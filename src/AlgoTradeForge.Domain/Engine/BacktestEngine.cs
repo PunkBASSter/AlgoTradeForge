@@ -11,11 +11,6 @@ public class BacktestEngine
     private readonly IBarMatcher _barMatcher;
     private readonly IMetricsCalculator _metricsCalculator;
 
-    public BacktestEngine()
-        : this(new BarMatcher(), new MetricsCalculator())
-    {
-    }
-
     public BacktestEngine(IBarMatcher barMatcher, IMetricsCalculator metricsCalculator)
     {
         _barMatcher = barMatcher;
