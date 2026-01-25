@@ -1,0 +1,14 @@
+using AlgoTradeForge.Application.Abstractions;
+
+namespace AlgoTradeForge.Application.Backtests;
+
+public sealed record RunBacktestCommand : ICommand<BacktestResultDto>
+{
+    public required string AssetName { get; init; }
+    public required string StrategyName { get; init; }
+    public required string BarSourceName { get; init; }
+    public required decimal InitialCash { get; init; }
+    public decimal CommissionPerTrade { get; init; } = 0m;
+    public decimal SlippageTicks { get; init; } = 0m;
+    public IDictionary<string, object>? StrategyParameters { get; init; }
+}

@@ -1,4 +1,6 @@
 <Solution>
   <Project Path="src\AlgoTradeForge.Domain\AlgoTradeForge.Domain.csproj" />
+  <Project Path="src\AlgoTradeForge.Application\AlgoTradeForge.Application.csproj" />
+  <Project Path="src\AlgoTradeForge.WebApi\AlgoTradeForge.WebApi.csproj" />
   <Project Path="tests\AlgoTradeForge.Domain.Tests\AlgoTradeForge.Domain.Tests.csproj" />
 </Solution>
