@@ -2,12 +2,21 @@ namespace AlgoTradeForge.Domain.Trading;
 
 public sealed class Position
 {
+    public Asset Asset { get; }
     public decimal Quantity { get; private set; }
     public decimal AverageEntryPrice { get; private set; }
     public decimal RealizedPnl { get; private set; }
 
+    public Position(Asset asset, decimal quantity = 0m, decimal averageEntryPrice = 0m, decimal realizedPnl = 0m)
+    {
+        Asset = asset;
+        Quantity = quantity;
+        AverageEntryPrice = averageEntryPrice;
+        RealizedPnl = realizedPnl;
+    }
+
     public decimal UnrealizedPnl(decimal currentPrice) =>
-        Quantity == 0m ? 0m : (currentPrice - AverageEntryPrice) * Quantity;
+        Quantity == 0m ? 0m : (currentPrice - AverageEntryPrice) * Quantity * Asset.Multiplier;
 
     internal void Apply(Fill fill)
     {
@@ -29,12 +38,12 @@ public sealed class Position
             else
             {
                 var closedQuantity = Quantity - newQuantity;
-                RealizedPnl += closedQuantity * (fill.Price - AverageEntryPrice);
+                RealizedPnl += closedQuantity * (fill.Price - AverageEntryPrice) * Asset.Multiplier;
             }
         }
         else
         {
-            RealizedPnl += Quantity * (fill.Price - AverageEntryPrice);
+            RealizedPnl += Quantity * (fill.Price - AverageEntryPrice) * Asset.Multiplier;
             AverageEntryPrice = fill.Price;
         }
 

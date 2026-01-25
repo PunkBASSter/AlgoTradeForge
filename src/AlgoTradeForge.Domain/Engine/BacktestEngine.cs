@@ -6,15 +6,30 @@ using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Engine;
 
-public static class BacktestEngine
+public class BacktestEngine
 {
-    public static async Task<BacktestResult> RunAsync(
+    private readonly IBarMatcher _barMatcher;
+    private readonly IMetricsCalculator _metricsCalculator;
+
+    public BacktestEngine()
+        : this(new BarMatcher(), new MetricsCalculator())
+    {
+    }
+
+    public BacktestEngine(IBarMatcher barMatcher, IMetricsCalculator metricsCalculator)
+    {
+        _barMatcher = barMatcher;
+        _metricsCalculator = metricsCalculator;
+    }
+
+    public virtual async Task<BacktestResult> RunAsync(
         IBarSource source,
         IBarStrategy strategy,
         BacktestOptions options,
         CancellationToken ct = default)
     {
         var stopwatch = Stopwatch.StartNew();
+        var asset = options.Asset;
 
         var portfolio = new Portfolio { InitialCash = options.InitialCash };
         portfolio.Initialize();
@@ -24,7 +39,7 @@ public static class BacktestEngine
         var orderIdCounter = 0L;
         StrategyAction? pendingAction = null;
 
-        await foreach (var bar in source.GetBarsAsync(ct))
+        await foreach (var bar in source.GetBarsAsync(asset.Name, ct))
         {
             ct.ThrowIfCancellationRequested();
             bars.Add(bar);
@@ -32,7 +47,7 @@ public static class BacktestEngine
             if (pendingAction is not null)
             {
                 var order = CreateOrder(pendingAction, ref orderIdCounter, bar.Timestamp);
-                var fill = BarMatcher.TryFill(order, bar, options);
+                var fill = _barMatcher.TryFill(order, bar, options);
 
                 if (fill is not null)
                 {
@@ -48,22 +63,23 @@ public static class BacktestEngine
                 pendingAction = null;
             }
 
-            var context = new StrategyContext(bar, bars.Count - 1, portfolio, fills, bars);
+            var context = new StrategyContext(asset, bar, bars.Count - 1, portfolio, fills, bars);
             pendingAction = strategy.OnBar(context);
         }
 
         var finalPrice = bars.Count > 0 ? bars[^1].Close : 0m;
-        var metrics = MetricsCalculator.Calculate(fills, bars, portfolio, finalPrice);
+        var metrics = _metricsCalculator.Calculate(fills, bars, portfolio, finalPrice, asset);
 
         stopwatch.Stop();
         return new BacktestResult(portfolio, fills, bars, metrics, stopwatch.Elapsed);
     }
 
-    private static Order CreateOrder(StrategyAction action, ref long orderIdCounter, DateTimeOffset timestamp)
+    protected virtual Order CreateOrder(StrategyAction action, ref long orderIdCounter, DateTimeOffset timestamp)
     {
         return new Order
         {
             Id = ++orderIdCounter,
+            Asset = action.Asset,
             Side = action.Side,
             Type = action.Type,
             Quantity = action.Quantity,

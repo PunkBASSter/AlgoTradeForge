@@ -3,16 +3,17 @@ using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Reporting;
 
-internal static class MetricsCalculator
+public class MetricsCalculator : IMetricsCalculator
 {
-    private const double RiskFreeRate = 0.02;
-    private const int TradingDaysPerYear = 252;
+    protected const double RiskFreeRate = 0.02;
+    protected const int TradingDaysPerYear = 252;
 
-    public static PerformanceMetrics Calculate(
+    public virtual PerformanceMetrics Calculate(
         IReadOnlyList<Fill> fills,
         IReadOnlyList<OhlcvBar> bars,
         Portfolio portfolio,
-        decimal finalPrice)
+        decimal finalPrice,
+        Asset asset)
     {
         var initialCapital = portfolio.InitialCash;
         var finalEquity = portfolio.Equity(finalPrice);
@@ -23,8 +24,8 @@ internal static class MetricsCalculator
             return CreateEmptyMetrics(initialCapital, finalEquity, tradingDays);
         }
 
-        var tradeStats = ComputeTradeStatistics(fills);
-        var equityCurve = BuildEquityCurve(fills, bars, initialCapital);
+        var tradeStats = ComputeTradeStatistics(fills, asset);
+        var equityCurve = BuildEquityCurve(fills, bars, initialCapital, asset);
         var maxDrawdown = ComputeMaxDrawdown(equityCurve);
         var (sharpe, sortino) = ComputeRiskMetrics(equityCurve);
 
@@ -67,7 +68,7 @@ internal static class MetricsCalculator
         };
     }
 
-    private static TradeStatistics ComputeTradeStatistics(IReadOnlyList<Fill> fills)
+    protected virtual TradeStatistics ComputeTradeStatistics(IReadOnlyList<Fill> fills, Asset asset)
     {
         var stats = new TradeStatistics();
         decimal position = 0;
@@ -81,7 +82,7 @@ internal static class MetricsCalculator
 
             if (position != 0 && Math.Sign(newPosition) != Math.Sign(position))
             {
-                var pnl = (double)(position * (fill.Price - avgEntryPrice));
+                var pnl = (double)(position * (fill.Price - avgEntryPrice) * asset.Multiplier);
                 if (pnl > 0)
                 {
                     stats.WinningTrades++;
@@ -102,7 +103,7 @@ internal static class MetricsCalculator
             else if (Math.Abs(newPosition) < Math.Abs(position))
             {
                 var closedQuantity = Math.Abs(position) - Math.Abs(newPosition);
-                var pnl = (double)(closedQuantity * (fill.Price - avgEntryPrice) * Math.Sign(position));
+                var pnl = (double)(closedQuantity * (fill.Price - avgEntryPrice) * Math.Sign(position) * asset.Multiplier);
                 if (pnl > 0)
                 {
                     stats.WinningTrades++;
@@ -127,10 +128,11 @@ internal static class MetricsCalculator
         return stats;
     }
 
-    private static List<double> BuildEquityCurve(
+    protected virtual List<double> BuildEquityCurve(
         IReadOnlyList<Fill> fills,
         IReadOnlyList<OhlcvBar> bars,
-        decimal initialCapital)
+        decimal initialCapital,
+        Asset asset)
     {
         var curve = new List<double>(bars.Count);
         var fillIndex = 0;
@@ -144,7 +146,7 @@ internal static class MetricsCalculator
             {
                 var fill = fills[fillIndex];
                 var direction = fill.Side == OrderSide.Buy ? 1 : -1;
-                cash += fill.Price * fill.Quantity * -direction - fill.Commission;
+                cash += fill.Price * fill.Quantity * asset.Multiplier * -direction - fill.Commission;
 
                 var fillQuantity = fill.Quantity * direction;
                 var newPosition = position + fillQuantity;
@@ -167,14 +169,14 @@ internal static class MetricsCalculator
                 fillIndex++;
             }
 
-            var equity = cash + position * bar.Close;
+            var equity = cash + position * bar.Close * asset.Multiplier;
             curve.Add((double)equity);
         }
 
         return curve;
     }
 
-    private static double ComputeMaxDrawdown(List<double> equityCurve)
+    protected virtual double ComputeMaxDrawdown(List<double> equityCurve)
     {
         if (equityCurve.Count == 0)
             return 0;
@@ -198,7 +200,7 @@ internal static class MetricsCalculator
         return maxDrawdown;
     }
 
-    private static (double sharpe, double sortino) ComputeRiskMetrics(List<double> equityCurve)
+    protected virtual (double sharpe, double sortino) ComputeRiskMetrics(List<double> equityCurve)
     {
         if (equityCurve.Count < 2)
             return (0, 0);
@@ -259,7 +261,7 @@ internal static class MetricsCalculator
         return (sharpe, sortino);
     }
 
-    private static PerformanceMetrics CreateEmptyMetrics(decimal initialCapital, decimal finalEquity, int tradingDays)
+    protected virtual PerformanceMetrics CreateEmptyMetrics(decimal initialCapital, decimal finalEquity, int tradingDays)
     {
         return new PerformanceMetrics
         {
@@ -284,7 +286,7 @@ internal static class MetricsCalculator
         };
     }
 
-    private sealed class TradeStatistics
+    protected class TradeStatistics
     {
         public int WinningTrades { get; set; }
         public int LosingTrades { get; set; }

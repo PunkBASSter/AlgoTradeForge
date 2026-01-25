@@ -3,9 +3,9 @@ using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Engine;
 
-internal static class BarMatcher
+public class BarMatcher : IBarMatcher
 {
-    public static Fill? TryFill(Order order, OhlcvBar bar, BacktestOptions options)
+    public virtual Fill? TryFill(Order order, OhlcvBar bar, BacktestOptions options)
     {
         var fillPrice = GetFillPrice(order, bar, options);
         if (fillPrice is null)
@@ -13,6 +13,7 @@ internal static class BarMatcher
 
         return new Fill(
             order.Id,
+            order.Asset,
             bar.Timestamp,
             fillPrice.Value,
             order.Quantity,
@@ -20,11 +21,11 @@ internal static class BarMatcher
             options.CommissionPerTrade);
     }
 
-    private static decimal? GetFillPrice(Order order, OhlcvBar bar, BacktestOptions options)
+    protected virtual decimal? GetFillPrice(Order order, OhlcvBar bar, BacktestOptions options)
     {
         if (order.Type == OrderType.Market)
         {
-            var slippage = options.SlippageTicks * options.TickSize;
+            var slippage = options.SlippageTicks * order.Asset.TickSize;
             var direction = order.Side == OrderSide.Buy ? 1 : -1;
             return bar.Open + slippage * direction;
         }
