@@ -258,6 +258,13 @@ backend/
 - Performance tests MUST run nightly and flag regressions
 - Strategy verification pipeline MUST have end-to-end tests
 
+### Test Framework Stack
+
+- MUST use **xUnit** as the test framework
+- MUST use **NSubstitute** for mocking interfaces
+- MUST use standard xUnit assertions (`Assert.Equal`, `Assert.Null`, etc.)
+- MUST NOT use FluentAssertions or other assertion libraries
+
 ### CI/CD Pipeline
 
 1. **Build**: Compile all projects, fail on warnings
@@ -294,4 +301,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.0.2 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-01-25
+**Version**: 1.0.3 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-01-25
