@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git fetch:*)",
+      "Bash(powershell -ExecutionPolicy Bypass -File \".specify/scripts/powershell/create-new-feature.ps1\" -Json -Number 1 -ShortName \"backtest-domain-model\" -Description \"create a domain model for strategy backtest\")"
+    ]
+  }
+}
