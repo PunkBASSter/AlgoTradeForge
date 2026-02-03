@@ -1,34 +1,70 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace AlgoTradeForge.Domain.History;
 
-/// <summary>
-/// Reads OHLCV bar data from local CSV files.
-/// Supports flexible CSV formats with configurable column mappings.
-/// </summary>
+internal readonly record struct BarCacheKey(
+    string AssetName,
+    DateTimeOffset StartTime,
+    DateTimeOffset EndTime);
+
 public sealed class CsvBarSource : IBarSource
 {
+    private static readonly MemoryCache s_cache = new(new MemoryCacheOptions
+    {
+        SizeLimit = 1000
+    });
+
     private readonly string? _basePath;
     private readonly CsvBarSourceOptions _options;
 
-    /// <summary>
-    /// Creates a CSV bar source that reads from the specified base path.
-    /// </summary>
-    /// <param name="basePath">
-    /// Base directory for CSV files. If null, uses <see cref="HistoryContext.BasePath"/>.
-    /// </param>
-    /// <param name="options">CSV parsing options. If null, uses defaults.</param>
     public CsvBarSource(string? basePath = null, CsvBarSourceOptions? options = null)
     {
         _basePath = basePath;
         _options = options ?? CsvBarSourceOptions.Default;
     }
 
-    /// <inheritdoc />
     public async IAsyncEnumerable<OhlcvBar> GetBarsAsync(
         string assetName,
+        DateTimeOffset startTime,
+        DateTimeOffset endTime,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var cacheKey = new BarCacheKey(assetName, startTime, endTime);
+
+        if (s_cache.TryGetValue(cacheKey, out IReadOnlyList<OhlcvBar>? cachedBars))
+        {
+            foreach (var bar in cachedBars!)
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return bar;
+            }
+            yield break;
+        }
+
+        var bars = new List<OhlcvBar>();
+
+        await foreach (var bar in LoadBarsFromFileAsync(assetName, startTime, endTime, ct))
+        {
+            bars.Add(bar);
+        }
+
+        var cacheEntryOptions = new MemoryCacheEntryOptions()
+            .SetSize(1);
+        s_cache.Set(cacheKey, (IReadOnlyList<OhlcvBar>)bars, cacheEntryOptions);
+
+        foreach (var bar in bars)
+        {
+            yield return bar;
+        }
+    }
+
+    private async IAsyncEnumerable<OhlcvBar> LoadBarsFromFileAsync(
+        string assetName,
+        DateTimeOffset startTime,
+        DateTimeOffset endTime,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var basePath = _basePath ?? HistoryContext.BasePath
@@ -68,9 +104,23 @@ public sealed class CsvBarSource : IBarSource
 
             if (TryParseLine(line, out var bar))
             {
-                yield return bar;
+                if (bar.Timestamp >= startTime && bar.Timestamp <= endTime)
+                {
+                    yield return bar;
+                }
             }
         }
+    }
+
+    public static void ClearCache()
+    {
+        s_cache.Clear();
+    }
+
+    public static void InvalidateCache(string assetName, DateTimeOffset startTime, DateTimeOffset endTime)
+    {
+        var cacheKey = new BarCacheKey(assetName, startTime, endTime);
+        s_cache.Remove(cacheKey);
     }
 
     private string ResolveFilePath(string basePath, string assetName)
@@ -136,86 +186,38 @@ public sealed class CsvBarSource : IBarSource
     }
 }
 
-/// <summary>
-/// Configuration options for CSV parsing.
-/// </summary>
 public sealed record CsvBarSourceOptions
 {
-    /// <summary>
-    /// Default options: comma-delimited, with header, columns in order: timestamp, open, high, low, close, volume.
-    /// </summary>
     public static CsvBarSourceOptions Default { get; } = new();
 
-    /// <summary>
-    /// Column delimiter character.
-    /// </summary>
     public char Delimiter { get; init; } = ',';
 
-    /// <summary>
-    /// Whether the CSV has a header row to skip.
-    /// </summary>
     public bool HasHeader { get; init; } = true;
 
-    /// <summary>
-    /// File encoding. Defaults to UTF-8.
-    /// </summary>
     public Encoding Encoding { get; init; } = Encoding.UTF8;
 
-    /// <summary>
-    /// Timestamp column index (0-based).
-    /// </summary>
     public int TimestampColumn { get; init; } = 0;
 
-    /// <summary>
-    /// Open price column index (0-based).
-    /// </summary>
     public int OpenColumn { get; init; } = 1;
 
-    /// <summary>
-    /// High price column index (0-based).
-    /// </summary>
     public int HighColumn { get; init; } = 2;
 
-    /// <summary>
-    /// Low price column index (0-based).
-    /// </summary>
     public int LowColumn { get; init; } = 3;
 
-    /// <summary>
-    /// Close price column index (0-based).
-    /// </summary>
     public int CloseColumn { get; init; } = 4;
 
-    /// <summary>
-    /// Volume column index (0-based).
-    /// </summary>
     public int VolumeColumn { get; init; } = 5;
 
-    /// <summary>
-    /// Timestamp format string for parsing. If null, auto-detects Unix or ISO formats.
-    /// </summary>
     public string? TimestampFormat { get; init; }
 
-    /// <summary>
-    /// Custom function to resolve file name from asset name.
-    /// If null, uses "{assetName}.csv".
-    /// </summary>
     public Func<string, string>? FileNameResolver { get; init; }
 
-    /// <summary>
-    /// Creates options for Yahoo Finance CSV format.
-    /// Columns: Date, Open, High, Low, Close, Adj Close, Volume
-    /// </summary>
     public static CsvBarSourceOptions YahooFinance { get; } = new()
     {
         TimestampFormat = "yyyy-MM-dd",
-        VolumeColumn = 6  // Skip Adj Close column
+        VolumeColumn = 6
     };
 
-    /// <summary>
-    /// Creates options for Binance CSV format.
-    /// Columns: Open time, Open, High, Low, Close, Volume, ...
-    /// </summary>
     public static CsvBarSourceOptions Binance { get; } = new()
     {
         HasHeader = false

@@ -9,11 +9,13 @@ public class BarMatcherTests
 {
     private readonly BarMatcher _matcher = new();
 
-    private BacktestOptions CreateOptions(Asset asset, decimal commission = 0m, decimal slippageTicks = 0m) =>
+    private static BacktestOptions CreateOptions(Asset asset, decimal commission = 0m, decimal slippageTicks = 0m) =>
         new()
         {
             InitialCash = 100_000m,
             Asset = asset,
+            StartTime = DateTimeOffset.MinValue,
+            EndTime = DateTimeOffset.MaxValue,
             CommissionPerTrade = commission,
             SlippageTicks = slippageTicks
         };

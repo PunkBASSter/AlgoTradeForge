@@ -37,6 +37,8 @@ public sealed class RunBacktestCommandHandler : ICommandHandler<RunBacktestComma
         {
             Asset = asset,
             InitialCash = command.InitialCash,
+            StartTime = command.StartTime,
+            EndTime = command.EndTime,
             CommissionPerTrade = command.CommissionPerTrade,
             SlippageTicks = command.SlippageTicks
         };

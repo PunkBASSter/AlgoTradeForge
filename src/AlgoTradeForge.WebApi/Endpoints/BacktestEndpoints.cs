@@ -37,6 +37,8 @@ public static class BacktestEndpoints
             StrategyName = request.StrategyName,
             BarSourceName = request.BarSourceName,
             InitialCash = request.InitialCash,
+            StartTime = request.StartTime,
+            EndTime = request.EndTime,
             CommissionPerTrade = request.CommissionPerTrade,
             SlippageTicks = request.SlippageTicks,
             StrategyParameters = request.StrategyParameters

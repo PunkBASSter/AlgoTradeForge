@@ -52,18 +52,24 @@ public class BacktestEngineTests
             TradingDays = 0
         };
 
-    private BacktestOptions CreateOptions() =>
+    private static BacktestOptions CreateOptions() =>
         new()
         {
             InitialCash = 100_000m,
             Asset = TestAssets.Aapl,
+            StartTime = DateTimeOffset.MinValue,
+            EndTime = DateTimeOffset.MaxValue,
             CommissionPerTrade = 0m
         };
 
     private static IBarSource CreateBarSource(params OhlcvBar[] bars)
     {
         var source = Substitute.For<IBarSource>();
-        source.GetBarsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        source.GetBarsAsync(
+                Arg.Any<string>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<CancellationToken>())
             .Returns(bars.ToAsyncEnumerable());
         return source;
     }

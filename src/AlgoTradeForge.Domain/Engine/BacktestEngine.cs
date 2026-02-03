@@ -34,7 +34,7 @@ public class BacktestEngine
         var orderIdCounter = 0L;
         StrategyAction? pendingAction = null;
 
-        await foreach (var bar in source.GetBarsAsync(asset.Name, ct))
+        await foreach (var bar in source.GetBarsAsync(asset.Name, options.StartTime, options.EndTime, ct))
         {
             ct.ThrowIfCancellationRequested();
             bars.Add(bar);
