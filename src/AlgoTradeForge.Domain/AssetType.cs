@@ -1,3 +1,3 @@
-namespace AlgoTradeForge.Domain.Trading;
+namespace AlgoTradeForge.Domain;
 
 public enum AssetType { Equity, Future, Option, Forex, Crypto }

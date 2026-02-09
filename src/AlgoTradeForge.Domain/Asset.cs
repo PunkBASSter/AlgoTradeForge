@@ -1,4 +1,4 @@
-namespace AlgoTradeForge.Domain.Trading;
+namespace AlgoTradeForge.Domain;
 
 public sealed record Asset
 {
@@ -21,4 +21,6 @@ public sealed record Asset
             TickSize = tickSize,
             MarginRequirement = margin
         };
+
+    public override string ToString() => Name;
 }

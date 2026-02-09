@@ -21,7 +21,7 @@ public class BacktestEngineTests
         _metricsCalculator = Substitute.For<IMetricsCalculator>();
         _metricsCalculator.Calculate(
             Arg.Any<IReadOnlyList<Fill>>(),
-            Arg.Any<IReadOnlyList<OhlcvBar>>(),
+            Arg.Any<IReadOnlyList<Bar>>(),
             Arg.Any<Portfolio>(),
             Arg.Any<decimal>(),
             Arg.Any<Asset>())
@@ -62,7 +62,7 @@ public class BacktestEngineTests
             CommissionPerTrade = 0m
         };
 
-    private static IBarSource CreateBarSource(params OhlcvBar[] bars)
+    private static IBarSource CreateBarSource(params Bar[] bars)
     {
         var source = Substitute.For<IBarSource>();
         source.GetBarsAsync(
@@ -74,9 +74,9 @@ public class BacktestEngineTests
         return source;
     }
 
-    private static IBarStrategy CreateStrategy(params StrategyAction?[] actions)
+    private static IIntBarStrategy CreateStrategy(params StrategyAction?[] actions)
     {
-        var strategy = Substitute.For<IBarStrategy>();
+        var strategy = Substitute.For<IIntBarStrategy>();
         var callIndex = 0;
         strategy.OnBar(Arg.Any<StrategyContext>())
             .Returns(_ => callIndex < actions.Length ? actions[callIndex++] : null);
@@ -107,7 +107,7 @@ public class BacktestEngineTests
 
         Assert.Empty(result.Fills);
         Assert.Equal(3, result.Bars.Count);
-        _barMatcher.DidNotReceive().TryFill(Arg.Any<Order>(), Arg.Any<OhlcvBar>(), Arg.Any<BacktestOptions>());
+        _barMatcher.DidNotReceive().TryFill(Arg.Any<Order>(), Arg.Any<Bar>(), Arg.Any<BacktestOptions>());
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public class BacktestEngineTests
         var action = StrategyAction.MarketBuy(TestAssets.Aapl, 100m);
         var strategy = CreateStrategy(action, null, null);
         var fill = TestFills.BuyAapl(101m, 100m);
-        _barMatcher.TryFill(Arg.Any<Order>(), Arg.Any<OhlcvBar>(), Arg.Any<BacktestOptions>())
+        _barMatcher.TryFill(Arg.Any<Order>(), Arg.Any<Bar>(), Arg.Any<BacktestOptions>())
             .Returns(fill);
 
         var result = await _engine.RunAsync(source, strategy, CreateOptions());
@@ -126,7 +126,7 @@ public class BacktestEngineTests
         Assert.Single(result.Fills);
         _barMatcher.Received(1).TryFill(
             Arg.Is<Order>(o => o.Side == OrderSide.Buy && o.Quantity == 100m),
-            Arg.Is<OhlcvBar>(b => b == bars[1]),
+            Arg.Is<Bar>(b => b == bars[1]),
             Arg.Any<BacktestOptions>());
     }
 
@@ -138,7 +138,7 @@ public class BacktestEngineTests
         var action = StrategyAction.MarketBuy(TestAssets.Aapl, 100m);
         var strategy = CreateStrategy(action, null);
         var fill = new Fill(1, TestAssets.Aapl, bars[1].Timestamp, 150m, 100m, OrderSide.Buy, 5m);
-        _barMatcher.TryFill(Arg.Any<Order>(), Arg.Any<OhlcvBar>(), Arg.Any<BacktestOptions>())
+        _barMatcher.TryFill(Arg.Any<Order>(), Arg.Any<Bar>(), Arg.Any<BacktestOptions>())
             .Returns(fill);
 
         var result = await _engine.RunAsync(source, strategy, CreateOptions());
@@ -157,7 +157,7 @@ public class BacktestEngineTests
         var source = CreateBarSource(bars);
         var action = StrategyAction.LimitBuy(TestAssets.Aapl, 100m, 50m);
         var strategy = CreateStrategy(action, null);
-        _barMatcher.TryFill(Arg.Any<Order>(), Arg.Any<OhlcvBar>(), Arg.Any<BacktestOptions>())
+        _barMatcher.TryFill(Arg.Any<Order>(), Arg.Any<Bar>(), Arg.Any<BacktestOptions>())
             .Returns((Fill?)null);
 
         var result = await _engine.RunAsync(source, strategy, CreateOptions());
@@ -179,7 +179,7 @@ public class BacktestEngineTests
         var buyFill = new Fill(1, TestAssets.Aapl, bars[1].Timestamp, 100m, 100m, OrderSide.Buy, 0m);
         var sellFill = new Fill(2, TestAssets.Aapl, bars[3].Timestamp, 110m, 100m, OrderSide.Sell, 0m);
 
-        _barMatcher.TryFill(Arg.Any<Order>(), Arg.Any<OhlcvBar>(), Arg.Any<BacktestOptions>())
+        _barMatcher.TryFill(Arg.Any<Order>(), Arg.Any<Bar>(), Arg.Any<BacktestOptions>())
             .Returns(
                 buyFill,
                 sellFill);
@@ -217,7 +217,7 @@ public class BacktestEngineTests
         var fill1 = new Fill(1, TestAssets.Aapl, bars[1].Timestamp, 100m, 50m, OrderSide.Buy, 0m);
         var fill2 = new Fill(2, TestAssets.Aapl, bars[3].Timestamp, 102m, 50m, OrderSide.Buy, 0m);
 
-        _barMatcher.TryFill(Arg.Any<Order>(), Arg.Any<OhlcvBar>(), Arg.Any<BacktestOptions>())
+        _barMatcher.TryFill(Arg.Any<Order>(), Arg.Any<Bar>(), Arg.Any<BacktestOptions>())
             .Returns(fill1, fill2);
 
         var result = await _engine.RunAsync(source, strategy, CreateOptions());
@@ -254,7 +254,7 @@ public class BacktestEngineTests
 
         _metricsCalculator.Received(1).Calculate(
             Arg.Any<IReadOnlyList<Fill>>(),
-            Arg.Is<IReadOnlyList<OhlcvBar>>(b => b.Count == 3),
+            Arg.Is<IReadOnlyList<Bar>>(b => b.Count == 3),
             Arg.Any<Portfolio>(),
             Arg.Is<decimal>(p => p == bars[2].Close),
             Arg.Is<Asset>(a => a == TestAssets.Aapl));
@@ -271,7 +271,7 @@ public class BacktestEngineTests
 
         long capturedId1 = 0, capturedId2 = 0;
         var callCount = 0;
-        _barMatcher.TryFill(Arg.Any<Order>(), Arg.Any<OhlcvBar>(), Arg.Any<BacktestOptions>())
+        _barMatcher.TryFill(Arg.Any<Order>(), Arg.Any<Bar>(), Arg.Any<BacktestOptions>())
             .Returns(ci =>
             {
                 var order = ci.ArgAt<Order>(0);

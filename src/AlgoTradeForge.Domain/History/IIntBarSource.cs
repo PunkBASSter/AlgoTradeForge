@@ -1,8 +1,8 @@
 namespace AlgoTradeForge.Domain.History;
 
-public interface IBarSource
+public interface IIntBarSource
 {
-    IAsyncEnumerable<OhlcvBar> GetBarsAsync(
+    IAsyncEnumerable<IntBar> GetBarsAsync(
         string assetName,
         DateTimeOffset startTime,
         DateTimeOffset endTime,

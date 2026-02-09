@@ -5,5 +5,5 @@ namespace AlgoTradeForge.Domain.Engine;
 
 public interface IBarMatcher
 {
-    Fill? TryFill(Order order, OhlcvBar bar, BacktestOptions options);
+    Fill? TryFill(Order order, IntBar bar, BacktestOptions options);
 }

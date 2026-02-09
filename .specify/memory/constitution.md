@@ -207,8 +207,7 @@ backend/
 │   └── StrategyHost/       # Dynamic compilation, execution sandbox
 └── tests/
     ├── Unit/
-    ├── Integration/
-    └── Performance/
+    └── Integration/
 ```
 
 ### Background Jobs

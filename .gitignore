@@ -54,3 +54,4 @@ TestResult.xml
 nunit-*.xml
 /.obsidian/*
 .claude/settings.local.json
+/.vs/

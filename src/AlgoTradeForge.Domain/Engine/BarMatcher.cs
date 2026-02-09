@@ -5,7 +5,7 @@ namespace AlgoTradeForge.Domain.Engine;
 
 public class BarMatcher : IBarMatcher
 {
-    public virtual Fill? TryFill(Order order, OhlcvBar bar, BacktestOptions options)
+    public virtual Fill? TryFill(Order order, IntBar bar, BacktestOptions options)
     {
         var fillPrice = GetFillPrice(order, bar, options);
         if (fillPrice is null)
@@ -14,14 +14,14 @@ public class BarMatcher : IBarMatcher
         return new Fill(
             order.Id,
             order.Asset,
-            bar.Timestamp,
+            new DateTimeOffset(), //bar.Timestamp,
             fillPrice.Value,
             order.Quantity,
             order.Side,
             options.CommissionPerTrade);
     }
 
-    protected virtual decimal? GetFillPrice(Order order, OhlcvBar bar, BacktestOptions options)
+    protected virtual decimal? GetFillPrice(Order order, IntBar bar, BacktestOptions options)
     {
         if (order.Type == OrderType.Market)
         {

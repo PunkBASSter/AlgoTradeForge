@@ -7,6 +7,6 @@ namespace AlgoTradeForge.Domain.Engine;
 public sealed record BacktestResult(
     Portfolio FinalPortfolio,
     IReadOnlyList<Fill> Fills,
-    IReadOnlyList<OhlcvBar> Bars,
+    IReadOnlyList<IntBar> Bars,
     PerformanceMetrics Metrics,
     TimeSpan Duration);

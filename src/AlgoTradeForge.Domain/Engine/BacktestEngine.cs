@@ -11,15 +11,15 @@ public class BacktestEngine
     private readonly IBarMatcher _barMatcher;
     private readonly IMetricsCalculator _metricsCalculator;
 
-    public BacktestEngine(IBarMatcher barMatcher, IMetricsCalculator metricsCalculator)
+    public BacktestEngine(IBarMatcher barMatcher, IMetricsCalculator metricsCalculator) //TODO include DataSource
     {
         _barMatcher = barMatcher;
         _metricsCalculator = metricsCalculator;
     }
 
     public virtual async Task<BacktestResult> RunAsync(
-        IBarSource source,
-        IBarStrategy strategy,
+        IIntBarSource source,
+        IIntBarStrategy strategy,
         BacktestOptions options,
         CancellationToken ct = default)
     {
@@ -30,43 +30,20 @@ public class BacktestEngine
         portfolio.Initialize();
 
         var fills = new List<Fill>();
-        var bars = new List<OhlcvBar>();
+        var bars = new List<IntBar>();
         var orderIdCounter = 0L;
         StrategyAction? pendingAction = null;
 
-        await foreach (var bar in source.GetBarsAsync(asset.Name, options.StartTime, options.EndTime, ct))
+        await foreach (var bar in source.GetBarsAsync(asset.Name, options.StartTime, options.EndTime, ct)) //TODO: Introduce debugging control commands
         {
-            ct.ThrowIfCancellationRequested();
-            bars.Add(bar);
-
-            if (pendingAction is not null)
-            {
-                var order = CreateOrder(pendingAction, ref orderIdCounter, bar.Timestamp);
-                var fill = _barMatcher.TryFill(order, bar, options);
-
-                if (fill is not null)
-                {
-                    order.Status = OrderStatus.Filled;
-                    portfolio.Apply(fill);
-                    fills.Add(fill);
-                }
-                else
-                {
-                    order.Status = OrderStatus.Rejected;
-                }
-
-                pendingAction = null;
-            }
-
-            var context = new StrategyContext(asset, bar, bars.Count - 1, portfolio, fills, bars);
-            pendingAction = strategy.OnBar(context);
+            // Rewrite this for strategy to use OrderClient (like S# connector) to submit orders.
         }
 
-        var finalPrice = bars.Count > 0 ? bars[^1].Close : 0m;
-        var metrics = _metricsCalculator.Calculate(fills, bars, portfolio, finalPrice, asset);
+        //var finalPrice = bars.Count > 0 ? bars[^1].Close : 0m;
+        //var metrics = _metricsCalculator.Calculate(fills, bars, portfolio, finalPrice, asset);
 
         stopwatch.Stop();
-        return new BacktestResult(portfolio, fills, bars, metrics, stopwatch.Elapsed);
+        return new BacktestResult(portfolio, fills, [], null, stopwatch.Elapsed); //TODO fix
     }
 
     protected virtual Order CreateOrder(StrategyAction action, ref long orderIdCounter, DateTimeOffset timestamp)
