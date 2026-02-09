@@ -1,11 +1,12 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.0 → 1.0.1
+Version change: 1.0.1 → 1.0.2
 Modified principles: None
-Added sections:
-  - Code Style subsection under Backend (.NET 10 + ASP.NET Core)
+Added sections: None
 Removed sections: None
+Modified sections:
+  - Code Style: Added CancellationToken naming convention (ct)
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible (Constitution Check section exists)
   - .specify/templates/spec-template.md ✅ compatible (requirements align)
@@ -159,11 +160,8 @@ frontend/
 - MUST NOT use `dynamic` type; prefer generics or discriminated unions
 
 **Code Style**:
-
-- MUST use immutable types (`record`, `record struct`) for data objects where possible
-- MUST use primary constructors for dependency injection and simple initialization
-- MUST use collection expressions (`[]`, `[a, b, c]`) for all collection initialization
 - MUST use self-descriptive naming; names should reveal intent without comments
+- MUST name `CancellationToken` parameters as `ct` for brevity and consistency
 - MUST NOT write XML summary comments (`<summary>`) or inline comments unless:
   - Explaining a non-obvious algorithm or mathematical formula
   - Flagging a known pitfall, workaround, or counterintuitive behavior
@@ -180,7 +178,7 @@ frontend/
 **Async/Concurrency**:
 
 - MUST use `async`/`await` throughout; no `.Result` or `.Wait()` blocking
-- MUST use `CancellationToken` propagation for all async operations
+- MUST use `ct` propagation for all async operations
 - MUST use `Channel<T>` or `IAsyncEnumerable<T>` for streaming scenarios
 - MUST use `ValueTask<T>` for hot paths where allocation matters
 
@@ -209,8 +207,7 @@ backend/
 │   └── StrategyHost/       # Dynamic compilation, execution sandbox
 └── tests/
     ├── Unit/
-    ├── Integration/
-    └── Performance/
+    └── Integration/
 ```
 
 ### Background Jobs
@@ -260,6 +257,13 @@ backend/
 - Performance tests MUST run nightly and flag regressions
 - Strategy verification pipeline MUST have end-to-end tests
 
+### Test Framework Stack
+
+- MUST use **xUnit** as the test framework
+- MUST use **NSubstitute** for mocking interfaces
+- MUST use standard xUnit assertions (`Assert.Equal`, `Assert.Null`, etc.)
+- MUST NOT use FluentAssertions or other assertion libraries
+
 ### CI/CD Pipeline
 
 1. **Build**: Compile all projects, fail on warnings
@@ -296,4 +300,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.0.1 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-01-24
+**Version**: 1.0.3 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-01-25
