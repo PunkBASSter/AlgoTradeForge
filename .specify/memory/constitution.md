@@ -1,16 +1,21 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.1 → 1.0.2
+Version change: 1.0.3 → 1.1.0
 Modified principles: None
-Added sections: None
+Added sections:
+  - Solution Layout (new top-level file structure section under Technology Standards)
 Removed sections: None
 Modified sections:
-  - Code Style: Added CancellationToken naming convention (ct)
+  - Backend Code Organization: Replaced generic backend/ tree with actual
+    AlgoTradeForge.* project layout matching solution structure
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ compatible (Constitution Check section exists)
-  - .specify/templates/spec-template.md ✅ compatible (requirements align)
-  - .specify/templates/tasks-template.md ✅ compatible (phase structure aligns)
+  - .specify/templates/plan-template.md ✅ compatible
+    (Constitution Check section exists; Source Code section is feature-specific)
+  - .specify/templates/spec-template.md ✅ compatible
+    (requirements align; no structural references)
+  - .specify/templates/tasks-template.md ✅ compatible
+    (Path Conventions section is generic; features reference plan.md)
   - .specify/templates/commands/*.md ✅ no files exist yet
 Follow-up TODOs: None
 -->
@@ -195,20 +200,43 @@ frontend/
 - MUST enforce memory and CPU limits per strategy execution
 - MUST capture compilation errors with line/column information for user feedback
 
-**Code Organization**:
+**Solution Layout** (repository root):
 
 ```
-backend/
+AlgoTradeForge/
+├── AlgoTradeForge.slnx         # Solution file (XML format)
 ├── src/
-│   ├── Api/                # ASP.NET Core host, API endpoints, middleware
-│   ├── Application/        # Specific use cases to serve endpoints
-│   ├── Domain/             # Domain models, interfaces, business logic
-│   ├── Infrastructure/     # Data access, external services, caching
-│   └── StrategyHost/       # Dynamic compilation, execution sandbox
-└── tests/
-    ├── Unit/
-    └── Integration/
+│   ├── AlgoTradeForge.Domain/          # Domain models, interfaces, business logic
+│   │   ├── Engine/                     # Backtest engine, bar matching
+│   │   ├── History/                    # Data sources, bars, time series
+│   │   │   └── Metadata/              # Bar and sample metadata
+│   │   ├── Reporting/                  # Performance metrics
+│   │   ├── Strategy/                   # Strategy interfaces and base types
+│   │   └── Trading/                    # Orders, fills, positions, portfolio
+│   ├── AlgoTradeForge.Application/     # Use cases (CQRS commands/queries)
+│   │   ├── Abstractions/              # ICommand, IQuery, handler interfaces
+│   │   ├── Backtests/                 # RunBacktest command + handler + DTOs
+│   │   └── Repositories/             # Repository interfaces
+│   ├── AlgoTradeForge.Infrastructure/  # Data access, external services
+│   │   └── History/                   # History data context
+│   └── AlgoTradeForge.WebApi/         # ASP.NET Core host, minimal API endpoints
+│       ├── Contracts/                 # Request/response models
+│       └── Endpoints/                 # Endpoint definitions
+├── tests/
+│   └── AlgoTradeForge.Domain.Tests/   # Domain unit tests (xUnit + NSubstitute)
+│       ├── Engine/                    # BacktestEngine, BarMatcher tests
+│       ├── Trading/                   # Portfolio, Position tests
+│       └── TestUtilities/             # Shared test data factories
+├── docs/                              # Design documents and requirements
+└── specs/                             # Feature specifications and checklists
 ```
+
+**Code Organization conventions**:
+- Each project uses namespace `AlgoTradeForge.<Layer>`
+- Domain project exposes internals to its test project via `InternalsVisibleTo`
+- Application references Domain; Infrastructure references Application;
+  WebApi references Application and Domain
+- Test projects mirror the source project folder structure
 
 ### Background Jobs
 
@@ -300,4 +328,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.0.3 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-01-25
+**Version**: 1.1.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-09
