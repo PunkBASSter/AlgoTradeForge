@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AlgoTradeForge.Application\AlgoTradeForge.Application.csproj" />
     <ProjectReference Include="..\AlgoTradeForge.Domain\AlgoTradeForge.Domain.csproj" />
+    <ProjectReference Include="..\AlgoTradeForge.Infrastructure\AlgoTradeForge.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

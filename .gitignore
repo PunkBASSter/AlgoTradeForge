@@ -55,3 +55,10 @@ nunit-*.xml
 /.obsidian/*
 .claude/settings.local.json
 /.vs/
+
+# Candle data (ingested)
+Data/
+
+# User secrets
+*.user
+.env*

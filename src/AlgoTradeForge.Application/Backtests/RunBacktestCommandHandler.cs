@@ -1,37 +1,24 @@
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain.Engine;
+using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Application.Backtests;
 
-public sealed class RunBacktestCommandHandler : ICommandHandler<RunBacktestCommand, BacktestResultDto>
+public sealed class RunBacktestCommandHandler(
+    BacktestEngine engine,
+    IAssetRepository assetRepository,
+    IStrategyFactory strategyFactory,
+    IInt64BarLoader barLoader,
+    IOptions<CandleStorageOptions> storageOptions) : ICommandHandler<RunBacktestCommand, BacktestResultDto>
 {
-    private readonly BacktestEngine _engine;
-    private readonly IAssetRepository _assetRepository;
-    private readonly IBarSourceRepository _barSourceRepository;
-    private readonly IStrategyFactory _strategyFactory;
-
-    public RunBacktestCommandHandler(
-        BacktestEngine engine,
-        IAssetRepository assetRepository,
-        IBarSourceRepository barSourceRepository,
-        IStrategyFactory strategyFactory)
-    {
-        _engine = engine;
-        _assetRepository = assetRepository;
-        _barSourceRepository = barSourceRepository;
-        _strategyFactory = strategyFactory;
-    }
-
     public async Task<BacktestResultDto> HandleAsync(RunBacktestCommand command, CancellationToken ct = default)
     {
-        var asset = await _assetRepository.GetByNameAsync(command.AssetName, ct)
+        var asset = await assetRepository.GetByNameAsync(command.AssetName, ct)
             ?? throw new ArgumentException($"Asset '{command.AssetName}' not found.", nameof(command));
 
-        var barSource = await _barSourceRepository.GetByNameAsync(command.BarSourceName, ct)
-            ?? throw new ArgumentException($"Bar source '{command.BarSourceName}' not found.", nameof(command));
-
-        var strategy = _strategyFactory.Create(command.StrategyName, command.StrategyParameters);
+        var strategy = strategyFactory.Create(command.StrategyName, command.StrategyParameters);
 
         var options = new BacktestOptions
         {
@@ -43,7 +30,16 @@ public sealed class RunBacktestCommandHandler : ICommandHandler<RunBacktestComma
             SlippageTicks = command.SlippageTicks
         };
 
-        var result = await _engine.RunAsync(barSource, strategy, options, ct);
+        var bars = barLoader.Load(
+            storageOptions.Value.DataRoot,
+            asset.Exchange ?? throw new InvalidOperationException($"Asset '{asset.Name}' has no Exchange configured."),
+            asset.Name,
+            asset.DecimalDigits,
+            DateOnly.FromDateTime(command.StartTime.UtcDateTime),
+            DateOnly.FromDateTime(command.EndTime.UtcDateTime),
+            asset.SmallestInterval);
+
+        var result = await engine.RunAsync(bars, strategy, options, ct);
 
         return new BacktestResultDto
         {

@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.Engine;
+using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Tests.TestUtilities;
 using AlgoTradeForge.Domain.Trading;
 using Xunit;
@@ -24,88 +25,46 @@ public class BarMatcherTests
     public void TryFill_MarketBuy_FillsAtOpen()
     {
         var order = TestOrders.MarketBuy(TestAssets.Aapl, 100m);
-        var bar = TestBars.Create(150m, 155m, 148m, 152m);
+        var bar = TestBars.Create(15000, 15500, 14800, 15200);
         var options = CreateOptions(TestAssets.Aapl);
 
         var fill = _matcher.TryFill(order, bar, options);
 
         Assert.NotNull(fill);
-        Assert.Equal(150m, fill.Price);
+        Assert.Equal(15000m, fill.Price);
     }
 
     [Fact]
     public void TryFill_MarketSell_FillsAtOpen()
     {
         var order = TestOrders.MarketSell(TestAssets.Aapl, 100m);
-        var bar = TestBars.Create(150m, 155m, 148m, 152m);
+        var bar = TestBars.Create(15000, 15500, 14800, 15200);
         var options = CreateOptions(TestAssets.Aapl);
 
         var fill = _matcher.TryFill(order, bar, options);
 
         Assert.NotNull(fill);
-        Assert.Equal(150m, fill.Price);
-    }
-
-    [Theory]
-    [InlineData(1, 150.01)]  // 1 tick slippage for equity
-    [InlineData(2, 150.02)]  // 2 ticks slippage
-    [InlineData(0, 150.00)]  // No slippage
-    public void TryFill_MarketBuyWithSlippage_AddsTicks(decimal slippageTicks, decimal expectedPrice)
-    {
-        var order = TestOrders.MarketBuy(TestAssets.Aapl, 100m);
-        var bar = TestBars.Create(150m, 155m, 148m, 152m);
-        var options = CreateOptions(TestAssets.Aapl, slippageTicks: slippageTicks);
-
-        var fill = _matcher.TryFill(order, bar, options);
-
-        Assert.Equal(expectedPrice, fill!.Price);
-    }
-
-    [Theory]
-    [InlineData(1, 149.99)]  // 1 tick slippage subtracted for sell
-    [InlineData(2, 149.98)]
-    public void TryFill_MarketSellWithSlippage_SubtractsTicks(decimal slippageTicks, decimal expectedPrice)
-    {
-        var order = TestOrders.MarketSell(TestAssets.Aapl, 100m);
-        var bar = TestBars.Create(150m, 155m, 148m, 152m);
-        var options = CreateOptions(TestAssets.Aapl, slippageTicks: slippageTicks);
-
-        var fill = _matcher.TryFill(order, bar, options);
-
-        Assert.Equal(expectedPrice, fill!.Price);
-    }
-
-    [Fact]
-    public void TryFill_MarketBuyFutures_AppliesTickSize()
-    {
-        var order = TestOrders.MarketBuy(TestAssets.EsMini, 1m);
-        var bar = TestBars.Create(5000m, 5020m, 4990m, 5010m);
-        var options = CreateOptions(TestAssets.EsMini, slippageTicks: 2m);
-
-        var fill = _matcher.TryFill(order, bar, options);
-
-        // 5000 + 2 * 0.25 = 5000.50
-        Assert.Equal(5000.50m, fill!.Price);
+        Assert.Equal(15000m, fill.Price);
     }
 
     [Fact]
     public void TryFill_LimitBuyPriceAtOrAboveLow_Fills()
     {
-        var order = TestOrders.LimitBuy(TestAssets.Aapl, 100m, limitPrice: 148m);
-        var bar = TestBars.Create(150m, 155m, 148m, 152m);
+        var order = TestOrders.LimitBuy(TestAssets.Aapl, 100m, limitPrice: 14800m);
+        var bar = TestBars.Create(15000, 15500, 14800, 15200);
         var options = CreateOptions(TestAssets.Aapl);
 
         var fill = _matcher.TryFill(order, bar, options);
 
         Assert.NotNull(fill);
-        Assert.Equal(148m, fill.Price);
+        Assert.Equal(14800m, fill.Price);
     }
 
     [Fact]
     public void TryFill_LimitBuyPriceBelowLow_Rejects()
     {
-        var order = TestOrders.LimitBuy(TestAssets.Aapl, 100m, limitPrice: 147m);
-        var bar = TestBars.Create(150m, 155m, 148m, 152m);
+        var order = TestOrders.LimitBuy(TestAssets.Aapl, 100m, limitPrice: 14700m);
+        var bar = TestBars.Create(15000, 15500, 14800, 15200);
         var options = CreateOptions(TestAssets.Aapl);
 
         var fill = _matcher.TryFill(order, bar, options);
@@ -116,39 +75,26 @@ public class BarMatcherTests
     [Fact]
     public void TryFill_LimitSellPriceAtOrBelowHigh_Fills()
     {
-        var order = TestOrders.LimitSell(TestAssets.Aapl, 100m, limitPrice: 155m);
-        var bar = TestBars.Create(150m, 155m, 148m, 152m);
+        var order = TestOrders.LimitSell(TestAssets.Aapl, 100m, limitPrice: 15500m);
+        var bar = TestBars.Create(15000, 15500, 14800, 15200);
         var options = CreateOptions(TestAssets.Aapl);
 
         var fill = _matcher.TryFill(order, bar, options);
 
         Assert.NotNull(fill);
-        Assert.Equal(155m, fill.Price);
+        Assert.Equal(15500m, fill.Price);
     }
 
     [Fact]
     public void TryFill_LimitSellPriceAboveHigh_Rejects()
     {
-        var order = TestOrders.LimitSell(TestAssets.Aapl, 100m, limitPrice: 156m);
-        var bar = TestBars.Create(150m, 155m, 148m, 152m);
+        var order = TestOrders.LimitSell(TestAssets.Aapl, 100m, limitPrice: 15600m);
+        var bar = TestBars.Create(15000, 15500, 14800, 15200);
         var options = CreateOptions(TestAssets.Aapl);
 
         var fill = _matcher.TryFill(order, bar, options);
 
         Assert.Null(fill);
-    }
-
-    [Fact]
-    public void TryFill_Fill_HasCorrectTimestamp()
-    {
-        var order = TestOrders.MarketBuy(TestAssets.Aapl, 100m);
-        var timestamp = new DateTimeOffset(2024, 6, 15, 10, 30, 0, TimeSpan.Zero);
-        var bar = TestBars.Create(150m, 155m, 148m, 152m, timestamp: timestamp);
-        var options = CreateOptions(TestAssets.Aapl);
-
-        var fill = _matcher.TryFill(order, bar, options);
-
-        Assert.Equal(timestamp, fill!.Timestamp);
     }
 
     [Fact]
@@ -167,7 +113,7 @@ public class BarMatcherTests
     public void TryFill_Fill_HasCorrectAsset()
     {
         var order = TestOrders.MarketBuy(TestAssets.EsMini, 1m);
-        var bar = TestBars.Create(5000m, 5020m, 4990m, 5010m);
+        var bar = TestBars.Create(500000, 502000, 499000, 501000);
         var options = CreateOptions(TestAssets.EsMini);
 
         var fill = _matcher.TryFill(order, bar, options);

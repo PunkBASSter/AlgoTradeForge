@@ -35,7 +35,6 @@ public static class BacktestEndpoints
         {
             AssetName = request.AssetName,
             StrategyName = request.StrategyName,
-            BarSourceName = request.BarSourceName,
             InitialCash = request.InitialCash,
             StartTime = request.StartTime,
             EndTime = request.EndTime,
@@ -57,7 +56,6 @@ public static class BacktestEndpoints
 
     private static Task<IResult> GetBacktest(Guid id)
     {
-        // Stub: In a real implementation, this would retrieve from a persistence store
         return Task.FromResult(Results.NotFound(new { error = $"Backtest with ID '{id}' not found." }));
     }
 }

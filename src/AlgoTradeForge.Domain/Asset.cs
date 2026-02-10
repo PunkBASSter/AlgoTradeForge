@@ -9,6 +9,10 @@ public sealed record Asset
     public decimal TickValue => TickSize * Multiplier;
     public string Currency { get; init; } = "USD";
     public decimal? MarginRequirement { get; init; }
+    public string? Exchange { get; init; }
+    public int DecimalDigits { get; init; } = 2;
+    public TimeSpan SmallestInterval { get; init; } = TimeSpan.FromMinutes(1);
+    public DateOnly? HistoryStart { get; init; }
 
     public static Asset Equity(string name) => new() { Name = name };
 
@@ -20,6 +24,17 @@ public sealed record Asset
             Multiplier = multiplier,
             TickSize = tickSize,
             MarginRequirement = margin
+        };
+
+    public static Asset Crypto(string name, string exchange, int decimalDigits, DateOnly? historyStart = null) =>
+        new()
+        {
+            Name = name,
+            Type = AssetType.Crypto,
+            Exchange = exchange,
+            DecimalDigits = decimalDigits,
+            HistoryStart = historyStart,
+            TickSize = 1m / (decimal)Math.Pow(10, decimalDigits)
         };
 
     public override string ToString() => Name;

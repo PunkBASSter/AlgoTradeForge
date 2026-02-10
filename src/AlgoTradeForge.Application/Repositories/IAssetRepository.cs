@@ -1,4 +1,4 @@
-using AlgoTradeForge.Domain.Trading;
+using AlgoTradeForge.Domain;
 
 namespace AlgoTradeForge.Application.Repositories;
 

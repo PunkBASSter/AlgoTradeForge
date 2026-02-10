@@ -6,7 +6,6 @@ public sealed record RunBacktestCommand : ICommand<BacktestResultDto>
 {
     public required string AssetName { get; init; }
     public required string StrategyName { get; init; }
-    public required string BarSourceName { get; init; }
     public required decimal InitialCash { get; init; }
     public required DateTimeOffset StartTime { get; init; }
     public required DateTimeOffset EndTime { get; init; }

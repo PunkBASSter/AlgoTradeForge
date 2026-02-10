@@ -10,13 +10,13 @@ public class MetricsCalculator : IMetricsCalculator
 
     public virtual PerformanceMetrics Calculate(
         IReadOnlyList<Fill> fills,
-        IReadOnlyList<Bar> bars,
+        IReadOnlyList<IntBar> bars,
         Portfolio portfolio,
-        decimal finalPrice,
+        long finalPrice,
         Asset asset)
     {
         var initialCapital = portfolio.InitialCash;
-        var finalEquity = portfolio.Equity(finalPrice);
+        var finalEquity = portfolio.Equity((decimal)finalPrice);
         var tradingDays = bars.Count;
 
         if (fills.Count == 0 || bars.Count == 0)
@@ -130,7 +130,7 @@ public class MetricsCalculator : IMetricsCalculator
 
     protected virtual List<double> BuildEquityCurve(
         IReadOnlyList<Fill> fills,
-        IReadOnlyList<Bar> bars,
+        IReadOnlyList<IntBar> bars,
         decimal initialCapital,
         Asset asset)
     {
@@ -140,9 +140,11 @@ public class MetricsCalculator : IMetricsCalculator
         decimal position = 0;
         decimal avgEntryPrice = 0;
 
-        foreach (var bar in bars)
+        for (var i = 0; i < bars.Count; i++)
         {
-            while (fillIndex < fills.Count && fills[fillIndex].Timestamp <= bar.Timestamp)
+            var bar = bars[i];
+
+            while (fillIndex < fills.Count)
             {
                 var fill = fills[fillIndex];
                 var direction = fill.Side == OrderSide.Buy ? 1 : -1;
@@ -167,9 +169,10 @@ public class MetricsCalculator : IMetricsCalculator
 
                 position = newPosition;
                 fillIndex++;
+                break;
             }
 
-            var equity = cash + position * bar.Close * asset.Multiplier;
+            var equity = cash + position * (decimal)bar.Close * asset.Multiplier;
             curve.Add((double)equity);
         }
 

@@ -1,8 +1,8 @@
 namespace AlgoTradeForge.Domain.History;
 
 public readonly record struct IntBar(
-    int Open,
-    int High,
-    int Low,
-    int Close,
+    long Open,
+    long High,
+    long Low,
+    long Close,
     long Volume);
