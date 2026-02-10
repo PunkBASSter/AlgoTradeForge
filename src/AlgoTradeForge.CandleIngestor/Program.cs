@@ -37,6 +37,11 @@ foreach (var adapterSection in adaptersConfig)
             return new BinanceAdapter(httpClient, adapterOptions);
         });
     }
+    else if (adapterOptions.Type == "LocalCsv")
+    {
+        builder.Services.AddKeyedSingleton<IDataAdapter>(adapterSection.Key, (sp, _) =>
+            new LocalCsvAdapter(adapterOptions, sp.GetRequiredService<ILogger<LocalCsvAdapter>>()));
+    }
 }
 
 builder.Services.AddSingleton(sp =>
