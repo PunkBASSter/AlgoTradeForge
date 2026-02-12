@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Application.CandleIngestion;
 
 public interface IInt64BarLoader
 {
-    TimeSeries<IntBar> Load(
+    TimeSeries<Int64Bar> Load(
         string dataRoot,
         string exchange,
         string symbol,

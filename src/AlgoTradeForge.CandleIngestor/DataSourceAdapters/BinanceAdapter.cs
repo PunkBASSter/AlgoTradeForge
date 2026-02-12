@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -70,11 +71,11 @@ public sealed class BinanceAdapter(HttpClient httpClient, AdapterOptions options
             foreach (var k in candles)
             {
                 var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(k[0].GetInt64());
-                var open = decimal.Parse(k[1].GetString()!);
-                var high = decimal.Parse(k[2].GetString()!);
-                var low = decimal.Parse(k[3].GetString()!);
-                var close = decimal.Parse(k[4].GetString()!);
-                var volume = decimal.Parse(k[5].GetString()!);
+                var open = decimal.Parse(k[1].GetString()!, CultureInfo.InvariantCulture);
+                var high = decimal.Parse(k[2].GetString()!, CultureInfo.InvariantCulture);
+                var low = decimal.Parse(k[3].GetString()!, CultureInfo.InvariantCulture);
+                var close = decimal.Parse(k[4].GetString()!, CultureInfo.InvariantCulture);
+                var volume = decimal.Parse(k[5].GetString()!, CultureInfo.InvariantCulture);
 
                 lastTimestamp = timestamp;
                 yield return new RawCandle(timestamp, open, high, low, close, volume);

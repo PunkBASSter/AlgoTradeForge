@@ -21,7 +21,7 @@ public class BacktestEngineTests
         _metricsCalculator = Substitute.For<IMetricsCalculator>();
         _metricsCalculator.Calculate(
             Arg.Any<IReadOnlyList<Fill>>(),
-            Arg.Any<IReadOnlyList<IntBar>>(),
+            Arg.Any<IReadOnlyList<Int64Bar>>(),
             Arg.Any<Portfolio>(),
             Arg.Any<long>(),
             Arg.Any<Asset>())
@@ -84,7 +84,7 @@ public class BacktestEngineTests
         var result = await _engine.RunAsync(bars, strategy, CreateOptions());
 
         Assert.Equal(3, result.Bars.Count);
-        strategy.Received(3).OnBarComplete(Arg.Any<TimeSeries<IntBar>>());
+        strategy.Received(3).OnBarComplete(Arg.Any<TimeSeries<Int64Bar>>());
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public class BacktestEngineTests
         Assert.NotNull(result.Metrics);
         _metricsCalculator.Received(1).Calculate(
             Arg.Any<IReadOnlyList<Fill>>(),
-            Arg.Is<IReadOnlyList<IntBar>>(b => b.Count == 3),
+            Arg.Is<IReadOnlyList<Int64Bar>>(b => b.Count == 3),
             Arg.Any<Portfolio>(),
             Arg.Any<long>(),
             Arg.Is<Asset>(a => a == TestAssets.Aapl));

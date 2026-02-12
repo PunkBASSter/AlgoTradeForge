@@ -18,7 +18,7 @@ public class BacktestEngine
     }
 
     public virtual Task<BacktestResult> RunAsync(
-        TimeSeries<IntBar> bars,
+        TimeSeries<Int64Bar> bars,
         IIntBarStrategy strategy,
         BacktestOptions options,
         CancellationToken ct = default)
@@ -30,7 +30,7 @@ public class BacktestEngine
         portfolio.Initialize();
 
         var fills = new List<Fill>();
-        var barList = new List<IntBar>();
+        var barList = new List<Int64Bar>();
         var orderIdCounter = 0L;
         StrategyAction? pendingAction = null;
 

@@ -5,7 +5,7 @@ namespace AlgoTradeForge.Infrastructure.CandleIngestion;
 
 public sealed class CsvInt64BarLoader : IInt64BarLoader
 {
-    public TimeSeries<IntBar> Load(
+    public TimeSeries<Int64Bar> Load(
         string dataRoot,
         string exchange,
         string symbol,
@@ -15,7 +15,7 @@ public sealed class CsvInt64BarLoader : IInt64BarLoader
         TimeSpan interval)
     {
         var startTime = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var series = new TimeSeries<IntBar>(startTime, interval);
+        var series = new TimeSeries<Int64Bar>(startTime, interval);
 
         var current = new DateOnly(from.Year, from.Month, 1);
         var endMonth = new DateOnly(to.Year, to.Month, 1);
@@ -40,7 +40,7 @@ public sealed class CsvInt64BarLoader : IInt64BarLoader
                     if (rowDate < from || rowDate > to)
                         continue;
 
-                    var bar = new IntBar(
+                    var bar = new Int64Bar(
                         long.Parse(parts[1]),
                         long.Parse(parts[2]),
                         long.Parse(parts[3]),

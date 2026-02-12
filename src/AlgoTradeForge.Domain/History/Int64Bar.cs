@@ -1,6 +1,6 @@
 namespace AlgoTradeForge.Domain.History;
 
-public readonly record struct IntBar(
+public readonly record struct Int64Bar(
     long Open,
     long High,
     long Low,

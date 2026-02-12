@@ -1,3 +1,4 @@
+using AlgoTradeForge.CandleIngestor.State;
 using AlgoTradeForge.CandleIngestor.Storage;
 using AlgoTradeForge.Domain.History;
 using Microsoft.Extensions.Options;
@@ -7,6 +8,7 @@ namespace AlgoTradeForge.CandleIngestor;
 public sealed class IngestionOrchestrator(
     IServiceProvider serviceProvider,
     CsvCandleWriter writer,
+    IngestionStateManager stateManager,
     IOptions<CandleIngestorOptions> options,
     ILogger<IngestionOrchestrator> logger)
 {
@@ -48,26 +50,123 @@ public sealed class IngestionOrchestrator(
     {
         logger.LogInformation("AssetIngestionStarted: {Symbol} on {Exchange}", assetConfig.Symbol, assetConfig.Exchange);
 
+        writer.Reset();
         var adapter = serviceProvider.GetRequiredKeyedService<IDataAdapter>(assetConfig.Exchange);
 
-        var lastTimestamp = writer.GetLastTimestamp(assetConfig.Exchange, assetConfig.Symbol);
+        // Phase 0 — Load state
+        var state = stateManager.Load(assetConfig.Exchange, assetConfig.Symbol);
+        if (state is null)
+        {
+            var lastTimestamp = writer.GetLastTimestamp(assetConfig.Exchange, assetConfig.Symbol);
+            if (lastTimestamp.HasValue)
+            {
+                state = stateManager.Bootstrap(assetConfig.Exchange, assetConfig.Symbol, writer);
+            }
+            else
+            {
+                state = new IngestionState();
+            }
+        }
+
+        // Phase 1 — Close gaps
+        await CloseGapsAsync(state, assetConfig, adapter, ct);
+
+        // Phase 2 — Extend forward
+        await ExtendForwardAsync(state, assetConfig, adapter, ct);
+
+        // Phase 3 — Save state
+        state.LastRunUtc = DateTimeOffset.UtcNow;
+        stateManager.Save(assetConfig.Exchange, assetConfig.Symbol, state);
+
+        logger.LogInformation("AssetIngestionCompleted: {Symbol} on {Exchange}", assetConfig.Symbol, assetConfig.Exchange);
+    }
+
+    private async Task CloseGapsAsync(
+        IngestionState state,
+        IngestorAssetConfig assetConfig,
+        IDataAdapter adapter,
+        CancellationToken ct)
+    {
+        if (state.Gaps.Count == 0)
+            return;
+
+        logger.LogInformation("ClosingGaps: {Symbol}, {GapCount} gaps to close",
+            assetConfig.Symbol, state.Gaps.Count);
+
+        var interval = assetConfig.SmallestInterval;
+        var remainingGaps = new List<IngestionGap>();
+
+        foreach (var gap in state.Gaps)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var fetchFrom = gap.From - interval;
+            var fetchTo = gap.To + interval;
+
+            logger.LogDebug("ClosingGap: {Symbol}, from={From} to={To}", assetConfig.Symbol, gap.From, gap.To);
+
+            DateTimeOffset? previousTimestamp = null;
+            var candleCount = 0L;
+            var subGaps = new List<IngestionGap>();
+
+            await foreach (var candle in adapter.FetchCandlesAsync(
+                assetConfig.Symbol, interval, fetchFrom, fetchTo, ct))
+            {
+                if (previousTimestamp.HasValue && candle.Timestamp <= previousTimestamp.Value)
+                    continue;
+
+                if (previousTimestamp.HasValue && (candle.Timestamp - previousTimestamp.Value) > interval)
+                {
+                    subGaps.Add(new IngestionGap
+                    {
+                        From = previousTimestamp.Value,
+                        To = candle.Timestamp
+                    });
+                }
+
+                writer.WriteCandle(candle, assetConfig.Exchange, assetConfig.Symbol, assetConfig.DecimalDigits);
+                previousTimestamp = candle.Timestamp;
+                candleCount++;
+            }
+
+            if (candleCount == 0)
+            {
+                remainingGaps.Add(gap);
+            }
+            else
+            {
+                remainingGaps.AddRange(subGaps);
+            }
+
+            writer.Flush();
+        }
+
+        state.Gaps = remainingGaps;
+
+        if (remainingGaps.Count > 0)
+            logger.LogWarning("GapsRemaining: {Symbol}, {Count} gaps still open", assetConfig.Symbol, remainingGaps.Count);
+        else
+            logger.LogInformation("AllGapsClosed: {Symbol}", assetConfig.Symbol);
+    }
+
+    private async Task ExtendForwardAsync(
+        IngestionState state,
+        IngestorAssetConfig assetConfig,
+        IDataAdapter adapter,
+        CancellationToken ct)
+    {
+        var interval = assetConfig.SmallestInterval;
         DateTimeOffset fetchFrom;
 
-        if (lastTimestamp.HasValue)
+        if (state.LastTimestamp.HasValue)
         {
-            fetchFrom = lastTimestamp.Value + assetConfig.SmallestInterval;
+            fetchFrom = state.LastTimestamp.Value + interval;
 
             if (fetchFrom >= DateTimeOffset.UtcNow)
             {
-                logger.LogInformation("AssetUpToDate: {Symbol}, last={LastTimestamp}", assetConfig.Symbol, lastTimestamp.Value);
+                logger.LogInformation("AssetUpToDate: {Symbol}, last={LastTimestamp}",
+                    assetConfig.Symbol, state.LastTimestamp.Value);
                 return;
-            }
-
-            var gap = DateTimeOffset.UtcNow - fetchFrom;
-            if (gap > assetConfig.SmallestInterval * 2)
-            {
-                logger.LogWarning("GapDetected: {Symbol}, last={LastTimestamp}, gap={Gap}",
-                    assetConfig.Symbol, lastTimestamp.Value, gap);
             }
         }
         else
@@ -77,25 +176,48 @@ public sealed class IngestionOrchestrator(
 
         var fetchTo = DateTimeOffset.UtcNow;
         var batchCount = 0L;
+        var previousTimestamp = state.LastTimestamp;
 
         await foreach (var candle in adapter.FetchCandlesAsync(
-            assetConfig.Symbol,
-            assetConfig.SmallestInterval,
-            fetchFrom,
-            fetchTo,
-            ct))
+            assetConfig.Symbol, interval, fetchFrom, fetchTo, ct))
         {
+            // Skip non-monotonic candles (source data may contain overlapping segments)
+            if (previousTimestamp.HasValue && candle.Timestamp <= previousTimestamp.Value)
+                continue;
+
+            if (previousTimestamp.HasValue && (candle.Timestamp - previousTimestamp.Value) > interval)
+            {
+                state.Gaps.Add(new IngestionGap
+                {
+                    From = previousTimestamp.Value,
+                    To = candle.Timestamp
+                });
+
+                logger.LogWarning("GapDetected: {Symbol}, from={From} to={To}",
+                    assetConfig.Symbol, previousTimestamp.Value, candle.Timestamp);
+            }
+
             writer.WriteCandle(candle, assetConfig.Exchange, assetConfig.Symbol, assetConfig.DecimalDigits);
+            previousTimestamp = candle.Timestamp;
             batchCount++;
+
+            if (state.FirstTimestamp is null)
+                state.FirstTimestamp = candle.Timestamp;
 
             if (batchCount % 10000 == 0)
             {
                 writer.Flush();
-                logger.LogInformation("BatchFetched: {Symbol}, {Count} candles processed", assetConfig.Symbol, batchCount);
+                logger.LogInformation("BatchFetched: {Symbol}, {Count} candles processed",
+                    assetConfig.Symbol, batchCount);
             }
         }
 
         writer.Flush();
-        logger.LogInformation("AssetIngestionCompleted: {Symbol}, {TotalCandles} candles total", assetConfig.Symbol, batchCount);
+
+        if (previousTimestamp.HasValue)
+            state.LastTimestamp = previousTimestamp;
+
+        logger.LogInformation("ExtendForwardCompleted: {Symbol}, {TotalCandles} candles fetched",
+            assetConfig.Symbol, batchCount);
     }
 }

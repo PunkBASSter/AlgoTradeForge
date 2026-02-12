@@ -7,7 +7,7 @@ public interface IMetricsCalculator
 {
     PerformanceMetrics Calculate(
         IReadOnlyList<Fill> fills,
-        IReadOnlyList<IntBar> bars,
+        IReadOnlyList<Int64Bar> bars,
         Portfolio portfolio,
         long finalPrice,
         Asset asset);

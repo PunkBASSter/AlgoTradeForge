@@ -52,9 +52,41 @@ public sealed class CsvCandleWriter(string dataRoot) : IDisposable
         _lastWrittenTimestamp = candle.Timestamp;
     }
 
+    public void Reset()
+    {
+        _currentWriter?.Flush();
+        _currentWriter?.Dispose();
+        _currentWriter = null;
+        _currentPartitionPath = null;
+        _lastWrittenTimestamp = null;
+    }
+
     public void Flush()
     {
         _currentWriter?.Flush();
+    }
+
+    public DateTimeOffset? GetFirstTimestamp(string exchange, string symbol)
+    {
+        var basePath = Path.Combine(_dataRoot, exchange, symbol);
+        if (!Directory.Exists(basePath))
+            return null;
+
+        foreach (var yearDir in Directory.GetDirectories(basePath).OrderBy(Path.GetFileName))
+        {
+            foreach (var file in Directory.GetFiles(yearDir, "*.csv").OrderBy(Path.GetFileNameWithoutExtension))
+            {
+                var firstLine = ReadFirstDataLine(file);
+                if (firstLine is not null)
+                {
+                    var commaIndex = firstLine.IndexOf(',');
+                    if (commaIndex > 0)
+                        return DateTimeOffset.Parse(firstLine[..commaIndex]);
+                }
+            }
+        }
+
+        return null;
     }
 
     public DateTimeOffset? GetLastTimestamp(string exchange, string symbol)
@@ -77,6 +109,19 @@ public sealed class CsvCandleWriter(string dataRoot) : IDisposable
             }
         }
 
+        return null;
+    }
+
+    private static string? ReadFirstDataLine(string filePath)
+    {
+        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(fs);
+
+        while (reader.ReadLine() is { } line)
+        {
+            if (!line.StartsWith("Timestamp", StringComparison.Ordinal) && line.Length > 0)
+                return line;
+        }
         return null;
     }
 

@@ -10,7 +10,7 @@ public class MetricsCalculator : IMetricsCalculator
 
     public virtual PerformanceMetrics Calculate(
         IReadOnlyList<Fill> fills,
-        IReadOnlyList<IntBar> bars,
+        IReadOnlyList<Int64Bar> bars,
         Portfolio portfolio,
         long finalPrice,
         Asset asset)
@@ -130,7 +130,7 @@ public class MetricsCalculator : IMetricsCalculator
 
     protected virtual List<double> BuildEquityCurve(
         IReadOnlyList<Fill> fills,
-        IReadOnlyList<IntBar> bars,
+        IReadOnlyList<Int64Bar> bars,
         decimal initialCapital,
         Asset asset)
     {

@@ -2,5 +2,5 @@
 
 public interface IDataSource
 {
-    TimeSeries<IntBar> GetData(HistoryDataQuery query);
+    TimeSeries<Int64Bar> GetData(HistoryDataQuery query);
 }

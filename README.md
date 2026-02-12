@@ -22,12 +22,10 @@ BacktestEngine needs
 
 
 TODO:
-- History partitioning
-- History streaming loader, replace custom csv parser
 - DataSource implemented + integrated with launcher and strategy resolving+subscribing to data
 - Strategy has Asset+Tf params passed to data source
 - Backtest running job with Start/Stop/Pause/Resume/Next Bar/Next Trade API
-- Add reporting timeframe, add TimeSeries resample with debug feature 
+- Add reporting timeframe, add TimeSeries resample with debug feature
 - Ensure BacktestEngine tracks and optimally fills multiple Orders
 - Strategy must track entry orders and exit orders (multi SL/TP) on its own (migrate from SS.AB)
 - History loading job
