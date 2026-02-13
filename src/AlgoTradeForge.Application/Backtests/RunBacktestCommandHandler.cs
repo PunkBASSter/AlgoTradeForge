@@ -1,8 +1,8 @@
 using AlgoTradeForge.Application.Abstractions;
-using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain.Engine;
-using Microsoft.Extensions.Options;
+using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Strategy;
 
 namespace AlgoTradeForge.Application.Backtests;
 
@@ -10,8 +10,7 @@ public sealed class RunBacktestCommandHandler(
     BacktestEngine engine,
     IAssetRepository assetRepository,
     IStrategyFactory strategyFactory,
-    IInt64BarLoader barLoader,
-    IOptions<CandleStorageOptions> storageOptions) : ICommandHandler<RunBacktestCommand, BacktestResultDto>
+    IDataSource dataSource) : ICommandHandler<RunBacktestCommand, BacktestResultDto>
 {
     public async Task<BacktestResultDto> HandleAsync(RunBacktestCommand command, CancellationToken ct = default)
     {
@@ -30,16 +29,31 @@ public sealed class RunBacktestCommandHandler(
             SlippageTicks = command.SlippageTicks
         };
 
-        var bars = barLoader.Load(
-            storageOptions.Value.DataRoot,
-            asset.Exchange ?? throw new InvalidOperationException($"Asset '{asset.Name}' has no Exchange configured."),
-            asset.Name,
-            asset.DecimalDigits,
-            DateOnly.FromDateTime(command.StartTime.UtcDateTime),
-            DateOnly.FromDateTime(command.EndTime.UtcDateTime),
-            asset.SmallestInterval);
+        var subscriptions = strategy.DataSubscriptions.Count > 0
+            ? strategy.DataSubscriptions
+            : (IList<DataSubscription>)[new DataSubscription(asset, asset.SmallestInterval)];
 
-        var result = await engine.RunAsync(bars, strategy, options, ct);
+        var dataMap = new Dictionary<DataSubscription, TimeSeries<Int64Bar>>();
+        foreach (var sub in subscriptions)
+        {
+            var query = new HistoryDataQuery
+            {
+                Asset = sub.Asset,
+                TimeFrame = sub.TimeFrame,
+                StartTime = command.StartTime,
+                EndTime = command.EndTime
+            };
+            dataMap[sub] = dataSource.GetData(query);
+        }
+
+        var snapshot = new MarketDataSnapshot(dataMap);
+
+        var primarySubscription = subscriptions
+            .Where(s => s.Asset == asset)
+            .OrderBy(s => s.TimeFrame)
+            .First();
+
+        var result = await engine.RunAsync(snapshot[primarySubscription], strategy, options, ct);
 
         return new BacktestResultDto
         {

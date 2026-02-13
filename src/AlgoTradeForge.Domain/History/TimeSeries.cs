@@ -89,7 +89,37 @@ public class TimeSeries<T> : IReadOnlyList<T>
         }
     }
 
+    public TimeSpan Step => _timeSpan;
+
+    public DateTimeOffset StartTime => _startTime;
+
     public DateTimeOffset GetTimestamp(int index) => _startTime + TimeSpan.FromTicks(_timeSpan.Ticks * index);
+
+    public TimeSeries<T> Slice(DateTimeOffset from, DateTimeOffset to)
+    {
+        if (from >= to)
+            return new TimeSeries<T>(from, _timeSpan);
+
+        if (_count == 0)
+            return new TimeSeries<T>(from, _timeSpan);
+
+        var startOffset = from - _startTime;
+        var startIndex = (int)Math.Max(0, (long)Math.Ceiling((double)startOffset.Ticks / _timeSpan.Ticks));
+
+        var endOffset = to - _startTime;
+        var endIndex = (int)Math.Min(_count, (long)Math.Ceiling((double)endOffset.Ticks / _timeSpan.Ticks));
+
+        if (startIndex >= endIndex)
+            return new TimeSeries<T>(from, _timeSpan);
+
+        var sliceStart = _startTime + TimeSpan.FromTicks(_timeSpan.Ticks * startIndex);
+        var result = new TimeSeries<T>(sliceStart, _timeSpan);
+
+        for (var i = startIndex; i < endIndex; i++)
+            result.Add(this[i]);
+
+        return result;
+    }
 
     public IEnumerator<T> GetEnumerator()
     {
