@@ -1,37 +1,23 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain.Engine;
+using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Strategy;
 
 namespace AlgoTradeForge.Application.Backtests;
 
-public sealed class RunBacktestCommandHandler : ICommandHandler<RunBacktestCommand, BacktestResultDto>
+public sealed class RunBacktestCommandHandler(
+    BacktestEngine engine,
+    IAssetRepository assetRepository,
+    IStrategyFactory strategyFactory,
+    IDataSource dataSource) : ICommandHandler<RunBacktestCommand, BacktestResultDto>
 {
-    private readonly BacktestEngine _engine;
-    private readonly IAssetRepository _assetRepository;
-    private readonly IBarSourceRepository _barSourceRepository;
-    private readonly IStrategyFactory _strategyFactory;
-
-    public RunBacktestCommandHandler(
-        BacktestEngine engine,
-        IAssetRepository assetRepository,
-        IBarSourceRepository barSourceRepository,
-        IStrategyFactory strategyFactory)
-    {
-        _engine = engine;
-        _assetRepository = assetRepository;
-        _barSourceRepository = barSourceRepository;
-        _strategyFactory = strategyFactory;
-    }
-
     public async Task<BacktestResultDto> HandleAsync(RunBacktestCommand command, CancellationToken ct = default)
     {
-        var asset = await _assetRepository.GetByNameAsync(command.AssetName, ct)
+        var asset = await assetRepository.GetByNameAsync(command.AssetName, ct)
             ?? throw new ArgumentException($"Asset '{command.AssetName}' not found.", nameof(command));
 
-        var barSource = await _barSourceRepository.GetByNameAsync(command.BarSourceName, ct)
-            ?? throw new ArgumentException($"Bar source '{command.BarSourceName}' not found.", nameof(command));
-
-        var strategy = _strategyFactory.Create(command.StrategyName, command.StrategyParameters);
+        var strategy = strategyFactory.Create(command.StrategyName, command.StrategyParameters);
 
         var options = new BacktestOptions
         {
@@ -43,7 +29,31 @@ public sealed class RunBacktestCommandHandler : ICommandHandler<RunBacktestComma
             SlippageTicks = command.SlippageTicks
         };
 
-        var result = await _engine.RunAsync(barSource, strategy, options, ct);
+        var subscriptions = strategy.DataSubscriptions.Count > 0
+            ? strategy.DataSubscriptions
+            : (IList<DataSubscription>)[new DataSubscription(asset, asset.SmallestInterval)];
+
+        var dataMap = new Dictionary<DataSubscription, TimeSeries<Int64Bar>>();
+        foreach (var sub in subscriptions)
+        {
+            var query = new HistoryDataQuery
+            {
+                Asset = sub.Asset,
+                TimeFrame = sub.TimeFrame,
+                StartTime = command.StartTime,
+                EndTime = command.EndTime
+            };
+            dataMap[sub] = dataSource.GetData(query);
+        }
+
+        var snapshot = new MarketDataSnapshot(dataMap);
+
+        var primarySubscription = subscriptions
+            .Where(s => s.Asset == asset)
+            .OrderBy(s => s.TimeFrame)
+            .First();
+
+        var result = await engine.RunAsync(snapshot[primarySubscription], strategy, options, ct);
 
         return new BacktestResultDto
         {

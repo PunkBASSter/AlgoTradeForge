@@ -1,14 +1,17 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.3 → 1.1.0
+Version change: 1.1.0 → 1.2.0
 Modified principles: None
 Added sections:
-  - Solution Layout (new top-level file structure section under Technology Standards)
+  - CandleIngestor architecture exemption note under Solution Layout
+  - AlgoTradeForge.Infrastructure.Tests in tests tree
 Removed sections: None
 Modified sections:
-  - Backend Code Organization: Replaced generic backend/ tree with actual
-    AlgoTradeForge.* project layout matching solution structure
+  - Solution Layout: Added CandleIngestor project (self-contained worker),
+    Infrastructure.Tests project, and updated project reference graph
+  - Code Organization conventions: Updated reference graph to reflect
+    CandleIngestor as self-contained; WebApi now references Infrastructure
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible
     (Constitution Check section exists; Source Code section is feature-specific)
@@ -216,26 +219,50 @@ AlgoTradeForge/
 │   ├── AlgoTradeForge.Application/     # Use cases (CQRS commands/queries)
 │   │   ├── Abstractions/              # ICommand, IQuery, handler interfaces
 │   │   ├── Backtests/                 # RunBacktest command + handler + DTOs
+│   │   ├── CandleIngestion/           # IInt64BarLoader interface
 │   │   └── Repositories/             # Repository interfaces
 │   ├── AlgoTradeForge.Infrastructure/  # Data access, external services
+│   │   ├── CandleIngestion/           # CsvInt64BarLoader (IInt64BarLoader impl)
 │   │   └── History/                   # History data context
+│   ├── AlgoTradeForge.CandleIngestor/ # Worker service (see note below)
+│   │   ├── BinanceAdapter.cs          # Binance API adapter
+│   │   ├── CsvCandleWriter.cs         # CSV partition writer
+│   │   ├── IngestionOrchestrator.cs   # Fetch-and-store coordinator
+│   │   ├── IngestionWorker.cs         # BackgroundService with PeriodicTimer
+│   │   ├── RateLimiter.cs             # Sliding-window rate limiter
+│   │   └── CandleIngestorOptions.cs   # Configuration records
 │   └── AlgoTradeForge.WebApi/         # ASP.NET Core host, minimal API endpoints
 │       ├── Contracts/                 # Request/response models
 │       └── Endpoints/                 # Endpoint definitions
 ├── tests/
-│   └── AlgoTradeForge.Domain.Tests/   # Domain unit tests (xUnit + NSubstitute)
-│       ├── Engine/                    # BacktestEngine, BarMatcher tests
-│       ├── Trading/                   # Portfolio, Position tests
-│       └── TestUtilities/             # Shared test data factories
+│   ├── AlgoTradeForge.Domain.Tests/   # Domain unit tests (xUnit + NSubstitute)
+│   │   ├── Engine/                    # BacktestEngine, BarMatcher tests
+│   │   ├── Trading/                   # Portfolio, Position tests
+│   │   └── TestUtilities/             # Shared test data factories
+│   └── AlgoTradeForge.Infrastructure.Tests/ # Infrastructure + CandleIngestor tests
+│       └── CandleIngestion/           # CsvInt64BarLoader, CsvCandleWriter,
+│                                      # BinanceAdapter tests
 ├── docs/                              # Design documents and requirements
 └── specs/                             # Feature specifications and checklists
 ```
 
+> **CandleIngestor architecture note**: `AlgoTradeForge.CandleIngestor` is a
+> self-contained worker service that bundles its own infrastructure code
+> (adapters, writers, rate limiter, configuration records) directly in the
+> executable project. It references only Application (for `IInt64BarLoader`
+> and domain types via transitive reference). This project is intentionally
+> **exempt from clean architecture layering** — it is a thin utility service
+> where simplicity and colocation outweigh separation of concerns. New
+> exchange adapters, writers, or ingestion logic MUST be added here, not in
+> the Infrastructure project.
+
 **Code Organization conventions**:
 - Each project uses namespace `AlgoTradeForge.<Layer>`
 - Domain project exposes internals to its test project via `InternalsVisibleTo`
+- CandleIngestor exposes internals to Infrastructure.Tests via `InternalsVisibleTo`
 - Application references Domain; Infrastructure references Application;
-  WebApi references Application and Domain
+  WebApi references Application, Domain, and Infrastructure;
+  CandleIngestor references Application only
 - Test projects mirror the source project folder structure
 
 ### Background Jobs
@@ -328,4 +355,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.1.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-09
+**Version**: 1.2.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-10

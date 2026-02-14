@@ -11,14 +11,14 @@ public class BacktestEngine
     private readonly IBarMatcher _barMatcher;
     private readonly IMetricsCalculator _metricsCalculator;
 
-    public BacktestEngine(IBarMatcher barMatcher, IMetricsCalculator metricsCalculator) //TODO include DataSource
+    public BacktestEngine(IBarMatcher barMatcher, IMetricsCalculator metricsCalculator)
     {
         _barMatcher = barMatcher;
         _metricsCalculator = metricsCalculator;
     }
 
-    public virtual async Task<BacktestResult> RunAsync(
-        IIntBarSource source,
+    public virtual Task<BacktestResult> RunAsync(
+        TimeSeries<Int64Bar> bars,
         IIntBarStrategy strategy,
         BacktestOptions options,
         CancellationToken ct = default)
@@ -30,20 +30,37 @@ public class BacktestEngine
         portfolio.Initialize();
 
         var fills = new List<Fill>();
-        var bars = new List<IntBar>();
+        var barList = new List<Int64Bar>();
         var orderIdCounter = 0L;
         StrategyAction? pendingAction = null;
 
-        await foreach (var bar in source.GetBarsAsync(asset.Name, options.StartTime, options.EndTime, ct)) //TODO: Introduce debugging control commands
+        for (var i = 0; i < bars.Count; i++)
         {
-            // Rewrite this for strategy to use OrderClient (like S# connector) to submit orders.
+            ct.ThrowIfCancellationRequested();
+
+            var bar = bars[i];
+            barList.Add(bar);
+
+            if (pendingAction is not null)
+            {
+                var order = CreateOrder(pendingAction, ref orderIdCounter, bars.GetTimestamp(i));
+                var fill = _barMatcher.TryFill(order, bar, options);
+                if (fill is not null)
+                {
+                    fills.Add(fill);
+                    portfolio.Apply(fill);
+                }
+                pendingAction = null;
+            }
+
+            strategy.OnBarComplete(bars);
         }
 
-        //var finalPrice = bars.Count > 0 ? bars[^1].Close : 0m;
-        //var metrics = _metricsCalculator.Calculate(fills, bars, portfolio, finalPrice, asset);
+        var finalPrice = barList.Count > 0 ? barList[^1].Close : 0L;
+        var metrics = _metricsCalculator.Calculate(fills, barList, portfolio, finalPrice, asset);
 
         stopwatch.Stop();
-        return new BacktestResult(portfolio, fills, [], null, stopwatch.Elapsed); //TODO fix
+        return Task.FromResult(new BacktestResult(portfolio, fills, barList, metrics, stopwatch.Elapsed));
     }
 
     protected virtual Order CreateOrder(StrategyAction action, ref long orderIdCounter, DateTimeOffset timestamp)

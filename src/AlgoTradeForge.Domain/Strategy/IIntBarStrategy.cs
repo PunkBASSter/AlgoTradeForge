@@ -4,5 +4,7 @@ namespace AlgoTradeForge.Domain.Strategy;
 
 public interface IIntBarStrategy
 {
-    void OnBarComplete(TimeSeries<IntBar> context);
+    IList<DataSubscription> DataSubscriptions { get; }
+
+    void OnBarComplete(TimeSeries<Int64Bar> context);
 }

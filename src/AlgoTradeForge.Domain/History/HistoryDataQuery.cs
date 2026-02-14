@@ -2,7 +2,7 @@
 
 public record HistoryDataQuery
 {
-    public required string AssetName { get; init; }
+    public required Asset Asset { get; init; }
     public required TimeSpan TimeFrame { get; init; }
     public DateTimeOffset? StartTime { get; init; }
     public DateTimeOffset? EndTime { get; init; }

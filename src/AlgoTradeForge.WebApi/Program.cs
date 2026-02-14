@@ -1,6 +1,10 @@
 using AlgoTradeForge.Application;
+using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Domain.Engine;
+using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Infrastructure.CandleIngestion;
+using AlgoTradeForge.Infrastructure.History;
 using AlgoTradeForge.WebApi.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -24,6 +28,12 @@ builder.Services.AddSingleton<BacktestEngine>();
 
 // Register Application services
 builder.Services.AddApplication();
+
+// Register Infrastructure services
+builder.Services.Configure<CandleStorageOptions>(
+    builder.Configuration.GetSection("CandleStorage"));
+builder.Services.AddSingleton<IInt64BarLoader, CsvInt64BarLoader>();
+builder.Services.AddSingleton<IDataSource, CsvDataSource>();
 
 // NOTE: IAssetRepository, IBarSourceRepository, and IStrategyFactory
 // must be registered by an Infrastructure layer or test configuration

@@ -5,40 +5,46 @@ namespace AlgoTradeForge.Domain.Tests.TestUtilities;
 public static class TestBars
 {
     private static readonly DateTimeOffset DefaultTimestamp = new(2024, 1, 1, 9, 30, 0, TimeSpan.Zero);
+    private static readonly TimeSpan DefaultStep = TimeSpan.FromMinutes(1);
 
-    public static Bar Create(
-        decimal open,
-        decimal high,
-        decimal low,
-        decimal close,
-        decimal volume = 1000m,
-        DateTimeOffset? timestamp = null) =>
-        new(timestamp ?? DefaultTimestamp, open, high, low, close, volume);
+    public static Int64Bar Create(
+        long open,
+        long high,
+        long low,
+        long close,
+        long volume = 1000L) =>
+        new(open, high, low, close, volume);
 
-    public static Bar Bullish(DateTimeOffset? timestamp = null) =>
-        Create(100m, 110m, 98m, 108m, timestamp: timestamp);
+    public static Int64Bar Bullish() =>
+        Create(10000, 11000, 9800, 10800);
 
-    public static Bar Bearish(DateTimeOffset? timestamp = null) =>
-        Create(100m, 102m, 90m, 92m, timestamp: timestamp);
+    public static Int64Bar Bearish() =>
+        Create(10000, 10200, 9000, 9200);
 
-    public static Bar Flat(DateTimeOffset? timestamp = null) =>
-        Create(100m, 101m, 99m, 100m, timestamp: timestamp);
+    public static Int64Bar Flat() =>
+        Create(10000, 10100, 9900, 10000);
 
-    public static Bar AtPrice(decimal price, DateTimeOffset? timestamp = null) =>
-        Create(price, price + 1m, price - 1m, price, timestamp: timestamp);
+    public static Int64Bar AtPrice(long price) =>
+        Create(price, price + 100, price - 100, price);
 
-    public static Bar[] CreateSequence(int count, decimal startPrice = 100m, decimal priceIncrement = 1m)
+    public static TimeSeries<Int64Bar> CreateSeries(int count, long startPrice = 10000, long priceIncrement = 100)
     {
-        var bars = new Bar[count];
-        var timestamp = DefaultTimestamp;
+        var series = new TimeSeries<Int64Bar>(DefaultTimestamp, DefaultStep);
 
         for (var i = 0; i < count; i++)
         {
             var price = startPrice + i * priceIncrement;
-            bars[i] = Create(price, price + 2m, price - 1m, price + 1m, timestamp: timestamp);
-            timestamp = timestamp.AddMinutes(1);
+            series.Add(Create(price, price + 200, price - 100, price + 100));
         }
 
-        return bars;
+        return series;
+    }
+
+    public static TimeSeries<Int64Bar> CreateSeries(params Int64Bar[] bars)
+    {
+        var series = new TimeSeries<Int64Bar>(DefaultTimestamp, DefaultStep);
+        foreach (var bar in bars)
+            series.Add(bar);
+        return series;
     }
 }
