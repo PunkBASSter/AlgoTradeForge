@@ -314,3 +314,115 @@ A skill file (`SKILL.md`) is provided that documents:
 | 5 | JSONL as source of truth, SQLite as derived | Simplifies the write path (append-only file). Both indexes are built from the same source after run completion. |
 | 6 | Trade DB shared across runs | Enables cross-run queries (all ETH-USD trades across strategy versions) without opening N directories. |
 | 7 | Strictly typed C# records per event type | Compile-time safety for event payloads. FE may use dynamic typing independently. |
+| 8 | Hybrid emission: explicit `IEventBus` injection + source-generated indicator proxies | Keeps business-critical emissions visible in code while eliminating boilerplate from pure-computation indicators. See §10. |
+
+---
+
+## 10. Event Emission API — Hybrid Approach
+
+### 10.1 Design Goal
+
+Event emission is a cross-cutting concern that touches strategy code, the execution engine, risk management, and indicators. The API must be:
+
+- **Lightweight** — minimal ceremony at the call site
+- **Explicit where it matters** — business-critical events (signals, orders, risk decisions) should be visible in the code that produces them
+- **Invisible where it doesn't** — indicators are pure computations; they should not know events exist
+
+### 10.2 Two Emission Mechanisms
+
+| Emission point | Mechanism | Rationale |
+|---|---|---|
+| Strategy signals (`sig`) | Explicit `IEventBus.Emit()` call | Signals are business decisions — the developer should see the emission in code |
+| Risk checks (`risk`) | Explicit `IEventBus.Emit()` call | Same — these are judgment calls, not boilerplate |
+| Order lifecycle (`ord.*`, `pos`) | Explicit `IEventBus.Emit()` call | The execution engine explicitly decides when orders change state |
+| Bar events (`bar`, `bar.mut`) | Explicit `IEventBus.Emit()` call | The backtest engine owns the bar loop — natural single emission point |
+| System events (`run.*`, `err`, `warn`) | Explicit `IEventBus.Emit()` call | Infrastructure-level, emitted by the engine at well-defined lifecycle points |
+| Indicator values (`ind`, `ind.mut`) | **Automatic via source-generated proxy** | Indicators follow a uniform `Compute(bar) → value` contract; emission is mechanical and identical for every indicator |
+
+### 10.3 Explicit Injection Path
+
+Components that emit business-critical events receive `IEventBus` via standard constructor injection:
+
+```csharp
+public interface IEventBus
+{
+    void Emit<T>(T evt) where T : IBacktestEvent;
+}
+```
+
+The bus implementation handles all filtering internally (`ExportMode` check, `DataSubscription.IsExportable` check). Call sites never check filters — they emit unconditionally and the bus drops what doesn't match. This keeps call sites to a single line.
+
+The classes that receive `IEventBus` are few and well-defined: the backtest engine, the execution engine, the risk manager, and the strategy base class. This is not a "sprinkled everywhere" dependency.
+
+### 10.4 Source-Generated Indicator Proxy Path
+
+Indicators implement a pure computation interface with no event awareness:
+
+```csharp
+[EmitOnCompute("ind")]
+public interface IIndicator<TOut>
+{
+    string Name { get; }
+    TOut Compute(Int64Bar bar);
+    void Reset();
+}
+```
+
+The `[EmitOnCompute]` attribute marks the interface for source generation. At compile time, a source generator produces a thin wrapper (decorator) for each indicator interface that:
+
+1. Delegates all calls to the inner (real) indicator
+2. After `Compute()` returns, emits an `ind` event carrying the indicator name, the result value, and the associated `DataSubscription`
+3. Passes through all other members (`Name`, `Reset`) without interception
+
+The generated wrapper is injected by the engine at run setup time: the engine takes the strategy's raw indicators, wraps each one with its generated emitting counterpart, and binds the wrapper to the correct `DataSubscription` and `IEventBus` instance. The strategy never sees the wrapper — it holds the same `IIndicator<T>` reference.
+
+**Key property:** indicators remain pure Domain types with zero dependencies on the event system. They can be unit-tested in complete isolation. The emission concern is handled entirely by the generated infrastructure code.
+
+### 10.5 Why Source Generation over DispatchProxy
+
+.NET provides a built-in runtime proxy mechanism (`System.Reflection.DispatchProxy`) that could achieve the same wrapping without code generation. However, it has three problems in a hot backtest loop processing millions of bars:
+
+1. **Reflection overhead** — every proxied call goes through `MethodInfo`-based dispatch. The proxy must inspect which method was called on every invocation.
+2. **Argument boxing** — `Int64Bar` is a `record struct`. The proxy receives arguments as `object?[]`, forcing a heap allocation per call.
+3. **Return value boxing** — numeric indicator results (e.g. `double`) are boxed on return through the proxy.
+
+For a backtest processing 500K+ bars with 3–5 indicators each, this creates millions of unnecessary allocations and reflection lookups per run.
+
+A **source generator** eliminates all three problems. The generated wrapper is a concrete class with strongly-typed method signatures — no reflection, no boxing, no allocation beyond the event record itself. The wrapper is as efficient as hand-written code because it *is* hand-written code, just authored by the compiler.
+
+### 10.6 Source Generator Shape
+
+The source generator:
+
+- **Trigger:** scans for interfaces annotated with `[EmitOnCompute("eventType")]`
+- **Input:** the interface definition (method signatures, generic type parameters)
+- **Output:** a concrete wrapper class per interface that implements the same interface
+
+For the `IIndicator<TOut>` interface, the generator produces a class equivalent to:
+
+```
+class Emitting_IIndicator<TOut> : IIndicator<TOut>
+    ctor(inner: IIndicator<TOut>, bus: IEventBus, subscription: DataSubscription)
+    Name       → delegates to inner.Name
+    Compute()  → calls inner.Compute(), then bus.Emit(new IndicatorEvent(...)), returns result
+    Reset()    → delegates to inner.Reset()
+```
+
+The generator only intercepts methods explicitly marked or matching the `Compute` convention. All other interface members are pure pass-through.
+
+A factory method is also generated for convenient wrapping:
+
+```
+static IIndicator<TOut> WithEmitting(this IIndicator<TOut> inner, IEventBus bus, DataSubscription sub)
+```
+
+This allows the engine setup code to wrap indicators in a single expression.
+
+### 10.7 Opt-Out for Optimization Runs
+
+In optimization mode, `ind` events are not in the `ExportMode` filter — the bus drops them. But the overhead of *creating* the event record before the bus drops it is still wasteful at scale.
+
+Two levels of opt-out:
+
+1. **Bus-level drop** (default) — the generated wrapper always calls `bus.Emit()`, and the bus's `ExportMode` check rejects it before serialization. Minimal overhead (one record allocation + one flag check per indicator per bar).
+2. **Skip wrapping entirely** — during optimization run setup, the engine does not wrap indicators with emitting proxies at all. Zero overhead. The strategy holds raw indicator references. This is a setup-time decision, not a per-call branch.
