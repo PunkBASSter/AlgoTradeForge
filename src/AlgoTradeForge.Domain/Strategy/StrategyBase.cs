@@ -12,7 +12,9 @@ public abstract class StrategyBase<TParams> : IInt64BarStrategy
 
     public IList<DataSubscription> DataSubscriptions => Params.DataSubscriptions;
 
-    public abstract void OnBar(Int64Bar bar, DataSubscription subscription, IOrderContext orders);
+    public abstract void OnBar(DateTimeOffset timestamp, Int64Bar bar, DataSubscription subscription, IOrderContext orders);
+
+    public virtual void OnInit() { }
 
     public virtual void OnTrade(Fill fill, Order order) { }
 }

@@ -81,7 +81,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
                 EvaluateSlTpPositions(subscription.Asset, bar, minTimestamp, options, fills, portfolio, activeSlTpPositions, strategy);
 
                 // Deliver bar to strategy
-                strategy.OnBar(bar, subscription, orderContext);
+                strategy.OnBar(minTimestamp, bar, subscription, orderContext);
                 AssignOrderIds(orderQueue, ref orderIdCounter, minTimestamp);
 
                 lastPrices[subscription.Asset.Name] = (decimal)bar.Close;
