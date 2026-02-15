@@ -3,7 +3,7 @@ using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Strategy;
 
-public abstract class StrategyBase<TParams> : IIntBarStrategy
+public abstract class StrategyBase<TParams> : IInt64BarStrategy
     where TParams : StrategyParamsBase
 {
     protected TParams Params { get; }

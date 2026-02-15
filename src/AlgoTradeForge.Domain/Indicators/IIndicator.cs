@@ -1,16 +1,13 @@
+﻿using AlgoTradeForge.Domain.History;
+
 namespace AlgoTradeForge.Domain.Indicators;
 
-public interface IIndicator
+public interface IIndicator<in TInp, TBuff>
 {
     string Name { get; }
-    bool IsFormed { get; }
-    int NumValuesToInitialize { get; }
     IndicatorMeasure Measure { get; }
-    DrawStyle Style { get; }
-    long? CurrentValue { get; }
-
-    long? Process(long input);
-    void Reset();
-
-    event Action? Reseted;
+    IReadOnlyDictionary<string, IReadOnlyList<TBuff>> Buffers { get; }
+    int MinimumHistory { get; }
+    int? CapacityLimit { get; }
+    void Compute(IReadOnlyList<TInp> series);
 }

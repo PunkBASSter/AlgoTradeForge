@@ -32,9 +32,9 @@ public class BacktestEngineTests
             EndTime = DateTimeOffset.MaxValue,
         };
 
-    private static IIntBarStrategy MockStrategy(params DataSubscription[] subs)
+    private static IInt64BarStrategy MockStrategy(params DataSubscription[] subs)
     {
-        var strategy = Substitute.For<IIntBarStrategy>();
+        var strategy = Substitute.For<IInt64BarStrategy>();
         strategy.DataSubscriptions.Returns(new List<DataSubscription>(subs));
         return strategy;
     }

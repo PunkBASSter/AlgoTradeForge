@@ -9,7 +9,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
 {
     public BacktestResult Run(
         TimeSeries<Int64Bar>[] seriesPerSubscription,
-        IIntBarStrategy strategy,
+        IInt64BarStrategy strategy,
         BacktestOptions options,
         CancellationToken ct = default)
     {
@@ -32,6 +32,8 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
         var activeSlTpPositions = new List<ActiveSlTpPosition>();
         var lastPrices = new Dictionary<string, decimal>();
         var equityCurve = new List<decimal>();
+
+        strategy.OnInit();
 
         while (true)
         {
@@ -104,7 +106,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
         List<Fill> fills,
         Portfolio portfolio,
         List<ActiveSlTpPosition> activeSlTpPositions,
-        IIntBarStrategy strategy)
+        IInt64BarStrategy strategy)
     {
         var pending = queue.GetPendingForAsset(asset);
         var toRemove = new List<long>();
@@ -161,7 +163,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
         List<Fill> fills,
         Portfolio portfolio,
         List<ActiveSlTpPosition> activeSlTpPositions,
-        IIntBarStrategy strategy)
+        IInt64BarStrategy strategy)
     {
         for (var i = activeSlTpPositions.Count - 1; i >= 0; i--)
         {
