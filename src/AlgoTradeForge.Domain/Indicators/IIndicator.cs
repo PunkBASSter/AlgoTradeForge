@@ -1,6 +1,4 @@
-﻿using AlgoTradeForge.Domain.History;
-
-namespace AlgoTradeForge.Domain.Indicators;
+﻿namespace AlgoTradeForge.Domain.Indicators;
 
 public interface IIndicator<in TInp, TBuff>
 {
