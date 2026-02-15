@@ -1,11 +1,18 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Strategy;
 
-public abstract class StrategyBase<TParams> where TParams : StrategyParamsBase
+public abstract class StrategyBase<TParams> : IIntBarStrategy
+    where TParams : StrategyParamsBase
 {
-    //TODO add strategy run hash to identify unique runs and results
+    protected TParams Params { get; }
+
+    protected StrategyBase(TParams parameters) => Params = parameters;
+
+    public IList<DataSubscription> DataSubscriptions => Params.DataSubscriptions;
+
+    public abstract void OnBar(Int64Bar bar, DataSubscription subscription, IOrderContext orders);
+
+    public virtual void OnTrade(Fill fill, Order order) { }
 }

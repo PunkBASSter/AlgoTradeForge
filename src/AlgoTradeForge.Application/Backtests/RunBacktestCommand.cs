@@ -11,5 +11,6 @@ public sealed record RunBacktestCommand : ICommand<BacktestResultDto>
     public required DateTimeOffset EndTime { get; init; }
     public decimal CommissionPerTrade { get; init; } = 0m;
     public decimal SlippageTicks { get; init; } = 0m;
+    public bool UseDetailedExecutionLogic { get; init; }
     public IDictionary<string, object>? StrategyParameters { get; init; }
 }

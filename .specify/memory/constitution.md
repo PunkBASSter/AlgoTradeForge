@@ -1,25 +1,22 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.1.0 → 1.2.0
-Modified principles: None
-Added sections:
-  - CandleIngestor architecture exemption note under Solution Layout
-  - AlgoTradeForge.Infrastructure.Tests in tests tree
+Version change: 1.2.0 → 1.3.0
+Modified principles:
+  - I. Strategy-as-Code: Clarified stateless requirement — execution state MUST
+    flow through IOrderContext; analytical state (indicators, bar history) MAY be
+    maintained between bars. Added rationale expansion.
+Added sections: None
 Removed sections: None
 Modified sections:
-  - Solution Layout: Added CandleIngestor project (self-contained worker),
-    Infrastructure.Tests project, and updated project reference graph
-  - Code Organization conventions: Updated reference graph to reflect
-    CandleIngestor as self-contained; WebApi now references Infrastructure
+  - Principle I bullet points: split "stateless between bars" into two explicit
+    bullets (execution state vs analytical state)
+  - Principle I rationale: added sentence on analytical/execution distinction
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible
-    (Constitution Check section exists; Source Code section is feature-specific)
+    (Constitution Check references Principle I by name; wording change is additive)
   - .specify/templates/spec-template.md ✅ compatible
-    (requirements align; no structural references)
   - .specify/templates/tasks-template.md ✅ compatible
-    (Path Conventions section is generic; features reference plan.md)
-  - .specify/templates/commands/*.md ✅ no files exist yet
 Follow-up TODOs: None
 -->
 
@@ -37,12 +34,15 @@ well-defined strategy interface. Strategies:
 
 - MUST be self-contained compilation units with no external runtime dependencies beyond the strategy host SDK
 - MUST declare their required indicators, parameters, and data dependencies explicitly
-- MUST be stateless between bars; all state MUST flow through the host-provided context
+- MUST be stateless with respect to execution between bars; all order submission, position tracking, and fill observation MUST flow through the host-provided `IOrderContext`
+- MAY maintain internal analytical state between bars (e.g., indicator buffers, bar history windows, derived signals) for decision-making purposes only; analytical state MUST NOT influence execution except through `IOrderContext` calls
 - MUST NOT perform direct I/O; all market data and order execution flows through the host
 
 **Rationale**: Dynamic compilation enables rapid iteration while maintaining type safety
 and performance. Isolation ensures strategies can be backtested, optimized, and
-deployed to live trading without code changes.
+deployed to live trading without code changes. The analytical/execution state distinction
+enables strategies to implement indicators and lookback windows while ensuring all
+execution actions remain observable and reproducible through the host interface.
 
 ### II. Test-First & Verification Pipeline (NON-NEGOTIABLE)
 
@@ -355,4 +355,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.2.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-10
+**Version**: 1.3.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-14

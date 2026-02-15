@@ -2,6 +2,7 @@ using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
 
 namespace AlgoTradeForge.Application.Backtests;
@@ -10,7 +11,8 @@ public sealed class RunBacktestCommandHandler(
     BacktestEngine engine,
     IAssetRepository assetRepository,
     IStrategyFactory strategyFactory,
-    IDataSource dataSource) : ICommandHandler<RunBacktestCommand, BacktestResultDto>
+    IHistoryRepository historyRepository,
+    IMetricsCalculator metricsCalculator) : ICommandHandler<RunBacktestCommand, BacktestResultDto>
 {
     public async Task<BacktestResultDto> HandleAsync(RunBacktestCommand command, CancellationToken ct = default)
     {
@@ -21,57 +23,49 @@ public sealed class RunBacktestCommandHandler(
 
         var options = new BacktestOptions
         {
-            Asset = asset,
             InitialCash = command.InitialCash,
+            Asset = asset,
             StartTime = command.StartTime,
             EndTime = command.EndTime,
             CommissionPerTrade = command.CommissionPerTrade,
-            SlippageTicks = command.SlippageTicks
+            SlippageTicks = command.SlippageTicks,
+            UseDetailedExecutionLogic = command.UseDetailedExecutionLogic
         };
 
-        var subscriptions = strategy.DataSubscriptions.Count > 0
-            ? strategy.DataSubscriptions
-            : (IList<DataSubscription>)[new DataSubscription(asset, asset.SmallestInterval)];
+        if (strategy.DataSubscriptions.Count == 0)
+            strategy.DataSubscriptions.Add(new DataSubscription(asset, asset.SmallestInterval));
 
-        var dataMap = new Dictionary<DataSubscription, TimeSeries<Int64Bar>>();
-        foreach (var sub in subscriptions)
+        var fromDate = DateOnly.FromDateTime(command.StartTime.UtcDateTime);
+        var toDate = DateOnly.FromDateTime(command.EndTime.UtcDateTime);
+
+        var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
+
+        for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
         {
-            var query = new HistoryDataQuery
-            {
-                Asset = sub.Asset,
-                TimeFrame = sub.TimeFrame,
-                StartTime = command.StartTime,
-                EndTime = command.EndTime
-            };
-            dataMap[sub] = dataSource.GetData(query);
+            seriesArray[i] = historyRepository.Load(strategy.DataSubscriptions[i], fromDate, toDate);
         }
 
-        var snapshot = new MarketDataSnapshot(dataMap);
+        var result = engine.Run(seriesArray, strategy, options, ct);
 
-        var primarySubscription = subscriptions
-            .Where(s => s.Asset == asset)
-            .OrderBy(s => s.TimeFrame)
-            .First();
-
-        var result = await engine.RunAsync(snapshot[primarySubscription], strategy, options, ct);
+        var metrics = metricsCalculator.Calculate(result.Fills, result.EquityCurve, command.InitialCash);
 
         return new BacktestResultDto
         {
             Id = Guid.NewGuid(),
             AssetName = command.AssetName,
             StrategyName = command.StrategyName,
-            InitialCapital = result.Metrics.InitialCapital,
-            FinalEquity = result.Metrics.FinalEquity,
-            NetProfit = result.Metrics.NetProfit,
-            TotalReturnPct = result.Metrics.TotalReturnPct,
-            AnnualizedReturnPct = result.Metrics.AnnualizedReturnPct,
-            SharpeRatio = result.Metrics.SharpeRatio,
-            SortinoRatio = result.Metrics.SortinoRatio,
-            MaxDrawdownPct = result.Metrics.MaxDrawdownPct,
-            TotalTrades = result.Metrics.TotalTrades,
-            WinRatePct = result.Metrics.WinRatePct,
-            ProfitFactor = result.Metrics.ProfitFactor,
-            TradingDays = result.Metrics.TradingDays,
+            InitialCapital = metrics.InitialCapital,
+            FinalEquity = metrics.FinalEquity,
+            NetProfit = metrics.NetProfit,
+            TotalReturnPct = metrics.TotalReturnPct,
+            AnnualizedReturnPct = metrics.AnnualizedReturnPct,
+            SharpeRatio = metrics.SharpeRatio,
+            SortinoRatio = metrics.SortinoRatio,
+            MaxDrawdownPct = metrics.MaxDrawdownPct,
+            TotalTrades = metrics.TotalTrades,
+            WinRatePct = metrics.WinRatePct,
+            ProfitFactor = metrics.ProfitFactor,
+            TradingDays = metrics.TradingDays,
             Duration = result.Duration,
             CompletedAt = DateTimeOffset.UtcNow
         };
