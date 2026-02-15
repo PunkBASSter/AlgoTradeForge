@@ -119,14 +119,12 @@ OrderQueue (sealed class)
 - `Cancel` returns false if order not found or already filled
 - Thread safety not required (single-threaded backtest loop)
 
-### BarResampler (new)
+### ~~BarResampler~~ → `TimeSeriesExtensions.Resample` (extension method)
 
-Utility for aggregating lower-timeframe bars into higher timeframes.
+> Moved from standalone static class to extension method on `TimeSeries<Int64Bar>` in `src/AlgoTradeForge.Domain/History/TimeSeriesExtensions.cs`.
 
 ```
-BarResampler (static class)
-└── Resample(source: TimeSeries<Int64Bar>, sourceInterval: TimeSpan, targetInterval: TimeSpan)
-    → TimeSeries<Int64Bar>
+TimeSeries<Int64Bar>.Resample(targetStep: TimeSpan) → TimeSeries<Int64Bar>
 ```
 
 **Aggregation rules**:
@@ -137,7 +135,7 @@ BarResampler (static class)
 - Volume: sum of all bars' Volume in the group
 - Timestamp: first bar's timestamp in the group
 
-**Validation**: `targetInterval` MUST be an exact multiple of `sourceInterval`.
+**Validation**: `targetStep` MUST be an exact multiple of `source.Step`.
 
 ### IOrderContext (new)
 
@@ -190,7 +188,7 @@ IHistoryRepository (interface)
 RunBacktestCommandHandler (Application layer)
  ├── uses → IHistoryRepository (loads data per subscription)
  │            └── wraps → IInt64BarLoader (existing CSV loader)
- │            └── uses → BarResampler (timeframe aggregation)
+ │            └── uses → TimeSeries<Int64Bar>.Resample() (timeframe aggregation)
  ├── passes → TimeSeries<Int64Bar>[] + DataSubscription[] to BacktestEngine
  └── when UseDetailedExecutionLogic:
       └── loads SmallestInterval data per asset → Dictionary<Asset, TimeSeries<Int64Bar>>

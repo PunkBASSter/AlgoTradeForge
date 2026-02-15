@@ -62,17 +62,17 @@
 
 > **Write these tests FIRST, ensure they FAIL before implementation**
 
-- [x] T014 [P] [US1] Create `BarResamplerTests` with OHLCV aggregation correctness tests (1m→5m, verify Open/High/Low/Close/Volume) in `tests/AlgoTradeForge.Domain.Tests/History/BarResamplerTests.cs`
+- [x] T014 [P] [US1] Create `TimeSeriesResampleTests` with OHLCV aggregation correctness tests (1m→5m, verify Open/High/Low/Close/Volume) in `tests/AlgoTradeForge.Domain.Tests/History/TimeSeriesResampleTests.cs`
 - [x] T015 [P] [US1] Create `HistoryRepositoryTests` with load + resample integration tests (mock `IInt64BarLoader`, verify resampled output) in `tests/AlgoTradeForge.Infrastructure.Tests/History/HistoryRepositoryTests.cs`
 - [x] T016 [US1] Add multi-subscription chronological feeding tests to `BacktestEngineTests` — verify bar delivery order across 2 subscriptions, same-timestamp tiebreaker, data gap handling in `tests/AlgoTradeForge.Domain.Tests/Engine/BacktestEngineTests.cs`
 
 ### Implementation for User Story 1
 
-- [x] T017 [US1] Create `BarResampler` static class with `Resample(TimeSeries<Int64Bar>, TimeSpan source, TimeSpan target)` method in `src/AlgoTradeForge.Domain/History/BarResampler.cs`
+- [x] T017 [US1] Create `TimeSeriesExtensions.Resample()` extension method on `TimeSeries<Int64Bar>` in `src/AlgoTradeForge.Domain/History/TimeSeriesExtensions.cs`
 - [x] T018 [US1] Create `IHistoryRepository` interface with `Load(DataSubscription, DateOnly, DateOnly)` method in `src/AlgoTradeForge.Application/Abstractions/IHistoryRepository.cs` (per `contracts/history-repository.md`)
 - [x] T019 [US1] Implement `HistoryRepository` wrapping `CsvInt64BarLoader` with resampling support in `src/AlgoTradeForge.Infrastructure/History/HistoryRepository.cs`
 - [x] T020 [US1] Rewrite `BacktestEngine.Run` to accept pre-loaded `TimeSeries<Int64Bar>[]` and `DataSubscription[]`, maintain `int[]` cursors, pick minimum timestamp, deliver single bar via `strategy.OnBar()` — engine MUST NOT reference `IHistoryRepository` (data loading is the handler's responsibility) in `src/AlgoTradeForge.Domain/Engine/BacktestEngine.cs`
-- [x] T021 [US1] Verify all US1 tests pass (`dotnet test --filter "BarResampler|HistoryRepository|BacktestEngine"`)
+- [x] T021 [US1] Verify all US1 tests pass (`dotnet test --filter "TimeSeriesResample|HistoryRepository|BacktestEngine"`)
 
 **Checkpoint**: Engine loads multi-subscription data, resamples, and feeds bars chronologically. Strategy receives one bar at a time.
 

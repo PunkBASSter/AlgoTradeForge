@@ -90,7 +90,7 @@ src/
 │   └── History/
 │       ├── Int64Bar.cs                   # UNCHANGED (already long from 002)
 │       ├── TimeSeries.cs                 # UNCHANGED
-│       └── BarResampler.cs               # NEW: OHLCV aggregation for timeframe upsampling
+│       └── TimeSeriesExtensions.cs        # NEW: Resample() extension method for timeframe upsampling
 │
 ├── AlgoTradeForge.Application/
 │   ├── Abstractions/
@@ -114,7 +114,7 @@ tests/
 │   │   ├── BarMatcherTests.cs            # MODIFIED: add Stop, StopLimit, SL/TP test cases
 │   │   └── OrderQueueTests.cs            # NEW: FIFO ordering, fill/cancel lifecycle
 │   ├── History/
-│   │   └── BarResamplerTests.cs          # NEW: OHLCV aggregation correctness
+│   │   └── TimeSeriesResampleTests.cs    # NEW: OHLCV aggregation correctness
 │   ├── Trading/
 │   │   └── PortfolioTests.cs             # EXISTING: may need updates for rejection scenarios
 │   └── TestUtilities/

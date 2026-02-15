@@ -41,7 +41,7 @@ public interface IHistoryRepository
 2. Determine source interval (Asset.SmallestInterval, typically 1m)
 3. Load raw bars via IInt64BarLoader for [from, to] range
 4. If subscription.TimeFrame == source interval → return as-is
-5. If subscription.TimeFrame > source interval → resample via BarResampler
+5. If subscription.TimeFrame > source interval → resample via TimeSeries<Int64Bar>.Resample()
 6. If subscription.TimeFrame < source interval → error (cannot downsample)
 ```
 
