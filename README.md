@@ -11,8 +11,6 @@ BacktestEngine needs
 
 TODO:
 - Backtest running with Start/Stop/Pause/Resume/Next Bar/Next Trade API
-- Add reporting timeframe, add TimeSeries resample with debug feature
-- Ensure BacktestEngine tracks and optimally fills multiple Orders
 - Strategy must track entry orders and exit orders (multi SL/TP) on its own (migrate from SS.AB)
 - Add termination conditions to BacktestOptions
 - History loading job

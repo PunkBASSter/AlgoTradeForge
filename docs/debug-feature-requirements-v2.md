@@ -86,15 +86,19 @@ Configuration is per event type, defined in code (not runtime config):
 
 The event bus checks `eventType.ExportMode.HasFlag(currentRunMode)` before serialization. Events that don't match are silently dropped — never serialized, never written to any sink.
 
-### 2.4 Reporting Timeframe
+### 2.4 Data Subscription Export Control
 
-A configurable `ReportingTimeframe` parameter (e.g. H1, H4, D1) determines:
+Bar and indicator export is governed by the `DataSubscription` configuration:
 
-- Which timeframe's `bar` and `ind` events are exported (lower TF bars are suppressed)
-- Which bars the visual debugger draws and steps through
-- Which bars appear in post-run reports and charts
+```csharp
+public record DataSubscription(Asset Asset, TimeSpan TimeFrame, bool IsExportable = false);
+```
 
-This prevents noise from e.g. minute-granular updates when the strategy operates on H1. The reporting timeframe filters at the event bus level, before sink dispatch.
+A strategy declares one or more data subscriptions (e.g. ETH-USD M1, ETH-USD H1, BTC-USD H4). Only subscriptions with `IsExportable = true` have their `bar`, `bar.mut`, `ind`, and `ind.mut` events emitted to sinks. Non-exportable subscriptions are still processed internally by the strategy but produce no event output.
+
+This allows fine-grained control in multi-asset, multi-timeframe strategies. For example, a strategy consuming M1 bars for signal calculation but operating on H1 decisions would mark only the H1 subscription as exportable — avoiding noise from 60x more M1 bar events.
+
+The visual debugger draws and steps through bars from exportable subscriptions only. Post-run reports likewise use exportable subscriptions for charting.
 
 ---
 
@@ -105,7 +109,7 @@ This prevents noise from e.g. minute-granular updates when the strategy operates
 Strategy code, indicators, execution engine, and risk manager all emit events through a single `IEventBus` abstraction. The bus:
 
 - Checks `ExportMode` tag against the current run mode — drops non-matching events
-- Applies `ReportingTimeframe` filter for bar/indicator events
+- Applies `DataSubscription.IsExportable` filter for bar/indicator events — only emits from exportable subscriptions
 - Serializes each surviving event to JSON **once**
 - Fans out the serialized payload to all registered sinks
 
@@ -121,6 +125,8 @@ Trade logging is not a separate sink — trade events (`ord.*`, `pos`) flow thro
 ---
 
 ## 4. File Organization & Run Identity
+
+The following structure should be in the same AlgoTradeForge dir (..AppData/localAlgoTradeForge on Windows) that contains partitioned Candle data from CandleIngestor.
 
 ### 4.1 Directory Structure
 
@@ -183,14 +189,14 @@ The FE client sends **control messages** to govern execution flow. The runner st
 | `continue` | — | Run to completion without pausing |
 | `next` | — | Advance to the next exported event (any type), then pause |
 | `next_type` | `{ "_t": "bar" }` | Advance until the next event of the given type is exported, then pause |
-| `next_bar` | — | Shortcut: advance to next `bar` event at ReportingTimeframe, then pause |
+| `next_bar` | — | Shortcut: advance to next `bar` event from any exportable subscription, then pause |
 | `next_signal` | — | Shortcut: advance to next `sig` event, then pause |
 | `next_trade` | — | Advance until next order lifecycle event, then pause |
 | `run_to` | `{ "sq": 5000 }` or `{ "ts": "..." }` | Run until a specific sequence number or timestamp, then pause |
 | `set_export` | `{ "mutations": true }` | Toggle opt-in event categories mid-run (e.g. enable `bar.mut`, `ind.mut`) |
 | `pause` | — | Pause execution after the current event completes |
 
-All stepping commands operate on **exported** events only (post-filter). `next_bar` specifically steps to the next bar at the configured `ReportingTimeframe`, skipping lower-TF bars even if they happen to be exported.
+All stepping commands operate on **exported** events only (post-filter). `next_bar` steps to the next bar from any exportable `DataSubscription`, skipping bars from non-exportable subscriptions.
 
 ### 5.3 Pause Semantics
 
@@ -302,7 +308,7 @@ A skill file (`SKILL.md`) is provided that documents:
 | # | Decision | Rationale |
 |---|----------|-----------|
 | 1 | Flag enum `ExportMode` over logging levels | Export is per-event-type configuration, not a severity hierarchy. A bar event isn't "less important" than a trade — it's relevant in different contexts. |
-| 2 | `ReportingTimeframe` filter | Prevents combinatorial noise (e.g. M1 bar mutations on H1 strategy). Single config knob controls export, visual debug, and reports. |
+| 2 | `DataSubscription.IsExportable` flag over global reporting timeframe | Per-subscription export control supports multi-asset, multi-TF strategies naturally. No single "reporting TF" assumption — each subscription decides independently. |
 | 3 | No run ID in event payload | Run identity is structural (directory), not per-event metadata. Eliminates redundant bytes and simplifies the event model. |
 | 4 | Single chronological JSONL, no partitioning | Preserves narrative flow for LLM sequential reasoning. SQLite index provides type-based access post-hoc. |
 | 5 | JSONL as source of truth, SQLite as derived | Simplifies the write path (append-only file). Both indexes are built from the same source after run completion. |
