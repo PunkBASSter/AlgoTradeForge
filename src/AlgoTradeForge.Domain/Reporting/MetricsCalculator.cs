@@ -1,40 +1,34 @@
-using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Reporting;
 
 public class MetricsCalculator : IMetricsCalculator
 {
-    protected const double RiskFreeRate = 0.02;
-    protected const int TradingDaysPerYear = 252;
+    private const double RiskFreeRate = 0.02;
+    private const int TradingDaysPerYear = 252;
 
-    public virtual PerformanceMetrics Calculate(
+    public PerformanceMetrics Calculate(
         IReadOnlyList<Fill> fills,
-        IReadOnlyList<Int64Bar> bars,
-        Portfolio portfolio,
-        long finalPrice,
-        Asset asset)
+        IReadOnlyList<decimal> equityCurve,
+        decimal initialCash)
     {
-        var initialCapital = portfolio.InitialCash;
-        var finalEquity = portfolio.Equity((decimal)finalPrice);
-        var tradingDays = bars.Count;
+        var finalEquity = equityCurve.Count > 0 ? equityCurve[^1] : initialCash;
+        var tradingDays = equityCurve.Count;
 
-        if (fills.Count == 0 || bars.Count == 0)
-        {
-            return CreateEmptyMetrics(initialCapital, finalEquity, tradingDays);
-        }
+        if (fills.Count == 0 || equityCurve.Count == 0)
+            return CreateEmptyMetrics(initialCash, finalEquity, tradingDays);
 
-        var tradeStats = ComputeTradeStatistics(fills, asset);
-        var equityCurve = BuildEquityCurve(fills, bars, initialCapital, asset);
-        var maxDrawdown = ComputeMaxDrawdown(equityCurve);
-        var (sharpe, sortino) = ComputeRiskMetrics(equityCurve);
+        var tradeStats = ComputeTradeStatistics(fills);
+        var curve = BuildDoubleCurve(equityCurve);
+        var maxDrawdown = ComputeMaxDrawdown(curve);
+        var (sharpe, sortino) = ComputeRiskMetrics(curve);
 
-        var totalReturn = initialCapital != 0
-            ? (double)((finalEquity - initialCapital) / initialCapital * 100)
+        var totalReturn = initialCash != 0
+            ? (double)((finalEquity - initialCash) / initialCash * 100)
             : 0;
 
-        var annualizedReturn = initialCapital != 0 && tradingDays > 0
-            ? (Math.Pow((double)(finalEquity / initialCapital), (double)TradingDaysPerYear / tradingDays) - 1) * 100
+        var annualizedReturn = initialCash != 0 && tradingDays > 0
+            ? (Math.Pow((double)(finalEquity / initialCash), (double)TradingDaysPerYear / tradingDays) - 1) * 100
             : 0;
 
         var winRate = tradeStats.RoundTrips > 0
@@ -62,124 +56,85 @@ public class MetricsCalculator : IMetricsCalculator
             ProfitFactor = profitFactor,
             AverageWin = tradeStats.WinningTrades > 0 ? tradeStats.GrossProfit / tradeStats.WinningTrades : 0,
             AverageLoss = tradeStats.LosingTrades > 0 ? tradeStats.GrossLoss / tradeStats.LosingTrades : 0,
-            InitialCapital = initialCapital,
+            InitialCapital = initialCash,
             FinalEquity = finalEquity,
             TradingDays = tradingDays
         };
     }
 
-    protected virtual TradeStatistics ComputeTradeStatistics(IReadOnlyList<Fill> fills, Asset asset)
+    private static TradeStatistics ComputeTradeStatistics(IReadOnlyList<Fill> fills)
     {
         var stats = new TradeStatistics();
-        decimal position = 0;
-        decimal avgEntryPrice = 0;
+        var positions = new Dictionary<string, (decimal Quantity, decimal AvgEntry, Asset Asset)>();
 
         foreach (var fill in fills)
         {
+            var key = fill.Asset.Name;
+            var multiplier = fill.Asset.Multiplier;
+
+            if (!positions.TryGetValue(key, out var pos))
+                pos = (0m, 0m, fill.Asset);
+
             var direction = fill.Side == OrderSide.Buy ? 1 : -1;
             var fillQuantity = fill.Quantity * direction;
-            var newPosition = position + fillQuantity;
+            var newQuantity = pos.Quantity + fillQuantity;
 
-            if (position != 0 && Math.Sign(newPosition) != Math.Sign(position))
+            if (pos.Quantity != 0 && Math.Sign(newQuantity) != Math.Sign(pos.Quantity))
             {
-                var pnl = (double)(position * (fill.Price - avgEntryPrice) * asset.Multiplier);
-                if (pnl > 0)
-                {
-                    stats.WinningTrades++;
-                    stats.GrossProfit += pnl;
-                }
-                else if (pnl < 0)
-                {
-                    stats.LosingTrades++;
-                    stats.GrossLoss += Math.Abs(pnl);
-                }
-                stats.RoundTrips++;
-                avgEntryPrice = fill.Price;
+                // Full reversal — close existing position
+                var pnl = (double)(pos.Quantity * (fill.Price - pos.AvgEntry) * multiplier);
+                RecordPnl(stats, pnl);
+                pos = (newQuantity, fill.Price, fill.Asset);
             }
-            else if (position == 0)
+            else if (pos.Quantity == 0)
             {
-                avgEntryPrice = fill.Price;
+                pos = (newQuantity, fill.Price, fill.Asset);
             }
-            else if (Math.Abs(newPosition) < Math.Abs(position))
+            else if (Math.Abs(newQuantity) < Math.Abs(pos.Quantity))
             {
-                var closedQuantity = Math.Abs(position) - Math.Abs(newPosition);
-                var pnl = (double)(closedQuantity * (fill.Price - avgEntryPrice) * Math.Sign(position) * asset.Multiplier);
-                if (pnl > 0)
-                {
-                    stats.WinningTrades++;
-                    stats.GrossProfit += pnl;
-                }
-                else if (pnl < 0)
-                {
-                    stats.LosingTrades++;
-                    stats.GrossLoss += Math.Abs(pnl);
-                }
-                stats.RoundTrips++;
+                // Partial close
+                var closedQuantity = Math.Abs(pos.Quantity) - Math.Abs(newQuantity);
+                var pnl = (double)(closedQuantity * (fill.Price - pos.AvgEntry) * Math.Sign(pos.Quantity) * multiplier);
+                RecordPnl(stats, pnl);
+                pos = (newQuantity, pos.AvgEntry, fill.Asset);
             }
             else
             {
-                var totalCost = position * avgEntryPrice + fillQuantity * fill.Price;
-                avgEntryPrice = totalCost / newPosition;
+                // Adding to position — weighted average entry
+                var totalCost = pos.Quantity * pos.AvgEntry + fillQuantity * fill.Price;
+                pos = (newQuantity, totalCost / newQuantity, fill.Asset);
             }
 
-            position = newPosition;
+            positions[key] = pos;
         }
 
         return stats;
     }
 
-    protected virtual List<double> BuildEquityCurve(
-        IReadOnlyList<Fill> fills,
-        IReadOnlyList<Int64Bar> bars,
-        decimal initialCapital,
-        Asset asset)
+    private static void RecordPnl(TradeStatistics stats, double pnl)
     {
-        var curve = new List<double>(bars.Count);
-        var fillIndex = 0;
-        decimal cash = initialCapital;
-        decimal position = 0;
-        decimal avgEntryPrice = 0;
-
-        for (var i = 0; i < bars.Count; i++)
+        if (pnl > 0)
         {
-            var bar = bars[i];
-
-            while (fillIndex < fills.Count)
-            {
-                var fill = fills[fillIndex];
-                var direction = fill.Side == OrderSide.Buy ? 1 : -1;
-                cash += fill.Price * fill.Quantity * asset.Multiplier * -direction - fill.Commission;
-
-                var fillQuantity = fill.Quantity * direction;
-                var newPosition = position + fillQuantity;
-
-                if (position == 0)
-                {
-                    avgEntryPrice = fill.Price;
-                }
-                else if (Math.Sign(newPosition) == Math.Sign(position) && Math.Abs(newPosition) > Math.Abs(position))
-                {
-                    var totalCost = position * avgEntryPrice + fillQuantity * fill.Price;
-                    avgEntryPrice = totalCost / newPosition;
-                }
-                else if (Math.Sign(newPosition) != Math.Sign(position))
-                {
-                    avgEntryPrice = fill.Price;
-                }
-
-                position = newPosition;
-                fillIndex++;
-                break;
-            }
-
-            var equity = cash + position * (decimal)bar.Close * asset.Multiplier;
-            curve.Add((double)equity);
+            stats.WinningTrades++;
+            stats.GrossProfit += pnl;
         }
+        else if (pnl < 0)
+        {
+            stats.LosingTrades++;
+            stats.GrossLoss += Math.Abs(pnl);
+        }
+        stats.RoundTrips++;
+    }
 
+    private static List<double> BuildDoubleCurve(IReadOnlyList<decimal> equityCurve)
+    {
+        var curve = new List<double>(equityCurve.Count);
+        foreach (var e in equityCurve)
+            curve.Add((double)e);
         return curve;
     }
 
-    protected virtual double ComputeMaxDrawdown(List<double> equityCurve)
+    private static double ComputeMaxDrawdown(List<double> equityCurve)
     {
         if (equityCurve.Count == 0)
             return 0;
@@ -203,7 +158,7 @@ public class MetricsCalculator : IMetricsCalculator
         return maxDrawdown;
     }
 
-    protected virtual (double sharpe, double sortino) ComputeRiskMetrics(List<double> equityCurve)
+    private static (double sharpe, double sortino) ComputeRiskMetrics(List<double> equityCurve)
     {
         if (equityCurve.Count < 2)
             return (0, 0);
@@ -212,36 +167,26 @@ public class MetricsCalculator : IMetricsCalculator
         for (var i = 1; i < equityCurve.Count; i++)
         {
             if (equityCurve[i - 1] > 0)
-            {
-                var ret = (equityCurve[i] - equityCurve[i - 1]) / equityCurve[i - 1];
-                returns.Add(ret);
-            }
+                returns.Add((equityCurve[i] - equityCurve[i - 1]) / equityCurve[i - 1]);
         }
 
         if (returns.Count == 0)
             return (0, 0);
 
-        double sum = 0;
-        double sumSq = 0;
-        double negSumSq = 0;
+        double sum = 0, sumSq = 0, negSumSq = 0;
         var negCount = 0;
 
         foreach (var r in returns)
         {
             sum += r;
             sumSq += r * r;
-            if (r < 0)
-            {
-                negSumSq += r * r;
-                negCount++;
-            }
+            if (r < 0) { negSumSq += r * r; negCount++; }
         }
 
         var n = returns.Count;
         var mean = sum / n;
         var variance = sumSq / n - mean * mean;
         var stdDev = Math.Sqrt(Math.Max(0, variance));
-
         var dailyRiskFreeRate = RiskFreeRate / TradingDaysPerYear;
 
         var sharpe = stdDev > 0
@@ -264,32 +209,20 @@ public class MetricsCalculator : IMetricsCalculator
         return (sharpe, sortino);
     }
 
-    protected virtual PerformanceMetrics CreateEmptyMetrics(decimal initialCapital, decimal finalEquity, int tradingDays)
+    private static PerformanceMetrics CreateEmptyMetrics(decimal initialCapital, decimal finalEquity, int tradingDays)
     {
         return new PerformanceMetrics
         {
-            TotalTrades = 0,
-            WinningTrades = 0,
-            LosingTrades = 0,
-            NetProfit = 0,
-            GrossProfit = 0,
-            GrossLoss = 0,
-            TotalReturnPct = 0,
-            AnnualizedReturnPct = 0,
-            SharpeRatio = 0,
-            SortinoRatio = 0,
-            MaxDrawdownPct = 0,
-            WinRatePct = 0,
-            ProfitFactor = 0,
-            AverageWin = 0,
-            AverageLoss = 0,
-            InitialCapital = initialCapital,
-            FinalEquity = finalEquity,
-            TradingDays = tradingDays
+            TotalTrades = 0, WinningTrades = 0, LosingTrades = 0,
+            NetProfit = 0, GrossProfit = 0, GrossLoss = 0,
+            TotalReturnPct = 0, AnnualizedReturnPct = 0,
+            SharpeRatio = 0, SortinoRatio = 0, MaxDrawdownPct = 0,
+            WinRatePct = 0, ProfitFactor = 0, AverageWin = 0, AverageLoss = 0,
+            InitialCapital = initialCapital, FinalEquity = finalEquity, TradingDays = tradingDays
         };
     }
 
-    protected class TradeStatistics
+    private class TradeStatistics
     {
         public int WinningTrades { get; set; }
         public int LosingTrades { get; set; }

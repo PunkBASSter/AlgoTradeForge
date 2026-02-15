@@ -1,79 +1,267 @@
 using System.Diagnostics;
 using AlgoTradeForge.Domain.History;
-using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Engine;
 
-public class BacktestEngine
+public sealed class BacktestEngine(IBarMatcher barMatcher)
 {
-    private readonly IBarMatcher _barMatcher;
-    private readonly IMetricsCalculator _metricsCalculator;
-
-    public BacktestEngine(IBarMatcher barMatcher, IMetricsCalculator metricsCalculator)
-    {
-        _barMatcher = barMatcher;
-        _metricsCalculator = metricsCalculator;
-    }
-
-    public virtual Task<BacktestResult> RunAsync(
-        TimeSeries<Int64Bar> bars,
+    public BacktestResult Run(
+        TimeSeries<Int64Bar>[] seriesPerSubscription,
         IIntBarStrategy strategy,
         BacktestOptions options,
         CancellationToken ct = default)
     {
-        var stopwatch = Stopwatch.StartNew();
-        var asset = options.Asset;
+        var subscriptions = strategy.DataSubscriptions;
 
+        if (seriesPerSubscription.Length != subscriptions.Count)
+            throw new ArgumentException("Series array length must match strategy DataSubscriptions count.");
+
+        var stopwatch = Stopwatch.StartNew();
         var portfolio = new Portfolio { InitialCash = options.InitialCash };
         portfolio.Initialize();
 
+        var subCount = subscriptions.Count;
+        var cursors = new int[subCount];
         var fills = new List<Fill>();
-        var barList = new List<Int64Bar>();
+        var orderQueue = new OrderQueue();
+        var orderContext = new BacktestOrderContext(orderQueue, fills);
         var orderIdCounter = 0L;
-        StrategyAction? pendingAction = null;
+        var totalBarsDelivered = 0;
+        var activeSlTpPositions = new List<ActiveSlTpPosition>();
+        var lastPrices = new Dictionary<string, decimal>();
+        var equityCurve = new List<decimal>();
 
-        for (var i = 0; i < bars.Count; i++)
+        while (true)
         {
             ct.ThrowIfCancellationRequested();
 
-            var bar = bars[i];
-            barList.Add(bar);
+            var minTimestamp = DateTimeOffset.MaxValue;
+            var minSubIndex = -1;
 
-            if (pendingAction is not null)
+            for (var s = 0; s < subCount; s++)
             {
-                var order = CreateOrder(pendingAction, ref orderIdCounter, bars.GetTimestamp(i));
-                var fill = _barMatcher.TryFill(order, bar, options);
-                if (fill is not null)
+                if (cursors[s] >= seriesPerSubscription[s].Count)
+                    continue;
+
+                var ts = seriesPerSubscription[s].GetTimestamp(cursors[s]);
+                if (ts < minTimestamp)
                 {
-                    fills.Add(fill);
-                    portfolio.Apply(fill);
+                    minTimestamp = ts;
+                    minSubIndex = s;
                 }
-                pendingAction = null;
             }
 
-            strategy.OnBarComplete(bars);
+            if (minSubIndex == -1)
+                break;
+
+            // Deliver all bars at the same timestamp in subscription declaration order
+            for (var s = minSubIndex; s < subCount; s++)
+            {
+                if (cursors[s] >= seriesPerSubscription[s].Count)
+                    continue;
+
+                var ts = seriesPerSubscription[s].GetTimestamp(cursors[s]);
+                if (ts != minTimestamp)
+                    continue;
+
+                var bar = seriesPerSubscription[s][cursors[s]];
+                var subscription = subscriptions[s];
+
+                // Snapshot fill count so strategy can observe fills from this bar's processing
+                orderContext.BeginBar(fills.Count);
+
+                // Process pending orders for this asset against the new bar
+                ProcessPendingOrders(subscription.Asset, bar, minTimestamp, options, orderQueue, fills, portfolio, activeSlTpPositions, strategy);
+
+                // Evaluate SL/TP for active positions on this asset
+                EvaluateSlTpPositions(subscription.Asset, bar, minTimestamp, options, fills, portfolio, activeSlTpPositions, strategy);
+
+                // Deliver bar to strategy
+                strategy.OnBar(bar, subscription, orderContext);
+                AssignOrderIds(orderQueue, ref orderIdCounter, minTimestamp);
+
+                lastPrices[subscription.Asset.Name] = (decimal)bar.Close;
+                cursors[s]++;
+                totalBarsDelivered++;
+            }
+
+            // Snapshot portfolio equity at this timestamp
+            equityCurve.Add(portfolio.Equity(lastPrices));
         }
 
-        var finalPrice = barList.Count > 0 ? barList[^1].Close : 0L;
-        var metrics = _metricsCalculator.Calculate(fills, barList, portfolio, finalPrice, asset);
-
         stopwatch.Stop();
-        return Task.FromResult(new BacktestResult(portfolio, fills, barList, metrics, stopwatch.Elapsed));
+        return new BacktestResult(portfolio, fills, equityCurve, totalBarsDelivered, stopwatch.Elapsed);
     }
 
-    protected virtual Order CreateOrder(StrategyAction action, ref long orderIdCounter, DateTimeOffset timestamp)
+    private void ProcessPendingOrders(
+        Asset asset,
+        Int64Bar bar,
+        DateTimeOffset timestamp,
+        BacktestOptions options,
+        OrderQueue queue,
+        List<Fill> fills,
+        Portfolio portfolio,
+        List<ActiveSlTpPosition> activeSlTpPositions,
+        IIntBarStrategy strategy)
     {
-        return new Order
+        var pending = queue.GetPendingForAsset(asset);
+        var toRemove = new List<long>();
+
+        foreach (var order in pending)
         {
-            Id = ++orderIdCounter,
-            Asset = action.Asset,
-            Side = action.Side,
-            Type = action.Type,
-            Quantity = action.Quantity,
-            LimitPrice = action.LimitPrice,
-            SubmittedAt = timestamp
-        };
+            var fill = barMatcher.TryFill(order, bar, options);
+            if (fill is null)
+                continue;
+
+            var fillWithTimestamp = fill with { Timestamp = timestamp };
+
+            // Check if strategy has enough cash for buy orders
+            if (order.Side == OrderSide.Buy)
+            {
+                var cost = fillWithTimestamp.Price * fillWithTimestamp.Quantity * order.Asset.Multiplier
+                           + fillWithTimestamp.Commission;
+                if (cost > portfolio.Cash)
+                {
+                    order.Status = OrderStatus.Rejected;
+                    toRemove.Add(order.Id);
+                    continue;
+                }
+            }
+
+            order.Status = OrderStatus.Filled;
+            fills.Add(fillWithTimestamp);
+            portfolio.Apply(fillWithTimestamp);
+            strategy.OnTrade(fillWithTimestamp, order);
+            toRemove.Add(order.Id);
+
+            // Track SL/TP if the order has stop loss or take profit levels
+            if (order.StopLossPrice.HasValue || order.TakeProfitLevels is { Count: > 0 })
+            {
+                activeSlTpPositions.Add(new ActiveSlTpPosition
+                {
+                    OriginalOrder = order,
+                    EntryPrice = fillWithTimestamp.Price,
+                    RemainingQuantity = fillWithTimestamp.Quantity,
+                    NextTpIndex = 0
+                });
+            }
+        }
+
+        foreach (var id in toRemove)
+            queue.Remove(id);
+    }
+
+    private void EvaluateSlTpPositions(
+        Asset asset,
+        Int64Bar bar,
+        DateTimeOffset timestamp,
+        BacktestOptions options,
+        List<Fill> fills,
+        Portfolio portfolio,
+        List<ActiveSlTpPosition> activeSlTpPositions,
+        IIntBarStrategy strategy)
+    {
+        for (var i = activeSlTpPositions.Count - 1; i >= 0; i--)
+        {
+            var pos = activeSlTpPositions[i];
+            if (pos.OriginalOrder.Asset != asset)
+                continue;
+
+            var slTpFill = barMatcher.EvaluateSlTp(
+                pos.OriginalOrder,
+                pos.EntryPrice,
+                pos.RemainingQuantity,
+                pos.NextTpIndex,
+                bar,
+                options,
+                out var hitTpIndex);
+
+            if (slTpFill is null)
+                continue;
+
+            var fillWithTimestamp = slTpFill with { Timestamp = timestamp };
+            fills.Add(fillWithTimestamp);
+            portfolio.Apply(fillWithTimestamp);
+            strategy.OnTrade(fillWithTimestamp, pos.OriginalOrder);
+
+            if (hitTpIndex < 0)
+            {
+                // SL closes entire position
+                activeSlTpPositions.RemoveAt(i);
+            }
+            else
+            {
+                pos.RemainingQuantity -= slTpFill.Quantity;
+                pos.NextTpIndex = hitTpIndex + 1;
+
+                if (pos.RemainingQuantity <= 0 ||
+                    pos.OriginalOrder.TakeProfitLevels is null ||
+                    pos.NextTpIndex >= pos.OriginalOrder.TakeProfitLevels.Count)
+                {
+                    activeSlTpPositions.RemoveAt(i);
+                }
+            }
+        }
+    }
+
+    private sealed class ActiveSlTpPosition
+    {
+        public required Order OriginalOrder { get; init; }
+        public required decimal EntryPrice { get; init; }
+        public decimal RemainingQuantity { get; set; }
+        public int NextTpIndex { get; set; }
+    }
+
+    private static void AssignOrderIds(OrderQueue queue, ref long counter, DateTimeOffset timestamp)
+    {
+        foreach (var order in queue.GetAll())
+        {
+            if (order.Id == 0)
+                order.Id = ++counter;
+
+            if (order.SubmittedAt == default)
+                order.SubmittedAt = timestamp;
+        }
+    }
+}
+
+internal sealed class BacktestOrderContext : IOrderContext
+{
+    private readonly OrderQueue _queue;
+    private readonly List<Fill> _allFills;
+    private int _fillSnapshotStart;
+    private long _nextOrderId;
+
+    public BacktestOrderContext(OrderQueue queue, List<Fill> allFills)
+    {
+        _queue = queue;
+        _allFills = allFills;
+    }
+
+    public void BeginBar(int currentFillCount)
+    {
+        _fillSnapshotStart = currentFillCount;
+    }
+
+    public long Submit(Order order)
+    {
+        var id = ++_nextOrderId;
+        // Create a new order with the assigned ID if the submitted one has Id=0
+        // The caller should set the Id; if they used 'required', it's already set.
+        _queue.Submit(order);
+        return order.Id;
+    }
+
+    public bool Cancel(long orderId) => _queue.Cancel(orderId);
+
+    public IReadOnlyList<Order> GetPendingOrders() => _queue.GetAll();
+
+    public IReadOnlyList<Fill> GetFills()
+    {
+        if (_fillSnapshotStart >= _allFills.Count)
+            return [];
+        return _allFills.GetRange(_fillSnapshotStart, _allFills.Count - _fillSnapshotStart);
     }
 }
