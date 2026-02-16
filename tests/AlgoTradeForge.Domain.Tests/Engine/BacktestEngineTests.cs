@@ -281,7 +281,7 @@ public class BacktestEngineTests
                         Side = OrderSide.Sell,
                         Type = OrderType.Limit,
                         Quantity = 10m,
-                        LimitPrice = 15350m
+                        LimitPrice = 15350L
                     });
                 }
             });
@@ -317,7 +317,7 @@ public class BacktestEngineTests
                         Side = OrderSide.Buy,
                         Type = OrderType.Stop,
                         Quantity = 5m,
-                        StopPrice = 15350m
+                        StopPrice = 15350L
                     });
                 }
             });
@@ -353,8 +353,8 @@ public class BacktestEngineTests
                         Side = OrderSide.Buy,
                         Type = OrderType.StopLimit,
                         Quantity = 5m,
-                        StopPrice = 15350m,
-                        LimitPrice = 15400m
+                        StopPrice = 15350L,
+                        LimitPrice = 15400L
                     });
                 }
             });
@@ -539,7 +539,7 @@ public class BacktestEngineTests
                         Side = OrderSide.Buy,
                         Type = OrderType.Market,
                         Quantity = 5m,
-                        StopLossPrice = 9800m // SL at 98
+                        StopLossPrice = 9800L // SL at 98
                     });
                 }
             });
