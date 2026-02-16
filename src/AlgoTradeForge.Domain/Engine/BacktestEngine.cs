@@ -74,14 +74,19 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 // Snapshot fill count so strategy can observe fills from this bar's processing
                 orderContext.BeginBar(fills.Count);
 
+                // Notify strategy that a new bar is starting (open price only)
+                var startBar = new Int64Bar(bar.TimestampMs, bar.Open, bar.Open, bar.Open, bar.Open, 0);
+                strategy.OnBarStart(startBar, subscription, orderContext);
+                AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp);
+
                 // Process pending orders for this asset against the new bar
                 ProcessPendingOrders(subscription.Asset, bar, barTimestamp, options, orderQueue, fills, portfolio, activeSlTpPositions, strategy);
 
                 // Evaluate SL/TP for active positions on this asset
                 EvaluateSlTpPositions(subscription.Asset, bar, barTimestamp, options, fills, portfolio, activeSlTpPositions, strategy);
 
-                // Deliver bar to strategy
-                strategy.OnBar(bar, subscription, orderContext);
+                // Deliver completed bar to strategy
+                strategy.OnBarComplete(bar, subscription, orderContext);
                 AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp);
 
                 lastPrices[subscription.Asset.Name] = (decimal)bar.Close;

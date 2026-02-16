@@ -48,7 +48,7 @@ public class BacktestEngineTests
         var sub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
         var strategy = MockStrategy(sub);
         var delivered = new List<(Int64Bar Bar, DataSubscription Sub)>();
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci => delivered.Add((ci.ArgAt<Int64Bar>(0), ci.ArgAt<DataSubscription>(1))));
 
         var result = _engine.Run([bars], strategy, CreateOptions());
@@ -71,7 +71,7 @@ public class BacktestEngineTests
         var delivered = new List<(DateTimeOffset Ts, DataSubscription Sub)>();
         var strategy = MockStrategy(btcSub, ethSub);
 
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci =>
             {
                 var bar = ci.ArgAt<Int64Bar>(0);
@@ -116,7 +116,7 @@ public class BacktestEngineTests
 
         var deliveryOrder = new List<DataSubscription>();
         var strategy = MockStrategy(btcSub, ethSub);
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci => deliveryOrder.Add(ci.ArgAt<DataSubscription>(1)));
 
         _engine.Run([btcBars, ethBars], strategy, CreateOptions());
@@ -143,7 +143,7 @@ public class BacktestEngineTests
 
         var deliveryOrder = new List<DataSubscription>();
         var strategy = MockStrategy(btcSub, ethSub);
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci => deliveryOrder.Add(ci.ArgAt<DataSubscription>(1)));
 
         var result = _engine.Run([btcBars, ethBars], strategy, CreateOptions());
@@ -200,7 +200,7 @@ public class BacktestEngineTests
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 10000);
         var receivedBars = new List<Int64Bar>();
         var strategy = MockStrategy(sub);
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci => receivedBars.Add(ci.ArgAt<Int64Bar>(0)));
 
         _engine.Run([bars], strategy, CreateOptions());
@@ -227,7 +227,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -264,7 +264,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -300,7 +300,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -336,7 +336,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -373,7 +373,7 @@ public class BacktestEngineTests
         var barCount = 0;
         IReadOnlyList<Fill>? observedFills = null;
 
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci =>
             {
                 barCount++;
@@ -416,7 +416,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -461,7 +461,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(sub);
         var barIdx = 0;
 
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci =>
             {
                 barIdx++;
@@ -522,7 +522,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -563,7 +563,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -605,7 +605,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBar(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci =>
             {
                 if (!orderPlaced)

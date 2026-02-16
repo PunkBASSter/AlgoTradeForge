@@ -21,7 +21,7 @@ public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters) : St
         _equity = Params.InitialCash;
     }
 
-    public override void OnBar(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+    public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
     {
         _barHistory.Add(bar);
         _dzz.Compute(_barHistory);
