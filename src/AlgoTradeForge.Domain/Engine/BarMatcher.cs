@@ -5,29 +5,12 @@ namespace AlgoTradeForge.Domain.Engine;
 
 public class BarMatcher : IBarMatcher
 {
-    public virtual Fill? TryFill(Order order, Int64Bar bar, BacktestOptions options)
-    {
-        var fillPrice = GetFillPrice(order, bar, options);
-        if (fillPrice is null)
-            return null;
-
-        return new Fill(
-            order.Id,
-            order.Asset,
-            new DateTimeOffset(), //bar.Timestamp,
-            fillPrice.Value,
-            order.Quantity,
-            order.Side,
-            options.CommissionPerTrade);
-    }
-
-    protected virtual decimal? GetFillPrice(Order order, Int64Bar bar, BacktestOptions options)
+    public decimal? GetFillPrice(Order order, Int64Bar bar, BacktestOptions options)
     {
         if (order.Type == OrderType.Market)
         {
-            var slippage = options.SlippageTicks * order.Asset.TickSize;
             var direction = order.Side == OrderSide.Buy ? 1 : -1;
-            return bar.Open + slippage * direction;
+            return bar.Open + options.SlippageTicks * direction;
         }
 
         if (order.Type == OrderType.Limit || (order.Type == OrderType.StopLimit && order.Status == OrderStatus.Triggered))
@@ -49,25 +32,23 @@ public class BarMatcher : IBarMatcher
             if (order.StopPrice is not { } stopPrice)
                 return null;
 
-            var slippage = options.SlippageTicks * order.Asset.TickSize;
-
             if (order.Side == OrderSide.Buy)
             {
                 // Stop Buy triggers when price rises to/above stop
                 if (bar.Open >= stopPrice)
-                    return bar.Open + slippage; // Gap up — fill at open + slippage
+                    return bar.Open + options.SlippageTicks; // Gap up — fill at open + slippage
 
                 if (bar.High >= stopPrice)
-                    return stopPrice + slippage;
+                    return stopPrice + options.SlippageTicks;
             }
             else
             {
                 // Stop Sell triggers when price falls to/below stop
                 if (bar.Open <= stopPrice)
-                    return bar.Open - slippage; // Gap down — fill at open - slippage
+                    return bar.Open - options.SlippageTicks; // Gap down — fill at open - slippage
 
                 if (bar.Low <= stopPrice)
-                    return stopPrice - slippage;
+                    return stopPrice - options.SlippageTicks;
             }
 
             return null;
@@ -93,28 +74,22 @@ public class BarMatcher : IBarMatcher
             if (order.Side == OrderSide.Sell && limitPrice <= bar.High)
                 return limitPrice;
 
-            // Stop triggered but limit not reached — mark as Triggered for future bars
-            order.Status = OrderStatus.Triggered;
+            // Stop triggered but limit not reached — engine handles marking as Triggered
             return null;
         }
 
         return null;
     }
 
-    public virtual Fill? EvaluateSlTp(
+    public SlTpMatchResult? EvaluateSlTp(
         Order originalOrder,
         decimal entryPrice,
-        decimal remainingQuantity,
         int nextTpIndex,
         Int64Bar bar,
-        BacktestOptions options,
-        out int hitTpIndex)
+        BacktestOptions options)
     {
-        hitTpIndex = -1;
-
         var slPrice = originalOrder.StopLossPrice;
         var tpLevels = originalOrder.TakeProfitLevels;
-        var closeSide = originalOrder.Side == OrderSide.Buy ? OrderSide.Sell : OrderSide.Buy;
 
         var slHit = slPrice.HasValue && IsSlHit(originalOrder.Side, slPrice.Value, bar);
 
@@ -141,30 +116,14 @@ public class BarMatcher : IBarMatcher
 
         // Both hit — worst case: SL wins (unless UseDetailedExecutionLogic, handled by engine)
         if (slHit && tpHit && !options.UseDetailedExecutionLogic)
-        {
-            return CreateSlFill(originalOrder, closeSide, slPrice!.Value, remainingQuantity, options);
-        }
+            return new SlTpMatchResult(slPrice!.Value, 1m, IsStopLoss: true, TpIndex: -1);
 
         if (slHit && !tpHit)
-        {
-            return CreateSlFill(originalOrder, closeSide, slPrice!.Value, remainingQuantity, options);
-        }
+            return new SlTpMatchResult(slPrice!.Value, 1m, IsStopLoss: true, TpIndex: -1);
 
         // TP hit only
-        hitTpIndex = tpIndex;
-        var tpQuantity = remainingQuantity * tpClosurePercentage;
-        return new Fill(
-            originalOrder.Id,
-            originalOrder.Asset,
-            default,
-            tpPrice,
-            tpQuantity,
-            closeSide,
-            options.CommissionPerTrade);
+        return new SlTpMatchResult(tpPrice, tpClosurePercentage, IsStopLoss: false, TpIndex: tpIndex);
     }
-
-    private static Fill CreateSlFill(Order order, OrderSide closeSide, decimal slPrice, decimal quantity, BacktestOptions options) =>
-        new(order.Id, order.Asset, default, slPrice, quantity, closeSide, options.CommissionPerTrade);
 
     private static bool IsSlHit(OrderSide entrySide, decimal slPrice, Int64Bar bar) =>
         entrySide == OrderSide.Buy

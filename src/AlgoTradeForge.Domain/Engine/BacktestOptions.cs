@@ -9,6 +9,6 @@ public sealed record BacktestOptions
     public required DateTimeOffset StartTime { get; init; }
     public required DateTimeOffset EndTime { get; init; }
     public decimal CommissionPerTrade { get; init; } = 0m;
-    public decimal SlippageTicks { get; init; } = 0m;
+    public long SlippageTicks { get; init; }
     public bool UseDetailedExecutionLogic { get; init; }
 }
