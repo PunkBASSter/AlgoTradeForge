@@ -26,7 +26,7 @@ public static class TestOrders
             Quantity = quantity
         };
 
-    public static Order LimitBuy(Asset asset, decimal quantity, decimal limitPrice) =>
+    public static Order LimitBuy(Asset asset, decimal quantity, long limitPrice) =>
         new()
         {
             Id = ++_orderIdCounter,
@@ -37,7 +37,7 @@ public static class TestOrders
             LimitPrice = limitPrice
         };
 
-    public static Order LimitSell(Asset asset, decimal quantity, decimal limitPrice) =>
+    public static Order LimitSell(Asset asset, decimal quantity, long limitPrice) =>
         new()
         {
             Id = ++_orderIdCounter,
@@ -48,7 +48,7 @@ public static class TestOrders
             LimitPrice = limitPrice
         };
 
-    public static Order StopBuy(Asset asset, decimal quantity, decimal stopPrice) =>
+    public static Order StopBuy(Asset asset, decimal quantity, long stopPrice) =>
         new()
         {
             Id = ++_orderIdCounter,
@@ -59,7 +59,7 @@ public static class TestOrders
             StopPrice = stopPrice
         };
 
-    public static Order StopSell(Asset asset, decimal quantity, decimal stopPrice) =>
+    public static Order StopSell(Asset asset, decimal quantity, long stopPrice) =>
         new()
         {
             Id = ++_orderIdCounter,
@@ -70,7 +70,7 @@ public static class TestOrders
             StopPrice = stopPrice
         };
 
-    public static Order StopLimitBuy(Asset asset, decimal quantity, decimal stopPrice, decimal limitPrice) =>
+    public static Order StopLimitBuy(Asset asset, decimal quantity, long stopPrice, long limitPrice) =>
         new()
         {
             Id = ++_orderIdCounter,
@@ -82,7 +82,7 @@ public static class TestOrders
             LimitPrice = limitPrice
         };
 
-    public static Order StopLimitSell(Asset asset, decimal quantity, decimal stopPrice, decimal limitPrice) =>
+    public static Order StopLimitSell(Asset asset, decimal quantity, long stopPrice, long limitPrice) =>
         new()
         {
             Id = ++_orderIdCounter,

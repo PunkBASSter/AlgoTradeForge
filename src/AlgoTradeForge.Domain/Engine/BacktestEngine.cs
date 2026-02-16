@@ -5,11 +5,11 @@ using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Engine;
 
-public sealed class BacktestEngine(IBarMatcher barMatcher)
+public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEvaluator)
 {
     public BacktestResult Run(
         TimeSeries<Int64Bar>[] seriesPerSubscription,
-        IIntBarStrategy strategy,
+        IInt64BarStrategy strategy,
         BacktestOptions options,
         CancellationToken ct = default)
     {
@@ -33,11 +33,13 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
         var lastPrices = new Dictionary<string, decimal>();
         var equityCurve = new List<decimal>();
 
+        strategy.OnInit();
+
         while (true)
         {
             ct.ThrowIfCancellationRequested();
 
-            var minTimestamp = DateTimeOffset.MaxValue;
+            var minTimestampMs = long.MaxValue;
             var minSubIndex = -1;
 
             for (var s = 0; s < subCount; s++)
@@ -45,10 +47,10 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
                 if (cursors[s] >= seriesPerSubscription[s].Count)
                     continue;
 
-                var ts = seriesPerSubscription[s].GetTimestamp(cursors[s]);
-                if (ts < minTimestamp)
+                var ts = seriesPerSubscription[s][cursors[s]].TimestampMs;
+                if (ts < minTimestampMs)
                 {
-                    minTimestamp = ts;
+                    minTimestampMs = ts;
                     minSubIndex = s;
                 }
             }
@@ -62,25 +64,30 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
                 if (cursors[s] >= seriesPerSubscription[s].Count)
                     continue;
 
-                var ts = seriesPerSubscription[s].GetTimestamp(cursors[s]);
-                if (ts != minTimestamp)
+                var bar = seriesPerSubscription[s][cursors[s]];
+                if (bar.TimestampMs != minTimestampMs)
                     continue;
 
-                var bar = seriesPerSubscription[s][cursors[s]];
                 var subscription = subscriptions[s];
+                var barTimestamp = bar.Timestamp;
 
                 // Snapshot fill count so strategy can observe fills from this bar's processing
                 orderContext.BeginBar(fills.Count);
 
+                // Notify strategy that a new bar is starting (open price only)
+                var startBar = new Int64Bar(bar.TimestampMs, bar.Open, bar.Open, bar.Open, bar.Open, 0);
+                strategy.OnBarStart(startBar, subscription, orderContext);
+                AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp);
+
                 // Process pending orders for this asset against the new bar
-                ProcessPendingOrders(subscription.Asset, bar, minTimestamp, options, orderQueue, fills, portfolio, activeSlTpPositions, strategy);
+                ProcessPendingOrders(subscription.Asset, bar, barTimestamp, options, orderQueue, fills, portfolio, activeSlTpPositions, strategy);
 
                 // Evaluate SL/TP for active positions on this asset
-                EvaluateSlTpPositions(subscription.Asset, bar, minTimestamp, options, fills, portfolio, activeSlTpPositions, strategy);
+                EvaluateSlTpPositions(subscription.Asset, bar, barTimestamp, options, fills, portfolio, activeSlTpPositions, strategy);
 
-                // Deliver bar to strategy
-                strategy.OnBar(bar, subscription, orderContext);
-                AssignOrderIds(orderQueue, ref orderIdCounter, minTimestamp);
+                // Deliver completed bar to strategy
+                strategy.OnBarComplete(bar, subscription, orderContext);
+                AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp);
 
                 lastPrices[subscription.Asset.Name] = (decimal)bar.Close;
                 cursors[s]++;
@@ -104,36 +111,50 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
         List<Fill> fills,
         Portfolio portfolio,
         List<ActiveSlTpPosition> activeSlTpPositions,
-        IIntBarStrategy strategy)
+        IInt64BarStrategy strategy)
     {
         var pending = queue.GetPendingForAsset(asset);
         var toRemove = new List<long>();
 
         foreach (var order in pending)
         {
-            var fill = barMatcher.TryFill(order, bar, options);
-            if (fill is null)
-                continue;
-
-            var fillWithTimestamp = fill with { Timestamp = timestamp };
-
-            // Check if strategy has enough cash for buy orders
-            if (order.Side == OrderSide.Buy)
+            var fillPrice = barMatcher.GetFillPrice(order, bar, options);
+            if (fillPrice is null)
             {
-                var cost = fillWithTimestamp.Price * fillWithTimestamp.Quantity * order.Asset.Multiplier
-                           + fillWithTimestamp.Commission;
-                if (cost > portfolio.Cash)
+                // StopLimit: stop was triggered but limit not reached — mark as Triggered
+                if (order.Type == OrderType.StopLimit && order.Status == OrderStatus.Pending && order.StopPrice is { } stopPrice)
                 {
-                    order.Status = OrderStatus.Rejected;
-                    toRemove.Add(order.Id);
-                    continue;
+                    var stopTriggered = order.Side == OrderSide.Buy
+                        ? bar.Open >= stopPrice || bar.High >= stopPrice
+                        : bar.Open <= stopPrice || bar.Low <= stopPrice;
+
+                    if (stopTriggered)
+                        order.Status = OrderStatus.Triggered;
                 }
+
+                continue;
             }
 
+            if (!riskEvaluator.CanFill(order, fillPrice.Value, portfolio, options))
+            {
+                order.Status = OrderStatus.Rejected;
+                toRemove.Add(order.Id);
+                continue;
+            }
+
+            var fill = new Fill(
+                order.Id,
+                order.Asset,
+                timestamp,
+                fillPrice.Value,
+                order.Quantity,
+                order.Side,
+                options.CommissionPerTrade);
+
             order.Status = OrderStatus.Filled;
-            fills.Add(fillWithTimestamp);
-            portfolio.Apply(fillWithTimestamp);
-            strategy.OnTrade(fillWithTimestamp, order);
+            fills.Add(fill);
+            portfolio.Apply(fill);
+            strategy.OnTrade(fill, order);
             toRemove.Add(order.Id);
 
             // Track SL/TP if the order has stop loss or take profit levels
@@ -142,8 +163,8 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
                 activeSlTpPositions.Add(new ActiveSlTpPosition
                 {
                     OriginalOrder = order,
-                    EntryPrice = fillWithTimestamp.Price,
-                    RemainingQuantity = fillWithTimestamp.Quantity,
+                    EntryPrice = fill.Price,
+                    RemainingQuantity = fill.Quantity,
                     NextTpIndex = 0
                 });
             }
@@ -161,7 +182,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
         List<Fill> fills,
         Portfolio portfolio,
         List<ActiveSlTpPosition> activeSlTpPositions,
-        IIntBarStrategy strategy)
+        IInt64BarStrategy strategy)
     {
         for (var i = activeSlTpPositions.Count - 1; i >= 0; i--)
         {
@@ -169,32 +190,43 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
             if (pos.OriginalOrder.Asset != asset)
                 continue;
 
-            var slTpFill = barMatcher.EvaluateSlTp(
+            var result = barMatcher.EvaluateSlTp(
                 pos.OriginalOrder,
                 pos.EntryPrice,
-                pos.RemainingQuantity,
                 pos.NextTpIndex,
                 bar,
-                options,
-                out var hitTpIndex);
+                options);
 
-            if (slTpFill is null)
+            if (result is not { } match)
                 continue;
 
-            var fillWithTimestamp = slTpFill with { Timestamp = timestamp };
-            fills.Add(fillWithTimestamp);
-            portfolio.Apply(fillWithTimestamp);
-            strategy.OnTrade(fillWithTimestamp, pos.OriginalOrder);
+            var closeSide = pos.OriginalOrder.Side == OrderSide.Buy ? OrderSide.Sell : OrderSide.Buy;
+            var quantity = match.IsStopLoss
+                ? pos.RemainingQuantity
+                : pos.RemainingQuantity * match.ClosurePercentage;
 
-            if (hitTpIndex < 0)
+            var fill = new Fill(
+                pos.OriginalOrder.Id,
+                pos.OriginalOrder.Asset,
+                timestamp,
+                match.Price,
+                quantity,
+                closeSide,
+                options.CommissionPerTrade);
+
+            fills.Add(fill);
+            portfolio.Apply(fill);
+            strategy.OnTrade(fill, pos.OriginalOrder);
+
+            if (match.IsStopLoss)
             {
                 // SL closes entire position
                 activeSlTpPositions.RemoveAt(i);
             }
             else
             {
-                pos.RemainingQuantity -= slTpFill.Quantity;
-                pos.NextTpIndex = hitTpIndex + 1;
+                pos.RemainingQuantity -= quantity;
+                pos.NextTpIndex = match.TpIndex + 1;
 
                 if (pos.RemainingQuantity <= 0 ||
                     pos.OriginalOrder.TakeProfitLevels is null ||
@@ -232,7 +264,6 @@ internal sealed class BacktestOrderContext : IOrderContext
     private readonly OrderQueue _queue;
     private readonly List<Fill> _allFills;
     private int _fillSnapshotStart;
-    private long _nextOrderId;
 
     public BacktestOrderContext(OrderQueue queue, List<Fill> allFills)
     {
@@ -247,9 +278,6 @@ internal sealed class BacktestOrderContext : IOrderContext
 
     public long Submit(Order order)
     {
-        var id = ++_nextOrderId;
-        // Create a new order with the assigned ID if the submitted one has Id=0
-        // The caller should set the Id; if they used 'required', it's already set.
         _queue.Submit(order);
         return order.Id;
     }

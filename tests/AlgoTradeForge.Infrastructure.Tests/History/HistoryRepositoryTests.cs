@@ -27,9 +27,11 @@ public class HistoryRepositoryTests
 
     private TimeSeries<Int64Bar> MakeMinuteSeries(int count)
     {
-        var series = new TimeSeries<Int64Bar>(Start, OneMinute);
+        var series = new TimeSeries<Int64Bar>();
+        var startMs = Start.ToUnixTimeMilliseconds();
+        var stepMs = (long)OneMinute.TotalMilliseconds;
         for (var i = 0; i < count; i++)
-            series.Add(new Int64Bar(100 + i, 200 + i, 50 + i, 150 + i, 1000));
+            series.Add(new Int64Bar(startMs + i * stepMs, 100 + i, 200 + i, 50 + i, 150 + i, 1000));
         return series;
     }
 
@@ -44,7 +46,6 @@ public class HistoryRepositoryTests
         var result = _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
 
         Assert.Equal(10, result.Count);
-        Assert.Equal(OneMinute, result.Step);
     }
 
     [Fact]
@@ -58,7 +59,6 @@ public class HistoryRepositoryTests
         var result = _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
 
         Assert.Equal(2, result.Count);
-        Assert.Equal(TimeSpan.FromMinutes(5), result.Step);
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class HistoryRepositoryTests
     public void Load_EmptyData_ReturnsEmptySeries()
     {
         var sub = new DataSubscription(BtcUsdt, OneMinute);
-        var raw = new TimeSeries<Int64Bar>(Start, OneMinute);
+        var raw = new TimeSeries<Int64Bar>();
         _loader.Load("/data", "Binance", "BTCUSDT", 2,
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), OneMinute).Returns(raw);
 
@@ -97,12 +97,14 @@ public class HistoryRepositoryTests
     public void Load_ResampledOhlcv_IsCorrect()
     {
         var sub = new DataSubscription(BtcUsdt, TimeSpan.FromMinutes(5));
-        var series = new TimeSeries<Int64Bar>(Start, OneMinute);
-        series.Add(new Int64Bar(100, 110, 90, 105, 1000));
-        series.Add(new Int64Bar(105, 115, 95, 108, 2000));
-        series.Add(new Int64Bar(108, 120, 85, 112, 1500));
-        series.Add(new Int64Bar(112, 118, 92, 110, 1800));
-        series.Add(new Int64Bar(110, 125, 88, 115, 2200));
+        var series = new TimeSeries<Int64Bar>();
+        var ms = Start.ToUnixTimeMilliseconds();
+        var step = (long)OneMinute.TotalMilliseconds;
+        series.Add(new Int64Bar(ms, 100, 110, 90, 105, 1000));
+        series.Add(new Int64Bar(ms + step, 105, 115, 95, 108, 2000));
+        series.Add(new Int64Bar(ms + 2 * step, 108, 120, 85, 112, 1500));
+        series.Add(new Int64Bar(ms + 3 * step, 112, 118, 92, 110, 1800));
+        series.Add(new Int64Bar(ms + 4 * step, 110, 125, 88, 115, 2200));
         _loader.Load("/data", "Binance", "BTCUSDT", 2,
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), OneMinute).Returns(series);
 

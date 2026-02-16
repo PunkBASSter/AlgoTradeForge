@@ -14,8 +14,7 @@ public sealed class CsvInt64BarLoader : IInt64BarLoader
         DateOnly to,
         TimeSpan interval)
     {
-        var startTime = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var series = new TimeSeries<Int64Bar>(startTime, interval);
+        var series = new TimeSeries<Int64Bar>();
 
         var current = new DateOnly(from.Year, from.Month, 1);
         var endMonth = new DateOnly(to.Year, to.Month, 1);
@@ -41,6 +40,7 @@ public sealed class CsvInt64BarLoader : IInt64BarLoader
                         continue;
 
                     var bar = new Int64Bar(
+                        timestamp.ToUnixTimeMilliseconds(),
                         long.Parse(parts[1]),
                         long.Parse(parts[2]),
                         long.Parse(parts[3]),

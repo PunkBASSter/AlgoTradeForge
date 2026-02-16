@@ -23,8 +23,8 @@ public class OrderQueueTests
     public void Submit_MultipleOrders_PreservesFifoOrder()
     {
         var order1 = TestOrders.MarketBuy(TestAssets.Aapl, 100m);
-        var order2 = TestOrders.LimitBuy(TestAssets.Aapl, 50m, 150m);
-        var order3 = TestOrders.StopBuy(TestAssets.Aapl, 25m, 160m);
+        var order2 = TestOrders.LimitBuy(TestAssets.Aapl, 50m, 150L);
+        var order3 = TestOrders.StopBuy(TestAssets.Aapl, 25m, 160L);
 
         _queue.Submit(order1);
         _queue.Submit(order2);
@@ -75,7 +75,7 @@ public class OrderQueueTests
     {
         var aaplBuy = TestOrders.MarketBuy(TestAssets.Aapl, 100m);
         var btcBuy = TestOrders.MarketBuy(TestAssets.BtcUsdt, 1m);
-        var aaplSell = TestOrders.LimitSell(TestAssets.Aapl, 50m, 160m);
+        var aaplSell = TestOrders.LimitSell(TestAssets.Aapl, 50m, 160L);
 
         _queue.Submit(aaplBuy);
         _queue.Submit(btcBuy);
@@ -106,7 +106,7 @@ public class OrderQueueTests
     [Fact]
     public void GetPendingForAsset_IncludesTriggeredOrders()
     {
-        var order = TestOrders.StopBuy(TestAssets.Aapl, 100m, 160m);
+        var order = TestOrders.StopBuy(TestAssets.Aapl, 100m, 160L);
         order.Status = OrderStatus.Triggered;
         _queue.Submit(order);
 
@@ -129,7 +129,7 @@ public class OrderQueueTests
     [Fact]
     public void GtcPersistence_PendingOrderSurvivesManyTicks()
     {
-        var order = TestOrders.LimitBuy(TestAssets.Aapl, 100m, 14000m);
+        var order = TestOrders.LimitBuy(TestAssets.Aapl, 100m, 14000L);
         _queue.Submit(order);
 
         // Simulate 100+ bar ticks — order should persist as GTC
