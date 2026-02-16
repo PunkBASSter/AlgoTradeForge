@@ -13,9 +13,11 @@ public class MarketDataSnapshotTests
 
     private static TimeSeries<Int64Bar> MakeSeries(int count = 1)
     {
-        var series = new TimeSeries<Int64Bar>(Start, OneMinute);
+        var series = new TimeSeries<Int64Bar>();
+        var startMs = Start.ToUnixTimeMilliseconds();
+        var stepMs = (long)OneMinute.TotalMilliseconds;
         for (var i = 0; i < count; i++)
-            series.Add(new Int64Bar(100, 200, 50, 150, 1000));
+            series.Add(new Int64Bar(startMs + i * stepMs, 100, 200, 50, 150, 1000));
         return series;
     }
 

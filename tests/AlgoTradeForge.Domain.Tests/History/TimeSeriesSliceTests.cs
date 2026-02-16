@@ -10,9 +10,11 @@ public class TimeSeriesSliceTests
 
     private static TimeSeries<Int64Bar> MakeSeries(int count)
     {
-        var series = new TimeSeries<Int64Bar>(Start, OneMinute);
+        var series = new TimeSeries<Int64Bar>();
+        var startMs = Start.ToUnixTimeMilliseconds();
+        var stepMs = (long)OneMinute.TotalMilliseconds;
         for (var i = 0; i < count; i++)
-            series.Add(new Int64Bar(100 + i, 200 + i, 50 + i, 150 + i, 1000 + i));
+            series.Add(new Int64Bar(startMs + i * stepMs, 100 + i, 200 + i, 50 + i, 150 + i, 1000 + i));
         return series;
     }
 
@@ -22,9 +24,9 @@ public class TimeSeriesSliceTests
         var series = MakeSeries(10); // bars at minute 0..9
 
         // Slice [minute 2, minute 5) => bars at index 2, 3, 4
-        var from = Start + TimeSpan.FromMinutes(2);
-        var to = Start + TimeSpan.FromMinutes(5);
-        var sliced = series.Slice(from, to);
+        var fromMs = (Start + TimeSpan.FromMinutes(2)).ToUnixTimeMilliseconds();
+        var toMs = (Start + TimeSpan.FromMinutes(5)).ToUnixTimeMilliseconds();
+        var sliced = series.Slice(fromMs, toMs);
 
         Assert.Equal(3, sliced.Count);
         Assert.Equal(102, sliced[0].Open);
@@ -33,20 +35,11 @@ public class TimeSeriesSliceTests
     }
 
     [Fact]
-    public void Slice_PreservesStep()
-    {
-        var series = MakeSeries(10);
-        var sliced = series.Slice(Start, Start + TimeSpan.FromMinutes(3));
-
-        Assert.Equal(OneMinute, sliced.Step);
-    }
-
-    [Fact]
     public void Slice_EmptyRange_ReturnsEmptySeries()
     {
         var series = MakeSeries(10);
-        var same = Start + TimeSpan.FromMinutes(5);
-        var sliced = series.Slice(same, same);
+        var sameMs = (Start + TimeSpan.FromMinutes(5)).ToUnixTimeMilliseconds();
+        var sliced = series.Slice(sameMs, sameMs);
 
         Assert.Empty(sliced);
     }
@@ -55,7 +48,9 @@ public class TimeSeriesSliceTests
     public void Slice_FromAfterTo_ReturnsEmptySeries()
     {
         var series = MakeSeries(10);
-        var sliced = series.Slice(Start + TimeSpan.FromMinutes(5), Start + TimeSpan.FromMinutes(2));
+        var fromMs = (Start + TimeSpan.FromMinutes(5)).ToUnixTimeMilliseconds();
+        var toMs = (Start + TimeSpan.FromMinutes(2)).ToUnixTimeMilliseconds();
+        var sliced = series.Slice(fromMs, toMs);
 
         Assert.Empty(sliced);
     }
@@ -64,7 +59,9 @@ public class TimeSeriesSliceTests
     public void Slice_EmptySeries_ReturnsEmpty()
     {
         var series = MakeSeries(0);
-        var sliced = series.Slice(Start, Start + TimeSpan.FromMinutes(5));
+        var fromMs = Start.ToUnixTimeMilliseconds();
+        var toMs = (Start + TimeSpan.FromMinutes(5)).ToUnixTimeMilliseconds();
+        var sliced = series.Slice(fromMs, toMs);
 
         Assert.Empty(sliced);
     }
@@ -73,7 +70,9 @@ public class TimeSeriesSliceTests
     public void Slice_EntireRange_ReturnsAllBars()
     {
         var series = MakeSeries(5);
-        var sliced = series.Slice(Start, Start + TimeSpan.FromMinutes(5));
+        var fromMs = Start.ToUnixTimeMilliseconds();
+        var toMs = (Start + TimeSpan.FromMinutes(5)).ToUnixTimeMilliseconds();
+        var sliced = series.Slice(fromMs, toMs);
 
         Assert.Equal(5, sliced.Count);
     }
@@ -82,7 +81,9 @@ public class TimeSeriesSliceTests
     public void Slice_BeyondEnd_ClampsToCount()
     {
         var series = MakeSeries(5);
-        var sliced = series.Slice(Start, Start + TimeSpan.FromMinutes(100));
+        var fromMs = Start.ToUnixTimeMilliseconds();
+        var toMs = (Start + TimeSpan.FromMinutes(100)).ToUnixTimeMilliseconds();
+        var sliced = series.Slice(fromMs, toMs);
 
         Assert.Equal(5, sliced.Count);
     }
@@ -91,7 +92,9 @@ public class TimeSeriesSliceTests
     public void Slice_BeforeStart_ClampsToZero()
     {
         var series = MakeSeries(5);
-        var sliced = series.Slice(Start - TimeSpan.FromMinutes(10), Start + TimeSpan.FromMinutes(3));
+        var fromMs = (Start - TimeSpan.FromMinutes(10)).ToUnixTimeMilliseconds();
+        var toMs = (Start + TimeSpan.FromMinutes(3)).ToUnixTimeMilliseconds();
+        var sliced = series.Slice(fromMs, toMs);
 
         Assert.Equal(3, sliced.Count);
         Assert.Equal(100, sliced[0].Open);

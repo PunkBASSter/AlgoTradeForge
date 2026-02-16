@@ -11,22 +11,26 @@ public class TimeSeriesResampleTests
     private static TimeSeries<Int64Bar> MakeMinuteBars(int count,
         long openBase = 100, long highBase = 200, long lowBase = 50, long closeBase = 150, long volumeBase = 1000)
     {
-        var series = new TimeSeries<Int64Bar>(Start, OneMinute);
+        var series = new TimeSeries<Int64Bar>();
+        var startMs = Start.ToUnixTimeMilliseconds();
+        var stepMs = (long)OneMinute.TotalMilliseconds;
         for (var i = 0; i < count; i++)
-            series.Add(new Int64Bar(openBase + i, highBase + i, lowBase + i, closeBase + i, volumeBase));
+            series.Add(new Int64Bar(startMs + i * stepMs, openBase + i, highBase + i, lowBase + i, closeBase + i, volumeBase));
         return series;
     }
 
     [Fact]
     public void Resample_1mTo5m_AggregatesCorrectly()
     {
-        // 5 one-minute bars → 1 five-minute bar
-        var series = new TimeSeries<Int64Bar>(Start, OneMinute);
-        series.Add(new Int64Bar(100, 110, 90, 105, 1000));
-        series.Add(new Int64Bar(105, 115, 95, 108, 2000));
-        series.Add(new Int64Bar(108, 120, 85, 112, 1500));
-        series.Add(new Int64Bar(112, 118, 92, 110, 1800));
-        series.Add(new Int64Bar(110, 125, 88, 115, 2200));
+        // 5 one-minute bars -> 1 five-minute bar
+        var series = new TimeSeries<Int64Bar>();
+        var startMs = Start.ToUnixTimeMilliseconds();
+        var stepMs = (long)OneMinute.TotalMilliseconds;
+        series.Add(new Int64Bar(startMs, 100, 110, 90, 105, 1000));
+        series.Add(new Int64Bar(startMs + stepMs, 105, 115, 95, 108, 2000));
+        series.Add(new Int64Bar(startMs + 2 * stepMs, 108, 120, 85, 112, 1500));
+        series.Add(new Int64Bar(startMs + 3 * stepMs, 112, 118, 92, 110, 1800));
+        series.Add(new Int64Bar(startMs + 4 * stepMs, 110, 125, 88, 115, 2200));
 
         var resampled = series.Resample(TimeSpan.FromMinutes(5));
 
@@ -37,6 +41,7 @@ public class TimeSeriesResampleTests
         Assert.Equal(85, bar.Low);      // min low
         Assert.Equal(115, bar.Close);   // last bar's close
         Assert.Equal(8500, bar.Volume); // sum of volumes
+        Assert.Equal(startMs, bar.TimestampMs); // timestamp of first bar in group
     }
 
     [Fact]
@@ -58,7 +63,7 @@ public class TimeSeriesResampleTests
     [Fact]
     public void Resample_PartialFinalGroup_Handled()
     {
-        // 7 bars resampled to 5-min → group of 5 + group of 2
+        // 7 bars resampled to 5-min -> group of 5 + group of 2
         var series = MakeMinuteBars(7);
 
         var resampled = series.Resample(TimeSpan.FromMinutes(5));
@@ -81,30 +86,11 @@ public class TimeSeriesResampleTests
     }
 
     [Fact]
-    public void Resample_SameInterval_Throws()
-    {
-        var series = MakeMinuteBars(5);
-
-        Assert.Throws<ArgumentException>(() => series.Resample(OneMinute));
-    }
-
-    [Fact]
     public void Resample_SmallerTarget_Throws()
     {
         var series = MakeMinuteBars(5);
 
         Assert.Throws<ArgumentException>(() => series.Resample(TimeSpan.FromSeconds(30)));
-    }
-
-    [Fact]
-    public void Resample_NonMultiple_Throws()
-    {
-        // 3-minute source bars → 7-minute target is not an exact multiple (7 % 3 != 0)
-        var series = new TimeSeries<Int64Bar>(Start, TimeSpan.FromMinutes(3));
-        for (var i = 0; i < 5; i++)
-            series.Add(new Int64Bar(100 + i, 200 + i, 50 + i, 150 + i, 1000));
-
-        Assert.Throws<ArgumentException>(() => series.Resample(TimeSpan.FromMinutes(7)));
     }
 
     [Fact]
@@ -115,6 +101,27 @@ public class TimeSeriesResampleTests
         var resampled = series.Resample(TimeSpan.FromMinutes(5));
 
         Assert.Empty(resampled);
-        Assert.Equal(TimeSpan.FromMinutes(5), resampled.Step);
+    }
+
+    [Fact]
+    public void Resample_GapInSource_ProducesNoBarForGap()
+    {
+        // Bars at minute 0,1,2 then gap, then bars at minute 10,11,12
+        var series = new TimeSeries<Int64Bar>();
+        var startMs = Start.ToUnixTimeMilliseconds();
+        var stepMs = (long)OneMinute.TotalMilliseconds;
+        for (var i = 0; i < 3; i++)
+            series.Add(new Int64Bar(startMs + i * stepMs, 100 + i, 200 + i, 50 + i, 150 + i, 1000));
+        for (var i = 10; i < 13; i++)
+            series.Add(new Int64Bar(startMs + i * stepMs, 100 + i, 200 + i, 50 + i, 150 + i, 1000));
+
+        var resampled = series.Resample(TimeSpan.FromMinutes(5));
+
+        // Group 0-4: bars at 0,1,2 only (partial)
+        // Group 5-9: no bars (gap) -> no output bar
+        // Group 10-14: bars at 10,11,12 only (partial)
+        Assert.Equal(2, resampled.Count);
+        Assert.Equal(100, resampled[0].Open);
+        Assert.Equal(110, resampled[1].Open);
     }
 }

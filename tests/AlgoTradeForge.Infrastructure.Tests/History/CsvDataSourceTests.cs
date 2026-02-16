@@ -24,9 +24,11 @@ public class CsvDataSourceTests
 
     private TimeSeries<Int64Bar> MakeMinuteSeries(int count)
     {
-        var series = new TimeSeries<Int64Bar>(Start, OneMinute);
+        var series = new TimeSeries<Int64Bar>();
+        var startMs = Start.ToUnixTimeMilliseconds();
+        var stepMs = (long)OneMinute.TotalMilliseconds;
         for (var i = 0; i < count; i++)
-            series.Add(new Int64Bar(100 + i, 200 + i, 50 + i, 150 + i, 1000));
+            series.Add(new Int64Bar(startMs + i * stepMs, 100 + i, 200 + i, 50 + i, 150 + i, 1000));
         return series;
     }
 
@@ -57,7 +59,6 @@ public class CsvDataSourceTests
         var result = source.GetData(query);
 
         Assert.Equal(10, result.Count);
-        Assert.Equal(OneMinute, result.Step);
     }
 
     [Fact]
@@ -78,7 +79,6 @@ public class CsvDataSourceTests
         var result = source.GetData(query);
 
         Assert.Equal(2, result.Count); // 10 bars / 5 = 2
-        Assert.Equal(TimeSpan.FromMinutes(5), result.Step);
     }
 
     [Fact]

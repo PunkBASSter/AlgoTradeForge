@@ -39,7 +39,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
         {
             ct.ThrowIfCancellationRequested();
 
-            var minTimestamp = DateTimeOffset.MaxValue;
+            var minTimestampMs = long.MaxValue;
             var minSubIndex = -1;
 
             for (var s = 0; s < subCount; s++)
@@ -47,10 +47,10 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
                 if (cursors[s] >= seriesPerSubscription[s].Count)
                     continue;
 
-                var ts = seriesPerSubscription[s].GetTimestamp(cursors[s]);
-                if (ts < minTimestamp)
+                var ts = seriesPerSubscription[s][cursors[s]].TimestampMs;
+                if (ts < minTimestampMs)
                 {
-                    minTimestamp = ts;
+                    minTimestampMs = ts;
                     minSubIndex = s;
                 }
             }
@@ -64,25 +64,25 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
                 if (cursors[s] >= seriesPerSubscription[s].Count)
                     continue;
 
-                var ts = seriesPerSubscription[s].GetTimestamp(cursors[s]);
-                if (ts != minTimestamp)
+                var bar = seriesPerSubscription[s][cursors[s]];
+                if (bar.TimestampMs != minTimestampMs)
                     continue;
 
-                var bar = seriesPerSubscription[s][cursors[s]];
                 var subscription = subscriptions[s];
+                var barTimestamp = bar.Timestamp;
 
                 // Snapshot fill count so strategy can observe fills from this bar's processing
                 orderContext.BeginBar(fills.Count);
 
                 // Process pending orders for this asset against the new bar
-                ProcessPendingOrders(subscription.Asset, bar, minTimestamp, options, orderQueue, fills, portfolio, activeSlTpPositions, strategy);
+                ProcessPendingOrders(subscription.Asset, bar, barTimestamp, options, orderQueue, fills, portfolio, activeSlTpPositions, strategy);
 
                 // Evaluate SL/TP for active positions on this asset
-                EvaluateSlTpPositions(subscription.Asset, bar, minTimestamp, options, fills, portfolio, activeSlTpPositions, strategy);
+                EvaluateSlTpPositions(subscription.Asset, bar, barTimestamp, options, fills, portfolio, activeSlTpPositions, strategy);
 
                 // Deliver bar to strategy
-                strategy.OnBar(minTimestamp, bar, subscription, orderContext);
-                AssignOrderIds(orderQueue, ref orderIdCounter, minTimestamp);
+                strategy.OnBar(bar, subscription, orderContext);
+                AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp);
 
                 lastPrices[subscription.Asset.Name] = (decimal)bar.Close;
                 cursors[s]++;
