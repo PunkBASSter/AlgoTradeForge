@@ -1,9 +1,11 @@
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
+using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Strategy.ZigZagBreakout;
 
+[StrategyKey("ZigZagBreakout")]
 public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters) : StrategyBase<ZigZagBreakoutParams>(parameters)
 {
     private DeltaZigZag _dzz = null!;
