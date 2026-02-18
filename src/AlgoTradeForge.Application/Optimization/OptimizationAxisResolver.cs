@@ -24,16 +24,8 @@ public sealed class OptimizationAxisResolver
             });
         }
 
-        // Validate no unknown override names
-        if (overrides is not null)
-        {
-            var knownNames = descriptor.Axes.Select(a => a.Name).ToHashSet();
-            foreach (var key in overrides.Keys)
-            {
-                if (!knownNames.Contains(key))
-                    throw new ArgumentException($"Unknown parameter name '{key}' for strategy '{descriptor.StrategyName}'.");
-            }
-        }
+        ValidateNoUnknownOverrides(descriptor.Axes, overrides,
+            key => $"Unknown parameter name '{key}' for strategy '{descriptor.StrategyName}'.");
 
         return resolved;
     }
@@ -142,12 +134,31 @@ public sealed class OptimizationAxisResolver
             resolved.Add(axis switch
             {
                 NumericRangeAxis numeric => ResolveNumeric(numeric, axisOverride),
+                DiscreteSetAxis discrete => ResolveDiscrete(discrete, axisOverride),
                 ModuleSlotAxis module => ResolveModuleSlot(module, axisOverride),
                 _ => throw new InvalidOperationException($"Unknown axis type in module: {axis.GetType().Name}")
             });
         }
 
+        ValidateNoUnknownOverrides(axes, overrides,
+            key => $"Unknown parameter name '{key}' in module variant override.");
+
         return resolved;
+    }
+
+    private static void ValidateNoUnknownOverrides(
+        IReadOnlyList<ParameterAxis> axes,
+        Dictionary<string, OptimizationAxisOverride>? overrides,
+        Func<string, string> messageFactory)
+    {
+        if (overrides is null) return;
+
+        var knownNames = axes.Select(a => a.Name).ToHashSet();
+        foreach (var key in overrides.Keys)
+        {
+            if (!knownNames.Contains(key))
+                throw new ArgumentException(messageFactory(key));
+        }
     }
 
     private static void ValidateWithinBounds(NumericRangeAxis axis, decimal min, decimal max)

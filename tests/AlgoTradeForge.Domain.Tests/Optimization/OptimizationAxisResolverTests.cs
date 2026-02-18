@@ -202,4 +202,63 @@ public class OptimizationAxisResolverTests
         var discrete = Assert.IsType<ResolvedDiscreteAxis>(resolved[0]);
         Assert.Equal(2, discrete.Values.Count);
     }
+
+    [Fact]
+    public void ModuleSlot_UnknownSubParameterName_Throws()
+    {
+        var descriptor = CreateDescriptor(
+            new ModuleSlotAxis("Exit", typeof(object),
+            [
+                new ModuleVariantDescriptor("AtrExit", typeof(object), typeof(object),
+                [
+                    new NumericRangeAxis("Mult", 1m, 5m, 0.5m, typeof(decimal))
+                ])
+            ]));
+
+        var overrides = new Dictionary<string, OptimizationAxisOverride>
+        {
+            ["Exit"] = new ModuleChoiceOverride(new Dictionary<string, Dictionary<string, OptimizationAxisOverride>?>
+            {
+                ["AtrExit"] = new Dictionary<string, OptimizationAxisOverride>
+                {
+                    ["Multt"] = new RangeOverride(2m, 3m, 0.5m) // typo: "Multt" instead of "Mult"
+                }
+            })
+        };
+
+        Assert.Throws<ArgumentException>(() => _resolver.Resolve(descriptor, overrides));
+    }
+
+    [Fact]
+    public void ModuleSlot_DiscreteSubAxis_Resolved()
+    {
+        var descriptor = CreateDescriptor(
+            new ModuleSlotAxis("Exit", typeof(object),
+            [
+                new ModuleVariantDescriptor("AtrExit", typeof(object), typeof(object),
+                [
+                    new DiscreteSetAxis("Mode", ["Fast", "Normal", "Slow"], typeof(string))
+                ])
+            ]));
+
+        var overrides = new Dictionary<string, OptimizationAxisOverride>
+        {
+            ["Exit"] = new ModuleChoiceOverride(new Dictionary<string, Dictionary<string, OptimizationAxisOverride>?>
+            {
+                ["AtrExit"] = new Dictionary<string, OptimizationAxisOverride>
+                {
+                    ["Mode"] = new DiscreteSetOverride(["Fast", "Slow"])
+                }
+            })
+        };
+
+        var resolved = _resolver.Resolve(descriptor, overrides);
+        var moduleAxis = Assert.IsType<ResolvedModuleSlotAxis>(resolved[0]);
+        Assert.Single(moduleAxis.Variants);
+
+        var subAxes = moduleAxis.Variants[0].SubAxes;
+        Assert.Single(subAxes);
+        var discrete = Assert.IsType<ResolvedDiscreteAxis>(subAxes[0]);
+        Assert.Equal(2, discrete.Values.Count);
+    }
 }
