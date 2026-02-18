@@ -112,7 +112,10 @@ public class BadNonNumericParams : StrategyParamsBase
 public interface ITestModule;
 
 [ModuleKey("TestImpl")]
-public class TestModuleImpl(TestModuleParams p) : ITestModule;
+public class TestModuleImpl : ITestModule
+{
+    public TestModuleImpl(TestModuleParams _) { }
+}
 
 public class TestModuleParams : ModuleParamsBase
 {

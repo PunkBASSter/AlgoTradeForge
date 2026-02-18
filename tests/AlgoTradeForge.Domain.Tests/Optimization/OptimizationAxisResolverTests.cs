@@ -230,6 +230,39 @@ public class OptimizationAxisResolverTests
     }
 
     [Fact]
+    public void ExpandRange_0To3Step03_Produces11Values()
+    {
+        var descriptor = CreateDescriptor(
+            new NumericRangeAxis("X", 0m, 100m, 0.1m, typeof(decimal)));
+
+        var overrides = new Dictionary<string, OptimizationAxisOverride>
+        {
+            ["X"] = new RangeOverride(0m, 3.0m, 0.3m)
+        };
+
+        var resolved = _resolver.Resolve(descriptor, overrides);
+        var numeric = Assert.IsType<ResolvedNumericAxis>(resolved[0]);
+        Assert.Equal(11, numeric.Values.Count);
+    }
+
+    [Fact]
+    public void ExpandRange_0To1Step01_Produces11Values_LastIsOne()
+    {
+        var descriptor = CreateDescriptor(
+            new NumericRangeAxis("X", 0m, 100m, 0.1m, typeof(decimal)));
+
+        var overrides = new Dictionary<string, OptimizationAxisOverride>
+        {
+            ["X"] = new RangeOverride(0m, 1.0m, 0.1m)
+        };
+
+        var resolved = _resolver.Resolve(descriptor, overrides);
+        var numeric = Assert.IsType<ResolvedNumericAxis>(resolved[0]);
+        Assert.Equal(11, numeric.Values.Count);
+        Assert.Equal(1.0m, numeric.Values[^1]);
+    }
+
+    [Fact]
     public void ModuleSlot_DiscreteSubAxis_Resolved()
     {
         var descriptor = CreateDescriptor(

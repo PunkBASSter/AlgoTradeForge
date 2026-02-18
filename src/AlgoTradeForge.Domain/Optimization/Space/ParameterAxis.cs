@@ -9,6 +9,9 @@ public sealed record NumericRangeAxis(
     decimal Step,
     Type ClrType) : ParameterAxis(Name);
 
+/// <summary>
+/// Axis with an explicit set of allowed values. Not yet emitted by the builder; serves as an extension point.
+/// </summary>
 public sealed record DiscreteSetAxis(
     string Name,
     IReadOnlyList<object> Values,

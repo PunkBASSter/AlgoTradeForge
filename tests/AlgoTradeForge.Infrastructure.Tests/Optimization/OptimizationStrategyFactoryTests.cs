@@ -79,6 +79,41 @@ public class OptimizationStrategyFactoryTests
     }
 
     [Fact]
+    public void Create_WithDictionary_UnknownProperty_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            _factory.Create("ZigZagBreakout", new Dictionary<string, object>
+            {
+                ["DzzDpeth"] = 8m // typo
+            }));
+        Assert.Contains("DzzDpeth", ex.Message);
+    }
+
+    [Fact]
+    public void Create_WithCombination_UnknownProperty_Throws()
+    {
+        var combination = new ParameterCombination(new Dictionary<string, object>
+        {
+            ["Nonexistent"] = 42m
+        });
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            _factory.Create("ZigZagBreakout", combination));
+        Assert.Contains("Nonexistent", ex.Message);
+    }
+
+    [Fact]
+    public void Create_DataSubscriptionsKey_SilentlySkipped()
+    {
+        var strategy = _factory.Create("ZigZagBreakout", new Dictionary<string, object>
+        {
+            ["DataSubscriptions"] = new object()
+        });
+
+        Assert.NotNull(strategy);
+    }
+
+    [Fact]
     public void Create_WithModuleSlot_CreatesModuleInstance()
     {
         var builder = new SpaceDescriptorBuilder(

@@ -56,8 +56,7 @@ public class ZigZagBreakoutStrategyTests
         TimeSpan tf,
         decimal riskPct = 1m,
         decimal minSize = 1m,
-        decimal maxSize = 100m,
-        decimal initialCash = 100_000m)
+        decimal maxSize = 100m)
     {
         var sub = new DataSubscription(asset, tf);
         return new ZigZagBreakoutStrategy(new ZigZagBreakoutParams
@@ -67,7 +66,6 @@ public class ZigZagBreakoutStrategyTests
             RiskPercentPerTrade = riskPct,
             MinPositionSize = minSize,
             MaxPositionSize = maxSize,
-            InitialCash = initialCash,
             DataSubscriptions = [sub],
         });
     }
@@ -105,7 +103,6 @@ public class ZigZagBreakoutStrategyTests
         {
             DzzDepth = 5m,
             MinimumThreshold = 5000L, // Very high threshold → no reversals → < 3 pivots
-            InitialCash = 100_000m,
             DataSubscriptions = [sub],
         });
 
@@ -165,7 +162,7 @@ public class ZigZagBreakoutStrategyTests
     }
 
     [Fact]
-    public void OnInit_InitializesIndicatorAndEquity()
+    public void OnInit_InitializesIndicator()
     {
         var asset = TestAssets.Aapl;
         var strategy = CreateStrategy(asset, OneMinute);

@@ -4,6 +4,7 @@ namespace AlgoTradeForge.Domain.Strategy;
 
 public interface IOrderContext
 {
+    decimal Cash { get; }
     long Submit(Order order);
     bool Cancel(long orderId);
     IReadOnlyList<Order> GetPendingOrders();

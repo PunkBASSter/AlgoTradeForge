@@ -15,5 +15,4 @@ public class ZigZagBreakoutParams : StrategyParamsBase
 
     public decimal MinPositionSize { get; init; } = 0.01m;
     public decimal MaxPositionSize { get; init; } = 1000m;
-    public decimal InitialCash { get; init; } = 10_000m;
 }

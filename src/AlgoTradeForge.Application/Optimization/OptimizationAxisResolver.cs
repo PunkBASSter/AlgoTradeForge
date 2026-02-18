@@ -35,9 +35,7 @@ public sealed class OptimizationAxisResolver
         switch (axisOverride)
         {
             case null:
-                // Omitted — not optimized, will use default. Return empty (excluded from product).
-                // Actually, we need a single-value axis with the default. But we don't have the default
-                // at this layer — the factory handles defaults. So we skip this axis entirely.
+                // Omitted — not optimized. Return empty axis so the factory applies the param default.
                 return new ResolvedNumericAxis(axis.Name, []);
 
             case FixedOverride fix:
@@ -177,9 +175,9 @@ public sealed class OptimizationAxisResolver
     private static IReadOnlyList<object> ExpandRange(decimal min, decimal max, decimal step, Type clrType)
     {
         var values = new List<object>();
-        for (var v = min; v <= max; v += step)
+        for (var i = 0; min + i * step <= max; i++)
         {
-            values.Add(ConvertNumeric(v, clrType));
+            values.Add(ConvertNumeric(min + i * step, clrType));
         }
 
         return values;

@@ -5,6 +5,9 @@ using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Engine;
 
+/// <summary>
+/// Stateless backtest engine. Safe for concurrent use — all mutable state is local to <see cref="Run"/>.
+/// </summary>
 public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEvaluator)
 {
     public BacktestResult Run(
@@ -26,7 +29,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         var cursors = new int[subCount];
         var fills = new List<Fill>();
         var orderQueue = new OrderQueue();
-        var orderContext = new BacktestOrderContext(orderQueue, fills);
+        var orderContext = new BacktestOrderContext(orderQueue, fills, portfolio);
         var orderIdCounter = 0L;
         var totalBarsDelivered = 0;
         var activeSlTpPositions = new List<ActiveSlTpPosition>();
@@ -263,13 +266,17 @@ internal sealed class BacktestOrderContext : IOrderContext
 {
     private readonly OrderQueue _queue;
     private readonly List<Fill> _allFills;
+    private readonly Portfolio _portfolio;
     private int _fillSnapshotStart;
 
-    public BacktestOrderContext(OrderQueue queue, List<Fill> allFills)
+    public BacktestOrderContext(OrderQueue queue, List<Fill> allFills, Portfolio portfolio)
     {
         _queue = queue;
         _allFills = allFills;
+        _portfolio = portfolio;
     }
+
+    public decimal Cash => _portfolio.Cash;
 
     public void BeginBar(int currentFillCount)
     {

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain;
@@ -30,21 +31,40 @@ public sealed class RunOptimizationCommandHandler(
         // Resolve axes from overrides
         var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes);
 
-        // Add DataSubscriptions as discrete axis if provided
-        if (command.DataSubscriptions is { Count: > 0 })
-        {
-            var subscriptions = new List<object>();
-            foreach (var sub in command.DataSubscriptions)
-            {
-                var asset = await assetRepository.GetByNameAsync(sub.Asset, ct)
-                    ?? throw new ArgumentException($"Asset '{sub.Asset}' not found.");
-                var timeFrame = TimeSpan.Parse(sub.TimeFrame);
-                subscriptions.Add(new DataSubscription(asset, timeFrame));
-            }
+        // Validate and resolve data subscriptions in a single pass
+        var dataSubs = command.DataSubscriptions;
+        if (dataSubs is null or { Count: 0 })
+            throw new ArgumentException("At least one DataSubscription must be provided.");
 
+        var fromDate = DateOnly.FromDateTime(command.StartTime.UtcDateTime);
+        var toDate = DateOnly.FromDateTime(command.EndTime.UtcDateTime);
+
+        var resolvedSubscriptions = new List<DataSubscription>();
+        var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
+        foreach (var sub in dataSubs)
+        {
+            var asset = await assetRepository.GetByNameAsync(sub.Asset, ct)
+                ?? throw new ArgumentException($"Asset '{sub.Asset}' not found.");
+
+            if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out var timeFrame))
+                throw new ArgumentException(
+                    $"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.Asset}'.");
+
+            var subscription = new DataSubscription(asset, timeFrame);
+            resolvedSubscriptions.Add(subscription);
+
+            var series = historyRepository.Load(subscription, fromDate, toDate);
+            var key = $"{sub.Asset}|{sub.TimeFrame}";
+            dataCache[key] = (asset, series);
+        }
+
+        // Add DataSubscriptions as discrete axis if multiple
+        if (resolvedSubscriptions.Count > 1)
+        {
             var allAxes = new List<ResolvedAxis>(resolvedAxes)
             {
-                new ResolvedDiscreteAxis("DataSubscriptions", subscriptions)
+                new ResolvedDiscreteAxis("DataSubscriptions",
+                    resolvedSubscriptions.Cast<object>().ToList())
             };
             resolvedAxes = allAxes;
         }
@@ -64,27 +84,6 @@ public sealed class RunOptimizationCommandHandler(
         if (estimatedCount > command.MaxCombinations)
             throw new ArgumentException(
                 $"Estimated {estimatedCount} combinations exceeds maximum of {command.MaxCombinations}.");
-
-        // Load historical data once
-        var dataSubs = command.DataSubscriptions;
-        if (dataSubs is null or { Count: 0 })
-            throw new ArgumentException("At least one DataSubscription must be provided.");
-
-        var fromDate = DateOnly.FromDateTime(command.StartTime.UtcDateTime);
-        var toDate = DateOnly.FromDateTime(command.EndTime.UtcDateTime);
-
-        // Pre-load all possible subscription data
-        var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
-        foreach (var sub in dataSubs)
-        {
-            var asset = await assetRepository.GetByNameAsync(sub.Asset, ct)
-                ?? throw new ArgumentException($"Asset '{sub.Asset}' not found.");
-            var timeFrame = TimeSpan.Parse(sub.TimeFrame);
-            var subscription = new DataSubscription(asset, timeFrame);
-            var series = historyRepository.Load(subscription, fromDate, toDate);
-            var key = $"{sub.Asset}|{sub.TimeFrame}";
-            dataCache[key] = (asset, series);
-        }
 
         var stopwatch = Stopwatch.StartNew();
         var results = new ConcurrentBag<OptimizationTrialResultDto>();
@@ -111,13 +110,10 @@ public sealed class RunOptimizationCommandHandler(
                 strategy.DataSubscriptions.Clear();
                 strategy.DataSubscriptions.Add(dataSub);
             }
-            else if (dataSubs.Count > 0)
+            else
             {
-                var first = dataSubs[0];
-                var asset = dataCache[$"{first.Asset}|{first.TimeFrame}"].Asset;
-                var timeFrame = TimeSpan.Parse(first.TimeFrame);
                 strategy.DataSubscriptions.Clear();
-                strategy.DataSubscriptions.Add(new DataSubscription(asset, timeFrame));
+                strategy.DataSubscriptions.Add(resolvedSubscriptions[0]);
             }
 
             // Build series array matching strategy subscriptions

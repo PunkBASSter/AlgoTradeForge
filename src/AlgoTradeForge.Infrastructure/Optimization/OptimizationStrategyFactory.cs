@@ -95,11 +95,16 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
         prop.SetValue(paramsInstance, moduleInstance);
     }
 
+    private static readonly HashSet<string> SkippableProperties = ["DataSubscriptions"];
+
     private static void SetProperty(Type type, object instance, string propertyName, object value)
     {
-        var prop = type.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
-        if (prop is null)
-            return; // Silently skip unknown properties (may be DataSubscriptions set elsewhere)
+        if (SkippableProperties.Contains(propertyName))
+            return;
+
+        var prop = type.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new ArgumentException(
+                $"Unknown property '{propertyName}' on type '{type.Name}'.");
 
         var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
         var converted = ConvertValue(value, targetType);
