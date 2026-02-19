@@ -12,7 +12,7 @@ public class BacktestEventOrderingTests
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
 
-    private static BacktestOptions CreateOptions(decimal initialCash = 100_000m) =>
+    private static BacktestOptions CreateOptions(long initialCash = 100_000L) =>
         new()
         {
             InitialCash = initialCash,
@@ -118,7 +118,7 @@ public class BacktestEventOrderingTests
         Assert.Single(result.Fills);
         Assert.NotNull(fillsSeenInComplete);
         Assert.Single(fillsSeenInComplete);
-        Assert.Equal(1000m, fillsSeenInComplete[0].Price);
+        Assert.Equal(1000L, fillsSeenInComplete[0].Price);
     }
 
     [Fact]

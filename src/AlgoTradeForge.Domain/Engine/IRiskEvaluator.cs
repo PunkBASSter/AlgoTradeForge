@@ -4,16 +4,16 @@ namespace AlgoTradeForge.Domain.Engine;
 
 public interface IRiskEvaluator
 {
-    bool CanFill(Order order, decimal fillPrice, Portfolio portfolio, BacktestOptions options);
+    bool CanFill(Order order, long fillPrice, Portfolio portfolio, BacktestOptions options);
 }
 
 public class BasicRiskEvaluator : IRiskEvaluator
 {
-    public bool CanFill(Order order, decimal fillPrice, Portfolio portfolio, BacktestOptions options)
+    public bool CanFill(Order order, long fillPrice, Portfolio portfolio, BacktestOptions options)
     {
         if (order.Side == OrderSide.Buy)
         {
-            var cost = fillPrice * order.Quantity * order.Asset.Multiplier + options.CommissionPerTrade;
+            var cost = (long)(fillPrice * order.Quantity * order.Asset.Multiplier) + options.CommissionPerTrade;
             return cost <= portfolio.Cash;
         }
 

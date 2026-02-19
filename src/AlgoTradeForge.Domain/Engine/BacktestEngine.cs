@@ -5,6 +5,9 @@ using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Engine;
 
+/// <summary>
+/// Stateless backtest engine. Safe for concurrent use — all mutable state is local to <see cref="Run"/>.
+/// </summary>
 public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEvaluator)
 {
     public BacktestResult Run(
@@ -26,12 +29,12 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         var cursors = new int[subCount];
         var fills = new List<Fill>();
         var orderQueue = new OrderQueue();
-        var orderContext = new BacktestOrderContext(orderQueue, fills);
+        var orderContext = new BacktestOrderContext(orderQueue, fills, portfolio);
         var orderIdCounter = 0L;
         var totalBarsDelivered = 0;
         var activeSlTpPositions = new List<ActiveSlTpPosition>();
-        var lastPrices = new Dictionary<string, decimal>();
-        var equityCurve = new List<decimal>();
+        var lastPrices = new Dictionary<string, long>();
+        var equityCurve = new List<long>();
 
         strategy.OnInit();
 
@@ -89,7 +92,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 strategy.OnBarComplete(bar, subscription, orderContext);
                 AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp);
 
-                lastPrices[subscription.Asset.Name] = (decimal)bar.Close;
+                lastPrices[subscription.Asset.Name] = bar.Close;
                 cursors[s]++;
                 totalBarsDelivered++;
             }
@@ -241,7 +244,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
     private sealed class ActiveSlTpPosition
     {
         public required Order OriginalOrder { get; init; }
-        public required decimal EntryPrice { get; init; }
+        public required long EntryPrice { get; init; }
         public decimal RemainingQuantity { get; set; }
         public int NextTpIndex { get; set; }
     }
@@ -263,13 +266,17 @@ internal sealed class BacktestOrderContext : IOrderContext
 {
     private readonly OrderQueue _queue;
     private readonly List<Fill> _allFills;
+    private readonly Portfolio _portfolio;
     private int _fillSnapshotStart;
 
-    public BacktestOrderContext(OrderQueue queue, List<Fill> allFills)
+    public BacktestOrderContext(OrderQueue queue, List<Fill> allFills, Portfolio portfolio)
     {
         _queue = queue;
         _allFills = allFills;
+        _portfolio = portfolio;
     }
+
+    public long Cash => _portfolio.Cash;
 
     public void BeginBar(int currentFillCount)
     {

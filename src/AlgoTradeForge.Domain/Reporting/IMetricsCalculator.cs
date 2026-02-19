@@ -6,6 +6,8 @@ public interface IMetricsCalculator
 {
     PerformanceMetrics Calculate(
         IReadOnlyList<Fill> fills,
-        IReadOnlyList<decimal> equityCurve,
-        decimal initialCash);
+        IReadOnlyList<long> equityCurve,
+        long initialCash,
+        DateTimeOffset startTime,
+        DateTimeOffset endTime);
 }

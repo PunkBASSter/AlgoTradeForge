@@ -1,9 +1,11 @@
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
+using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Strategy.ZigZagBreakout;
 
+[StrategyKey("ZigZagBreakout")]
 public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters) : StrategyBase<ZigZagBreakoutParams>(parameters)
 {
     private DeltaZigZag _dzz = null!;
@@ -11,14 +13,11 @@ public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters) : St
 
     private long? _pendingOrderId;
     private bool _isInPosition;
-    private decimal _equity;
-    private decimal _entryPrice;
     private long _nextOrderId = 1; // Start at 1 so engine's AssignOrderIds (Id==0 check) won't overwrite
 
     public override void OnInit()
     {
         _dzz = new DeltaZigZag(Params.DzzDepth / 10m, Params.MinimumThreshold);
-        _equity = Params.InitialCash;
     }
 
     public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
@@ -54,7 +53,7 @@ public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters) : St
             var tp = price + Math.Abs(price - sl);
             var slDistance = Math.Abs(price - sl);
             var positionSize = slDistance > 0
-                ? Math.Clamp(_equity * (Params.RiskPercentPerTrade / 100m) / slDistance, Params.MinPositionSize, Params.MaxPositionSize)
+                ? Math.Clamp(orders.Cash * (Params.RiskPercentPerTrade / 100m) / slDistance, Params.MinPositionSize, Params.MaxPositionSize)
                 : Params.MinPositionSize;
 
             // Check if existing pending order already matches this signal
@@ -62,7 +61,7 @@ public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters) : St
             {
                 var pending = orders.GetPendingOrders();
                 var existing = pending.FirstOrDefault(o => o.Id == _pendingOrderId.Value);
-                if (existing is not null && existing.StopPrice == (decimal)price && existing.StopLossPrice == (decimal)sl)
+                if (existing is not null && existing.StopPrice == price && existing.StopLossPrice == sl)
                     return; // Same signal, keep existing order
 
                 // Different signal — cancel old, submit new
@@ -97,14 +96,12 @@ public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters) : St
         {
             // Entry fill
             _isInPosition = true;
-            _entryPrice = fill.Price;
             _pendingOrderId = null;
         }
         else
         {
             // Exit fill (SL or TP)
             _isInPosition = false;
-            _equity += (fill.Price - _entryPrice) * fill.Quantity * order.Asset.Multiplier - fill.Commission;
         }
     }
 

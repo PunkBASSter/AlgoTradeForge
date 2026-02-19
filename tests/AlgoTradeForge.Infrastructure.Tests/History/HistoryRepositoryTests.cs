@@ -71,16 +71,6 @@ public class HistoryRepositoryTests
     }
 
     [Fact]
-    public void Load_NoExchange_Throws()
-    {
-        var noExchangeAsset = Asset.Equity("TEST");
-        var sub = new DataSubscription(noExchangeAsset, OneMinute);
-
-        Assert.Throws<InvalidOperationException>(() =>
-            _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31)));
-    }
-
-    [Fact]
     public void Load_EmptyData_ReturnsEmptySeries()
     {
         var sub = new DataSubscription(BtcUsdt, OneMinute);

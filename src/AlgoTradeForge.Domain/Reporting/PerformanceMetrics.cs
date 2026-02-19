@@ -8,6 +8,7 @@ public sealed record PerformanceMetrics
     public required decimal NetProfit { get; init; }
     public required decimal GrossProfit { get; init; }
     public required decimal GrossLoss { get; init; }
+    public required decimal TotalCommissions { get; init; }
     public required double TotalReturnPct { get; init; }
     public required double AnnualizedReturnPct { get; init; }
     public required double SharpeRatio { get; init; }

@@ -314,7 +314,8 @@ A skill file (`SKILL.md`) is provided that documents:
 | 5 | JSONL as source of truth, SQLite as derived | Simplifies the write path (append-only file). Both indexes are built from the same source after run completion. |
 | 6 | Trade DB shared across runs | Enables cross-run queries (all ETH-USD trades across strategy versions) without opening N directories. |
 | 7 | Strictly typed C# records per event type | Compile-time safety for event payloads. FE may use dynamic typing independently. |
-| 8 | Hybrid emission: explicit `IEventBus` injection + source-generated indicator proxies | Keeps business-critical emissions visible in code while eliminating boilerplate from pure-computation indicators. See §10. |
+| 8 | Hybrid emission: explicit `IEventBus` injection + factory-decorated indicators | Keeps business-critical emissions visible in code while eliminating boilerplate from pure-computation indicators. Factory earns dual justification: event emission control and centralized indicator construction for optimization sweeps. See §10. |
+| 9 | `IIndicatorFactory` + generic decorator over source-generated proxies | Strategies create indicators directly and hold concrete/interface references. A factory provides the interception point for wrapping without engine needing visibility into strategy internals. One hand-written generic decorator covers all indicator types — no source generation complexity. See §10.4–10.6. |
 
 ---
 
@@ -337,7 +338,7 @@ Event emission is a cross-cutting concern that touches strategy code, the execut
 | Order lifecycle (`ord.*`, `pos`) | Explicit `IEventBus.Emit()` call | The execution engine explicitly decides when orders change state |
 | Bar events (`bar`, `bar.mut`) | Explicit `IEventBus.Emit()` call | The backtest engine owns the bar loop — natural single emission point |
 | System events (`run.*`, `err`, `warn`) | Explicit `IEventBus.Emit()` call | Infrastructure-level, emitted by the engine at well-defined lifecycle points |
-| Indicator values (`ind`, `ind.mut`) | **Automatic via source-generated proxy** | Indicators follow a uniform `Compute(bar) → value` contract; emission is mechanical and identical for every indicator |
+| Indicator values (`ind`, `ind.mut`) | **Automatic via factory-decorated indicator** | Indicators follow a uniform `Compute(series) → values` contract; emission is mechanical and identical for every indicator. A factory wraps indicators with a generic decorator at creation time. |
 
 ### 10.3 Explicit Injection Path
 
@@ -354,75 +355,131 @@ The bus implementation handles all filtering internally (`ExportMode` check, `Da
 
 The classes that receive `IEventBus` are few and well-defined: the backtest engine, the execution engine, the risk manager, and the strategy base class. This is not a "sprinkled everywhere" dependency.
 
-### 10.4 Source-Generated Indicator Proxy Path
+### 10.4 Indicator Factory Path
 
-Indicators implement a pure computation interface with no event awareness:
+Strategies create indicators through an injected `IIndicatorFactory`. The factory is the interception point for event emission — it wraps indicators with a generic decorator that emits `ind` events after each `Compute()` call.
 
 ```csharp
-[EmitOnCompute("ind")]
-public interface IIndicator<TOut>
+public interface IIndicatorFactory
 {
-    string Name { get; }
-    TOut Compute(Int64Bar bar);
-    void Reset();
+    IIndicator<TInp, TBuff> Create<TInp, TBuff>(
+        IIndicator<TInp, TBuff> indicator,
+        DataSubscription subscription);
 }
 ```
 
-The `[EmitOnCompute]` attribute marks the interface for source generation. At compile time, a source generator produces a thin wrapper (decorator) for each indicator interface that:
+Strategy code creates indicators by passing a raw instance and the associated subscription:
 
-1. Delegates all calls to the inner (real) indicator
-2. After `Compute()` returns, emits an `ind` event carrying the indicator name, the result value, and the associated `DataSubscription`
-3. Passes through all other members (`Name`, `Reset`) without interception
+```csharp
+public sealed class ZigZagBreakoutStrategy(
+    ZigZagBreakoutParams parameters,
+    IIndicatorFactory indicators) : StrategyBase<ZigZagBreakoutParams>(parameters)
+{
+    private IIndicator<Int64Bar, long> _dzz = null!;
 
-The generated wrapper is injected by the engine at run setup time: the engine takes the strategy's raw indicators, wraps each one with its generated emitting counterpart, and binds the wrapper to the correct `DataSubscription` and `IEventBus` instance. The strategy never sees the wrapper — it holds the same `IIndicator<T>` reference.
+    public override void OnInit()
+    {
+        _dzz = indicators.Create(
+            new DeltaZigZag(Params.DzzDepth / 10m, Params.MinimumThreshold),
+            DataSubscriptions[0]);
+    }
 
-**Key property:** indicators remain pure Domain types with zero dependencies on the event system. They can be unit-tested in complete isolation. The emission concern is handled entirely by the generated infrastructure code.
-
-### 10.5 Why Source Generation over DispatchProxy
-
-.NET provides a built-in runtime proxy mechanism (`System.Reflection.DispatchProxy`) that could achieve the same wrapping without code generation. However, it has three problems in a hot backtest loop processing millions of bars:
-
-1. **Reflection overhead** — every proxied call goes through `MethodInfo`-based dispatch. The proxy must inspect which method was called on every invocation.
-2. **Argument boxing** — `Int64Bar` is a `record struct`. The proxy receives arguments as `object?[]`, forcing a heap allocation per call.
-3. **Return value boxing** — numeric indicator results (e.g. `double`) are boxed on return through the proxy.
-
-For a backtest processing 500K+ bars with 3–5 indicators each, this creates millions of unnecessary allocations and reflection lookups per run.
-
-A **source generator** eliminates all three problems. The generated wrapper is a concrete class with strongly-typed method signatures — no reflection, no boxing, no allocation beyond the event record itself. The wrapper is as efficient as hand-written code because it *is* hand-written code, just authored by the compiler.
-
-### 10.6 Source Generator Shape
-
-The source generator:
-
-- **Trigger:** scans for interfaces annotated with `[EmitOnCompute("eventType")]`
-- **Input:** the interface definition (method signatures, generic type parameters)
-- **Output:** a concrete wrapper class per interface that implements the same interface
-
-For the `IIndicator<TOut>` interface, the generator produces a class equivalent to:
-
-```
-class Emitting_IIndicator<TOut> : IIndicator<TOut>
-    ctor(inner: IIndicator<TOut>, bus: IEventBus, subscription: DataSubscription)
-    Name       → delegates to inner.Name
-    Compute()  → calls inner.Compute(), then bus.Emit(new IndicatorEvent(...)), returns result
-    Reset()    → delegates to inner.Reset()
+    public override void OnBar(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+    {
+        _barHistory.Add(bar);
+        _dzz.Compute(_barHistory);          // decorator emits ind event here
+        var values = _dzz.Buffers["Value"];  // works through interface
+        // ... strategy logic unchanged
+    }
+}
 ```
 
-The generator only intercepts methods explicitly marked or matching the `Compute` convention. All other interface members are pure pass-through.
+The strategy holds an `IIndicator<TInp, TBuff>` interface reference. All existing indicator interface members (`Buffers`, `Name`, `Measure`, `Compute`) are accessible through the interface — no concrete type access is lost for strategy logic.
 
-A factory method is also generated for convenient wrapping:
+**Key property:** indicators remain pure Domain types with zero dependencies on the event system. They can be unit-tested in complete isolation. The emission concern is handled entirely by the factory and decorator infrastructure.
+
+### 10.5 Generic Decorator
+
+A single hand-written generic decorator class covers all indicator types — no source generation required:
+
+```csharp
+internal sealed class EmittingIndicator<TInp, TBuff>(
+    IIndicator<TInp, TBuff> inner,
+    IEventBus bus,
+    DataSubscription sub) : IIndicator<TInp, TBuff>
+{
+    public string Name => inner.Name;
+    public IndicatorMeasure Measure => inner.Measure;
+    public IReadOnlyDictionary<string, IReadOnlyList<TBuff>> Buffers => inner.Buffers;
+    public int MinimumHistory => inner.MinimumHistory;
+    public int? CapacityLimit => inner.CapacityLimit;
+
+    public void Compute(IReadOnlyList<TInp> series)
+    {
+        inner.Compute(series);
+        bus.Emit(new IndEvent(inner.Name, inner.Measure, /* latest buffer values */, sub));
+    }
+}
+```
+
+The decorator is strongly typed — no reflection, no boxing of `Int64Bar` (a `record struct`), no allocation beyond the event record itself. Performance is identical to hand-written delegation code.
+
+**Why not source generation:** The original design considered a Roslyn source generator to auto-produce decorator classes per indicator interface. This was rejected because:
+
+1. **One generic class suffices** — `IIndicator<TInp, TBuff>` is the only indicator interface. A single `EmittingIndicator<TInp, TBuff>` covers all concrete indicators without code generation.
+2. **No interception point existed** — source-gen proxies assumed the engine would wrap indicators at setup time, but strategies create indicators internally. The factory pattern provides this interception point explicitly, making the source generator's wrapping mechanism redundant.
+3. **Build complexity** — source generators add a project dependency, complicate debugging, and require maintenance of generator code. A plain class in the infrastructure layer is simpler.
+
+**Why not `DispatchProxy`:** .NET's runtime proxy mechanism (`System.Reflection.DispatchProxy`) suffers from reflection overhead, argument boxing (`Int64Bar` is a `record struct` → heap allocation per call), and return value boxing. For 500K+ bars × 3–5 indicators, this creates millions of unnecessary allocations. The hand-written generic decorator avoids all three.
+
+### 10.6 Factory Implementations
+
+Two factory implementations, selected at run setup time:
+
+```csharp
+// Backtest / debug — wraps with emission decorator
+internal sealed class EmittingIndicatorFactory(IEventBus bus) : IIndicatorFactory
+{
+    public IIndicator<TInp, TBuff> Create<TInp, TBuff>(
+        IIndicator<TInp, TBuff> indicator, DataSubscription sub)
+        => new EmittingIndicator<TInp, TBuff>(indicator, bus, sub);
+}
+
+// Optimization — pass-through, zero overhead
+internal sealed class PassthroughIndicatorFactory : IIndicatorFactory
+{
+    public IIndicator<TInp, TBuff> Create<TInp, TBuff>(
+        IIndicator<TInp, TBuff> indicator, DataSubscription sub)
+        => indicator;
+}
+```
+
+The engine selects the factory at run setup based on execution mode. This is a one-time decision — no per-call branches.
+
+### 10.7 Multi-Subscription Correctness
+
+In multi-asset or multi-timeframe strategies (e.g. ETH M1 + ETH H1 with different indicators per timeframe), indicator event emission must fire only when an indicator actually computes — not on every `OnBar` call.
+
+The decorator achieves this by construction: the `ind` event is emitted inside `Compute()`, so it fires if and only if the strategy calls `Compute` on that indicator for the current bar. If the strategy only computes the H1 indicator on H1 bars, only H1 bars produce `ind` events for that indicator.
+
+This is a correctness advantage over alternative approaches (e.g. emitting all tracked indicators from `StrategyBase.OnBar`) which would require manual association of indicators to subscriptions to avoid emitting stale snapshots.
+
+### 10.8 Opt-Out for Optimization Runs
+
+In optimization mode, `ind` events are not in the `ExportMode` filter — the bus would drop them. But the overhead of *creating* the event record before the bus drops it is still wasteful at scale.
+
+The factory approach provides clean opt-out: the engine injects `PassthroughIndicatorFactory` for optimization runs. The factory returns the raw indicator unwrapped — zero overhead, no allocation, no flag check per bar. This is a setup-time decision, not a per-call branch.
+
+### 10.9 Dual Justification for the Factory
+
+The `IIndicatorFactory` abstraction earns its existence for two independent reasons:
+
+1. **Event emission control** — wrapping/not-wrapping indicators with the emitting decorator based on execution mode.
+2. **Optimization module composition** — the optimization framework (see `optimizeable_params_framework.md` §7) supports indicators as pluggable `[OptimizableModule]` slots on strategy params. When the optimization runner resolves a module variant (e.g., SMA with Period=20 vs EMA with Period=20, Smoothing=0.2), it creates a raw `IIndicator<TInp, TBuff>` instance and injects it into the strategy params. The strategy then passes it through `IIndicatorFactory.Create()` — the same code path as manually constructed indicators. This means `IIndicatorFactory` is the **universal decoration point** regardless of how the indicator was created:
 
 ```
-static IIndicator<TOut> WithEmitting(this IIndicator<TOut> inner, IEventBus bus, DataSubscription sub)
+Manual construction:   new DeltaZigZag(...)  ──→ IIndicatorFactory.Create() ──→ wrapped/passthrough
+Module injection:      registry.Create(...)  ──→ IIndicatorFactory.Create() ──→ wrapped/passthrough
 ```
 
-This allows the engine setup code to wrap indicators in a single expression.
-
-### 10.7 Opt-Out for Optimization Runs
-
-In optimization mode, `ind` events are not in the `ExportMode` filter — the bus drops them. But the overhead of *creating* the event record before the bus drops it is still wasteful at scale.
-
-Two levels of opt-out:
-
-1. **Bus-level drop** (default) — the generated wrapper always calls `bus.Emit()`, and the bus's `ExportMode` check rejects it before serialization. Minimal overhead (one record allocation + one flag check per indicator per bar).
-2. **Skip wrapping entirely** — during optimization run setup, the engine does not wrap indicators with emitting proxies at all. Zero overhead. The strategy holds raw indicator references. This is a setup-time decision, not a per-call branch.
+The two features compose without coupling: the optimization framework owns indicator **selection and construction**, while `IIndicatorFactory` owns **decoration for event emission**. Neither knows about the other.

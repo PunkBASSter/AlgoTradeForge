@@ -13,9 +13,6 @@ public sealed class HistoryRepository(
     public TimeSeries<Int64Bar> Load(DataSubscription subscription, DateOnly from, DateOnly to)
     {
         var asset = subscription.Asset;
-        var exchange = asset.Exchange
-            ?? throw new InvalidOperationException($"Asset '{asset.Name}' has no Exchange configured.");
-
         var sourceInterval = asset.SmallestInterval;
 
         if (subscription.TimeFrame < sourceInterval)
@@ -25,7 +22,7 @@ public sealed class HistoryRepository(
 
         var raw = barLoader.Load(
             storageOptions.Value.DataRoot,
-            exchange,
+            asset.Exchange,
             asset.Name,
             asset.DecimalDigits,
             from,

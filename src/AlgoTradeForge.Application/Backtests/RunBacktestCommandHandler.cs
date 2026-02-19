@@ -16,24 +16,30 @@ public sealed class RunBacktestCommandHandler(
 {
     public async Task<BacktestResultDto> HandleAsync(RunBacktestCommand command, CancellationToken ct = default)
     {
-        var asset = await assetRepository.GetByNameAsync(command.AssetName, ct)
+        var asset = await assetRepository.GetByNameAsync(command.AssetName, command.Exchange, ct)
             ?? throw new ArgumentException($"Asset '{command.AssetName}' not found.", nameof(command));
 
         var strategy = strategyFactory.Create(command.StrategyName, command.StrategyParameters);
 
+        // Scale real-dollar values to int64 price units for the Domain layer
+        var scaleFactor = 1m / asset.TickSize;
+
         var options = new BacktestOptions
         {
-            InitialCash = command.InitialCash,
+            InitialCash = (long)(command.InitialCash * scaleFactor),
             Asset = asset,
             StartTime = command.StartTime,
             EndTime = command.EndTime,
-            CommissionPerTrade = command.CommissionPerTrade,
+            CommissionPerTrade = (long)(command.CommissionPerTrade * scaleFactor),
             SlippageTicks = command.SlippageTicks,
             UseDetailedExecutionLogic = command.UseDetailedExecutionLogic
         };
 
         if (strategy.DataSubscriptions.Count == 0)
-            strategy.DataSubscriptions.Add(new DataSubscription(asset, asset.SmallestInterval));
+        {
+            var timeFrame = command.TimeFrame ?? asset.SmallestInterval;
+            strategy.DataSubscriptions.Add(new DataSubscription(asset, timeFrame));
+        }
 
         var fromDate = DateOnly.FromDateTime(command.StartTime.UtcDateTime);
         var toDate = DateOnly.FromDateTime(command.EndTime.UtcDateTime);
@@ -47,16 +53,19 @@ public sealed class RunBacktestCommandHandler(
 
         var result = engine.Run(seriesArray, strategy, options, ct);
 
-        var metrics = metricsCalculator.Calculate(result.Fills, result.EquityCurve, command.InitialCash);
+        var metrics = metricsCalculator.Calculate(
+            result.Fills, result.EquityCurve, options.InitialCash,
+            command.StartTime, command.EndTime);
 
         return new BacktestResultDto
         {
             Id = Guid.NewGuid(),
             AssetName = command.AssetName,
             StrategyName = command.StrategyName,
-            InitialCapital = metrics.InitialCapital,
-            FinalEquity = metrics.FinalEquity,
-            NetProfit = metrics.NetProfit,
+            InitialCapital = metrics.InitialCapital / scaleFactor,
+            FinalEquity = metrics.FinalEquity / scaleFactor,
+            NetProfit = metrics.NetProfit / scaleFactor,
+            TotalCommissions = metrics.TotalCommissions / scaleFactor,
             TotalReturnPct = metrics.TotalReturnPct,
             AnnualizedReturnPct = metrics.AnnualizedReturnPct,
             SharpeRatio = metrics.SharpeRatio,

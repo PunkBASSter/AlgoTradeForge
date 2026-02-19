@@ -9,18 +9,19 @@ public sealed record Asset
     public decimal TickValue => TickSize * Multiplier;
     public string Currency { get; init; } = "USD";
     public decimal? MarginRequirement { get; init; }
-    public string? Exchange { get; init; }
+    public required string Exchange { get; init; }
     public int DecimalDigits { get; init; } = 2;
     public TimeSpan SmallestInterval { get; init; } = TimeSpan.FromMinutes(1);
     public DateOnly? HistoryStart { get; init; }
 
-    public static Asset Equity(string name) => new() { Name = name };
+    public static Asset Equity(string name, string exchange) => new() { Name = name, Exchange = exchange };
 
-    public static Asset Future(string name, decimal multiplier, decimal tickSize, decimal? margin = null) =>
+    public static Asset Future(string name, string exchange, decimal multiplier, decimal tickSize, decimal? margin = null) =>
         new()
         {
             Name = name,
             Type = AssetType.Future,
+            Exchange = exchange,
             Multiplier = multiplier,
             TickSize = tickSize,
             MarginRequirement = margin

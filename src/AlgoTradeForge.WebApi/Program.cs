@@ -4,8 +4,11 @@ using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Application.Repositories;
+using AlgoTradeForge.Infrastructure;
 using AlgoTradeForge.Infrastructure.CandleIngestion;
 using AlgoTradeForge.Infrastructure.History;
+using AlgoTradeForge.Infrastructure.Repositories;
 using AlgoTradeForge.WebApi.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -38,8 +41,10 @@ builder.Services.AddSingleton<IInt64BarLoader, CsvInt64BarLoader>();
 builder.Services.AddSingleton<IDataSource, CsvDataSource>();
 builder.Services.AddSingleton<IHistoryRepository, HistoryRepository>();
 
-// NOTE: IAssetRepository, IBarSourceRepository, and IStrategyFactory
-// must be registered by an Infrastructure layer or test configuration
+// Register optimization infrastructure
+builder.Services.AddInfrastructure(typeof(AlgoTradeForge.Domain.Strategy.StrategyBase<>).Assembly);
+
+builder.Services.AddSingleton<IAssetRepository, InMemoryAssetRepository>();
 
 var app = builder.Build();
 
@@ -57,5 +62,6 @@ app.UseHttpsRedirection();
 
 // Map endpoints
 app.MapBacktestEndpoints();
+app.MapOptimizationEndpoints();
 
 app.Run();

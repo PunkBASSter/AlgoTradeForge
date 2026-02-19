@@ -5,7 +5,7 @@ namespace AlgoTradeForge.Domain.Engine;
 
 public class BarMatcher : IBarMatcher
 {
-    public decimal? GetFillPrice(Order order, Int64Bar bar, BacktestOptions options)
+    public long? GetFillPrice(Order order, Int64Bar bar, BacktestOptions options)
     {
         if (order.Type == OrderType.Market)
         {
@@ -83,7 +83,7 @@ public class BarMatcher : IBarMatcher
 
     public SlTpMatchResult? EvaluateSlTp(
         Order originalOrder,
-        decimal entryPrice,
+        long entryPrice,
         int nextTpIndex,
         Int64Bar bar,
         BacktestOptions options)
@@ -95,7 +95,7 @@ public class BarMatcher : IBarMatcher
 
         // Find first reachable TP
         var tpHit = false;
-        var tpPrice = 0m;
+        var tpPrice = 0L;
         var tpIndex = -1;
         var tpClosurePercentage = 1m;
 
@@ -125,12 +125,12 @@ public class BarMatcher : IBarMatcher
         return new SlTpMatchResult(tpPrice, tpClosurePercentage, IsStopLoss: false, TpIndex: tpIndex);
     }
 
-    private static bool IsSlHit(OrderSide entrySide, decimal slPrice, Int64Bar bar) =>
+    private static bool IsSlHit(OrderSide entrySide, long slPrice, Int64Bar bar) =>
         entrySide == OrderSide.Buy
             ? bar.Low <= slPrice   // Long position: SL is below — hit when price drops to SL
             : bar.High >= slPrice; // Short position: SL is above — hit when price rises to SL
 
-    private static bool IsTpHit(OrderSide entrySide, decimal tpPrice, Int64Bar bar) =>
+    private static bool IsTpHit(OrderSide entrySide, long tpPrice, Int64Bar bar) =>
         entrySide == OrderSide.Buy
             ? bar.High >= tpPrice  // Long position: TP is above — hit when price rises to TP
             : bar.Low <= tpPrice;  // Short position: TP is below — hit when price drops to TP

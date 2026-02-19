@@ -4,7 +4,7 @@ public sealed record Fill(
     long OrderId,
     Asset Asset,
     DateTimeOffset Timestamp,
-    decimal Price,
+    long Price,
     decimal Quantity,
     OrderSide Side,
-    decimal Commission);
+    long Commission);

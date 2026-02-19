@@ -98,23 +98,6 @@ public class CsvDataSourceTests
     }
 
     [Fact]
-    public void GetData_NullExchange_Throws()
-    {
-        var assetNoExchange = Asset.Equity("SPY");
-        var source = CreateSource();
-
-        var query = new HistoryDataQuery
-        {
-            Asset = assetNoExchange,
-            TimeFrame = OneMinute,
-            StartTime = Start,
-            EndTime = End
-        };
-
-        Assert.Throws<InvalidOperationException>(() => source.GetData(query));
-    }
-
-    [Fact]
     public void GetData_NullStartTime_Throws()
     {
         var source = CreateSource();

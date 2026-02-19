@@ -9,29 +9,29 @@ public static class TestFills
 
     public static Fill Buy(
         Asset asset,
-        decimal price,
+        long price,
         decimal quantity,
-        decimal commission = 0m,
+        long commission = 0L,
         DateTimeOffset? timestamp = null) =>
         new(++_orderIdCounter, asset, timestamp ?? DefaultTimestamp, price, quantity, OrderSide.Buy, commission);
 
     public static Fill Sell(
         Asset asset,
-        decimal price,
+        long price,
         decimal quantity,
-        decimal commission = 0m,
+        long commission = 0L,
         DateTimeOffset? timestamp = null) =>
         new(++_orderIdCounter, asset, timestamp ?? DefaultTimestamp, price, quantity, OrderSide.Sell, commission);
 
-    public static Fill BuyAapl(decimal price, decimal quantity, decimal commission = 0m) =>
+    public static Fill BuyAapl(long price, decimal quantity, long commission = 0L) =>
         Buy(TestAssets.Aapl, price, quantity, commission);
 
-    public static Fill SellAapl(decimal price, decimal quantity, decimal commission = 0m) =>
+    public static Fill SellAapl(long price, decimal quantity, long commission = 0L) =>
         Sell(TestAssets.Aapl, price, quantity, commission);
 
-    public static Fill BuyEs(decimal price, decimal quantity, decimal commission = 0m) =>
+    public static Fill BuyEs(long price, decimal quantity, long commission = 0L) =>
         Buy(TestAssets.EsMini, price, quantity, commission);
 
-    public static Fill SellEs(decimal price, decimal quantity, decimal commission = 0m) =>
+    public static Fill SellEs(long price, decimal quantity, long commission = 0L) =>
         Sell(TestAssets.EsMini, price, quantity, commission);
 }
