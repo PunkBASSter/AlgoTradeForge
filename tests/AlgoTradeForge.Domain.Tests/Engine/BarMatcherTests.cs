@@ -10,10 +10,10 @@ public class BarMatcherTests
 {
     private readonly BarMatcher _matcher = new();
 
-    private static BacktestOptions CreateOptions(Asset asset, decimal commission = 0m, long slippageTicks = 0) =>
+    private static BacktestOptions CreateOptions(Asset asset, long commission = 0L, long slippageTicks = 0) =>
         new()
         {
-            InitialCash = 100_000m,
+            InitialCash = 100_000L,
             Asset = asset,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
@@ -30,7 +30,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(15000m, price);
+        Assert.Equal(15000L, price);
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(15000m, price);
+        Assert.Equal(15000L, price);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(14800m, price);
+        Assert.Equal(14800L, price);
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(15500m, price);
+        Assert.Equal(15500L, price);
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(15200m, price);
+        Assert.Equal(15200L, price);
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(15500m, price); // Fill at open (slippage through gap)
+        Assert.Equal(15500L, price); // Fill at open (slippage through gap)
     }
 
     [Fact]
@@ -143,7 +143,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(14900m, price);
+        Assert.Equal(14900L, price);
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(15000m, price); // Fill at open (gap down)
+        Assert.Equal(15000L, price); // Fill at open (gap down)
     }
 
     [Fact]
@@ -179,7 +179,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(15205m, price);
+        Assert.Equal(15205L, price);
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(14895m, price);
+        Assert.Equal(14895L, price);
     }
 
     #endregion
@@ -208,7 +208,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(15300m, price); // Fill at limit price
+        Assert.Equal(15300L, price); // Fill at limit price
     }
 
     [Fact]
@@ -235,7 +235,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(14900m, price);
+        Assert.Equal(14900L, price);
     }
 
     [Fact]
@@ -247,7 +247,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(14800m, price);
+        Assert.Equal(14800L, price);
     }
 
     [Fact]
@@ -284,7 +284,7 @@ public class BarMatcherTests
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
-        Assert.Equal(15300m, price); // Limit price, no slippage
+        Assert.Equal(15300L, price); // Limit price, no slippage
     }
 
     #endregion
@@ -323,10 +323,10 @@ public class BarMatcherTests
         var bar = TestBars.Create(15000, 15200, 14400, 14800); // Low=14400 <= SL=14500, High=15200 < TP=16000
         var options = CreateOptions(TestAssets.Aapl);
 
-        var result = _matcher.EvaluateSlTp(order, 15000m, 0, bar, options);
+        var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
         Assert.NotNull(result);
-        Assert.Equal(14500m, result.Value.Price);
+        Assert.Equal(14500L, result.Value.Price);
         Assert.True(result.Value.IsStopLoss);
         Assert.Equal(1m, result.Value.ClosurePercentage);
     }
@@ -339,10 +339,10 @@ public class BarMatcherTests
         var bar = TestBars.Create(15000, 16000, 14600, 15500); // High=16000 >= TP=15800, Low=14600 > SL=14500
         var options = CreateOptions(TestAssets.Aapl);
 
-        var result = _matcher.EvaluateSlTp(order, 15000m, 0, bar, options);
+        var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
         Assert.NotNull(result);
-        Assert.Equal(15800m, result.Value.Price);
+        Assert.Equal(15800L, result.Value.Price);
         Assert.False(result.Value.IsStopLoss);
         Assert.Equal(0, result.Value.TpIndex);
         Assert.Equal(1m, result.Value.ClosurePercentage);
@@ -356,10 +356,10 @@ public class BarMatcherTests
         var bar = TestBars.Create(15000, 16000, 14000, 15500); // Low=14000 <= SL, High=16000 >= TP
         var options = CreateOptions(TestAssets.Aapl);
 
-        var result = _matcher.EvaluateSlTp(order, 15000m, 0, bar, options);
+        var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
         Assert.NotNull(result);
-        Assert.Equal(14500m, result.Value.Price); // Worst case: SL wins
+        Assert.Equal(14500L, result.Value.Price); // Worst case: SL wins
         Assert.True(result.Value.IsStopLoss);
     }
 
@@ -370,7 +370,7 @@ public class BarMatcherTests
         var bar = TestBars.Create(15000, 15200, 14100, 15100); // Low=14100 > SL=14000, High=15200 < TP=16000
         var options = CreateOptions(TestAssets.Aapl);
 
-        var result = _matcher.EvaluateSlTp(order, 15000m, 0, bar, options);
+        var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
         Assert.Null(result);
     }
@@ -383,10 +383,10 @@ public class BarMatcherTests
         var bar = TestBars.Create(15000, 15600, 14200, 15300); // High=15600 >= SL=15500, Low=14200 > TP=14000
         var options = CreateOptions(TestAssets.Aapl);
 
-        var result = _matcher.EvaluateSlTp(order, 15000m, 0, bar, options);
+        var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
         Assert.NotNull(result);
-        Assert.Equal(15500m, result.Value.Price);
+        Assert.Equal(15500L, result.Value.Price);
         Assert.True(result.Value.IsStopLoss);
     }
 
@@ -398,10 +398,10 @@ public class BarMatcherTests
         var bar = TestBars.Create(15000, 15400, 14100, 14500); // Low=14100 <= TP=14200, High=15400 < SL=15500
         var options = CreateOptions(TestAssets.Aapl);
 
-        var result = _matcher.EvaluateSlTp(order, 15000m, 0, bar, options);
+        var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
         Assert.NotNull(result);
-        Assert.Equal(14200m, result.Value.Price);
+        Assert.Equal(14200L, result.Value.Price);
         Assert.False(result.Value.IsStopLoss);
     }
 
@@ -412,7 +412,7 @@ public class BarMatcherTests
         var bar = TestBars.Create(15000, 15000, 15000, 15000); // Zero-range bar
         var options = CreateOptions(TestAssets.Aapl);
 
-        var result = _matcher.EvaluateSlTp(order, 15000m, 0, bar, options);
+        var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
         Assert.Null(result);
     }
@@ -429,20 +429,20 @@ public class BarMatcherTests
         var bar1 = TestBars.Create(15000, 15600, 14100, 15300); // High=15600 >= TP1=15500
         var options = CreateOptions(TestAssets.Aapl);
 
-        var result1 = _matcher.EvaluateSlTp(order, 15000m, 0, bar1, options);
+        var result1 = _matcher.EvaluateSlTp(order, 15000L, 0, bar1, options);
 
         Assert.NotNull(result1);
-        Assert.Equal(15500m, result1.Value.Price);
+        Assert.Equal(15500L, result1.Value.Price);
         Assert.Equal(0.5m, result1.Value.ClosurePercentage);
         Assert.False(result1.Value.IsStopLoss);
         Assert.Equal(0, result1.Value.TpIndex);
 
         // Second TP hit
         var bar2 = TestBars.Create(15800, 16200, 15700, 16000);
-        var result2 = _matcher.EvaluateSlTp(order, 15000m, 1, bar2, options);
+        var result2 = _matcher.EvaluateSlTp(order, 15000L, 1, bar2, options);
 
         Assert.NotNull(result2);
-        Assert.Equal(16000m, result2.Value.Price);
+        Assert.Equal(16000L, result2.Value.Price);
         Assert.Equal(1m, result2.Value.ClosurePercentage);
         Assert.False(result2.Value.IsStopLoss);
         Assert.Equal(1, result2.Value.TpIndex);

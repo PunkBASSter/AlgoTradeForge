@@ -4,8 +4,8 @@ public sealed class Portfolio
 {
     private readonly Dictionary<string, Position> _positions = new();
 
-    public required decimal InitialCash { get; init; }
-    public decimal Cash { get; private set; }
+    public required long InitialCash { get; init; }
+    public long Cash { get; private set; }
     public IReadOnlyDictionary<string, Position> Positions => _positions;
 
     public Position? GetPosition(string symbol) =>
@@ -21,17 +21,17 @@ public sealed class Portfolio
         return position;
     }
 
-    public decimal Equity(decimal currentPrice)
+    public long Equity(long currentPrice)
     {
         var positionValue = 0m;
         foreach (var position in _positions.Values)
         {
             positionValue += position.Quantity * currentPrice * position.Asset.Multiplier;
         }
-        return Cash + positionValue;
+        return Cash + (long)positionValue;
     }
 
-    public decimal Equity(IReadOnlyDictionary<string, decimal> prices)
+    public long Equity(IReadOnlyDictionary<string, long> prices)
     {
         var positionValue = 0m;
         foreach (var (symbol, position) in _positions)
@@ -41,7 +41,7 @@ public sealed class Portfolio
                 positionValue += position.Quantity * price * position.Asset.Multiplier;
             }
         }
-        return Cash + positionValue;
+        return Cash + (long)positionValue;
     }
 
     internal void Initialize()
@@ -57,7 +57,7 @@ public sealed class Portfolio
     internal void Apply(Fill fill)
     {
         var direction = fill.Side == OrderSide.Buy ? -1 : 1;
-        var cashChange = fill.Price * fill.Quantity * fill.Asset.Multiplier * direction - fill.Commission;
+        var cashChange = (long)(fill.Price * fill.Quantity * fill.Asset.Multiplier * direction) - fill.Commission;
         Cash += cashChange;
 
         var position = GetOrCreatePosition(fill.Asset);

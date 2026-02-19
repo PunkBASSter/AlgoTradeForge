@@ -9,8 +9,8 @@ public class MetricsCalculator : IMetricsCalculator
 
     public PerformanceMetrics Calculate(
         IReadOnlyList<Fill> fills,
-        IReadOnlyList<decimal> equityCurve,
-        decimal initialCash,
+        IReadOnlyList<long> equityCurve,
+        long initialCash,
         DateTimeOffset startTime,
         DateTimeOffset endTime)
     {
@@ -29,11 +29,11 @@ public class MetricsCalculator : IMetricsCalculator
         var (sharpe, sortino) = ComputeRiskMetrics(curve, periodsPerYear);
 
         var totalReturn = initialCash != 0
-            ? (double)((finalEquity - initialCash) / initialCash * 100)
+            ? (double)(finalEquity - initialCash) / (double)initialCash * 100
             : 0;
 
         var annualizedReturn = years > 0 && initialCash != 0
-            ? (Math.Pow((double)(finalEquity / initialCash), 1.0 / years) - 1) * 100
+            ? (Math.Pow((double)finalEquity / (double)initialCash, 1.0 / years) - 1) * 100
             : 0;
 
         var winRate = tradeStats.RoundTrips > 0
@@ -70,7 +70,7 @@ public class MetricsCalculator : IMetricsCalculator
     private static TradeStatistics ComputeTradeStatistics(IReadOnlyList<Fill> fills)
     {
         var stats = new TradeStatistics();
-        var positions = new Dictionary<string, (decimal Quantity, decimal AvgEntry, Asset Asset)>();
+        var positions = new Dictionary<string, (decimal Quantity, long AvgEntry, Asset Asset)>();
 
         foreach (var fill in fills)
         {
@@ -78,7 +78,7 @@ public class MetricsCalculator : IMetricsCalculator
             var multiplier = fill.Asset.Multiplier;
 
             if (!positions.TryGetValue(key, out var pos))
-                pos = (0m, 0m, fill.Asset);
+                pos = (0m, 0L, fill.Asset);
 
             var direction = fill.Side == OrderSide.Buy ? 1 : -1;
             var fillQuantity = fill.Quantity * direction;
@@ -107,7 +107,7 @@ public class MetricsCalculator : IMetricsCalculator
             {
                 // Adding to position — weighted average entry
                 var totalCost = pos.Quantity * pos.AvgEntry + fillQuantity * fill.Price;
-                pos = (newQuantity, totalCost / newQuantity, fill.Asset);
+                pos = (newQuantity, (long)(totalCost / newQuantity), fill.Asset);
             }
 
             positions[key] = pos;
@@ -131,7 +131,7 @@ public class MetricsCalculator : IMetricsCalculator
         stats.RoundTrips++;
     }
 
-    private static List<double> BuildDoubleCurve(IReadOnlyList<decimal> equityCurve)
+    private static List<double> BuildDoubleCurve(IReadOnlyList<long> equityCurve)
     {
         var curve = new List<double>(equityCurve.Count);
         foreach (var e in equityCurve)
@@ -215,7 +215,7 @@ public class MetricsCalculator : IMetricsCalculator
         return (sharpe, sortino);
     }
 
-    private static PerformanceMetrics CreateEmptyMetrics(decimal initialCapital, decimal finalEquity, int tradingDays)
+    private static PerformanceMetrics CreateEmptyMetrics(long initialCapital, long finalEquity, int tradingDays)
     {
         return new PerformanceMetrics
         {

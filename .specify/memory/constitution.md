@@ -1,20 +1,17 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.2.0 → 1.3.0
-Modified principles:
-  - I. Strategy-as-Code: Clarified stateless requirement — execution state MUST
-    flow through IOrderContext; analytical state (indicators, bar history) MAY be
-    maintained between bars. Added rationale expansion.
+Version change: 1.3.0 → 1.4.0
+Modified principles: None
 Added sections: None
 Removed sections: None
 Modified sections:
-  - Principle I bullet points: split "stateless between bars" into two explicit
-    bullets (execution state vs analytical state)
-  - Principle I rationale: added sentence on analytical/execution distinction
+  - Backend > Code Style: Added "Int64 Money Convention" bullet — all monetary
+    and price values within the Domain layer MUST use long (Int64). The
+    Application layer is the decimal↔long conversion boundary via asset.TickSize.
+    Quantities and percentages remain decimal.
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ compatible
-    (Constitution Check references Principle I by name; wording change is additive)
+  - .specify/templates/plan-template.md ✅ compatible (no money-type references)
   - .specify/templates/spec-template.md ✅ compatible
   - .specify/templates/tasks-template.md ✅ compatible
 Follow-up TODOs: None
@@ -175,6 +172,12 @@ frontend/
   - Flagging a known pitfall, workaround, or counterintuitive behavior
   - Documenting a `TODO` or `HACK` with justification
 - Code MUST be self-documenting through clear naming, small methods, and explicit types
+- MUST use `long` (Int64) for all monetary and price values within the Domain layer
+  (cash, fill prices, commissions, equity curve). The Application layer converts
+  `decimal` inputs to `long` via `(long)(value / asset.TickSize)` before calling
+  the Domain engine, and converts `long` results back to `decimal` via
+  `value * asset.TickSize` for the returned response. Quantities and percentages
+  stay `decimal`.
 
 **API Design**:
 
@@ -355,4 +358,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.3.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-14
+**Version**: 1.4.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-19

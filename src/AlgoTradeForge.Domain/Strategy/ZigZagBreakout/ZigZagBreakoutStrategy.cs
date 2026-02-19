@@ -61,7 +61,7 @@ public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters) : St
             {
                 var pending = orders.GetPendingOrders();
                 var existing = pending.FirstOrDefault(o => o.Id == _pendingOrderId.Value);
-                if (existing is not null && existing.StopPrice == (decimal)price && existing.StopLossPrice == (decimal)sl)
+                if (existing is not null && existing.StopPrice == price && existing.StopLossPrice == sl)
                     return; // Same signal, keep existing order
 
                 // Different signal — cancel old, submit new

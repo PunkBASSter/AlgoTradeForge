@@ -5,7 +5,7 @@ namespace AlgoTradeForge.Domain.Engine;
 
 public interface IBarMatcher
 {
-    decimal? GetFillPrice(Order order, Int64Bar bar, BacktestOptions options);
+    long? GetFillPrice(Order order, Int64Bar bar, BacktestOptions options);
 
     /// <summary>
     /// Evaluates SL/TP levels against a bar for a filled entry order.
@@ -14,11 +14,11 @@ public interface IBarMatcher
     /// </summary>
     SlTpMatchResult? EvaluateSlTp(
         Order originalOrder,
-        decimal entryPrice,
+        long entryPrice,
         int nextTpIndex,
         Int64Bar bar,
         BacktestOptions options);
 }
 
 public readonly record struct SlTpMatchResult(
-    decimal Price, decimal ClosurePercentage, bool IsStopLoss, int TpIndex);
+    long Price, decimal ClosurePercentage, bool IsStopLoss, int TpIndex);

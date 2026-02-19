@@ -26,7 +26,7 @@ public class BacktestEngineTests
     private static BacktestOptions CreateOptions() =>
         new()
         {
-            InitialCash = 100_000m,
+            InitialCash = 100_000L,
             Asset = TestAssets.Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
@@ -167,7 +167,7 @@ public class BacktestEngineTests
 
         Assert.Equal(0, result.TotalBarsProcessed);
         Assert.Empty(result.Fills);
-        Assert.Equal(100_000m, result.FinalPortfolio.Cash);
+        Assert.Equal(100_000L, result.FinalPortfolio.Cash);
     }
 
     [Fact]
@@ -287,7 +287,7 @@ public class BacktestEngineTests
 
         // Bars have High = open + 200, so bar at 15200 has High=15400 >= 15350
         Assert.Single(result.Fills);
-        Assert.Equal(15350m, result.Fills[0].Price);
+        Assert.Equal(15350L, result.Fills[0].Price);
     }
 
     [Fact]
@@ -323,7 +323,7 @@ public class BacktestEngineTests
 
         // Bar at open=15200 has High=15400 >= StopPrice=15350
         Assert.Single(result.Fills);
-        Assert.Equal(15350m, result.Fills[0].Price);
+        Assert.Equal(15350L, result.Fills[0].Price);
     }
 
     [Fact]
@@ -359,7 +359,7 @@ public class BacktestEngineTests
         var result = engine.Run([bars], strategy, CreateOptions());
 
         Assert.Single(result.Fills);
-        Assert.Equal(15400m, result.Fills[0].Price);
+        Assert.Equal(15400L, result.Fills[0].Price);
     }
 
     [Fact]
@@ -437,7 +437,7 @@ public class BacktestEngineTests
 
         var opts = new BacktestOptions
         {
-            InitialCash = 100_000m,
+            InitialCash = 100_000L,
             Asset = TestAssets.Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
@@ -484,7 +484,7 @@ public class BacktestEngineTests
 
         var opts = new BacktestOptions
         {
-            InitialCash = 1_000_000m, // large cash pool so no rejections
+            InitialCash = 1_000_000L, // large cash pool so no rejections
             Asset = TestAssets.Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
@@ -544,7 +544,7 @@ public class BacktestEngineTests
         var result = engine.Run([bars], strategy, CreateOptions());
 
         Assert.Equal(2, result.Fills.Count);
-        Assert.Equal(9800m, result.Fills[1].Price);
+        Assert.Equal(9800L, result.Fills[1].Price);
         Assert.Equal(OrderSide.Sell, result.Fills[1].Side); // SL closing the long
     }
 
@@ -577,7 +577,7 @@ public class BacktestEngineTests
                         Side = OrderSide.Buy,
                         Type = OrderType.Market,
                         Quantity = 5m,
-                        TakeProfitLevels = [new TakeProfitLevel(10500m, 1m)]
+                        TakeProfitLevels = [new TakeProfitLevel(10500L, 1m)]
                     });
                 }
             });
@@ -585,7 +585,7 @@ public class BacktestEngineTests
         var result = engine.Run([bars], strategy, CreateOptions());
 
         Assert.Equal(2, result.Fills.Count);
-        Assert.Equal(10500m, result.Fills[1].Price); // TP hit
+        Assert.Equal(10500L, result.Fills[1].Price); // TP hit
     }
 
     [Fact]
@@ -621,8 +621,8 @@ public class BacktestEngineTests
                         Quantity = 10m,
                         TakeProfitLevels =
                         [
-                            new TakeProfitLevel(1050m, 0.5m), // TP1: close 50% at 1050
-                            new TakeProfitLevel(1100m, 1m)    // TP2: close remaining at 1100
+                            new TakeProfitLevel(1050L, 0.5m), // TP1: close 50% at 1050
+                            new TakeProfitLevel(1100L, 1m)    // TP2: close remaining at 1100
                         ]
                     });
                 }
@@ -634,10 +634,10 @@ public class BacktestEngineTests
         // Fill 0: entry
         Assert.Equal(10m, result.Fills[0].Quantity);
         // Fill 1: TP1 -- 50% of 10 = 5
-        Assert.Equal(1050m, result.Fills[1].Price);
+        Assert.Equal(1050L, result.Fills[1].Price);
         Assert.Equal(5m, result.Fills[1].Quantity);
         // Fill 2: TP2 -- remaining 5
-        Assert.Equal(1100m, result.Fills[2].Price);
+        Assert.Equal(1100L, result.Fills[2].Price);
         Assert.Equal(5m, result.Fills[2].Quantity);
     }
 

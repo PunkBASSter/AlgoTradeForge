@@ -129,26 +129,41 @@ public sealed class RunOptimizationCommandHandler(
                         $"No pre-loaded data for subscription {key}.");
             }
 
+            var trialAsset = strategy.DataSubscriptions[0].Asset;
+            var trialScaleFactor = 1m / trialAsset.TickSize;
+
             var backOptions = new BacktestOptions
             {
-                InitialCash = command.InitialCash,
-                Asset = strategy.DataSubscriptions[0].Asset,
+                InitialCash = (long)(command.InitialCash * trialScaleFactor),
+                Asset = trialAsset,
                 StartTime = command.StartTime,
                 EndTime = command.EndTime,
-                CommissionPerTrade = command.CommissionPerTrade,
+                CommissionPerTrade = (long)(command.CommissionPerTrade * trialScaleFactor),
                 SlippageTicks = command.SlippageTicks
             };
 
             var result = engine.Run(seriesArray, strategy, backOptions, token);
             var metrics = metricsCalculator.Calculate(
-                result.Fills, result.EquityCurve, command.InitialCash,
+                result.Fills, result.EquityCurve, backOptions.InitialCash,
                 command.StartTime, command.EndTime);
+
+            // Scale absolute dollar values back to real units
+            var scaledMetrics = metrics with
+            {
+                InitialCapital = metrics.InitialCapital / trialScaleFactor,
+                FinalEquity = metrics.FinalEquity / trialScaleFactor,
+                NetProfit = metrics.NetProfit / trialScaleFactor,
+                GrossProfit = metrics.GrossProfit / trialScaleFactor,
+                GrossLoss = metrics.GrossLoss / trialScaleFactor,
+                AverageWin = metrics.AverageWin / (double)trialScaleFactor,
+                AverageLoss = metrics.AverageLoss / (double)trialScaleFactor,
+            };
 
             trialWatch.Stop();
             results.Add(new OptimizationTrialResultDto
             {
                 Parameters = combination.Values,
-                Metrics = metrics,
+                Metrics = scaledMetrics,
                 Duration = trialWatch.Elapsed
             });
 

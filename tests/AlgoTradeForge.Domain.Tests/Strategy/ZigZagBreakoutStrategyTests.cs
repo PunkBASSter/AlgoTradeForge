@@ -16,7 +16,7 @@ public class ZigZagBreakoutStrategyTests
     private static BacktestOptions CreateOptions(Asset asset) =>
         new()
         {
-            InitialCash = 100_000m,
+            InitialCash = 100_000L,
             Asset = asset,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
@@ -86,11 +86,11 @@ public class ZigZagBreakoutStrategyTests
 
         var entryFill = result.Fills[0];
         Assert.Equal(OrderSide.Buy, entryFill.Side);
-        Assert.Equal(2000m, entryFill.Price);
+        Assert.Equal(2000L, entryFill.Price);
 
         var exitFill = result.Fills[1];
         Assert.Equal(OrderSide.Sell, exitFill.Side);
-        Assert.Equal(2300m, exitFill.Price);
+        Assert.Equal(2300L, exitFill.Price);
     }
 
     [Fact]
