@@ -16,7 +16,7 @@ public sealed class RunBacktestCommandHandler(
 {
     public async Task<BacktestResultDto> HandleAsync(RunBacktestCommand command, CancellationToken ct = default)
     {
-        var asset = await assetRepository.GetByNameAsync(command.AssetName, ct)
+        var asset = await assetRepository.GetByNameAsync(command.AssetName, command.Exchange, ct)
             ?? throw new ArgumentException($"Asset '{command.AssetName}' not found.", nameof(command));
 
         var strategy = strategyFactory.Create(command.StrategyName, command.StrategyParameters);
@@ -33,7 +33,10 @@ public sealed class RunBacktestCommandHandler(
         };
 
         if (strategy.DataSubscriptions.Count == 0)
-            strategy.DataSubscriptions.Add(new DataSubscription(asset, asset.SmallestInterval));
+        {
+            var timeFrame = command.TimeFrame ?? asset.SmallestInterval;
+            strategy.DataSubscriptions.Add(new DataSubscription(asset, timeFrame));
+        }
 
         var fromDate = DateOnly.FromDateTime(command.StartTime.UtcDateTime);
         var toDate = DateOnly.FromDateTime(command.EndTime.UtcDateTime);
@@ -47,7 +50,9 @@ public sealed class RunBacktestCommandHandler(
 
         var result = engine.Run(seriesArray, strategy, options, ct);
 
-        var metrics = metricsCalculator.Calculate(result.Fills, result.EquityCurve, command.InitialCash);
+        var metrics = metricsCalculator.Calculate(
+            result.Fills, result.EquityCurve, command.InitialCash,
+            command.StartTime, command.EndTime);
 
         return new BacktestResultDto
         {

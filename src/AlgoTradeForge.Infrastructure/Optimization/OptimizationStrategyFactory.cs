@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
@@ -116,6 +117,9 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
         if (targetType.IsInstanceOfType(value))
             return value;
 
+        if (value is JsonElement jsonElement)
+            return ConvertJsonElement(jsonElement, targetType);
+
         // Handle numeric conversions
         if (targetType == typeof(decimal)) return Convert.ToDecimal(value);
         if (targetType == typeof(double)) return Convert.ToDouble(value);
@@ -124,6 +128,19 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
         if (targetType == typeof(float)) return Convert.ToSingle(value);
 
         return Convert.ChangeType(value, targetType);
+    }
+
+    private static object ConvertJsonElement(JsonElement element, Type targetType)
+    {
+        if (targetType == typeof(decimal)) return element.GetDecimal();
+        if (targetType == typeof(double)) return element.GetDouble();
+        if (targetType == typeof(int)) return element.GetInt32();
+        if (targetType == typeof(long)) return element.GetInt64();
+        if (targetType == typeof(float)) return (float)element.GetDouble();
+        if (targetType == typeof(string)) return element.GetString()!;
+        if (targetType == typeof(bool)) return element.GetBoolean();
+
+        return element.Deserialize(targetType)!;
     }
 
     private static IInt64BarStrategy CreateStrategyInstance(Type strategyType, object paramsInstance)

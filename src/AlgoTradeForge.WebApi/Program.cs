@@ -4,9 +4,11 @@ using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Infrastructure;
 using AlgoTradeForge.Infrastructure.CandleIngestion;
 using AlgoTradeForge.Infrastructure.History;
+using AlgoTradeForge.Infrastructure.Repositories;
 using AlgoTradeForge.WebApi.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -42,7 +44,7 @@ builder.Services.AddSingleton<IHistoryRepository, HistoryRepository>();
 // Register optimization infrastructure
 builder.Services.AddInfrastructure(typeof(AlgoTradeForge.Domain.Strategy.StrategyBase<>).Assembly);
 
-// NOTE: IAssetRepository must be registered by an Infrastructure layer or test configuration
+builder.Services.AddSingleton<IAssetRepository, InMemoryAssetRepository>();
 
 var app = builder.Build();
 

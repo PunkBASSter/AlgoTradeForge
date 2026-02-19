@@ -11,8 +11,6 @@ public sealed class CsvDataSource(
     public TimeSeries<Int64Bar> GetData(HistoryDataQuery query)
     {
         var asset = query.Asset;
-        var exchange = asset.Exchange
-            ?? throw new InvalidOperationException($"Asset '{asset.Name}' has no Exchange configured.");
 
         var from = query.StartTime
             ?? throw new ArgumentException("StartTime is required.", nameof(query));
@@ -28,7 +26,7 @@ public sealed class CsvDataSource(
 
         var raw = barLoader.Load(
             storageOptions.Value.DataRoot,
-            exchange,
+            asset.Exchange,
             asset.Name,
             asset.DecimalDigits,
             DateOnly.FromDateTime(from.UtcDateTime),

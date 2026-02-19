@@ -1,3 +1,4 @@
+using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.WebApi.Contracts;
@@ -31,15 +32,25 @@ public static class BacktestEndpoints
         ICommandHandler<RunBacktestCommand, BacktestResultDto> handler,
         CancellationToken ct)
     {
+        TimeSpan? timeFrame = null;
+        if (request.TimeFrame is not null)
+        {
+            if (!TimeSpan.TryParse(request.TimeFrame, CultureInfo.InvariantCulture, out var parsed))
+                return Results.BadRequest(new { error = $"Invalid TimeFrame '{request.TimeFrame}'." });
+            timeFrame = parsed;
+        }
+
         var command = new RunBacktestCommand
         {
             AssetName = request.AssetName,
+            Exchange = request.Exchange,
             StrategyName = request.StrategyName,
             InitialCash = request.InitialCash,
             StartTime = request.StartTime,
             EndTime = request.EndTime,
             CommissionPerTrade = request.CommissionPerTrade,
             SlippageTicks = request.SlippageTicks,
+            TimeFrame = timeFrame,
             StrategyParameters = request.StrategyParameters
         };
 

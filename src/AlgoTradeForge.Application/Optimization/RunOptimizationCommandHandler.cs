@@ -43,8 +43,8 @@ public sealed class RunOptimizationCommandHandler(
         var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
         foreach (var sub in dataSubs)
         {
-            var asset = await assetRepository.GetByNameAsync(sub.Asset, ct)
-                ?? throw new ArgumentException($"Asset '{sub.Asset}' not found.");
+            var asset = await assetRepository.GetByNameAsync(sub.Asset, sub.Exchange, ct)
+                ?? throw new ArgumentException($"Asset '{sub.Asset}' on exchange '{sub.Exchange}' not found.");
 
             if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out var timeFrame))
                 throw new ArgumentException(
@@ -140,7 +140,9 @@ public sealed class RunOptimizationCommandHandler(
             };
 
             var result = engine.Run(seriesArray, strategy, backOptions, token);
-            var metrics = metricsCalculator.Calculate(result.Fills, result.EquityCurve, command.InitialCash);
+            var metrics = metricsCalculator.Calculate(
+                result.Fills, result.EquityCurve, command.InitialCash,
+                command.StartTime, command.EndTime);
 
             trialWatch.Stop();
             results.Add(new OptimizationTrialResultDto

@@ -10,10 +10,13 @@ public class MetricsCalculator : IMetricsCalculator
     public PerformanceMetrics Calculate(
         IReadOnlyList<Fill> fills,
         IReadOnlyList<decimal> equityCurve,
-        decimal initialCash)
+        decimal initialCash,
+        DateTimeOffset startTime,
+        DateTimeOffset endTime)
     {
         var finalEquity = equityCurve.Count > 0 ? equityCurve[^1] : initialCash;
-        var tradingDays = equityCurve.Count;
+        var totalDays = (endTime - startTime).TotalDays;
+        var tradingDays = (int)Math.Ceiling(totalDays);
 
         if (fills.Count == 0 || equityCurve.Count == 0)
             return CreateEmptyMetrics(initialCash, finalEquity, tradingDays);
@@ -21,14 +24,16 @@ public class MetricsCalculator : IMetricsCalculator
         var tradeStats = ComputeTradeStatistics(fills);
         var curve = BuildDoubleCurve(equityCurve);
         var maxDrawdown = ComputeMaxDrawdown(curve);
-        var (sharpe, sortino) = ComputeRiskMetrics(curve);
+        var years = totalDays / 365.25;
+        var periodsPerYear = years > 0 ? equityCurve.Count / years : TradingDaysPerYear;
+        var (sharpe, sortino) = ComputeRiskMetrics(curve, periodsPerYear);
 
         var totalReturn = initialCash != 0
             ? (double)((finalEquity - initialCash) / initialCash * 100)
             : 0;
 
-        var annualizedReturn = initialCash != 0 && tradingDays > 0
-            ? (Math.Pow((double)(finalEquity / initialCash), (double)TradingDaysPerYear / tradingDays) - 1) * 100
+        var annualizedReturn = years > 0 && initialCash != 0
+            ? (Math.Pow((double)(finalEquity / initialCash), 1.0 / years) - 1) * 100
             : 0;
 
         var winRate = tradeStats.RoundTrips > 0
@@ -158,7 +163,7 @@ public class MetricsCalculator : IMetricsCalculator
         return maxDrawdown;
     }
 
-    private static (double sharpe, double sortino) ComputeRiskMetrics(List<double> equityCurve)
+    private static (double sharpe, double sortino) ComputeRiskMetrics(List<double> equityCurve, double periodsPerYear)
     {
         if (equityCurve.Count < 2)
             return (0, 0);
@@ -187,10 +192,11 @@ public class MetricsCalculator : IMetricsCalculator
         var mean = sum / n;
         var variance = sumSq / n - mean * mean;
         var stdDev = Math.Sqrt(Math.Max(0, variance));
-        var dailyRiskFreeRate = RiskFreeRate / TradingDaysPerYear;
+        var riskFreeRatePerPeriod = RiskFreeRate / periodsPerYear;
+        var annualizationFactor = Math.Sqrt(periodsPerYear);
 
         var sharpe = stdDev > 0
-            ? (mean - dailyRiskFreeRate) / stdDev * Math.Sqrt(TradingDaysPerYear)
+            ? (mean - riskFreeRatePerPeriod) / stdDev * annualizationFactor
             : 0;
 
         var sortino = 0.0;
@@ -198,10 +204,10 @@ public class MetricsCalculator : IMetricsCalculator
         {
             var downwardStdDev = Math.Sqrt(negSumSq / negCount);
             sortino = downwardStdDev > 0
-                ? (mean - dailyRiskFreeRate) / downwardStdDev * Math.Sqrt(TradingDaysPerYear)
+                ? (mean - riskFreeRatePerPeriod) / downwardStdDev * annualizationFactor
                 : 0;
         }
-        else if (mean > dailyRiskFreeRate)
+        else if (mean > riskFreeRatePerPeriod)
         {
             sortino = double.PositiveInfinity;
         }
