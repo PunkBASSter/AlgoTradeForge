@@ -49,9 +49,10 @@ public class MetricsCalculator : IMetricsCalculator
             TotalTrades = fills.Count,
             WinningTrades = tradeStats.WinningTrades,
             LosingTrades = tradeStats.LosingTrades,
-            NetProfit = (decimal)(tradeStats.GrossProfit - tradeStats.GrossLoss),
+            NetProfit = (decimal)(tradeStats.GrossProfit - tradeStats.GrossLoss - tradeStats.TotalCommissions),
             GrossProfit = (decimal)tradeStats.GrossProfit,
             GrossLoss = (decimal)tradeStats.GrossLoss,
+            TotalCommissions = (decimal)tradeStats.TotalCommissions,
             TotalReturnPct = totalReturn,
             AnnualizedReturnPct = annualizedReturn,
             SharpeRatio = sharpe,
@@ -74,6 +75,7 @@ public class MetricsCalculator : IMetricsCalculator
 
         foreach (var fill in fills)
         {
+            stats.TotalCommissions += (double)fill.Commission;
             var key = fill.Asset.Name;
             var multiplier = fill.Asset.Multiplier;
 
@@ -220,7 +222,7 @@ public class MetricsCalculator : IMetricsCalculator
         return new PerformanceMetrics
         {
             TotalTrades = 0, WinningTrades = 0, LosingTrades = 0,
-            NetProfit = 0, GrossProfit = 0, GrossLoss = 0,
+            NetProfit = 0, GrossProfit = 0, GrossLoss = 0, TotalCommissions = 0,
             TotalReturnPct = 0, AnnualizedReturnPct = 0,
             SharpeRatio = 0, SortinoRatio = 0, MaxDrawdownPct = 0,
             WinRatePct = 0, ProfitFactor = 0, AverageWin = 0, AverageLoss = 0,
@@ -235,5 +237,6 @@ public class MetricsCalculator : IMetricsCalculator
         public int RoundTrips { get; set; }
         public double GrossProfit { get; set; }
         public double GrossLoss { get; set; }
+        public double TotalCommissions { get; set; }
     }
 }

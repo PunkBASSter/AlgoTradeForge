@@ -100,6 +100,25 @@ public class MetricsCalculatorTests
     }
 
     [Fact]
+    public void NetProfit_SubtractsCommissions()
+    {
+        // Buy at 100, sell at 121 → trade PnL = (121-100)*10*1 = 210
+        // Each fill has commission of 5 → total commission = 10
+        // NetProfit should be 210 - 10 = 200
+        var fills = new List<Fill>
+        {
+            TestFills.BuyAapl(100L, 10m, commission: 5L),
+            TestFills.SellAapl(121L, 10m, commission: 5L)
+        };
+        var equityCurve = new List<long> { 10_000L, 10_200L };
+
+        var metrics = _sut.Calculate(fills, equityCurve, 10_000L, Start, TwoYearsLater);
+
+        Assert.Equal(200m, metrics.NetProfit);
+        Assert.Equal(10m, metrics.TotalCommissions);
+    }
+
+    [Fact]
     public void EmptyEquityCurve_ReturnsZeroMetrics()
     {
         var metrics = _sut.Calculate(

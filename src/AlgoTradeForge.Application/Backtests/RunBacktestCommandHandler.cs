@@ -65,6 +65,7 @@ public sealed class RunBacktestCommandHandler(
             InitialCapital = metrics.InitialCapital / scaleFactor,
             FinalEquity = metrics.FinalEquity / scaleFactor,
             NetProfit = metrics.NetProfit / scaleFactor,
+            TotalCommissions = metrics.TotalCommissions / scaleFactor,
             TotalReturnPct = metrics.TotalReturnPct,
             AnnualizedReturnPct = metrics.AnnualizedReturnPct,
             SharpeRatio = metrics.SharpeRatio,

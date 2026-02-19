@@ -8,6 +8,7 @@ public sealed record BacktestResultDto
     public required decimal InitialCapital { get; init; }
     public required decimal FinalEquity { get; init; }
     public required decimal NetProfit { get; init; }
+    public required decimal TotalCommissions { get; init; }
     public required double TotalReturnPct { get; init; }
     public required double AnnualizedReturnPct { get; init; }
     public required double SharpeRatio { get; init; }

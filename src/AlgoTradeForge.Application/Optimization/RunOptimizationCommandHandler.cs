@@ -155,6 +155,7 @@ public sealed class RunOptimizationCommandHandler(
                 NetProfit = metrics.NetProfit / trialScaleFactor,
                 GrossProfit = metrics.GrossProfit / trialScaleFactor,
                 GrossLoss = metrics.GrossLoss / trialScaleFactor,
+                TotalCommissions = metrics.TotalCommissions / trialScaleFactor,
                 AverageWin = metrics.AverageWin / (double)trialScaleFactor,
                 AverageLoss = metrics.AverageLoss / (double)trialScaleFactor,
             };
