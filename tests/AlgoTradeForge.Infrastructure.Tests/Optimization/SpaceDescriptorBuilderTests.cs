@@ -39,8 +39,8 @@ public class SpaceDescriptorBuilderTests
         Assert.Equal(typeof(decimal), dzzAxis.ClrType);
 
         var thresholdAxis = numericAxes.Single(a => a.Name == "MinimumThreshold");
-        Assert.Equal(10m, thresholdAxis.Min);
-        Assert.Equal(100m, thresholdAxis.Max);
+        Assert.Equal(5_000m, thresholdAxis.Min);
+        Assert.Equal(50_000m, thresholdAxis.Max);
         Assert.Equal(typeof(long), thresholdAxis.ClrType);
 
         var riskAxis = numericAxes.Single(a => a.Name == "RiskPercentPerTrade");
