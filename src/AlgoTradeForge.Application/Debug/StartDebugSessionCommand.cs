@@ -2,7 +2,7 @@ using AlgoTradeForge.Application.Abstractions;
 
 namespace AlgoTradeForge.Application.Debug;
 
-public sealed record StartDebugSessionCommand : ICommand<DebugSessionDto>
+public sealed record StartDebugSessionCommand : ICommand<DebugSessionDto>, IBacktestSetupCommand
 {
     public required string AssetName { get; init; }
     public required string Exchange { get; init; }

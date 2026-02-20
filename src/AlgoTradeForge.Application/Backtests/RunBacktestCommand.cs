@@ -2,7 +2,7 @@ using AlgoTradeForge.Application.Abstractions;
 
 namespace AlgoTradeForge.Application.Backtests;
 
-public sealed record RunBacktestCommand : ICommand<BacktestResultDto>
+public sealed record RunBacktestCommand : ICommand<BacktestResultDto>, IBacktestSetupCommand
 {
     public required string AssetName { get; init; }
     public required string Exchange { get; init; }
