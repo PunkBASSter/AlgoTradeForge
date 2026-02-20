@@ -44,7 +44,7 @@ internal sealed class BacktestOrderContext : IOrderContext
         {
             _bus.Emit(new OrderCancelEvent(
                 _currentTimestamp,
-                "engine",
+                EventSources.Engine,
                 order.Id,
                 order.Asset.Name,
                 "Strategy cancelled"));

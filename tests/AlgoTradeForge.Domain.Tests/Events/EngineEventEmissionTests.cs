@@ -299,6 +299,65 @@ public class EngineEventEmissionTests
         Assert.Equal(0m, positions[1].Quantity); // closed
     }
 
+    // ── Position lifecycle: open → increase → close ─────────────────────
+
+    [Fact]
+    public void PositionLifecycle_Open_Increase_Close()
+    {
+        var bus = new CapturingEventBus();
+        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var barCount = 0;
+
+        var strategy = new ActionStrategy(sub)
+        {
+            OnBarStartAction = (_, _, orders) =>
+            {
+                barCount++;
+                switch (barCount)
+                {
+                    case 1: // Open: buy 2
+                        orders.Submit(new Order
+                        {
+                            Id = 0, Asset = TestAssets.Aapl,
+                            Side = OrderSide.Buy, Type = OrderType.Market, Quantity = 2m
+                        });
+                        break;
+                    case 2: // Increase: buy 3 more
+                        orders.Submit(new Order
+                        {
+                            Id = 0, Asset = TestAssets.Aapl,
+                            Side = OrderSide.Buy, Type = OrderType.Market, Quantity = 3m
+                        });
+                        break;
+                    case 3: // Close: sell all 5
+                        orders.Submit(new Order
+                        {
+                            Id = 0, Asset = TestAssets.Aapl,
+                            Side = OrderSide.Sell, Type = OrderType.Market, Quantity = 5m
+                        });
+                        break;
+                }
+            }
+        };
+
+        var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 1000);
+        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
+
+        var positions = bus.Events.OfType<PositionEvent>().ToList();
+        Assert.Equal(3, positions.Count);
+
+        // Open: qty 2
+        Assert.Equal(2m, positions[0].Quantity);
+        Assert.Equal(1000L, positions[0].AverageEntryPrice);
+
+        // Increase: qty 5 (2 + 3), blended average entry
+        Assert.Equal(5m, positions[1].Quantity);
+        Assert.True(positions[1].AverageEntryPrice > 0);
+
+        // Close: qty 0, realized PnL recorded
+        Assert.Equal(0m, positions[2].Quantity);
+    }
+
     // ── Full event stream ordering ──────────────────────────────────────
 
     [Fact]
@@ -459,6 +518,28 @@ public class EngineEventEmissionTests
         Assert.True(evt.Duration > TimeSpan.Zero);
     }
 
+    // ── sig event via StrategyBase.EmitSignal ───────────────────────────
+
+    [Fact]
+    public void StrategyEmitSignal_EndToEnd_CapturedByBus()
+    {
+        var bus = new CapturingEventBus();
+        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var strategy = new SignalEmittingTestStrategy(new SignalTestParams { DataSubscriptions = [sub] });
+        var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 1000);
+
+        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
+
+        var signals = bus.Events.OfType<SignalEvent>().ToList();
+        Assert.Equal(2, signals.Count); // one per bar
+        Assert.Equal("CrossUp", signals[0].SignalName);
+        Assert.Equal("AAPL", signals[0].AssetName);
+        Assert.Equal("Long", signals[0].Direction);
+        Assert.Equal(0.9m, signals[0].Strength);
+        Assert.Equal("Test reason", signals[0].Reason);
+        Assert.Equal(nameof(SignalEmittingTestStrategy), signals[0].Source);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private sealed class CapturingEventBus : IEventBus
@@ -484,5 +565,15 @@ public class EngineEventEmissionTests
             OnBarCompleteAction?.Invoke(bar, subscription, orders);
 
         public void OnTrade(Fill fill, Order order) { }
+    }
+
+    private sealed class SignalTestParams : StrategyParamsBase;
+
+    private sealed class SignalEmittingTestStrategy(SignalTestParams p) : StrategyBase<SignalTestParams>(p)
+    {
+        public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+        {
+            EmitSignal(bar.Timestamp, "CrossUp", subscription.Asset.Name, "Long", 0.9m, "Test reason");
+        }
     }
 }

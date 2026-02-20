@@ -21,5 +21,13 @@ public abstract class StrategyBase<TParams>(TParams parameters) : IInt64BarStrat
 
     public virtual void OnTrade(Fill fill, Order order) { }
 
+    protected void EmitSignal(DateTimeOffset timestamp, string signalName, string assetName,
+        string direction, decimal strength, string? reason = null)
+    {
+        EventBus.Emit(new SignalEvent(
+            timestamp, GetType().Name,
+            signalName, assetName, direction, strength, reason));
+    }
+
     void IEventBusReceiver.SetEventBus(IEventBus bus) => EventBus = bus;
 }

@@ -11,7 +11,7 @@ namespace AlgoTradeForge.Domain.Engine;
 /// </summary>
 public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEvaluator)
 {
-    private const string Source = "engine";
+    private const string Source = EventSources.Engine;
     public BacktestResult Run(
         TimeSeries<Int64Bar>[] seriesPerSubscription,
         IInt64BarStrategy strategy,
