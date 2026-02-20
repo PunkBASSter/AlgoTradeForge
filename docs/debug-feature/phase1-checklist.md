@@ -10,30 +10,30 @@
 
 ### Event Type Records
 
-- [ ] All event types from §2.2 defined as C# records implementing `IBacktestEvent`:
-  - [ ] `BarEvent` — bar closed (`bar`)
-  - [ ] `BarMutEvent` — open bar mutated (`bar.mut`)
-  - [ ] `IndEvent` — indicator computed for closed bar (`ind`)
-  - [ ] `IndMutEvent` — indicator recomputed on mutation (`ind.mut`)
-  - [ ] `SigEvent` — strategy signal generated (`sig`)
-  - [ ] `RiskEvent` — risk check performed (`risk`)
-  - [ ] `OrdPlaceEvent` — order submitted (`ord.place`)
-  - [ ] `OrdFillEvent` — order filled (`ord.fill`)
-  - [ ] `OrdCancelEvent` — order cancelled (`ord.cancel`)
-  - [ ] `OrdRejectEvent` — order rejected (`ord.reject`)
-  - [ ] `PosEvent` — position changed (`pos`)
-  - [ ] `RunStartEvent` — run began with config snapshot (`run.start`)
-  - [ ] `RunEndEvent` — run completed with summary (`run.end`)
-  - [ ] `ErrEvent` — error (`err`)
-  - [ ] `WarnEvent` — warning (`warn`)
-  - [ ] `TickEvent` — new tick received (`tick`) — opt-in, `ExportMode = Backtest`
-- [ ] Each record carries the canonical envelope fields: `ts` (ISO 8601 UTC), `sq` (uint64 monotonic), `_t` (event type string), `src` (emitting component), `d` (typed payload)
-- [ ] Event types live in Domain layer (no infrastructure dependencies)
+- [x] All event types from §2.2 defined as C# records implementing `IBacktestEvent`:
+  - [x] `BarEvent` — bar closed (`bar`)
+  - [x] `BarMutEvent` — open bar mutated (`bar.mut`)
+  - [x] `IndEvent` — indicator computed for closed bar (`ind`)
+  - [x] `IndMutEvent` — indicator recomputed on mutation (`ind.mut`)
+  - [x] `SigEvent` — strategy signal generated (`sig`)
+  - [x] `RiskEvent` — risk check performed (`risk`)
+  - [x] `OrdPlaceEvent` — order submitted (`ord.place`)
+  - [x] `OrdFillEvent` — order filled (`ord.fill`)
+  - [x] `OrdCancelEvent` — order cancelled (`ord.cancel`)
+  - [x] `OrdRejectEvent` — order rejected (`ord.reject`)
+  - [x] `PosEvent` — position changed (`pos`)
+  - [x] `RunStartEvent` — run began with config snapshot (`run.start`)
+  - [x] `RunEndEvent` — run completed with summary (`run.end`)
+  - [x] `ErrEvent` — error (`err`)
+  - [x] `WarnEvent` — warning (`warn`)
+  - [x] `TickEvent` — new tick received (`tick`) — opt-in, `ExportMode = Backtest`
+- [x] Each record carries the canonical envelope fields: `ts` (ISO 8601 UTC), `sq` (uint64 monotonic), `_t` (event type string), `src` (emitting component), `d` (typed payload)
+- [x] Event types live in Domain layer (no infrastructure dependencies)
 
 ### ExportMode
 
-- [ ] `[Flags] enum ExportMode { Backtest = 1, Optimization = 2, Live = 4 }` defined
-- [ ] Each event type annotated with its default `ExportMode` per §2.3 table:
+- [x] `[Flags] enum ExportMode { Backtest = 1, Optimization = 2, Live = 4 }` defined
+- [x] Each event type annotated with its default `ExportMode` per §2.3 table:
   - `ord.*`, `pos` → `Backtest | Optimization | Live`
   - `sig`, `risk` → `Backtest | Live`
   - `bar`, `ind` → `Backtest`
@@ -42,36 +42,36 @@
 
 ### IEventBus Interface
 
-- [ ] `IEventBus` interface in Domain with `void Emit<T>(T evt) where T : IBacktestEvent`
-- [ ] Call sites emit unconditionally — bus handles all filtering internally
-- [ ] No filtering logic leaks to call sites
+- [x] `IEventBus` interface in Domain with `void Emit<T>(T evt) where T : IBacktestEvent`
+- [x] Call sites emit unconditionally — bus handles all filtering internally
+- [x] No filtering logic leaks to call sites
 
 ### EventBus Implementation
 
-- [ ] `EventBus` in Application layer
-- [ ] Checks `ExportMode.HasFlag(currentRunMode)` before serialization — non-matching events silently dropped
-- [ ] Checks `DataSubscription.IsExportable` for `bar`, `bar.mut`, `ind`, `ind.mut` events — drops events from non-exportable subscriptions
-- [ ] Serializes each surviving event to JSON **once** (not per-sink)
-- [ ] Fans out serialized payload to all registered `ISink` instances
-- [ ] `ISink` interface defined (receives serialized event bytes/string)
+- [x] `EventBus` in Application layer
+- [x] Checks `ExportMode.HasFlag(currentRunMode)` before serialization — non-matching events silently dropped
+- [x] Checks `DataSubscription.IsExportable` for `bar`, `bar.mut`, `ind`, `ind.mut` events — drops events from non-exportable subscriptions
+- [x] Serializes each surviving event to JSON **once** (not per-sink)
+- [x] Fans out serialized payload to all registered `ISink` instances
+- [x] `ISink` interface defined (receives serialized event bytes/string)
 
 ### NullEventBus
 
-- [ ] `NullEventBus` implementation — all `Emit` calls are no-ops
-- [ ] Zero allocation on the emit path
-- [ ] Used for optimization runs and normal backtests that don't need event export
+- [x] `NullEventBus` implementation — all `Emit` calls are no-ops
+- [x] Zero allocation on the emit path
+- [x] Used for optimization runs and normal backtests that don't need event export
 
 ### Tests
 
-- [ ] Unit tests: each event type serializes/deserializes correctly with compact field names
-- [ ] Unit tests: `ExportMode` filtering — events dropped when mode doesn't match
-- [ ] Unit tests: `DataSubscription.IsExportable` filtering for bar/ind events
-- [ ] Unit tests: fan-out — single event dispatched to multiple sinks
-- [ ] Unit tests: `NullEventBus.Emit()` is a no-op (no allocations, no side effects)
-- [ ] All existing tests pass unchanged (`dotnet test` green)
+- [x] Unit tests: each event type serializes/deserializes correctly with compact field names
+- [x] Unit tests: `ExportMode` filtering — events dropped when mode doesn't match
+- [x] Unit tests: `DataSubscription.IsExportable` filtering for bar/ind events
+- [x] Unit tests: fan-out — single event dispatched to multiple sinks
+- [x] Unit tests: `NullEventBus.Emit()` is a no-op (no allocations, no side effects)
+- [x] All existing tests pass unchanged (`dotnet test` green)
 
 ### Non-Functional
 
-- [ ] No new NuGet packages introduced
-- [ ] Event records are `readonly record struct` or `sealed record` — no unnecessary heap pressure
-- [ ] Sequence number (`sq`) is monotonic per-run, assigned by the bus (not by emitters)
+- [x] No new NuGet packages introduced
+- [x] Event records are `readonly record struct` or `sealed record` — no unnecessary heap pressure
+- [x] Sequence number (`sq`) is monotonic per-run, assigned by the bus (not by emitters)
