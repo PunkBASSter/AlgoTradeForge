@@ -1,5 +1,6 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Debug;
+using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
@@ -23,9 +24,17 @@ public class DebugSessionHandlerTests
     private readonly IMetricsCalculator _metricsCalc = new MetricsCalculator();
     private readonly BacktestEngine _engine = new(new BarMatcher(), new BasicRiskEvaluator());
     private readonly IDebugSessionStore _sessionStore = new InMemoryDebugSessionStore();
+    private readonly IRunSinkFactory _runSinkFactory = Substitute.For<IRunSinkFactory>();
+
+    public DebugSessionHandlerTests()
+    {
+        var sink = Substitute.For<IRunSink>();
+        sink.RunFolderPath.Returns(Path.Combine(Path.GetTempPath(), "test-run"));
+        _runSinkFactory.Create(Arg.Any<RunIdentity>()).Returns(sink);
+    }
 
     private StartDebugSessionCommandHandler CreateStartHandler() =>
-        new(_engine, _assetRepo, _strategyFactory, _historyRepo, _metricsCalc, _sessionStore);
+        new(_engine, _assetRepo, _strategyFactory, _historyRepo, _metricsCalc, _sessionStore, _runSinkFactory);
 
     private SendDebugCommandHandler CreateSendHandler() =>
         new(_sessionStore);

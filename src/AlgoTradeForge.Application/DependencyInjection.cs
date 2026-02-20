@@ -1,6 +1,7 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Debug;
+using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,9 @@ public static class DependencyInjection
 
         // Event bus (no-op by default; overridden when sinks are configured)
         services.AddSingleton<IEventBus>(NullEventBus.Instance);
+
+        // Event log storage defaults
+        services.Configure<EventLogStorageOptions>(_ => { });
 
         // Debug session management
         services.AddSingleton<IDebugSessionStore, InMemoryDebugSessionStore>();
