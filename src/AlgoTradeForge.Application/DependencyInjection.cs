@@ -2,6 +2,7 @@ using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Debug;
 using AlgoTradeForge.Application.Optimization;
+using AlgoTradeForge.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace AlgoTradeForge.Application;
@@ -13,6 +14,9 @@ public static class DependencyInjection
         services.AddScoped<ICommandHandler<RunBacktestCommand, BacktestResultDto>, RunBacktestCommandHandler>();
         services.AddScoped<ICommandHandler<RunOptimizationCommand, OptimizationResultDto>, RunOptimizationCommandHandler>();
         services.AddSingleton<OptimizationAxisResolver>();
+
+        // Event bus (no-op by default; overridden when sinks are configured)
+        services.AddSingleton<IEventBus>(NullEventBus.Instance);
 
         // Debug session management
         services.AddSingleton<IDebugSessionStore, InMemoryDebugSessionStore>();
