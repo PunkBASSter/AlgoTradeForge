@@ -38,20 +38,21 @@ public class OrderQueueTests
     }
 
     [Fact]
-    public void Cancel_PendingOrder_ReturnsTrue()
+    public void Cancel_PendingOrder_ReturnsOrder()
     {
         var order = TestOrders.MarketBuy(TestAssets.Aapl, 100m);
         _queue.Submit(order);
 
         var result = _queue.Cancel(order.Id);
 
-        Assert.True(result);
+        Assert.NotNull(result);
+        Assert.Same(order, result);
         Assert.Equal(OrderStatus.Cancelled, order.Status);
         Assert.Equal(0, _queue.Count);
     }
 
     [Fact]
-    public void Cancel_FilledOrder_ReturnsFalse()
+    public void Cancel_FilledOrder_ReturnsNull()
     {
         var order = TestOrders.MarketBuy(TestAssets.Aapl, 100m);
         order.Status = OrderStatus.Filled;
@@ -59,15 +60,15 @@ public class OrderQueueTests
 
         var result = _queue.Cancel(order.Id);
 
-        Assert.False(result);
+        Assert.Null(result);
     }
 
     [Fact]
-    public void Cancel_NonExistentOrder_ReturnsFalse()
+    public void Cancel_NonExistentOrder_ReturnsNull()
     {
         var result = _queue.Cancel(999);
 
-        Assert.False(result);
+        Assert.Null(result);
     }
 
     [Fact]

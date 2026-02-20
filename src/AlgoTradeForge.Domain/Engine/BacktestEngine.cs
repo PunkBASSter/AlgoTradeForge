@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
@@ -10,15 +11,19 @@ namespace AlgoTradeForge.Domain.Engine;
 /// </summary>
 public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEvaluator)
 {
+    private const string Source = "engine";
     public BacktestResult Run(
         TimeSeries<Int64Bar>[] seriesPerSubscription,
         IInt64BarStrategy strategy,
         BacktestOptions options,
         CancellationToken ct = default,
-        IDebugProbe? probe = null)
+        IDebugProbe? probe = null,
+        IEventBus? bus = null)
     {
         probe ??= NullDebugProbe.Instance;
+        bus ??= NullEventBus.Instance;
         var probeActive = probe.IsActive;
+        var busActive = bus is not NullEventBus;
         var sequenceNumber = 0L;
         var subscriptions = strategy.DataSubscriptions;
 
@@ -33,99 +38,143 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         var cursors = new int[subCount];
         var fills = new List<Fill>();
         var orderQueue = new OrderQueue();
-        var orderContext = new BacktestOrderContext(orderQueue, fills, portfolio);
+        var orderContext = new BacktestOrderContext(orderQueue, fills, portfolio, bus);
         var orderIdCounter = 0L;
         var totalBarsDelivered = 0;
         var activeSlTpPositions = new List<ActiveSlTpPosition>();
         var lastPrices = new Dictionary<string, long>();
         var equityCurve = new List<long>();
 
+        if (strategy is IEventBusReceiver receiver)
+            receiver.SetEventBus(bus);
+
         strategy.OnInit();
+
+        if (busActive)
+        {
+            bus.Emit(new RunStartEvent(
+                DateTimeOffset.UtcNow,
+                Source,
+                strategy.GetType().Name,
+                options.Asset.Name,
+                options.InitialCash,
+                options.StartTime,
+                options.EndTime,
+                ExportMode.Backtest));
+        }
 
         if (probeActive)
             probe.OnRunStart();
 
-        while (true)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-
-            var minTimestampMs = long.MaxValue;
-            var minSubIndex = -1;
-
-            for (var s = 0; s < subCount; s++)
+            while (true)
             {
-                if (cursors[s] >= seriesPerSubscription[s].Count)
-                    continue;
+                ct.ThrowIfCancellationRequested();
 
-                var ts = seriesPerSubscription[s][cursors[s]].TimestampMs;
-                if (ts < minTimestampMs)
+                var minTimestampMs = long.MaxValue;
+                var minSubIndex = -1;
+
+                for (var s = 0; s < subCount; s++)
                 {
-                    minTimestampMs = ts;
-                    minSubIndex = s;
+                    if (cursors[s] >= seriesPerSubscription[s].Count)
+                        continue;
+
+                    var ts = seriesPerSubscription[s][cursors[s]].TimestampMs;
+                    if (ts < minTimestampMs)
+                    {
+                        minTimestampMs = ts;
+                        minSubIndex = s;
+                    }
                 }
-            }
 
-            if (minSubIndex == -1)
-                break;
+                if (minSubIndex == -1)
+                    break;
 
-            // Deliver all bars at the same timestamp in subscription declaration order
-            for (var s = minSubIndex; s < subCount; s++)
-            {
-                if (cursors[s] >= seriesPerSubscription[s].Count)
-                    continue;
-
-                var bar = seriesPerSubscription[s][cursors[s]];
-                if (bar.TimestampMs != minTimestampMs)
-                    continue;
-
-                var subscription = subscriptions[s];
-                var barTimestamp = bar.Timestamp;
-
-                // Snapshot fill count so strategy can observe fills from this bar's processing
-                var fillCountBefore = fills.Count;
-                orderContext.BeginBar(fillCountBefore);
-
-                // Notify strategy that a new bar is starting (open price only)
-                var startBar = new Int64Bar(bar.TimestampMs, bar.Open, bar.Open, bar.Open, bar.Open, 0);
-                strategy.OnBarStart(startBar, subscription, orderContext);
-                AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp);
-
-                // Process pending orders for this asset against the new bar
-                ProcessPendingOrders(subscription.Asset, bar, barTimestamp, options, orderQueue, fills, portfolio, activeSlTpPositions, strategy);
-
-                // Evaluate SL/TP for active positions on this asset
-                EvaluateSlTpPositions(subscription.Asset, bar, barTimestamp, options, fills, portfolio, activeSlTpPositions, strategy);
-
-                // Deliver completed bar to strategy
-                strategy.OnBarComplete(bar, subscription, orderContext);
-                AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp);
-
-                lastPrices[subscription.Asset.Name] = bar.Close;
-                cursors[s]++;
-                totalBarsDelivered++;
-
-                if (probeActive)
+                // Deliver all bars at the same timestamp in subscription declaration order
+                for (var s = minSubIndex; s < subCount; s++)
                 {
-                    var fillsThisBar = fills.Count - fillCountBefore;
-                    probe.OnBarProcessed(new DebugSnapshot(
-                        ++sequenceNumber,
-                        bar.TimestampMs,
-                        s,
-                        subscription.IsExportable,
-                        fillsThisBar,
-                        portfolio.Equity(lastPrices)));
-                }
-            }
+                    if (cursors[s] >= seriesPerSubscription[s].Count)
+                        continue;
 
-            // Snapshot portfolio equity at this timestamp
-            equityCurve.Add(portfolio.Equity(lastPrices));
+                    var bar = seriesPerSubscription[s][cursors[s]];
+                    if (bar.TimestampMs != minTimestampMs)
+                        continue;
+
+                    var subscription = subscriptions[s];
+                    var barTimestamp = bar.Timestamp;
+
+                    // Snapshot fill count so strategy can observe fills from this bar's processing
+                    var fillCountBefore = fills.Count;
+                    orderContext.BeginBar(fillCountBefore, barTimestamp);
+
+                    // Notify strategy that a new bar is starting (open price only)
+                    var startBar = new Int64Bar(bar.TimestampMs, bar.Open, bar.Open, bar.Open, bar.Open, 0);
+                    strategy.OnBarStart(startBar, subscription, orderContext);
+                    AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp, bus, busActive);
+
+                    // Process pending orders for this asset against the new bar
+                    ProcessPendingOrders(subscription.Asset, bar, barTimestamp, options, orderQueue, fills, portfolio, activeSlTpPositions, strategy, bus, busActive);
+
+                    // Evaluate SL/TP for active positions on this asset
+                    EvaluateSlTpPositions(subscription.Asset, bar, barTimestamp, options, fills, portfolio, activeSlTpPositions, strategy, bus, busActive);
+
+                    // Deliver completed bar to strategy
+                    strategy.OnBarComplete(bar, subscription, orderContext);
+                    AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp, bus, busActive);
+
+                    lastPrices[subscription.Asset.Name] = bar.Close;
+                    cursors[s]++;
+                    totalBarsDelivered++;
+
+                    EmitBar(bus, busActive, barTimestamp, bar, subscription);
+
+                    if (probeActive)
+                    {
+                        var fillsThisBar = fills.Count - fillCountBefore;
+                        probe.OnBarProcessed(new DebugSnapshot(
+                            ++sequenceNumber,
+                            bar.TimestampMs,
+                            s,
+                            subscription.IsExportable,
+                            fillsThisBar,
+                            portfolio.Equity(lastPrices)));
+                    }
+                }
+
+                // Snapshot portfolio equity at this timestamp
+                equityCurve.Add(portfolio.Equity(lastPrices));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (busActive)
+                bus.Emit(new ErrorEvent(DateTimeOffset.UtcNow, Source, ex.Message, ex.StackTrace));
+            throw;
         }
 
         if (probeActive)
             probe.OnRunEnd();
 
         stopwatch.Stop();
-        return new BacktestResult(portfolio, fills, equityCurve, totalBarsDelivered, stopwatch.Elapsed);
+        var result = new BacktestResult(portfolio, fills, equityCurve, totalBarsDelivered, stopwatch.Elapsed);
+
+        if (busActive)
+        {
+            bus.Emit(new RunEndEvent(
+                DateTimeOffset.UtcNow,
+                Source,
+                result.TotalBarsProcessed,
+                result.EquityCurve.Count > 0 ? result.EquityCurve[^1] : options.InitialCash,
+                result.Fills.Count,
+                result.Duration));
+        }
+
+        return result;
     }
 
     private void ProcessPendingOrders(
@@ -137,7 +186,9 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         List<Fill> fills,
         Portfolio portfolio,
         List<ActiveSlTpPosition> activeSlTpPositions,
-        IInt64BarStrategy strategy)
+        IInt64BarStrategy strategy,
+        IEventBus bus,
+        bool busActive)
     {
         var pending = queue.GetPendingForAsset(asset);
         var toRemove = new List<long>();
@@ -161,10 +212,14 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 continue;
             }
 
-            if (!riskEvaluator.CanFill(order, fillPrice.Value, portfolio, options))
+            var riskPassed = riskEvaluator.CanFill(order, fillPrice.Value, portfolio, options);
+            EmitRiskCheck(bus, busActive, timestamp, order, riskPassed);
+
+            if (!riskPassed)
             {
                 order.Status = OrderStatus.Rejected;
                 toRemove.Add(order.Id);
+                EmitOrderRejected(bus, busActive, timestamp, order);
                 continue;
             }
 
@@ -182,6 +237,8 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             portfolio.Apply(fill);
             strategy.OnTrade(fill, order);
             toRemove.Add(order.Id);
+
+            EmitFillAndPosition(bus, busActive, timestamp, fill, portfolio);
 
             // Track SL/TP if the order has stop loss or take profit levels
             if (order.StopLossPrice.HasValue || order.TakeProfitLevels is { Count: > 0 })
@@ -208,7 +265,9 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         List<Fill> fills,
         Portfolio portfolio,
         List<ActiveSlTpPosition> activeSlTpPositions,
-        IInt64BarStrategy strategy)
+        IInt64BarStrategy strategy,
+        IEventBus bus,
+        bool busActive)
     {
         for (var i = activeSlTpPositions.Count - 1; i >= 0; i--)
         {
@@ -244,6 +303,8 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             portfolio.Apply(fill);
             strategy.OnTrade(fill, pos.OriginalOrder);
 
+            EmitFillAndPosition(bus, busActive, timestamp, fill, portfolio);
+
             if (match.IsStopLoss)
             {
                 // SL closes entire position
@@ -264,6 +325,103 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         }
     }
 
+    private static void EmitBar(
+        IEventBus bus,
+        bool busActive,
+        DateTimeOffset timestamp,
+        Int64Bar bar,
+        DataSubscription subscription)
+    {
+        if (!busActive)
+            return;
+
+        bus.Emit(new BarEvent(
+            timestamp,
+            Source,
+            subscription.Asset.Name,
+            TimeFrameFormatter.Format(subscription.TimeFrame),
+            bar.Open,
+            bar.High,
+            bar.Low,
+            bar.Close,
+            bar.Volume,
+            subscription.IsExportable));
+    }
+
+    private static void EmitRiskCheck(
+        IEventBus bus,
+        bool busActive,
+        DateTimeOffset timestamp,
+        Order order,
+        bool passed)
+    {
+        if (!busActive)
+            return;
+
+        bus.Emit(new RiskEvent(
+            timestamp,
+            Source,
+            order.Asset.Name,
+            passed,
+            "CashCheck",
+            passed ? null : "Insufficient cash"));
+    }
+
+    private static void EmitOrderRejected(
+        IEventBus bus,
+        bool busActive,
+        DateTimeOffset timestamp,
+        Order order)
+    {
+        if (!busActive)
+            return;
+
+        bus.Emit(new OrderRejectEvent(
+            timestamp,
+            Source,
+            order.Id,
+            order.Asset.Name,
+            "Insufficient cash"));
+
+        bus.Emit(new WarningEvent(
+            timestamp,
+            Source,
+            $"Order {order.Id} rejected: insufficient cash for {order.Side} {order.Quantity} {order.Asset.Name}"));
+    }
+
+    private static void EmitFillAndPosition(
+        IEventBus bus,
+        bool busActive,
+        DateTimeOffset timestamp,
+        Fill fill,
+        Portfolio portfolio)
+    {
+        if (!busActive)
+            return;
+
+        bus.Emit(new OrderFillEvent(
+            timestamp,
+            Source,
+            fill.OrderId,
+            fill.Asset.Name,
+            fill.Side,
+            fill.Price,
+            fill.Quantity,
+            fill.Commission));
+
+        var position = portfolio.GetPosition(fill.Asset.Name);
+        if (position is not null)
+        {
+            bus.Emit(new PositionEvent(
+                timestamp,
+                Source,
+                fill.Asset.Name,
+                position.Quantity,
+                position.AverageEntryPrice,
+                position.RealizedPnl));
+        }
+    }
+
     private sealed class ActiveSlTpPosition
     {
         public required Order OriginalOrder { get; init; }
@@ -272,7 +430,12 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         public int NextTpIndex { get; set; }
     }
 
-    private static void AssignOrderIds(OrderQueue queue, ref long counter, DateTimeOffset timestamp)
+    private static void AssignOrderIds(
+        OrderQueue queue,
+        ref long counter,
+        DateTimeOffset timestamp,
+        IEventBus bus,
+        bool busActive)
     {
         foreach (var order in queue.GetAll())
         {
@@ -280,7 +443,23 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 order.Id = ++counter;
 
             if (order.SubmittedAt == default)
+            {
                 order.SubmittedAt = timestamp;
+
+                if (busActive)
+                {
+                    bus.Emit(new OrderPlaceEvent(
+                        timestamp,
+                        Source,
+                        order.Id,
+                        order.Asset.Name,
+                        order.Side,
+                        order.Type,
+                        order.Quantity,
+                        order.LimitPrice,
+                        order.StopPrice));
+                }
+            }
         }
     }
 }

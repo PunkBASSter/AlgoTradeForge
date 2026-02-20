@@ -9,15 +9,15 @@ public sealed class OrderQueue
 
     public void Submit(Order order) => _orders.Add(order);
 
-    public bool Cancel(long orderId)
+    public Order? Cancel(long orderId)
     {
         var order = _orders.Find(o => o.Id == orderId);
         if (order is null || order.Status is OrderStatus.Filled or OrderStatus.Cancelled)
-            return false;
+            return null;
 
         order.Status = OrderStatus.Cancelled;
         _orders.Remove(order);
-        return true;
+        return order;
     }
 
     public IReadOnlyList<Order> GetPendingForAsset(Asset asset)
