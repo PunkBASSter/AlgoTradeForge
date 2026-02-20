@@ -2,6 +2,7 @@ using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
 
@@ -19,7 +20,7 @@ public sealed class RunBacktestCommandHandler(
         var asset = await assetRepository.GetByNameAsync(command.AssetName, command.Exchange, ct)
             ?? throw new ArgumentException($"Asset '{command.AssetName}' not found.", nameof(command));
 
-        var strategy = strategyFactory.Create(command.StrategyName, command.StrategyParameters);
+        var strategy = strategyFactory.Create(command.StrategyName, PassthroughIndicatorFactory.Instance, command.StrategyParameters);
 
         // Scale real-dollar values to int64 price units for the Domain layer
         var scaleFactor = 1m / asset.TickSize;

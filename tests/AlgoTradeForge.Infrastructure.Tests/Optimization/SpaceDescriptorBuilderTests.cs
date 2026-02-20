@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
@@ -124,7 +125,7 @@ public class TestModuleParams : ModuleParamsBase
 }
 
 [StrategyKey("WithModule")]
-public sealed class StrategyWithModule(StrategyWithModuleParams p) : StrategyBase<StrategyWithModuleParams>(p)
+public sealed class StrategyWithModule(StrategyWithModuleParams p, IIndicatorFactory? indicators = null) : StrategyBase<StrategyWithModuleParams>(p, indicators)
 {
     public override void OnBarComplete(Domain.History.Int64Bar bar, DataSubscription sub, IOrderContext orders) { }
 }

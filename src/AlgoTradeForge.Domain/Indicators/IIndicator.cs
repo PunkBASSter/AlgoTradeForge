@@ -1,6 +1,6 @@
 ﻿namespace AlgoTradeForge.Domain.Indicators;
 
-public interface IIndicator<in TInp, TBuff>
+public interface IIndicator<TInp, TBuff>
 {
     string Name { get; }
     IndicatorMeasure Measure { get; }

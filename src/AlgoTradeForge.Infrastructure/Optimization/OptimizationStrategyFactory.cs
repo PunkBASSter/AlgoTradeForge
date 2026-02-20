@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.Modules;
@@ -16,7 +17,7 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
         _descriptorBuilder = descriptorBuilder;
     }
 
-    public IInt64BarStrategy Create(string strategyName, IDictionary<string, object>? parameters = null)
+    public IInt64BarStrategy Create(string strategyName, IIndicatorFactory indicatorFactory, IDictionary<string, object>? parameters = null)
     {
         var descriptor = _descriptorBuilder.GetDescriptor(strategyName)
             ?? throw new ArgumentException($"Strategy '{strategyName}' not found.");
@@ -31,7 +32,7 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
             }
         }
 
-        return CreateStrategyInstance(descriptor.StrategyType, paramsInstance);
+        return CreateStrategyInstance(descriptor.StrategyType, paramsInstance, indicatorFactory);
     }
 
     public IInt64BarStrategy Create(string strategyName, ParameterCombination combination)
@@ -53,7 +54,7 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
             }
         }
 
-        return CreateStrategyInstance(descriptor.StrategyType, paramsInstance);
+        return CreateStrategyInstance(descriptor.StrategyType, paramsInstance, PassthroughIndicatorFactory.Instance);
     }
 
     private void SetModuleProperty(
@@ -143,8 +144,8 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
         return element.Deserialize(targetType)!;
     }
 
-    private static IInt64BarStrategy CreateStrategyInstance(Type strategyType, object paramsInstance)
+    private static IInt64BarStrategy CreateStrategyInstance(Type strategyType, object paramsInstance, IIndicatorFactory indicatorFactory)
     {
-        return (IInt64BarStrategy)Activator.CreateInstance(strategyType, paramsInstance)!;
+        return (IInt64BarStrategy)Activator.CreateInstance(strategyType, paramsInstance, indicatorFactory)!;
     }
 }

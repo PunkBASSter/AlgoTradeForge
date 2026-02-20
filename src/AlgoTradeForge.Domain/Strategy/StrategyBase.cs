@@ -1,15 +1,18 @@
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Strategy;
 
-public abstract class StrategyBase<TParams>(TParams parameters) : IInt64BarStrategy, IEventBusReceiver
+public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactory? indicators = null) : IInt64BarStrategy, IEventBusReceiver
     where TParams : StrategyParamsBase
 {
     protected TParams Params { get; } = parameters;
 
     protected IEventBus EventBus { get; private set; } = NullEventBus.Instance;
+
+    protected IIndicatorFactory Indicators { get; } = indicators ?? PassthroughIndicatorFactory.Instance;
 
     public IList<DataSubscription> DataSubscriptions => Params.DataSubscriptions;
 

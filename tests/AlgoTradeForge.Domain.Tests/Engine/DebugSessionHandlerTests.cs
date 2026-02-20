@@ -5,6 +5,7 @@ using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Tests.TestUtilities;
@@ -48,7 +49,7 @@ public class DebugSessionHandlerTests
         var sub = new DataSubscription(asset, OneMinute, IsExportable: true);
         var strategy = Substitute.For<IInt64BarStrategy>();
         strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
-        _strategyFactory.Create("TestStrategy", Arg.Any<IDictionary<string, object>?>())
+        _strategyFactory.Create("TestStrategy", Arg.Any<IIndicatorFactory>(), Arg.Any<IDictionary<string, object>?>())
             .Returns(strategy);
 
         var bars = TestBars.CreateSeries(Start, OneMinute, barCount);

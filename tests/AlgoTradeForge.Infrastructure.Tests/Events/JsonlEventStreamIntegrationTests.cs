@@ -1,9 +1,11 @@
 using System.Text.Json;
 using AlgoTradeForge.Application.Events;
+using AlgoTradeForge.Application.Indicators;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
 using AlgoTradeForge.Infrastructure.Events;
@@ -175,6 +177,110 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         Assert.True(fillIdx < posIdx, "ord.fill should precede pos");
     }
 
+    [Fact]
+    public void EmittingIndicatorFactory_ProducesIndEventsInJsonl()
+    {
+        // Arrange
+        var identity = new RunIdentity
+        {
+            StrategyName = "IndicatorStrat",
+            AssetName = "AAPL",
+            StartTime = Start,
+            EndTime = Start.AddMinutes(3),
+            InitialCash = 100_000L,
+            RunMode = ExportMode.Backtest,
+            RunTimestamp = DateTimeOffset.UtcNow,
+        };
+
+        var options = new EventLogStorageOptions { Root = _testRoot };
+        using var sink = new JsonlFileSink(identity, options);
+        var bus = new EventBus(ExportMode.Backtest, [sink]);
+        var indicatorFactory = new EmittingIndicatorFactory(bus);
+
+        var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
+        var strategy = new IndicatorUsingStrategy(new IndicatorUsingParams { DataSubscriptions = [sub] }, indicatorFactory);
+
+        var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
+        var engine = new BacktestEngine(new BarMatcher(), new BasicRiskEvaluator());
+
+        var btOptions = new BacktestOptions
+        {
+            InitialCash = 100_000L,
+            Asset = Aapl,
+            StartTime = DateTimeOffset.MinValue,
+            EndTime = DateTimeOffset.MaxValue,
+        };
+
+        // Act
+        engine.Run([bars], strategy, btOptions, bus: bus);
+        sink.Dispose();
+
+        // Assert
+        var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
+        var typeIds = File.ReadAllLines(eventsPath)
+            .Select(l => JsonDocument.Parse(l).RootElement.GetProperty("_t").GetString()!)
+            .ToList();
+
+        Assert.Contains("ind", typeIds);
+
+        // Verify ind event has correct structure
+        var indLines = File.ReadAllLines(eventsPath)
+            .Where(l => JsonDocument.Parse(l).RootElement.GetProperty("_t").GetString() == "ind")
+            .ToList();
+        Assert.True(indLines.Count >= 3, $"Expected at least 3 ind events (one per bar), got {indLines.Count}");
+
+        var firstInd = JsonDocument.Parse(indLines[0]);
+        var data = firstInd.RootElement.GetProperty("d");
+        Assert.Equal("DeltaZigZag", data.GetProperty("indicatorName").GetString());
+    }
+
+    [Fact]
+    public void OptimizationPath_NoFactory_ZeroIndEvents()
+    {
+        // Arrange — backtest without indicator factory (optimization path)
+        var identity = new RunIdentity
+        {
+            StrategyName = "NoIndStrat",
+            AssetName = "AAPL",
+            StartTime = Start,
+            EndTime = Start.AddMinutes(3),
+            InitialCash = 100_000L,
+            RunMode = ExportMode.Backtest,
+            RunTimestamp = DateTimeOffset.UtcNow,
+        };
+
+        var options = new EventLogStorageOptions { Root = _testRoot };
+        using var sink = new JsonlFileSink(identity, options);
+        var bus = new EventBus(ExportMode.Backtest, [sink]);
+
+        var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
+        var strategy = new IndicatorUsingStrategy(new IndicatorUsingParams { DataSubscriptions = [sub] });
+
+        var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
+        var engine = new BacktestEngine(new BarMatcher(), new BasicRiskEvaluator());
+
+        var btOptions = new BacktestOptions
+        {
+            InitialCash = 100_000L,
+            Asset = Aapl,
+            StartTime = DateTimeOffset.MinValue,
+            EndTime = DateTimeOffset.MaxValue,
+        };
+
+        // Act — no indicatorFactory passed (passthrough default)
+        engine.Run([bars], strategy, btOptions, bus: bus);
+        sink.Dispose();
+
+        // Assert
+        var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
+        var typeIds = File.ReadAllLines(eventsPath)
+            .Select(l => JsonDocument.Parse(l).RootElement.GetProperty("_t").GetString()!)
+            .ToList();
+
+        Assert.DoesNotContain("ind", typeIds);
+        Assert.DoesNotContain("ind.mut", typeIds);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static TimeSeries<Int64Bar> CreateSeries(
@@ -215,6 +321,25 @@ public class JsonlEventStreamIntegrationTests : IDisposable
                 Type = OrderType.Market,
                 Quantity = 1m,
             });
+        }
+    }
+
+    private sealed class IndicatorUsingParams : StrategyParamsBase;
+
+    private sealed class IndicatorUsingStrategy(IndicatorUsingParams p, IIndicatorFactory? indicators = null) : StrategyBase<IndicatorUsingParams>(p, indicators)
+    {
+        private IIndicator<Int64Bar, long> _dzz = null!;
+        private readonly List<Int64Bar> _barHistory = [];
+
+        public override void OnInit()
+        {
+            _dzz = Indicators.Create(new DeltaZigZag(0.5m, 100L), DataSubscriptions[0]);
+        }
+
+        public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+        {
+            _barHistory.Add(bar);
+            _dzz.Compute(_barHistory);
         }
     }
 }

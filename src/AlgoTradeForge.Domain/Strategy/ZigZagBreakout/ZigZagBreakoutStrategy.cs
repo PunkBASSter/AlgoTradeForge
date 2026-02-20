@@ -6,9 +6,9 @@ using AlgoTradeForge.Domain.Trading;
 namespace AlgoTradeForge.Domain.Strategy.ZigZagBreakout;
 
 [StrategyKey("ZigZagBreakout")]
-public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters) : StrategyBase<ZigZagBreakoutParams>(parameters)
+public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters, IIndicatorFactory? indicators = null) : StrategyBase<ZigZagBreakoutParams>(parameters, indicators)
 {
-    private DeltaZigZag _dzz = null!;
+    private IIndicator<Int64Bar, long> _dzz = null!;
     private readonly List<Int64Bar> _barHistory = [];
 
     private long? _pendingOrderId;
@@ -17,7 +17,7 @@ public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters) : St
 
     public override void OnInit()
     {
-        _dzz = new DeltaZigZag(Params.DzzDepth / 10m, Params.MinimumThreshold);
+        _dzz = Indicators.Create(new DeltaZigZag(Params.DzzDepth / 10m, Params.MinimumThreshold), DataSubscriptions[0]);
     }
 
     public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)

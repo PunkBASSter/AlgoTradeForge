@@ -1,6 +1,7 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Events;
+using AlgoTradeForge.Application.Indicators;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
@@ -24,7 +25,6 @@ public sealed class StartDebugSessionCommandHandler(
         var asset = await assetRepository.GetByNameAsync(command.AssetName, command.Exchange, ct)
             ?? throw new ArgumentException($"Asset '{command.AssetName}' not found.", nameof(command));
 
-        var strategy = strategyFactory.Create(command.StrategyName, command.StrategyParameters);
         var scaleFactor = 1m / asset.TickSize;
 
         var options = new BacktestOptions
@@ -37,19 +37,6 @@ public sealed class StartDebugSessionCommandHandler(
             SlippageTicks = command.SlippageTicks,
             UseDetailedExecutionLogic = command.UseDetailedExecutionLogic
         };
-
-        if (strategy.DataSubscriptions.Count == 0)
-        {
-            var timeFrame = command.TimeFrame ?? asset.SmallestInterval;
-            strategy.DataSubscriptions.Add(new DataSubscription(asset, timeFrame));
-        }
-
-        var fromDate = DateOnly.FromDateTime(command.StartTime.UtcDateTime);
-        var toDate = DateOnly.FromDateTime(command.EndTime.UtcDateTime);
-
-        var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
-        for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
-            seriesArray[i] = historyRepository.Load(strategy.DataSubscriptions[i], fromDate, toDate);
 
         var session = sessionStore.Create(command.AssetName, command.StrategyName);
 
@@ -68,6 +55,22 @@ public sealed class StartDebugSessionCommandHandler(
         var sink = runSinkFactory.Create(identity);
         session.EventSink = sink;
         session.EventBus = new EventBus(ExportMode.Backtest, [sink]);
+        var indicatorFactory = new EmittingIndicatorFactory(session.EventBus);
+
+        var strategy = strategyFactory.Create(command.StrategyName, indicatorFactory, command.StrategyParameters);
+
+        if (strategy.DataSubscriptions.Count == 0)
+        {
+            var timeFrame = command.TimeFrame ?? asset.SmallestInterval;
+            strategy.DataSubscriptions.Add(new DataSubscription(asset, timeFrame));
+        }
+
+        var fromDate = DateOnly.FromDateTime(command.StartTime.UtcDateTime);
+        var toDate = DateOnly.FromDateTime(command.EndTime.UtcDateTime);
+
+        var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
+        for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
+            seriesArray[i] = historyRepository.Load(strategy.DataSubscriptions[i], fromDate, toDate);
 
         session.RunTask = Task.Factory.StartNew(
             () =>
