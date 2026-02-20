@@ -14,8 +14,12 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         TimeSeries<Int64Bar>[] seriesPerSubscription,
         IInt64BarStrategy strategy,
         BacktestOptions options,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IDebugProbe? probe = null)
     {
+        probe ??= NullDebugProbe.Instance;
+        var probeActive = probe.IsActive;
+        var sequenceNumber = 0L;
         var subscriptions = strategy.DataSubscriptions;
 
         if (seriesPerSubscription.Length != subscriptions.Count)
@@ -37,6 +41,9 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         var equityCurve = new List<long>();
 
         strategy.OnInit();
+
+        if (probeActive)
+            probe.OnRunStart();
 
         while (true)
         {
@@ -75,7 +82,8 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 var barTimestamp = bar.Timestamp;
 
                 // Snapshot fill count so strategy can observe fills from this bar's processing
-                orderContext.BeginBar(fills.Count);
+                var fillCountBefore = fills.Count;
+                orderContext.BeginBar(fillCountBefore);
 
                 // Notify strategy that a new bar is starting (open price only)
                 var startBar = new Int64Bar(bar.TimestampMs, bar.Open, bar.Open, bar.Open, bar.Open, 0);
@@ -95,11 +103,26 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 lastPrices[subscription.Asset.Name] = bar.Close;
                 cursors[s]++;
                 totalBarsDelivered++;
+
+                if (probeActive)
+                {
+                    var fillsThisBar = fills.Count - fillCountBefore;
+                    probe.OnBarProcessed(new DebugSnapshot(
+                        ++sequenceNumber,
+                        bar.TimestampMs,
+                        s,
+                        subscription.IsExportable,
+                        fillsThisBar,
+                        portfolio.Equity(lastPrices)));
+                }
             }
 
             // Snapshot portfolio equity at this timestamp
             equityCurve.Add(portfolio.Equity(lastPrices));
         }
+
+        if (probeActive)
+            probe.OnRunEnd();
 
         stopwatch.Stop();
         return new BacktestResult(portfolio, fills, equityCurve, totalBarsDelivered, stopwatch.Elapsed);
@@ -259,44 +282,5 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             if (order.SubmittedAt == default)
                 order.SubmittedAt = timestamp;
         }
-    }
-}
-
-internal sealed class BacktestOrderContext : IOrderContext
-{
-    private readonly OrderQueue _queue;
-    private readonly List<Fill> _allFills;
-    private readonly Portfolio _portfolio;
-    private int _fillSnapshotStart;
-
-    public BacktestOrderContext(OrderQueue queue, List<Fill> allFills, Portfolio portfolio)
-    {
-        _queue = queue;
-        _allFills = allFills;
-        _portfolio = portfolio;
-    }
-
-    public long Cash => _portfolio.Cash;
-
-    public void BeginBar(int currentFillCount)
-    {
-        _fillSnapshotStart = currentFillCount;
-    }
-
-    public long Submit(Order order)
-    {
-        _queue.Submit(order);
-        return order.Id;
-    }
-
-    public bool Cancel(long orderId) => _queue.Cancel(orderId);
-
-    public IReadOnlyList<Order> GetPendingOrders() => _queue.GetAll();
-
-    public IReadOnlyList<Fill> GetFills()
-    {
-        if (_fillSnapshotStart >= _allFills.Count)
-            return [];
-        return _allFills.GetRange(_fillSnapshotStart, _allFills.Count - _fillSnapshotStart);
     }
 }

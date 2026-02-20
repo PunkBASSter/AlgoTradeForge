@@ -483,3 +483,81 @@ Module injection:      registry.Create(...)  ──→ IIndicatorFactory.Create(
 ```
 
 The two features compose without coupling: the optimization framework owns indicator **selection and construction**, while `IIndicatorFactory` owns **decoration for event emission**. Neither knows about the other.
+
+---
+
+## 11. Implementation Status
+
+### 11.1 MVP — Debug Probe (Control Loop Gating)
+
+**Status: DONE** (branch `007-debug-control-in-loop`)
+
+The MVP implements execution control via an injected `IDebugProbe` that gates the `BacktestEngine.Run()` loop at **bar boundaries**. This is a POC of the debug probe concept — event serialization (JSONL, IEventBus) and WebSocket transport are out of scope for this phase.
+
+**Architecture**: See `docs/debug-feature-control-loop-plan.md` for the full design.
+
+**MVP commands implemented:**
+
+| Command | Break Condition | Description | Status |
+|---------|----------------|-------------|--------|
+| `next_bar` | `Always` | Step to the next bar (any subscription) | **Done** |
+| `next` | `OnExportableBar` | Step to the next bar from an exportable subscription | **Done** |
+| `next_trade` | `OnFillBar` | Step to the next bar that produces fills | **Done** |
+| `run_to_sequence` | `AtSequence(n)` | Run until sequence number >= n | **Done** |
+| `run_to_timestamp` | `AtTimestamp(ms)` | Run until bar timestamp >= ms | **Done** |
+| `continue` | `Never` | Run to completion without pausing | **Done** |
+| `pause` | `Always` | Pause at the next bar boundary | **Done** |
+
+These commands cover the core debugging scenarios: stepping bar-by-bar, jumping to a specific point in time, and finding the next trade.
+
+**HTTP endpoints (temporary POC — will be replaced by WebSocket transport in §5):**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/debug-sessions/` | Start a debug session (engine starts paused) |
+| `POST` | `/api/debug-sessions/{id}/commands` | Send a control command, returns `DebugSnapshot` |
+| `GET` | `/api/debug-sessions/{id}` | Get session status + last snapshot |
+| `DELETE` | `/api/debug-sessions/{id}` | Terminate and clean up session |
+
+**Files added/modified:**
+
+| File | Layer | Change |
+|------|-------|--------|
+| `IDebugProbe.cs` | Domain | Interface: `IsActive`, `OnRunStart`, `OnBarProcessed`, `OnRunEnd` |
+| `DebugSnapshot.cs` | Domain | `readonly record struct` with sequence, timestamp, subscription index, exportable flag, fill count, equity |
+| `NullDebugProbe.cs` | Domain | Singleton null-object (`IsActive = false`) for non-debug runs |
+| `BacktestEngine.cs` | Domain | Added optional `IDebugProbe?` param + 3 guarded call sites |
+| `BacktestOrderContext.cs` | Domain | Extracted from engine for fill tracking |
+| `DebugCommand.cs` | Application | Sealed record hierarchy for all commands |
+| `BreakCondition.cs` | Application | Abstract record with `ShouldBreak(DebugSnapshot)` |
+| `GatingDebugProbe.cs` | Application | `ManualResetEventSlim`-based gate, `SendCommandAsync` for HTTP thread |
+| `DebugSession.cs` | Application | Session object owning probe + background `Task` |
+| `IDebugSessionStore.cs` | Application | Session store interface |
+| `InMemoryDebugSessionStore.cs` | Application | `ConcurrentDictionary`-based store |
+| `DebugSessionDto.cs` | Application | DTOs for HTTP responses |
+| `StartDebugSessionCommand[Handler].cs` | Application | Creates session, launches engine on `LongRunning` thread |
+| `SendDebugCommand[Handler].cs` | Application | Sends command to probe, returns snapshot |
+| `DebugContracts.cs` | WebApi | HTTP request records |
+| `DebugEndpoints.cs` | WebApi | REST endpoints (temporary POC) |
+
+### 11.2 Future — Per-Event Stepping (requires IEventBus)
+
+**Status: NOT STARTED** — depends on §3 (Event Bus Architecture) and §10 (Event Emission API).
+
+Once `IEventBus` is implemented, the debug probe can observe individual event types (signals, indicators, order placements) rather than only bar boundaries. This enables:
+
+| Command | Description | Prerequisite |
+|---------|-------------|-------------|
+| `next_signal` | Advance to next `sig` event | IEventBus emitting signal events |
+| `next_type { "_t": "..." }` | Advance to next event of any given type | IEventBus with event type metadata |
+| `set_export` | Toggle opt-in event categories mid-run | IEventBus + ExportMode filtering |
+
+**Extension path**: Add `OnEventEmitted(string eventType, DebugSnapshot)` to `IDebugProbe`. The `GatingDebugProbe` evaluates break conditions against event type in addition to bar-level counters. The bar-boundary gate (`OnBarProcessed`) becomes a special case.
+
+**Compound conditions** (e.g., "next trade after timestamp X") can be supported by composing existing `BreakCondition` subclasses with AND logic — the `BreakCondition` abstraction already supports this pattern.
+
+### 11.3 Future — WebSocket Transport
+
+**Status: NOT STARTED** — depends on §5 (WebSocket Interface).
+
+The current HTTP REST endpoints are a temporary POC for validating the debug probe mechanism. The production transport will use WebSocket connections per §5.1, with the same command set delivered as WebSocket messages instead of HTTP requests. The `GatingDebugProbe` and `BreakCondition` infrastructure remains unchanged — only the transport layer is replaced.

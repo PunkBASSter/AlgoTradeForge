@@ -63,5 +63,6 @@ app.UseHttpsRedirection();
 // Map endpoints
 app.MapBacktestEndpoints();
 app.MapOptimizationEndpoints();
+app.MapDebugEndpoints();
 
 app.Run();
