@@ -2,6 +2,8 @@ using AlgoTradeForge.Domain.Reporting;
 
 namespace AlgoTradeForge.WebApi.Contracts;
 
+public sealed record PagedResponse<T>(IReadOnlyList<T> Items, int TotalCount, int Limit, int Offset, bool HasMore);
+
 public sealed record BacktestRunResponse
 {
     public required Guid Id { get; init; }

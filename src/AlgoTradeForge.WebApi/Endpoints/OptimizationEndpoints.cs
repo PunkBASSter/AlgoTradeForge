@@ -23,7 +23,7 @@ public static class OptimizationEndpoints
             .WithName("ListOptimizations")
             .WithSummary("List optimization runs with optional filters")
             .WithOpenApi()
-            .Produces<IReadOnlyList<OptimizationRunResponse>>(StatusCodes.Status200OK);
+            .Produces<PagedResponse<OptimizationRunResponse>>(StatusCodes.Status200OK);
 
         group.MapGet("/{id:guid}", GetOptimization)
             .WithName("GetOptimization")
@@ -65,7 +65,7 @@ public static class OptimizationEndpoints
     }
 
     private static async Task<IResult> ListOptimizations(
-        ICommandHandler<ListOptimizationRunsQuery, IReadOnlyList<OptimizationRunRecord>> handler,
+        ICommandHandler<ListOptimizationRunsQuery, PagedResult<OptimizationRunRecord>> handler,
         string? strategyName,
         string? assetName,
         string? exchange,
@@ -76,7 +76,7 @@ public static class OptimizationEndpoints
         int offset = 0,
         CancellationToken ct = default)
     {
-        var query = new ListOptimizationRunsQuery(new OptimizationRunQuery
+        var filter = new OptimizationRunQuery
         {
             StrategyName = strategyName,
             AssetName = assetName,
@@ -86,10 +86,14 @@ public static class OptimizationEndpoints
             To = to,
             Limit = limit,
             Offset = offset,
-        });
+        };
+        var query = new ListOptimizationRunsQuery(filter);
 
-        var records = await handler.HandleAsync(query, ct);
-        var response = records.Select(MapToResponse).ToList();
+        var paged = await handler.HandleAsync(query, ct);
+        var items = paged.Items.Select(MapToResponse).ToList();
+        var response = new PagedResponse<OptimizationRunResponse>(
+            items, paged.TotalCount, filter.Limit, filter.Offset,
+            filter.Offset + items.Count < paged.TotalCount);
         return Results.Ok(response);
     }
 

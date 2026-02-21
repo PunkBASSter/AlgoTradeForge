@@ -3,11 +3,11 @@ using AlgoTradeForge.Application.Persistence;
 
 namespace AlgoTradeForge.Application.Backtests;
 
-public sealed record ListBacktestRunsQuery(BacktestRunQuery Filter) : ICommand<IReadOnlyList<BacktestRunRecord>>;
+public sealed record ListBacktestRunsQuery(BacktestRunQuery Filter) : ICommand<PagedResult<BacktestRunRecord>>;
 
 public sealed class ListBacktestRunsQueryHandler(
-    IRunRepository repository) : ICommandHandler<ListBacktestRunsQuery, IReadOnlyList<BacktestRunRecord>>
+    IRunRepository repository) : ICommandHandler<ListBacktestRunsQuery, PagedResult<BacktestRunRecord>>
 {
-    public Task<IReadOnlyList<BacktestRunRecord>> HandleAsync(ListBacktestRunsQuery query, CancellationToken ct = default)
+    public Task<PagedResult<BacktestRunRecord>> HandleAsync(ListBacktestRunsQuery query, CancellationToken ct = default)
         => repository.QueryAsync(query.Filter, ct);
 }

@@ -150,12 +150,11 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
 
     // ── Query backtests ────────────────────────────────────────────────
 
-    public async Task<IReadOnlyList<BacktestRunRecord>> QueryAsync(BacktestRunQuery query, CancellationToken ct = default)
+    public async Task<PagedResult<BacktestRunRecord>> QueryAsync(BacktestRunQuery query, CancellationToken ct = default)
     {
         await EnsureInitializedAsync(ct);
         await using var conn = await CreateConnectionAsync(ct);
 
-        var sb = new StringBuilder($"SELECT {BacktestListColumns} FROM backtest_runs br");
         var parameters = new List<SqliteParameter>();
         var conditions = new List<string>();
 
@@ -194,24 +193,36 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             parameters.Add(new SqliteParameter("$to", query.To.Value.ToString("O")));
         }
 
-        if (conditions.Count > 0)
-            sb.Append(" WHERE ").Append(string.Join(" AND ", conditions));
+        var whereClause = conditions.Count > 0
+            ? " WHERE " + string.Join(" AND ", conditions)
+            : "";
 
+        // Count total matching rows
+        await using var countCmd = conn.CreateCommand();
+        countCmd.CommandText = $"SELECT COUNT(*) FROM backtest_runs br{whereClause}";
+        foreach (var p in parameters)
+            countCmd.Parameters.Add(new SqliteParameter(p.ParameterName, p.Value));
+        var totalCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync(ct));
+
+        // Fetch page
+        var sb = new StringBuilder($"SELECT {BacktestListColumns} FROM backtest_runs br");
+        sb.Append(whereClause);
         sb.Append(" ORDER BY br.completed_at DESC");
         sb.Append(" LIMIT $limit OFFSET $offset");
-        parameters.Add(new SqliteParameter("$limit", query.Limit));
-        parameters.Add(new SqliteParameter("$offset", query.Offset));
 
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sb.ToString();
-        cmd.Parameters.AddRange(parameters);
+        foreach (var p in parameters)
+            cmd.Parameters.Add(new SqliteParameter(p.ParameterName, p.Value));
+        cmd.Parameters.Add(new SqliteParameter("$limit", query.Limit));
+        cmd.Parameters.Add(new SqliteParameter("$offset", query.Offset));
 
         var results = new List<BacktestRunRecord>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
             results.Add(ReadBacktestRunCore(reader, includeEquityCurve: false));
 
-        return results;
+        return new PagedResult<BacktestRunRecord>(results, totalCount);
     }
 
     // ── Save optimization ──────────────────────────────────────────────
@@ -310,13 +321,12 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
 
     // ── Query optimizations ────────────────────────────────────────────
 
-    public async Task<IReadOnlyList<OptimizationRunRecord>> QueryOptimizationsAsync(
+    public async Task<PagedResult<OptimizationRunRecord>> QueryOptimizationsAsync(
         OptimizationRunQuery query, CancellationToken ct = default)
     {
         await EnsureInitializedAsync(ct);
         await using var conn = await CreateConnectionAsync(ct);
 
-        var sb = new StringBuilder("SELECT * FROM optimization_runs opr");
         var parameters = new List<SqliteParameter>();
         var conditions = new List<string>();
 
@@ -351,24 +361,36 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             parameters.Add(new SqliteParameter("$to", query.To.Value.ToString("O")));
         }
 
-        if (conditions.Count > 0)
-            sb.Append(" WHERE ").Append(string.Join(" AND ", conditions));
+        var whereClause = conditions.Count > 0
+            ? " WHERE " + string.Join(" AND ", conditions)
+            : "";
 
+        // Count total matching rows
+        await using var countCmd = conn.CreateCommand();
+        countCmd.CommandText = $"SELECT COUNT(*) FROM optimization_runs opr{whereClause}";
+        foreach (var p in parameters)
+            countCmd.Parameters.Add(new SqliteParameter(p.ParameterName, p.Value));
+        var totalCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync(ct));
+
+        // Fetch page
+        var sb = new StringBuilder("SELECT * FROM optimization_runs opr");
+        sb.Append(whereClause);
         sb.Append(" ORDER BY opr.completed_at DESC");
         sb.Append(" LIMIT $limit OFFSET $offset");
-        parameters.Add(new SqliteParameter("$limit", query.Limit));
-        parameters.Add(new SqliteParameter("$offset", query.Offset));
 
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sb.ToString();
-        cmd.Parameters.AddRange(parameters);
+        foreach (var p in parameters)
+            cmd.Parameters.Add(new SqliteParameter(p.ParameterName, p.Value));
+        cmd.Parameters.Add(new SqliteParameter("$limit", query.Limit));
+        cmd.Parameters.Add(new SqliteParameter("$offset", query.Offset));
 
         var results = new List<OptimizationRunRecord>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
             results.Add(ReadOptimizationRun(reader));
 
-        return results;
+        return new PagedResult<OptimizationRunRecord>(results, totalCount);
     }
 
     // ── Distinct strategy names ────────────────────────────────────────

@@ -152,8 +152,9 @@ public class SqliteRunRepositoryTests : IDisposable
 
         var results = await _repo.QueryAsync(new BacktestRunQuery { StrategyName = "ZigZagBreakout" });
 
-        Assert.Single(results);
-        Assert.Equal("ZigZagBreakout", results[0].StrategyName);
+        Assert.Equal(1, results.TotalCount);
+        Assert.Single(results.Items);
+        Assert.Equal("ZigZagBreakout", results.Items[0].StrategyName);
     }
 
     // ── Query by asset + exchange ──────────────────────────────────────
@@ -180,8 +181,8 @@ public class SqliteRunRepositoryTests : IDisposable
         await _repo.SaveAsync(r2);
 
         var results = await _repo.QueryAsync(new BacktestRunQuery { AssetName = "BTCUSDT" });
-        Assert.Single(results);
-        Assert.Equal("BTCUSDT", results[0].AssetName);
+        Assert.Single(results.Items);
+        Assert.Equal("BTCUSDT", results.Items[0].AssetName);
     }
 
     // ── Query by timeframe ─────────────────────────────────────────────
@@ -208,8 +209,8 @@ public class SqliteRunRepositoryTests : IDisposable
         await _repo.SaveAsync(r2);
 
         var results = await _repo.QueryAsync(new BacktestRunQuery { TimeFrame = "4h" });
-        Assert.Single(results);
-        Assert.Equal("4h", results[0].TimeFrame);
+        Assert.Single(results.Items);
+        Assert.Equal("4h", results.Items[0].TimeFrame);
     }
 
     // ── Query by date range ────────────────────────────────────────────
@@ -236,8 +237,8 @@ public class SqliteRunRepositoryTests : IDisposable
             From = new DateTimeOffset(2025, 3, 1, 0, 0, 0, TimeSpan.Zero),
         });
 
-        Assert.Single(results);
-        Assert.Equal(late.Id, results[0].Id);
+        Assert.Single(results.Items);
+        Assert.Equal(late.Id, results.Items[0].Id);
     }
 
     // ── Query pagination ───────────────────────────────────────────────
@@ -258,9 +259,11 @@ public class SqliteRunRepositoryTests : IDisposable
         var page1 = await _repo.QueryAsync(new BacktestRunQuery { Limit = 2, Offset = 0 });
         var page2 = await _repo.QueryAsync(new BacktestRunQuery { Limit = 2, Offset = 2 });
 
-        Assert.Equal(2, page1.Count);
-        Assert.Equal(2, page2.Count);
-        Assert.NotEqual(page1[0].Id, page2[0].Id);
+        Assert.Equal(5, page1.TotalCount);
+        Assert.Equal(2, page1.Items.Count);
+        Assert.Equal(5, page2.TotalCount);
+        Assert.Equal(2, page2.Items.Count);
+        Assert.NotEqual(page1.Items[0].Id, page2.Items[0].Id);
     }
 
     // ── Query chronological order ──────────────────────────────────────
@@ -284,9 +287,9 @@ public class SqliteRunRepositoryTests : IDisposable
 
         var results = await _repo.QueryAsync(new BacktestRunQuery());
 
-        Assert.Equal(2, results.Count);
-        Assert.Equal(r2.Id, results[0].Id); // Later first
-        Assert.Equal(r1.Id, results[1].Id);
+        Assert.Equal(2, results.Items.Count);
+        Assert.Equal(r2.Id, results.Items[0].Id); // Later first
+        Assert.Equal(r1.Id, results.Items[1].Id);
     }
 
     // ── Save optimization + children ───────────────────────────────────
@@ -441,13 +444,13 @@ public class SqliteRunRepositoryTests : IDisposable
 
         // Without filter: both rows visible
         var all = await _repo.QueryAsync(new BacktestRunQuery());
-        Assert.Equal(2, all.Count);
+        Assert.Equal(2, all.Items.Count);
 
         // With StandaloneOnly: only the standalone run
         var standaloneOnly = await _repo.QueryAsync(new BacktestRunQuery { StandaloneOnly = true });
-        Assert.Single(standaloneOnly);
-        Assert.Equal(standalone.Id, standaloneOnly[0].Id);
-        Assert.Null(standaloneOnly[0].OptimizationRunId);
+        Assert.Single(standaloneOnly.Items);
+        Assert.Equal(standalone.Id, standaloneOnly.Items[0].Id);
+        Assert.Null(standaloneOnly.Items[0].OptimizationRunId);
     }
 
     // ── Limit capping ─────────────────────────────────────────────────
@@ -499,12 +502,77 @@ public class SqliteRunRepositoryTests : IDisposable
 
         var results = await _repo.QueryAsync(new BacktestRunQuery());
 
-        Assert.Single(results);
-        Assert.Empty(results[0].EquityCurve);
+        Assert.Single(results.Items);
+        Assert.Empty(results.Items[0].EquityCurve);
 
         // GetById still returns full equity curve
         var detail = await _repo.GetByIdAsync(original.Id);
         Assert.NotNull(detail);
         Assert.Equal(original.EquityCurve.Count, detail.EquityCurve.Count);
+    }
+
+    // ── TotalCount reflects full filtered count ───────────────────────
+
+    [Fact]
+    public async Task Query_TotalCount_ReflectsFullFilteredCount_RegardlessOfLimitOffset()
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            await _repo.SaveAsync(MakeBacktestRecord() with
+            {
+                Id = Guid.NewGuid(),
+                StrategyName = "Target",
+                CompletedAt = new DateTimeOffset(2025, 1, 1 + i, 0, 0, 0, TimeSpan.Zero),
+            });
+        }
+        await _repo.SaveAsync(MakeBacktestRecord(strategyName: "Other"));
+
+        var page = await _repo.QueryAsync(new BacktestRunQuery
+        {
+            StrategyName = "Target",
+            Limit = 2,
+            Offset = 1,
+        });
+
+        Assert.Equal(5, page.TotalCount);
+        Assert.Equal(2, page.Items.Count);
+    }
+
+    // ── Optimization TotalCount ───────────────────────────────────────
+
+    [Fact]
+    public async Task QueryOptimizations_TotalCount_ReflectsFilteredCount()
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            var optId = Guid.NewGuid();
+            var trial = MakeBacktestRecord(optimizationRunId: optId, runFolderPath: null) with { Id = Guid.NewGuid() };
+            await _repo.SaveOptimizationAsync(new OptimizationRunRecord
+            {
+                Id = optId,
+                StrategyName = "ZigZagBreakout",
+                StrategyVersion = "1.0.0",
+                StartedAt = new DateTimeOffset(2025, 1, 1 + i, 0, 0, 0, TimeSpan.Zero),
+                CompletedAt = new DateTimeOffset(2025, 1, 1 + i, 0, 1, 0, TimeSpan.Zero),
+                DurationMs = 1000,
+                TotalCombinations = 1,
+                SortBy = "SharpeRatio",
+                DataStart = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                DataEnd = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
+                InitialCash = 10000m,
+                Commission = 0m,
+                SlippageTicks = 0,
+                MaxParallelism = 1,
+                AssetName = "BTCUSDT",
+                Exchange = "Binance",
+                TimeFrame = "1h",
+                Trials = [trial],
+            });
+        }
+
+        var page = await _repo.QueryOptimizationsAsync(new OptimizationRunQuery { Limit = 2, Offset = 0 });
+
+        Assert.Equal(3, page.TotalCount);
+        Assert.Equal(2, page.Items.Count);
     }
 }
