@@ -35,7 +35,7 @@ public sealed class RunBacktestCommandHandler(
             StrategyParameters = command.StrategyParameters,
         };
 
-        var sink = runSinkFactory.Create(identity);
+        using var sink = runSinkFactory.Create(identity);
         var eventBus = new EventBus(ExportMode.Backtest, [sink]);
         var result = engine.Run(setup.Series, setup.Strategy, setup.Options, ct, bus: eventBus);
 
@@ -103,7 +103,6 @@ public sealed class RunBacktestCommandHandler(
         };
 
         await runRepository.SaveAsync(record, ct);
-        sink.Dispose();
 
         return new BacktestResultDto
         {

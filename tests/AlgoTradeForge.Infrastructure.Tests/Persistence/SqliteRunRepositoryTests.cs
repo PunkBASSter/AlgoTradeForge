@@ -472,4 +472,39 @@ public class SqliteRunRepositoryTests : IDisposable
         var query = new OptimizationRunQuery { Limit = 10_000 };
         Assert.Equal(OptimizationRunQuery.MaxLimit, query.Limit);
     }
+
+    // ── Offset clamping ───────────────────────────────────────────────
+
+    [Fact]
+    public void Offset_NegativeClampedToZero()
+    {
+        var query = new BacktestRunQuery { Offset = -10 };
+        Assert.Equal(0, query.Offset);
+    }
+
+    [Fact]
+    public void OptimizationOffset_NegativeClampedToZero()
+    {
+        var query = new OptimizationRunQuery { Offset = -10 };
+        Assert.Equal(0, query.Offset);
+    }
+
+    // ── Query list excludes equity curve ──────────────────────────────
+
+    [Fact]
+    public async Task Query_ReturnsEmptyEquityCurve_ForListResults()
+    {
+        var original = MakeBacktestRecord();
+        await _repo.SaveAsync(original);
+
+        var results = await _repo.QueryAsync(new BacktestRunQuery());
+
+        Assert.Single(results);
+        Assert.Empty(results[0].EquityCurve);
+
+        // GetById still returns full equity curve
+        var detail = await _repo.GetByIdAsync(original.Id);
+        Assert.NotNull(detail);
+        Assert.Equal(original.EquityCurve.Count, detail.EquityCurve.Count);
+    }
 }

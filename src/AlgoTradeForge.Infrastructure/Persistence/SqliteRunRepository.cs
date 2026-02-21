@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -8,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Infrastructure.Persistence;
 
-public sealed class SqliteRunRepository : IRunRepository
+public sealed class SqliteRunRepository : IRunRepository, IDisposable
 {
     private readonly string _connectionString;
     private readonly SemaphoreSlim _initLock = new(1, 1);
@@ -18,6 +19,16 @@ public sealed class SqliteRunRepository : IRunRepository
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
+
+    /// <summary>All backtest_runs columns except equity_curve_json, for list queries.</summary>
+    private const string BacktestListColumns = """
+        id, strategy_name, strategy_version, parameters_json,
+        initial_cash, commission, slippage_ticks,
+        started_at, completed_at, data_start, data_end,
+        duration_ms, total_bars, metrics_json,
+        run_folder_path, run_mode, optimization_run_id,
+        asset_name, exchange, timeframe
+        """;
 
     public SqliteRunRepository(IOptions<RunStorageOptions> options)
     {
@@ -29,12 +40,14 @@ public sealed class SqliteRunRepository : IRunRepository
         _connectionString = $"Data Source={dbPath}";
     }
 
-    private async Task EnsureInitializedAsync()
+    public void Dispose() => _initLock.Dispose();
+
+    private async Task EnsureInitializedAsync(CancellationToken ct)
     {
         if (Volatile.Read(ref _initialized))
             return;
 
-        await _initLock.WaitAsync();
+        await _initLock.WaitAsync(ct);
         try
         {
             if (!_initialized)
@@ -49,10 +62,10 @@ public sealed class SqliteRunRepository : IRunRepository
         }
     }
 
-    private SqliteConnection CreateConnection()
+    private async Task<SqliteConnection> CreateConnectionAsync(CancellationToken ct)
     {
         var conn = new SqliteConnection(_connectionString);
-        conn.Open();
+        await conn.OpenAsync(ct);
         return conn;
     }
 
@@ -60,18 +73,19 @@ public sealed class SqliteRunRepository : IRunRepository
 
     public async Task SaveAsync(BacktestRunRecord record, CancellationToken ct = default)
     {
-        await EnsureInitializedAsync();
-        using var conn = CreateConnection();
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
         using var tx = conn.BeginTransaction();
 
-        InsertBacktestRun(conn, tx, record);
+        await InsertBacktestRunAsync(conn, tx, record, ct);
 
         tx.Commit();
     }
 
-    private static void InsertBacktestRun(SqliteConnection conn, SqliteTransaction tx, BacktestRunRecord r)
+    private static async Task InsertBacktestRunAsync(
+        SqliteConnection conn, SqliteTransaction tx, BacktestRunRecord r, CancellationToken ct)
     {
-        using var cmd = conn.CreateCommand();
+        await using var cmd = conn.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = """
             INSERT INTO backtest_runs (
@@ -113,35 +127,35 @@ public sealed class SqliteRunRepository : IRunRepository
         cmd.Parameters.AddWithValue("$exchange", r.Exchange);
         cmd.Parameters.AddWithValue("$tf", r.TimeFrame);
 
-        cmd.ExecuteNonQuery();
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     // ── Get backtest by ID ─────────────────────────────────────────────
 
     public async Task<BacktestRunRecord?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-        await EnsureInitializedAsync();
-        using var conn = CreateConnection();
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
 
-        using var cmd = conn.CreateCommand();
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT * FROM backtest_runs WHERE id = $id";
         cmd.Parameters.AddWithValue("$id", id.ToString());
 
-        using var reader = cmd.ExecuteReader();
-        if (!reader.Read())
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
             return null;
 
-        return ReadBacktestRun(reader);
+        return ReadBacktestRunCore(reader, includeEquityCurve: true);
     }
 
     // ── Query backtests ────────────────────────────────────────────────
 
     public async Task<IReadOnlyList<BacktestRunRecord>> QueryAsync(BacktestRunQuery query, CancellationToken ct = default)
     {
-        await EnsureInitializedAsync();
-        using var conn = CreateConnection();
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
 
-        var sb = new StringBuilder("SELECT * FROM backtest_runs br");
+        var sb = new StringBuilder($"SELECT {BacktestListColumns} FROM backtest_runs br");
         var parameters = new List<SqliteParameter>();
         var conditions = new List<string>();
 
@@ -188,14 +202,14 @@ public sealed class SqliteRunRepository : IRunRepository
         parameters.Add(new SqliteParameter("$limit", query.Limit));
         parameters.Add(new SqliteParameter("$offset", query.Offset));
 
-        using var cmd = conn.CreateCommand();
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = sb.ToString();
         cmd.Parameters.AddRange(parameters);
 
         var results = new List<BacktestRunRecord>();
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
-            results.Add(ReadBacktestRun(reader));
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            results.Add(ReadBacktestRunCore(reader, includeEquityCurve: false));
 
         return results;
     }
@@ -204,12 +218,12 @@ public sealed class SqliteRunRepository : IRunRepository
 
     public async Task SaveOptimizationAsync(OptimizationRunRecord record, CancellationToken ct = default)
     {
-        await EnsureInitializedAsync();
-        using var conn = CreateConnection();
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
         using var tx = conn.BeginTransaction();
 
         // Insert parent optimization run
-        using (var cmd = conn.CreateCommand())
+        await using (var cmd = conn.CreateCommand())
         {
             cmd.Transaction = tx;
             cmd.CommandText = """
@@ -246,13 +260,13 @@ public sealed class SqliteRunRepository : IRunRepository
             cmd.Parameters.AddWithValue("$exchange", record.Exchange);
             cmd.Parameters.AddWithValue("$tf", record.TimeFrame);
 
-            cmd.ExecuteNonQuery();
+            await cmd.ExecuteNonQueryAsync(ct);
         }
 
         // Insert child trial backtest runs
         foreach (var trial in record.Trials)
         {
-            InsertBacktestRun(conn, tx, trial);
+            await InsertBacktestRunAsync(conn, tx, trial, ct);
         }
 
         tx.Commit();
@@ -262,29 +276,33 @@ public sealed class SqliteRunRepository : IRunRepository
 
     public async Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, CancellationToken ct = default)
     {
-        await EnsureInitializedAsync();
-        using var conn = CreateConnection();
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
 
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT * FROM optimization_runs WHERE id = $id";
-        cmd.Parameters.AddWithValue("$id", id.ToString());
+        OptimizationRunRecord record;
 
-        using var reader = cmd.ExecuteReader();
-        if (!reader.Read())
-            return null;
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT * FROM optimization_runs WHERE id = $id";
+            cmd.Parameters.AddWithValue("$id", id.ToString());
 
-        var record = ReadOptimizationRun(reader);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct))
+                return null;
+
+            record = ReadOptimizationRun(reader);
+        }
 
         // Load child trials
         var trials = new List<BacktestRunRecord>();
-        using (var trialCmd = conn.CreateCommand())
+        await using (var trialCmd = conn.CreateCommand())
         {
             trialCmd.CommandText = "SELECT * FROM backtest_runs WHERE optimization_run_id = $optId";
             trialCmd.Parameters.AddWithValue("$optId", id.ToString());
 
-            using var trialReader = trialCmd.ExecuteReader();
-            while (trialReader.Read())
-                trials.Add(ReadBacktestRun(trialReader));
+            await using var trialReader = await trialCmd.ExecuteReaderAsync(ct);
+            while (await trialReader.ReadAsync(ct))
+                trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: true));
         }
 
         return record with { Trials = trials };
@@ -295,8 +313,8 @@ public sealed class SqliteRunRepository : IRunRepository
     public async Task<IReadOnlyList<OptimizationRunRecord>> QueryOptimizationsAsync(
         OptimizationRunQuery query, CancellationToken ct = default)
     {
-        await EnsureInitializedAsync();
-        using var conn = CreateConnection();
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
 
         var sb = new StringBuilder("SELECT * FROM optimization_runs opr");
         var parameters = new List<SqliteParameter>();
@@ -341,13 +359,13 @@ public sealed class SqliteRunRepository : IRunRepository
         parameters.Add(new SqliteParameter("$limit", query.Limit));
         parameters.Add(new SqliteParameter("$offset", query.Offset));
 
-        using var cmd = conn.CreateCommand();
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = sb.ToString();
         cmd.Parameters.AddRange(parameters);
 
         var results = new List<OptimizationRunRecord>();
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
             results.Add(ReadOptimizationRun(reader));
 
         return results;
@@ -357,10 +375,10 @@ public sealed class SqliteRunRepository : IRunRepository
 
     public async Task<IReadOnlyList<string>> GetDistinctStrategyNamesAsync(CancellationToken ct = default)
     {
-        await EnsureInitializedAsync();
-        using var conn = CreateConnection();
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
 
-        using var cmd = conn.CreateCommand();
+        await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT DISTINCT strategy_name FROM backtest_runs
             UNION
@@ -369,8 +387,8 @@ public sealed class SqliteRunRepository : IRunRepository
             """;
 
         var names = new List<string>();
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
             names.Add(reader.GetString(0));
 
         return names;
@@ -378,7 +396,7 @@ public sealed class SqliteRunRepository : IRunRepository
 
     // ── Helpers ────────────────────────────────────────────────────────
 
-    private static BacktestRunRecord ReadBacktestRun(SqliteDataReader reader)
+    private static BacktestRunRecord ReadBacktestRunCore(DbDataReader reader, bool includeEquityCurve)
     {
         var optIdStr = reader.IsDBNull(reader.GetOrdinal("optimization_run_id"))
             ? null
@@ -404,7 +422,9 @@ public sealed class SqliteRunRepository : IRunRepository
             TotalBars = reader.GetInt32(reader.GetOrdinal("total_bars")),
             Metrics = JsonSerializer.Deserialize<PerformanceMetrics>(
                 reader.GetString(reader.GetOrdinal("metrics_json")), JsonOptions)!,
-            EquityCurve = DeserializeEquityCurve(reader.GetString(reader.GetOrdinal("equity_curve_json"))),
+            EquityCurve = includeEquityCurve
+                ? DeserializeEquityCurve(reader.GetString(reader.GetOrdinal("equity_curve_json")))
+                : [],
             RunFolderPath = reader.IsDBNull(reader.GetOrdinal("run_folder_path"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("run_folder_path")),
@@ -413,7 +433,7 @@ public sealed class SqliteRunRepository : IRunRepository
         };
     }
 
-    private static OptimizationRunRecord ReadOptimizationRun(SqliteDataReader reader) => new()
+    private static OptimizationRunRecord ReadOptimizationRun(DbDataReader reader) => new()
     {
         Id = Guid.Parse(reader.GetString(reader.GetOrdinal("id"))),
         StrategyName = reader.GetString(reader.GetOrdinal("strategy_name")),
