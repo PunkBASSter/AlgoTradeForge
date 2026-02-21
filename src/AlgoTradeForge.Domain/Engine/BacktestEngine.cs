@@ -12,6 +12,7 @@ namespace AlgoTradeForge.Domain.Engine;
 public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEvaluator)
 {
     private const string Source = EventSources.Engine;
+
     public BacktestResult Run(
         TimeSeries<Int64Bar>[] seriesPerSubscription,
         IInt64BarStrategy strategy,
@@ -20,38 +21,73 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         IDebugProbe? probe = null,
         IEventBus? bus = null)
     {
+        var stopwatch = Stopwatch.StartNew();
+        var state = InitializeRun(seriesPerSubscription, strategy, options, probe, bus);
+
+        try
+        {
+            RunMainLoop(state, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            EmitError(state, ex);
+            throw;
+        }
+        finally
+        {
+            stopwatch.Stop();
+            FinalizeRun(state, stopwatch);
+        }
+
+        return new BacktestResult(state.Portfolio, state.Fills, state.EquityCurve, state.TotalBarsDelivered, stopwatch.Elapsed);
+    }
+
+    private static RunState InitializeRun(
+        TimeSeries<Int64Bar>[] series,
+        IInt64BarStrategy strategy,
+        BacktestOptions options,
+        IDebugProbe? probe,
+        IEventBus? bus)
+    {
         probe ??= NullDebugProbe.Instance;
         bus ??= NullEventBus.Instance;
-        var probeActive = probe.IsActive;
-        var busActive = bus is not NullEventBus;
-        var sequenceNumber = 0L;
         var subscriptions = strategy.DataSubscriptions;
 
-        if (seriesPerSubscription.Length != subscriptions.Count)
+        if (series.Length != subscriptions.Count)
             throw new ArgumentException("Series array length must match strategy DataSubscriptions count.");
 
-        var stopwatch = Stopwatch.StartNew();
+        var fills = new List<Fill>();
+        var orderQueue = new OrderQueue();
         var portfolio = new Portfolio { InitialCash = options.InitialCash };
         portfolio.Initialize();
 
-        var subCount = subscriptions.Count;
-        var cursors = new int[subCount];
-        var fills = new List<Fill>();
-        var orderQueue = new OrderQueue();
-        var orderContext = new BacktestOrderContext(orderQueue, fills, portfolio, bus);
-        var orderIdCounter = 0L;
-        var totalBarsDelivered = 0;
-        var activeSlTpPositions = new List<ActiveSlTpPosition>();
-        var lastPrices = new Dictionary<string, long>();
-        var equityCurve = new List<long>();
-        var toRemoveBuffer = new List<long>();
+        var state = new RunState
+        {
+            Probe = probe,
+            Bus = bus,
+            ProbeActive = probe.IsActive,
+            BusActive = bus is not NullEventBus,
+            Strategy = strategy,
+            Options = options,
+            Subscriptions = subscriptions,
+            Series = series,
+            Portfolio = portfolio,
+            OrderContext = new BacktestOrderContext(orderQueue, fills, portfolio, bus),
+            OrderQueue = orderQueue,
+            Fills = fills,
+            Cursors = new int[subscriptions.Count],
+        };
 
         if (strategy is IEventBusReceiver receiver)
             receiver.SetEventBus(bus);
 
         strategy.OnInit();
 
-        if (busActive)
+        if (state.BusActive)
         {
             bus.Emit(new RunStartEvent(
                 DateTimeOffset.UtcNow,
@@ -64,145 +100,140 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 ExportMode.Backtest));
         }
 
-        if (probeActive)
+        if (state.ProbeActive)
             probe.OnRunStart();
 
-        try
-        {
-            while (true)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                var minTimestampMs = long.MaxValue;
-                var minSubIndex = -1;
-
-                for (var s = 0; s < subCount; s++)
-                {
-                    if (cursors[s] >= seriesPerSubscription[s].Count)
-                        continue;
-
-                    var ts = seriesPerSubscription[s][cursors[s]].TimestampMs;
-                    if (ts < minTimestampMs)
-                    {
-                        minTimestampMs = ts;
-                        minSubIndex = s;
-                    }
-                }
-
-                if (minSubIndex == -1)
-                    break;
-
-                // Deliver all bars at the same timestamp in subscription declaration order
-                for (var s = minSubIndex; s < subCount; s++)
-                {
-                    if (cursors[s] >= seriesPerSubscription[s].Count)
-                        continue;
-
-                    var bar = seriesPerSubscription[s][cursors[s]];
-                    if (bar.TimestampMs != minTimestampMs)
-                        continue;
-
-                    var subscription = subscriptions[s];
-                    var barTimestamp = bar.Timestamp;
-
-                    // Snapshot fill count so strategy can observe fills from this bar's processing
-                    var fillCountBefore = fills.Count;
-                    orderContext.BeginBar(fillCountBefore, barTimestamp);
-
-                    // Notify strategy that a new bar is starting (open price only)
-                    var startBar = new Int64Bar(bar.TimestampMs, bar.Open, bar.Open, bar.Open, bar.Open, 0);
-                    strategy.OnBarStart(startBar, subscription, orderContext);
-                    AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp, bus, busActive);
-
-                    // Process pending orders for this asset against the new bar
-                    ProcessPendingOrders(subscription.Asset, bar, barTimestamp, options, orderQueue, fills, portfolio, activeSlTpPositions, strategy, bus, busActive, toRemoveBuffer);
-
-                    // Evaluate SL/TP for active positions on this asset
-                    EvaluateSlTpPositions(subscription.Asset, bar, barTimestamp, options, fills, portfolio, activeSlTpPositions, strategy, bus, busActive);
-
-                    // Deliver completed bar to strategy
-                    strategy.OnBarComplete(bar, subscription, orderContext);
-                    AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp, bus, busActive);
-
-                    lastPrices[subscription.Asset.Name] = bar.Close;
-                    cursors[s]++;
-                    totalBarsDelivered++;
-
-                    EmitBar(bus, busActive, barTimestamp, bar, subscription);
-
-                    if (probeActive)
-                    {
-                        var fillsThisBar = fills.Count - fillCountBefore;
-                        probe.OnBarProcessed(new DebugSnapshot(
-                            ++sequenceNumber,
-                            bar.TimestampMs,
-                            s,
-                            subscription.IsExportable,
-                            fillsThisBar,
-                            portfolio.Equity(lastPrices)));
-                    }
-                }
-
-                // Snapshot portfolio equity at this timestamp
-                equityCurve.Add(portfolio.Equity(lastPrices));
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            if (busActive)
-                try { bus.Emit(new ErrorEvent(DateTimeOffset.UtcNow, Source, ex.Message, ex.StackTrace)); }
-                catch { /* Don't mask the original exception */ }
-            throw;
-        }
-        finally
-        {
-            stopwatch.Stop();
-            if (busActive)
-                try
-                {
-                    bus.Emit(new RunEndEvent(
-                        DateTimeOffset.UtcNow,
-                        Source,
-                        totalBarsDelivered,
-                        equityCurve.Count > 0 ? equityCurve[^1] : options.InitialCash,
-                        fills.Count,
-                        stopwatch.Elapsed));
-                }
-                catch { /* Don't mask the original exception */ }
-            if (probeActive)
-                try { probe.OnRunEnd(); }
-                catch { /* Don't mask the original exception */ }
-        }
-
-        var result = new BacktestResult(portfolio, fills, equityCurve, totalBarsDelivered, stopwatch.Elapsed);
-
-        return result;
+        return state;
     }
 
-    private void ProcessPendingOrders(
-        Asset asset,
-        Int64Bar bar,
-        DateTimeOffset timestamp,
-        BacktestOptions options,
-        OrderQueue queue,
-        List<Fill> fills,
-        Portfolio portfolio,
-        List<ActiveSlTpPosition> activeSlTpPositions,
-        IInt64BarStrategy strategy,
-        IEventBus bus,
-        bool busActive,
-        List<long> toRemove)
+    private void RunMainLoop(RunState state, CancellationToken ct)
     {
-        var pending = queue.GetPendingForAsset(asset);
-        toRemove.Clear();
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var (minSubIndex, minTimestampMs) = FindNextTimestamp(state);
+            if (minSubIndex == -1)
+                break;
+
+            DeliverBarsAtTimestamp(state, minSubIndex, minTimestampMs);
+
+            // Snapshot portfolio equity at this timestamp
+            state.EquityCurve.Add(state.Portfolio.Equity(state.LastPrices));
+        }
+    }
+
+    private static (int subIndex, long timestampMs) FindNextTimestamp(RunState state)
+    {
+        var minTimestampMs = long.MaxValue;
+        var minSubIndex = -1;
+        var subCount = state.Subscriptions.Count;
+
+        for (var s = 0; s < subCount; s++)
+        {
+            if (state.Cursors[s] >= state.Series[s].Count)
+                continue;
+
+            var ts = state.Series[s][state.Cursors[s]].TimestampMs;
+            if (ts < minTimestampMs)
+            {
+                minTimestampMs = ts;
+                minSubIndex = s;
+            }
+        }
+
+        return (minSubIndex, minTimestampMs);
+    }
+
+    private void DeliverBarsAtTimestamp(RunState state, int minSubIndex, long timestampMs)
+    {
+        var subCount = state.Subscriptions.Count;
+
+        for (var s = minSubIndex; s < subCount; s++)
+        {
+            if (state.Cursors[s] >= state.Series[s].Count)
+                continue;
+
+            var bar = state.Series[s][state.Cursors[s]];
+            if (bar.TimestampMs != timestampMs)
+                continue;
+
+            var subscription = state.Subscriptions[s];
+            var barTimestamp = bar.Timestamp;
+
+            // Snapshot fill count so strategy can observe fills from this bar's processing
+            var fillCountBefore = state.Fills.Count;
+            state.OrderContext.BeginBar(fillCountBefore, barTimestamp);
+
+            // Notify strategy that a new bar is starting (open price only)
+            var startBar = new Int64Bar(bar.TimestampMs, bar.Open, bar.Open, bar.Open, bar.Open, 0);
+            state.Strategy.OnBarStart(startBar, subscription, state.OrderContext);
+            AssignOrderIds(state, barTimestamp);
+
+            // Process pending orders for this asset against the new bar
+            ProcessPendingOrders(state, subscription.Asset, bar, barTimestamp);
+
+            // Evaluate SL/TP for active positions on this asset
+            EvaluateSlTpPositions(state, subscription.Asset, bar, barTimestamp);
+
+            // Deliver completed bar to strategy
+            state.Strategy.OnBarComplete(bar, subscription, state.OrderContext);
+            AssignOrderIds(state, barTimestamp);
+
+            state.LastPrices[subscription.Asset.Name] = bar.Close;
+            state.Cursors[s]++;
+            state.TotalBarsDelivered++;
+
+            EmitBar(state, bar, subscription);
+
+            if (state.ProbeActive)
+            {
+                var fillsThisBar = state.Fills.Count - fillCountBefore;
+                state.Probe.OnBarProcessed(new DebugSnapshot(
+                    ++state.SequenceNumber,
+                    bar.TimestampMs,
+                    s,
+                    subscription.IsExportable,
+                    fillsThisBar,
+                    state.Portfolio.Equity(state.LastPrices)));
+            }
+        }
+    }
+
+    private static void EmitError(RunState state, Exception ex)
+    {
+        if (state.BusActive)
+            try { state.Bus.Emit(new ErrorEvent(DateTimeOffset.UtcNow, Source, ex.Message, ex.StackTrace)); }
+            catch { /* Don't mask the original exception */ }
+    }
+
+    private static void FinalizeRun(RunState state, Stopwatch stopwatch)
+    {
+        if (state.BusActive)
+            try
+            {
+                state.Bus.Emit(new RunEndEvent(
+                    DateTimeOffset.UtcNow,
+                    Source,
+                    state.TotalBarsDelivered,
+                    state.EquityCurve.Count > 0 ? state.EquityCurve[^1] : state.Options.InitialCash,
+                    state.Fills.Count,
+                    stopwatch.Elapsed));
+            }
+            catch { /* Don't mask the original exception */ }
+        if (state.ProbeActive)
+            try { state.Probe.OnRunEnd(); }
+            catch { /* Don't mask the original exception */ }
+    }
+
+    private void ProcessPendingOrders(RunState state, Asset asset, Int64Bar bar, DateTimeOffset timestamp)
+    {
+        var pending = state.OrderQueue.GetPendingForAsset(asset);
+        state.ToRemoveBuffer.Clear();
 
         foreach (var order in pending)
         {
-            var fillPrice = barMatcher.GetFillPrice(order, bar, options);
+            var fillPrice = barMatcher.GetFillPrice(order, bar, state.Options);
             if (fillPrice is null)
             {
                 // StopLimit: stop was triggered but limit not reached — mark as Triggered
@@ -219,14 +250,14 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 continue;
             }
 
-            var riskPassed = riskEvaluator.CanFill(order, fillPrice.Value, portfolio, options);
-            EmitRiskCheck(bus, busActive, timestamp, order, riskPassed);
+            var riskPassed = riskEvaluator.CanFill(order, fillPrice.Value, state.Portfolio, state.Options);
+            EmitRiskCheck(state, order, riskPassed);
 
             if (!riskPassed)
             {
                 order.Status = OrderStatus.Rejected;
-                toRemove.Add(order.Id);
-                EmitOrderRejected(bus, busActive, timestamp, order);
+                state.ToRemoveBuffer.Add(order.Id);
+                EmitOrderRejected(state, order);
                 continue;
             }
 
@@ -237,20 +268,20 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 fillPrice.Value,
                 order.Quantity,
                 order.Side,
-                options.CommissionPerTrade);
+                state.Options.CommissionPerTrade);
 
             order.Status = OrderStatus.Filled;
-            fills.Add(fill);
-            portfolio.Apply(fill);
-            strategy.OnTrade(fill, order);
-            toRemove.Add(order.Id);
+            state.Fills.Add(fill);
+            state.Portfolio.Apply(fill);
+            state.Strategy.OnTrade(fill, order);
+            state.ToRemoveBuffer.Add(order.Id);
 
-            EmitFillAndPosition(bus, busActive, timestamp, fill, portfolio);
+            EmitFillAndPosition(state, timestamp, fill);
 
             // Track SL/TP if the order has stop loss or take profit levels
             if (order.StopLossPrice.HasValue || order.TakeProfitLevels is { Count: > 0 })
             {
-                activeSlTpPositions.Add(new ActiveSlTpPosition
+                state.ActiveSlTpPositions.Add(new RunState.ActiveSlTpPosition
                 {
                     OriginalOrder = order,
                     EntryPrice = fill.Price,
@@ -260,25 +291,15 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             }
         }
 
-        foreach (var id in toRemove)
-            queue.Remove(id);
+        foreach (var id in state.ToRemoveBuffer)
+            state.OrderQueue.Remove(id);
     }
 
-    private void EvaluateSlTpPositions(
-        Asset asset,
-        Int64Bar bar,
-        DateTimeOffset timestamp,
-        BacktestOptions options,
-        List<Fill> fills,
-        Portfolio portfolio,
-        List<ActiveSlTpPosition> activeSlTpPositions,
-        IInt64BarStrategy strategy,
-        IEventBus bus,
-        bool busActive)
+    private void EvaluateSlTpPositions(RunState state, Asset asset, Int64Bar bar, DateTimeOffset timestamp)
     {
-        for (var i = activeSlTpPositions.Count - 1; i >= 0; i--)
+        for (var i = state.ActiveSlTpPositions.Count - 1; i >= 0; i--)
         {
-            var pos = activeSlTpPositions[i];
+            var pos = state.ActiveSlTpPositions[i];
             if (pos.OriginalOrder.Asset != asset)
                 continue;
 
@@ -287,7 +308,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 pos.EntryPrice,
                 pos.NextTpIndex,
                 bar,
-                options);
+                state.Options);
 
             if (result is not { } match)
                 continue;
@@ -304,18 +325,18 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 match.Price,
                 quantity,
                 closeSide,
-                options.CommissionPerTrade);
+                state.Options.CommissionPerTrade);
 
-            fills.Add(fill);
-            portfolio.Apply(fill);
-            strategy.OnTrade(fill, pos.OriginalOrder);
+            state.Fills.Add(fill);
+            state.Portfolio.Apply(fill);
+            state.Strategy.OnTrade(fill, pos.OriginalOrder);
 
-            EmitFillAndPosition(bus, busActive, timestamp, fill, portfolio);
+            EmitFillAndPosition(state, timestamp, fill);
 
             if (match.IsStopLoss)
             {
                 // SL closes entire position
-                activeSlTpPositions.RemoveAt(i);
+                state.ActiveSlTpPositions.RemoveAt(i);
             }
             else
             {
@@ -326,24 +347,19 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                     pos.OriginalOrder.TakeProfitLevels is null ||
                     pos.NextTpIndex >= pos.OriginalOrder.TakeProfitLevels.Count)
                 {
-                    activeSlTpPositions.RemoveAt(i);
+                    state.ActiveSlTpPositions.RemoveAt(i);
                 }
             }
         }
     }
 
-    private static void EmitBar(
-        IEventBus bus,
-        bool busActive,
-        DateTimeOffset timestamp,
-        Int64Bar bar,
-        DataSubscription subscription)
+    private static void EmitBar(RunState state, Int64Bar bar, DataSubscription subscription)
     {
-        if (!busActive)
+        if (!state.BusActive)
             return;
 
-        bus.Emit(new BarEvent(
-            timestamp,
+        state.Bus.Emit(new BarEvent(
+            bar.Timestamp,
             Source,
             subscription.Asset.Name,
             TimeFrameFormatter.Format(subscription.TimeFrame),
@@ -355,18 +371,13 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             subscription.IsExportable));
     }
 
-    private static void EmitRiskCheck(
-        IEventBus bus,
-        bool busActive,
-        DateTimeOffset timestamp,
-        Order order,
-        bool passed)
+    private static void EmitRiskCheck(RunState state, Order order, bool passed)
     {
-        if (!busActive)
+        if (!state.BusActive)
             return;
 
-        bus.Emit(new RiskEvent(
-            timestamp,
+        state.Bus.Emit(new RiskEvent(
+            DateTimeOffset.UtcNow,
             Source,
             order.Asset.Name,
             passed,
@@ -374,39 +385,30 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             passed ? null : "Insufficient cash"));
     }
 
-    private static void EmitOrderRejected(
-        IEventBus bus,
-        bool busActive,
-        DateTimeOffset timestamp,
-        Order order)
+    private static void EmitOrderRejected(RunState state, Order order)
     {
-        if (!busActive)
+        if (!state.BusActive)
             return;
 
-        bus.Emit(new OrderRejectEvent(
-            timestamp,
+        state.Bus.Emit(new OrderRejectEvent(
+            DateTimeOffset.UtcNow,
             Source,
             order.Id,
             order.Asset.Name,
             "Insufficient cash"));
 
-        bus.Emit(new WarningEvent(
-            timestamp,
+        state.Bus.Emit(new WarningEvent(
+            DateTimeOffset.UtcNow,
             Source,
             $"Order {order.Id} rejected: insufficient cash for {order.Side} {order.Quantity} {order.Asset.Name}"));
     }
 
-    private static void EmitFillAndPosition(
-        IEventBus bus,
-        bool busActive,
-        DateTimeOffset timestamp,
-        Fill fill,
-        Portfolio portfolio)
+    private static void EmitFillAndPosition(RunState state, DateTimeOffset timestamp, Fill fill)
     {
-        if (!busActive)
+        if (!state.BusActive)
             return;
 
-        bus.Emit(new OrderFillEvent(
+        state.Bus.Emit(new OrderFillEvent(
             timestamp,
             Source,
             fill.OrderId,
@@ -416,10 +418,10 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             fill.Quantity,
             fill.Commission));
 
-        var position = portfolio.GetPosition(fill.Asset.Name);
+        var position = state.Portfolio.GetPosition(fill.Asset.Name);
         if (position is not null)
         {
-            bus.Emit(new PositionEvent(
+            state.Bus.Emit(new PositionEvent(
                 timestamp,
                 Source,
                 fill.Asset.Name,
@@ -429,33 +431,20 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         }
     }
 
-    private sealed class ActiveSlTpPosition
+    private static void AssignOrderIds(RunState state, DateTimeOffset timestamp)
     {
-        public required Order OriginalOrder { get; init; }
-        public required long EntryPrice { get; init; }
-        public decimal RemainingQuantity { get; set; }
-        public int NextTpIndex { get; set; }
-    }
-
-    private static void AssignOrderIds(
-        OrderQueue queue,
-        ref long counter,
-        DateTimeOffset timestamp,
-        IEventBus bus,
-        bool busActive)
-    {
-        foreach (var order in queue.GetAll())
+        foreach (var order in state.OrderQueue.GetAll())
         {
             if (order.Id == 0)
-                order.Id = ++counter;
+                order.Id = ++state.OrderIdCounter;
 
             if (order.SubmittedAt == default)
             {
                 order.SubmittedAt = timestamp;
 
-                if (busActive)
+                if (state.BusActive)
                 {
-                    bus.Emit(new OrderPlaceEvent(
+                    state.Bus.Emit(new OrderPlaceEvent(
                         timestamp,
                         Source,
                         order.Id,
@@ -467,6 +456,41 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                         order.StopPrice));
                 }
             }
+        }
+    }
+
+    private sealed class RunState
+    {
+        // Per-run dependencies (set once at init)
+        public required IDebugProbe Probe;
+        public required IEventBus Bus;
+        public required bool ProbeActive;
+        public required bool BusActive;
+        public required IInt64BarStrategy Strategy;
+        public required BacktestOptions Options;
+        public required IList<DataSubscription> Subscriptions;
+        public required TimeSeries<Int64Bar>[] Series;
+
+        // Mutable simulation state
+        public required Portfolio Portfolio;
+        public required BacktestOrderContext OrderContext;
+        public required OrderQueue OrderQueue;
+        public required List<Fill> Fills;
+        public readonly List<ActiveSlTpPosition> ActiveSlTpPositions = [];
+        public readonly Dictionary<string, long> LastPrices = [];
+        public readonly List<long> EquityCurve = [];
+        public required int[] Cursors;
+        public readonly List<long> ToRemoveBuffer = [];
+        public long OrderIdCounter;
+        public long SequenceNumber;
+        public int TotalBarsDelivered;
+
+        public sealed class ActiveSlTpPosition
+        {
+            public required Order OriginalOrder { get; init; }
+            public required long EntryPrice { get; init; }
+            public decimal RemainingQuantity { get; set; }
+            public int NextTpIndex { get; set; }
         }
     }
 }
