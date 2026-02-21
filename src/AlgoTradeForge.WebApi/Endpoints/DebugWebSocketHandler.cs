@@ -143,13 +143,7 @@ public static class DebugWebSocketHandler
 
         if (command is DebugCommand.SetExport setExport)
         {
-            if (session.EventBus is not EventBus eventBus)
-            {
-                SendError(sink, "EventBus does not support mutation toggling.");
-                return;
-            }
-
-            eventBus.SetMutationsEnabled(setExport.Mutations);
+            session.EventBus!.SetMutationsEnabled(setExport.Mutations);
             SendSetExportAck(sink, setExport.Mutations);
             return;
         }

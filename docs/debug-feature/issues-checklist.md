@@ -104,25 +104,29 @@
 
 ## Warning — Performance (2)
 
-- [ ] **W16 — `List<long>` allocated per `ProcessPendingOrders` call**
+- [x] **W16 — `List<long>` allocated per `ProcessPendingOrders` call**
   - File: `src/AlgoTradeForge.Domain/Engine/BacktestEngine.cs:196`
   - GC pressure on long backtests. Consider pooling or reusing a field-level list.
+  - **Fix:** Hoisted `toRemoveBuffer` to `Run()` local, passed as parameter, `Clear()` at start of each call.
 
-- [ ] **W17 — `ArrayBufferWriter<byte>` allocated every `Emit` call**
+- [x] **W17 — `ArrayBufferWriter<byte>` allocated every `Emit` call**
   - File: `src/AlgoTradeForge.Application/Events/EventBus.cs:56`
   - Hot-path GC pressure. Pool or reuse as `[ThreadStatic]` since engine is single-threaded.
+  - **Fix:** Made `ArrayBufferWriter<byte>` an instance field `_buffer`, call `ResetWrittenCount()` at start of each `Emit`.
 
 ---
 
 ## Warning — Design (2)
 
-- [ ] **W18 — Direct cast to concrete `EventBus` in WebSocket handler**
+- [x] **W18 — Direct cast to concrete `EventBus` in WebSocket handler**
   - File: `src/AlgoTradeForge.WebApi/Endpoints/DebugWebSocketHandler.cs`
   - `SetExport` command casts `session.EventBus` to `EventBus`. Add `SetMutationsEnabled` to `IEventBus` or create `IMutableEventBus`.
+  - **Fix:** Added `MutationsEnabled` and `SetMutationsEnabled` to `IEventBus` with default no-op implementations. Removed concrete cast in handler.
 
-- [ ] **W19 — `OnEventEmitted` declared but never called**
+- [x] **W19 — `OnEventEmitted` declared but never called**
   - File: `src/AlgoTradeForge.Domain/Engine/IDebugProbe.cs:25`
   - Dead API surface. Remove until actually wired up (YAGNI).
+  - **False positive:** `OnEventEmitted` IS actively called from `EventBus.Emit()` (line 75), implemented in `GatingDebugProbe`, and tested in `EventBusTests`. No change needed.
 
 ---
 

@@ -13,6 +13,7 @@ public sealed class EventBus : IEventBus
     private readonly ISink[] _sinks;
     private readonly IDebugProbe? _probe;
     private readonly JsonSerializerOptions _payloadOptions;
+    private readonly ArrayBufferWriter<byte> _buffer = new();
     private long _sequence;
     private bool _mutationsEnabled;
 
@@ -53,8 +54,8 @@ public sealed class EventBus : IEventBus
 
         var seq = ++_sequence;
 
-        var buffer = new ArrayBufferWriter<byte>();
-        using var writer = new Utf8JsonWriter(buffer);
+        _buffer.ResetWrittenCount();
+        using var writer = new Utf8JsonWriter(_buffer);
 
         writer.WriteStartObject();
         writer.WriteString("ts", evt.Timestamp);
@@ -68,7 +69,7 @@ public sealed class EventBus : IEventBus
         writer.WriteEndObject();
         writer.Flush();
 
-        var json = buffer.WrittenMemory;
+        var json = _buffer.WrittenMemory;
         foreach (var sink in _sinks)
             sink.Write(json);
 

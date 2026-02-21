@@ -44,6 +44,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         var activeSlTpPositions = new List<ActiveSlTpPosition>();
         var lastPrices = new Dictionary<string, long>();
         var equityCurve = new List<long>();
+        var toRemoveBuffer = new List<long>();
 
         if (strategy is IEventBusReceiver receiver)
             receiver.SetEventBus(bus);
@@ -114,7 +115,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                     AssignOrderIds(orderQueue, ref orderIdCounter, barTimestamp, bus, busActive);
 
                     // Process pending orders for this asset against the new bar
-                    ProcessPendingOrders(subscription.Asset, bar, barTimestamp, options, orderQueue, fills, portfolio, activeSlTpPositions, strategy, bus, busActive);
+                    ProcessPendingOrders(subscription.Asset, bar, barTimestamp, options, orderQueue, fills, portfolio, activeSlTpPositions, strategy, bus, busActive, toRemoveBuffer);
 
                     // Evaluate SL/TP for active positions on this asset
                     EvaluateSlTpPositions(subscription.Asset, bar, barTimestamp, options, fills, portfolio, activeSlTpPositions, strategy, bus, busActive);
@@ -189,10 +190,11 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         List<ActiveSlTpPosition> activeSlTpPositions,
         IInt64BarStrategy strategy,
         IEventBus bus,
-        bool busActive)
+        bool busActive,
+        List<long> toRemove)
     {
         var pending = queue.GetPendingForAsset(asset);
-        var toRemove = new List<long>();
+        toRemove.Clear();
 
         foreach (var order in pending)
         {
