@@ -14,9 +14,9 @@ public sealed class EventBus : IEventBus
     private readonly IDebugProbe? _probe;
     private readonly JsonSerializerOptions _payloadOptions;
     private readonly ArrayBufferWriter<byte> _buffer = new();
-    /// <summary>Monotonic event counter. Not thread-safe — safe because the engine loop is single-threaded.</summary>
     private long _sequence;
     private bool _mutationsEnabled;
+    private int _ownerThreadId;
 
     public EventBus(ExportMode runMode, IEnumerable<ISink> sinks, IDebugProbe? probe = null)
     {
@@ -41,6 +41,14 @@ public sealed class EventBus : IEventBus
 
     public void Emit<T>(T evt) where T : IBacktestEvent
     {
+        // _buffer and _sequence are not thread-safe. Emit must only be called from
+        // the engine loop thread. Capture the thread id on the first call and assert
+        // on subsequent calls so misuse surfaces immediately in debug builds.
+        System.Diagnostics.Debug.Assert(
+            Interlocked.CompareExchange(ref _ownerThreadId, Environment.CurrentManagedThreadId, 0) == 0
+            || _ownerThreadId == Environment.CurrentManagedThreadId,
+            "EventBus.Emit must only be called from a single thread (the engine loop).");
+
         if (!T.DefaultExportMode.HasFlag(_runMode))
             return;
 

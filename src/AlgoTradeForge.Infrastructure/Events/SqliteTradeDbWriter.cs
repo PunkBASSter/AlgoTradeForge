@@ -65,7 +65,7 @@ public sealed class SqliteTradeDbWriter(
         if (dir is not null)
             Directory.CreateDirectory(dir);
 
-        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        using var conn = new SqliteConnection($"Data Source={dbPath};Pooling=False");
         conn.Open();
 
         using var pragma = conn.CreateCommand();
@@ -124,7 +124,7 @@ public sealed class SqliteTradeDbWriter(
     private static void DeleteRun(string dbPath, string runFolderPath)
     {
         var runFolder = Path.GetFileName(runFolderPath);
-        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        using var conn = new SqliteConnection($"Data Source={dbPath};Pooling=False");
         conn.Open();
 
         using var pragma = conn.CreateCommand();
@@ -216,7 +216,7 @@ public sealed class SqliteTradeDbWriter(
         }
 
         // Insert into DB
-        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        using var conn = new SqliteConnection($"Data Source={dbPath};Pooling=False");
         conn.Open();
 
         using var pragma = conn.CreateCommand();
