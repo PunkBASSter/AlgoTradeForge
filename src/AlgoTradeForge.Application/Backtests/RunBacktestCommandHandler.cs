@@ -92,7 +92,7 @@ public sealed class RunBacktestCommandHandler(
             DataSubscriptions = dataSubscriptions,
             InitialCash = command.InitialCash,
             Commission = command.CommissionPerTrade,
-            SlippageTicks = (int)command.SlippageTicks,
+            SlippageTicks = checked((int)command.SlippageTicks),
             StartedAt = startedAt,
             CompletedAt = completedAt,
             DataStart = command.StartTime,

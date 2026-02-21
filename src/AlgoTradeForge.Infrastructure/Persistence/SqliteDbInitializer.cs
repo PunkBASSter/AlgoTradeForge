@@ -4,8 +4,14 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
+    private const int CurrentVersion = 1;
+
     private const string Schema = """
         PRAGMA journal_mode=WAL;
+
+        CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER NOT NULL
+        );
 
         CREATE TABLE IF NOT EXISTS optimization_runs (
             id                  TEXT    NOT NULL PRIMARY KEY,
@@ -76,8 +82,17 @@ internal static class SqliteDbInitializer
         await using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = Schema;
-        await command.ExecuteNonQueryAsync();
+        await using var schemaCmd = connection.CreateCommand();
+        schemaCmd.CommandText = Schema;
+        await schemaCmd.ExecuteNonQueryAsync();
+
+        // Seed version on first run; future migrations will check and increment
+        await using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = $"""
+            INSERT INTO schema_version (version)
+            SELECT {CurrentVersion}
+            WHERE NOT EXISTS (SELECT 1 FROM schema_version)
+            """;
+        await versionCmd.ExecuteNonQueryAsync();
     }
 }

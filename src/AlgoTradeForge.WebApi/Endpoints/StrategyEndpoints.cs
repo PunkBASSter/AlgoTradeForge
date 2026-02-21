@@ -1,3 +1,4 @@
+using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Persistence;
 
 namespace AlgoTradeForge.WebApi.Endpoints;
@@ -17,10 +18,10 @@ public static class StrategyEndpoints
     }
 
     private static async Task<IResult> GetStrategies(
-        IRunRepository repository,
+        ICommandHandler<GetDistinctStrategyNamesQuery, IReadOnlyList<string>> handler,
         CancellationToken ct)
     {
-        var names = await repository.GetDistinctStrategyNamesAsync(ct);
+        var names = await handler.HandleAsync(new GetDistinctStrategyNamesQuery(), ct);
         return Results.Ok(names);
     }
 }

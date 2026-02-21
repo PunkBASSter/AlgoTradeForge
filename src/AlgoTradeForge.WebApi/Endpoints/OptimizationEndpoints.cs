@@ -145,32 +145,9 @@ public static class OptimizationEndpoints
         DataEnd = r.DataEnd,
         DurationMs = r.DurationMs,
         TotalBars = r.TotalBars,
-        Metrics = MetricsToDict(r.Metrics),
+        Metrics = MetricsMapping.ToDict(r.Metrics),
         HasCandleData = r.RunFolderPath is not null,
         RunMode = r.RunMode,
         OptimizationRunId = r.OptimizationRunId,
-    };
-
-    private static Dictionary<string, object> MetricsToDict(Domain.Reporting.PerformanceMetrics m) => new()
-    {
-        ["totalTrades"] = m.TotalTrades,
-        ["winningTrades"] = m.WinningTrades,
-        ["losingTrades"] = m.LosingTrades,
-        ["netProfit"] = m.NetProfit,
-        ["grossProfit"] = m.GrossProfit,
-        ["grossLoss"] = m.GrossLoss,
-        ["totalCommissions"] = m.TotalCommissions,
-        ["totalReturnPct"] = m.TotalReturnPct,
-        ["annualizedReturnPct"] = m.AnnualizedReturnPct,
-        ["sharpeRatio"] = m.SharpeRatio,
-        ["sortinoRatio"] = m.SortinoRatio,
-        ["maxDrawdownPct"] = m.MaxDrawdownPct,
-        ["winRatePct"] = m.WinRatePct,
-        ["profitFactor"] = m.ProfitFactor,
-        ["averageWin"] = m.AverageWin,
-        ["averageLoss"] = m.AverageLoss,
-        ["initialCapital"] = m.InitialCapital,
-        ["finalEquity"] = m.FinalEquity,
-        ["tradingDays"] = m.TradingDays,
     };
 }

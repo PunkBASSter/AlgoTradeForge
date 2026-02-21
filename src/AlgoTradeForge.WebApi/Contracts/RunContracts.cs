@@ -1,3 +1,5 @@
+using AlgoTradeForge.Domain.Reporting;
+
 namespace AlgoTradeForge.WebApi.Contracts;
 
 public sealed record BacktestRunResponse
@@ -25,6 +27,32 @@ public sealed record BacktestRunResponse
 public sealed record DataSubscriptionResponse(string AssetName, string Exchange, string TimeFrame);
 
 public sealed record EquityPointResponse(long TimestampMs, decimal Value);
+
+public static class MetricsMapping
+{
+    public static Dictionary<string, object> ToDict(PerformanceMetrics m) => new()
+    {
+        ["totalTrades"] = m.TotalTrades,
+        ["winningTrades"] = m.WinningTrades,
+        ["losingTrades"] = m.LosingTrades,
+        ["netProfit"] = m.NetProfit,
+        ["grossProfit"] = m.GrossProfit,
+        ["grossLoss"] = m.GrossLoss,
+        ["totalCommissions"] = m.TotalCommissions,
+        ["totalReturnPct"] = m.TotalReturnPct,
+        ["annualizedReturnPct"] = m.AnnualizedReturnPct,
+        ["sharpeRatio"] = m.SharpeRatio,
+        ["sortinoRatio"] = m.SortinoRatio,
+        ["maxDrawdownPct"] = m.MaxDrawdownPct,
+        ["winRatePct"] = m.WinRatePct,
+        ["profitFactor"] = m.ProfitFactor,
+        ["averageWin"] = m.AverageWin,
+        ["averageLoss"] = m.AverageLoss,
+        ["initialCapital"] = m.InitialCapital,
+        ["finalEquity"] = m.FinalEquity,
+        ["tradingDays"] = m.TradingDays,
+    };
+}
 
 public sealed record OptimizationRunResponse
 {

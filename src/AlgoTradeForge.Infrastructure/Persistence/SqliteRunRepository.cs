@@ -187,6 +187,10 @@ public sealed class SqliteRunRepository : IRunRepository
             conditions.Add("bds.timeframe = $tf");
             parameters.Add(new SqliteParameter("$tf", query.TimeFrame));
         }
+        if (query.StandaloneOnly == true)
+        {
+            conditions.Add("br.optimization_run_id IS NULL");
+        }
         if (query.From is not null)
         {
             conditions.Add("br.completed_at >= $from");

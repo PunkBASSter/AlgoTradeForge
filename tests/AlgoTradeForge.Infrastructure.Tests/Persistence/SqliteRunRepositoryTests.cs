@@ -385,4 +385,75 @@ public class SqliteRunRepositoryTests : IDisposable
         Assert.Contains("Alpha", names);
         Assert.Contains("Beta", names);
     }
+
+    // ── StandaloneOnly filter ─────────────────────────────────────────
+
+    [Fact]
+    public async Task Query_StandaloneOnly_ExcludesOptimizationTrials()
+    {
+        var optId = Guid.NewGuid();
+
+        // Standalone backtest
+        var standalone = MakeBacktestRecord();
+        await _repo.SaveAsync(standalone);
+
+        // Optimization with one trial
+        var trial = MakeBacktestRecord(optimizationRunId: optId, runFolderPath: null) with
+        {
+            Id = Guid.NewGuid(),
+        };
+        var opt = new OptimizationRunRecord
+        {
+            Id = optId,
+            StrategyName = "ZigZagBreakout",
+            StrategyVersion = "1.0.0",
+            StartedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            DurationMs = 100,
+            TotalCombinations = 1,
+            SortBy = "SharpeRatio",
+            DataStart = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            DataEnd = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
+            InitialCash = 10000m,
+            Commission = 0m,
+            SlippageTicks = 0,
+            MaxParallelism = 1,
+            DataSubscriptions = [new DataSubscriptionRecord("BTCUSDT", "Binance", "1h")],
+            Trials = [trial],
+        };
+        await _repo.SaveOptimizationAsync(opt);
+
+        // Without filter: both rows visible
+        var all = await _repo.QueryAsync(new BacktestRunQuery());
+        Assert.Equal(2, all.Count);
+
+        // With StandaloneOnly: only the standalone run
+        var standaloneOnly = await _repo.QueryAsync(new BacktestRunQuery { StandaloneOnly = true });
+        Assert.Single(standaloneOnly);
+        Assert.Equal(standalone.Id, standaloneOnly[0].Id);
+        Assert.Null(standaloneOnly[0].OptimizationRunId);
+    }
+
+    // ── Limit capping ─────────────────────────────────────────────────
+
+    [Fact]
+    public void Limit_ClampedToMaxLimit()
+    {
+        var query = new BacktestRunQuery { Limit = 10_000 };
+        Assert.Equal(BacktestRunQuery.MaxLimit, query.Limit);
+    }
+
+    [Fact]
+    public void Limit_ClampedToMinimumOne()
+    {
+        var query = new BacktestRunQuery { Limit = -5 };
+        Assert.Equal(1, query.Limit);
+    }
+
+    [Fact]
+    public void OptimizationLimit_ClampedToMaxLimit()
+    {
+        var query = new OptimizationRunQuery { Limit = 10_000 };
+        Assert.Equal(OptimizationRunQuery.MaxLimit, query.Limit);
+    }
 }
