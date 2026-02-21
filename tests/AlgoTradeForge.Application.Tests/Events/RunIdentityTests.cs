@@ -2,7 +2,7 @@ using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Domain.Events;
 using Xunit;
 
-namespace AlgoTradeForge.Domain.Tests.Events;
+namespace AlgoTradeForge.Application.Tests.Events;
 
 public class RunIdentityTests
 {

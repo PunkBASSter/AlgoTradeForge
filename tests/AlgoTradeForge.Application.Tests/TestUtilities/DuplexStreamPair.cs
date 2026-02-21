@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 
-namespace AlgoTradeForge.Domain.Tests.TestUtilities;
+namespace AlgoTradeForge.Application.Tests.TestUtilities;
 
 /// <summary>
 /// Creates paired in-memory streams and WebSockets for testing.

@@ -4,7 +4,7 @@ using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Trading;
 using Xunit;
 
-namespace AlgoTradeForge.Domain.Tests.Events;
+namespace AlgoTradeForge.Application.Tests.Events;
 
 public class ExportModeFilteringTests
 {

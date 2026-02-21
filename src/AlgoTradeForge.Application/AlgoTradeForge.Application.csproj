@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="AlgoTradeForge.Domain.Tests" />
+    <InternalsVisibleTo Include="AlgoTradeForge.Application.Tests" />
   </ItemGroup>
 
   <ItemGroup>

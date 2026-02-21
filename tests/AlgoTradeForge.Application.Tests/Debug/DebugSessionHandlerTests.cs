@@ -9,11 +9,11 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
-using AlgoTradeForge.Domain.Tests.TestUtilities;
+using AlgoTradeForge.Application.Tests.TestUtilities;
 using NSubstitute;
 using Xunit;
 
-namespace AlgoTradeForge.Domain.Tests.Engine;
+namespace AlgoTradeForge.Application.Tests.Debug;
 
 public class DebugSessionHandlerTests
 {

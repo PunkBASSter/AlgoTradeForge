@@ -17,9 +17,10 @@
   - `/api/debug-sessions/{id}/ws` has no `.RequireAuthorization()`. Session GUID is the only protection. Add auth or bind to localhost only.
   - **Fix:** Added `LocalhostOnlyFilter` endpoint filter to both REST group and WebSocket endpoint. Non-loopback connections get 403.
 
-- [ ] **C3 — Application-layer tests in `Domain.Tests`**
+- [x] **C3 — Application-layer tests in `Domain.Tests`**
   - 9+ test files test Application-layer classes (`BreakConditionTests`, `DebugCommandParsingTests`, `DebugSessionHandlerTests`, `InMemoryDebugSessionStoreTests`, `WebSocketSinkTests`, `EventBusTests`, `EventSerializationTests`, `ExportModeFilteringTests`, `RunIdentityTests`, `IndicatorFactoryTests`) but live in the Domain test project.
   - Also: `Application.csproj` has `InternalsVisibleTo` targeting `Domain.Tests` rather than `Application.Tests`.
+  - **Fix:** Created `AlgoTradeForge.Application.Tests` project. Moved 13 files (12 test classes + `DuplexStreamPair` utility) via `git mv`. Updated all namespaces. Fixed `InternalsVisibleTo` to target `Application.Tests`. Added project to solution.
 
 ---
 

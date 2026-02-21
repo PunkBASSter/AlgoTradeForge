@@ -1,10 +1,10 @@
 using System.Net.WebSockets;
 using System.Text;
 using AlgoTradeForge.Application.Events;
-using AlgoTradeForge.Domain.Tests.TestUtilities;
+using AlgoTradeForge.Application.Tests.TestUtilities;
 using Xunit;
 
-namespace AlgoTradeForge.Domain.Tests.Engine;
+namespace AlgoTradeForge.Application.Tests.Events;
 
 public sealed class WebSocketSinkTests
 {

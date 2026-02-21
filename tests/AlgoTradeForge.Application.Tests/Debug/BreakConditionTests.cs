@@ -2,7 +2,7 @@ using AlgoTradeForge.Application.Debug;
 using AlgoTradeForge.Domain.Engine;
 using Xunit;
 
-namespace AlgoTradeForge.Domain.Tests.Engine;
+namespace AlgoTradeForge.Application.Tests.Debug;
 
 public class BreakConditionTests
 {

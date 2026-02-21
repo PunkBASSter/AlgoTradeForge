@@ -2,7 +2,7 @@ using System.Text.Json;
 using AlgoTradeForge.Application.Debug;
 using Xunit;
 
-namespace AlgoTradeForge.Domain.Tests.Engine;
+namespace AlgoTradeForge.Application.Tests.Debug;
 
 /// <summary>
 /// Tests that WebSocket command JSON messages produce the correct DebugCommand.

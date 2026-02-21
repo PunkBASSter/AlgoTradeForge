@@ -5,11 +5,11 @@ using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Strategy;
-using AlgoTradeForge.Domain.Tests.TestUtilities;
+using AlgoTradeForge.Application.Tests.TestUtilities;
 using AlgoTradeForge.Domain.Trading;
 using Xunit;
 
-namespace AlgoTradeForge.Domain.Tests.Indicators;
+namespace AlgoTradeForge.Application.Tests.Indicators;
 
 public class IndicatorFactoryTests
 {

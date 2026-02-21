@@ -1,7 +1,7 @@
 using AlgoTradeForge.Application.Debug;
 using Xunit;
 
-namespace AlgoTradeForge.Domain.Tests.Engine;
+namespace AlgoTradeForge.Application.Tests.Debug;
 
 public class InMemoryDebugSessionStoreTests
 {

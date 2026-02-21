@@ -7,11 +7,11 @@ using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
-using AlgoTradeForge.Domain.Tests.TestUtilities;
+using AlgoTradeForge.Application.Tests.TestUtilities;
 using NSubstitute;
 using Xunit;
 
-namespace AlgoTradeForge.Domain.Tests.Engine;
+namespace AlgoTradeForge.Application.Tests.Debug;
 
 public sealed class DebugWebSocketIntegrationTests
 {

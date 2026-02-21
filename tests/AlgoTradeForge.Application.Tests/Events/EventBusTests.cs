@@ -5,7 +5,7 @@ using AlgoTradeForge.Domain.Trading;
 using NSubstitute;
 using Xunit;
 
-namespace AlgoTradeForge.Domain.Tests.Events;
+namespace AlgoTradeForge.Application.Tests.Events;
 
 public class EventBusTests
 {
