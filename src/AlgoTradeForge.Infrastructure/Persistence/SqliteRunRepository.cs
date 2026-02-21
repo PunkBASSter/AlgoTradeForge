@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using AlgoTradeForge.Application.Persistence;
@@ -93,8 +94,8 @@ public sealed class SqliteRunRepository : IRunRepository
         cmd.Parameters.AddWithValue("$stratName", r.StrategyName);
         cmd.Parameters.AddWithValue("$stratVer", r.StrategyVersion);
         cmd.Parameters.AddWithValue("$paramsJson", JsonSerializer.Serialize(r.Parameters, JsonOptions));
-        cmd.Parameters.AddWithValue("$cash", r.InitialCash.ToString());
-        cmd.Parameters.AddWithValue("$commission", r.Commission.ToString());
+        cmd.Parameters.AddWithValue("$cash", r.InitialCash.ToString(CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$commission", r.Commission.ToString(CultureInfo.InvariantCulture));
         cmd.Parameters.AddWithValue("$slippage", r.SlippageTicks);
         cmd.Parameters.AddWithValue("$startedAt", r.StartedAt.ToString("O"));
         cmd.Parameters.AddWithValue("$completedAt", r.CompletedAt.ToString("O"));
@@ -260,8 +261,8 @@ public sealed class SqliteRunRepository : IRunRepository
             cmd.Parameters.AddWithValue("$sortBy", record.SortBy);
             cmd.Parameters.AddWithValue("$dataStart", record.DataStart.ToString("O"));
             cmd.Parameters.AddWithValue("$dataEnd", record.DataEnd.ToString("O"));
-            cmd.Parameters.AddWithValue("$cash", record.InitialCash.ToString());
-            cmd.Parameters.AddWithValue("$commission", record.Commission.ToString());
+            cmd.Parameters.AddWithValue("$cash", record.InitialCash.ToString(CultureInfo.InvariantCulture));
+            cmd.Parameters.AddWithValue("$commission", record.Commission.ToString(CultureInfo.InvariantCulture));
             cmd.Parameters.AddWithValue("$slippage", record.SlippageTicks);
             cmd.Parameters.AddWithValue("$maxParallelism", record.MaxParallelism);
 
@@ -449,13 +450,13 @@ public sealed class SqliteRunRepository : IRunRepository
             StrategyVersion = reader.GetString(reader.GetOrdinal("strategy_version")),
             Parameters = DeserializeParameters(reader.GetString(reader.GetOrdinal("parameters_json"))),
             DataSubscriptions = [], // loaded separately
-            InitialCash = decimal.Parse(reader.GetString(reader.GetOrdinal("initial_cash"))),
-            Commission = decimal.Parse(reader.GetString(reader.GetOrdinal("commission"))),
+            InitialCash = decimal.Parse(reader.GetString(reader.GetOrdinal("initial_cash")), CultureInfo.InvariantCulture),
+            Commission = decimal.Parse(reader.GetString(reader.GetOrdinal("commission")), CultureInfo.InvariantCulture),
             SlippageTicks = reader.GetInt32(reader.GetOrdinal("slippage_ticks")),
-            StartedAt = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("started_at"))),
-            CompletedAt = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("completed_at"))),
-            DataStart = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_start"))),
-            DataEnd = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_end"))),
+            StartedAt = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("started_at")), CultureInfo.InvariantCulture),
+            CompletedAt = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("completed_at")), CultureInfo.InvariantCulture),
+            DataStart = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_start")), CultureInfo.InvariantCulture),
+            DataEnd = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_end")), CultureInfo.InvariantCulture),
             DurationMs = reader.GetInt64(reader.GetOrdinal("duration_ms")),
             TotalBars = reader.GetInt32(reader.GetOrdinal("total_bars")),
             Metrics = JsonSerializer.Deserialize<PerformanceMetrics>(
@@ -474,15 +475,15 @@ public sealed class SqliteRunRepository : IRunRepository
         Id = Guid.Parse(reader.GetString(reader.GetOrdinal("id"))),
         StrategyName = reader.GetString(reader.GetOrdinal("strategy_name")),
         StrategyVersion = reader.GetString(reader.GetOrdinal("strategy_version")),
-        StartedAt = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("started_at"))),
-        CompletedAt = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("completed_at"))),
+        StartedAt = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("started_at")), CultureInfo.InvariantCulture),
+        CompletedAt = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("completed_at")), CultureInfo.InvariantCulture),
         DurationMs = reader.GetInt64(reader.GetOrdinal("duration_ms")),
         TotalCombinations = reader.GetInt64(reader.GetOrdinal("total_combinations")),
         SortBy = reader.GetString(reader.GetOrdinal("sort_by")),
-        DataStart = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_start"))),
-        DataEnd = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_end"))),
-        InitialCash = decimal.Parse(reader.GetString(reader.GetOrdinal("initial_cash"))),
-        Commission = decimal.Parse(reader.GetString(reader.GetOrdinal("commission"))),
+        DataStart = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_start")), CultureInfo.InvariantCulture),
+        DataEnd = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_end")), CultureInfo.InvariantCulture),
+        InitialCash = decimal.Parse(reader.GetString(reader.GetOrdinal("initial_cash")), CultureInfo.InvariantCulture),
+        Commission = decimal.Parse(reader.GetString(reader.GetOrdinal("commission")), CultureInfo.InvariantCulture),
         SlippageTicks = reader.GetInt32(reader.GetOrdinal("slippage_ticks")),
         MaxParallelism = reader.GetInt32(reader.GetOrdinal("max_parallelism")),
         DataSubscriptions = [], // loaded separately
