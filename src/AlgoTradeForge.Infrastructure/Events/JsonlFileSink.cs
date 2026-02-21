@@ -38,6 +38,7 @@ public sealed class JsonlFileSink : IRunSink
     {
         lock (_writeLock)
         {
+            if (_disposed) return;
             _stream.Write(utf8Json.Span);
             _stream.Write(NewLine);
             _stream.Flush();
@@ -70,9 +71,12 @@ public sealed class JsonlFileSink : IRunSink
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _stream.Flush();
-        _stream.Dispose();
+        lock (_writeLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _stream.Flush();
+            _stream.Dispose();
+        }
     }
 }

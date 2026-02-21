@@ -11,7 +11,7 @@ public sealed class LocalhostOnlyFilter : IEndpointFilter
     public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var remoteIp = context.HttpContext.Connection.RemoteIpAddress;
-        if (remoteIp is not null && !IPAddress.IsLoopback(remoteIp))
+        if (remoteIp is null || !IPAddress.IsLoopback(remoteIp))
         {
             return ValueTask.FromResult<object?>(Results.StatusCode(StatusCodes.Status403Forbidden));
         }

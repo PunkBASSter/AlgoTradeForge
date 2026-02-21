@@ -162,17 +162,20 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         {
             stopwatch.Stop();
             if (busActive)
-            {
-                bus.Emit(new RunEndEvent(
-                    DateTimeOffset.UtcNow,
-                    Source,
-                    totalBarsDelivered,
-                    equityCurve.Count > 0 ? equityCurve[^1] : options.InitialCash,
-                    fills.Count,
-                    stopwatch.Elapsed));
-            }
+                try
+                {
+                    bus.Emit(new RunEndEvent(
+                        DateTimeOffset.UtcNow,
+                        Source,
+                        totalBarsDelivered,
+                        equityCurve.Count > 0 ? equityCurve[^1] : options.InitialCash,
+                        fills.Count,
+                        stopwatch.Elapsed));
+                }
+                catch { /* Don't mask the original exception */ }
             if (probeActive)
-                probe.OnRunEnd();
+                try { probe.OnRunEnd(); }
+                catch { /* Don't mask the original exception */ }
         }
 
         var result = new BacktestResult(portfolio, fills, equityCurve, totalBarsDelivered, stopwatch.Elapsed);

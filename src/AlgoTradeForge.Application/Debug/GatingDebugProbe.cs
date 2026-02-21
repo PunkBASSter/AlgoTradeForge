@@ -19,7 +19,7 @@ public sealed class GatingDebugProbe : IDebugProbe, IDisposable
     private BreakCondition _breakCondition = BreakCondition.Always.Instance;
     private DebugSnapshot _lastSnapshot;
     private TaskCompletionSource<DebugSnapshot>? _snapshotWaiter;
-    private bool _disposed;
+    private int _disposed;
     private volatile bool _running;
 
     public bool IsActive => true;
@@ -98,7 +98,7 @@ public sealed class GatingDebugProbe : IDebugProbe, IDisposable
         CancellationTokenRegistration registration;
         lock (_lock)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
             if (!_running)
                 return _lastSnapshot;
@@ -152,8 +152,7 @@ public sealed class GatingDebugProbe : IDebugProbe, IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _running = false;
         Volatile.Write(ref _breakCondition, BreakCondition.Never.Instance);
         _readyTcs.TrySetResult(); // unblock SendCommandAsync if engine never started
