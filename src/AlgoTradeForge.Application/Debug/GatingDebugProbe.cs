@@ -66,7 +66,10 @@ public sealed class GatingDebugProbe : IDebugProbe, IDisposable
             // Snapshot is bar-granularity: it reflects the last completed bar, not the
             // mid-bar event that triggered this break. The event's own sequenceNumber
             // is available via the EventBus stream (the "sq" field in emitted JSON).
-            NotifyWaiters(_lastSnapshot);
+            // Read under lock: DebugSnapshot is 32 bytes — not atomic on x64.
+            DebugSnapshot snap;
+            lock (_lock) snap = _lastSnapshot;
+            NotifyWaiters(snap);
             _gate.Wait();
         }
     }

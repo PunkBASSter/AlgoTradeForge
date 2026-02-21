@@ -15,7 +15,8 @@ public static class DebugEndpoints
     public static void MapDebugEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/debug-sessions")
-            .WithTags("Debug");
+            .WithTags("Debug")
+            .AddEndpointFilter<LocalhostOnlyFilter>();
 
         group.MapPost("/", StartSession)
             .WithName("StartDebugSession")

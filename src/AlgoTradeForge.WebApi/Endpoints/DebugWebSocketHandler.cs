@@ -22,7 +22,8 @@ public static class DebugWebSocketHandler
 
     public static void MapDebugWebSocket(this IEndpointRouteBuilder app)
     {
-        app.Map("/api/debug-sessions/{id:guid}/ws", HandleWebSocket);
+        app.Map("/api/debug-sessions/{id:guid}/ws", HandleWebSocket)
+            .AddEndpointFilter<LocalhostOnlyFilter>();
     }
 
     private static async Task HandleWebSocket(HttpContext context, Guid id, IDebugSessionStore store)
