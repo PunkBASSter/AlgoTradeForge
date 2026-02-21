@@ -168,6 +168,7 @@ public class IndicatorFactoryTests
 
     private sealed class DualTfStrategy(DualTfParams p, IIndicatorFactory? indicators = null) : StrategyBase<DualTfParams>(p, indicators)
     {
+        public override string Version => "1.0.0";
         private IIndicator<Int64Bar, long> _m1Dzz = null!;
         private IIndicator<Int64Bar, long> _h1Dzz = null!;
         private readonly List<Int64Bar> _m1History = [];

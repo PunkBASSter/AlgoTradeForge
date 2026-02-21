@@ -3,6 +3,7 @@ using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Debug;
 using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Application.Optimization;
+using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,6 +24,15 @@ public static class DependencyInjection
         // Event log storage defaults
         services.Configure<EventLogStorageOptions>(_ => { });
         services.Configure<PostRunPipelineOptions>(_ => { });
+
+        // Run persistence defaults
+        services.Configure<RunStorageOptions>(_ => { });
+
+        // Query handlers
+        services.AddScoped<ICommandHandler<GetBacktestByIdQuery, BacktestRunRecord?>, GetBacktestByIdQueryHandler>();
+        services.AddScoped<ICommandHandler<ListBacktestRunsQuery, IReadOnlyList<BacktestRunRecord>>, ListBacktestRunsQueryHandler>();
+        services.AddScoped<ICommandHandler<GetOptimizationByIdQuery, OptimizationRunRecord?>, GetOptimizationByIdQueryHandler>();
+        services.AddScoped<ICommandHandler<ListOptimizationRunsQuery, IReadOnlyList<OptimizationRunRecord>>, ListOptimizationRunsQueryHandler>();
 
         // Debug session management
         services.AddSingleton<IDebugSessionStore, InMemoryDebugSessionStore>();

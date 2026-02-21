@@ -8,6 +8,8 @@ namespace AlgoTradeForge.Domain.Strategy.ZigZagBreakout;
 [StrategyKey("ZigZagBreakout")]
 public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters, IIndicatorFactory? indicators = null) : StrategyBase<ZigZagBreakoutParams>(parameters, indicators)
 {
+    public override string Version => "1.0.0";
+
     private IIndicator<Int64Bar, long> _dzz = null!;
     private readonly List<Int64Bar> _barHistory = [];
 

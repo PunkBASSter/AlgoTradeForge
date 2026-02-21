@@ -308,6 +308,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
     private sealed class IndicatorUsingStrategy(IndicatorUsingParams p, IIndicatorFactory? indicators = null) : StrategyBase<IndicatorUsingParams>(p, indicators)
     {
+        public override string Version => "1.0.0";
         private IIndicator<Int64Bar, long> _dzz = null!;
         private readonly List<Int64Bar> _barHistory = [];
 

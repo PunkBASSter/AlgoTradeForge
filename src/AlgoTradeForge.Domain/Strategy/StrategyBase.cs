@@ -8,6 +8,8 @@ namespace AlgoTradeForge.Domain.Strategy;
 public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactory? indicators = null) : IInt64BarStrategy, IEventBusReceiver
     where TParams : StrategyParamsBase
 {
+    public abstract string Version { get; }
+
     protected TParams Params { get; } = parameters;
 
     protected IEventBus EventBus { get; private set; } = NullEventBus.Instance;

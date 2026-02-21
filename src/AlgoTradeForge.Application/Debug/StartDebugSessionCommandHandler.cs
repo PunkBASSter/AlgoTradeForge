@@ -64,15 +64,16 @@ public sealed class StartDebugSessionCommandHandler(
 
                 var runSummary = new RunSummary(
                     result.TotalBarsProcessed,
-                    result.EquityCurve.Count > 0 ? result.EquityCurve[^1] : setup.Options.InitialCash,
+                    result.EquityCurve.Count > 0 ? result.EquityCurve[^1].Value : setup.Options.InitialCash,
                     result.Fills.Count,
                     result.Duration);
 
                 runSink.WriteMeta(runSummary);
                 postRunPipeline.Execute(runSink.RunFolderPath, capturedIdentity!, runSummary);
 
+                var equityValues = result.EquityCurve.Select(e => e.Value).ToList();
                 var metrics = metricsCalculator.Calculate(
-                    result.Fills, result.EquityCurve, setup.Options.InitialCash,
+                    result.Fills, equityValues, setup.Options.InitialCash,
                     command.StartTime, command.EndTime);
 
                 return new BacktestResultDto

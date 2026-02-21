@@ -68,6 +68,7 @@ public class NullEventBusBenchmarkTests
 
     private sealed class NoOpStrategy(DataSubscription subscription) : IInt64BarStrategy
     {
+        public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
 
         public void OnInit() { }

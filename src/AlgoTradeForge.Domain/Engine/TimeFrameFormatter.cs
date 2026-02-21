@@ -1,6 +1,6 @@
 namespace AlgoTradeForge.Domain.Engine;
 
-internal static class TimeFrameFormatter
+public static class TimeFrameFormatter
 {
     public static string Format(TimeSpan timeFrame) => timeFrame.TotalSeconds switch
     {

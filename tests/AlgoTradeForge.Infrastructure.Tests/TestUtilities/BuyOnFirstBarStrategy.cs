@@ -8,6 +8,7 @@ internal sealed class BuyOnFirstBarParams : StrategyParamsBase;
 
 internal sealed class BuyOnFirstBarStrategy(BuyOnFirstBarParams p) : StrategyBase<BuyOnFirstBarParams>(p)
 {
+    public override string Version => "1.0.0";
     private bool _submitted;
 
     public override void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders)

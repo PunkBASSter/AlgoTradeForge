@@ -76,7 +76,7 @@ public class PostRunIntegrationTests : IDisposable
 
         var summary = new RunSummary(
             result.TotalBarsProcessed,
-            result.EquityCurve.Count > 0 ? result.EquityCurve[^1] : 100_000L,
+            result.EquityCurve.Count > 0 ? result.EquityCurve[^1].Value : 100_000L,
             result.Fills.Count,
             result.Duration);
 
@@ -201,7 +201,7 @@ public class PostRunIntegrationTests : IDisposable
         var result = engine.Run([bars], strategy, btOptions, bus: bus);
         var summary = new RunSummary(
             result.TotalBarsProcessed,
-            result.EquityCurve.Count > 0 ? result.EquityCurve[^1] : 100_000L,
+            result.EquityCurve.Count > 0 ? result.EquityCurve[^1].Value : 100_000L,
             result.Fills.Count,
             result.Duration);
         sink.WriteMeta(summary);

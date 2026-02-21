@@ -119,7 +119,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             DeliverBarsAtTimestamp(state, minSubIndex, minTimestampMs);
 
             // Snapshot portfolio equity at this timestamp
-            state.EquityCurve.Add(state.Portfolio.Equity(state.LastPrices));
+            state.EquityCurve.Add(new EquitySnapshot(minTimestampMs, state.Portfolio.Equity(state.LastPrices)));
         }
     }
 
@@ -216,7 +216,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                     DateTimeOffset.UtcNow,
                     Source,
                     state.TotalBarsDelivered,
-                    state.EquityCurve.Count > 0 ? state.EquityCurve[^1] : state.Options.InitialCash,
+                    state.EquityCurve.Count > 0 ? state.EquityCurve[^1].Value : state.Options.InitialCash,
                     state.Fills.Count,
                     stopwatch.Elapsed));
             }
@@ -478,7 +478,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         public required List<Fill> Fills;
         public readonly List<ActiveSlTpPosition> ActiveSlTpPositions = [];
         public readonly Dictionary<string, long> LastPrices = [];
-        public readonly List<long> EquityCurve = [];
+        public readonly List<EquitySnapshot> EquityCurve = [];
         public required int[] Cursors;
         public readonly List<long> ToRemoveBuffer = [];
         public long OrderIdCounter;

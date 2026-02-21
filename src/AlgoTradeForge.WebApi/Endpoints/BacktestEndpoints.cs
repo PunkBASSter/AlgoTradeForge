@@ -1,6 +1,7 @@
 using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Backtests;
+using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.WebApi.Contracts;
 
 namespace AlgoTradeForge.WebApi.Endpoints;
@@ -19,11 +20,24 @@ public static class BacktestEndpoints
             .Produces<BacktestResultDto>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);
 
+        group.MapGet("/", ListBacktests)
+            .WithName("ListBacktests")
+            .WithSummary("List backtest runs with optional filters")
+            .WithOpenApi()
+            .Produces<IReadOnlyList<BacktestRunResponse>>(StatusCodes.Status200OK);
+
         group.MapGet("/{id:guid}", GetBacktest)
             .WithName("GetBacktest")
             .WithSummary("Get a backtest result by ID")
             .WithOpenApi()
-            .Produces<BacktestResultDto>(StatusCodes.Status200OK)
+            .Produces<BacktestRunResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{id:guid}/equity", GetEquityCurve)
+            .WithName("GetBacktestEquity")
+            .WithSummary("Get the equity curve for a backtest run")
+            .WithOpenApi()
+            .Produces<IReadOnlyList<EquityPointResponse>>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
     }
 
@@ -65,8 +79,107 @@ public static class BacktestEndpoints
         }
     }
 
-    private static Task<IResult> GetBacktest(Guid id)
+    private static async Task<IResult> ListBacktests(
+        ICommandHandler<ListBacktestRunsQuery, IReadOnlyList<BacktestRunRecord>> handler,
+        string? strategyName,
+        string? assetName,
+        string? exchange,
+        string? timeFrame,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int limit = 50,
+        int offset = 0,
+        CancellationToken ct = default)
     {
-        return Task.FromResult(Results.NotFound(new { error = $"Backtest with ID '{id}' not found." }));
+        var query = new ListBacktestRunsQuery(new BacktestRunQuery
+        {
+            StrategyName = strategyName,
+            AssetName = assetName,
+            Exchange = exchange,
+            TimeFrame = timeFrame,
+            From = from,
+            To = to,
+            Limit = limit,
+            Offset = offset,
+        });
+
+        var records = await handler.HandleAsync(query, ct);
+        var response = records.Select(MapToResponse).ToList();
+        return Results.Ok(response);
     }
+
+    private static async Task<IResult> GetBacktest(
+        Guid id,
+        ICommandHandler<GetBacktestByIdQuery, BacktestRunRecord?> handler,
+        CancellationToken ct)
+    {
+        var record = await handler.HandleAsync(new GetBacktestByIdQuery(id), ct);
+        if (record is null)
+            return Results.NotFound(new { error = $"Backtest with ID '{id}' not found." });
+
+        return Results.Ok(MapToResponse(record));
+    }
+
+    private static async Task<IResult> GetEquityCurve(
+        Guid id,
+        ICommandHandler<GetBacktestByIdQuery, BacktestRunRecord?> handler,
+        CancellationToken ct)
+    {
+        var record = await handler.HandleAsync(new GetBacktestByIdQuery(id), ct);
+        if (record is null)
+            return Results.NotFound(new { error = $"Backtest with ID '{id}' not found." });
+
+        var points = record.EquityCurve
+            .Select(ep => new EquityPointResponse(ep.TimestampMs, ep.Value))
+            .ToList();
+
+        return Results.Ok(points);
+    }
+
+    private static BacktestRunResponse MapToResponse(BacktestRunRecord r) => new()
+    {
+        Id = r.Id,
+        StrategyName = r.StrategyName,
+        StrategyVersion = r.StrategyVersion,
+        Parameters = new Dictionary<string, object>(r.Parameters),
+        DataSubscriptions = r.DataSubscriptions
+            .Select(ds => new DataSubscriptionResponse(ds.AssetName, ds.Exchange, ds.TimeFrame))
+            .ToList(),
+        InitialCash = r.InitialCash,
+        Commission = r.Commission,
+        SlippageTicks = r.SlippageTicks,
+        StartedAt = r.StartedAt,
+        CompletedAt = r.CompletedAt,
+        DataStart = r.DataStart,
+        DataEnd = r.DataEnd,
+        DurationMs = r.DurationMs,
+        TotalBars = r.TotalBars,
+        Metrics = MetricsToDict(r.Metrics),
+        HasCandleData = r.RunFolderPath is not null,
+        RunMode = r.RunMode,
+        OptimizationRunId = r.OptimizationRunId,
+    };
+
+    private static Dictionary<string, object> MetricsToDict(Domain.Reporting.PerformanceMetrics m) => new()
+    {
+        ["totalTrades"] = m.TotalTrades,
+        ["winningTrades"] = m.WinningTrades,
+        ["losingTrades"] = m.LosingTrades,
+        ["netProfit"] = m.NetProfit,
+        ["grossProfit"] = m.GrossProfit,
+        ["grossLoss"] = m.GrossLoss,
+        ["totalCommissions"] = m.TotalCommissions,
+        ["totalReturnPct"] = m.TotalReturnPct,
+        ["annualizedReturnPct"] = m.AnnualizedReturnPct,
+        ["sharpeRatio"] = m.SharpeRatio,
+        ["sortinoRatio"] = m.SortinoRatio,
+        ["maxDrawdownPct"] = m.MaxDrawdownPct,
+        ["winRatePct"] = m.WinRatePct,
+        ["profitFactor"] = m.ProfitFactor,
+        ["averageWin"] = m.AverageWin,
+        ["averageLoss"] = m.AverageLoss,
+        ["initialCapital"] = m.InitialCapital,
+        ["finalEquity"] = m.FinalEquity,
+        ["tradingDays"] = m.TradingDays,
+    };
 }
