@@ -1,11 +1,10 @@
-using System.Text.Json.Serialization;
 using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Events;
 
 public sealed record OrderPlaceEvent(
-    [property: JsonIgnore] DateTimeOffset Timestamp,
-    [property: JsonIgnore] string Source,
+    DateTimeOffset Timestamp,
+    string Source,
     long OrderId,
     string AssetName,
     OrderSide Side,
@@ -19,8 +18,8 @@ public sealed record OrderPlaceEvent(
 }
 
 public sealed record OrderFillEvent(
-    [property: JsonIgnore] DateTimeOffset Timestamp,
-    [property: JsonIgnore] string Source,
+    DateTimeOffset Timestamp,
+    string Source,
     long OrderId,
     string AssetName,
     OrderSide Side,
@@ -33,8 +32,8 @@ public sealed record OrderFillEvent(
 }
 
 public sealed record OrderCancelEvent(
-    [property: JsonIgnore] DateTimeOffset Timestamp,
-    [property: JsonIgnore] string Source,
+    DateTimeOffset Timestamp,
+    string Source,
     long OrderId,
     string AssetName,
     string? Reason) : IBacktestEvent
@@ -44,8 +43,8 @@ public sealed record OrderCancelEvent(
 }
 
 public sealed record OrderRejectEvent(
-    [property: JsonIgnore] DateTimeOffset Timestamp,
-    [property: JsonIgnore] string Source,
+    DateTimeOffset Timestamp,
+    string Source,
     long OrderId,
     string AssetName,
     string Reason) : IBacktestEvent
@@ -55,8 +54,8 @@ public sealed record OrderRejectEvent(
 }
 
 public sealed record PositionEvent(
-    [property: JsonIgnore] DateTimeOffset Timestamp,
-    [property: JsonIgnore] string Source,
+    DateTimeOffset Timestamp,
+    string Source,
     string AssetName,
     decimal Quantity,
     long AverageEntryPrice,

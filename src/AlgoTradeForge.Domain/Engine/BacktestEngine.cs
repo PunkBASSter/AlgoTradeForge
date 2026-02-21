@@ -156,9 +156,11 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 bus.Emit(new ErrorEvent(DateTimeOffset.UtcNow, Source, ex.Message, ex.StackTrace));
             throw;
         }
-
-        if (probeActive)
-            probe.OnRunEnd();
+        finally
+        {
+            if (probeActive)
+                probe.OnRunEnd();
+        }
 
         stopwatch.Stop();
         var result = new BacktestResult(portfolio, fills, equityCurve, totalBarsDelivered, stopwatch.Elapsed);

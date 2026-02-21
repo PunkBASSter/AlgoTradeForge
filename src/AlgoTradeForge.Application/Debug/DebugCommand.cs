@@ -27,4 +27,13 @@ public abstract record DebugCommand
 
     /// <summary>Pause at the next bar boundary.</summary>
     public sealed record Pause : DebugCommand;
+
+    /// <summary>Advance until the next signal event is emitted, then pause.</summary>
+    public sealed record NextSignal : DebugCommand;
+
+    /// <summary>Advance until an event of the specified type is emitted, then pause.</summary>
+    public sealed record NextType(string EventType) : DebugCommand;
+
+    /// <summary>Toggle mutation event export. Config command — does not affect stepping.</summary>
+    public sealed record SetExport(bool Mutations) : DebugCommand;
 }

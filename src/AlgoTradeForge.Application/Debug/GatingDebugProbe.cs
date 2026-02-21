@@ -54,6 +54,23 @@ public sealed class GatingDebugProbe : IDebugProbe, IDisposable
         }
     }
 
+    public void OnEventEmitted(string eventType, long sequenceNumber)
+    {
+        var condition = Volatile.Read(ref _breakCondition);
+        if (!condition.IsEventLevel)
+            return;
+
+        if (condition.ShouldBreakOnEvent(eventType, sequenceNumber))
+        {
+            _gate.Reset();
+            // Snapshot is bar-granularity: it reflects the last completed bar, not the
+            // mid-bar event that triggered this break. The event's own sequenceNumber
+            // is available via the EventBus stream (the "sq" field in emitted JSON).
+            NotifyWaiters(_lastSnapshot);
+            _gate.Wait();
+        }
+    }
+
     public void OnRunEnd()
     {
         _running = false;

@@ -1,5 +1,7 @@
 using AlgoTradeForge.Application.Debug;
+using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Domain.Engine;
+using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Tests.TestUtilities;
@@ -412,6 +414,85 @@ public class GatingDebugProbeTests
         }
     }
 
+    [Fact]
+    public async Task NextType_OrdFill_StepsToFillEvent()
+    {
+        using var probe = new GatingDebugProbe();
+        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var strategy = new OrderOnBar2Strategy(sub);
+        var sink = new NullSink();
+        var bus = new EventBus(ExportMode.Backtest, [sink], probe);
+
+        // 5 bars: order on bar 0's OnBarComplete, fill on bar 1
+        var bars = TestBars.CreateSeries(Start, OneMinute, 5, startPrice: 1000);
+
+        var engineTask = Task.Factory.StartNew(
+            () => CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe, bus: bus),
+            TaskCreationOptions.LongRunning);
+
+        // next_type("ord.fill") — should pause when the ord.fill event is emitted
+        _ = await probe.SendCommandAsync(new DebugCommand.NextType("ord.fill"));
+        // The engine paused at event emission, before OnBarProcessed for that bar
+        Assert.True(probe.IsRunning);
+
+        await probe.SendCommandAsync(new DebugCommand.Continue());
+        var result = await engineTask;
+        Assert.Equal(5, result.TotalBarsProcessed);
+    }
+
+    [Fact]
+    public async Task NextSignal_StepsToSignalEvent()
+    {
+        using var probe = new GatingDebugProbe();
+        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var strategy = new SignalEmittingStrategy(sub);
+        var sink = new NullSink();
+        var bus = new EventBus(ExportMode.Backtest, [sink], probe);
+
+        // 5 bars: strategy emits signal on bar 1 (index 1)
+        var bars = TestBars.CreateSeries(Start, OneMinute, 5, startPrice: 1000);
+
+        var engineTask = Task.Factory.StartNew(
+            () => CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe, bus: bus),
+            TaskCreationOptions.LongRunning);
+
+        // next_signal — should pause when the sig event is emitted
+        _ = await probe.SendCommandAsync(new DebugCommand.NextSignal());
+        Assert.True(probe.IsRunning);
+
+        await probe.SendCommandAsync(new DebugCommand.Continue());
+        var result = await engineTask;
+        Assert.Equal(5, result.TotalBarsProcessed);
+    }
+
+    [Fact]
+    public async Task BarLevel_Commands_Still_Work_With_EventBus_Wired()
+    {
+        using var probe = new GatingDebugProbe();
+        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var strategy = Substitute.For<IInt64BarStrategy>();
+        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        var sink = new NullSink();
+        var bus = new EventBus(ExportMode.Backtest, [sink], probe);
+
+        var bars = TestBars.CreateSeries(Start, OneMinute, 5);
+
+        var engineTask = Task.Factory.StartNew(
+            () => CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe, bus: bus),
+            TaskCreationOptions.LongRunning);
+
+        // Bar-level NextBar still works
+        var snap1 = await probe.SendCommandAsync(new DebugCommand.NextBar());
+        Assert.Equal(1, snap1.SequenceNumber);
+
+        var snap2 = await probe.SendCommandAsync(new DebugCommand.NextBar());
+        Assert.Equal(2, snap2.SequenceNumber);
+
+        await probe.SendCommandAsync(new DebugCommand.Continue());
+        var result = await engineTask;
+        Assert.Equal(5, result.TotalBarsProcessed);
+    }
+
     private sealed class CallbackStrategy(
         DataSubscription subscription,
         Action<Int64Bar, DataSubscription, IOrderContext>? onBarComplete = null) : IInt64BarStrategy
@@ -422,5 +503,36 @@ public class GatingDebugProbeTests
 
         public void OnBarComplete(Int64Bar bar, DataSubscription sub, IOrderContext orders)
             => onBarComplete?.Invoke(bar, sub, orders);
+    }
+
+    /// <summary>
+    /// Strategy that emits a signal event on bar index 1.
+    /// Implements IEventBusReceiver so the engine injects the EventBus.
+    /// </summary>
+    private sealed class SignalEmittingStrategy(DataSubscription subscription) : IInt64BarStrategy, IEventBusReceiver
+    {
+        private IEventBus _bus = NullEventBus.Instance;
+        private int _barIndex;
+
+        public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
+        public void OnInit() { }
+        public void OnTrade(Fill fill, Order order) { }
+
+        public void OnBarComplete(Int64Bar bar, DataSubscription sub, IOrderContext orders)
+        {
+            if (_barIndex == 1)
+            {
+                _bus.Emit(new SignalEvent(
+                    bar.Timestamp, "test", "TestSignal", sub.Asset.Name, "Long", 1.0m, null));
+            }
+            _barIndex++;
+        }
+
+        public void SetEventBus(IEventBus bus) => _bus = bus;
+    }
+
+    private sealed class NullSink : ISink
+    {
+        public void Write(ReadOnlyMemory<byte> utf8Json) { }
     }
 }

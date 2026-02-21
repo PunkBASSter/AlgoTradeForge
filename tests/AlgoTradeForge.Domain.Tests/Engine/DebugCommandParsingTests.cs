@@ -101,4 +101,67 @@ public sealed class DebugCommandParsingTests
         Assert.NotNull(command);
         Assert.Null(error);
     }
+
+    [Fact]
+    public void ParseCommand_NextSignal_ProducesCorrectType()
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(new { command = "next_signal" });
+        var (command, error) = DebugCommandParser.Parse(json);
+
+        Assert.Null(error);
+        Assert.IsType<DebugCommand.NextSignal>(command);
+    }
+
+    [Fact]
+    public void ParseCommand_NextType_ProducesCorrectCommandWithValue()
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(new { command = "next_type", _t = "ord.fill" });
+        var (command, error) = DebugCommandParser.Parse(json);
+
+        Assert.Null(error);
+        var nt = Assert.IsType<DebugCommand.NextType>(command);
+        Assert.Equal("ord.fill", nt.EventType);
+    }
+
+    [Fact]
+    public void ParseCommand_NextType_MissingValue_ReturnsError()
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(new { command = "next_type" });
+        var (command, error) = DebugCommandParser.Parse(json);
+
+        Assert.Null(command);
+        Assert.Contains("_t", error);
+    }
+
+    [Fact]
+    public void ParseCommand_SetExport_ProducesCorrectCommandWithValue()
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(new { command = "set_export", mutations = true });
+        var (command, error) = DebugCommandParser.Parse(json);
+
+        Assert.Null(error);
+        var se = Assert.IsType<DebugCommand.SetExport>(command);
+        Assert.True(se.Mutations);
+    }
+
+    [Fact]
+    public void ParseCommand_SetExport_False()
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(new { command = "set_export", mutations = false });
+        var (command, error) = DebugCommandParser.Parse(json);
+
+        Assert.Null(error);
+        var se = Assert.IsType<DebugCommand.SetExport>(command);
+        Assert.False(se.Mutations);
+    }
+
+    [Fact]
+    public void ParseCommand_SetExport_MissingValue_ReturnsError()
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(new { command = "set_export" });
+        var (command, error) = DebugCommandParser.Parse(json);
+
+        Assert.Null(command);
+        Assert.Contains("mutations", error);
+    }
 }

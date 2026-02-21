@@ -197,6 +197,47 @@ public class DebugProbeTests
     }
 
     [Fact]
+    public void Run_WithActiveProbe_CallsOnRunEnd_WhenStrategyThrows()
+    {
+        var calls = new List<string>();
+        var probe = new RecordingDebugProbe(calls);
+
+        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var strategy = Substitute.For<IInt64BarStrategy>();
+        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+            .Do(_ => throw new InvalidOperationException("Strategy error"));
+
+        var bars = TestBars.CreateSeries(Start, OneMinute, 1);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe));
+
+        Assert.Contains("OnRunEnd", calls);
+    }
+
+    [Fact]
+    public void Run_WithActiveProbe_CallsOnRunEnd_OnCancellation()
+    {
+        var calls = new List<string>();
+        var probe = new RecordingDebugProbe(calls);
+
+        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        using var cts = new CancellationTokenSource();
+        var strategy = Substitute.For<IInt64BarStrategy>();
+        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+            .Do(_ => cts.Cancel());
+
+        var bars = TestBars.CreateSeries(Start, OneMinute, 2);
+
+        Assert.Throws<OperationCanceledException>(() =>
+            CreateEngine().Run([bars], strategy, CreateOptions(), cts.Token, probe: probe));
+
+        Assert.Contains("OnRunEnd", calls);
+    }
+
+    [Fact]
     public void Run_EmptySeries_ProbeReceivesStartAndEndOnly()
     {
         var calls = new List<string>();

@@ -32,6 +32,15 @@ public static class DebugCommandParser
                 => (new DebugCommand.RunToTimestamp(ts.GetInt64()), null),
             DebugCommandNames.RunToTimestamp
                 => (null, $"Command '{DebugCommandNames.RunToTimestamp}' requires '{DebugCommandNames.TimestampMsField}' field."),
+            DebugCommandNames.NextSignal => (new DebugCommand.NextSignal(), null),
+            DebugCommandNames.NextType when root.TryGetProperty(DebugCommandNames.EventTypeField, out var t)
+                => (new DebugCommand.NextType(t.GetString()!), null),
+            DebugCommandNames.NextType
+                => (null, $"Command '{DebugCommandNames.NextType}' requires '{DebugCommandNames.EventTypeField}' field."),
+            DebugCommandNames.SetExport when root.TryGetProperty(DebugCommandNames.MutationsField, out var m)
+                => (new DebugCommand.SetExport(m.GetBoolean()), null),
+            DebugCommandNames.SetExport
+                => (null, $"Command '{DebugCommandNames.SetExport}' requires '{DebugCommandNames.MutationsField}' field."),
             _ => (null, $"Unknown command '{commandStr}'.")
         };
     }

@@ -13,7 +13,13 @@ public static class DebugCommandNames
     public const string RunToSequence = "run_to_sequence";
     public const string RunToTimestamp = "run_to_timestamp";
 
+    public const string NextSignal = "next_signal";
+    public const string NextType = "next_type";
+    public const string SetExport = "set_export";
+
     public const string CommandField = "command";
     public const string SequenceNumberField = "sequenceNumber";
     public const string TimestampMsField = "timestampMs";
+    public const string EventTypeField = "_t";
+    public const string MutationsField = "mutations";
 }

@@ -141,4 +141,37 @@ public sealed class WebSocketSinkTests
         // Act — should not throw
         sink.SendMessage(message.ToArray());
     }
+
+    [Fact]
+    public async Task DetachAsync_AllowsReattachingNewWebSocket()
+    {
+        // Arrange
+        await using var sink = new WebSocketSink();
+        var (serverWs1, clientWs1) = DuplexStreamPair.CreateLinkedWebSockets();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        sink.Attach(serverWs1, cts.Token);
+
+        // Verify first connection works
+        var msg1 = """{"sq":1}"""u8;
+        sink.Write(msg1.ToArray());
+
+        var buffer = new byte[4096];
+        var result = await clientWs1.ReceiveAsync(buffer.AsMemory(), cts.Token);
+        Assert.True(result.Count > 0);
+
+        // Act — detach first connection, attach a new one
+        await sink.DetachAsync();
+
+        var (serverWs2, clientWs2) = DuplexStreamPair.CreateLinkedWebSockets();
+        sink.Attach(serverWs2, cts.Token);
+
+        // Verify second connection works
+        var msg2 = """{"sq":2}"""u8;
+        sink.Write(msg2.ToArray());
+
+        result = await clientWs2.ReceiveAsync(buffer.AsMemory(), cts.Token);
+        var received = Encoding.UTF8.GetString(buffer, 0, result.Count);
+        Assert.Contains("\"sq\":2", received);
+    }
 }

@@ -1,6 +1,8 @@
 using System.Net.WebSockets;
 using System.Text.Json;
 using AlgoTradeForge.Application.Debug;
+using AlgoTradeForge.Application.Events;
+using AlgoTradeForge.Domain.Engine;
 
 namespace AlgoTradeForge.WebApi.Endpoints;
 
@@ -59,6 +61,10 @@ public static class DebugWebSocketHandler
         }
         catch (WebSocketException) { /* Client disconnected */ }
         catch (OperationCanceledException) { /* Request aborted */ }
+        finally
+        {
+            await session.WebSocketSink.DetachAsync();
+        }
     }
 
     private const int MaxMessageSize = 64 * 1024; // 64 KB
@@ -127,6 +133,19 @@ public static class DebugWebSocketHandler
             return;
         }
 
+        if (command is DebugCommand.SetExport setExport)
+        {
+            if (session.EventBus is not EventBus eventBus)
+            {
+                SendError(sink, "EventBus does not support mutation toggling.");
+                return;
+            }
+
+            eventBus.SetMutationsEnabled(setExport.Mutations);
+            SendSetExportAck(sink, setExport.Mutations);
+            return;
+        }
+
         try
         {
             var snapshot = await session.Probe.SendCommandAsync(command, ct);
@@ -139,7 +158,7 @@ public static class DebugWebSocketHandler
     }
 
     private static void SendSnapshot(
-        Application.Events.WebSocketSink sink, Domain.Engine.DebugSnapshot snapshot, bool sessionActive)
+        WebSocketSink sink, DebugSnapshot snapshot, bool sessionActive)
     {
         var response = new WebSocketSnapshotMessage(
             "snapshot", sessionActive, snapshot.SequenceNumber, snapshot.TimestampMs,
@@ -150,7 +169,14 @@ public static class DebugWebSocketHandler
         sink.SendMessage(bytes);
     }
 
-    private static void SendError(Application.Events.WebSocketSink sink, string message)
+    private static void SendSetExportAck(WebSocketSink sink, bool mutations)
+    {
+        var response = new WebSocketSetExportAckMessage("set_export_ack", mutations);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(response, JsonOptions);
+        sink.SendMessage(bytes);
+    }
+
+    private static void SendError(WebSocketSink sink, string message)
     {
         var response = new WebSocketErrorMessage("error", message);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(response, JsonOptions);
@@ -166,6 +192,10 @@ public static class DebugWebSocketHandler
         bool IsExportableSubscription,
         int FillsThisBar,
         long PortfolioEquity);
+
+    private sealed record WebSocketSetExportAckMessage(
+        string Type,
+        bool Mutations);
 
     private sealed record WebSocketErrorMessage(
         string Type,

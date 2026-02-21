@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 namespace AlgoTradeForge.Domain.Events;
 
 [Flags]
@@ -12,10 +10,7 @@ public enum ExportMode
 
 public interface IBacktestEvent
 {
-    [JsonIgnore]
     DateTimeOffset Timestamp { get; }
-
-    [JsonIgnore]
     string Source { get; }
 
     static abstract string TypeId { get; }
@@ -24,6 +19,5 @@ public interface IBacktestEvent
 
 public interface ISubscriptionBoundEvent : IBacktestEvent
 {
-    [JsonIgnore]
     bool IsExportable { get; }
 }

@@ -44,6 +44,27 @@ public sealed class WebSocketSink : ISink, IAsyncDisposable, IDisposable
     }
 
     /// <summary>
+    /// Detaches the current WebSocket connection, stopping the send loop.
+    /// After detaching, a new client can call <see cref="Attach"/> to reconnect.
+    /// </summary>
+    public async Task DetachAsync()
+    {
+        if (_sendCts is not null)
+        {
+            await _sendCts.CancelAsync().ConfigureAwait(false);
+            if (_sendLoop is not null)
+            {
+                try { await _sendLoop.ConfigureAwait(false); }
+                catch (OperationCanceledException) { }
+            }
+            _sendCts.Dispose();
+            _sendCts = null;
+        }
+        _sendLoop = null;
+        _webSocket = null;
+    }
+
+    /// <summary>
     /// Enqueues an event for delivery to the connected WebSocket client.
     /// If no client is connected or the channel is full, the event is silently dropped.
     /// </summary>

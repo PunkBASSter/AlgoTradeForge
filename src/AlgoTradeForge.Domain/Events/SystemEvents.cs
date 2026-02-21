@@ -1,10 +1,8 @@
-using System.Text.Json.Serialization;
-
 namespace AlgoTradeForge.Domain.Events;
 
 public sealed record RunStartEvent(
-    [property: JsonIgnore] DateTimeOffset Timestamp,
-    [property: JsonIgnore] string Source,
+    DateTimeOffset Timestamp,
+    string Source,
     string StrategyName,
     string AssetName,
     long InitialCash,
@@ -17,8 +15,8 @@ public sealed record RunStartEvent(
 }
 
 public sealed record RunEndEvent(
-    [property: JsonIgnore] DateTimeOffset Timestamp,
-    [property: JsonIgnore] string Source,
+    DateTimeOffset Timestamp,
+    string Source,
     int TotalBarsProcessed,
     long FinalEquity,
     int TotalFills,
@@ -29,8 +27,8 @@ public sealed record RunEndEvent(
 }
 
 public sealed record ErrorEvent(
-    [property: JsonIgnore] DateTimeOffset Timestamp,
-    [property: JsonIgnore] string Source,
+    DateTimeOffset Timestamp,
+    string Source,
     string Message,
     string? StackTrace) : IBacktestEvent
 {
@@ -39,8 +37,8 @@ public sealed record ErrorEvent(
 }
 
 public sealed record WarningEvent(
-    [property: JsonIgnore] DateTimeOffset Timestamp,
-    [property: JsonIgnore] string Source,
+    DateTimeOffset Timestamp,
+    string Source,
     string Message) : IBacktestEvent
 {
     public static string TypeId => "warn";

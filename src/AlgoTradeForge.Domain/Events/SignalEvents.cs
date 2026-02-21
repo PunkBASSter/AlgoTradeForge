@@ -1,10 +1,8 @@
-using System.Text.Json.Serialization;
-
 namespace AlgoTradeForge.Domain.Events;
 
 public sealed record SignalEvent(
-    [property: JsonIgnore] DateTimeOffset Timestamp,
-    [property: JsonIgnore] string Source,
+    DateTimeOffset Timestamp,
+    string Source,
     string SignalName,
     string AssetName,
     string Direction,
@@ -16,8 +14,8 @@ public sealed record SignalEvent(
 }
 
 public sealed record RiskEvent(
-    [property: JsonIgnore] DateTimeOffset Timestamp,
-    [property: JsonIgnore] string Source,
+    DateTimeOffset Timestamp,
+    string Source,
     string AssetName,
     bool Passed,
     string CheckName,
