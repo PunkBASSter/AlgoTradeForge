@@ -1,6 +1,8 @@
 using System.Reflection;
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Domain.Optimization;
+using AlgoTradeForge.Infrastructure.Events;
 using AlgoTradeForge.Infrastructure.Optimization;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -20,6 +22,11 @@ public static class DependencyInjection
         var factory = new OptimizationStrategyFactory(builder);
         services.AddSingleton<IStrategyFactory>(factory);
         services.AddSingleton<IOptimizationStrategyFactory>(factory);
+
+        services.AddSingleton<IRunSinkFactory, JsonlRunSinkFactory>();
+        services.AddSingleton<IEventIndexBuilder, SqliteEventIndexBuilder>();
+        services.AddSingleton<ITradeDbWriter, SqliteTradeDbWriter>();
+        services.AddSingleton<IPostRunPipeline, PostRunPipeline>();
 
         return services;
     }

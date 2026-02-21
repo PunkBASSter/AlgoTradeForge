@@ -1,60 +1,23 @@
 using AlgoTradeForge.Application.Abstractions;
-using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain.Engine;
-using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Reporting;
-using AlgoTradeForge.Domain.Strategy;
 
 namespace AlgoTradeForge.Application.Backtests;
 
 public sealed class RunBacktestCommandHandler(
     BacktestEngine engine,
-    IAssetRepository assetRepository,
-    IStrategyFactory strategyFactory,
-    IHistoryRepository historyRepository,
+    BacktestPreparer preparer,
     IMetricsCalculator metricsCalculator) : ICommandHandler<RunBacktestCommand, BacktestResultDto>
 {
     public async Task<BacktestResultDto> HandleAsync(RunBacktestCommand command, CancellationToken ct = default)
     {
-        var asset = await assetRepository.GetByNameAsync(command.AssetName, command.Exchange, ct)
-            ?? throw new ArgumentException($"Asset '{command.AssetName}' not found.", nameof(command));
+        var setup = await preparer.PrepareAsync(command, PassthroughIndicatorFactory.Instance, ct);
 
-        var strategy = strategyFactory.Create(command.StrategyName, command.StrategyParameters);
-
-        // Scale real-dollar values to int64 price units for the Domain layer
-        var scaleFactor = 1m / asset.TickSize;
-
-        var options = new BacktestOptions
-        {
-            InitialCash = (long)(command.InitialCash * scaleFactor),
-            Asset = asset,
-            StartTime = command.StartTime,
-            EndTime = command.EndTime,
-            CommissionPerTrade = (long)(command.CommissionPerTrade * scaleFactor),
-            SlippageTicks = command.SlippageTicks,
-            UseDetailedExecutionLogic = command.UseDetailedExecutionLogic
-        };
-
-        if (strategy.DataSubscriptions.Count == 0)
-        {
-            var timeFrame = command.TimeFrame ?? asset.SmallestInterval;
-            strategy.DataSubscriptions.Add(new DataSubscription(asset, timeFrame));
-        }
-
-        var fromDate = DateOnly.FromDateTime(command.StartTime.UtcDateTime);
-        var toDate = DateOnly.FromDateTime(command.EndTime.UtcDateTime);
-
-        var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
-
-        for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
-        {
-            seriesArray[i] = historyRepository.Load(strategy.DataSubscriptions[i], fromDate, toDate);
-        }
-
-        var result = engine.Run(seriesArray, strategy, options, ct);
+        var result = engine.Run(setup.Series, setup.Strategy, setup.Options, ct);
 
         var metrics = metricsCalculator.Calculate(
-            result.Fills, result.EquityCurve, options.InitialCash,
+            result.Fills, result.EquityCurve, setup.Options.InitialCash,
             command.StartTime, command.EndTime);
 
         return new BacktestResultDto
@@ -62,10 +25,10 @@ public sealed class RunBacktestCommandHandler(
             Id = Guid.NewGuid(),
             AssetName = command.AssetName,
             StrategyName = command.StrategyName,
-            InitialCapital = metrics.InitialCapital / scaleFactor,
-            FinalEquity = metrics.FinalEquity / scaleFactor,
-            NetProfit = metrics.NetProfit / scaleFactor,
-            TotalCommissions = metrics.TotalCommissions / scaleFactor,
+            InitialCapital = metrics.InitialCapital / setup.ScaleFactor,
+            FinalEquity = metrics.FinalEquity / setup.ScaleFactor,
+            NetProfit = metrics.NetProfit / setup.ScaleFactor,
+            TotalCommissions = metrics.TotalCommissions / setup.ScaleFactor,
             TotalReturnPct = metrics.TotalReturnPct,
             AnnualizedReturnPct = metrics.AnnualizedReturnPct,
             SharpeRatio = metrics.SharpeRatio,

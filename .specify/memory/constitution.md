@@ -1,19 +1,25 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.3.0 → 1.4.0
+Version change: 1.4.0 → 1.5.0
 Modified principles: None
 Added sections: None
 Removed sections: None
 Modified sections:
-  - Backend > Code Style: Added "Int64 Money Convention" bullet — all monetary
-    and price values within the Domain layer MUST use long (Int64). The
-    Application layer is the decimal↔long conversion boundary via asset.TickSize.
-    Quantities and percentages remain decimal.
+  - Backend > Async/Concurrency: Added thread-affinity documentation
+    requirement — types that rely on single-threaded access MUST document
+    the invariant via comments or debug assertions.
+  - Backend > Dependency Injection: Added captive dependency prohibition —
+    Singletons MUST NOT constructor-inject Scoped or Transient services.
+  - Development Workflow > Testing Requirements: Added performance test
+    categorization via [Trait] and shared test utility consolidation rule.
+Trigger: Code review of branch 007-debug-control-in-loop identified gaps
+  in concurrency documentation, DI lifetime guidance, and test organization.
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ compatible (no money-type references)
+  - .specify/templates/plan-template.md ✅ compatible (no testing/DI references)
   - .specify/templates/spec-template.md ✅ compatible
-  - .specify/templates/tasks-template.md ✅ compatible
+  - .specify/templates/tasks-template.md ✅ compatible (test org is guidance,
+    not task structure)
 Follow-up TODOs: None
 -->
 
@@ -192,12 +198,18 @@ frontend/
 - MUST use `ct` propagation for all async operations
 - MUST use `Channel<T>` or `IAsyncEnumerable<T>` for streaming scenarios
 - MUST use `ValueTask<T>` for hot paths where allocation matters
+- MUST document thread-affinity assumptions on types that are not
+  thread-safe (e.g., single-threaded engine loop buffers); use comments
+  or `Debug.Assert(Thread.CurrentThread == _ownerThread)` to enforce
 
 **Dependency Injection**:
 
 - MUST register services with appropriate lifetimes (Scoped for request, Singleton for shared)
 - MUST use `IOptions<T>` pattern for configuration
 - MUST NOT use service locator pattern; inject dependencies explicitly
+- MUST NOT register a Singleton that constructor-injects Scoped or Transient
+  services (captive dependency); if a Singleton needs request-scoped data,
+  inject `IServiceScopeFactory` and resolve within a scope
 
 **Strategy Hosting**:
 
@@ -314,6 +326,11 @@ AlgoTradeForge/
 - Integration tests MUST cover all API endpoints
 - Performance tests MUST run nightly and flag regressions
 - Strategy verification pipeline MUST have end-to-end tests
+- Performance and time-bound tests MUST use `[Trait("Category", "Performance")]`
+  so CI pipelines can exclude them from fast feedback loops
+- Shared test utilities (builders, fakes, assertion helpers) MUST NOT be
+  duplicated across test projects; extract to a shared test utilities project
+  or reference from the primary test project via `InternalsVisibleTo`
 
 ### Test Framework Stack
 
@@ -358,4 +375,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.4.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-19
+**Version**: 1.5.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-21

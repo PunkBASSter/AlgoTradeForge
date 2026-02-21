@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy.ZigZagBreakout;
 using AlgoTradeForge.Infrastructure.Optimization;
@@ -19,7 +20,7 @@ public class OptimizationStrategyFactoryTests
     [Fact]
     public void Create_WithDictionary_SetsParameters()
     {
-        var strategy = _factory.Create("ZigZagBreakout", new Dictionary<string, object>
+        var strategy = _factory.Create("ZigZagBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
         {
             ["DzzDepth"] = 8m,
             ["MinimumThreshold"] = 50L,
@@ -49,14 +50,14 @@ public class OptimizationStrategyFactoryTests
     [Fact]
     public void Create_WithDefaults_UsesDefaultParamValues()
     {
-        var strategy = _factory.Create("ZigZagBreakout");
+        var strategy = _factory.Create("ZigZagBreakout", PassthroughIndicatorFactory.Instance);
         Assert.NotNull(strategy);
     }
 
     [Fact]
     public void Create_UnknownStrategy_Throws()
     {
-        Assert.Throws<ArgumentException>(() => _factory.Create("NonExistent"));
+        Assert.Throws<ArgumentException>(() => _factory.Create("NonExistent", PassthroughIndicatorFactory.Instance));
     }
 
     [Fact]
@@ -82,7 +83,7 @@ public class OptimizationStrategyFactoryTests
     public void Create_WithDictionary_UnknownProperty_Throws()
     {
         var ex = Assert.Throws<ArgumentException>(() =>
-            _factory.Create("ZigZagBreakout", new Dictionary<string, object>
+            _factory.Create("ZigZagBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
             {
                 ["DzzDpeth"] = 8m // typo
             }));
@@ -105,7 +106,7 @@ public class OptimizationStrategyFactoryTests
     [Fact]
     public void Create_DataSubscriptionsKey_SilentlySkipped()
     {
-        var strategy = _factory.Create("ZigZagBreakout", new Dictionary<string, object>
+        var strategy = _factory.Create("ZigZagBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
         {
             ["DataSubscriptions"] = new object()
         });

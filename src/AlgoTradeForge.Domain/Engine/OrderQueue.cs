@@ -9,17 +9,22 @@ public sealed class OrderQueue
 
     public void Submit(Order order) => _orders.Add(order);
 
-    public bool Cancel(long orderId)
+    public Order? Cancel(long orderId)
     {
         var order = _orders.Find(o => o.Id == orderId);
         if (order is null || order.Status is OrderStatus.Filled or OrderStatus.Cancelled)
-            return false;
+            return null;
 
         order.Status = OrderStatus.Cancelled;
         _orders.Remove(order);
-        return true;
+        return order;
     }
 
+    /// <summary>
+    /// Returns pending/triggered orders for the given asset.
+    /// <para><b>Warning:</b> Returns a shared internal buffer — the result is invalidated
+    /// by the next call to this method. Enumerate or copy before calling again.</para>
+    /// </summary>
     public IReadOnlyList<Order> GetPendingForAsset(Asset asset)
     {
         _pendingBuffer.Clear();
