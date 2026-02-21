@@ -6,8 +6,9 @@ using AlgoTradeForge.WebApi.Contracts;
 namespace AlgoTradeForge.WebApi.Endpoints;
 
 /// <summary>
-/// Temporary REST endpoints for POC validation of the debug probe in the backtesting loop.
-/// These will be replaced (or not, who knows...) by WebSocket transport (see debug-feature-requirements-v2.md §5 and §11.3).
+/// REST endpoints for debug session management (create, status, terminate).
+/// Command/event transport has been migrated to WebSocket — see <see cref="DebugWebSocketHandler"/>.
+/// The HTTP POST /commands endpoint is retained for backward compatibility but deprecated.
 /// </summary>
 public static class DebugEndpoints
 {
@@ -25,7 +26,7 @@ public static class DebugEndpoints
 
         group.MapPost("/{id:guid}/commands", SendCommand)
             .WithName("SendDebugCommand")
-            .WithSummary("Send a control command to a debug session")
+            .WithSummary("[Deprecated — use WebSocket /api/debug-sessions/{id}/ws] Send a control command to a debug session")
             .WithOpenApi()
             .Produces<DebugStepResultDto>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest)

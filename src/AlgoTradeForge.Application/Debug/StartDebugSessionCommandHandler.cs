@@ -38,7 +38,9 @@ public sealed class StartDebugSessionCommandHandler(
 
             sink = runSinkFactory.Create(capturedIdentity);
             session.EventSink = sink;
-            session.EventBus = new EventBus(ExportMode.Backtest, [sink]);
+            var wsSink = new WebSocketSink();
+            session.WebSocketSink = wsSink;
+            session.EventBus = new EventBus(ExportMode.Backtest, [sink, wsSink]);
             return new EmittingIndicatorFactory(session.EventBus);
         }, ct);
 

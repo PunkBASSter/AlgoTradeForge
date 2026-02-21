@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Backtests;
+using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Domain.Events;
 
 namespace AlgoTradeForge.Application.Debug;
@@ -30,6 +31,12 @@ public sealed class DebugSession : IAsyncDisposable, IDisposable
     public IDisposable? EventSink { get; internal set; }
 
     /// <summary>
+    /// The WebSocket sink for real-time event streaming.
+    /// Created at session start, WebSocket attached when client connects.
+    /// </summary>
+    public WebSocketSink? WebSocketSink { get; internal set; }
+
+    /// <summary>
     /// Cancellation source for the engine run.
     /// </summary>
     public CancellationTokenSource Cts { get; } = new();
@@ -42,6 +49,8 @@ public sealed class DebugSession : IAsyncDisposable, IDisposable
             try { await RunTask.ConfigureAwait(false); }
             catch (OperationCanceledException) { }
             catch (Exception) { /* engine threw — already logged elsewhere */ }
+        if (WebSocketSink is not null)
+            await WebSocketSink.DisposeAsync().ConfigureAwait(false);
         EventSink?.Dispose();
         Cts.Dispose();
     }

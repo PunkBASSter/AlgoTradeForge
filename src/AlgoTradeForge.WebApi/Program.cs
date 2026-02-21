@@ -59,10 +59,12 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseWebSockets();
 
 // Map endpoints
 app.MapBacktestEndpoints();
 app.MapOptimizationEndpoints();
 app.MapDebugEndpoints();
+app.MapDebugWebSocket();
 
 app.Run();
