@@ -24,6 +24,9 @@ public static class DependencyInjection
         services.AddSingleton<IOptimizationStrategyFactory>(factory);
 
         services.AddSingleton<IRunSinkFactory, JsonlRunSinkFactory>();
+        services.AddSingleton<IEventIndexBuilder, SqliteEventIndexBuilder>();
+        services.AddSingleton<ITradeDbWriter, SqliteTradeDbWriter>();
+        services.AddSingleton<IPostRunPipeline, PostRunPipeline>();
 
         return services;
     }

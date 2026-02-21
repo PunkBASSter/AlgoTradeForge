@@ -27,6 +27,7 @@ public class DebugSessionHandlerTests
     private readonly BacktestEngine _engine = new(new BarMatcher(), new BasicRiskEvaluator());
     private readonly IDebugSessionStore _sessionStore = new InMemoryDebugSessionStore();
     private readonly IRunSinkFactory _runSinkFactory = Substitute.For<IRunSinkFactory>();
+    private readonly IPostRunPipeline _postRunPipeline = Substitute.For<IPostRunPipeline>();
 
     public DebugSessionHandlerTests()
     {
@@ -39,7 +40,7 @@ public class DebugSessionHandlerTests
         new(_assetRepo, _strategyFactory, _historyRepo);
 
     private StartDebugSessionCommandHandler CreateStartHandler() =>
-        new(_engine, CreatePreparer(), _metricsCalc, _sessionStore, _runSinkFactory);
+        new(_engine, CreatePreparer(), _metricsCalc, _sessionStore, _runSinkFactory, _postRunPipeline);
 
     private SendDebugCommandHandler CreateSendHandler() =>
         new(_sessionStore);

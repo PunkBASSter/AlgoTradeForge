@@ -13,16 +13,18 @@ public sealed class StartDebugSessionCommandHandler(
     BacktestPreparer preparer,
     IMetricsCalculator metricsCalculator,
     IDebugSessionStore sessionStore,
-    IRunSinkFactory runSinkFactory) : ICommandHandler<StartDebugSessionCommand, DebugSessionDto>
+    IRunSinkFactory runSinkFactory,
+    IPostRunPipeline postRunPipeline) : ICommandHandler<StartDebugSessionCommand, DebugSessionDto>
 {
     public async Task<DebugSessionDto> HandleAsync(StartDebugSessionCommand command, CancellationToken ct = default)
     {
         var session = sessionStore.Create(command.AssetName, command.StrategyName);
 
         IRunSink? sink = null;
+        RunIdentity? capturedIdentity = null;
         var setup = await preparer.PrepareAsync(command, options =>
         {
-            var identity = new RunIdentity
+            capturedIdentity = new RunIdentity
             {
                 StrategyName = command.StrategyName,
                 AssetName = command.AssetName,
@@ -34,7 +36,7 @@ public sealed class StartDebugSessionCommandHandler(
                 StrategyParameters = command.StrategyParameters,
             };
 
-            sink = runSinkFactory.Create(identity);
+            sink = runSinkFactory.Create(capturedIdentity);
             session.EventSink = sink;
             session.EventBus = new EventBus(ExportMode.Backtest, [sink]);
             return new EmittingIndicatorFactory(session.EventBus);
@@ -47,11 +49,14 @@ public sealed class StartDebugSessionCommandHandler(
             {
                 var result = engine.Run(setup.Series, setup.Strategy, setup.Options, session.Cts.Token, session.Probe, session.EventBus);
 
-                runSink.WriteMeta(new RunSummary(
+                var runSummary = new RunSummary(
                     result.TotalBarsProcessed,
                     result.EquityCurve.Count > 0 ? result.EquityCurve[^1] : setup.Options.InitialCash,
                     result.Fills.Count,
-                    result.Duration));
+                    result.Duration);
+
+                runSink.WriteMeta(runSummary);
+                postRunPipeline.Execute(runSink.RunFolderPath, capturedIdentity!, runSummary);
 
                 var metrics = metricsCalculator.Calculate(
                     result.Fills, result.EquityCurve, setup.Options.InitialCash,

@@ -22,6 +22,7 @@ public static class DependencyInjection
 
         // Event log storage defaults
         services.Configure<EventLogStorageOptions>(_ => { });
+        services.Configure<PostRunPipelineOptions>(_ => { });
 
         // Debug session management
         services.AddSingleton<IDebugSessionStore, InMemoryDebugSessionStore>();
