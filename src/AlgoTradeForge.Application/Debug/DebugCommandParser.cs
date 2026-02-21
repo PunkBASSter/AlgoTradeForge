@@ -34,7 +34,8 @@ public static class DebugCommandParser
                 => (null, $"Command '{DebugCommandNames.RunToTimestamp}' requires '{DebugCommandNames.TimestampMsField}' field."),
             DebugCommandNames.NextSignal => (new DebugCommand.NextSignal(), null),
             DebugCommandNames.NextType when root.TryGetProperty(DebugCommandNames.EventTypeField, out var t)
-                => (new DebugCommand.NextType(t.GetString()!), null),
+                    && t.GetString() is { } eventType
+                => (new DebugCommand.NextType(eventType), null),
             DebugCommandNames.NextType
                 => (null, $"Command '{DebugCommandNames.NextType}' requires '{DebugCommandNames.EventTypeField}' field."),
             DebugCommandNames.SetExport when root.TryGetProperty(DebugCommandNames.MutationsField, out var m)

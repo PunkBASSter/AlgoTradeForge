@@ -70,29 +70,35 @@
 
 ## Warning — Correctness (6)
 
-- [ ] **W10 — `RunEndEvent` not emitted on cancellation/exception**
+- [x] **W10 — `RunEndEvent` not emitted on cancellation/exception**
   - File: `src/AlgoTradeForge.Domain/Engine/BacktestEngine.cs:168-177`
   - `probe.OnRunEnd()` IS in `finally`, but `RunEndEvent` emission is not. Asymmetric lifecycle.
+  - **Fix:** Moved `stopwatch.Stop()` and `RunEndEvent` emission into the `finally` block alongside `probe.OnRunEnd()`.
 
-- [ ] **W11 — `GetString()!` null-forgiving on event type field**
+- [x] **W11 — `GetString()!` null-forgiving on event type field**
   - File: `src/AlgoTradeForge.Application/Debug/DebugCommandParser.cs:37`
   - If JSON `_t` field is `null`, passes `null` into `DebugCommand.NextType`. Add null check.
+  - **Fix:** Changed `t.GetString()!` to null-safe pattern match `t.GetString() is { } eventType`.
 
-- [ ] **W12 — `ParseCommand` in `DebugEndpoints` duplicates `DebugCommandParser`**
+- [x] **W12 — `ParseCommand` in `DebugEndpoints` duplicates `DebugCommandParser`**
   - File: `src/AlgoTradeForge.WebApi/Endpoints/DebugEndpoints.cs:144-162`
   - REST path missing `next_signal`, `next_type`, `set_export` commands. Delete duplicate and delegate to `DebugCommandParser`.
+  - **Fix:** Replaced duplicate switch with JSON serialization to `DebugCommandParser.Parse()`. All commands now supported.
 
-- [ ] **W13 — Second WebSocket connection throws after accept**
+- [x] **W13 — Second WebSocket connection throws after accept**
   - File: `src/AlgoTradeForge.WebApi/Endpoints/DebugWebSocketHandler.cs`
   - `Attach` throws if already connected, but only after `AcceptWebSocketAsync`. Check before accepting and return 409.
+  - **Fix:** Added `IsConnected` check before `AcceptWebSocketAsync`, returns 409 Conflict if already connected.
 
-- [ ] **W14 — Stale channel messages on WebSocket reconnect**
-  - File: `src/AlgoTradeForge.WebApi/Endpoints/DebugWebSocketHandler.cs`
+- [x] **W14 — Stale channel messages on WebSocket reconnect**
+  - File: `src/AlgoTradeForge.Application/Events/WebSocketSink.cs`
   - After `DetachAsync`, channel may contain stale messages. Drain or replace channel on `Attach`.
+  - **Fix:** Added `while (_channel.Reader.TryRead(out _)) { }` drain loop in `DetachAsync` after send loop completes.
 
-- [ ] **W15 — `DeleteRun` missing `PRAGMA busy_timeout=5000`**
+- [x] **W15 — `DeleteRun` missing `PRAGMA busy_timeout=5000`**
   - File: `src/AlgoTradeForge.Infrastructure/Events/SqliteTradeDbWriter.cs`
   - Inconsistent with `EnsureSchema` and `InsertRun`. Can cause sporadic `SQLITE_BUSY` failures during `RebuildFromJsonl`.
+  - **Fix:** Added `PRAGMA busy_timeout=5000` to the `DeleteRun` method's pragma statement.
 
 ---
 

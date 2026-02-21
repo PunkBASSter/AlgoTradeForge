@@ -50,6 +50,13 @@ public static class DebugWebSocketHandler
             return;
         }
 
+        if (session.WebSocketSink.IsConnected)
+        {
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            await context.Response.WriteAsync("A WebSocket client is already connected to this session.");
+            return;
+        }
+
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
         var ct = context.RequestAborted;
 

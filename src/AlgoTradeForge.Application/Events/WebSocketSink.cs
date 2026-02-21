@@ -75,6 +75,9 @@ public sealed class WebSocketSink : ISink, IAsyncDisposable, IDisposable
             cts.Dispose();
         }
 
+        // Drain stale messages that may have been enqueued after the send loop stopped
+        while (_channel.Reader.TryRead(out _)) { }
+
         lock (_lock)
         {
             _sendCts = null;

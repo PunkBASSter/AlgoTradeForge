@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Debug;
 using AlgoTradeForge.WebApi.Contracts;
@@ -142,24 +143,18 @@ public static class DebugEndpoints
         return Results.NoContent();
     }
 
+    private static readonly JsonSerializerOptions CommandJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    /// <summary>
+    /// Converts the REST DTO to the wire JSON format expected by <see cref="DebugCommandParser"/>,
+    /// so all command parsing lives in one place.
+    /// </summary>
     private static (DebugCommand? Command, string? Error) ParseCommand(DebugCommandRequest request)
     {
-        return request.Command.ToLowerInvariant() switch
-        {
-            "continue" => (new DebugCommand.Continue(), null),
-            "next" => (new DebugCommand.Next(), null),
-            "next_bar" => (new DebugCommand.NextBar(), null),
-            "next_trade" => (new DebugCommand.NextTrade(), null),
-            "pause" => (new DebugCommand.Pause(), null),
-            "run_to_sequence" when request.SequenceNumber.HasValue
-                => (new DebugCommand.RunToSequence(request.SequenceNumber.Value), null),
-            "run_to_sequence"
-                => (null, "Command 'run_to_sequence' requires 'sequenceNumber' parameter."),
-            "run_to_timestamp" when request.TimestampMs.HasValue
-                => (new DebugCommand.RunToTimestamp(request.TimestampMs.Value), null),
-            "run_to_timestamp"
-                => (null, "Command 'run_to_timestamp' requires 'timestampMs' parameter."),
-            _ => (null, $"Unknown command '{request.Command}'.")
-        };
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(request, CommandJsonOptions);
+        return DebugCommandParser.Parse(jsonBytes);
     }
 }

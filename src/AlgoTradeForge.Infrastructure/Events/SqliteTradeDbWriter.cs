@@ -128,7 +128,7 @@ public sealed class SqliteTradeDbWriter(
         conn.Open();
 
         using var pragma = conn.CreateCommand();
-        pragma.CommandText = "PRAGMA foreign_keys=ON;";
+        pragma.CommandText = "PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;";
         pragma.ExecuteNonQuery();
 
         using var tx = conn.BeginTransaction();
