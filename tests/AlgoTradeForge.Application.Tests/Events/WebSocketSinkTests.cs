@@ -65,8 +65,10 @@ public sealed class WebSocketSinkTests
         // Act — should not throw even though client disconnected
         sink.Write(eventJson.ToArray());
 
-        // Give the send loop time to process and handle the error
-        await Task.Delay(100);
+        // Poll briefly to let the send loop process and encounter the disconnect
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (sink.IsConnected && DateTime.UtcNow < deadline)
+            await Task.Delay(10);
     }
 
     [Fact]

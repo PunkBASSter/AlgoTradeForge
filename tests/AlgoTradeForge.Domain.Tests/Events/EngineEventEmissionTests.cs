@@ -542,13 +542,6 @@ public class EngineEventEmissionTests
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    private sealed class CapturingEventBus : IEventBus
-    {
-        public List<object> Events { get; } = [];
-
-        public void Emit<T>(T evt) where T : IBacktestEvent => Events.Add(evt);
-    }
-
     private sealed class ActionStrategy(DataSubscription subscription) : IInt64BarStrategy
     {
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];

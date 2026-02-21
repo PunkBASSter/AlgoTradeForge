@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Events;
+using AlgoTradeForge.Application.Tests.TestUtilities;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.Trading;
@@ -9,16 +10,6 @@ namespace AlgoTradeForge.Application.Tests.Events;
 
 public class EventBusTests
 {
-    private sealed class RecordingSink : ISink
-    {
-        public List<byte[]> Received { get; } = [];
-
-        public void Write(ReadOnlyMemory<byte> utf8Json)
-        {
-            Received.Add(utf8Json.ToArray());
-        }
-    }
-
     private static readonly DateTimeOffset Ts = new(2025, 6, 1, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]

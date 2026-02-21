@@ -1,6 +1,7 @@
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Tests.TestUtilities;
 using AlgoTradeForge.Domain.Trading;
 using Xunit;
 
@@ -89,10 +90,4 @@ public class StrategyEventBusReceiverTests
         }
     }
 
-    private sealed class CapturingEventBus : IEventBus
-    {
-        public List<object> Events { get; } = [];
-
-        public void Emit<T>(T evt) where T : IBacktestEvent => Events.Add(evt);
-    }
 }

@@ -85,8 +85,14 @@ public class DebugSessionHandlerTests
         var session = _sessionStore.Get(dto.SessionId);
         Assert.NotNull(session);
 
-        // Cleanup: DisposeAsync cancels, awaits RunTask, and releases all resources
-        await session.DisposeAsync();
+        try
+        {
+            // Assertions on session state would go here
+        }
+        finally
+        {
+            await session.DisposeAsync();
+        }
     }
 
     [Fact]
@@ -135,12 +141,17 @@ public class DebugSessionHandlerTests
 
         // Wait for engine to complete
         var session = _sessionStore.Get(sessionDto.SessionId)!;
-        var result = await session.RunTask!;
+        try
+        {
+            var result = await session.RunTask!;
 
-        Assert.NotNull(result);
-        Assert.False(session.Probe.IsRunning);
-
-        await session.DisposeAsync();
+            Assert.NotNull(result);
+            Assert.False(session.Probe.IsRunning);
+        }
+        finally
+        {
+            await session.DisposeAsync();
+        }
     }
 
     [Fact]
@@ -182,17 +193,22 @@ public class DebugSessionHandlerTests
         });
 
         var session = _sessionStore.Get(sessionDto.SessionId)!;
-        await session.RunTask!;
-
-        // Send command after completion
-        var result = await sendHandler.HandleAsync(new SendDebugCommandRequest
+        try
         {
-            SessionId = sessionDto.SessionId,
-            Command = new DebugCommand.NextBar()
-        });
+            await session.RunTask!;
 
-        Assert.False(result.SessionActive);
+            // Send command after completion
+            var result = await sendHandler.HandleAsync(new SendDebugCommandRequest
+            {
+                SessionId = sessionDto.SessionId,
+                Command = new DebugCommand.NextBar()
+            });
 
-        await session.DisposeAsync();
+            Assert.False(result.SessionActive);
+        }
+        finally
+        {
+            await session.DisposeAsync();
+        }
     }
 }

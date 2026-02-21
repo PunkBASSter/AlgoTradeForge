@@ -132,16 +132,19 @@
 
 ## Warning — Test Quality (3)
 
-- [ ] **W20 — Duplicate helper classes across test files**
+- [x] **W20 — Duplicate helper classes across test files**
   - `CapturingEventBus` (x3), `RecordingSink` (x2), `BuyOnFirstBarStrategy` (x2). Extract to shared `TestUtilities/`.
+  - **Fix:** Extracted to shared `TestUtilities/` in each project: `CapturingEventBus` in Domain.Tests + Application.Tests, `RecordingSink` in Application.Tests, `BuyOnFirstBarStrategy` in Infrastructure.Tests. Removed 7 private inline definitions.
 
-- [ ] **W21 — `session.Dispose()` not in finally blocks**
-  - File: `tests/AlgoTradeForge.Domain.Tests/Engine/DebugSessionHandlerTests.cs`
+- [x] **W21 — `session.Dispose()` not in finally blocks**
+  - File: `tests/AlgoTradeForge.Application.Tests/Debug/DebugSessionHandlerTests.cs`
   - Resource leak on assertion failure. Use `using` or try/finally.
+  - **Fix:** Wrapped all 3 test methods with `try/finally` blocks around session usage, ensuring `DisposeAsync` runs even on assertion failure.
 
-- [ ] **W22 — `Task.Delay` for synchronization in WebSocket tests**
+- [x] **W22 — `Task.Delay` for synchronization in WebSocket tests**
   - Files: `DebugWebSocketIntegrationTests.cs`, `WebSocketSinkTests.cs`
   - Fixed `Task.Delay(100-200ms)` flaky on slow CI runners. Use polling loops with timeout.
+  - **Fix:** Replaced 4 `Task.Delay` waits in `DebugWebSocketIntegrationTests` with `DrainUntilAsync` polling helper that uses `WaitToReadAsync` with condition predicates. Replaced `Task.Delay(100)` in `WebSocketSinkTests` with deadline-based polling on `IsConnected`.
 
 ---
 

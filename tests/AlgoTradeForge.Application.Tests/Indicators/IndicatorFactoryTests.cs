@@ -164,13 +164,6 @@ public class IndicatorFactoryTests
         Assert.Single(h1Events);
     }
 
-    private sealed class CapturingEventBus : IEventBus
-    {
-        public List<object> Events { get; } = [];
-
-        public void Emit<T>(T evt) where T : IBacktestEvent => Events.Add(evt!);
-    }
-
     private sealed class DualTfParams : StrategyParamsBase;
 
     private sealed class DualTfStrategy(DualTfParams p, IIndicatorFactory? indicators = null) : StrategyBase<DualTfParams>(p, indicators)

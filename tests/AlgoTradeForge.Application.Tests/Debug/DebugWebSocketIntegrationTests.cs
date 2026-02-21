@@ -65,11 +65,9 @@ public sealed class DebugWebSocketIntegrationTests
         var snap1 = await probe.SendCommandAsync(new DebugCommand.NextBar(), cts.Token);
         Assert.Equal(1, snap1.SequenceNumber);
 
-        // Give the send loop time to flush events
-        await Task.Delay(100);
-
-        // Drain events received so far
-        var firstBarEvents = DrainAvailable(received.Reader);
+        // Poll until events arrive from the send loop
+        var firstBarEvents = await DrainUntilAsync(received.Reader,
+            msgs => msgs.Any(e => e.Contains("\"_t\":\"bar\"")), cts.Token);
         Assert.True(firstBarEvents.Count > 0, "Should receive at least run.start and bar events");
         Assert.Contains(firstBarEvents, e => e.Contains("\"_t\":\"run.start\""));
         Assert.Contains(firstBarEvents, e => e.Contains("\"_t\":\"bar\""));
@@ -78,8 +76,8 @@ public sealed class DebugWebSocketIntegrationTests
         var snap2 = await probe.SendCommandAsync(new DebugCommand.NextBar(), cts.Token);
         Assert.Equal(2, snap2.SequenceNumber);
 
-        await Task.Delay(100);
-        var secondBarEvents = DrainAvailable(received.Reader);
+        var secondBarEvents = await DrainUntilAsync(received.Reader,
+            msgs => msgs.Any(e => e.Contains("\"_t\":\"bar\"")), cts.Token);
         Assert.Contains(secondBarEvents, e => e.Contains("\"_t\":\"bar\""));
 
         // Act 3: Continue — engine runs to completion
@@ -89,9 +87,9 @@ public sealed class DebugWebSocketIntegrationTests
         var result = await engineTask.WaitAsync(cts.Token);
         Assert.Equal(5, result.TotalBarsProcessed);
 
-        // Give send loop time to flush remaining events
-        await Task.Delay(200);
-        var remainingEvents = DrainAvailable(received.Reader);
+        // Poll until run.end event arrives
+        var remainingEvents = await DrainUntilAsync(received.Reader,
+            msgs => msgs.Any(e => e.Contains("\"_t\":\"run.end\"")), cts.Token);
 
         // Verify we got bar events for remaining bars and run.end event
         var allEvents = firstBarEvents.Concat(secondBarEvents).Concat(remainingEvents).ToList();
@@ -169,12 +167,11 @@ public sealed class DebugWebSocketIntegrationTests
         Assert.Equal(3, result1.TotalBarsProcessed);
         Assert.Equal(4, result2.TotalBarsProcessed);
 
-        // Give send loops time to flush
-        await Task.Delay(200);
-
-        // Drain events from each client
-        var events1 = DrainAvailable(received1.Reader);
-        var events2 = DrainAvailable(received2.Reader);
+        // Poll until events arrive from each session's send loop
+        var events1 = await DrainUntilAsync(received1.Reader,
+            msgs => msgs.Any(e => e.Contains("\"_t\":\"run.end\"")), cts.Token);
+        var events2 = await DrainUntilAsync(received2.Reader,
+            msgs => msgs.Any(e => e.Contains("\"_t\":\"run.end\"")), cts.Token);
 
         // Each session should have its own set of bar events
         var barCount1 = events1.Count(e => e.Contains("\"_t\":\"bar\""));
@@ -213,6 +210,33 @@ public sealed class DebugWebSocketIntegrationTests
         var messages = new List<string>();
         while (reader.TryRead(out var msg))
             messages.Add(msg);
+        return messages;
+    }
+
+    /// <summary>
+    /// Polls the channel reader until <paramref name="predicate"/> is satisfied or cancellation.
+    /// Replaces fixed <c>Task.Delay</c> waits with deterministic condition checks.
+    /// </summary>
+    private static async Task<List<string>> DrainUntilAsync(
+        ChannelReader<string> reader,
+        Func<List<string>, bool> predicate,
+        CancellationToken ct)
+    {
+        var messages = new List<string>();
+        while (!ct.IsCancellationRequested)
+        {
+            // Drain whatever is available right now
+            while (reader.TryRead(out var msg))
+                messages.Add(msg);
+
+            if (predicate(messages))
+                break;
+
+            // Wait for more data (with timeout via ct)
+            if (!await reader.WaitToReadAsync(ct).ConfigureAwait(false))
+                break; // channel completed
+        }
+
         return messages;
     }
 }

@@ -7,6 +7,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
 using AlgoTradeForge.Infrastructure.Events;
+using AlgoTradeForge.Infrastructure.Tests.TestUtilities;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -294,24 +295,4 @@ public class PostRunIntegrationTests : IDisposable
         return series;
     }
 
-    private sealed class BuyOnFirstBarParams : StrategyParamsBase;
-
-    private sealed class BuyOnFirstBarStrategy(BuyOnFirstBarParams p) : StrategyBase<BuyOnFirstBarParams>(p)
-    {
-        private bool _submitted;
-
-        public override void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
-        {
-            if (_submitted) return;
-            _submitted = true;
-            orders.Submit(new Order
-            {
-                Id = 0,
-                Asset = subscription.Asset,
-                Side = OrderSide.Buy,
-                Type = OrderType.Market,
-                Quantity = 1m,
-            });
-        }
-    }
 }
