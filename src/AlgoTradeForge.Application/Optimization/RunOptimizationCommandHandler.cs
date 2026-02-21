@@ -10,6 +10,7 @@ using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
+using static AlgoTradeForge.Domain.Reporting.MetricNames;
 
 namespace AlgoTradeForge.Application.Optimization;
 
@@ -189,12 +190,12 @@ public sealed class RunOptimizationCommandHandler(
     {
         return sortBy switch
         {
-            "SharpeRatio" => trials.OrderByDescending(t => t.Metrics.SharpeRatio).ToList(),
-            "NetProfit" => trials.OrderByDescending(t => t.Metrics.NetProfit).ToList(),
-            "SortinoRatio" => trials.OrderByDescending(t => t.Metrics.SortinoRatio).ToList(),
-            "ProfitFactor" => trials.OrderByDescending(t => t.Metrics.ProfitFactor).ToList(),
-            "WinRatePct" => trials.OrderByDescending(t => t.Metrics.WinRatePct).ToList(),
-            "MaxDrawdownPct" => trials.OrderBy(t => t.Metrics.MaxDrawdownPct).ToList(),
+            SharpeRatio => trials.OrderByDescending(t => t.Metrics.SharpeRatio).ToList(),
+            NetProfit => trials.OrderByDescending(t => t.Metrics.NetProfit).ToList(),
+            SortinoRatio => trials.OrderByDescending(t => t.Metrics.SortinoRatio).ToList(),
+            ProfitFactor => trials.OrderByDescending(t => t.Metrics.ProfitFactor).ToList(),
+            WinRatePct => trials.OrderByDescending(t => t.Metrics.WinRatePct).ToList(),
+            MaxDrawdownPct => trials.OrderBy(t => t.Metrics.MaxDrawdownPct).ToList(),
             _ => trials.OrderByDescending(t => t.Metrics.SharpeRatio).ToList()
         };
     }
