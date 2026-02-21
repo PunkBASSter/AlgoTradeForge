@@ -8,7 +8,9 @@ public sealed record BacktestRunResponse
     public required string StrategyName { get; init; }
     public required string StrategyVersion { get; init; }
     public required Dictionary<string, object> Parameters { get; init; }
-    public required List<DataSubscriptionResponse> DataSubscriptions { get; init; }
+    public required string AssetName { get; init; }
+    public required string Exchange { get; init; }
+    public required string TimeFrame { get; init; }
     public required decimal InitialCash { get; init; }
     public required decimal Commission { get; init; }
     public required int SlippageTicks { get; init; }
@@ -23,8 +25,6 @@ public sealed record BacktestRunResponse
     public required string RunMode { get; init; }
     public Guid? OptimizationRunId { get; init; }
 }
-
-public sealed record DataSubscriptionResponse(string AssetName, string Exchange, string TimeFrame);
 
 public sealed record EquityPointResponse(long TimestampMs, decimal Value);
 
@@ -70,6 +70,8 @@ public sealed record OptimizationRunResponse
     public required decimal Commission { get; init; }
     public required int SlippageTicks { get; init; }
     public required int MaxParallelism { get; init; }
-    public required List<DataSubscriptionResponse> DataSubscriptions { get; init; }
+    public required string AssetName { get; init; }
+    public required string Exchange { get; init; }
+    public required string TimeFrame { get; init; }
     public required List<BacktestRunResponse> Trials { get; init; }
 }

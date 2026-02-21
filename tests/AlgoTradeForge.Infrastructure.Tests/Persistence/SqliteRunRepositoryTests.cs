@@ -61,7 +61,9 @@ public class SqliteRunRepositoryTests : IDisposable
             StrategyName = strategyName,
             StrategyVersion = "1.0.0",
             Parameters = new Dictionary<string, object> { ["DzzDepth"] = 5L, ["MinimumThreshold"] = 0.01m },
-            DataSubscriptions = [new DataSubscriptionRecord("BTCUSDT", "Binance", "1h")],
+            AssetName = "BTCUSDT",
+            Exchange = "Binance",
+            TimeFrame = "1h",
             InitialCash = 10000m,
             Commission = 0.1m,
             SlippageTicks = 2,
@@ -125,11 +127,10 @@ public class SqliteRunRepositoryTests : IDisposable
         // Parameters
         Assert.Equal(5L, loaded.Parameters["DzzDepth"]);
 
-        // Data subscriptions
-        Assert.Single(loaded.DataSubscriptions);
-        Assert.Equal("BTCUSDT", loaded.DataSubscriptions[0].AssetName);
-        Assert.Equal("Binance", loaded.DataSubscriptions[0].Exchange);
-        Assert.Equal("1h", loaded.DataSubscriptions[0].TimeFrame);
+        // Data subscription fields
+        Assert.Equal("BTCUSDT", loaded.AssetName);
+        Assert.Equal("Binance", loaded.Exchange);
+        Assert.Equal("1h", loaded.TimeFrame);
     }
 
     // ── GetById returns null for non-existent ──────────────────────────
@@ -163,12 +164,16 @@ public class SqliteRunRepositoryTests : IDisposable
         var r1 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            DataSubscriptions = [new DataSubscriptionRecord("BTCUSDT", "Binance", "1h")],
+            AssetName = "BTCUSDT",
+            Exchange = "Binance",
+            TimeFrame = "1h",
         };
         var r2 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            DataSubscriptions = [new DataSubscriptionRecord("ETHUSDT", "Binance", "4h")],
+            AssetName = "ETHUSDT",
+            Exchange = "Binance",
+            TimeFrame = "4h",
         };
 
         await _repo.SaveAsync(r1);
@@ -176,7 +181,7 @@ public class SqliteRunRepositoryTests : IDisposable
 
         var results = await _repo.QueryAsync(new BacktestRunQuery { AssetName = "BTCUSDT" });
         Assert.Single(results);
-        Assert.Equal("BTCUSDT", results[0].DataSubscriptions[0].AssetName);
+        Assert.Equal("BTCUSDT", results[0].AssetName);
     }
 
     // ── Query by timeframe ─────────────────────────────────────────────
@@ -187,12 +192,16 @@ public class SqliteRunRepositoryTests : IDisposable
         var r1 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            DataSubscriptions = [new DataSubscriptionRecord("BTCUSDT", "Binance", "1h")],
+            AssetName = "BTCUSDT",
+            Exchange = "Binance",
+            TimeFrame = "1h",
         };
         var r2 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            DataSubscriptions = [new DataSubscriptionRecord("BTCUSDT", "Binance", "4h")],
+            AssetName = "BTCUSDT",
+            Exchange = "Binance",
+            TimeFrame = "4h",
         };
 
         await _repo.SaveAsync(r1);
@@ -200,7 +209,7 @@ public class SqliteRunRepositoryTests : IDisposable
 
         var results = await _repo.QueryAsync(new BacktestRunQuery { TimeFrame = "4h" });
         Assert.Single(results);
-        Assert.Equal("4h", results[0].DataSubscriptions[0].TimeFrame);
+        Assert.Equal("4h", results[0].TimeFrame);
     }
 
     // ── Query by date range ────────────────────────────────────────────
@@ -312,7 +321,9 @@ public class SqliteRunRepositoryTests : IDisposable
             Commission = 0.1m,
             SlippageTicks = 2,
             MaxParallelism = 4,
-            DataSubscriptions = [new DataSubscriptionRecord("BTCUSDT", "Binance", "1h")],
+            AssetName = "BTCUSDT",
+            Exchange = "Binance",
+            TimeFrame = "1h",
             Trials = [trial1, trial2],
         };
 
@@ -330,9 +341,10 @@ public class SqliteRunRepositoryTests : IDisposable
         Assert.Equal(4, loaded.MaxParallelism);
         Assert.Equal(2, loaded.Trials.Count);
 
-        // Verify optimization data subscriptions
-        Assert.Single(loaded.DataSubscriptions);
-        Assert.Equal("BTCUSDT", loaded.DataSubscriptions[0].AssetName);
+        // Verify optimization data subscription fields
+        Assert.Equal("BTCUSDT", loaded.AssetName);
+        Assert.Equal("Binance", loaded.Exchange);
+        Assert.Equal("1h", loaded.TimeFrame);
     }
 
     // ── Get optimization by ID with all trials ─────────────────────────
@@ -371,7 +383,9 @@ public class SqliteRunRepositoryTests : IDisposable
             Commission = 0m,
             SlippageTicks = 0,
             MaxParallelism = 1,
-            DataSubscriptions = [new DataSubscriptionRecord("BTCUSDT", "Binance", "1h")],
+            AssetName = "BTCUSDT",
+            Exchange = "Binance",
+            TimeFrame = "1h",
             Trials = [trial],
         };
         await _repo.SaveOptimizationAsync(opt);
@@ -418,7 +432,9 @@ public class SqliteRunRepositoryTests : IDisposable
             Commission = 0m,
             SlippageTicks = 0,
             MaxParallelism = 1,
-            DataSubscriptions = [new DataSubscriptionRecord("BTCUSDT", "Binance", "1h")],
+            AssetName = "BTCUSDT",
+            Exchange = "Binance",
+            TimeFrame = "1h",
             Trials = [trial],
         };
         await _repo.SaveOptimizationAsync(opt);

@@ -188,13 +188,8 @@ public sealed class RunOptimizationCommandHandler(
             for (var i = 0; i < result.EquityCurve.Count; i++)
                 equityCurve[i] = new EquityPoint(result.EquityCurve[i].TimestampMs, result.EquityCurve[i].Value / trialScaleFactor);
 
-            // Build data subscriptions for this trial
-            var trialDataSubs = strategy.DataSubscriptions
-                .Select(ds => new DataSubscriptionRecord(
-                    ds.Asset.Name,
-                    ds.Asset.Exchange,
-                    TimeFrameFormatter.Format(ds.TimeFrame)))
-                .ToList();
+            // Extract primary subscription for this trial
+            var trialPrimarySub = strategy.DataSubscriptions[0];
 
             var trialRecord = new BacktestRunRecord
             {
@@ -202,7 +197,9 @@ public sealed class RunOptimizationCommandHandler(
                 StrategyName = command.StrategyName,
                 StrategyVersion = strategy.Version,
                 Parameters = combination.Values,
-                DataSubscriptions = trialDataSubs,
+                AssetName = trialPrimarySub.Asset.Name,
+                Exchange = trialPrimarySub.Asset.Exchange,
+                TimeFrame = TimeFrameFormatter.Format(trialPrimarySub.TimeFrame),
                 InitialCash = command.InitialCash,
                 Commission = command.CommissionPerTrade,
                 SlippageTicks = checked((int)command.SlippageTicks),
@@ -228,10 +225,8 @@ public sealed class RunOptimizationCommandHandler(
 
         var sortedTrials = SortTrials(results.Select(r => r.Dto), command.SortBy);
 
-        // Build optimization data subscriptions from command
-        var optDataSubscriptions = dataSubs
-            .Select(ds => new DataSubscriptionRecord(ds.Asset, ds.Exchange, ds.TimeFrame))
-            .ToList();
+        // Extract primary subscription from command
+        var optPrimarySub = dataSubs[0];
 
         var maxParallelism = command.MaxDegreeOfParallelism > 0
             ? command.MaxDegreeOfParallelism
@@ -253,7 +248,9 @@ public sealed class RunOptimizationCommandHandler(
             Commission = command.CommissionPerTrade,
             SlippageTicks = checked((int)command.SlippageTicks),
             MaxParallelism = maxParallelism,
-            DataSubscriptions = optDataSubscriptions,
+            AssetName = optPrimarySub.Asset,
+            Exchange = optPrimarySub.Exchange,
+            TimeFrame = optPrimarySub.TimeFrame,
             Trials = results.Select(r => r.Record).ToList(),
         };
 

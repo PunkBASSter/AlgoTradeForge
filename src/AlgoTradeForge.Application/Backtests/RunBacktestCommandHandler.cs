@@ -69,13 +69,8 @@ public sealed class RunBacktestCommandHandler(
         var runId = Guid.NewGuid();
         var completedAt = DateTimeOffset.UtcNow;
 
-        // Build data subscription records
-        var dataSubscriptions = setup.Strategy.DataSubscriptions
-            .Select(ds => new DataSubscriptionRecord(
-                ds.Asset.Name,
-                ds.Asset.Exchange,
-                TimeFrameFormatter.Format(ds.TimeFrame)))
-            .ToList();
+        // Extract data subscription from the first (primary) subscription
+        var primarySub = setup.Strategy.DataSubscriptions[0];
 
         // Build equity curve with timestamps, scaling values to real-money decimals
         var equityCurve = new EquityPoint[result.EquityCurve.Count];
@@ -89,7 +84,9 @@ public sealed class RunBacktestCommandHandler(
             StrategyVersion = setup.Strategy.Version,
             Parameters = command.StrategyParameters?.AsReadOnly()
                 ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-            DataSubscriptions = dataSubscriptions,
+            AssetName = primarySub.Asset.Name,
+            Exchange = primarySub.Asset.Exchange,
+            TimeFrame = TimeFrameFormatter.Format(primarySub.TimeFrame),
             InitialCash = command.InitialCash,
             Commission = command.CommissionPerTrade,
             SlippageTicks = checked((int)command.SlippageTicks),

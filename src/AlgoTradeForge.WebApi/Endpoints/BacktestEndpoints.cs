@@ -144,9 +144,9 @@ public static class BacktestEndpoints
         StrategyName = r.StrategyName,
         StrategyVersion = r.StrategyVersion,
         Parameters = new Dictionary<string, object>(r.Parameters),
-        DataSubscriptions = r.DataSubscriptions
-            .Select(ds => new DataSubscriptionResponse(ds.AssetName, ds.Exchange, ds.TimeFrame))
-            .ToList(),
+        AssetName = r.AssetName,
+        Exchange = r.Exchange,
+        TimeFrame = r.TimeFrame,
         InitialCash = r.InitialCash,
         Commission = r.Commission,
         SlippageTicks = r.SlippageTicks,

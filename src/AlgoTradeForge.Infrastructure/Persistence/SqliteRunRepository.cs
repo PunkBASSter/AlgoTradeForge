@@ -65,7 +65,6 @@ public sealed class SqliteRunRepository : IRunRepository
         using var tx = conn.BeginTransaction();
 
         InsertBacktestRun(conn, tx, record);
-        InsertBacktestDataSubscriptions(conn, tx, record.Id, record.DataSubscriptions);
 
         tx.Commit();
     }
@@ -80,13 +79,15 @@ public sealed class SqliteRunRepository : IRunRepository
                 initial_cash, commission, slippage_ticks,
                 started_at, completed_at, data_start, data_end,
                 duration_ms, total_bars, metrics_json, equity_curve_json,
-                run_folder_path, run_mode, optimization_run_id
+                run_folder_path, run_mode, optimization_run_id,
+                asset_name, exchange, timeframe
             ) VALUES (
                 $id, $stratName, $stratVer, $paramsJson,
                 $cash, $commission, $slippage,
                 $startedAt, $completedAt, $dataStart, $dataEnd,
                 $durationMs, $totalBars, $metricsJson, $equityJson,
-                $runFolder, $runMode, $optId
+                $runFolder, $runMode, $optId,
+                $asset, $exchange, $tf
             )
             """;
 
@@ -108,27 +109,11 @@ public sealed class SqliteRunRepository : IRunRepository
         cmd.Parameters.AddWithValue("$runFolder", (object?)r.RunFolderPath ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$runMode", r.RunMode);
         cmd.Parameters.AddWithValue("$optId", r.OptimizationRunId.HasValue ? r.OptimizationRunId.Value.ToString() : DBNull.Value);
+        cmd.Parameters.AddWithValue("$asset", r.AssetName);
+        cmd.Parameters.AddWithValue("$exchange", r.Exchange);
+        cmd.Parameters.AddWithValue("$tf", r.TimeFrame);
 
         cmd.ExecuteNonQuery();
-    }
-
-    private static void InsertBacktestDataSubscriptions(
-        SqliteConnection conn, SqliteTransaction tx, Guid backtestRunId, IReadOnlyList<DataSubscriptionRecord> subs)
-    {
-        foreach (var sub in subs)
-        {
-            using var cmd = conn.CreateCommand();
-            cmd.Transaction = tx;
-            cmd.CommandText = """
-                INSERT INTO backtest_data_subscriptions (backtest_run_id, asset_name, exchange, timeframe)
-                VALUES ($runId, $asset, $exchange, $tf)
-                """;
-            cmd.Parameters.AddWithValue("$runId", backtestRunId.ToString());
-            cmd.Parameters.AddWithValue("$asset", sub.AssetName);
-            cmd.Parameters.AddWithValue("$exchange", sub.Exchange);
-            cmd.Parameters.AddWithValue("$tf", sub.TimeFrame);
-            cmd.ExecuteNonQuery();
-        }
     }
 
     // ── Get backtest by ID ─────────────────────────────────────────────
@@ -146,9 +131,7 @@ public sealed class SqliteRunRepository : IRunRepository
         if (!reader.Read())
             return null;
 
-        var record = ReadBacktestRun(reader);
-        var subs = LoadBacktestSubscriptions(conn, id);
-        return record with { DataSubscriptions = subs };
+        return ReadBacktestRun(reader);
     }
 
     // ── Query backtests ────────────────────────────────────────────────
@@ -158,13 +141,8 @@ public sealed class SqliteRunRepository : IRunRepository
         await EnsureInitializedAsync();
         using var conn = CreateConnection();
 
-        var sb = new StringBuilder("SELECT DISTINCT br.* FROM backtest_runs br");
+        var sb = new StringBuilder("SELECT * FROM backtest_runs br");
         var parameters = new List<SqliteParameter>();
-        var needsJoin = query.AssetName is not null || query.Exchange is not null || query.TimeFrame is not null;
-
-        if (needsJoin)
-            sb.Append(" INNER JOIN backtest_data_subscriptions bds ON bds.backtest_run_id = br.id");
-
         var conditions = new List<string>();
 
         if (query.StrategyName is not null)
@@ -174,17 +152,17 @@ public sealed class SqliteRunRepository : IRunRepository
         }
         if (query.AssetName is not null)
         {
-            conditions.Add("bds.asset_name = $asset");
+            conditions.Add("br.asset_name = $asset");
             parameters.Add(new SqliteParameter("$asset", query.AssetName));
         }
         if (query.Exchange is not null)
         {
-            conditions.Add("bds.exchange = $exchange");
+            conditions.Add("br.exchange = $exchange");
             parameters.Add(new SqliteParameter("$exchange", query.Exchange));
         }
         if (query.TimeFrame is not null)
         {
-            conditions.Add("bds.timeframe = $tf");
+            conditions.Add("br.timeframe = $tf");
             parameters.Add(new SqliteParameter("$tf", query.TimeFrame));
         }
         if (query.StandaloneOnly == true)
@@ -219,13 +197,6 @@ public sealed class SqliteRunRepository : IRunRepository
         while (reader.Read())
             results.Add(ReadBacktestRun(reader));
 
-        // Load subscriptions for each result
-        for (var i = 0; i < results.Count; i++)
-        {
-            var subs = LoadBacktestSubscriptions(conn, results[i].Id);
-            results[i] = results[i] with { DataSubscriptions = subs };
-        }
-
         return results;
     }
 
@@ -246,12 +217,14 @@ public sealed class SqliteRunRepository : IRunRepository
                     id, strategy_name, strategy_version,
                     started_at, completed_at, duration_ms, total_combinations,
                     sort_by, data_start, data_end,
-                    initial_cash, commission, slippage_ticks, max_parallelism
+                    initial_cash, commission, slippage_ticks, max_parallelism,
+                    asset_name, exchange, timeframe
                 ) VALUES (
                     $id, $stratName, $stratVer,
                     $startedAt, $completedAt, $durationMs, $totalCombinations,
                     $sortBy, $dataStart, $dataEnd,
-                    $cash, $commission, $slippage, $maxParallelism
+                    $cash, $commission, $slippage, $maxParallelism,
+                    $asset, $exchange, $tf
                 )
                 """;
 
@@ -269,23 +242,10 @@ public sealed class SqliteRunRepository : IRunRepository
             cmd.Parameters.AddWithValue("$commission", record.Commission.ToString(CultureInfo.InvariantCulture));
             cmd.Parameters.AddWithValue("$slippage", record.SlippageTicks);
             cmd.Parameters.AddWithValue("$maxParallelism", record.MaxParallelism);
+            cmd.Parameters.AddWithValue("$asset", record.AssetName);
+            cmd.Parameters.AddWithValue("$exchange", record.Exchange);
+            cmd.Parameters.AddWithValue("$tf", record.TimeFrame);
 
-            cmd.ExecuteNonQuery();
-        }
-
-        // Insert optimization data subscriptions
-        foreach (var sub in record.DataSubscriptions)
-        {
-            using var cmd = conn.CreateCommand();
-            cmd.Transaction = tx;
-            cmd.CommandText = """
-                INSERT INTO optimization_data_subscriptions (optimization_run_id, asset_name, exchange, timeframe)
-                VALUES ($optId, $asset, $exchange, $tf)
-                """;
-            cmd.Parameters.AddWithValue("$optId", record.Id.ToString());
-            cmd.Parameters.AddWithValue("$asset", sub.AssetName);
-            cmd.Parameters.AddWithValue("$exchange", sub.Exchange);
-            cmd.Parameters.AddWithValue("$tf", sub.TimeFrame);
             cmd.ExecuteNonQuery();
         }
 
@@ -293,7 +253,6 @@ public sealed class SqliteRunRepository : IRunRepository
         foreach (var trial in record.Trials)
         {
             InsertBacktestRun(conn, tx, trial);
-            InsertBacktestDataSubscriptions(conn, tx, trial.Id, trial.DataSubscriptions);
         }
 
         tx.Commit();
@@ -316,9 +275,6 @@ public sealed class SqliteRunRepository : IRunRepository
 
         var record = ReadOptimizationRun(reader);
 
-        // Load optimization data subscriptions
-        var optSubs = LoadOptimizationSubscriptions(conn, id);
-
         // Load child trials
         var trials = new List<BacktestRunRecord>();
         using (var trialCmd = conn.CreateCommand())
@@ -331,14 +287,7 @@ public sealed class SqliteRunRepository : IRunRepository
                 trials.Add(ReadBacktestRun(trialReader));
         }
 
-        // Load subscriptions for each trial
-        for (var i = 0; i < trials.Count; i++)
-        {
-            var subs = LoadBacktestSubscriptions(conn, trials[i].Id);
-            trials[i] = trials[i] with { DataSubscriptions = subs };
-        }
-
-        return record with { DataSubscriptions = optSubs, Trials = trials };
+        return record with { Trials = trials };
     }
 
     // ── Query optimizations ────────────────────────────────────────────
@@ -349,13 +298,8 @@ public sealed class SqliteRunRepository : IRunRepository
         await EnsureInitializedAsync();
         using var conn = CreateConnection();
 
-        var sb = new StringBuilder("SELECT DISTINCT opr.* FROM optimization_runs opr");
+        var sb = new StringBuilder("SELECT * FROM optimization_runs opr");
         var parameters = new List<SqliteParameter>();
-        var needsJoin = query.AssetName is not null || query.Exchange is not null || query.TimeFrame is not null;
-
-        if (needsJoin)
-            sb.Append(" INNER JOIN optimization_data_subscriptions ods ON ods.optimization_run_id = opr.id");
-
         var conditions = new List<string>();
 
         if (query.StrategyName is not null)
@@ -365,17 +309,17 @@ public sealed class SqliteRunRepository : IRunRepository
         }
         if (query.AssetName is not null)
         {
-            conditions.Add("ods.asset_name = $asset");
+            conditions.Add("opr.asset_name = $asset");
             parameters.Add(new SqliteParameter("$asset", query.AssetName));
         }
         if (query.Exchange is not null)
         {
-            conditions.Add("ods.exchange = $exchange");
+            conditions.Add("opr.exchange = $exchange");
             parameters.Add(new SqliteParameter("$exchange", query.Exchange));
         }
         if (query.TimeFrame is not null)
         {
-            conditions.Add("ods.timeframe = $tf");
+            conditions.Add("opr.timeframe = $tf");
             parameters.Add(new SqliteParameter("$tf", query.TimeFrame));
         }
         if (query.From is not null)
@@ -405,13 +349,6 @@ public sealed class SqliteRunRepository : IRunRepository
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
             results.Add(ReadOptimizationRun(reader));
-
-        // Load subscriptions and trials for each result
-        for (var i = 0; i < results.Count; i++)
-        {
-            var optSubs = LoadOptimizationSubscriptions(conn, results[i].Id);
-            results[i] = results[i] with { DataSubscriptions = optSubs, Trials = [] };
-        }
 
         return results;
     }
@@ -453,7 +390,9 @@ public sealed class SqliteRunRepository : IRunRepository
             StrategyName = reader.GetString(reader.GetOrdinal("strategy_name")),
             StrategyVersion = reader.GetString(reader.GetOrdinal("strategy_version")),
             Parameters = DeserializeParameters(reader.GetString(reader.GetOrdinal("parameters_json"))),
-            DataSubscriptions = [], // loaded separately
+            AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
+            Exchange = reader.GetString(reader.GetOrdinal("exchange")),
+            TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
             InitialCash = decimal.Parse(reader.GetString(reader.GetOrdinal("initial_cash")), CultureInfo.InvariantCulture),
             Commission = decimal.Parse(reader.GetString(reader.GetOrdinal("commission")), CultureInfo.InvariantCulture),
             SlippageTicks = reader.GetInt32(reader.GetOrdinal("slippage_ticks")),
@@ -490,37 +429,11 @@ public sealed class SqliteRunRepository : IRunRepository
         Commission = decimal.Parse(reader.GetString(reader.GetOrdinal("commission")), CultureInfo.InvariantCulture),
         SlippageTicks = reader.GetInt32(reader.GetOrdinal("slippage_ticks")),
         MaxParallelism = reader.GetInt32(reader.GetOrdinal("max_parallelism")),
-        DataSubscriptions = [], // loaded separately
+        AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
+        Exchange = reader.GetString(reader.GetOrdinal("exchange")),
+        TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
         Trials = [], // loaded separately
     };
-
-    private static IReadOnlyList<DataSubscriptionRecord> LoadBacktestSubscriptions(SqliteConnection conn, Guid backtestRunId)
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT asset_name, exchange, timeframe FROM backtest_data_subscriptions WHERE backtest_run_id = $id";
-        cmd.Parameters.AddWithValue("$id", backtestRunId.ToString());
-
-        var subs = new List<DataSubscriptionRecord>();
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
-            subs.Add(new DataSubscriptionRecord(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
-
-        return subs;
-    }
-
-    private static IReadOnlyList<DataSubscriptionRecord> LoadOptimizationSubscriptions(SqliteConnection conn, Guid optimizationRunId)
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT asset_name, exchange, timeframe FROM optimization_data_subscriptions WHERE optimization_run_id = $id";
-        cmd.Parameters.AddWithValue("$id", optimizationRunId.ToString());
-
-        var subs = new List<DataSubscriptionRecord>();
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
-            subs.Add(new DataSubscriptionRecord(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
-
-        return subs;
-    }
 
     private static string SerializeEquityCurve(IReadOnlyList<EquityPoint> curve)
     {

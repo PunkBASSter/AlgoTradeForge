@@ -8,7 +8,9 @@ public sealed record BacktestRunRecord
     public required string StrategyName { get; init; }
     public required string StrategyVersion { get; init; }
     public required IReadOnlyDictionary<string, object> Parameters { get; init; }
-    public required IReadOnlyList<DataSubscriptionRecord> DataSubscriptions { get; init; }
+    public required string AssetName { get; init; }
+    public required string Exchange { get; init; }
+    public required string TimeFrame { get; init; }
     public required decimal InitialCash { get; init; }
     public required decimal Commission { get; init; }
     public required int SlippageTicks { get; init; }
@@ -26,5 +28,3 @@ public sealed record BacktestRunRecord
 }
 
 public sealed record EquityPoint(long TimestampMs, decimal Value);
-
-public sealed record DataSubscriptionRecord(string AssetName, string Exchange, string TimeFrame);

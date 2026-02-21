@@ -16,6 +16,8 @@ public sealed record OptimizationRunRecord
     public required decimal Commission { get; init; }
     public required int SlippageTicks { get; init; }
     public required int MaxParallelism { get; init; }
-    public required IReadOnlyList<DataSubscriptionRecord> DataSubscriptions { get; init; }
+    public required string AssetName { get; init; }
+    public required string Exchange { get; init; }
+    public required string TimeFrame { get; init; }
     public required IReadOnlyList<BacktestRunRecord> Trials { get; init; }
 }
