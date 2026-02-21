@@ -98,6 +98,8 @@ public sealed class GatingDebugProbe : IDebugProbe, IDisposable
         CancellationTokenRegistration registration;
         lock (_lock)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
             if (!_running)
                 return _lastSnapshot;
 
@@ -157,6 +159,14 @@ public sealed class GatingDebugProbe : IDebugProbe, IDisposable
         _readyTcs.TrySetResult(); // unblock SendCommandAsync if engine never started
         NotifyWaiters(default);   // complete any pending TCS
         _gate.Set();              // unblock engine thread if waiting
-        // Don't dispose _gate here — engine thread may still be unwinding
+        // Don't dispose _gate here — engine thread may still be unwinding.
+        // Call DisposeGate() after the engine task has completed.
     }
+
+    /// <summary>
+    /// Disposes the underlying <see cref="ManualResetEventSlim"/> kernel handle.
+    /// Must only be called after the engine task has completed (i.e. the engine thread
+    /// is no longer referencing <c>_gate</c>).
+    /// </summary>
+    public void DisposeGate() => _gate.Dispose();
 }

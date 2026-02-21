@@ -11,6 +11,7 @@ namespace AlgoTradeForge.Application.Events;
 public sealed class WebSocketSink : ISink, IAsyncDisposable, IDisposable
 {
     private readonly Channel<byte[]> _channel;
+    private readonly Lock _lock = new();
     private WebSocket? _webSocket;
     private Task? _sendLoop;
     private CancellationTokenSource? _sendCts;
@@ -26,7 +27,10 @@ public sealed class WebSocketSink : ISink, IAsyncDisposable, IDisposable
     }
 
     /// <summary>Whether a WebSocket client is currently connected and open.</summary>
-    public bool IsConnected => _webSocket?.State == WebSocketState.Open;
+    public bool IsConnected
+    {
+        get { lock (_lock) return _webSocket?.State == WebSocketState.Open; }
+    }
 
     /// <summary>
     /// Attaches a WebSocket connection and starts the background send loop.
@@ -35,12 +39,15 @@ public sealed class WebSocketSink : ISink, IAsyncDisposable, IDisposable
     /// <exception cref="InvalidOperationException">Thrown if a WebSocket is already attached.</exception>
     public void Attach(WebSocket webSocket, CancellationToken ct)
     {
-        if (_webSocket is not null)
-            throw new InvalidOperationException("A WebSocket is already attached to this sink.");
+        lock (_lock)
+        {
+            if (_webSocket is not null)
+                throw new InvalidOperationException("A WebSocket is already attached to this sink.");
 
-        _webSocket = webSocket;
-        _sendCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        _sendLoop = SendLoopAsync(_sendCts.Token);
+            _webSocket = webSocket;
+            _sendCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            _sendLoop = SendLoopAsync(_sendCts.Token);
+        }
     }
 
     /// <summary>
@@ -49,19 +56,31 @@ public sealed class WebSocketSink : ISink, IAsyncDisposable, IDisposable
     /// </summary>
     public async Task DetachAsync()
     {
-        if (_sendCts is not null)
+        CancellationTokenSource? cts;
+        Task? loop;
+        lock (_lock)
         {
-            await _sendCts.CancelAsync().ConfigureAwait(false);
-            if (_sendLoop is not null)
+            cts = _sendCts;
+            loop = _sendLoop;
+        }
+
+        if (cts is not null)
+        {
+            await cts.CancelAsync().ConfigureAwait(false);
+            if (loop is not null)
             {
-                try { await _sendLoop.ConfigureAwait(false); }
+                try { await loop.ConfigureAwait(false); }
                 catch (OperationCanceledException) { }
             }
-            _sendCts.Dispose();
-            _sendCts = null;
+            cts.Dispose();
         }
-        _sendLoop = null;
-        _webSocket = null;
+
+        lock (_lock)
+        {
+            _sendCts = null;
+            _sendLoop = null;
+            _webSocket = null;
+        }
     }
 
     /// <summary>
@@ -70,8 +89,11 @@ public sealed class WebSocketSink : ISink, IAsyncDisposable, IDisposable
     /// </summary>
     public void Write(ReadOnlyMemory<byte> utf8Json)
     {
-        if (_webSocket is null)
-            return;
+        lock (_lock)
+        {
+            if (_webSocket is null)
+                return;
+        }
 
         // Copy bytes — the memory buffer may be recycled by the caller.
         // The send loop checks WebSocket state before sending.
@@ -84,8 +106,11 @@ public sealed class WebSocketSink : ISink, IAsyncDisposable, IDisposable
     /// </summary>
     public void SendMessage(ReadOnlyMemory<byte> utf8Json)
     {
-        if (_webSocket is null)
-            return;
+        lock (_lock)
+        {
+            if (_webSocket is null)
+                return;
+        }
 
         _channel.Writer.TryWrite(utf8Json.ToArray());
     }
@@ -113,22 +138,34 @@ public sealed class WebSocketSink : ISink, IAsyncDisposable, IDisposable
     public async ValueTask DisposeAsync()
     {
         _channel.Writer.TryComplete();
-        if (_sendCts is not null)
+        CancellationTokenSource? cts;
+        Task? loop;
+        lock (_lock)
         {
-            await _sendCts.CancelAsync().ConfigureAwait(false);
-            if (_sendLoop is not null)
+            cts = _sendCts;
+            loop = _sendLoop;
+        }
+
+        if (cts is not null)
+        {
+            await cts.CancelAsync().ConfigureAwait(false);
+            if (loop is not null)
             {
-                try { await _sendLoop.ConfigureAwait(false); }
+                try { await loop.ConfigureAwait(false); }
                 catch (OperationCanceledException) { }
             }
-            _sendCts.Dispose();
+            cts.Dispose();
         }
     }
 
     public void Dispose()
     {
         _channel.Writer.TryComplete();
-        _sendCts?.Cancel();
-        _sendCts?.Dispose();
+        lock (_lock)
+        {
+            _sendCts?.Cancel();
+            // Do not dispose CTS here — send loop may still be running.
+            // Prefer DisposeAsync for proper cleanup.
+        }
     }
 }

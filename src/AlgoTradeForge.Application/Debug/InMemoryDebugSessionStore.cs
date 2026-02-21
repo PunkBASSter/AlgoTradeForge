@@ -7,6 +7,7 @@ public sealed class InMemoryDebugSessionStore : IDebugSessionStore
     public const int DefaultMaxSessions = 10;
 
     private readonly ConcurrentDictionary<Guid, DebugSession> _sessions = new();
+    private readonly Lock _createLock = new();
     private readonly int _maxSessions;
 
     public InMemoryDebugSessionStore(int maxSessions = DefaultMaxSessions)
@@ -16,16 +17,19 @@ public sealed class InMemoryDebugSessionStore : IDebugSessionStore
 
     public DebugSession Create(string assetName, string strategyName)
     {
-        if (_sessions.Count >= _maxSessions)
-            throw new InvalidOperationException($"Maximum number of concurrent debug sessions ({_maxSessions}) reached.");
-
-        var session = new DebugSession
+        lock (_createLock)
         {
-            AssetName = assetName,
-            StrategyName = strategyName
-        };
-        _sessions[session.Id] = session;
-        return session;
+            if (_sessions.Count >= _maxSessions)
+                throw new InvalidOperationException($"Maximum number of concurrent debug sessions ({_maxSessions}) reached.");
+
+            var session = new DebugSession
+            {
+                AssetName = assetName,
+                StrategyName = strategyName
+            };
+            _sessions[session.Id] = session;
+            return session;
+        }
     }
 
     public DebugSession? Get(Guid sessionId) =>

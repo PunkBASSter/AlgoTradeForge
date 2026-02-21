@@ -26,23 +26,23 @@
 
 ## Warning — Thread Safety & Concurrency (5)
 
-- [ ] **W1 — `ManualResetEventSlim` never disposed**
+- [x] **W1 — `ManualResetEventSlim` never disposed**
   - File: `src/AlgoTradeForge.Application/Debug/GatingDebugProbe.cs:148-158`
   - `_gate` kernel handle leaks. Add `DisposeGate()` called from `DebugSession.DisposeAsync()` after awaiting `RunTask`.
 
-- [ ] **W2 — Race between `Dispose()` and `SendCommandAsync()`**
+- [x] **W2 — Race between `Dispose()` and `SendCommandAsync()`**
   - File: `src/AlgoTradeForge.Application/Debug/GatingDebugProbe.cs`
   - Returns zeroed `DebugSnapshot` instead of throwing `ObjectDisposedException`.
 
-- [ ] **W3 — TOCTOU race on max session count**
+- [x] **W3 — TOCTOU race on max session count**
   - File: `src/AlgoTradeForge.Application/Debug/InMemoryDebugSessionStore.cs:19`
   - Two concurrent `Create()` calls can both pass the count check. Use a lock around check-and-add.
 
-- [ ] **W4 — `WebSocketSink` field access not synchronized**
+- [x] **W4 — `WebSocketSink` field access not synchronized**
   - File: `src/AlgoTradeForge.Application/Events/WebSocketSink.cs:36-44`
   - `Attach`/`Detach`/`Write` access `_webSocket` without lock or `volatile`.
 
-- [ ] **W5 — `JsonlFileSink.Write` not thread-safe**
+- [x] **W5 — `JsonlFileSink.Write` not thread-safe**
   - File: `src/AlgoTradeForge.Infrastructure/Events/JsonlFileSink.cs`
   - Interleaved `Write(data)` + `Write(newline)` could corrupt JSONL output if ever called concurrently.
 

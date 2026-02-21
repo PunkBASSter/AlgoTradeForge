@@ -19,6 +19,7 @@ public sealed class JsonlFileSink : IRunSink
 
     private readonly RunIdentity _identity;
     private readonly FileStream _stream;
+    private readonly Lock _writeLock = new();
     private bool _disposed;
 
     public string RunFolderPath { get; }
@@ -35,9 +36,12 @@ public sealed class JsonlFileSink : IRunSink
 
     public void Write(ReadOnlyMemory<byte> utf8Json)
     {
-        _stream.Write(utf8Json.Span);
-        _stream.Write(NewLine);
-        _stream.Flush();
+        lock (_writeLock)
+        {
+            _stream.Write(utf8Json.Span);
+            _stream.Write(NewLine);
+            _stream.Flush();
+        }
     }
 
     public void WriteMeta(RunSummary summary)

@@ -49,6 +49,8 @@ public sealed class DebugSession : IAsyncDisposable, IDisposable
             try { await RunTask.ConfigureAwait(false); }
             catch (OperationCanceledException) { }
             catch (Exception) { /* engine threw — already logged elsewhere */ }
+        // Engine task has completed — safe to release the kernel wait handle.
+        Probe.DisposeGate();
         if (WebSocketSink is not null)
             await WebSocketSink.DisposeAsync().ConfigureAwait(false);
         EventSink?.Dispose();
