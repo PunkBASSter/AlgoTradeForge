@@ -22,27 +22,38 @@ public sealed class StartDebugSessionCommandHandler(
 
         IRunSink? sink = null;
         RunIdentity? capturedIdentity = null;
-        var setup = await preparer.PrepareAsync(command, options =>
+        BacktestSetup setup;
+        try
         {
-            capturedIdentity = new RunIdentity
+            setup = await preparer.PrepareAsync(command, options =>
             {
-                StrategyName = command.StrategyName,
-                AssetName = command.AssetName,
-                StartTime = command.StartTime,
-                EndTime = command.EndTime,
-                InitialCash = options.InitialCash,
-                RunMode = ExportMode.Backtest,
-                RunTimestamp = session.CreatedAt,
-                StrategyParameters = command.StrategyParameters,
-            };
+                capturedIdentity = new RunIdentity
+                {
+                    StrategyName = command.StrategyName,
+                    AssetName = command.AssetName,
+                    StartTime = command.StartTime,
+                    EndTime = command.EndTime,
+                    InitialCash = options.InitialCash,
+                    RunMode = ExportMode.Backtest,
+                    RunTimestamp = session.CreatedAt,
+                    StrategyParameters = command.StrategyParameters,
+                };
 
-            sink = runSinkFactory.Create(capturedIdentity);
-            session.EventSink = sink;
-            var wsSink = new WebSocketSink();
-            session.WebSocketSink = wsSink;
-            session.EventBus = new EventBus(ExportMode.Backtest, [sink, wsSink], session.Probe);
-            return new EmittingIndicatorFactory(session.EventBus);
-        }, ct);
+                sink = runSinkFactory.Create(capturedIdentity);
+                session.EventSink = sink;
+                var wsSink = new WebSocketSink();
+                session.WebSocketSink = wsSink;
+                session.EventBus = new EventBus(ExportMode.Backtest, [sink, wsSink], session.Probe);
+                return new EmittingIndicatorFactory(session.EventBus);
+            }, ct);
+        }
+        catch
+        {
+            // Clean up the orphaned session so it doesn't consume a slot in the store
+            if (sessionStore.TryRemove(session.Id, out var orphaned))
+                await orphaned!.DisposeAsync();
+            throw;
+        }
 
         var runSink = sink ?? throw new InvalidOperationException("Indicator factory callback was not invoked.");
 

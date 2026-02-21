@@ -20,6 +20,11 @@ public sealed class OrderQueue
         return order;
     }
 
+    /// <summary>
+    /// Returns pending/triggered orders for the given asset.
+    /// <para><b>Warning:</b> Returns a shared internal buffer — the result is invalidated
+    /// by the next call to this method. Enumerate or copy before calling again.</para>
+    /// </summary>
     public IReadOnlyList<Order> GetPendingForAsset(Asset asset)
     {
         _pendingBuffer.Clear();

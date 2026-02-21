@@ -154,7 +154,8 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         catch (Exception ex)
         {
             if (busActive)
-                bus.Emit(new ErrorEvent(DateTimeOffset.UtcNow, Source, ex.Message, ex.StackTrace));
+                try { bus.Emit(new ErrorEvent(DateTimeOffset.UtcNow, Source, ex.Message, ex.StackTrace)); }
+                catch { /* Don't mask the original exception */ }
             throw;
         }
         finally

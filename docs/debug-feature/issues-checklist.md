@@ -150,15 +150,27 @@
 
 ## Info (12)
 
-- [ ] **I1** — `busActive` via `is not NullEventBus` is fragile if alternate no-op bus introduced (`BacktestEngine.cs`)
-- [ ] **I2** — If `bus.Emit()` throws in the error handler, original exception is lost (`BacktestEngine.cs:156`)
+- [x] **I1** — `busActive` via `is not NullEventBus` is fragile if alternate no-op bus introduced (`BacktestEngine.cs`)
+  - **Fix:** Added `bool IsNoop` default interface member to `IEventBus` (false), overridden to `true` in `NullEventBus`. Engine uses `!bus.IsNoop`.
+- [x] **I2** — If `bus.Emit()` throws in the error handler, original exception is lost (`BacktestEngine.cs:156`)
+  - **Fix:** Wrapped `bus.Emit(ErrorEvent)` in the catch block with `try/catch` to preserve the original exception.
 - [ ] **I3** — `Submit` returns `order.Id` which may be `0` (engine sentinel) if strategy doesn't pre-assign (`BacktestOrderContext.cs:34`)
-- [ ] **I4** — `GetPendingForAsset` returns shared mutable `_pendingBuffer` — second call invalidates first (`OrderQueue.cs:23`)
+  - **Skipped:** By-design — engine assigns IDs after Submit. Would require API change.
+- [x] **I4** — `GetPendingForAsset` returns shared mutable `_pendingBuffer` — second call invalidates first (`OrderQueue.cs:23`)
+  - **Fix:** Added XML doc comment warning callers about the shared buffer invalidation contract.
 - [ ] **I5** — `PortfolioEquity` returned as raw `long` — inconsistent with scaled `BacktestResultDto` (`DebugSessionDto.cs`)
-- [ ] **I6** — `InternalsVisibleTo` targets `Domain.Tests` rather than `Application.Tests` (`Application.csproj:17`)
+  - **Skipped:** Design decision — needs broader DTO scaling convention alignment.
+- [x] **I6** — `InternalsVisibleTo` targets `Domain.Tests` rather than `Application.Tests` (`Application.csproj:17`)
+  - **Already fixed in C3.** Confirmed `Application.csproj:17` targets `AlgoTradeForge.Application.Tests`.
 - [ ] **I7** — Wall-clock `DateTimeOffset.UtcNow` used as event timestamp in backtests (`EmittingIndicatorDecorator.cs:36`)
-- [ ] **I8** — No cleanup of orphaned session if `PrepareAsync` throws after `Create()` (`StartDebugSessionCommandHandler.cs`)
+  - **Skipped:** Architectural decision — needs simulated-time clock abstraction.
+- [x] **I8** — No cleanup of orphaned session if `PrepareAsync` throws after `Create()` (`StartDebugSessionCommandHandler.cs`)
+  - **Fix:** Wrapped `PrepareAsync` in `try/catch` — on failure, removes session from store and disposes it.
 - [ ] **I9** — Non-standard timeframes (e.g., 90s) truncate to nearest unit `1m` (`TimeFrameFormatter.cs`)
-- [ ] **I10** — `++_sequence` not thread-safe; fine if single-threaded but needs documentation (`EventBus.cs:54`)
+  - **Skipped:** Edge case in formatter — needs design decision on display format.
+- [x] **I10** — `++_sequence` not thread-safe; fine if single-threaded but needs documentation (`EventBus.cs:54`)
+  - **Fix:** Added XML doc comment documenting the single-threaded invariant.
 - [ ] **I11** — `SignalEvent.Direction` is `string` — consider a strongly-typed enum (`SignalEvents.cs`)
-- [ ] **I12** — No `WebSocketOptions.KeepAliveInterval` configured — debug sessions paused >2min may drop (`Program.cs`)
+  - **Skipped:** Would require enum design + migration across strategy API surface.
+- [x] **I12** — No `WebSocketOptions.KeepAliveInterval` configured — debug sessions paused >2min may drop (`Program.cs`)
+  - **Fix:** Added `KeepAliveInterval = TimeSpan.FromSeconds(30)` to `UseWebSockets` options.

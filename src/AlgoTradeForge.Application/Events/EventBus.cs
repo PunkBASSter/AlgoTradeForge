@@ -14,6 +14,7 @@ public sealed class EventBus : IEventBus
     private readonly IDebugProbe? _probe;
     private readonly JsonSerializerOptions _payloadOptions;
     private readonly ArrayBufferWriter<byte> _buffer = new();
+    /// <summary>Monotonic event counter. Not thread-safe — safe because the engine loop is single-threaded.</summary>
     private long _sequence;
     private bool _mutationsEnabled;
 
