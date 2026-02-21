@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
@@ -10,6 +11,7 @@ using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
+using static AlgoTradeForge.Domain.Reporting.MetricNames;
 
 namespace AlgoTradeForge.Application.Optimization;
 
@@ -21,7 +23,8 @@ public sealed class RunOptimizationCommandHandler(
     IMetricsCalculator metricsCalculator,
     IOptimizationSpaceProvider spaceProvider,
     OptimizationAxisResolver axisResolver,
-    ICartesianProductGenerator cartesianGenerator) : ICommandHandler<RunOptimizationCommand, OptimizationResultDto>
+    ICartesianProductGenerator cartesianGenerator,
+    IRunRepository runRepository) : ICommandHandler<RunOptimizationCommand, OptimizationResultDto>
 {
     public async Task<OptimizationResultDto> HandleAsync(RunOptimizationCommand command, CancellationToken ct = default)
     {
@@ -85,9 +88,14 @@ public sealed class RunOptimizationCommandHandler(
             throw new ArgumentException(
                 $"Estimated {estimatedCount} combinations exceeds maximum of {command.MaxCombinations}.");
 
+        var startedAt = DateTimeOffset.UtcNow;
+        var optimizationRunId = Guid.NewGuid();
         var stopwatch = Stopwatch.StartNew();
-        var results = new ConcurrentBag<OptimizationTrialResultDto>();
+        var results = new ConcurrentBag<(OptimizationTrialResultDto Dto, BacktestRunRecord Record)>();
         var combinations = cartesianGenerator.Enumerate(activeAxes);
+
+        // Capture strategy version from first trial
+        string? strategyVersion = null;
 
         var parallelOptions = new ParallelOptions
         {
@@ -102,6 +110,9 @@ public sealed class RunOptimizationCommandHandler(
             var trialWatch = Stopwatch.StartNew();
 
             var strategy = strategyFactory.Create(command.StrategyName, combination);
+
+            // Capture strategy version from the first trial
+            Interlocked.CompareExchange(ref strategyVersion, strategy.Version, null);
 
             // Determine which data subscriptions to use for this trial
             if (combination.Values.TryGetValue("DataSubscriptions", out var subObj) &&
@@ -143,8 +154,11 @@ public sealed class RunOptimizationCommandHandler(
             };
 
             var result = engine.Run(seriesArray, strategy, backOptions, token);
+
+            // Extract raw long values for metrics calculation (Domain-scale)
+            var equityValues = result.EquityCurve.Select(e => e.Value).ToList();
             var metrics = metricsCalculator.Calculate(
-                result.Fills, result.EquityCurve, backOptions.InitialCash,
+                result.Fills, equityValues, backOptions.InitialCash,
                 command.StartTime, command.EndTime);
 
             // Scale absolute dollar values back to real units
@@ -161,19 +175,86 @@ public sealed class RunOptimizationCommandHandler(
             };
 
             trialWatch.Stop();
-            results.Add(new OptimizationTrialResultDto
+
+            var dto = new OptimizationTrialResultDto
             {
                 Parameters = combination.Values,
                 Metrics = scaledMetrics,
                 Duration = trialWatch.Elapsed
-            });
+            };
+
+            // Build equity curve with timestamps, scaling values to real-money decimals
+            var equityCurve = new EquityPoint[result.EquityCurve.Count];
+            for (var i = 0; i < result.EquityCurve.Count; i++)
+                equityCurve[i] = new EquityPoint(result.EquityCurve[i].TimestampMs, result.EquityCurve[i].Value / trialScaleFactor);
+
+            // Extract primary subscription for this trial
+            var trialPrimarySub = strategy.DataSubscriptions[0];
+
+            var trialRecord = new BacktestRunRecord
+            {
+                Id = Guid.NewGuid(),
+                StrategyName = command.StrategyName,
+                StrategyVersion = strategy.Version,
+                Parameters = combination.Values,
+                AssetName = trialPrimarySub.Asset.Name,
+                Exchange = trialPrimarySub.Asset.Exchange,
+                TimeFrame = TimeFrameFormatter.Format(trialPrimarySub.TimeFrame),
+                InitialCash = command.InitialCash,
+                Commission = command.CommissionPerTrade,
+                SlippageTicks = checked((int)command.SlippageTicks),
+                StartedAt = startedAt,
+                CompletedAt = DateTimeOffset.UtcNow,
+                DataStart = command.StartTime,
+                DataEnd = command.EndTime,
+                DurationMs = (long)trialWatch.Elapsed.TotalMilliseconds,
+                TotalBars = result.TotalBarsProcessed,
+                Metrics = scaledMetrics,
+                EquityCurve = equityCurve,
+                RunFolderPath = null, // Optimization trials don't emit events
+                RunMode = "Backtest",
+                OptimizationRunId = optimizationRunId,
+            };
+
+            results.Add((dto, trialRecord));
 
             return ValueTask.CompletedTask;
         });
 
         stopwatch.Stop();
 
-        var sortedTrials = SortTrials(results, command.SortBy);
+        var sortedTrials = SortTrials(results.Select(r => r.Dto), command.SortBy);
+
+        // Extract primary subscription from command
+        var optPrimarySub = dataSubs[0];
+
+        var maxParallelism = command.MaxDegreeOfParallelism > 0
+            ? command.MaxDegreeOfParallelism
+            : Environment.ProcessorCount;
+
+        var optimizationRecord = new OptimizationRunRecord
+        {
+            Id = optimizationRunId,
+            StrategyName = command.StrategyName,
+            StrategyVersion = strategyVersion ?? "0",
+            StartedAt = startedAt,
+            CompletedAt = DateTimeOffset.UtcNow,
+            DurationMs = (long)stopwatch.Elapsed.TotalMilliseconds,
+            TotalCombinations = estimatedCount,
+            SortBy = command.SortBy,
+            DataStart = command.StartTime,
+            DataEnd = command.EndTime,
+            InitialCash = command.InitialCash,
+            Commission = command.CommissionPerTrade,
+            SlippageTicks = checked((int)command.SlippageTicks),
+            MaxParallelism = maxParallelism,
+            AssetName = optPrimarySub.Asset,
+            Exchange = optPrimarySub.Exchange,
+            TimeFrame = optPrimarySub.TimeFrame,
+            Trials = results.Select(r => r.Record).ToList(),
+        };
+
+        await runRepository.SaveOptimizationAsync(optimizationRecord, ct);
 
         return new OptimizationResultDto
         {
@@ -189,12 +270,12 @@ public sealed class RunOptimizationCommandHandler(
     {
         return sortBy switch
         {
-            "SharpeRatio" => trials.OrderByDescending(t => t.Metrics.SharpeRatio).ToList(),
-            "NetProfit" => trials.OrderByDescending(t => t.Metrics.NetProfit).ToList(),
-            "SortinoRatio" => trials.OrderByDescending(t => t.Metrics.SortinoRatio).ToList(),
-            "ProfitFactor" => trials.OrderByDescending(t => t.Metrics.ProfitFactor).ToList(),
-            "WinRatePct" => trials.OrderByDescending(t => t.Metrics.WinRatePct).ToList(),
-            "MaxDrawdownPct" => trials.OrderBy(t => t.Metrics.MaxDrawdownPct).ToList(),
+            SharpeRatio => trials.OrderByDescending(t => t.Metrics.SharpeRatio).ToList(),
+            NetProfit => trials.OrderByDescending(t => t.Metrics.NetProfit).ToList(),
+            SortinoRatio => trials.OrderByDescending(t => t.Metrics.SortinoRatio).ToList(),
+            ProfitFactor => trials.OrderByDescending(t => t.Metrics.ProfitFactor).ToList(),
+            WinRatePct => trials.OrderByDescending(t => t.Metrics.WinRatePct).ToList(),
+            MaxDrawdownPct => trials.OrderBy(t => t.Metrics.MaxDrawdownPct).ToList(),
             _ => trials.OrderByDescending(t => t.Metrics.SharpeRatio).ToList()
         };
     }

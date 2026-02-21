@@ -1,6 +1,7 @@
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
+using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Reporting;
@@ -34,6 +35,10 @@ builder.Services.AddSingleton<BacktestEngine>();
 // Register Application services
 builder.Services.AddApplication();
 
+// Register run persistence config
+builder.Services.Configure<RunStorageOptions>(
+    builder.Configuration.GetSection("RunStorage"));
+
 // Register Infrastructure services
 builder.Services.Configure<CandleStorageOptions>(
     builder.Configuration.GetSection("CandleStorage"));
@@ -64,6 +69,7 @@ app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSecond
 // Map endpoints
 app.MapBacktestEndpoints();
 app.MapOptimizationEndpoints();
+app.MapStrategyEndpoints();
 app.MapDebugEndpoints();
 app.MapDebugWebSocket();
 

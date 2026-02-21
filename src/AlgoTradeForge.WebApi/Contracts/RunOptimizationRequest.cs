@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AlgoTradeForge.Application.Optimization;
+using AlgoTradeForge.Domain.Reporting;
 
 namespace AlgoTradeForge.WebApi.Contracts;
 
@@ -19,7 +20,7 @@ public sealed record RunOptimizationRequest
     public long SlippageTicks { get; init; }
     public int MaxDegreeOfParallelism { get; init; } = -1;
     public long MaxCombinations { get; init; } = 100_000;
-    public string SortBy { get; init; } = "SharpeRatio";
+    public string SortBy { get; init; } = MetricNames.Default;
 }
 
 public sealed class OptimizationAxesConverter : JsonConverter<Dictionary<string, OptimizationAxisOverride>>

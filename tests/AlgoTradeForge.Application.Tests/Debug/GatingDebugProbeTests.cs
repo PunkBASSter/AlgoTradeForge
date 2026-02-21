@@ -395,6 +395,7 @@ public class GatingDebugProbeTests
     private sealed class OrderOnBar2Strategy(DataSubscription subscription) : IInt64BarStrategy
     {
         private bool _submitted;
+        public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
@@ -497,6 +498,7 @@ public class GatingDebugProbeTests
         DataSubscription subscription,
         Action<Int64Bar, DataSubscription, IOrderContext>? onBarComplete = null) : IInt64BarStrategy
     {
+        public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
@@ -514,6 +516,7 @@ public class GatingDebugProbeTests
         private IEventBus _bus = NullEventBus.Instance;
         private int _barIndex;
 
+        public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }

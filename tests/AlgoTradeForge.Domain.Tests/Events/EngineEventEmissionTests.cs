@@ -544,6 +544,7 @@ public class EngineEventEmissionTests
 
     private sealed class ActionStrategy(DataSubscription subscription) : IInt64BarStrategy
     {
+        public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
 
         public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarStartAction { get; init; }
@@ -564,6 +565,7 @@ public class EngineEventEmissionTests
 
     private sealed class SignalEmittingTestStrategy(SignalTestParams p) : StrategyBase<SignalTestParams>(p)
     {
+        public override string Version => "1.0.0";
         public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
         {
             EmitSignal(bar.Timestamp, "CrossUp", subscription.Asset.Name, "Long", 0.9m, "Test reason");

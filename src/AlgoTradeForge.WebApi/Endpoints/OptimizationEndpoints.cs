@@ -1,5 +1,6 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
+using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.WebApi.Contracts;
 
 namespace AlgoTradeForge.WebApi.Endpoints;
@@ -17,6 +18,19 @@ public static class OptimizationEndpoints
             .WithOpenApi()
             .Produces<OptimizationResultDto>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);
+
+        group.MapGet("/", ListOptimizations)
+            .WithName("ListOptimizations")
+            .WithSummary("List optimization runs with optional filters")
+            .WithOpenApi()
+            .Produces<PagedResponse<OptimizationRunResponse>>(StatusCodes.Status200OK);
+
+        group.MapGet("/{id:guid}", GetOptimization)
+            .WithName("GetOptimization")
+            .WithSummary("Get an optimization run with all trials")
+            .WithOpenApi()
+            .Produces<OptimizationRunResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> RunOptimization(
@@ -49,4 +63,95 @@ public static class OptimizationEndpoints
             return Results.BadRequest(new { error = ex.Message });
         }
     }
+
+    private static async Task<IResult> ListOptimizations(
+        ICommandHandler<ListOptimizationRunsQuery, PagedResult<OptimizationRunRecord>> handler,
+        string? strategyName,
+        string? assetName,
+        string? exchange,
+        string? timeFrame,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int limit = 50,
+        int offset = 0,
+        CancellationToken ct = default)
+    {
+        var filter = new OptimizationRunQuery
+        {
+            StrategyName = strategyName,
+            AssetName = assetName,
+            Exchange = exchange,
+            TimeFrame = timeFrame,
+            From = from,
+            To = to,
+            Limit = limit,
+            Offset = offset,
+        };
+        var query = new ListOptimizationRunsQuery(filter);
+
+        var paged = await handler.HandleAsync(query, ct);
+        var items = paged.Items.Select(MapToResponse).ToList();
+        var response = new PagedResponse<OptimizationRunResponse>(
+            items, paged.TotalCount, filter.Limit, filter.Offset,
+            filter.Offset + items.Count < paged.TotalCount);
+        return Results.Ok(response);
+    }
+
+    private static async Task<IResult> GetOptimization(
+        Guid id,
+        ICommandHandler<GetOptimizationByIdQuery, OptimizationRunRecord?> handler,
+        CancellationToken ct)
+    {
+        var record = await handler.HandleAsync(new GetOptimizationByIdQuery(id), ct);
+        if (record is null)
+            return Results.NotFound(new { error = $"Optimization with ID '{id}' not found." });
+
+        return Results.Ok(MapToResponse(record));
+    }
+
+    private static OptimizationRunResponse MapToResponse(OptimizationRunRecord r) => new()
+    {
+        Id = r.Id,
+        StrategyName = r.StrategyName,
+        StrategyVersion = r.StrategyVersion,
+        StartedAt = r.StartedAt,
+        CompletedAt = r.CompletedAt,
+        DurationMs = r.DurationMs,
+        TotalCombinations = r.TotalCombinations,
+        SortBy = r.SortBy,
+        DataStart = r.DataStart,
+        DataEnd = r.DataEnd,
+        InitialCash = r.InitialCash,
+        Commission = r.Commission,
+        SlippageTicks = r.SlippageTicks,
+        MaxParallelism = r.MaxParallelism,
+        AssetName = r.AssetName,
+        Exchange = r.Exchange,
+        TimeFrame = r.TimeFrame,
+        Trials = r.Trials.Select(MapTrialToResponse).ToList(),
+    };
+
+    private static BacktestRunResponse MapTrialToResponse(BacktestRunRecord r) => new()
+    {
+        Id = r.Id,
+        StrategyName = r.StrategyName,
+        StrategyVersion = r.StrategyVersion,
+        Parameters = new Dictionary<string, object>(r.Parameters),
+        AssetName = r.AssetName,
+        Exchange = r.Exchange,
+        TimeFrame = r.TimeFrame,
+        InitialCash = r.InitialCash,
+        Commission = r.Commission,
+        SlippageTicks = r.SlippageTicks,
+        StartedAt = r.StartedAt,
+        CompletedAt = r.CompletedAt,
+        DataStart = r.DataStart,
+        DataEnd = r.DataEnd,
+        DurationMs = r.DurationMs,
+        TotalBars = r.TotalBars,
+        Metrics = MetricsMapping.ToDict(r.Metrics),
+        HasCandleData = r.RunFolderPath is not null,
+        RunMode = r.RunMode,
+        OptimizationRunId = r.OptimizationRunId,
+    };
 }

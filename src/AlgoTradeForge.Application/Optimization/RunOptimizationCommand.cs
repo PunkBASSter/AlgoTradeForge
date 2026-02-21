@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Domain.Reporting;
 
 namespace AlgoTradeForge.Application.Optimization;
 
@@ -14,7 +15,7 @@ public sealed record RunOptimizationCommand : ICommand<OptimizationResultDto>
     public long SlippageTicks { get; init; }
     public int MaxDegreeOfParallelism { get; init; } = -1;
     public long MaxCombinations { get; init; } = 100_000;
-    public string SortBy { get; init; } = "SharpeRatio";
+    public string SortBy { get; init; } = MetricNames.Default;
 }
 
 public sealed record DataSubscriptionDto

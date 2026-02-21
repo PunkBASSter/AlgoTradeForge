@@ -275,6 +275,7 @@ public class DebugProbeTests
         DataSubscription subscription,
         Action<Int64Bar, DataSubscription, IOrderContext> onBarComplete) : IInt64BarStrategy
     {
+        public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
 
         public void OnInit() { }

@@ -293,6 +293,7 @@ public class BacktestEventOrderingTests
 
     private sealed class EventRecordingStrategy(DataSubscription subscription) : IInt64BarStrategy
     {
+        public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
         public List<string> Events { get; } = [];
 
