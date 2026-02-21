@@ -13,25 +13,25 @@ public static class DebugCommandParser
         using var doc = JsonDocument.Parse(utf8Json);
         var root = doc.RootElement;
 
-        if (!root.TryGetProperty("command", out var commandProp))
-            return (null, "Missing 'command' field.");
+        if (!root.TryGetProperty(DebugCommandNames.CommandField, out var commandProp))
+            return (null, $"Missing '{DebugCommandNames.CommandField}' field.");
 
         var commandStr = commandProp.GetString()?.ToLowerInvariant();
         return commandStr switch
         {
-            "continue" => (new DebugCommand.Continue(), null),
-            "next" => (new DebugCommand.Next(), null),
-            "next_bar" => (new DebugCommand.NextBar(), null),
-            "next_trade" => (new DebugCommand.NextTrade(), null),
-            "pause" => (new DebugCommand.Pause(), null),
-            "run_to_sequence" when root.TryGetProperty("sequenceNumber", out var sq)
+            DebugCommandNames.Continue => (new DebugCommand.Continue(), null),
+            DebugCommandNames.Next => (new DebugCommand.Next(), null),
+            DebugCommandNames.NextBar => (new DebugCommand.NextBar(), null),
+            DebugCommandNames.NextTrade => (new DebugCommand.NextTrade(), null),
+            DebugCommandNames.Pause => (new DebugCommand.Pause(), null),
+            DebugCommandNames.RunToSequence when root.TryGetProperty(DebugCommandNames.SequenceNumberField, out var sq)
                 => (new DebugCommand.RunToSequence(sq.GetInt64()), null),
-            "run_to_sequence"
-                => (null, "Command 'run_to_sequence' requires 'sequenceNumber' field."),
-            "run_to_timestamp" when root.TryGetProperty("timestampMs", out var ts)
+            DebugCommandNames.RunToSequence
+                => (null, $"Command '{DebugCommandNames.RunToSequence}' requires '{DebugCommandNames.SequenceNumberField}' field."),
+            DebugCommandNames.RunToTimestamp when root.TryGetProperty(DebugCommandNames.TimestampMsField, out var ts)
                 => (new DebugCommand.RunToTimestamp(ts.GetInt64()), null),
-            "run_to_timestamp"
-                => (null, "Command 'run_to_timestamp' requires 'timestampMs' field."),
+            DebugCommandNames.RunToTimestamp
+                => (null, $"Command '{DebugCommandNames.RunToTimestamp}' requires '{DebugCommandNames.TimestampMsField}' field."),
             _ => (null, $"Unknown command '{commandStr}'.")
         };
     }
