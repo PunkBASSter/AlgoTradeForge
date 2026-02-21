@@ -6,7 +6,7 @@ namespace AlgoTradeForge.Application.Tests.Debug;
 public class InMemoryDebugSessionStoreTests
 {
     [Fact]
-    public void Create_ReturnsSessionWithId()
+    public async Task Create_ReturnsSessionWithId()
     {
         var store = new InMemoryDebugSessionStore();
 
@@ -16,11 +16,11 @@ public class InMemoryDebugSessionStoreTests
         Assert.Equal("AAPL", session.AssetName);
         Assert.Equal("TestStrategy", session.StrategyName);
 
-        session.Dispose();
+        await session.DisposeAsync();
     }
 
     [Fact]
-    public void Get_ExistingSession_ReturnsIt()
+    public async Task Get_ExistingSession_ReturnsIt()
     {
         var store = new InMemoryDebugSessionStore();
         var session = store.Create("AAPL", "TestStrategy");
@@ -28,7 +28,7 @@ public class InMemoryDebugSessionStoreTests
         var retrieved = store.Get(session.Id);
 
         Assert.Same(session, retrieved);
-        session.Dispose();
+        await session.DisposeAsync();
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public class InMemoryDebugSessionStoreTests
     }
 
     [Fact]
-    public void TryRemove_ExistingSession_RemovesAndReturnsTrue()
+    public async Task TryRemove_ExistingSession_RemovesAndReturnsTrue()
     {
         var store = new InMemoryDebugSessionStore();
         var session = store.Create("AAPL", "TestStrategy");
@@ -49,7 +49,7 @@ public class InMemoryDebugSessionStoreTests
         Assert.Same(session, removed);
         Assert.Null(store.Get(session.Id));
 
-        session.Dispose();
+        await session.DisposeAsync();
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class InMemoryDebugSessionStoreTests
     }
 
     [Fact]
-    public void GetAll_ReturnsAllSessions()
+    public async Task GetAll_ReturnsAllSessions()
     {
         var store = new InMemoryDebugSessionStore();
         var s1 = store.Create("AAPL", "Strat1");
@@ -73,12 +73,12 @@ public class InMemoryDebugSessionStoreTests
         Assert.Contains(all, s => s.Id == s1.Id);
         Assert.Contains(all, s => s.Id == s2.Id);
 
-        s1.Dispose();
-        s2.Dispose();
+        await s1.DisposeAsync();
+        await s2.DisposeAsync();
     }
 
     [Fact]
-    public void Create_ExceedsMaxSessions_Throws()
+    public async Task Create_ExceedsMaxSessions_Throws()
     {
         var store = new InMemoryDebugSessionStore(maxSessions: 2);
         var s1 = store.Create("A", "S1");
@@ -87,12 +87,12 @@ public class InMemoryDebugSessionStoreTests
         var ex = Assert.Throws<InvalidOperationException>(() => store.Create("C", "S3"));
         Assert.Contains("Maximum", ex.Message);
 
-        s1.Dispose();
-        s2.Dispose();
+        await s1.DisposeAsync();
+        await s2.DisposeAsync();
     }
 
     [Fact]
-    public void Create_AfterRemoval_AllowsNewSession()
+    public async Task Create_AfterRemoval_AllowsNewSession()
     {
         var store = new InMemoryDebugSessionStore(maxSessions: 1);
         var s1 = store.Create("A", "S1");
@@ -100,10 +100,10 @@ public class InMemoryDebugSessionStoreTests
         Assert.Throws<InvalidOperationException>(() => store.Create("B", "S2"));
 
         store.TryRemove(s1.Id, out _);
-        s1.Dispose();
+        await s1.DisposeAsync();
 
         var s2 = store.Create("B", "S2");
         Assert.NotNull(store.Get(s2.Id));
-        s2.Dispose();
+        await s2.DisposeAsync();
     }
 }

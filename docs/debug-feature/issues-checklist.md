@@ -50,19 +50,19 @@
 
 ## Warning — Resource Management (4)
 
-- [ ] **W6 — `DebugSession` synchronous `Dispose()` leaks resources**
+- [x] **W6 — `DebugSession` synchronous `Dispose()` leaks resources**
   - File: `src/AlgoTradeForge.Application/Debug/DebugSession.cs:58-64`
   - `EventSink`, `WebSocketSink`, `Cts` not cleaned up in synchronous path. Consider removing `IDisposable` and only supporting `IAsyncDisposable`.
 
-- [ ] **W7 — No double-dispose guard in `DebugSession`**
+- [x] **W7 — No double-dispose guard in `DebugSession`**
   - File: `src/AlgoTradeForge.Application/Debug/DebugSession.cs`
   - `Cts.Dispose()` called twice throws `ObjectDisposedException`. Add a `_disposed` flag.
 
-- [ ] **W8 — `WebSocketSink` synchronous `Dispose()` disposes CTS while send loop runs**
+- [x] **W8 — `WebSocketSink` synchronous `Dispose()` disposes CTS while send loop runs**
   - File: `src/AlgoTradeForge.Application/Events/WebSocketSink.cs:128-133`
   - `_sendCts.Dispose()` called without waiting for `_sendLoop` to finish.
 
-- [ ] **W9 — Missing `Pooling=False` in `SqliteTradeDbWriterTests`**
+- [x] **W9 — Missing `Pooling=False` in `SqliteTradeDbWriterTests`**
   - File: `tests/AlgoTradeForge.Infrastructure.Tests/Events/SqliteTradeDbWriterTests.cs`
   - 6 SQLite connection strings (lines 88, 114, 149, 204, 226, 262) lack `Pooling=False`. Can cause flaky Windows CI failures.
 

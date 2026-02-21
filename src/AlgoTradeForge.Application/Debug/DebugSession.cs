@@ -6,9 +6,13 @@ namespace AlgoTradeForge.Application.Debug;
 
 /// <summary>
 /// Represents a single debug session. Owns the probe and tracks metadata.
+/// Dispose via <see cref="DisposeAsync"/> only — synchronous disposal is not supported
+/// because the engine task and WebSocket sink require async teardown.
 /// </summary>
-public sealed class DebugSession : IAsyncDisposable, IDisposable
+public sealed class DebugSession : IAsyncDisposable
 {
+    private int _disposed;
+
     public Guid Id { get; } = Guid.NewGuid();
     public GatingDebugProbe Probe { get; } = new();
     public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
@@ -43,6 +47,9 @@ public sealed class DebugSession : IAsyncDisposable, IDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
         Cts.Cancel();
         Probe.Dispose();
         if (RunTask is not null)
@@ -55,13 +62,5 @@ public sealed class DebugSession : IAsyncDisposable, IDisposable
             await WebSocketSink.DisposeAsync().ConfigureAwait(false);
         EventSink?.Dispose();
         Cts.Dispose();
-    }
-
-    public void Dispose()
-    {
-        Cts.Cancel();
-        Probe.Dispose();
-        // Don't dispose EventSink or CTS synchronously — engine thread may still
-        // be running (e.g. WriteMeta). Prefer DisposeAsync for proper cleanup.
     }
 }

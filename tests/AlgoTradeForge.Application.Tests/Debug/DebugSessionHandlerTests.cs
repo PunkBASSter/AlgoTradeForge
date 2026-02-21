@@ -85,10 +85,8 @@ public class DebugSessionHandlerTests
         var session = _sessionStore.Get(dto.SessionId);
         Assert.NotNull(session);
 
-        // Cleanup: dispose then observe the engine task to prevent unobserved exceptions
-        session.Dispose();
-        try { await session.RunTask!; }
-        catch (OperationCanceledException) { }
+        // Cleanup: DisposeAsync cancels, awaits RunTask, and releases all resources
+        await session.DisposeAsync();
     }
 
     [Fact]
@@ -142,7 +140,7 @@ public class DebugSessionHandlerTests
         Assert.NotNull(result);
         Assert.False(session.Probe.IsRunning);
 
-        session.Dispose();
+        await session.DisposeAsync();
     }
 
     [Fact]
@@ -195,6 +193,6 @@ public class DebugSessionHandlerTests
 
         Assert.False(result.SessionActive);
 
-        session.Dispose();
+        await session.DisposeAsync();
     }
 }

@@ -84,7 +84,7 @@ public class SqliteTradeDbWriterTests : IDisposable
 
         writer.WriteFromJsonl(_runFolder, identity, summary);
 
-        using var conn = new SqliteConnection($"Data Source={_tradeDbPath};Mode=ReadOnly");
+        using var conn = new SqliteConnection($"Data Source={_tradeDbPath};Mode=ReadOnly;Pooling=False");
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -111,7 +111,7 @@ public class SqliteTradeDbWriterTests : IDisposable
 
         writer.WriteFromJsonl(_runFolder, MakeIdentity(), MakeSummary());
 
-        using var conn = new SqliteConnection($"Data Source={_tradeDbPath};Mode=ReadOnly");
+        using var conn = new SqliteConnection($"Data Source={_tradeDbPath};Mode=ReadOnly;Pooling=False");
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -145,7 +145,7 @@ public class SqliteTradeDbWriterTests : IDisposable
 
         writer.WriteFromJsonl(_runFolder, MakeIdentity(), MakeSummary());
 
-        using var conn = new SqliteConnection($"Data Source={_tradeDbPath};Mode=ReadOnly");
+        using var conn = new SqliteConnection($"Data Source={_tradeDbPath};Mode=ReadOnly;Pooling=False");
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -201,7 +201,7 @@ public class SqliteTradeDbWriterTests : IDisposable
         await Task.WhenAll(t1, t2);
 
         // Verify both runs exist
-        using var conn = new SqliteConnection($"Data Source={_tradeDbPath};Mode=ReadOnly");
+        using var conn = new SqliteConnection($"Data Source={_tradeDbPath};Mode=ReadOnly;Pooling=False");
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -223,7 +223,7 @@ public class SqliteTradeDbWriterTests : IDisposable
         writer.WriteFromJsonl(_runFolder, identity, MakeSummary());
 
         // Verify 2 trades
-        using (var conn = new SqliteConnection($"Data Source={_tradeDbPath};Mode=ReadOnly"))
+        using (var conn = new SqliteConnection($"Data Source={_tradeDbPath};Mode=ReadOnly;Pooling=False"))
         {
             conn.Open();
             using var cmd = conn.CreateCommand();
@@ -239,7 +239,7 @@ public class SqliteTradeDbWriterTests : IDisposable
 
         writer.RebuildFromJsonl(_runFolder, identity, new RunSummary(500, 103_000L, 1, TimeSpan.FromSeconds(2)));
 
-        using (var conn = new SqliteConnection($"Data Source={_tradeDbPath};Mode=ReadOnly"))
+        using (var conn = new SqliteConnection($"Data Source={_tradeDbPath};Mode=ReadOnly;Pooling=False"))
         {
             conn.Open();
             using var cmd = conn.CreateCommand();
@@ -259,7 +259,7 @@ public class SqliteTradeDbWriterTests : IDisposable
 
         writer.WriteFromJsonl(_runFolder, MakeIdentity(), MakeSummary());
 
-        using var conn = new SqliteConnection($"Data Source={_tradeDbPath}");
+        using var conn = new SqliteConnection($"Data Source={_tradeDbPath};Pooling=False");
         conn.Open();
 
         using var cmd = conn.CreateCommand();
