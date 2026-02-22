@@ -15,9 +15,9 @@
 
 **Purpose**: Next.js project initialization, dependencies, and configuration
 
-- [ ] T001 Initialize Next.js 16 project with TypeScript strict mode, install dependencies (react, next, tailwindcss, @tailwindcss/postcss, @tanstack/react-query, zustand, lightweight-charts, codemirror, @codemirror/lang-json) in `frontend/`
-- [ ] T002 [P] Configure Tailwind CSS 4 dark theme with CSS-first `@theme` design tokens (bg-surface, bg-panel, text-primary, text-secondary, accent colors, chart palette) in `frontend/app/globals.css` (no `tailwind.config.ts` — Tailwind v4 uses `@import "tailwindcss"` + `@theme` blocks)
-- [ ] T003 [P] Configure Vitest with React Testing Library and path aliases in `frontend/vitest.config.ts`
+- [X] T001 Initialize Next.js 16 project with TypeScript strict mode, install dependencies (react, next, tailwindcss, @tailwindcss/postcss, @tanstack/react-query, zustand, lightweight-charts, codemirror, @codemirror/lang-json) in `frontend/`
+- [X] T002 [P] Configure Tailwind CSS 4 dark theme with CSS-first `@theme` design tokens (bg-surface, bg-panel, text-primary, text-secondary, accent colors, chart palette) in `frontend/app/globals.css` (no `tailwind.config.ts` — Tailwind v4 uses `@import "tailwindcss"` + `@theme` blocks)
+- [X] T003 [P] Configure Vitest with React Testing Library and path aliases in `frontend/vitest.config.ts`
 
 ---
 
@@ -29,36 +29,36 @@
 
 ### Types
 
-- [ ] T004 [P] Define API response and request types (BacktestRun, OptimizationRun, PagedResponse, EquityPoint, EventsData, CandleData, IndicatorSeries, TradeData, RunBacktestRequest, RunOptimizationRequest, StartDebugSessionRequest, DebugSession, DebugSessionStatus, DebugSnapshot, DebugCommand, ServerMessage) in `frontend/types/api.ts`
-- [ ] T005 [P] Define backtest event types (EventType union, BacktestEvent envelope, BarEventData, IndicatorEventData, SignalEventData, RiskEventData, OrderPlaceEventData, OrderFillEventData, OrderCancelEventData, OrderRejectEventData, PositionEventData, RunStartEventData, RunEndEventData, ErrorEventData, WarningEventData) in `frontend/lib/events/types.ts` with re-exports from `frontend/types/events.ts`
-- [ ] T006 [P] Define chart-specific data types (chart configuration, series options, marker types) in `frontend/types/chart.ts`
+- [X] T004 [P] Define API response and request types (BacktestRun, OptimizationRun, PagedResponse, EquityPoint, EventsData, CandleData, IndicatorSeries, TradeData, RunBacktestRequest, RunOptimizationRequest, StartDebugSessionRequest, DebugSession, DebugSessionStatus, DebugSnapshot, DebugCommand, ServerMessage) in `frontend/types/api.ts`
+- [X] T005 [P] Define backtest event types (EventType union, BacktestEvent envelope, BarEventData, IndicatorEventData, SignalEventData, RiskEventData, OrderPlaceEventData, OrderFillEventData, OrderCancelEventData, OrderRejectEventData, PositionEventData, RunStartEventData, RunEndEventData, ErrorEventData, WarningEventData) in `frontend/lib/events/types.ts` with re-exports from `frontend/types/events.ts`
+- [X] T006 [P] Define chart-specific data types (chart configuration, series options, marker types) in `frontend/types/chart.ts`
 
 ### Service Layer
 
-- [ ] T007 Implement fetch-based API client with all endpoint methods (strategies list, backtests CRUD + equity + events, optimizations CRUD, debug sessions CRUD) in `frontend/lib/services/api-client.ts`
-- [ ] T008 Create service layer index that exports active client based on NEXT_PUBLIC_MOCK_MODE env var in `frontend/lib/services/index.ts`
+- [X] T007 Implement fetch-based API client with all endpoint methods (strategies list, backtests CRUD + equity + events, optimizations CRUD, debug sessions CRUD) in `frontend/lib/services/api-client.ts`
+- [X] T008 Create service layer index that exports active client based on NEXT_PUBLIC_MOCK_MODE env var in `frontend/lib/services/index.ts`
 
 ### Utilities
 
-- [ ] T009 [P] Implement camelCase-to-Title-Case formatter, number/currency/percentage formatters, and duration formatter in `frontend/lib/utils/format.ts`, and structured logging utility (debug/info/warn/error levels with component context tag) in `frontend/lib/utils/logger.ts`
-- [ ] T010 [P] Implement TradingView chart helpers (create chart with dark theme defaults, add series, create markers, cleanup) in `frontend/lib/utils/chart-utils.ts`
-- [ ] T011 [P] Implement JSONL event parser with message discriminator (type field → snapshot/error/ack, _t field → backtest event) in `frontend/lib/events/parser.ts`
+- [X] T009 [P] Implement camelCase-to-Title-Case formatter, number/currency/percentage formatters, and duration formatter in `frontend/lib/utils/format.ts`, and structured logging utility (debug/info/warn/error levels with component context tag) in `frontend/lib/utils/logger.ts`
+- [X] T010 [P] Implement TradingView chart helpers (create chart with dark theme defaults, add series, create markers, cleanup) in `frontend/lib/utils/chart-utils.ts`
+- [X] T011 [P] Implement JSONL event parser with message discriminator (type field → snapshot/error/ack, _t field → backtest event) in `frontend/lib/events/parser.ts`
 
 ### UI Primitives
 
-- [ ] T012 [P] Create Button component (primary, secondary, ghost, danger variants; disabled state; loading spinner) in `frontend/components/ui/button.tsx`
-- [ ] T013 [P] Create data Table component with dynamic columns, row click handler, and horizontal scroll support in `frontend/components/ui/table.tsx`
-- [ ] T014 [P] Create Skeleton loader component (line, rect, chart variants) in `frontend/components/ui/skeleton.tsx`
-- [ ] T015 [P] Create Toast notification component and provider (success, error, info variants with auto-dismiss) in `frontend/components/ui/toast.tsx`
-- [ ] T016 [P] Create Tabs component (controlled, with tab panels) in `frontend/components/ui/tabs.tsx`
-- [ ] T017 [P] Create SlideOver panel component (right-side slide, overlay, close button, scroll body) in `frontend/components/ui/slide-over.tsx`
-- [ ] T018 [P] Create Pagination component with offset-based navigation using hasMore flag in `frontend/components/ui/pagination.tsx`
+- [X] T012 [P] Create Button component (primary, secondary, ghost, danger variants; disabled state; loading spinner) in `frontend/components/ui/button.tsx`
+- [X] T013 [P] Create data Table component with dynamic columns, row click handler, and horizontal scroll support in `frontend/components/ui/table.tsx`
+- [X] T014 [P] Create Skeleton loader component (line, rect, chart variants) in `frontend/components/ui/skeleton.tsx`
+- [X] T015 [P] Create Toast notification component and provider (success, error, info variants with auto-dismiss) in `frontend/components/ui/toast.tsx`
+- [X] T016 [P] Create Tabs component (controlled, with tab panels) in `frontend/components/ui/tabs.tsx`
+- [X] T017 [P] Create SlideOver panel component (right-side slide, overlay, close button, scroll body) in `frontend/components/ui/slide-over.tsx`
+- [X] T018 [P] Create Pagination component with offset-based navigation using hasMore flag in `frontend/components/ui/pagination.tsx`
 
 ### App Shell
 
-- [ ] T019 Create root layout with dark theme body, header (app name "AlgoTradeForge", nav links: Dashboard, Debug, Docs placeholder, Settings placeholder), footer (version), TanStack QueryClientProvider in `frontend/app/layout.tsx`
-- [ ] T020 [P] Create root page with redirect to /dashboard in `frontend/app/page.tsx`
-- [ ] T021 [P] Create ChartSkeleton placeholder component (pulsing rect matching chart dimensions) in `frontend/components/features/charts/chart-skeleton.tsx`
+- [X] T019 Create root layout with dark theme body, header (app name "AlgoTradeForge", nav links: Dashboard, Debug, Docs placeholder, Settings placeholder), footer (version), TanStack QueryClientProvider in `frontend/app/layout.tsx`
+- [X] T020 [P] Create root page with redirect to /dashboard in `frontend/app/page.tsx`
+- [X] T021 [P] Create ChartSkeleton placeholder component (pulsing rect matching chart dimensions) in `frontend/components/features/charts/chart-skeleton.tsx`
 
 **Checkpoint**: Foundation ready — user story implementation can now begin
 
@@ -72,15 +72,15 @@
 
 ### Implementation for User Story 1
 
-- [ ] T022 [P] [US1] Create Zustand debug session store (session state enum: idle/configuring/connecting/active/stopped, accumulated candles array, indicators map, trades array, latest snapshot, error message) in `frontend/lib/stores/debug-store.ts`
-- [ ] T023 [US1] Create useDebugWebSocket hook (WebSocket lifecycle tied to sessionId, JSONL message parsing via event parser, command sending methods, snapshot/error handling, Zustand store integration, cleanup on unmount, connection drop detection with error notification and session cleanup; in mock mode: accept injected event source that replays mock fixtures from T036 instead of opening a real WebSocket) in `frontend/hooks/use-debug-websocket.ts`
-- [ ] T024 [P] [US1] Create CandlestickChart client component with next/dynamic ssr:false wrapper, incremental update mode using ISeriesApi.update() for real-time bar additions, indicator line series with legend, order placement markers (from ord.place), trade fill markers (from ord.fill), position markers (from pos), requestAnimationFrame batching, chart.remove() cleanup in `frontend/components/features/charts/candlestick-chart.tsx` (TP/SL horizontal lines deferred to future iteration for debug mode)
-- [ ] T025 [P] [US1] Create SessionConfigEditor with CodeMirror 6 JSON editor (dark theme, syntax validation, pre-filled default StartDebugSessionRequest template) and "Start" submit button in `frontend/components/features/debug/session-config-editor.tsx`
-- [ ] T026 [P] [US1] Create DebugToolbar with buttons: Next (next), To Next Bar (next_bar), To Next Trade (next_trade), To Next Signal (next_signal), Run To Timestamp input+button (run_to_timestamp), Run To Sequence input+button (run_to_sequence), Play (continue), Pause (pause), Stop (DELETE session), Set Export toggle (set_export with mutations boolean) in `frontend/components/features/debug/debug-toolbar.tsx`
-- [ ] T027 [P] [US1] Create DebugMetrics panel displaying snapshot data (sessionActive, sequenceNumber, timestampMs formatted as datetime, portfolioEquity, fillsThisBar, subscriptionIndex) in `frontend/components/features/debug/debug-metrics.tsx`
-- [ ] T028 [US1] Create debug page with full session lifecycle: idle state shows SessionConfigEditor → on Start: POST /api/debug-sessions then open WebSocket → active state shows toolbar + candlestick chart + metrics panel → on Stop: close WebSocket + DELETE session → confirmation prompt on navigate-away during active session in `frontend/app/debug/page.tsx`
-- [ ] T029 [P] [US1] Create debug loading skeleton in `frontend/app/debug/loading.tsx`
-- [ ] T030 [P] [US1] Create debug error boundary with retry option in `frontend/app/debug/error.tsx`
+- [X] T022 [P] [US1] Create Zustand debug session store (session state enum: idle/configuring/connecting/active/stopped, accumulated candles array, indicators map, trades array, latest snapshot, error message) in `frontend/lib/stores/debug-store.ts`
+- [X] T023 [US1] Create useDebugWebSocket hook (WebSocket lifecycle tied to sessionId, JSONL message parsing via event parser, command sending methods, snapshot/error handling, Zustand store integration, cleanup on unmount, connection drop detection with error notification and session cleanup; in mock mode: accept injected event source that replays mock fixtures from T036 instead of opening a real WebSocket) in `frontend/hooks/use-debug-websocket.ts`
+- [X] T024 [P] [US1] Create CandlestickChart client component with next/dynamic ssr:false wrapper, incremental update mode using ISeriesApi.update() for real-time bar additions, indicator line series with legend, order placement markers (from ord.place), trade fill markers (from ord.fill), position markers (from pos), requestAnimationFrame batching, chart.remove() cleanup in `frontend/components/features/charts/candlestick-chart.tsx` (TP/SL horizontal lines deferred to future iteration for debug mode)
+- [X] T025 [P] [US1] Create SessionConfigEditor with CodeMirror 6 JSON editor (dark theme, syntax validation, pre-filled default StartDebugSessionRequest template) and "Start" submit button in `frontend/components/features/debug/session-config-editor.tsx`
+- [X] T026 [P] [US1] Create DebugToolbar with buttons: Next (next), To Next Bar (next_bar), To Next Trade (next_trade), To Next Signal (next_signal), Run To Timestamp input+button (run_to_timestamp), Run To Sequence input+button (run_to_sequence), Play (continue), Pause (pause), Stop (DELETE session), Set Export toggle (set_export with mutations boolean) in `frontend/components/features/debug/debug-toolbar.tsx`
+- [X] T027 [P] [US1] Create DebugMetrics panel displaying snapshot data (sessionActive, sequenceNumber, timestampMs formatted as datetime, portfolioEquity, fillsThisBar, subscriptionIndex) in `frontend/components/features/debug/debug-metrics.tsx`
+- [X] T028 [US1] Create debug page with full session lifecycle: idle state shows SessionConfigEditor → on Start: POST /api/debug-sessions then open WebSocket → active state shows toolbar + candlestick chart + metrics panel → on Stop: close WebSocket + DELETE session → confirmation prompt on navigate-away during active session in `frontend/app/debug/page.tsx`
+- [X] T029 [P] [US1] Create debug loading skeleton in `frontend/app/debug/loading.tsx`
+- [X] T030 [P] [US1] Create debug error boundary with retry option in `frontend/app/debug/error.tsx`
 
 **Checkpoint**: Debug screen (MVP) is fully functional — users can configure, start, step through, and stop debug sessions with real-time chart updates
 
@@ -94,13 +94,13 @@
 
 ### Implementation for User Story 5
 
-- [ ] T031 [P] [US5] Create mock strategies fixture (3-5 strategy names) in `frontend/lib/services/mock-data/strategies.json`
-- [ ] T032 [P] [US5] Create mock backtests fixture (paged response with 10+ runs, varied strategies/assets/metrics) in `frontend/lib/services/mock-data/backtests.json`
-- [ ] T033 [P] [US5] Create mock optimizations fixture (2-3 optimization runs with trials arrays) in `frontend/lib/services/mock-data/optimizations.json`
-- [ ] T034 [P] [US5] Create mock equity curve fixture (50+ timestampMs/value data points) in `frontend/lib/services/mock-data/equity.json`
-- [ ] T035 [P] [US5] Create mock events data fixture (candles, indicators with measure types, trades with TP/SL) in `frontend/lib/services/mock-data/events.json`
-- [ ] T036 [P] [US5] Create mock debug event replay sequence (30+ JSONL events including bar, ind, sig, ord.fill, pos events interleaved with snapshot messages) in `frontend/lib/services/mock-data/debug-events.jsonl`
-- [ ] T037 [US5] Implement mock client matching API client interface: fixture loading for all list/detail/equity/events endpoints, paging simulation, filter matching, simulated WebSocket replay with timed event emission from debug-events.jsonl, mock POST responses for run/session creation in `frontend/lib/services/mock-client.ts`
+- [X] T031 [P] [US5] Create mock strategies fixture (3-5 strategy names) in `frontend/lib/services/mock-data/strategies.json`
+- [X] T032 [P] [US5] Create mock backtests fixture (paged response with 10+ runs, varied strategies/assets/metrics) in `frontend/lib/services/mock-data/backtests.json`
+- [X] T033 [P] [US5] Create mock optimizations fixture (2-3 optimization runs with trials arrays) in `frontend/lib/services/mock-data/optimizations.json`
+- [X] T034 [P] [US5] Create mock equity curve fixture (50+ timestampMs/value data points) in `frontend/lib/services/mock-data/equity.json`
+- [X] T035 [P] [US5] Create mock events data fixture (candles, indicators with measure types, trades with TP/SL) in `frontend/lib/services/mock-data/events.json`
+- [X] T036 [P] [US5] Create mock debug event replay sequence (30+ JSONL events including bar, ind, sig, ord.fill, pos events interleaved with snapshot messages) in `frontend/lib/services/mock-data/debug-events.jsonl`
+- [X] T037 [US5] Implement mock client matching API client interface: fixture loading for all list/detail/equity/events endpoints, paging simulation, filter matching, simulated WebSocket replay with timed event emission from debug-events.jsonl, mock POST responses for run/session creation in `frontend/lib/services/mock-client.ts`
 
 **Checkpoint**: All screens functional with NEXT_PUBLIC_MOCK_MODE=true — no backend required for development
 
@@ -114,18 +114,18 @@
 
 ### Implementation for User Story 2
 
-- [ ] T038 [P] [US2] Create TanStack Query hooks for backtest detail, equity curve, and events data (useBacktestDetail, useBacktestEquity, useBacktestEvents) in `frontend/hooks/use-backtests.ts`
-- [ ] T039 [P] [US2] Create TanStack Query hook for optimization detail with trials (useOptimizationDetail) in `frontend/hooks/use-optimizations.ts`
-- [ ] T040 [US2] Create EquityChart client component with next/dynamic ssr:false wrapper, TradingView line series, crosshair tooltips, bulk setData() loading, fitContent() on load, chart.remove() cleanup in `frontend/components/features/charts/equity-chart.tsx`
-- [ ] T041 [P] [US2] Create MetricsPanel component (iterates metrics dictionary, formats camelCase keys to Title Case, formats numeric values with appropriate precision) in `frontend/components/features/report/metrics-panel.tsx`
-- [ ] T042 [P] [US2] Create ParamsPanel component (iterates parameters dictionary, displays key-value pairs with formatted labels) in `frontend/components/features/report/params-panel.tsx`
-- [ ] T043 [US2] Add bulk data loading mode to CandlestickChart (setData() for candles + indicators + trades + TP/SL horizontal price lines spanning each trade's duration, fitContent() after load, used by report screen vs incremental mode used by debug) in `frontend/components/features/charts/candlestick-chart.tsx`
-- [ ] T044 [US2] Create backtest report page: fetch backtest detail + equity + conditional events, render EquityChart, MetricsPanel, ParamsPanel, conditionally render CandlestickChart when hasCandleData is true in `frontend/app/report/backtest/[id]/page.tsx`
-- [ ] T045 [P] [US2] Create backtest report loading skeleton in `frontend/app/report/backtest/[id]/loading.tsx`
-- [ ] T046 [P] [US2] Create backtest report error boundary in `frontend/app/report/backtest/[id]/error.tsx`
-- [ ] T047 [P] [US2] Create OptimizationTrialsTable component (columns: trial parameters, key metrics; row click navigates to /report/backtest/[trialId]) in `frontend/components/features/report/optimization-trials-table.tsx`
-- [ ] T048 [US2] Create optimization report page: fetch optimization detail, render summary (totalCombinations, durationMs, sortBy), render OptimizationTrialsTable with trials array in `frontend/app/report/optimization/[id]/page.tsx`
-- [ ] T049 [P] [US2] Create optimization report loading skeleton and error boundary in `frontend/app/report/optimization/[id]/loading.tsx` and `frontend/app/report/optimization/[id]/error.tsx`
+- [X] T038 [P] [US2] Create TanStack Query hooks for backtest detail, equity curve, and events data (useBacktestDetail, useBacktestEquity, useBacktestEvents) in `frontend/hooks/use-backtests.ts`
+- [X] T039 [P] [US2] Create TanStack Query hook for optimization detail with trials (useOptimizationDetail) in `frontend/hooks/use-optimizations.ts`
+- [X] T040 [US2] Create EquityChart client component with next/dynamic ssr:false wrapper, TradingView line series, crosshair tooltips, bulk setData() loading, fitContent() on load, chart.remove() cleanup in `frontend/components/features/charts/equity-chart.tsx`
+- [X] T041 [P] [US2] Create MetricsPanel component (iterates metrics dictionary, formats camelCase keys to Title Case, formats numeric values with appropriate precision) in `frontend/components/features/report/metrics-panel.tsx`
+- [X] T042 [P] [US2] Create ParamsPanel component (iterates parameters dictionary, displays key-value pairs with formatted labels) in `frontend/components/features/report/params-panel.tsx`
+- [X] T043 [US2] Add bulk data loading mode to CandlestickChart (setData() for candles + indicators + trades + TP/SL horizontal price lines spanning each trade's duration, fitContent() after load, used by report screen vs incremental mode used by debug) in `frontend/components/features/charts/candlestick-chart.tsx`
+- [X] T044 [US2] Create backtest report page: fetch backtest detail + equity + conditional events, render EquityChart, MetricsPanel, ParamsPanel, conditionally render CandlestickChart when hasCandleData is true in `frontend/app/report/backtest/[id]/page.tsx`
+- [X] T045 [P] [US2] Create backtest report loading skeleton in `frontend/app/report/backtest/[id]/loading.tsx`
+- [X] T046 [P] [US2] Create backtest report error boundary in `frontend/app/report/backtest/[id]/error.tsx`
+- [X] T047 [P] [US2] Create OptimizationTrialsTable component (columns: trial parameters, key metrics; row click navigates to /report/backtest/[trialId]) in `frontend/components/features/report/optimization-trials-table.tsx`
+- [X] T048 [US2] Create optimization report page: fetch optimization detail, render summary (totalCombinations, durationMs, sortBy), render OptimizationTrialsTable with trials array in `frontend/app/report/optimization/[id]/page.tsx`
+- [X] T049 [P] [US2] Create optimization report loading skeleton and error boundary in `frontend/app/report/optimization/[id]/loading.tsx` and `frontend/app/report/optimization/[id]/error.tsx`
 
 **Checkpoint**: Both backtest and optimization report screens are fully functional with all chart components, metrics, and navigation
 
@@ -139,16 +139,16 @@
 
 ### Implementation for User Story 3
 
-- [ ] T050 [P] [US3] Create useStrategies TanStack Query hook in `frontend/hooks/use-strategies.ts`
-- [ ] T051 [P] [US3] Add useBacktestList TanStack Query hook (with strategyName, assetName, exchange, timeFrame, from, to, standaloneOnly, limit, offset query params) to `frontend/hooks/use-backtests.ts`
-- [ ] T052 [P] [US3] Add useOptimizationList TanStack Query hook (with strategyName, assetName, exchange, timeFrame, from, to, limit, offset query params) to `frontend/hooks/use-optimizations.ts`
-- [ ] T053 [P] [US3] Create StrategySelector sidebar component (fetches strategy list, renders clickable list items, highlights selected) in `frontend/components/features/dashboard/strategy-selector.tsx`
-- [ ] T054 [P] [US3] Create RunFilters component (inputs for assetName, exchange, timeFrame, date range from/to, applies filters as query params) in `frontend/components/features/dashboard/run-filters.tsx`
-- [ ] T055 [US3] Create RunsTable component (dynamic columns from metrics dictionary: StrategyVersion, RunId, Asset, Exchange, TF, Sortino, Sharpe, Profit Factor + additional metrics; row click navigates to /report/backtest/[id] or /report/optimization/[id]; empty state message) in `frontend/components/features/dashboard/runs-table.tsx`
-- [ ] T056 [US3] Create dashboard layout with sidebar containing StrategySelector in `frontend/app/dashboard/layout.tsx`
-- [ ] T057 [US3] Create dashboard page with mode Tabs (Backtest/Optimization), RunFilters, RunsTable, Pagination, integrated with TanStack Query hooks and strategy selection state in `frontend/app/dashboard/page.tsx`
-- [ ] T058 [P] [US3] Create dashboard loading skeleton in `frontend/app/dashboard/loading.tsx`
-- [ ] T059 [P] [US3] Create dashboard error boundary in `frontend/app/dashboard/error.tsx`
+- [X] T050 [P] [US3] Create useStrategies TanStack Query hook in `frontend/hooks/use-strategies.ts`
+- [X] T051 [P] [US3] Add useBacktestList TanStack Query hook (with strategyName, assetName, exchange, timeFrame, from, to, standaloneOnly, limit, offset query params) to `frontend/hooks/use-backtests.ts`
+- [X] T052 [P] [US3] Add useOptimizationList TanStack Query hook (with strategyName, assetName, exchange, timeFrame, from, to, limit, offset query params) to `frontend/hooks/use-optimizations.ts`
+- [X] T053 [P] [US3] Create StrategySelector sidebar component (fetches strategy list, renders clickable list items, highlights selected) in `frontend/components/features/dashboard/strategy-selector.tsx`
+- [X] T054 [P] [US3] Create RunFilters component (inputs for assetName, exchange, timeFrame, date range from/to, applies filters as query params) in `frontend/components/features/dashboard/run-filters.tsx`
+- [X] T055 [US3] Create RunsTable component (dynamic columns from metrics dictionary: StrategyVersion, RunId, Asset, Exchange, TF, Sortino, Sharpe, Profit Factor + additional metrics; row click navigates to /report/backtest/[id] or /report/optimization/[id]; empty state message) in `frontend/components/features/dashboard/runs-table.tsx`
+- [X] T056 [US3] Create dashboard layout with sidebar containing StrategySelector in `frontend/app/dashboard/layout.tsx`
+- [X] T057 [US3] Create dashboard page with mode Tabs (Backtest/Optimization), RunFilters, RunsTable, Pagination, integrated with TanStack Query hooks and strategy selection state in `frontend/app/dashboard/page.tsx`
+- [X] T058 [P] [US3] Create dashboard loading skeleton in `frontend/app/dashboard/loading.tsx`
+- [X] T059 [P] [US3] Create dashboard error boundary in `frontend/app/dashboard/error.tsx`
 
 **Checkpoint**: Dashboard is fully functional — users can browse, filter, page through, and navigate to any run's report
 
@@ -162,8 +162,8 @@
 
 ### Implementation for User Story 4
 
-- [ ] T060 [US4] Create RunNewPanel component: slide-over with CodeMirror JSON editor, mode-aware defaults (RunBacktestRequest template for Backtest tab, RunOptimizationRequest template for Optimization tab), JSON validation, "Run" submit button, loading state, success closes panel and triggers table refetch, error shows toast in `frontend/components/features/dashboard/run-new-panel.tsx`
-- [ ] T061 [US4] Integrate RunNewPanel into dashboard page: add "+ Run New" button, pass current mode tab, wire panel open/close state, trigger TanStack Query invalidation on successful submission in `frontend/app/dashboard/page.tsx`
+- [X] T060 [US4] Create RunNewPanel component: slide-over with CodeMirror JSON editor, mode-aware defaults (RunBacktestRequest template for Backtest tab, RunOptimizationRequest template for Optimization tab), JSON validation, "Run" submit button, loading state, success closes panel and triggers table refetch, error shows toast in `frontend/components/features/dashboard/run-new-panel.tsx`
+- [X] T061 [US4] Integrate RunNewPanel into dashboard page: add "+ Run New" button, pass current mode tab, wire panel open/close state, trigger TanStack Query invalidation on successful submission in `frontend/app/dashboard/page.tsx`
 
 **Checkpoint**: Users can launch new backtests and optimizations directly from the dashboard
 
@@ -173,10 +173,10 @@
 
 **Purpose**: Edge case handling, performance optimizations, and responsive design improvements
 
-- [ ] T062 Add navigation-away confirmation prompt for active debug sessions (beforeunload event + Next.js route change interception) in `frontend/app/debug/page.tsx`
-- [ ] T063 [P] Add responsive layout: collapsible sidebar to icons on screens <1280px, horizontal table scrolling, chart container resize handling in `frontend/app/dashboard/layout.tsx` and `frontend/components/ui/table.tsx`
-- [ ] T064 [P] Add event buffering with requestAnimationFrame batching for debug auto-play mode (batch rapid events to prevent layout thrashing) in `frontend/hooks/use-debug-websocket.ts`
-- [ ] T065 Run quickstart.md validation: verify dev server starts, all routes render, mock mode serves data on all screens, no TypeScript errors, and basic timing check that filter updates complete in <1s, report pages render in <2s, and debug step updates appear in <1s (SC-003, SC-004, SC-006)
+- [X] T062 Add navigation-away confirmation prompt for active debug sessions (beforeunload event + Next.js route change interception) in `frontend/app/debug/page.tsx`
+- [X] T063 [P] Add responsive layout: collapsible sidebar to icons on screens <1280px, horizontal table scrolling, chart container resize handling in `frontend/app/dashboard/layout.tsx` and `frontend/components/ui/table.tsx`
+- [X] T064 [P] Add event buffering with requestAnimationFrame batching for debug auto-play mode (batch rapid events to prevent layout thrashing) in `frontend/hooks/use-debug-websocket.ts`
+- [X] T065 Run quickstart.md validation: verify dev server starts, all routes render, mock mode serves data on all screens, no TypeScript errors, and basic timing check that filter updates complete in <1s, report pages render in <2s, and debug step updates appear in <1s (SC-003, SC-004, SC-006)
 
 ---
 

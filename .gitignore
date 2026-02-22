@@ -62,3 +62,11 @@ Data/
 # User secrets
 *.user
 .env*
+
+# Node.js / Next.js (frontend/)
+node_modules/
+frontend/.next/
+frontend/out/
+*.log
+*.tsbuildinfo
+next-env.d.ts
