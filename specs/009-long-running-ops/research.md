@@ -20,7 +20,9 @@
 
 ## R2: In-Memory Progress Store
 
-**Decision**: Create `IRunProgressStore` interface + `InMemoryRunProgressStore` implementation in the Application layer using `ConcurrentDictionary<Guid, RunProgress>`.
+> **Superseded**: This decision was revised during Phase 1 design. The final implementation uses `RunProgressCache` wrapping `IDistributedCache` per Constitution v1.6.0, plus `InMemoryRunCancellationRegistry` for non-serializable CTS. See data-model.md "Removed Types" for details.
+
+**Original Decision**: Create `IRunProgressStore` interface + `InMemoryRunProgressStore` implementation in the Application layer using `ConcurrentDictionary<Guid, RunProgress>`.
 
 **Rationale**:
 - `Microsoft.Extensions.Caching.Memory` is already referenced in Domain.csproj but `IMemoryCache` is designed for cache eviction scenarios with sliding/absolute expiration. We need deterministic key-value storage where entries are explicitly managed.

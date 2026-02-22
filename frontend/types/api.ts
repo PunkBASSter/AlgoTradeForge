@@ -43,6 +43,8 @@ export interface BacktestRun {
   hasCandleData: boolean;
   runMode: string;
   optimizationRunId?: string;
+  errorMessage?: string;
+  errorStackTrace?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +121,52 @@ export interface TradeData {
   commission: number;
   takeProfitPrice?: number;
   stopLossPrice?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Run status types
+// ---------------------------------------------------------------------------
+
+export type RunStatusType =
+  | "Pending"
+  | "Running"
+  | "Completed"
+  | "Failed"
+  | "Cancelled";
+
+export interface BacktestSubmission {
+  id: string;
+  totalBars: number;
+  status: string;
+  isDedup: boolean;
+}
+
+export interface OptimizationSubmission {
+  id: string;
+  totalCombinations: number;
+  status: string;
+  isDedup: boolean;
+}
+
+export interface BacktestStatus {
+  id: string;
+  status: RunStatusType;
+  processedBars: number;
+  totalBars: number;
+  errorMessage?: string;
+  errorStackTrace?: string;
+  result?: BacktestRun;
+}
+
+export interface OptimizationStatus {
+  id: string;
+  status: RunStatusType;
+  completedCombinations: number;
+  failedCombinations: number;
+  totalCombinations: number;
+  errorMessage?: string;
+  errorStackTrace?: string;
+  result?: OptimizationRun;
 }
 
 // ---------------------------------------------------------------------------

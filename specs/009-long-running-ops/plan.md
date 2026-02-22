@@ -113,7 +113,7 @@ tests/
 | Requirement | Implementation | Status |
 |-------------|---------------|--------|
 | Deduplicate by RunKey | Deterministic key = `{Strategy}_{Version}_{Period}_{ParamsHash}`; checked in `IDistributedCache` before starting a new run | COMPLIANT |
-| Progress via `IDistributedCache` | `AddDistributedMemoryCache()` locally; key = RunKey, value = progress `int`; swappable to Redis via DI registration | COMPLIANT |
+| Progress via `IDistributedCache` | `AddDistributedMemoryCache()` locally; progress key = `progress:{guid}` → serialized `RunProgressEntry`; dedup key = `runkey:{runKey}` → `Guid`; swappable to Redis via DI registration | COMPLIANT |
 | No DLQ required | Failed runs store error in `BacktestRunRecord` columns; client can resubmit | N/A per constitution |
 | No checkpoint/resumability required | Atomic compute — partial results carry no value | N/A per constitution |
 | No distributed locking required | Single-node deployment | N/A per constitution |

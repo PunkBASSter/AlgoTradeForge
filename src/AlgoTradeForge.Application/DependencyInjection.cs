@@ -4,6 +4,7 @@ using AlgoTradeForge.Application.Debug;
 using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,9 +15,13 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddScoped<BacktestPreparer>();
-        services.AddScoped<ICommandHandler<RunBacktestCommand, BacktestResultDto>, RunBacktestCommandHandler>();
-        services.AddScoped<ICommandHandler<RunOptimizationCommand, OptimizationResultDto>, RunOptimizationCommandHandler>();
+        services.AddScoped<ICommandHandler<RunBacktestCommand, BacktestSubmissionDto>, RunBacktestCommandHandler>();
+        services.AddScoped<ICommandHandler<RunOptimizationCommand, OptimizationSubmissionDto>, RunOptimizationCommandHandler>();
         services.AddSingleton<OptimizationAxisResolver>();
+
+        // Progress tracking
+        services.AddSingleton<RunProgressCache>();
+        services.AddSingleton<IRunCancellationRegistry, InMemoryRunCancellationRegistry>();
 
         // Event bus (no-op by default; overridden when sinks are configured)
         services.AddSingleton<IEventBus>(NullEventBus.Instance);

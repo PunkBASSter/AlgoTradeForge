@@ -2,12 +2,16 @@
 
 import type {
   BacktestRun,
+  BacktestSubmission,
+  BacktestStatus,
   PagedResponse,
   EquityPoint,
   EventsData,
   RunBacktestRequest,
   RunOptimizationRequest,
   OptimizationRun,
+  OptimizationSubmission,
+  OptimizationStatus,
   StartDebugSessionRequest,
   DebugSession,
   DebugSessionStatus,
@@ -164,12 +168,25 @@ export const apiClient = {
     );
   },
 
-  runBacktest(req: RunBacktestRequest): Promise<BacktestRun> {
-    return request<BacktestRun>("/api/backtests", {
+  runBacktest(req: RunBacktestRequest): Promise<BacktestSubmission> {
+    return request<BacktestSubmission>("/api/backtests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
     });
+  },
+
+  getBacktestStatus(id: string): Promise<BacktestStatus> {
+    return request<BacktestStatus>(
+      `/api/backtests/${encodeURIComponent(id)}/status`,
+    );
+  },
+
+  cancelBacktest(id: string): Promise<{ id: string; status: string }> {
+    return request<{ id: string; status: string }>(
+      `/api/backtests/${encodeURIComponent(id)}/cancel`,
+      { method: "POST" },
+    );
   },
 
   // --- Optimizations ---
@@ -189,12 +206,27 @@ export const apiClient = {
     );
   },
 
-  runOptimization(req: RunOptimizationRequest): Promise<OptimizationRun> {
-    return request<OptimizationRun>("/api/optimizations", {
+  runOptimization(
+    req: RunOptimizationRequest,
+  ): Promise<OptimizationSubmission> {
+    return request<OptimizationSubmission>("/api/optimizations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
     });
+  },
+
+  getOptimizationStatus(id: string): Promise<OptimizationStatus> {
+    return request<OptimizationStatus>(
+      `/api/optimizations/${encodeURIComponent(id)}/status`,
+    );
+  },
+
+  cancelOptimization(id: string): Promise<{ id: string; status: string }> {
+    return request<{ id: string; status: string }>(
+      `/api/optimizations/${encodeURIComponent(id)}/cancel`,
+      { method: "POST" },
+    );
   },
 
   // --- Debug sessions ---

@@ -32,6 +32,9 @@ builder.Services.AddSingleton<IRiskEvaluator, BasicRiskEvaluator>();
 builder.Services.AddSingleton<IMetricsCalculator, MetricsCalculator>();
 builder.Services.AddSingleton<BacktestEngine>();
 
+// Register distributed cache (in-memory; swappable to Redis via DI)
+builder.Services.AddDistributedMemoryCache();
+
 // Register Application services
 builder.Services.AddApplication();
 

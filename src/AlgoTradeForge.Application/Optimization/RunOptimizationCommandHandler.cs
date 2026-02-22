@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
@@ -11,6 +12,7 @@ using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
+using Microsoft.Extensions.Logging;
 using static AlgoTradeForge.Domain.Reporting.MetricNames;
 
 namespace AlgoTradeForge.Application.Optimization;
@@ -24,17 +26,40 @@ public sealed class RunOptimizationCommandHandler(
     IOptimizationSpaceProvider spaceProvider,
     OptimizationAxisResolver axisResolver,
     ICartesianProductGenerator cartesianGenerator,
-    IRunRepository runRepository) : ICommandHandler<RunOptimizationCommand, OptimizationResultDto>
+    IRunRepository runRepository,
+    RunProgressCache progressCache,
+    IRunCancellationRegistry cancellationRegistry,
+    ILogger<RunOptimizationCommandHandler> logger) : ICommandHandler<RunOptimizationCommand, OptimizationSubmissionDto>
 {
-    public async Task<OptimizationResultDto> HandleAsync(RunOptimizationCommand command, CancellationToken ct = default)
+    private static readonly TimeSpan ProgressFlushInterval = TimeSpan.FromSeconds(1);
+
+    public async Task<OptimizationSubmissionDto> HandleAsync(RunOptimizationCommand command, CancellationToken ct = default)
     {
+        // 1. Compute RunKey and check for dedup
+        var runKey = RunKeyBuilder.Build(command);
+        var existingId = await progressCache.TryGetRunIdByKeyAsync(runKey, ct);
+        if (existingId is not null)
+        {
+            var existing = await progressCache.GetAsync(existingId.Value, ct);
+            if (existing is not null && existing.Status is RunStatus.Pending or RunStatus.Running)
+            {
+                return new OptimizationSubmissionDto
+                {
+                    Id = existingId.Value,
+                    TotalCombinations = existing.Total,
+                    IsDedup = true
+                };
+            }
+
+            await progressCache.RemoveRunKeyAsync(runKey, ct);
+        }
+
+        // 2. Synchronous validation and data loading
         var descriptor = spaceProvider.GetDescriptor(command.StrategyName)
             ?? throw new ArgumentException($"Strategy '{command.StrategyName}' not found.");
 
-        // Resolve axes from overrides
         var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes);
 
-        // Validate and resolve data subscriptions in a single pass
         var dataSubs = command.DataSubscriptions;
         if (dataSubs is null or { Count: 0 })
             throw new ArgumentException("At least one DataSubscription must be provided.");
@@ -50,8 +75,7 @@ public sealed class RunOptimizationCommandHandler(
                 ?? throw new ArgumentException($"Asset '{sub.Asset}' on exchange '{sub.Exchange}' not found.");
 
             if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out var timeFrame))
-                throw new ArgumentException(
-                    $"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.Asset}'.");
+                throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.Asset}'.");
 
             var subscription = new DataSubscription(asset, timeFrame);
             resolvedSubscriptions.Add(subscription);
@@ -61,7 +85,6 @@ public sealed class RunOptimizationCommandHandler(
             dataCache[key] = (asset, series);
         }
 
-        // Add DataSubscriptions as discrete axis if multiple
         if (resolvedSubscriptions.Count > 1)
         {
             var allAxes = new List<ResolvedAxis>(resolvedAxes)
@@ -72,7 +95,6 @@ public sealed class RunOptimizationCommandHandler(
             resolvedAxes = allAxes;
         }
 
-        // Filter out empty axes (omitted params use defaults)
         var activeAxes = resolvedAxes
             .Where(a => a switch
             {
@@ -88,181 +110,373 @@ public sealed class RunOptimizationCommandHandler(
             throw new ArgumentException(
                 $"Estimated {estimatedCount} combinations exceeds maximum of {command.MaxCombinations}.");
 
+        // 3. Create RunProgressEntry
         var startedAt = DateTimeOffset.UtcNow;
         var optimizationRunId = Guid.NewGuid();
-        var stopwatch = Stopwatch.StartNew();
-        var results = new ConcurrentBag<(OptimizationTrialResultDto Dto, BacktestRunRecord Record)>();
-        var combinations = cartesianGenerator.Enumerate(activeAxes);
-
-        // Capture strategy version from first trial
-        string? strategyVersion = null;
-
-        var parallelOptions = new ParallelOptions
+        var entry = new RunProgressEntry
         {
-            MaxDegreeOfParallelism = command.MaxDegreeOfParallelism > 0
-                ? command.MaxDegreeOfParallelism
-                : Environment.ProcessorCount,
-            CancellationToken = ct
+            Id = optimizationRunId,
+            Status = RunStatus.Pending,
+            Processed = 0,
+            Failed = 0,
+            Total = estimatedCount,
+            StartedAt = startedAt
         };
+        await progressCache.SetAsync(entry, ct);
+        await progressCache.SetRunKeyAsync(runKey, optimizationRunId, ct);
 
-        await Parallel.ForEachAsync(combinations, parallelOptions, (combination, token) =>
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cancellationRegistry.Register(optimizationRunId, cts);
+
+        // 4. Start background task
+        _ = Task.Run(() => RunOptimizationAsync(
+            command, resolvedSubscriptions, dataCache, activeAxes,
+            estimatedCount, optimizationRunId, runKey, startedAt,
+            strategyFactory, cts.Token));
+
+        return new OptimizationSubmissionDto
         {
-            var trialWatch = Stopwatch.StartNew();
+            Id = optimizationRunId,
+            TotalCombinations = estimatedCount,
+            IsDedup = false
+        };
+    }
 
-            var strategy = strategyFactory.Create(command.StrategyName, combination);
-
-            // Capture strategy version from the first trial
-            Interlocked.CompareExchange(ref strategyVersion, strategy.Version, null);
-
-            // Determine which data subscriptions to use for this trial
-            if (combination.Values.TryGetValue("DataSubscriptions", out var subObj) &&
-                subObj is DataSubscription dataSub)
+    private async Task RunOptimizationAsync(
+        RunOptimizationCommand command,
+        List<DataSubscription> resolvedSubscriptions,
+        Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
+        List<ResolvedAxis> activeAxes,
+        long estimatedCount,
+        Guid optimizationRunId,
+        string runKey,
+        DateTimeOffset startedAt,
+        IOptimizationStrategyFactory factory,
+        CancellationToken ct)
+    {
+        try
+        {
+            await progressCache.SetAsync(new RunProgressEntry
             {
-                strategy.DataSubscriptions.Clear();
-                strategy.DataSubscriptions.Add(dataSub);
-            }
-            else
-            {
-                strategy.DataSubscriptions.Clear();
-                strategy.DataSubscriptions.Add(resolvedSubscriptions[0]);
-            }
+                Id = optimizationRunId,
+                Status = RunStatus.Running,
+                Processed = 0,
+                Failed = 0,
+                Total = estimatedCount,
+                StartedAt = startedAt
+            }, ct);
 
-            // Build series array matching strategy subscriptions
-            var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
-            for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
-            {
-                var sub = strategy.DataSubscriptions[i];
-                var key = $"{sub.Asset.Name}|{sub.TimeFrame}";
-                if (dataCache.TryGetValue(key, out var cached))
-                    seriesArray[i] = cached.Series;
-                else
-                    throw new InvalidOperationException(
-                        $"No pre-loaded data for subscription {key}.");
-            }
+            var stopwatch = Stopwatch.StartNew();
+            var results = new ConcurrentBag<(OptimizationTrialResultDto Dto, BacktestRunRecord Record)>();
+            var combinations = cartesianGenerator.Enumerate(activeAxes);
+            string? strategyVersion = null;
+            var counters = new long[2]; // [0] = processed, [1] = failed
 
-            var trialAsset = strategy.DataSubscriptions[0].Asset;
-            var trialScaleFactor = 1m / trialAsset.TickSize;
-
-            var backOptions = new BacktestOptions
+            var parallelOptions = new ParallelOptions
             {
-                InitialCash = (long)(command.InitialCash * trialScaleFactor),
-                Asset = trialAsset,
-                StartTime = command.StartTime,
-                EndTime = command.EndTime,
-                CommissionPerTrade = (long)(command.CommissionPerTrade * trialScaleFactor),
-                SlippageTicks = command.SlippageTicks
+                MaxDegreeOfParallelism = command.MaxDegreeOfParallelism > 0
+                    ? command.MaxDegreeOfParallelism
+                    : Environment.ProcessorCount,
+                CancellationToken = ct
             };
 
-            var result = engine.Run(seriesArray, strategy, backOptions, token);
+            // Start progress flush loop
+            var progressFlushCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var progressFlushTask = FlushProgressAsync(
+                optimizationRunId, counters,
+                estimatedCount, startedAt, progressFlushCts.Token);
 
-            // Extract raw long values for metrics calculation (Domain-scale)
-            var equityValues = result.EquityCurve.Select(e => e.Value).ToList();
-            var metrics = metricsCalculator.Calculate(
-                result.Fills, equityValues, backOptions.InitialCash,
-                command.StartTime, command.EndTime);
-
-            // Scale absolute dollar values back to real units
-            var scaledMetrics = metrics with
+            await Parallel.ForEachAsync(combinations, parallelOptions, (combination, token) =>
             {
-                InitialCapital = metrics.InitialCapital / trialScaleFactor,
-                FinalEquity = metrics.FinalEquity / trialScaleFactor,
-                NetProfit = metrics.NetProfit / trialScaleFactor,
-                GrossProfit = metrics.GrossProfit / trialScaleFactor,
-                GrossLoss = metrics.GrossLoss / trialScaleFactor,
-                TotalCommissions = metrics.TotalCommissions / trialScaleFactor,
-                AverageWin = metrics.AverageWin / (double)trialScaleFactor,
-                AverageLoss = metrics.AverageLoss / (double)trialScaleFactor,
-            };
+                try
+                {
+                    var trialWatch = Stopwatch.StartNew();
+                    var strategy = factory.Create(command.StrategyName, combination);
+                    Interlocked.CompareExchange(ref strategyVersion, strategy.Version, null);
 
-            trialWatch.Stop();
+                    if (combination.Values.TryGetValue("DataSubscriptions", out var subObj) &&
+                        subObj is DataSubscription dataSub)
+                    {
+                        strategy.DataSubscriptions.Clear();
+                        strategy.DataSubscriptions.Add(dataSub);
+                    }
+                    else
+                    {
+                        strategy.DataSubscriptions.Clear();
+                        strategy.DataSubscriptions.Add(resolvedSubscriptions[0]);
+                    }
 
-            var dto = new OptimizationTrialResultDto
+                    var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
+                    for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
+                    {
+                        var sub = strategy.DataSubscriptions[i];
+                        var key = $"{sub.Asset.Name}|{sub.TimeFrame}";
+                        if (dataCache.TryGetValue(key, out var cached))
+                            seriesArray[i] = cached.Series;
+                        else
+                            throw new InvalidOperationException($"No pre-loaded data for subscription {key}.");
+                    }
+
+                    var trialAsset = strategy.DataSubscriptions[0].Asset;
+                    var trialScaleFactor = 1m / trialAsset.TickSize;
+
+                    var backOptions = new BacktestOptions
+                    {
+                        InitialCash = (long)(command.InitialCash * trialScaleFactor),
+                        Asset = trialAsset,
+                        StartTime = command.StartTime,
+                        EndTime = command.EndTime,
+                        CommissionPerTrade = (long)(command.CommissionPerTrade * trialScaleFactor),
+                        SlippageTicks = command.SlippageTicks
+                    };
+
+                    var result = engine.Run(seriesArray, strategy, backOptions, token);
+
+                    var equityValues = result.EquityCurve.Select(e => e.Value).ToList();
+                    var metrics = metricsCalculator.Calculate(
+                        result.Fills, equityValues, backOptions.InitialCash,
+                        command.StartTime, command.EndTime);
+
+                    var scaledMetrics = metrics with
+                    {
+                        InitialCapital = metrics.InitialCapital / trialScaleFactor,
+                        FinalEquity = metrics.FinalEquity / trialScaleFactor,
+                        NetProfit = metrics.NetProfit / trialScaleFactor,
+                        GrossProfit = metrics.GrossProfit / trialScaleFactor,
+                        GrossLoss = metrics.GrossLoss / trialScaleFactor,
+                        TotalCommissions = metrics.TotalCommissions / trialScaleFactor,
+                        AverageWin = metrics.AverageWin / (double)trialScaleFactor,
+                        AverageLoss = metrics.AverageLoss / (double)trialScaleFactor,
+                    };
+
+                    trialWatch.Stop();
+
+                    var dto = new OptimizationTrialResultDto
+                    {
+                        Parameters = combination.Values,
+                        Metrics = scaledMetrics,
+                        Duration = trialWatch.Elapsed
+                    };
+
+                    var equityCurve = new EquityPoint[result.EquityCurve.Count];
+                    for (var i = 0; i < result.EquityCurve.Count; i++)
+                        equityCurve[i] = new EquityPoint(result.EquityCurve[i].TimestampMs, result.EquityCurve[i].Value / trialScaleFactor);
+
+                    var trialPrimarySub = strategy.DataSubscriptions[0];
+                    var trialRecord = new BacktestRunRecord
+                    {
+                        Id = Guid.NewGuid(),
+                        StrategyName = command.StrategyName,
+                        StrategyVersion = strategy.Version,
+                        Parameters = combination.Values,
+                        AssetName = trialPrimarySub.Asset.Name,
+                        Exchange = trialPrimarySub.Asset.Exchange,
+                        TimeFrame = TimeFrameFormatter.Format(trialPrimarySub.TimeFrame),
+                        InitialCash = command.InitialCash,
+                        Commission = command.CommissionPerTrade,
+                        SlippageTicks = checked((int)command.SlippageTicks),
+                        StartedAt = startedAt,
+                        CompletedAt = DateTimeOffset.UtcNow,
+                        DataStart = command.StartTime,
+                        DataEnd = command.EndTime,
+                        DurationMs = (long)trialWatch.Elapsed.TotalMilliseconds,
+                        TotalBars = result.TotalBarsProcessed,
+                        Metrics = scaledMetrics,
+                        EquityCurve = equityCurve,
+                        RunFolderPath = null,
+                        RunMode = "Backtest",
+                        OptimizationRunId = optimizationRunId,
+                    };
+
+                    results.Add((dto, trialRecord));
+                    Interlocked.Increment(ref counters[0]);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw; // Re-throw to let Parallel.ForEachAsync handle cancellation
+                }
+                catch (Exception ex)
+                {
+                    // Per-trial error handling: save failed trial with error info
+                    var zeroMetrics = new PerformanceMetrics
+                    {
+                        TotalTrades = 0, WinningTrades = 0, LosingTrades = 0,
+                        NetProfit = 0, GrossProfit = 0, GrossLoss = 0, TotalCommissions = 0,
+                        TotalReturnPct = 0, AnnualizedReturnPct = 0,
+                        SharpeRatio = 0, SortinoRatio = 0, MaxDrawdownPct = 0,
+                        WinRatePct = 0, ProfitFactor = 0, AverageWin = 0, AverageLoss = 0,
+                        InitialCapital = command.InitialCash, FinalEquity = command.InitialCash,
+                        TradingDays = 0,
+                    };
+
+                    var failedDto = new OptimizationTrialResultDto
+                    {
+                        Parameters = combination.Values,
+                        Metrics = zeroMetrics,
+                        Duration = TimeSpan.Zero,
+                        ErrorMessage = ex.Message,
+                        ErrorStackTrace = ex.StackTrace
+                    };
+
+                    var failedRecord = new BacktestRunRecord
+                    {
+                        Id = Guid.NewGuid(),
+                        StrategyName = command.StrategyName,
+                        StrategyVersion = strategyVersion ?? "0",
+                        Parameters = combination.Values,
+                        AssetName = resolvedSubscriptions[0].Asset.Name,
+                        Exchange = resolvedSubscriptions[0].Asset.Exchange,
+                        TimeFrame = TimeFrameFormatter.Format(resolvedSubscriptions[0].TimeFrame),
+                        InitialCash = command.InitialCash,
+                        Commission = command.CommissionPerTrade,
+                        SlippageTicks = checked((int)command.SlippageTicks),
+                        StartedAt = startedAt,
+                        CompletedAt = DateTimeOffset.UtcNow,
+                        DataStart = command.StartTime,
+                        DataEnd = command.EndTime,
+                        DurationMs = 0,
+                        TotalBars = 0,
+                        Metrics = zeroMetrics,
+                        EquityCurve = [],
+                        RunFolderPath = null,
+                        RunMode = "Backtest",
+                        OptimizationRunId = optimizationRunId,
+                        ErrorMessage = ex.Message,
+                        ErrorStackTrace = ex.StackTrace,
+                    };
+
+                    results.Add((failedDto, failedRecord));
+                    Interlocked.Increment(ref counters[1]);
+                    Interlocked.Increment(ref counters[0]);
+
+                    logger.LogWarning(ex, "Optimization {RunId}: trial failed", optimizationRunId);
+                }
+
+                return ValueTask.CompletedTask;
+            });
+
+            // Stop progress flush loop
+            await progressFlushCts.CancelAsync();
+
+            stopwatch.Stop();
+
+            var sortedTrials = SortTrials(results.Select(r => r.Dto), command.SortBy);
+            var optPrimarySub = command.DataSubscriptions![0];
+            var maxParallelism = command.MaxDegreeOfParallelism > 0
+                ? command.MaxDegreeOfParallelism
+                : Environment.ProcessorCount;
+
+            var optimizationRecord = new OptimizationRunRecord
             {
-                Parameters = combination.Values,
-                Metrics = scaledMetrics,
-                Duration = trialWatch.Elapsed
-            };
-
-            // Build equity curve with timestamps, scaling values to real-money decimals
-            var equityCurve = new EquityPoint[result.EquityCurve.Count];
-            for (var i = 0; i < result.EquityCurve.Count; i++)
-                equityCurve[i] = new EquityPoint(result.EquityCurve[i].TimestampMs, result.EquityCurve[i].Value / trialScaleFactor);
-
-            // Extract primary subscription for this trial
-            var trialPrimarySub = strategy.DataSubscriptions[0];
-
-            var trialRecord = new BacktestRunRecord
-            {
-                Id = Guid.NewGuid(),
+                Id = optimizationRunId,
                 StrategyName = command.StrategyName,
-                StrategyVersion = strategy.Version,
-                Parameters = combination.Values,
-                AssetName = trialPrimarySub.Asset.Name,
-                Exchange = trialPrimarySub.Asset.Exchange,
-                TimeFrame = TimeFrameFormatter.Format(trialPrimarySub.TimeFrame),
+                StrategyVersion = strategyVersion ?? "0",
+                StartedAt = startedAt,
+                CompletedAt = DateTimeOffset.UtcNow,
+                DurationMs = (long)stopwatch.Elapsed.TotalMilliseconds,
+                TotalCombinations = estimatedCount,
+                SortBy = command.SortBy,
+                DataStart = command.StartTime,
+                DataEnd = command.EndTime,
                 InitialCash = command.InitialCash,
                 Commission = command.CommissionPerTrade,
                 SlippageTicks = checked((int)command.SlippageTicks),
-                StartedAt = startedAt,
-                CompletedAt = DateTimeOffset.UtcNow,
-                DataStart = command.StartTime,
-                DataEnd = command.EndTime,
-                DurationMs = (long)trialWatch.Elapsed.TotalMilliseconds,
-                TotalBars = result.TotalBarsProcessed,
-                Metrics = scaledMetrics,
-                EquityCurve = equityCurve,
-                RunFolderPath = null, // Optimization trials don't emit events
-                RunMode = "Backtest",
-                OptimizationRunId = optimizationRunId,
+                MaxParallelism = maxParallelism,
+                AssetName = optPrimarySub.Asset,
+                Exchange = optPrimarySub.Exchange,
+                TimeFrame = optPrimarySub.TimeFrame,
+                Trials = results.Select(r => r.Record).ToList(),
             };
 
-            results.Add((dto, trialRecord));
+            await runRepository.SaveOptimizationAsync(optimizationRecord);
 
-            return ValueTask.CompletedTask;
-        });
+            await progressCache.SetAsync(new RunProgressEntry
+            {
+                Id = optimizationRunId,
+                Status = RunStatus.Completed,
+                Processed = Interlocked.Read(ref counters[0]),
+                Failed = Interlocked.Read(ref counters[1]),
+                Total = estimatedCount,
+                StartedAt = startedAt
+            });
 
-        stopwatch.Stop();
-
-        var sortedTrials = SortTrials(results.Select(r => r.Dto), command.SortBy);
-
-        // Extract primary subscription from command
-        var optPrimarySub = dataSubs[0];
-
-        var maxParallelism = command.MaxDegreeOfParallelism > 0
-            ? command.MaxDegreeOfParallelism
-            : Environment.ProcessorCount;
-
-        var optimizationRecord = new OptimizationRunRecord
+            logger.LogInformation("Optimization {RunId} completed in {Duration}ms with {Trials} trials ({Failed} failed)",
+                optimizationRunId, stopwatch.ElapsedMilliseconds, results.Count,
+                Interlocked.Read(ref counters[1]));
+        }
+        catch (OperationCanceledException)
         {
-            Id = optimizationRunId,
-            StrategyName = command.StrategyName,
-            StrategyVersion = strategyVersion ?? "0",
-            StartedAt = startedAt,
-            CompletedAt = DateTimeOffset.UtcNow,
-            DurationMs = (long)stopwatch.Elapsed.TotalMilliseconds,
-            TotalCombinations = estimatedCount,
-            SortBy = command.SortBy,
-            DataStart = command.StartTime,
-            DataEnd = command.EndTime,
-            InitialCash = command.InitialCash,
-            Commission = command.CommissionPerTrade,
-            SlippageTicks = checked((int)command.SlippageTicks),
-            MaxParallelism = maxParallelism,
-            AssetName = optPrimarySub.Asset,
-            Exchange = optPrimarySub.Exchange,
-            TimeFrame = optPrimarySub.TimeFrame,
-            Trials = results.Select(r => r.Record).ToList(),
-        };
+            await progressCache.SetAsync(new RunProgressEntry
+            {
+                Id = optimizationRunId,
+                Status = RunStatus.Cancelled,
+                Processed = 0,
+                Failed = 0,
+                Total = estimatedCount,
+                StartedAt = startedAt
+            });
 
-        await runRepository.SaveOptimizationAsync(optimizationRecord, ct);
-
-        return new OptimizationResultDto
+            logger.LogInformation("Optimization {RunId} was cancelled", optimizationRunId);
+        }
+        catch (Exception ex)
         {
-            StrategyName = command.StrategyName,
-            TotalCombinations = estimatedCount,
-            TotalDuration = stopwatch.Elapsed,
-            Trials = sortedTrials
-        };
+            await progressCache.SetAsync(new RunProgressEntry
+            {
+                Id = optimizationRunId,
+                Status = RunStatus.Failed,
+                Processed = 0,
+                Failed = 0,
+                Total = estimatedCount,
+                ErrorMessage = ex.Message,
+                ErrorStackTrace = ex.StackTrace,
+                StartedAt = startedAt
+            });
+
+            logger.LogError(ex, "Optimization {RunId} failed", optimizationRunId);
+        }
+        finally
+        {
+            // Cleanup: remove RunKey mapping and CTS immediately
+            await progressCache.RemoveRunKeyAsync(runKey);
+            cancellationRegistry.Remove(optimizationRunId);
+
+            // Delayed progress entry cleanup — allows final status polls to read terminal state
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(60));
+                await progressCache.RemoveAsync(optimizationRunId);
+            });
+        }
+    }
+
+    private async Task FlushProgressAsync(
+        Guid runId,
+        long[] counters,
+        long totalCombinations,
+        DateTimeOffset startedAt,
+        CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(ProgressFlushInterval, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            await progressCache.SetAsync(new RunProgressEntry
+            {
+                Id = runId,
+                Status = RunStatus.Running,
+                Processed = Interlocked.Read(ref counters[0]),
+                Failed = Interlocked.Read(ref counters[1]),
+                Total = totalCombinations,
+                StartedAt = startedAt
+            });
+        }
     }
 
     private static IReadOnlyList<OptimizationTrialResultDto> SortTrials(

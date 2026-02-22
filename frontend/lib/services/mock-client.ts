@@ -2,12 +2,16 @@
 
 import type {
   BacktestRun,
+  BacktestSubmission,
+  BacktestStatus,
   PagedResponse,
   EquityPoint,
   EventsData,
   RunBacktestRequest,
   RunOptimizationRequest,
   OptimizationRun,
+  OptimizationSubmission,
+  OptimizationStatus,
   StartDebugSessionRequest,
   DebugSession,
   DebugSessionStatus,
@@ -111,9 +115,20 @@ export const mockClient: typeof import("./api-client").apiClient & {
     return events;
   },
 
-  async runBacktest(_req: RunBacktestRequest): Promise<BacktestRun> {
+  async runBacktest(_req: RunBacktestRequest): Promise<BacktestSubmission> {
     await delay(800);
-    return backtests.items[0];
+    return { id: backtests.items[0].id, totalBars: backtests.items[0].totalBars, status: "Pending", isDedup: false };
+  },
+
+  async getBacktestStatus(id: string): Promise<BacktestStatus> {
+    await delay();
+    const found = backtests.items.find((b) => b.id === id);
+    return { id, status: "Completed", processedBars: found?.totalBars ?? 0, totalBars: found?.totalBars ?? 0, result: found };
+  },
+
+  async cancelBacktest(id: string): Promise<{ id: string; status: string }> {
+    await delay();
+    return { id, status: "Cancelled" };
   },
 
   // --- Optimizations ---
@@ -163,9 +178,20 @@ export const mockClient: typeof import("./api-client").apiClient & {
 
   async runOptimization(
     _req: RunOptimizationRequest,
-  ): Promise<OptimizationRun> {
+  ): Promise<OptimizationSubmission> {
     await delay(1200);
-    return optimizations.items[0];
+    return { id: optimizations.items[0].id, totalCombinations: optimizations.items[0].totalCombinations, status: "Pending", isDedup: false };
+  },
+
+  async getOptimizationStatus(id: string): Promise<OptimizationStatus> {
+    await delay();
+    const found = optimizations.items.find((o) => o.id === id);
+    return { id, status: "Completed", completedCombinations: found?.totalCombinations ?? 0, failedCombinations: 0, totalCombinations: found?.totalCombinations ?? 0, result: found };
+  },
+
+  async cancelOptimization(id: string): Promise<{ id: string; status: string }> {
+    await delay();
+    return { id, status: "Cancelled" };
   },
 
   // --- Debug sessions ---

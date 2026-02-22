@@ -32,7 +32,8 @@
 {
   "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "totalBars": 8760,
-  "status": "Pending"
+  "status": "Pending",
+  "isDedup": false
 }
 ```
 
@@ -58,7 +59,8 @@
 {
   "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
   "totalCombinations": 2500,
-  "status": "Pending"
+  "status": "Pending",
+  "isDedup": false
 }
 ```
 

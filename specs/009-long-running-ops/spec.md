@@ -88,7 +88,7 @@ A trader who has submitted a backtest or optimization can cancel it before it co
 - What happens when the user polls for a run identifier that does not exist? The system returns a clear "not found" response.
 - What happens when an optimization has zero valid parameter combinations? The system fails immediately at submission time with a validation error, before starting any background operation.
 - What happens when the data period specified has no available candle data? The operation fails promptly with an appropriate error rather than running with no data.
-- What happens when the user submits a new run while a previous one is still processing? Both run independently; there is no limit on concurrent runs (single-user local system).
+- What happens when the user submits a new run while a previous one is still processing? If the parameters are identical, the system deduplicates by returning the existing run's identifier (per Constitution v1.6.0 RunKey dedup). If the parameters differ, both runs execute independently. There is no limit on concurrent runs (single-user local system).
 - What happens when individual optimization trials fail while others succeed? The optimization continues processing remaining trials. Failed trials are saved alongside successful ones, with error information and stacktrace stored in the trial record. The frontend displays error details for failed trials.
 
 ## Requirements *(mandatory)*

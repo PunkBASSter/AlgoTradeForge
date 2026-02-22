@@ -99,6 +99,19 @@ export default function BacktestReportPage({
         </p>
       </div>
 
+      {/* Error display */}
+      {backtest.errorMessage && (
+        <div className="p-4 rounded-lg border border-accent-red bg-red-900/10 space-y-2">
+          <h2 className="text-sm font-semibold text-accent-red">Run Error</h2>
+          <p className="text-sm text-text-secondary">{backtest.errorMessage}</p>
+          {backtest.errorStackTrace && (
+            <pre className="text-xs text-text-muted mt-2 overflow-x-auto whitespace-pre-wrap max-h-48 overflow-y-auto">
+              {backtest.errorStackTrace}
+            </pre>
+          )}
+        </div>
+      )}
+
       {/* Metrics & Parameters grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <MetricsPanel metrics={backtest.metrics} />

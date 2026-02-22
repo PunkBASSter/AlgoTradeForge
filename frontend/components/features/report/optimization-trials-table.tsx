@@ -15,6 +15,16 @@ type TrialRow = BacktestRun & Record<string, unknown>;
 
 const columns: Column<TrialRow>[] = [
   {
+    key: "status",
+    header: "",
+    render: (_v, row) =>
+      row.errorMessage ? (
+        <span className="text-accent-red" title={row.errorMessage}>
+          &#x26A0;
+        </span>
+      ) : null,
+  },
+  {
     key: "parameters",
     header: "Parameters",
     render: (_v, row) => (

@@ -26,6 +26,8 @@ public sealed record BacktestRunResponse
     public required bool HasCandleData { get; init; }
     public required string RunMode { get; init; }
     public Guid? OptimizationRunId { get; init; }
+    public string? ErrorMessage { get; init; }
+    public string? ErrorStackTrace { get; init; }
 }
 
 public sealed record EquityPointResponse(long TimestampMs, decimal Value);
