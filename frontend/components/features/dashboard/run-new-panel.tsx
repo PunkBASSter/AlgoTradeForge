@@ -13,6 +13,7 @@ import { SlideOver } from "@/components/ui/slide-over";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { getClient } from "@/lib/services";
+import { RunProgress } from "@/components/features/dashboard/run-progress";
 import type { RunBacktestRequest, RunOptimizationRequest } from "@/types/api";
 
 const BACKTEST_TEMPLATE: RunBacktestRequest = {
@@ -72,10 +73,11 @@ export function RunNewPanel({
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const { toast } = useToast();
   const client = getClient();
 
-  // Create editor once when the container mounts
+  // Create editor once when the slide-over opens
   useEffect(() => {
     if (!open || !editorContainerRef.current) return;
 
@@ -101,7 +103,8 @@ export function RunNewPanel({
       view.destroy();
       editorViewRef.current = null;
     };
-  }, [open, mode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mode changes handled by separate effect below
+  }, [open]);
 
   // Update editor content when mode changes (without recreating the view)
   const prevModeRef = useRef(mode);
@@ -131,16 +134,36 @@ export function RunNewPanel({
       return;
     }
 
+    // Basic runtime validation of required fields
+    const obj = parsed as Record<string, unknown>;
+    if (mode === "backtest") {
+      const missing = ["assetName", "exchange", "strategyName", "initialCash", "startTime", "endTime"]
+        .filter((k) => obj[k] === undefined || obj[k] === null);
+      if (missing.length > 0) {
+        toast(`Missing required fields: ${missing.join(", ")}`, "error");
+        return;
+      }
+    } else {
+      const missing = ["strategyName", "initialCash", "startTime", "endTime"]
+        .filter((k) => obj[k] === undefined || obj[k] === null);
+      if (missing.length > 0) {
+        toast(`Missing required fields: ${missing.join(", ")}`, "error");
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
+      let runId: string;
       if (mode === "backtest") {
-        await client.runBacktest(parsed as RunBacktestRequest);
+        const submission = await client.runBacktest(parsed as RunBacktestRequest);
+        runId = submission.id;
       } else {
-        await client.runOptimization(parsed as RunOptimizationRequest);
+        const submission = await client.runOptimization(parsed as RunOptimizationRequest);
+        runId = submission.id;
       }
-      toast(`${mode === "backtest" ? "Backtest" : "Optimization"} started`, "success");
-      onSuccess();
-      onClose();
+      toast(`${mode === "backtest" ? "Backtest" : "Optimization"} submitted`, "success");
+      setActiveRunId(runId);
     } catch (err) {
       toast(String(err), "error");
     } finally {
@@ -148,33 +171,58 @@ export function RunNewPanel({
     }
   };
 
+  const handleClose = () => {
+    if (activeRunId) {
+      setActiveRunId(null);
+      onSuccess();
+    }
+    onClose();
+  };
+
+  const handleRunComplete = () => {
+    onSuccess();
+  };
+
   return (
     <SlideOver
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       title={`New ${mode === "backtest" ? "Backtest" : "Optimization"}`}
     >
-      <div className="space-y-4">
-        <p className="text-sm text-text-secondary">
-          Edit the JSON configuration below and click Run.
-        </p>
-        <div
-          ref={editorContainerRef}
-          className="rounded-lg overflow-hidden border border-border-default"
-        />
-        <div className="flex gap-2">
-          <Button
-            variant="primary"
-            onClick={handleSubmit}
-            loading={submitting}
-          >
-            Run
-          </Button>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
+      {activeRunId ? (
+        <div className="space-y-4">
+          <RunProgress
+            runId={activeRunId}
+            mode={mode}
+            onComplete={handleRunComplete}
+          />
+          <Button variant="ghost" onClick={handleClose}>
+            Close
           </Button>
         </div>
-      </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-text-secondary">
+            Edit the JSON configuration below and click Run.
+          </p>
+          <div
+            ref={editorContainerRef}
+            className="rounded-lg overflow-hidden border border-border-default"
+          />
+          <div className="flex gap-2">
+            <Button
+              variant="primary"
+              onClick={handleSubmit}
+              loading={submitting}
+            >
+              Run
+            </Button>
+            <Button variant="ghost" onClick={handleClose}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
     </SlideOver>
   );
 }

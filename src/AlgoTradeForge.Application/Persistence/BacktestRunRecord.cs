@@ -25,6 +25,15 @@ public sealed record BacktestRunRecord
     public string? RunFolderPath { get; init; }
     public required string RunMode { get; init; }
     public Guid? OptimizationRunId { get; init; }
+    public string? ErrorMessage { get; init; }
+    public string? ErrorStackTrace { get; init; }
 }
 
 public sealed record EquityPoint(long TimestampMs, decimal Value);
+
+public static class RunModes
+{
+    public const string Backtest = "Backtest";
+    public const string Cancelled = "Cancelled";
+    public const string Failed = "Failed";
+}

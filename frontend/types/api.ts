@@ -43,6 +43,8 @@ export interface BacktestRun {
   hasCandleData: boolean;
   runMode: string;
   optimizationRunId?: string;
+  errorMessage?: string;
+  errorStackTrace?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +121,61 @@ export interface TradeData {
   commission: number;
   takeProfitPrice?: number;
   stopLossPrice?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Run status types
+// ---------------------------------------------------------------------------
+
+export type RunStatusType =
+  | "Pending"
+  | "Running"
+  | "Completed"
+  | "Failed"
+  | "Cancelled";
+
+export interface BacktestSubmission {
+  id: string;
+  totalBars: number;
+}
+
+export interface OptimizationSubmission {
+  id: string;
+  totalCombinations: number;
+}
+
+export interface BacktestStatus {
+  id: string;
+  processedBars: number;
+  totalBars: number;
+  result?: BacktestRun;
+}
+
+export interface OptimizationStatus {
+  id: string;
+  completedCombinations: number;
+  totalCombinations: number;
+  result?: OptimizationRun;
+}
+
+/** Derive run status from backend data (no status field in API response). */
+export function deriveBacktestStatus(data: BacktestStatus): RunStatusType {
+  if (data.result) {
+    if (data.result.runMode === "Cancelled") return "Cancelled";
+    if (data.result.errorMessage) return "Failed";
+    return "Completed";
+  }
+  if (data.processedBars === 0) return "Pending";
+  return "Running";
+}
+
+/** Derive optimization status from backend data. */
+export function deriveOptimizationStatus(data: OptimizationStatus): RunStatusType {
+  if (data.result) {
+    return "Completed";
+  }
+  if (data.completedCombinations === 0) return "Pending";
+  return "Running";
 }
 
 // ---------------------------------------------------------------------------

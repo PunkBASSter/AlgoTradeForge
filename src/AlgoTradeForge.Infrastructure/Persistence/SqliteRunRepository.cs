@@ -27,7 +27,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         started_at, completed_at, data_start, data_end,
         duration_ms, total_bars, metrics_json,
         run_folder_path, run_mode, optimization_run_id,
-        asset_name, exchange, timeframe
+        asset_name, exchange, timeframe,
+        error_message, error_stack_trace
         """;
 
     public SqliteRunRepository(IOptions<RunStorageOptions> options)
@@ -94,14 +95,16 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 started_at, completed_at, data_start, data_end,
                 duration_ms, total_bars, metrics_json, equity_curve_json,
                 run_folder_path, run_mode, optimization_run_id,
-                asset_name, exchange, timeframe
+                asset_name, exchange, timeframe,
+                error_message, error_stack_trace
             ) VALUES (
                 $id, $stratName, $stratVer, $paramsJson,
                 $cash, $commission, $slippage,
                 $startedAt, $completedAt, $dataStart, $dataEnd,
                 $durationMs, $totalBars, $metricsJson, $equityJson,
                 $runFolder, $runMode, $optId,
-                $asset, $exchange, $tf
+                $asset, $exchange, $tf,
+                $errorMsg, $errorStack
             )
             """;
 
@@ -126,6 +129,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         cmd.Parameters.AddWithValue("$asset", r.AssetName);
         cmd.Parameters.AddWithValue("$exchange", r.Exchange);
         cmd.Parameters.AddWithValue("$tf", r.TimeFrame);
+        cmd.Parameters.AddWithValue("$errorMsg", (object?)r.ErrorMessage ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$errorStack", (object?)r.ErrorStackTrace ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -452,6 +457,12 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 : reader.GetString(reader.GetOrdinal("run_folder_path")),
             RunMode = reader.GetString(reader.GetOrdinal("run_mode")),
             OptimizationRunId = optIdStr is not null ? Guid.Parse(optIdStr) : null,
+            ErrorMessage = reader.IsDBNull(reader.GetOrdinal("error_message"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("error_message")),
+            ErrorStackTrace = reader.IsDBNull(reader.GetOrdinal("error_stack_trace"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("error_stack_trace")),
         };
     }
 

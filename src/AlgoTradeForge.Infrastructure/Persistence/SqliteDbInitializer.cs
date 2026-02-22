@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 2;
+    private const int CurrentVersion = 3;
 
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -54,7 +54,9 @@ internal static class SqliteDbInitializer
             optimization_run_id TEXT    NULL REFERENCES optimization_runs(id),
             asset_name          TEXT    NOT NULL,
             exchange            TEXT    NOT NULL,
-            timeframe           TEXT    NOT NULL
+            timeframe           TEXT    NOT NULL,
+            error_message       TEXT    NULL,
+            error_stack_trace   TEXT    NULL
         );
 
         CREATE INDEX IF NOT EXISTS ix_br_strategy ON backtest_runs(strategy_name);
@@ -62,6 +64,11 @@ internal static class SqliteDbInitializer
         CREATE INDEX IF NOT EXISTS ix_br_opt_id ON backtest_runs(optimization_run_id);
         CREATE INDEX IF NOT EXISTS ix_br_asset ON backtest_runs(asset_name, exchange, timeframe);
         CREATE INDEX IF NOT EXISTS ix_opr_asset ON optimization_runs(asset_name, exchange, timeframe);
+        """;
+
+    private const string MigrationV3 = """
+        ALTER TABLE backtest_runs ADD COLUMN error_message TEXT NULL;
+        ALTER TABLE backtest_runs ADD COLUMN error_stack_trace TEXT NULL;
         """;
 
     public static async Task EnsureCreatedAsync(string connectionString)
@@ -81,5 +88,31 @@ internal static class SqliteDbInitializer
             WHERE NOT EXISTS (SELECT 1 FROM schema_version)
             """;
         await versionCmd.ExecuteNonQueryAsync();
+
+        // Apply migrations for existing databases
+        var currentVersion = await GetVersionAsync(connection);
+        if (currentVersion < 3)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV3;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 3);
+        }
+    }
+
+    private static async Task<int> GetVersionAsync(SqliteConnection connection)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT version FROM schema_version LIMIT 1";
+        var result = await cmd.ExecuteScalarAsync();
+        return result is not null ? Convert.ToInt32(result) : 0;
+    }
+
+    private static async Task SetVersionAsync(SqliteConnection connection, int version)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "UPDATE schema_version SET version = $version";
+        cmd.Parameters.AddWithValue("$version", version);
+        await cmd.ExecuteNonQueryAsync();
     }
 }

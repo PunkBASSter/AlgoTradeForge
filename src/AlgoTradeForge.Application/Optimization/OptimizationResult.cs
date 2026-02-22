@@ -16,4 +16,6 @@ public sealed record OptimizationTrialResultDto
     public required IReadOnlyDictionary<string, object> Parameters { get; init; }
     public required PerformanceMetrics Metrics { get; init; }
     public required TimeSpan Duration { get; init; }
+    public string? ErrorMessage { get; init; }
+    public string? ErrorStackTrace { get; init; }
 }

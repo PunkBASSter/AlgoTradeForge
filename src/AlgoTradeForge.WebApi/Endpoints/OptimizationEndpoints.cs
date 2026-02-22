@@ -1,22 +1,26 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.WebApi.Contracts;
 
 namespace AlgoTradeForge.WebApi.Endpoints;
 
 public static class OptimizationEndpoints
 {
+    private static bool _isDevelopment;
     public static void MapOptimizationEndpoints(this IEndpointRouteBuilder app)
     {
+        _isDevelopment = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().IsDevelopment();
+
         var group = app.MapGroup("/api/optimizations")
             .WithTags("Optimizations");
 
         group.MapPost("/", RunOptimization)
             .WithName("RunOptimization")
-            .WithSummary("Run a brute-force parameter optimization")
+            .WithSummary("Submit an optimization for background execution")
             .WithOpenApi()
-            .Produces<OptimizationResultDto>(StatusCodes.Status200OK)
+            .Produces<OptimizationSubmissionResponse>(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status400BadRequest);
 
         group.MapGet("/", ListOptimizations)
@@ -31,11 +35,25 @@ public static class OptimizationEndpoints
             .WithOpenApi()
             .Produces<OptimizationRunResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{id:guid}/status", GetOptimizationStatus)
+            .WithName("GetOptimizationStatus")
+            .WithSummary("Poll for optimization progress and results")
+            .WithOpenApi()
+            .Produces<OptimizationStatusResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{id:guid}/cancel", CancelOptimization)
+            .WithName("CancelOptimization")
+            .WithSummary("Cancel an in-progress optimization")
+            .WithOpenApi()
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> RunOptimization(
         RunOptimizationRequest request,
-        ICommandHandler<RunOptimizationCommand, OptimizationResultDto> handler,
+        ICommandHandler<RunOptimizationCommand, OptimizationSubmissionDto> handler,
         CancellationToken ct)
     {
         var command = new RunOptimizationCommand
@@ -55,13 +73,48 @@ public static class OptimizationEndpoints
 
         try
         {
-            var result = await handler.HandleAsync(command, ct);
-            return Results.Ok(result);
+            var submission = await handler.HandleAsync(command, ct);
+            var response = new OptimizationSubmissionResponse
+            {
+                Id = submission.Id,
+                TotalCombinations = submission.TotalCombinations,
+            };
+            return Results.Accepted($"/api/optimizations/{submission.Id}/status", response);
         }
         catch (ArgumentException ex)
         {
             return Results.BadRequest(new { error = ex.Message });
         }
+    }
+
+    private static async Task<IResult> GetOptimizationStatus(
+        Guid id,
+        ICommandHandler<GetOptimizationStatusQuery, OptimizationStatusDto?> handler,
+        CancellationToken ct)
+    {
+        var dto = await handler.HandleAsync(new GetOptimizationStatusQuery(id), ct);
+        if (dto is null)
+            return Results.NotFound(new { error = $"Run '{id}' not found." });
+
+        return Results.Ok(new OptimizationStatusResponse
+        {
+            Id = dto.Id,
+            CompletedCombinations = dto.CompletedCombinations,
+            TotalCombinations = dto.TotalCombinations,
+            Result = dto.Result is not null ? MapToResponse(dto.Result) : null,
+        });
+    }
+
+    private static async Task<IResult> CancelOptimization(
+        Guid id,
+        ICommandHandler<CancelRunCommand, bool> handler,
+        CancellationToken ct)
+    {
+        var cancelled = await handler.HandleAsync(new CancelRunCommand(id), ct);
+        if (!cancelled)
+            return Results.NotFound(new { error = $"Run '{id}' not found." });
+
+        return Results.Ok(new { id, status = "Cancelled" });
     }
 
     private static async Task<IResult> ListOptimizations(
@@ -153,5 +206,7 @@ public static class OptimizationEndpoints
         HasCandleData = r.RunFolderPath is not null,
         RunMode = r.RunMode,
         OptimizationRunId = r.OptimizationRunId,
+        ErrorMessage = r.ErrorMessage,
+        ErrorStackTrace = _isDevelopment ? r.ErrorStackTrace : null,
     };
 }

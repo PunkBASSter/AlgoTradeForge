@@ -2,12 +2,16 @@
 
 import type {
   BacktestRun,
+  BacktestSubmission,
+  BacktestStatus,
   PagedResponse,
   EquityPoint,
   EventsData,
   RunBacktestRequest,
   RunOptimizationRequest,
   OptimizationRun,
+  OptimizationSubmission,
+  OptimizationStatus,
   StartDebugSessionRequest,
   DebugSession,
   DebugSessionStatus,
@@ -100,9 +104,14 @@ function fetchWithTimeout(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
+  // Combine caller-provided signal with internal timeout signal
+  const signal = init?.signal
+    ? AbortSignal.any([init.signal, controller.signal])
+    : controller.signal;
+
   const promise = fetch(url, {
     ...init,
-    signal: init?.signal ?? controller.signal,
+    signal,
   }).finally(() => clearTimeout(timeoutId));
 
   return { promise, abort: () => controller.abort() };
@@ -113,9 +122,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await promise;
   if (!response.ok) {
     await handleErrorResponse(response);
-  }
-  if (response.status === 204) {
-    return undefined as T;
   }
   return response.json() as Promise<T>;
 }
@@ -164,12 +170,25 @@ export const apiClient = {
     );
   },
 
-  runBacktest(req: RunBacktestRequest): Promise<BacktestRun> {
-    return request<BacktestRun>("/api/backtests", {
+  runBacktest(req: RunBacktestRequest): Promise<BacktestSubmission> {
+    return request<BacktestSubmission>("/api/backtests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
     });
+  },
+
+  getBacktestStatus(id: string): Promise<BacktestStatus> {
+    return request<BacktestStatus>(
+      `/api/backtests/${encodeURIComponent(id)}/status`,
+    );
+  },
+
+  cancelBacktest(id: string): Promise<{ id: string; status: string }> {
+    return request<{ id: string; status: string }>(
+      `/api/backtests/${encodeURIComponent(id)}/cancel`,
+      { method: "POST" },
+    );
   },
 
   // --- Optimizations ---
@@ -189,12 +208,27 @@ export const apiClient = {
     );
   },
 
-  runOptimization(req: RunOptimizationRequest): Promise<OptimizationRun> {
-    return request<OptimizationRun>("/api/optimizations", {
+  runOptimization(
+    req: RunOptimizationRequest,
+  ): Promise<OptimizationSubmission> {
+    return request<OptimizationSubmission>("/api/optimizations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
     });
+  },
+
+  getOptimizationStatus(id: string): Promise<OptimizationStatus> {
+    return request<OptimizationStatus>(
+      `/api/optimizations/${encodeURIComponent(id)}/status`,
+    );
+  },
+
+  cancelOptimization(id: string): Promise<{ id: string; status: string }> {
+    return request<{ id: string; status: string }>(
+      `/api/optimizations/${encodeURIComponent(id)}/cancel`,
+      { method: "POST" },
+    );
   },
 
   // --- Debug sessions ---

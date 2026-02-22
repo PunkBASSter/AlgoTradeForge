@@ -2,22 +2,27 @@ using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.WebApi.Contracts;
 
 namespace AlgoTradeForge.WebApi.Endpoints;
 
 public static class BacktestEndpoints
 {
+    private static bool _isDevelopment;
+
     public static void MapBacktestEndpoints(this IEndpointRouteBuilder app)
     {
+        _isDevelopment = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().IsDevelopment();
+
         var group = app.MapGroup("/api/backtests")
             .WithTags("Backtests");
 
         group.MapPost("/", RunBacktest)
             .WithName("RunBacktest")
-            .WithSummary("Run a backtest with the specified parameters")
+            .WithSummary("Submit a backtest for background execution")
             .WithOpenApi()
-            .Produces<BacktestResultDto>(StatusCodes.Status200OK)
+            .Produces<BacktestSubmissionResponse>(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status400BadRequest);
 
         group.MapGet("/", ListBacktests)
@@ -39,11 +44,25 @@ public static class BacktestEndpoints
             .WithOpenApi()
             .Produces<IReadOnlyList<EquityPointResponse>>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{id:guid}/status", GetBacktestStatus)
+            .WithName("GetBacktestStatus")
+            .WithSummary("Poll for backtest progress and results")
+            .WithOpenApi()
+            .Produces<BacktestStatusResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{id:guid}/cancel", CancelBacktest)
+            .WithName("CancelBacktest")
+            .WithSummary("Cancel an in-progress backtest")
+            .WithOpenApi()
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> RunBacktest(
         RunBacktestRequest request,
-        ICommandHandler<RunBacktestCommand, BacktestResultDto> handler,
+        ICommandHandler<RunBacktestCommand, BacktestSubmissionDto> handler,
         CancellationToken ct)
     {
         TimeSpan? timeFrame = null;
@@ -70,13 +89,48 @@ public static class BacktestEndpoints
 
         try
         {
-            var result = await handler.HandleAsync(command, ct);
-            return Results.Ok(result);
+            var submission = await handler.HandleAsync(command, ct);
+            var response = new BacktestSubmissionResponse
+            {
+                Id = submission.Id,
+                TotalBars = submission.TotalBars,
+            };
+            return Results.Accepted($"/api/backtests/{submission.Id}/status", response);
         }
         catch (ArgumentException ex)
         {
             return Results.BadRequest(new { error = ex.Message });
         }
+    }
+
+    private static async Task<IResult> GetBacktestStatus(
+        Guid id,
+        ICommandHandler<GetBacktestStatusQuery, BacktestStatusDto?> handler,
+        CancellationToken ct)
+    {
+        var dto = await handler.HandleAsync(new GetBacktestStatusQuery(id), ct);
+        if (dto is null)
+            return Results.NotFound(new { error = $"Run '{id}' not found." });
+
+        return Results.Ok(new BacktestStatusResponse
+        {
+            Id = dto.Id,
+            ProcessedBars = dto.ProcessedBars,
+            TotalBars = dto.TotalBars,
+            Result = dto.Result is not null ? MapToResponse(dto.Result) : null,
+        });
+    }
+
+    private static async Task<IResult> CancelBacktest(
+        Guid id,
+        ICommandHandler<CancelRunCommand, bool> handler,
+        CancellationToken ct)
+    {
+        var cancelled = await handler.HandleAsync(new CancelRunCommand(id), ct);
+        if (!cancelled)
+            return Results.NotFound(new { error = $"Run '{id}' not found." });
+
+        return Results.Ok(new { id, status = "Cancelled" });
     }
 
     private static async Task<IResult> ListBacktests(
@@ -142,7 +196,7 @@ public static class BacktestEndpoints
         return Results.Ok(points);
     }
 
-    private static BacktestRunResponse MapToResponse(BacktestRunRecord r) => new()
+    internal static BacktestRunResponse MapToResponse(BacktestRunRecord r) => new()
     {
         Id = r.Id,
         StrategyName = r.StrategyName,
@@ -164,5 +218,7 @@ public static class BacktestEndpoints
         HasCandleData = r.RunFolderPath is not null,
         RunMode = r.RunMode,
         OptimizationRunId = r.OptimizationRunId,
+        ErrorMessage = r.ErrorMessage,
+        ErrorStackTrace = _isDevelopment ? r.ErrorStackTrace : null,
     };
 }
