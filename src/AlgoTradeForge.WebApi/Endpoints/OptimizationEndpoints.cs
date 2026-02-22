@@ -45,8 +45,7 @@ public static class OptimizationEndpoints
             .WithSummary("Cancel an in-progress optimization")
             .WithOpenApi()
             .Produces(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status409Conflict);
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> RunOptimization(
@@ -87,68 +86,30 @@ public static class OptimizationEndpoints
 
     private static async Task<IResult> GetOptimizationStatus(
         Guid id,
-        RunProgressCache progressCache,
-        ICommandHandler<GetOptimizationByIdQuery, OptimizationRunRecord?> queryHandler,
+        ICommandHandler<GetOptimizationStatusQuery, OptimizationStatusDto?> handler,
         CancellationToken ct)
     {
-        var entry = await progressCache.GetAsync(id, ct);
-        if (entry is not null)
+        var dto = await handler.HandleAsync(new GetOptimizationStatusQuery(id), ct);
+        if (dto is null)
+            return Results.NotFound(new { error = $"Run '{id}' not found." });
+
+        return Results.Ok(new OptimizationStatusResponse
         {
-            OptimizationRunResponse? result = null;
-
-            if (entry.Status == RunStatus.Completed)
-            {
-                var record = await queryHandler.HandleAsync(new GetOptimizationByIdQuery(id), ct);
-                if (record is not null)
-                    result = MapToResponse(record);
-            }
-
-            return Results.Ok(new OptimizationStatusResponse
-            {
-                Id = id,
-                Status = entry.Status.ToString(),
-                CompletedCombinations = entry.Processed,
-                FailedCombinations = entry.Failed,
-                TotalCombinations = entry.Total,
-                ErrorMessage = entry.ErrorMessage,
-                ErrorStackTrace = entry.ErrorStackTrace,
-                Result = result
-            });
-        }
-
-        var completedRecord = await queryHandler.HandleAsync(new GetOptimizationByIdQuery(id), ct);
-        if (completedRecord is not null)
-        {
-            return Results.Ok(new OptimizationStatusResponse
-            {
-                Id = id,
-                Status = RunStatus.Completed.ToString(),
-                CompletedCombinations = completedRecord.TotalCombinations,
-                FailedCombinations = 0,
-                TotalCombinations = completedRecord.TotalCombinations,
-                Result = MapToResponse(completedRecord)
-            });
-        }
-
-        return Results.NotFound(new { error = $"Run '{id}' not found." });
+            Id = dto.Id,
+            CompletedCombinations = dto.CompletedCombinations,
+            TotalCombinations = dto.TotalCombinations,
+            Result = dto.Result is not null ? MapToResponse(dto.Result) : null,
+        });
     }
 
     private static async Task<IResult> CancelOptimization(
         Guid id,
-        RunProgressCache progressCache,
-        IRunCancellationRegistry cancellationRegistry,
+        ICommandHandler<CancelRunCommand, bool> handler,
         CancellationToken ct)
     {
-        var entry = await progressCache.GetAsync(id, ct);
-        if (entry is null)
+        var cancelled = await handler.HandleAsync(new CancelRunCommand(id), ct);
+        if (!cancelled)
             return Results.NotFound(new { error = $"Run '{id}' not found." });
-
-        if (entry.Status is RunStatus.Completed or RunStatus.Failed or RunStatus.Cancelled)
-            return Results.Conflict(new { error = $"Run '{id}' is already {entry.Status} and cannot be cancelled." });
-
-        cancellationRegistry.TryCancel(id);
-
-        await progressCache.SetAsync(entry with { Status = RunStatus.Cancelled });
 
         return Results.Ok(new { id, status = "Cancelled" });
     }

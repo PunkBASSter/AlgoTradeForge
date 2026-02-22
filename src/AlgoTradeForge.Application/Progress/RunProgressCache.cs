@@ -1,44 +1,46 @@
-using System.Text.Json;
+using System.Buffers.Binary;
 using Microsoft.Extensions.Caching.Distributed;
 
 namespace AlgoTradeForge.Application.Progress;
 
 public sealed class RunProgressCache(IDistributedCache cache)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     private static string ProgressKey(Guid id) => $"progress:{id}";
     private static string RunKeyKey(string runKey) => $"runkey:{runKey}";
 
-    public async Task SetAsync(RunProgressEntry entry, CancellationToken ct = default)
+    public async Task SetProgressAsync(Guid id, long processed, long total, CancellationToken ct = default)
     {
-        var json = JsonSerializer.Serialize(entry, JsonOptions);
-        await cache.SetStringAsync(ProgressKey(entry.Id), json, ct);
+        var buffer = new byte[16];
+        BinaryPrimitives.WriteInt64LittleEndian(buffer.AsSpan(0), processed);
+        BinaryPrimitives.WriteInt64LittleEndian(buffer.AsSpan(8), total);
+        await cache.SetAsync(ProgressKey(id), buffer, ct);
     }
 
-    public async Task<RunProgressEntry?> GetAsync(Guid id, CancellationToken ct = default)
+    public async Task<(long Processed, long Total)?> GetProgressAsync(Guid id, CancellationToken ct = default)
     {
-        var json = await cache.GetStringAsync(ProgressKey(id), ct);
-        return json is null ? null : JsonSerializer.Deserialize<RunProgressEntry>(json, JsonOptions);
+        var bytes = await cache.GetAsync(ProgressKey(id), ct);
+        if (bytes is null)
+            return null;
+
+        var processed = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(0));
+        var total = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(8));
+        return (processed, total);
     }
 
-    public async Task RemoveAsync(Guid id, CancellationToken ct = default)
+    public async Task RemoveProgressAsync(Guid id, CancellationToken ct = default)
     {
         await cache.RemoveAsync(ProgressKey(id), ct);
     }
 
-    public async Task<Guid?> TryGetRunIdByKeyAsync(string runKey, CancellationToken ct = default)
-    {
-        var value = await cache.GetStringAsync(RunKeyKey(runKey), ct);
-        return value is not null ? Guid.Parse(value) : null;
-    }
-
     public async Task SetRunKeyAsync(string runKey, Guid id, CancellationToken ct = default)
     {
-        await cache.SetStringAsync(RunKeyKey(runKey), id.ToString(), ct);
+        await cache.SetAsync(RunKeyKey(runKey), id.ToByteArray(), ct);
+    }
+
+    public async Task<Guid?> TryGetRunIdByKeyAsync(string runKey, CancellationToken ct = default)
+    {
+        var bytes = await cache.GetAsync(RunKeyKey(runKey), ct);
+        return bytes is not null ? new Guid(bytes) : null;
     }
 
     public async Task RemoveRunKeyAsync(string runKey, CancellationToken ct = default)

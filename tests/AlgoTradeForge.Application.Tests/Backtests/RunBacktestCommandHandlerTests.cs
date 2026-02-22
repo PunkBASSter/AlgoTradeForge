@@ -15,7 +15,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 using Xunit;
 
 namespace AlgoTradeForge.Application.Tests.Backtests;
@@ -31,13 +30,12 @@ public class RunBacktestCommandHandlerTests
     private readonly IRunRepository _runRepository = Substitute.For<IRunRepository>();
     private readonly IRunCancellationRegistry _cancellationRegistry = new InMemoryRunCancellationRegistry();
     private readonly RunProgressCache _progressCache;
-    private readonly IDistributedCache _distributedCache;
 
     public RunBacktestCommandHandlerTests()
     {
-        _distributedCache = new MemoryDistributedCache(
+        var distributedCache = new MemoryDistributedCache(
             Options.Create(new MemoryDistributedCacheOptions()));
-        _progressCache = new RunProgressCache(_distributedCache);
+        _progressCache = new RunProgressCache(distributedCache);
     }
 
     private RunBacktestCommandHandler CreateHandler()
@@ -98,15 +96,7 @@ public class RunBacktestCommandHandlerTests
         var existingId = Guid.NewGuid();
         var runKey = RunKeyBuilder.Build(command);
         await _progressCache.SetRunKeyAsync(runKey, existingId);
-        await _progressCache.SetAsync(new RunProgressEntry
-        {
-            Id = existingId,
-            Status = RunStatus.Running,
-            Processed = 5,
-            Failed = 0,
-            Total = 10,
-            StartedAt = DateTimeOffset.UtcNow
-        });
+        await _progressCache.SetProgressAsync(existingId, 5, 10);
 
         // Act
         var result = await handler.HandleAsync(command);
@@ -143,11 +133,9 @@ public class RunBacktestCommandHandlerTests
         var result = await handler.HandleAsync(command);
 
         // Assert
-        var entry = await _progressCache.GetAsync(result.Id);
-        Assert.NotNull(entry);
-        Assert.Equal(result.Id, entry.Id);
-        Assert.True(entry.Status is RunStatus.Pending or RunStatus.Running);
-        Assert.Equal(10, entry.Total);
+        var progress = await _progressCache.GetProgressAsync(result.Id);
+        Assert.NotNull(progress);
+        Assert.Equal(10, progress.Value.Total);
     }
 
     [Fact]

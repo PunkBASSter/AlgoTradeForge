@@ -35,10 +35,13 @@ public static class DependencyInjection
 
         // Query handlers
         services.AddScoped<ICommandHandler<GetBacktestByIdQuery, BacktestRunRecord?>, GetBacktestByIdQueryHandler>();
+        services.AddScoped<ICommandHandler<GetBacktestStatusQuery, BacktestStatusDto?>, GetBacktestStatusQueryHandler>();
         services.AddScoped<ICommandHandler<ListBacktestRunsQuery, PagedResult<BacktestRunRecord>>, ListBacktestRunsQueryHandler>();
         services.AddScoped<ICommandHandler<GetOptimizationByIdQuery, OptimizationRunRecord?>, GetOptimizationByIdQueryHandler>();
+        services.AddScoped<ICommandHandler<GetOptimizationStatusQuery, OptimizationStatusDto?>, GetOptimizationStatusQueryHandler>();
         services.AddScoped<ICommandHandler<ListOptimizationRunsQuery, PagedResult<OptimizationRunRecord>>, ListOptimizationRunsQueryHandler>();
         services.AddScoped<ICommandHandler<GetDistinctStrategyNamesQuery, IReadOnlyList<string>>, GetDistinctStrategyNamesQueryHandler>();
+        services.AddScoped<ICommandHandler<CancelRunCommand, bool>, CancelRunCommandHandler>();
 
         // Debug session management
         services.AddSingleton<IDebugSessionStore, InMemoryDebugSessionStore>();

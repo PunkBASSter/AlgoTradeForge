@@ -31,7 +31,7 @@ public sealed class RunOptimizationCommandHandler(
     IRunCancellationRegistry cancellationRegistry,
     ILogger<RunOptimizationCommandHandler> logger) : ICommandHandler<RunOptimizationCommand, OptimizationSubmissionDto>
 {
-    private static readonly TimeSpan ProgressFlushInterval = TimeSpan.FromSeconds(1);
+    private const int ProgressUpdateInterval = 100;
 
     public async Task<OptimizationSubmissionDto> HandleAsync(RunOptimizationCommand command, CancellationToken ct = default)
     {
@@ -40,13 +40,13 @@ public sealed class RunOptimizationCommandHandler(
         var existingId = await progressCache.TryGetRunIdByKeyAsync(runKey, ct);
         if (existingId is not null)
         {
-            var existing = await progressCache.GetAsync(existingId.Value, ct);
-            if (existing is not null && existing.Status is RunStatus.Pending or RunStatus.Running)
+            var existing = await progressCache.GetProgressAsync(existingId.Value, ct);
+            if (existing is not null)
             {
                 return new OptimizationSubmissionDto
                 {
                     Id = existingId.Value,
-                    TotalCombinations = existing.Total,
+                    TotalCombinations = existing.Value.Total,
                 };
             }
 
@@ -109,22 +109,13 @@ public sealed class RunOptimizationCommandHandler(
             throw new ArgumentException(
                 $"Estimated {estimatedCount} combinations exceeds maximum of {command.MaxCombinations}.");
 
-        // 3. Create RunProgressEntry
+        // 3. Store progress marker in cache
         var startedAt = DateTimeOffset.UtcNow;
         var optimizationRunId = Guid.NewGuid();
-        var entry = new RunProgressEntry
-        {
-            Id = optimizationRunId,
-            Status = RunStatus.Pending,
-            Processed = 0,
-            Failed = 0,
-            Total = estimatedCount,
-            StartedAt = startedAt
-        };
-        await progressCache.SetAsync(entry, ct);
+        await progressCache.SetProgressAsync(optimizationRunId, 0, estimatedCount, ct);
         await progressCache.SetRunKeyAsync(runKey, optimizationRunId, ct);
 
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var cts = new CancellationTokenSource();
         cancellationRegistry.Register(optimizationRunId, cts);
 
         // 4. Start background task
@@ -154,21 +145,11 @@ public sealed class RunOptimizationCommandHandler(
     {
         try
         {
-            await progressCache.SetAsync(new RunProgressEntry
-            {
-                Id = optimizationRunId,
-                Status = RunStatus.Running,
-                Processed = 0,
-                Failed = 0,
-                Total = estimatedCount,
-                StartedAt = startedAt
-            }, ct);
-
             var stopwatch = Stopwatch.StartNew();
             var results = new ConcurrentBag<(OptimizationTrialResultDto Dto, BacktestRunRecord Record)>();
             var combinations = cartesianGenerator.Enumerate(activeAxes);
             string? strategyVersion = null;
-            var counters = new long[2]; // [0] = processed, [1] = failed
+            long processedCount = 0;
 
             var parallelOptions = new ParallelOptions
             {
@@ -178,13 +159,7 @@ public sealed class RunOptimizationCommandHandler(
                 CancellationToken = ct
             };
 
-            // Start progress flush loop
-            var progressFlushCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var progressFlushTask = FlushProgressAsync(
-                optimizationRunId, counters,
-                estimatedCount, startedAt, progressFlushCts.Token);
-
-            await Parallel.ForEachAsync(combinations, parallelOptions, (combination, token) =>
+            await Parallel.ForEachAsync(combinations, parallelOptions, async (combination, token) =>
             {
                 try
                 {
@@ -287,7 +262,10 @@ public sealed class RunOptimizationCommandHandler(
                     };
 
                     results.Add((dto, trialRecord));
-                    Interlocked.Increment(ref counters[0]);
+
+                    var count = Interlocked.Increment(ref processedCount);
+                    if (count % ProgressUpdateInterval == 0)
+                        await progressCache.SetProgressAsync(optimizationRunId, count, estimatedCount);
                 }
                 catch (OperationCanceledException)
                 {
@@ -344,19 +322,20 @@ public sealed class RunOptimizationCommandHandler(
                     };
 
                     results.Add((failedDto, failedRecord));
-                    Interlocked.Increment(ref counters[1]);
-                    Interlocked.Increment(ref counters[0]);
+
+                    var count = Interlocked.Increment(ref processedCount);
+                    if (count % ProgressUpdateInterval == 0)
+                        await progressCache.SetProgressAsync(optimizationRunId, count, estimatedCount);
 
                     logger.LogWarning(ex, "Optimization {RunId}: trial failed", optimizationRunId);
                 }
-
-                return ValueTask.CompletedTask;
             });
 
-            // Stop progress flush loop
-            await progressFlushCts.CancelAsync();
-
             stopwatch.Stop();
+
+            // Final progress flush (handles case where total % ProgressUpdateInterval != 0)
+            await progressCache.SetProgressAsync(
+                optimizationRunId, Interlocked.Read(ref processedCount), estimatedCount);
 
             var sortedTrials = SortTrials(results.Select(r => r.Dto), command.SortBy);
             var optPrimarySub = command.DataSubscriptions![0];
@@ -388,92 +367,22 @@ public sealed class RunOptimizationCommandHandler(
 
             await runRepository.SaveOptimizationAsync(optimizationRecord);
 
-            await progressCache.SetAsync(new RunProgressEntry
-            {
-                Id = optimizationRunId,
-                Status = RunStatus.Completed,
-                Processed = Interlocked.Read(ref counters[0]),
-                Failed = Interlocked.Read(ref counters[1]),
-                Total = estimatedCount,
-                StartedAt = startedAt
-            });
-
-            logger.LogInformation("Optimization {RunId} completed in {Duration}ms with {Trials} trials ({Failed} failed)",
-                optimizationRunId, stopwatch.ElapsedMilliseconds, results.Count,
-                Interlocked.Read(ref counters[1]));
+            logger.LogInformation("Optimization {RunId} completed in {Duration}ms with {Trials} trials",
+                optimizationRunId, stopwatch.ElapsedMilliseconds, results.Count);
         }
         catch (OperationCanceledException)
         {
-            await progressCache.SetAsync(new RunProgressEntry
-            {
-                Id = optimizationRunId,
-                Status = RunStatus.Cancelled,
-                Processed = 0,
-                Failed = 0,
-                Total = estimatedCount,
-                StartedAt = startedAt
-            });
-
             logger.LogInformation("Optimization {RunId} was cancelled", optimizationRunId);
         }
         catch (Exception ex)
         {
-            await progressCache.SetAsync(new RunProgressEntry
-            {
-                Id = optimizationRunId,
-                Status = RunStatus.Failed,
-                Processed = 0,
-                Failed = 0,
-                Total = estimatedCount,
-                ErrorMessage = ex.Message,
-                ErrorStackTrace = ex.StackTrace,
-                StartedAt = startedAt
-            });
-
             logger.LogError(ex, "Optimization {RunId} failed", optimizationRunId);
         }
         finally
         {
-            // Cleanup: remove RunKey mapping and CTS immediately
+            await progressCache.RemoveProgressAsync(optimizationRunId);
             await progressCache.RemoveRunKeyAsync(runKey);
             cancellationRegistry.Remove(optimizationRunId);
-
-            // Delayed progress entry cleanup — allows final status polls to read terminal state
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(TimeSpan.FromSeconds(60));
-                await progressCache.RemoveAsync(optimizationRunId);
-            });
-        }
-    }
-
-    private async Task FlushProgressAsync(
-        Guid runId,
-        long[] counters,
-        long totalCombinations,
-        DateTimeOffset startedAt,
-        CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(ProgressFlushInterval, ct);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-
-            await progressCache.SetAsync(new RunProgressEntry
-            {
-                Id = runId,
-                Status = RunStatus.Running,
-                Processed = Interlocked.Read(ref counters[0]),
-                Failed = Interlocked.Read(ref counters[1]),
-                Total = totalCombinations,
-                StartedAt = startedAt
-            });
         }
     }
 

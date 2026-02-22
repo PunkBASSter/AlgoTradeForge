@@ -111,15 +111,7 @@ public class RunOptimizationCommandHandlerTests
         var existingId = Guid.NewGuid();
         var runKey = RunKeyBuilder.Build(command);
         await _progressCache.SetRunKeyAsync(runKey, existingId);
-        await _progressCache.SetAsync(new RunProgressEntry
-        {
-            Id = existingId,
-            Status = RunStatus.Running,
-            Processed = 1,
-            Failed = 0,
-            Total = 3,
-            StartedAt = DateTimeOffset.UtcNow
-        });
+        await _progressCache.SetProgressAsync(existingId, 1, 3);
 
         // Act
         var result = await handler.HandleAsync(command);
@@ -156,10 +148,9 @@ public class RunOptimizationCommandHandlerTests
         var result = await handler.HandleAsync(command);
 
         // Assert
-        var entry = await _progressCache.GetAsync(result.Id);
-        Assert.NotNull(entry);
-        Assert.True(entry.Status is RunStatus.Pending or RunStatus.Running);
-        Assert.Equal(3, entry.Total);
+        var progress = await _progressCache.GetProgressAsync(result.Id);
+        Assert.NotNull(progress);
+        Assert.Equal(3, progress.Value.Total);
 
         var runKey = RunKeyBuilder.Build(command);
         var mappedId = await _progressCache.TryGetRunIdByKeyAsync(runKey);

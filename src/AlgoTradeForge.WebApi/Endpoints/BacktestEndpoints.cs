@@ -5,6 +5,7 @@ using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.WebApi.Contracts;
 
+
 namespace AlgoTradeForge.WebApi.Endpoints;
 
 public static class BacktestEndpoints
@@ -53,8 +54,7 @@ public static class BacktestEndpoints
             .WithSummary("Cancel an in-progress backtest")
             .WithOpenApi()
             .Produces(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status409Conflict);
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> RunBacktest(
@@ -102,69 +102,28 @@ public static class BacktestEndpoints
 
     private static async Task<IResult> GetBacktestStatus(
         Guid id,
-        RunProgressCache progressCache,
-        ICommandHandler<GetBacktestByIdQuery, BacktestRunRecord?> queryHandler,
+        ICommandHandler<GetBacktestStatusQuery, BacktestStatusDto?> handler,
         CancellationToken ct)
     {
-        // Check in-progress cache first
-        var entry = await progressCache.GetAsync(id, ct);
-        if (entry is not null)
+        var dto = await handler.HandleAsync(new GetBacktestStatusQuery(id), ct);
+        if (dto is null)
+            return Results.NotFound(new { error = $"Run '{id}' not found." });
+
+        return Results.Ok(new BacktestStatusResponse
         {
-            BacktestRunResponse? result = null;
-
-            // If completed, fetch the full result from persistence
-            if (entry.Status == RunStatus.Completed)
-            {
-                var record = await queryHandler.HandleAsync(new GetBacktestByIdQuery(id), ct);
-                if (record is not null)
-                    result = MapToResponse(record);
-            }
-
-            return Results.Ok(new BacktestStatusResponse
-            {
-                Id = id,
-                Status = entry.Status.ToString(),
-                ProcessedBars = (int)entry.Processed,
-                TotalBars = (int)entry.Total,
-                ErrorMessage = entry.ErrorMessage,
-                ErrorStackTrace = entry.ErrorStackTrace,
-                Result = result
-            });
-        }
-
-        // Check persistence for completed runs
-        var completedRecord = await queryHandler.HandleAsync(new GetBacktestByIdQuery(id), ct);
-        if (completedRecord is not null)
-        {
-            return Results.Ok(new BacktestStatusResponse
-            {
-                Id = id,
-                Status = RunStatus.Completed.ToString(),
-                ProcessedBars = completedRecord.TotalBars,
-                TotalBars = completedRecord.TotalBars,
-                Result = MapToResponse(completedRecord)
-            });
-        }
-
-        return Results.NotFound(new { error = $"Run '{id}' not found." });
+            Id = dto.Id,
+            Result = dto.Result is not null ? MapToResponse(dto.Result) : null,
+        });
     }
 
     private static async Task<IResult> CancelBacktest(
         Guid id,
-        RunProgressCache progressCache,
-        IRunCancellationRegistry cancellationRegistry,
+        ICommandHandler<CancelRunCommand, bool> handler,
         CancellationToken ct)
     {
-        var entry = await progressCache.GetAsync(id, ct);
-        if (entry is null)
+        var cancelled = await handler.HandleAsync(new CancelRunCommand(id), ct);
+        if (!cancelled)
             return Results.NotFound(new { error = $"Run '{id}' not found." });
-
-        if (entry.Status is RunStatus.Completed or RunStatus.Failed or RunStatus.Cancelled)
-            return Results.Conflict(new { error = $"Run '{id}' is already {entry.Status} and cannot be cancelled." });
-
-        cancellationRegistry.TryCancel(id);
-
-        await progressCache.SetAsync(entry with { Status = RunStatus.Cancelled });
 
         return Results.Ok(new { id, status = "Cancelled" });
     }

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Application.Persistence;
@@ -22,8 +21,6 @@ public sealed class RunBacktestCommandHandler(
     IRunCancellationRegistry cancellationRegistry,
     ILogger<RunBacktestCommandHandler> logger) : ICommandHandler<RunBacktestCommand, BacktestSubmissionDto>
 {
-    private static readonly TimeSpan ProgressFlushInterval = TimeSpan.FromSeconds(1);
-
     public async Task<BacktestSubmissionDto> HandleAsync(RunBacktestCommand command, CancellationToken ct = default)
     {
         // 1. Compute RunKey and check for dedup
@@ -31,13 +28,13 @@ public sealed class RunBacktestCommandHandler(
         var existingId = await progressCache.TryGetRunIdByKeyAsync(runKey, ct);
         if (existingId is not null)
         {
-            var existing = await progressCache.GetAsync(existingId.Value, ct);
-            if (existing is not null && existing.Status is RunStatus.Pending or RunStatus.Running)
+            var existing = await progressCache.GetProgressAsync(existingId.Value, ct);
+            if (existing is not null)
             {
                 return new BacktestSubmissionDto
                 {
                     Id = existingId.Value,
-                    TotalBars = (int)existing.Total,
+                    TotalBars = (int)existing.Value.Total,
                 };
             }
 
@@ -50,22 +47,13 @@ public sealed class RunBacktestCommandHandler(
         var setup = await preparer.PrepareAsync(command, PassthroughIndicatorFactory.Instance, ct);
         var totalBars = setup.Series[0].Count;
 
-        // 3. Create RunProgressEntry and store in cache
+        // 3. Store progress marker in cache
         var runId = Guid.NewGuid();
-        var entry = new RunProgressEntry
-        {
-            Id = runId,
-            Status = RunStatus.Pending,
-            Processed = 0,
-            Failed = 0,
-            Total = totalBars,
-            StartedAt = startedAt
-        };
-        await progressCache.SetAsync(entry, ct);
+        await progressCache.SetProgressAsync(runId, 0, totalBars, ct);
         await progressCache.SetRunKeyAsync(runKey, runId, ct);
 
         // 4. Register CancellationTokenSource
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var cts = new CancellationTokenSource();
         cancellationRegistry.Register(runId, cts);
 
         // 5. Start background task
@@ -90,17 +78,6 @@ public sealed class RunBacktestCommandHandler(
     {
         try
         {
-            // Update status to Running
-            await progressCache.SetAsync(new RunProgressEntry
-            {
-                Id = runId,
-                Status = RunStatus.Running,
-                Processed = 0,
-                Failed = 0,
-                Total = totalBars,
-                StartedAt = startedAt
-            }, ct);
-
             var identity = new RunIdentity
             {
                 StrategyName = command.StrategyName,
@@ -114,25 +91,10 @@ public sealed class RunBacktestCommandHandler(
                 StrategyParameters = command.StrategyParameters,
             };
 
-            var progressSink = new ProgressTrackingEventBusSink();
             using var fileSink = runSinkFactory.Create(identity);
-            var eventBus = new EventBus(ExportMode.Backtest, [fileSink, progressSink]);
-
-            // Start progress flush loop
-            var progressFlushTask = FlushProgressAsync(runId, progressSink, totalBars, startedAt, ct);
+            var eventBus = new EventBus(ExportMode.Backtest, [fileSink]);
 
             var result = engine.Run(setup.Series, setup.Strategy, setup.Options, ct, bus: eventBus);
-
-            // Final progress flush
-            await progressCache.SetAsync(new RunProgressEntry
-            {
-                Id = runId,
-                Status = RunStatus.Running,
-                Processed = progressSink.ProcessedBars,
-                Failed = 0,
-                Total = totalBars,
-                StartedAt = startedAt
-            });
 
             var runSummary = new RunSummary(
                 result.TotalBarsProcessed,
@@ -195,92 +157,21 @@ public sealed class RunBacktestCommandHandler(
 
             await runRepository.SaveAsync(record);
 
-            // Update cache to Completed
-            await progressCache.SetAsync(new RunProgressEntry
-            {
-                Id = runId,
-                Status = RunStatus.Completed,
-                Processed = totalBars,
-                Failed = 0,
-                Total = totalBars,
-                StartedAt = startedAt
-            });
-
             logger.LogInformation("Backtest {RunId} completed in {Duration}ms", runId, record.DurationMs);
         }
         catch (OperationCanceledException)
         {
-            await progressCache.SetAsync(new RunProgressEntry
-            {
-                Id = runId,
-                Status = RunStatus.Cancelled,
-                Processed = 0,
-                Failed = 0,
-                Total = totalBars,
-                StartedAt = startedAt
-            });
-
             logger.LogInformation("Backtest {RunId} was cancelled", runId);
         }
         catch (Exception ex)
         {
-            await progressCache.SetAsync(new RunProgressEntry
-            {
-                Id = runId,
-                Status = RunStatus.Failed,
-                Processed = 0,
-                Failed = 0,
-                Total = totalBars,
-                ErrorMessage = ex.Message,
-                ErrorStackTrace = ex.StackTrace,
-                StartedAt = startedAt
-            });
-
             logger.LogError(ex, "Backtest {RunId} failed", runId);
         }
         finally
         {
-            // Cleanup: remove RunKey mapping and CTS immediately
+            await progressCache.RemoveProgressAsync(runId);
             await progressCache.RemoveRunKeyAsync(runKey);
             cancellationRegistry.Remove(runId);
-
-            // Delayed progress entry cleanup — allows final status polls to read terminal state
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(TimeSpan.FromSeconds(60));
-                await progressCache.RemoveAsync(runId);
-            });
-        }
-    }
-
-    private async Task FlushProgressAsync(
-        Guid runId,
-        ProgressTrackingEventBusSink progressSink,
-        int totalBars,
-        DateTimeOffset startedAt,
-        CancellationToken ct)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(ProgressFlushInterval, ct);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-
-            await progressCache.SetAsync(new RunProgressEntry
-            {
-                Id = runId,
-                Status = RunStatus.Running,
-                Processed = progressSink.ProcessedBars,
-                Failed = 0,
-                Total = totalBars,
-                StartedAt = startedAt
-            });
         }
     }
 }

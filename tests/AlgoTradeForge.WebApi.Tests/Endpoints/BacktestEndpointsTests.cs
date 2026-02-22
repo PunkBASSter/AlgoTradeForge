@@ -1,114 +1,60 @@
-using System.Net;
-using System.Net.Http.Json;
-using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
-using AlgoTradeForge.WebApi.Contracts;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
+using Xunit;
 
 namespace AlgoTradeForge.WebApi.Tests.Endpoints;
 
 public class BacktestEndpointsTests
 {
-    private readonly IDistributedCache _distributedCache;
     private readonly RunProgressCache _progressCache;
 
     public BacktestEndpointsTests()
     {
-        _distributedCache = new MemoryDistributedCache(
+        var distributedCache = new MemoryDistributedCache(
             Options.Create(new MemoryDistributedCacheOptions()));
-        _progressCache = new RunProgressCache(_distributedCache);
+        _progressCache = new RunProgressCache(distributedCache);
     }
 
     [Fact]
-    public async Task GetStatus_RunningEntry_ReturnsOkWithProgress()
+    public async Task GetStatus_ActiveRun_CacheHitMeansRunning()
     {
         // Arrange
         var runId = Guid.NewGuid();
-        await _progressCache.SetAsync(new RunProgressEntry
-        {
-            Id = runId,
-            Status = RunStatus.Running,
-            Processed = 50,
-            Failed = 0,
-            Total = 100,
-            StartedAt = DateTimeOffset.UtcNow
-        });
+        await _progressCache.SetProgressAsync(runId, 50, 100);
 
         // Act
-        var entry = await _progressCache.GetAsync(runId);
+        var progress = await _progressCache.GetProgressAsync(runId);
 
-        // Assert
-        Assert.NotNull(entry);
-        Assert.Equal(RunStatus.Running, entry.Status);
-        Assert.Equal(50, entry.Processed);
-        Assert.Equal(100, entry.Total);
+        // Assert — cache presence means running
+        Assert.NotNull(progress);
+        Assert.Equal(50, progress.Value.Processed);
+        Assert.Equal(100, progress.Value.Total);
     }
 
     [Fact]
-    public async Task GetStatus_CompletedEntry_ReturnsCompletedStatus()
+    public async Task GetStatus_CompletedRun_CacheMiss()
     {
-        // Arrange
-        var runId = Guid.NewGuid();
-        await _progressCache.SetAsync(new RunProgressEntry
-        {
-            Id = runId,
-            Status = RunStatus.Completed,
-            Processed = 100,
-            Failed = 0,
-            Total = 100,
-            StartedAt = DateTimeOffset.UtcNow
-        });
+        // Act — no cache entry for this ID
+        var progress = await _progressCache.GetProgressAsync(Guid.NewGuid());
 
-        // Act
-        var entry = await _progressCache.GetAsync(runId);
-
-        // Assert
-        Assert.NotNull(entry);
-        Assert.Equal(RunStatus.Completed, entry.Status);
-        Assert.Equal(100, entry.Processed);
+        // Assert — cache miss, would check SQLite next
+        Assert.Null(progress);
     }
 
     [Fact]
-    public async Task GetStatus_FailedEntry_ReturnsErrorDetails()
-    {
-        // Arrange
-        var runId = Guid.NewGuid();
-        await _progressCache.SetAsync(new RunProgressEntry
-        {
-            Id = runId,
-            Status = RunStatus.Failed,
-            Processed = 30,
-            Failed = 0,
-            Total = 100,
-            ErrorMessage = "Test error",
-            ErrorStackTrace = "at TestStack",
-            StartedAt = DateTimeOffset.UtcNow
-        });
-
-        // Act
-        var entry = await _progressCache.GetAsync(runId);
-
-        // Assert
-        Assert.NotNull(entry);
-        Assert.Equal(RunStatus.Failed, entry.Status);
-        Assert.Equal("Test error", entry.ErrorMessage);
-        Assert.Equal("at TestStack", entry.ErrorStackTrace);
-    }
-
-    [Fact]
-    public async Task GetStatus_UnknownId_ReturnsNull()
+    public async Task GetStatus_UnknownRun_ReturnsNull()
     {
         // Act
-        var entry = await _progressCache.GetAsync(Guid.NewGuid());
+        var progress = await _progressCache.GetProgressAsync(Guid.NewGuid());
 
         // Assert
-        Assert.Null(entry);
+        Assert.Null(progress);
     }
 
     [Fact]
-    public async Task Cancel_RunningEntry_UpdatesStatusToCancelled()
+    public async Task Cancel_RegisteredRun_CancelsViaRegistry()
     {
         // Arrange
         var runId = Guid.NewGuid();
@@ -116,52 +62,25 @@ public class BacktestEndpointsTests
         var cts = new CancellationTokenSource();
         registry.Register(runId, cts);
 
-        await _progressCache.SetAsync(new RunProgressEntry
-        {
-            Id = runId,
-            Status = RunStatus.Running,
-            Processed = 10,
-            Failed = 0,
-            Total = 100,
-            StartedAt = DateTimeOffset.UtcNow
-        });
-
         // Act
-        var entry = await _progressCache.GetAsync(runId);
-        Assert.NotNull(entry);
-        Assert.Equal(RunStatus.Running, entry.Status);
-
-        registry.TryCancel(runId);
-        await _progressCache.SetAsync(entry with { Status = RunStatus.Cancelled });
+        var result = registry.TryCancel(runId);
 
         // Assert
-        var updated = await _progressCache.GetAsync(runId);
-        Assert.NotNull(updated);
-        Assert.Equal(RunStatus.Cancelled, updated.Status);
+        Assert.True(result);
         Assert.True(cts.IsCancellationRequested);
     }
 
     [Fact]
-    public async Task Cancel_CompletedEntry_ConflictDetected()
+    public async Task Cancel_UnknownRun_ReturnsFalse()
     {
         // Arrange
-        var runId = Guid.NewGuid();
-        await _progressCache.SetAsync(new RunProgressEntry
-        {
-            Id = runId,
-            Status = RunStatus.Completed,
-            Processed = 100,
-            Failed = 0,
-            Total = 100,
-            StartedAt = DateTimeOffset.UtcNow
-        });
+        var registry = new InMemoryRunCancellationRegistry();
 
         // Act
-        var entry = await _progressCache.GetAsync(runId);
+        var result = registry.TryCancel(Guid.NewGuid());
 
-        // Assert — status is terminal, cancel should not proceed
-        Assert.NotNull(entry);
-        Assert.True(entry.Status is RunStatus.Completed or RunStatus.Failed or RunStatus.Cancelled);
+        // Assert
+        Assert.False(result);
     }
 
     [Fact]
@@ -172,20 +91,35 @@ public class BacktestEndpointsTests
         var runKey = "test-run-key-12345";
 
         await _progressCache.SetRunKeyAsync(runKey, runId);
-        await _progressCache.SetAsync(new RunProgressEntry
-        {
-            Id = runId,
-            Status = RunStatus.Running,
-            Processed = 0,
-            Failed = 0,
-            Total = 50,
-            StartedAt = DateTimeOffset.UtcNow
-        });
+        await _progressCache.SetProgressAsync(runId, 0, 50);
 
         // Act
         var existingId = await _progressCache.TryGetRunIdByKeyAsync(runKey);
 
         // Assert
         Assert.Equal(runId, existingId);
+
+        // Verify the run is active
+        var progress = await _progressCache.GetProgressAsync(existingId!.Value);
+        Assert.NotNull(progress);
+    }
+
+    [Fact]
+    public async Task ProgressUpdate_RoundTrip()
+    {
+        // Arrange
+        var runId = Guid.NewGuid();
+
+        // Act — simulate progress updates
+        await _progressCache.SetProgressAsync(runId, 0, 100);
+        await _progressCache.SetProgressAsync(runId, 50, 100);
+        await _progressCache.SetProgressAsync(runId, 100, 100);
+
+        var progress = await _progressCache.GetProgressAsync(runId);
+
+        // Assert
+        Assert.NotNull(progress);
+        Assert.Equal(100, progress.Value.Processed);
+        Assert.Equal(100, progress.Value.Total);
     }
 }
