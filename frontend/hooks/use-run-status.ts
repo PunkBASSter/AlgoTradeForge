@@ -8,6 +8,13 @@ function isTerminal(status: RunStatusType | undefined): boolean {
   return status === "Completed" || status === "Failed" || status === "Cancelled";
 }
 
+/** Returns a polling interval that backs off as fetch count increases. */
+function backoffInterval(query: { state: { dataUpdateCount: number } }, baseMs: number, maxMs: number): number {
+  // Double the interval every 10 fetches, capped at maxMs
+  const doublings = Math.floor(query.state.dataUpdateCount / 10);
+  return Math.min(baseMs * 2 ** doublings, maxMs);
+}
+
 export function useBacktestStatus(id: string | null) {
   const client = getClient();
   return useQuery<BacktestStatus>({
@@ -16,7 +23,8 @@ export function useBacktestStatus(id: string | null) {
     enabled: !!id,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return isTerminal(status) ? false : 5_000;
+      if (isTerminal(status)) return false;
+      return backoffInterval(query, 3_000, 15_000);
     },
   });
 }
@@ -29,7 +37,8 @@ export function useOptimizationStatus(id: string | null) {
     enabled: !!id,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return isTerminal(status) ? false : 30_000;
+      if (isTerminal(status)) return false;
+      return backoffInterval(query, 5_000, 30_000);
     },
   });
 }

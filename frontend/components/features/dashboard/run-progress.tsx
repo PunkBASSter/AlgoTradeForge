@@ -2,10 +2,11 @@
 
 // T040 - RunProgress component for displaying run progress with polling
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useBacktestStatus, useOptimizationStatus } from "@/hooks/use-run-status";
 import { getClient } from "@/lib/services";
+import { useToast } from "@/components/ui/toast";
 import type { RunStatusType } from "@/types/api";
 
 interface RunProgressProps {
@@ -47,6 +48,7 @@ export function RunProgress({ runId, mode, onComplete }: RunProgressProps) {
   const [cancelling, setCancelling] = useState(false);
   const queryClient = useQueryClient();
   const client = getClient();
+  const { toast } = useToast();
 
   const backtestQuery = useBacktestStatus(mode === "backtest" ? runId : null);
   const optimizationQuery = useOptimizationStatus(mode === "optimization" ? runId : null);
@@ -68,18 +70,26 @@ export function RunProgress({ runId, mode, onComplete }: RunProgressProps) {
         ? ["backtest-status", runId]
         : ["optimization-status", runId];
       await queryClient.invalidateQueries({ queryKey });
-    } catch {
-      // Cancellation may fail if already completed
+    } catch (err) {
+      // Swallow 404 (already completed), but surface other errors
+      const msg = String(err);
+      if (!msg.includes("404")) {
+        toast("Failed to cancel run", "error");
+      }
     } finally {
       setCancelling(false);
     }
   };
 
-  // Notify parent on completion
+  // Notify parent on completion (once only)
   const status = data?.status;
-  if (status === "Completed" && onComplete) {
-    onComplete();
-  }
+  const hasNotifiedRef = useRef(false);
+  useEffect(() => {
+    if (status === "Completed" && onComplete && !hasNotifiedRef.current) {
+      hasNotifiedRef.current = true;
+      onComplete();
+    }
+  }, [status, onComplete]);
 
   if (isLoading) {
     return (

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Caching.Distributed;
 
 namespace AlgoTradeForge.Application.Progress;
@@ -7,6 +8,8 @@ public sealed class RunProgressCache(IDistributedCache cache)
 {
     private static string ProgressKey(Guid id) => $"progress:{id}";
     private static string RunKeyKey(string runKey) => $"runkey:{runKey}";
+
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new();
 
     public async Task SetProgressAsync(Guid id, long processed, long total, CancellationToken ct = default)
     {
@@ -19,7 +22,7 @@ public sealed class RunProgressCache(IDistributedCache cache)
     public async Task<(long Processed, long Total)?> GetProgressAsync(Guid id, CancellationToken ct = default)
     {
         var bytes = await cache.GetAsync(ProgressKey(id), ct);
-        if (bytes is null)
+        if (bytes is null || bytes.Length < 16)
             return null;
 
         var processed = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(0));
@@ -46,5 +49,21 @@ public sealed class RunProgressCache(IDistributedCache cache)
     public async Task RemoveRunKeyAsync(string runKey, CancellationToken ct = default)
     {
         await cache.RemoveAsync(RunKeyKey(runKey), ct);
+    }
+
+    /// <summary>
+    /// Acquires a per-runKey lock to prevent TOCTOU races during dedup check-and-register.
+    /// Caller must dispose the returned handle when done.
+    /// </summary>
+    public async Task<IDisposable> AcquireRunKeyLockAsync(string runKey, CancellationToken ct = default)
+    {
+        var semaphore = _keyLocks.GetOrAdd(runKey, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync(ct);
+        return new LockHandle(semaphore);
+    }
+
+    private sealed class LockHandle(SemaphoreSlim semaphore) : IDisposable
+    {
+        public void Dispose() => semaphore.Release();
     }
 }

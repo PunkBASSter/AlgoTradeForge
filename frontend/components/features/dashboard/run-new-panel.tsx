@@ -77,7 +77,7 @@ export function RunNewPanel({
   const { toast } = useToast();
   const client = getClient();
 
-  // Create editor once when the container mounts
+  // Create editor once when the slide-over opens
   useEffect(() => {
     if (!open || !editorContainerRef.current) return;
 
@@ -103,7 +103,8 @@ export function RunNewPanel({
       view.destroy();
       editorViewRef.current = null;
     };
-  }, [open, mode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mode changes handled by separate effect below
+  }, [open]);
 
   // Update editor content when mode changes (without recreating the view)
   const prevModeRef = useRef(mode);
@@ -131,6 +132,24 @@ export function RunNewPanel({
     } catch {
       toast("Invalid JSON", "error");
       return;
+    }
+
+    // Basic runtime validation of required fields
+    const obj = parsed as Record<string, unknown>;
+    if (mode === "backtest") {
+      const missing = ["assetName", "exchange", "strategyName", "initialCash", "startTime", "endTime"]
+        .filter((k) => obj[k] === undefined || obj[k] === null);
+      if (missing.length > 0) {
+        toast(`Missing required fields: ${missing.join(", ")}`, "error");
+        return;
+      }
+    } else {
+      const missing = ["strategyName", "initialCash", "startTime", "endTime"]
+        .filter((k) => obj[k] === undefined || obj[k] === null);
+      if (missing.length > 0) {
+        toast(`Missing required fields: ${missing.join(", ")}`, "error");
+        return;
+      }
     }
 
     setSubmitting(true);

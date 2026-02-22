@@ -30,3 +30,10 @@ public sealed record BacktestRunRecord
 }
 
 public sealed record EquityPoint(long TimestampMs, decimal Value);
+
+public static class RunModes
+{
+    public const string Backtest = "Backtest";
+    public const string Cancelled = "Cancelled";
+    public const string Failed = "Failed";
+}

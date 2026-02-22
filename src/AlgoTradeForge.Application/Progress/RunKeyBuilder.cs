@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using AlgoTradeForge.Application.Backtests;
@@ -57,7 +58,7 @@ public static class RunKeyBuilder
         {
             sb.Append('|');
             foreach (var kvp in cmd.Axes.OrderBy(k => k.Key))
-                sb.Append(kvp.Key).Append('=').Append(kvp.Value).Append(',');
+                sb.Append(kvp.Key).Append('=').Append(string.Format(CultureInfo.InvariantCulture, "{0}", kvp.Value)).Append(',');
         }
 
         return HashString(sb.ToString());
@@ -69,7 +70,7 @@ public static class RunKeyBuilder
         foreach (var kvp in parameters.OrderBy(k => k.Key, StringComparer.Ordinal))
         {
             if (!first) sb.Append(',');
-            sb.Append(kvp.Key).Append('=').Append(kvp.Value);
+            sb.Append(kvp.Key).Append('=').Append(string.Format(CultureInfo.InvariantCulture, "{0}", kvp.Value));
             first = false;
         }
     }

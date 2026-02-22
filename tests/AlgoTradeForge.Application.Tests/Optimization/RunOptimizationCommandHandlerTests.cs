@@ -50,6 +50,7 @@ public class RunOptimizationCommandHandlerTests
             _metricsCalculator, _spaceProvider, new OptimizationAxisResolver(),
             _cartesianGenerator, _runRepository, _progressCache,
             _cancellationRegistry,
+            Options.Create(new RunTimeoutOptions()),
             NullLogger<RunOptimizationCommandHandler>.Instance);
     }
 

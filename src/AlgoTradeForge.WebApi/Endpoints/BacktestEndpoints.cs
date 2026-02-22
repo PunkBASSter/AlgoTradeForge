@@ -112,6 +112,8 @@ public static class BacktestEndpoints
         return Results.Ok(new BacktestStatusResponse
         {
             Id = dto.Id,
+            ProcessedBars = dto.ProcessedBars,
+            TotalBars = dto.TotalBars,
             Result = dto.Result is not null ? MapToResponse(dto.Result) : null,
         });
     }

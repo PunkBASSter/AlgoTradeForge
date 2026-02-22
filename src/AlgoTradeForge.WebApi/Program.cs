@@ -2,6 +2,7 @@ using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Reporting;
@@ -37,6 +38,10 @@ builder.Services.AddDistributedMemoryCache();
 
 // Register Application services
 builder.Services.AddApplication();
+
+// Register run timeout config
+builder.Services.Configure<RunTimeoutOptions>(
+    builder.Configuration.GetSection("RunTimeouts"));
 
 // Register run persistence config
 builder.Services.Configure<RunStorageOptions>(

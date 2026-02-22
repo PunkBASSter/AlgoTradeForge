@@ -19,10 +19,12 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         BacktestOptions options,
         CancellationToken ct = default,
         IDebugProbe? probe = null,
-        IEventBus? bus = null)
+        IEventBus? bus = null,
+        Action<int>? onBarsProcessed = null)
     {
         var stopwatch = Stopwatch.StartNew();
         var state = InitializeRun(seriesPerSubscription, strategy, options, probe, bus);
+        state.OnBarsProcessed = onBarsProcessed;
 
         try
         {
@@ -183,6 +185,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             state.LastPrices[subscription.Asset.Name] = bar.Close;
             state.Cursors[s]++;
             state.TotalBarsDelivered++;
+            state.OnBarsProcessed?.Invoke(state.TotalBarsDelivered);
 
             EmitBar(state, bar, subscription);
 
@@ -484,6 +487,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         public long OrderIdCounter;
         public long SequenceNumber;
         public int TotalBarsDelivered;
+        public Action<int>? OnBarsProcessed;
 
         public sealed class ActiveSlTpPosition
         {

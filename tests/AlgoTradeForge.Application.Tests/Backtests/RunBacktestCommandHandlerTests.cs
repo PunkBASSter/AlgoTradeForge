@@ -51,6 +51,7 @@ public class RunBacktestCommandHandlerTests
             engine, preparer, _metricsCalculator,
             _runSinkFactory, _postRunPipeline, _runRepository,
             _progressCache, _cancellationRegistry,
+            Options.Create(new RunTimeoutOptions()),
             NullLogger<RunBacktestCommandHandler>.Instance);
     }
 

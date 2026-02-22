@@ -7,6 +7,8 @@ namespace AlgoTradeForge.Application.Backtests;
 public sealed record BacktestStatusDto
 {
     public required Guid Id { get; init; }
+    public long ProcessedBars { get; init; }
+    public long TotalBars { get; init; }
     public BacktestRunRecord? Result { get; init; }
 }
 
@@ -20,11 +22,26 @@ public sealed class GetBacktestStatusQueryHandler(
     {
         var progress = await progressCache.GetProgressAsync(query.Id, ct);
         if (progress is not null)
-            return new BacktestStatusDto { Id = query.Id };
+        {
+            return new BacktestStatusDto
+            {
+                Id = query.Id,
+                ProcessedBars = progress.Value.Processed,
+                TotalBars = progress.Value.Total,
+            };
+        }
 
         var record = await repository.GetByIdAsync(query.Id, ct);
         if (record is not null)
-            return new BacktestStatusDto { Id = query.Id, Result = record };
+        {
+            return new BacktestStatusDto
+            {
+                Id = query.Id,
+                ProcessedBars = record.TotalBars,
+                TotalBars = record.TotalBars,
+                Result = record,
+            };
+        }
 
         return null;
     }

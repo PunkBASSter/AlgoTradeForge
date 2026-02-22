@@ -104,9 +104,14 @@ function fetchWithTimeout(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
+  // Combine caller-provided signal with internal timeout signal
+  const signal = init?.signal
+    ? AbortSignal.any([init.signal, controller.signal])
+    : controller.signal;
+
   const promise = fetch(url, {
     ...init,
-    signal: init?.signal ?? controller.signal,
+    signal,
   }).finally(() => clearTimeout(timeoutId));
 
   return { promise, abort: () => controller.abort() };
@@ -117,9 +122,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await promise;
   if (!response.ok) {
     await handleErrorResponse(response);
-  }
-  if (response.status === 204) {
-    return undefined as T;
   }
   return response.json() as Promise<T>;
 }

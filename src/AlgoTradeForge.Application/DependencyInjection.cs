@@ -14,9 +14,9 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
-        services.AddScoped<BacktestPreparer>();
-        services.AddScoped<ICommandHandler<RunBacktestCommand, BacktestSubmissionDto>, RunBacktestCommandHandler>();
-        services.AddScoped<ICommandHandler<RunOptimizationCommand, OptimizationSubmissionDto>, RunOptimizationCommandHandler>();
+        services.AddSingleton<BacktestPreparer>();
+        services.AddSingleton<ICommandHandler<RunBacktestCommand, BacktestSubmissionDto>, RunBacktestCommandHandler>();
+        services.AddSingleton<ICommandHandler<RunOptimizationCommand, OptimizationSubmissionDto>, RunOptimizationCommandHandler>();
         services.AddSingleton<OptimizationAxisResolver>();
 
         // Progress tracking
@@ -29,6 +29,9 @@ public static class DependencyInjection
         // Event log storage defaults
         services.Configure<EventLogStorageOptions>(_ => { });
         services.Configure<PostRunPipelineOptions>(_ => { });
+
+        // Run timeout defaults
+        services.Configure<RunTimeoutOptions>(_ => { });
 
         // Run persistence defaults
         services.Configure<RunStorageOptions>(_ => { });
