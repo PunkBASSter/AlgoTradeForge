@@ -453,14 +453,15 @@ public sealed class RunOptimizationCommandHandler(
                 ? command.MaxDegreeOfParallelism
                 : Environment.ProcessorCount;
 
+            var completedAt = DateTimeOffset.UtcNow;
             var record = new OptimizationRunRecord
             {
                 Id = optimizationRunId,
                 StrategyName = command.StrategyName,
                 StrategyVersion = "0",
                 StartedAt = startedAt,
-                CompletedAt = DateTimeOffset.UtcNow,
-                DurationMs = (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
+                CompletedAt = completedAt,
+                DurationMs = (long)(completedAt - startedAt).TotalMilliseconds,
                 TotalCombinations = estimatedCount,
                 SortBy = command.SortBy,
                 DataStart = command.StartTime,

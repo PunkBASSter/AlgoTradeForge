@@ -9,12 +9,14 @@ using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Trading;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Xunit;
 
 namespace AlgoTradeForge.Application.Tests.Backtests;
@@ -185,5 +187,166 @@ public class RunBacktestCommandHandlerTests
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command));
+    }
+
+    // --- Background execution path tests ---
+
+    private void SetupBackgroundMocks()
+    {
+        var sink = Substitute.For<IRunSink>();
+        sink.RunFolderPath.Returns("/test/run/path");
+        _runSinkFactory.Create(Arg.Any<RunIdentity>()).Returns(sink);
+
+        _metricsCalculator.Calculate(
+                Arg.Any<IReadOnlyList<Fill>>(), Arg.Any<IReadOnlyList<long>>(),
+                Arg.Any<long>(), Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>())
+            .Returns(new PerformanceMetrics
+            {
+                TotalTrades = 0, WinningTrades = 0, LosingTrades = 0,
+                NetProfit = 0, GrossProfit = 0, GrossLoss = 0, TotalCommissions = 0,
+                TotalReturnPct = 0, AnnualizedReturnPct = 0,
+                SharpeRatio = 0, SortinoRatio = 0, MaxDrawdownPct = 0,
+                WinRatePct = 0, ProfitFactor = 0, AverageWin = 0, AverageLoss = 0,
+                InitialCapital = 10_000m, FinalEquity = 10_000m, TradingDays = 0,
+            });
+
+        _postRunPipeline.Execute(Arg.Any<string>(), Arg.Any<RunIdentity>(), Arg.Any<RunSummary>())
+            .Returns(new PostRunResult(true, true, null, null));
+    }
+
+    private async Task WaitForBackgroundCompletion(Guid runId, int timeoutMs = 5000)
+    {
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (Environment.TickCount64 < deadline)
+        {
+            var progress = await _progressCache.GetProgressAsync(runId);
+            if (progress is null) return;
+            await Task.Delay(25);
+        }
+
+        throw new TimeoutException($"Background task for run {runId} did not complete within {timeoutMs}ms.");
+    }
+
+    [Fact]
+    public async Task BackgroundTask_CompletesSuccessfully_SavesRecordAndCleansUp()
+    {
+        // Arrange
+        SetupPreparerMocks();
+        SetupBackgroundMocks();
+        var handler = CreateHandler();
+        var command = CreateCommand();
+
+        BacktestRunRecord? savedRecord = null;
+        _runRepository.SaveAsync(Arg.Any<BacktestRunRecord>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(ci => savedRecord = ci.Arg<BacktestRunRecord>());
+
+        // Act
+        var submission = await handler.HandleAsync(command);
+        await WaitForBackgroundCompletion(submission.Id);
+
+        // Assert — record was saved with correct data
+        Assert.NotNull(savedRecord);
+        Assert.Equal(submission.Id, savedRecord.Id);
+        Assert.Equal(RunModes.Backtest, savedRecord.RunMode);
+        Assert.Null(savedRecord.ErrorMessage);
+        Assert.Equal(10, savedRecord.TotalBars);
+
+        // Assert — progress and run key were cleaned up
+        var progress = await _progressCache.GetProgressAsync(submission.Id);
+        Assert.Null(progress);
+        var runKey = RunKeyBuilder.Build(command);
+        var mappedId = await _progressCache.TryGetRunIdByKeyAsync(runKey);
+        Assert.Null(mappedId);
+    }
+
+    [Fact]
+    public async Task BackgroundTask_EngineThrows_SavesErrorRecord()
+    {
+        // Arrange — make metricsCalculator throw to simulate a failure in the background task
+        SetupPreparerMocks();
+        SetupBackgroundMocks();
+        _metricsCalculator.Calculate(
+                Arg.Any<IReadOnlyList<Fill>>(), Arg.Any<IReadOnlyList<long>>(),
+                Arg.Any<long>(), Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>())
+            .Throws(new InvalidOperationException("Simulated engine failure"));
+
+        var handler = CreateHandler();
+        var command = CreateCommand();
+
+        BacktestRunRecord? savedRecord = null;
+        _runRepository.SaveAsync(Arg.Any<BacktestRunRecord>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(ci => savedRecord = ci.Arg<BacktestRunRecord>());
+
+        // Act
+        var submission = await handler.HandleAsync(command);
+        await WaitForBackgroundCompletion(submission.Id);
+
+        // Assert — error record was saved
+        Assert.NotNull(savedRecord);
+        Assert.Equal(submission.Id, savedRecord.Id);
+        Assert.Equal(RunModes.Failed, savedRecord.RunMode);
+        Assert.Equal("Simulated engine failure", savedRecord.ErrorMessage);
+
+        // Assert — cleanup still happened
+        var progress = await _progressCache.GetProgressAsync(submission.Id);
+        Assert.Null(progress);
+    }
+
+    [Fact]
+    public async Task BackgroundTask_Cancelled_SavesCancelledRecord()
+    {
+        // Arrange — strategy blocks on first bar so we can cancel reliably
+        var asset = TestAssets.BtcUsdt;
+        _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Domain.Asset?>(asset));
+
+        var enteredBar = new ManualResetEventSlim(false);
+        var strategy = Substitute.For<IInt64BarStrategy>();
+        strategy.Version.Returns("1.0");
+        strategy.DataSubscriptions.Returns(new List<DataSubscription>
+        {
+            new(asset, TimeSpan.FromMinutes(1))
+        });
+        // Block engine briefly on OnBarComplete — long enough for the test to cancel,
+        // short enough that the engine reaches ct.ThrowIfCancellationRequested() between bars
+        strategy.When(s => s.OnBarComplete(
+                Arg.Any<Domain.History.Int64Bar>(),
+                Arg.Any<DataSubscription>(),
+                Arg.Any<Domain.Strategy.IOrderContext>()))
+            .Do(_ =>
+            {
+                enteredBar.Set();
+                Thread.Sleep(300);
+            });
+
+        _strategyFactory.Create("TestStrategy", Arg.Any<IIndicatorFactory>(), Arg.Any<IDictionary<string, object>?>())
+            .Returns(strategy);
+
+        var series = TestBars.CreateSeries(10);
+        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(series);
+
+        SetupBackgroundMocks();
+        var handler = CreateHandler();
+        var command = CreateCommand();
+
+        BacktestRunRecord? savedRecord = null;
+        _runRepository.SaveAsync(Arg.Any<BacktestRunRecord>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask)
+            .AndDoes(ci => savedRecord = ci.Arg<BacktestRunRecord>());
+
+        // Act — submit, wait for engine to start processing, then cancel
+        var submission = await handler.HandleAsync(command);
+        enteredBar.Wait(TimeSpan.FromSeconds(5));
+        _cancellationRegistry.TryCancel(submission.Id);
+        await WaitForBackgroundCompletion(submission.Id);
+
+        // Assert — cancelled record was saved
+        Assert.NotNull(savedRecord);
+        Assert.Equal(submission.Id, savedRecord.Id);
+        Assert.Equal(RunModes.Cancelled, savedRecord.RunMode);
+        Assert.Contains("cancelled", savedRecord.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 }

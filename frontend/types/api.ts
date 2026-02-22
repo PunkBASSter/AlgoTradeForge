@@ -137,36 +137,45 @@ export type RunStatusType =
 export interface BacktestSubmission {
   id: string;
   totalBars: number;
-  status: string;
-  isDedup: boolean;
 }
 
 export interface OptimizationSubmission {
   id: string;
   totalCombinations: number;
-  status: string;
-  isDedup: boolean;
 }
 
 export interface BacktestStatus {
   id: string;
-  status: RunStatusType;
   processedBars: number;
   totalBars: number;
-  errorMessage?: string;
-  errorStackTrace?: string;
   result?: BacktestRun;
 }
 
 export interface OptimizationStatus {
   id: string;
-  status: RunStatusType;
   completedCombinations: number;
-  failedCombinations: number;
   totalCombinations: number;
-  errorMessage?: string;
-  errorStackTrace?: string;
   result?: OptimizationRun;
+}
+
+/** Derive run status from backend data (no status field in API response). */
+export function deriveBacktestStatus(data: BacktestStatus): RunStatusType {
+  if (data.result) {
+    if (data.result.runMode === "Cancelled") return "Cancelled";
+    if (data.result.errorMessage) return "Failed";
+    return "Completed";
+  }
+  if (data.processedBars === 0) return "Pending";
+  return "Running";
+}
+
+/** Derive optimization status from backend data. */
+export function deriveOptimizationStatus(data: OptimizationStatus): RunStatusType {
+  if (data.result) {
+    return "Completed";
+  }
+  if (data.completedCombinations === 0) return "Pending";
+  return "Running";
 }
 
 // ---------------------------------------------------------------------------

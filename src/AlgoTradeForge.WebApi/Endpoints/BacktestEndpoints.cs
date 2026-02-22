@@ -5,13 +5,16 @@ using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.WebApi.Contracts;
 
-
 namespace AlgoTradeForge.WebApi.Endpoints;
 
 public static class BacktestEndpoints
 {
+    private static bool _isDevelopment;
+
     public static void MapBacktestEndpoints(this IEndpointRouteBuilder app)
     {
+        _isDevelopment = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().IsDevelopment();
+
         var group = app.MapGroup("/api/backtests")
             .WithTags("Backtests");
 
@@ -216,6 +219,6 @@ public static class BacktestEndpoints
         RunMode = r.RunMode,
         OptimizationRunId = r.OptimizationRunId,
         ErrorMessage = r.ErrorMessage,
-        ErrorStackTrace = r.ErrorStackTrace,
+        ErrorStackTrace = _isDevelopment ? r.ErrorStackTrace : null,
     };
 }

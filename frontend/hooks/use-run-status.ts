@@ -3,8 +3,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { getClient } from "@/lib/services";
 import type { BacktestStatus, OptimizationStatus, RunStatusType } from "@/types/api";
+import { deriveBacktestStatus, deriveOptimizationStatus } from "@/types/api";
 
-function isTerminal(status: RunStatusType | undefined): boolean {
+function isTerminal(status: RunStatusType): boolean {
   return status === "Completed" || status === "Failed" || status === "Cancelled";
 }
 
@@ -22,8 +23,8 @@ export function useBacktestStatus(id: string | null) {
     queryFn: () => client.getBacktestStatus(id!),
     enabled: !!id,
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      if (isTerminal(status)) return false;
+      const data = query.state.data;
+      if (data && isTerminal(deriveBacktestStatus(data))) return false;
       return backoffInterval(query, 3_000, 15_000);
     },
   });
@@ -36,8 +37,8 @@ export function useOptimizationStatus(id: string | null) {
     queryFn: () => client.getOptimizationStatus(id!),
     enabled: !!id,
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      if (isTerminal(status)) return false;
+      const data = query.state.data;
+      if (data && isTerminal(deriveOptimizationStatus(data))) return false;
       return backoffInterval(query, 5_000, 30_000);
     },
   });

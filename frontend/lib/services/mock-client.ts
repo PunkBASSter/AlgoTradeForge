@@ -117,13 +117,13 @@ export const mockClient: typeof import("./api-client").apiClient & {
 
   async runBacktest(_req: RunBacktestRequest): Promise<BacktestSubmission> {
     await delay(800);
-    return { id: backtests.items[0].id, totalBars: backtests.items[0].totalBars, status: "Pending", isDedup: false };
+    return { id: backtests.items[0].id, totalBars: backtests.items[0].totalBars };
   },
 
   async getBacktestStatus(id: string): Promise<BacktestStatus> {
     await delay();
     const found = backtests.items.find((b) => b.id === id);
-    return { id, status: "Completed", processedBars: found?.totalBars ?? 0, totalBars: found?.totalBars ?? 0, result: found };
+    return { id, processedBars: found?.totalBars ?? 0, totalBars: found?.totalBars ?? 0, result: found };
   },
 
   async cancelBacktest(id: string): Promise<{ id: string; status: string }> {
@@ -180,13 +180,13 @@ export const mockClient: typeof import("./api-client").apiClient & {
     _req: RunOptimizationRequest,
   ): Promise<OptimizationSubmission> {
     await delay(1200);
-    return { id: optimizations.items[0].id, totalCombinations: optimizations.items[0].totalCombinations, status: "Pending", isDedup: false };
+    return { id: optimizations.items[0].id, totalCombinations: optimizations.items[0].totalCombinations };
   },
 
   async getOptimizationStatus(id: string): Promise<OptimizationStatus> {
     await delay();
     const found = optimizations.items.find((o) => o.id === id);
-    return { id, status: "Completed", completedCombinations: found?.totalCombinations ?? 0, failedCombinations: 0, totalCombinations: found?.totalCombinations ?? 0, result: found };
+    return { id, completedCombinations: found?.totalCombinations ?? 0, totalCombinations: found?.totalCombinations ?? 0, result: found };
   },
 
   async cancelOptimization(id: string): Promise<{ id: string; status: string }> {

@@ -53,17 +53,25 @@ public sealed class RunProgressCache(IDistributedCache cache)
 
     /// <summary>
     /// Acquires a per-runKey lock to prevent TOCTOU races during dedup check-and-register.
-    /// Caller must dispose the returned handle when done.
+    /// Caller must dispose the returned handle when done. The lock entry is evicted when
+    /// no other waiters are pending, preventing unbounded dictionary growth.
     /// </summary>
     public async Task<IDisposable> AcquireRunKeyLockAsync(string runKey, CancellationToken ct = default)
     {
         var semaphore = _keyLocks.GetOrAdd(runKey, _ => new SemaphoreSlim(1, 1));
         await semaphore.WaitAsync(ct);
-        return new LockHandle(semaphore);
+        return new LockHandle(semaphore, runKey, _keyLocks);
     }
 
-    private sealed class LockHandle(SemaphoreSlim semaphore) : IDisposable
+    private sealed class LockHandle(SemaphoreSlim semaphore, string runKey, ConcurrentDictionary<string, SemaphoreSlim> keyLocks) : IDisposable
     {
-        public void Dispose() => semaphore.Release();
+        public void Dispose()
+        {
+            semaphore.Release();
+
+            // Evict if no other waiters are pending (CurrentCount back to 1 means idle)
+            if (semaphore.CurrentCount == 1)
+                keyLocks.TryRemove(runKey, out _);
+        }
     }
 }

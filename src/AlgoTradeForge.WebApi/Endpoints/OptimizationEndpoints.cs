@@ -8,8 +8,11 @@ namespace AlgoTradeForge.WebApi.Endpoints;
 
 public static class OptimizationEndpoints
 {
+    private static bool _isDevelopment;
     public static void MapOptimizationEndpoints(this IEndpointRouteBuilder app)
     {
+        _isDevelopment = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().IsDevelopment();
+
         var group = app.MapGroup("/api/optimizations")
             .WithTags("Optimizations");
 
@@ -204,6 +207,6 @@ public static class OptimizationEndpoints
         RunMode = r.RunMode,
         OptimizationRunId = r.OptimizationRunId,
         ErrorMessage = r.ErrorMessage,
-        ErrorStackTrace = r.ErrorStackTrace,
+        ErrorStackTrace = _isDevelopment ? r.ErrorStackTrace : null,
     };
 }

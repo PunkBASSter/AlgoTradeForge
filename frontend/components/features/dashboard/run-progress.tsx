@@ -8,6 +8,7 @@ import { useBacktestStatus, useOptimizationStatus } from "@/hooks/use-run-status
 import { getClient } from "@/lib/services";
 import { useToast } from "@/components/ui/toast";
 import type { RunStatusType } from "@/types/api";
+import { deriveBacktestStatus, deriveOptimizationStatus } from "@/types/api";
 
 interface RunProgressProps {
   runId: string;
@@ -82,14 +83,18 @@ export function RunProgress({ runId, mode, onComplete }: RunProgressProps) {
   };
 
   // Notify parent on completion (once only)
-  const status = data?.status;
+  const derivedStatusForEffect = data
+    ? (isBacktest
+        ? deriveBacktestStatus(data as import("@/types/api").BacktestStatus)
+        : deriveOptimizationStatus(data as import("@/types/api").OptimizationStatus))
+    : undefined;
   const hasNotifiedRef = useRef(false);
   useEffect(() => {
-    if (status === "Completed" && onComplete && !hasNotifiedRef.current) {
+    if (derivedStatusForEffect === "Completed" && onComplete && !hasNotifiedRef.current) {
       hasNotifiedRef.current = true;
       onComplete();
     }
-  }, [status, onComplete]);
+  }, [derivedStatusForEffect, onComplete]);
 
   if (isLoading) {
     return (
@@ -113,35 +118,35 @@ export function RunProgress({ runId, mode, onComplete }: RunProgressProps) {
 
   if (!data) return null;
 
+  const derivedStatus = isBacktest
+    ? deriveBacktestStatus(data as import("@/types/api").BacktestStatus)
+    : deriveOptimizationStatus(data as import("@/types/api").OptimizationStatus);
+
   const processed = isBacktest
     ? (data as { processedBars: number }).processedBars
     : (data as { completedCombinations: number }).completedCombinations;
   const total = isBacktest
     ? (data as { totalBars: number }).totalBars
     : (data as { totalCombinations: number }).totalCombinations;
-  const failed = !isBacktest
-    ? (data as { failedCombinations: number }).failedCombinations
-    : 0;
 
   const label = isBacktest ? "Bars" : "Combinations";
+
+  const backtestResult = isBacktest ? (data as import("@/types/api").BacktestStatus).result : undefined;
+  const errorMessage = backtestResult?.errorMessage;
+  const errorStackTrace = backtestResult?.errorStackTrace;
 
   return (
     <div className="p-4 rounded-lg border border-border-default bg-bg-panel space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <StatusBadge status={data.status} />
+          <StatusBadge status={derivedStatus} />
           <span className="text-sm text-text-secondary">
             {processed.toLocaleString()} / {total.toLocaleString()} {label}
           </span>
-          {failed > 0 && (
-            <span className="text-xs text-accent-red">
-              ({failed} failed)
-            </span>
-          )}
         </div>
       </div>
 
-      {(data.status === "Running" || data.status === "Pending") && (
+      {(derivedStatus === "Running" || derivedStatus === "Pending") && (
         <>
           <ProgressBar processed={processed} total={total} />
           <button
@@ -154,13 +159,13 @@ export function RunProgress({ runId, mode, onComplete }: RunProgressProps) {
         </>
       )}
 
-      {data.errorMessage && (
+      {errorMessage && (
         <div className="p-3 rounded border border-accent-red bg-red-900/10 space-y-1">
           <p className="text-sm font-medium text-accent-red">Error</p>
-          <p className="text-xs text-text-secondary">{data.errorMessage}</p>
-          {data.errorStackTrace && (
+          <p className="text-xs text-text-secondary">{errorMessage}</p>
+          {errorStackTrace && (
             <pre className="text-xs text-text-muted mt-2 overflow-x-auto whitespace-pre-wrap">
-              {data.errorStackTrace}
+              {errorStackTrace}
             </pre>
           )}
         </div>

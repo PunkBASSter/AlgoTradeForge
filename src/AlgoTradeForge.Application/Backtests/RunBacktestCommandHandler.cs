@@ -107,7 +107,7 @@ public sealed class RunBacktestCommandHandler(
                 onBarsProcessed: bars =>
                 {
                     if (bars % ProgressUpdateInterval == 0)
-                        progressCache.SetProgressAsync(runId, bars, totalBars).GetAwaiter().GetResult();
+                        _ = progressCache.SetProgressAsync(runId, bars, totalBars);
                 });
 
             var runSummary = new RunSummary(
@@ -185,6 +185,7 @@ public sealed class RunBacktestCommandHandler(
     {
         try
         {
+            var completedAt = DateTimeOffset.UtcNow;
             var primarySub = setup.Strategy.DataSubscriptions[0];
             var record = new BacktestRunRecord
             {
@@ -200,10 +201,10 @@ public sealed class RunBacktestCommandHandler(
                 Commission = command.CommissionPerTrade,
                 SlippageTicks = checked((int)command.SlippageTicks),
                 StartedAt = startedAt,
-                CompletedAt = DateTimeOffset.UtcNow,
+                CompletedAt = completedAt,
                 DataStart = command.StartTime,
                 DataEnd = command.EndTime,
-                DurationMs = (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
+                DurationMs = (long)(completedAt - startedAt).TotalMilliseconds,
                 TotalBars = 0,
                 Metrics = new PerformanceMetrics
                 {
