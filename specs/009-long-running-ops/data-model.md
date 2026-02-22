@@ -22,6 +22,7 @@ Lifecycle state of a background operation.
 Pending → Running → Completed
                   → Failed
          → Failed (startup failure)
+         → Cancelled (user cancels before processing starts)
 Running → Cancelled
 ```
 

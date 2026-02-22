@@ -1,25 +1,25 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.4.0 → 1.5.0
-Modified principles: None
+Version change: 1.5.0 → 1.6.0
+Modified principles:
+  - V. Separation of Concerns: Added ephemeral compute run exception —
+    backtests/optimizations need not be resumable but MUST deduplicate
+    by deterministic RunKey.
 Added sections: None
 Removed sections: None
 Modified sections:
-  - Backend > Async/Concurrency: Added thread-affinity documentation
-    requirement — types that rely on single-threaded access MUST document
-    the invariant via comments or debug assertions.
-  - Backend > Dependency Injection: Added captive dependency prohibition —
-    Singletons MUST NOT constructor-inject Scoped or Transient services.
-  - Development Workflow > Testing Requirements: Added performance test
-    categorization via [Trait] and shared test utility consolidation rule.
-Trigger: Code review of branch 007-debug-control-in-loop identified gaps
-  in concurrency documentation, DI lifetime guidance, and test organization.
+  - Background Jobs: Split into Durable Jobs (unchanged requirements) and
+    Ephemeral Compute Runs (backtests, optimizations) with relaxed rules:
+    no DLQ, no checkpoint/resumability, no distributed locking required.
+    MUST deduplicate by RunKey via IDistributedCache.
+Trigger: speckit.analyze C1/C2 findings on 009-long-running-ops — Background
+  Jobs MUST statements were overly broad for atomic compute runs whose partial
+  results carry no value.
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ compatible (no testing/DI references)
+  - .specify/templates/plan-template.md ✅ compatible
   - .specify/templates/spec-template.md ✅ compatible
-  - .specify/templates/tasks-template.md ✅ compatible (test org is guidance,
-    not task structure)
+  - .specify/templates/tasks-template.md ✅ compatible
 Follow-up TODOs: None
 -->
 
@@ -98,7 +98,9 @@ The system MUST maintain clear boundaries between components:
 - **Persistence**: Each data type has dedicated storage optimized for its access pattern
 
 Frontend MUST NOT contain trading logic. Backend MUST NOT block on long-running
-operations. Jobs MUST be idempotent and resumable.
+operations. Jobs MUST be idempotent and resumable, except **ephemeral compute
+runs** (backtests, optimizations) whose partial results carry no value — these
+MUST be deduplicated by a deterministic RunKey but need not be resumable.
 
 **Rationale**: Clear boundaries enable independent scaling, testing, and deployment.
 They prevent coupling that makes systems fragile and hard to evolve.
@@ -282,11 +284,22 @@ AlgoTradeForge/
 
 ### Background Jobs
 
+Background jobs fall into two categories:
+
+**Durable Jobs** (data ingestion, scheduled tasks):
 - MUST use a job framework with persistence (Hangfire, Quartz.NET, or similar)
 - Jobs MUST be idempotent; re-running the same job produces identical results
 - Jobs MUST checkpoint progress for resumability after failures
 - MUST implement distributed locking for jobs that cannot run concurrently
 - MUST have dead-letter queues for failed jobs with alerting
+
+**Ephemeral Compute Runs** (backtests, optimizations):
+- Partial results carry no value; runs are atomic — complete or discard
+- MUST be deduplicated by a deterministic RunKey (e.g., Strategy+Version+Period+ParamsHash); submitting identical parameters returns the existing run
+- MUST track progress via `IDistributedCache` (key = RunKey, value = progress int); implementations MAY use `AddDistributedMemoryCache()` locally and swap to Redis/SQL Server via DI registration
+- Dead-letter queues are NOT required; failed runs record error details and clients may resubmit
+- Checkpoint/resumability is NOT required; if a run is lost (e.g., server restart), the client resubmits
+- Distributed locking is NOT required for single-node deployments
 
 ### Persistence
 
@@ -375,4 +388,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.5.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-21
+**Version**: 1.6.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-22

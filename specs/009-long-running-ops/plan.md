@@ -5,18 +5,18 @@
 
 ## Summary
 
-Redesign the backtest and optimization command handlers from synchronous HTTP-blocking execution to a fire-and-forget background model. POST endpoints return `202 Accepted` with a run ID and total count immediately. New status endpoints allow polling for progress (bars/combinations processed) and return the full results via a nullable result field upon completion. An in-memory `ConcurrentDictionary`-based progress store tracks volatile run state. The frontend polls automatically using TanStack Query's `refetchInterval` and displays "Processed X / Total" progress. Cancellation is supported via dedicated cancel endpoints that trigger `CancellationTokenSource`.
+Redesign the backtest and optimization command handlers from synchronous HTTP-blocking execution to a fire-and-forget background model. POST endpoints return `202 Accepted` with a RunKey and total count immediately. The RunKey is deterministic (`Strategy_Version_Period_ParamsHash`) — submitting identical parameters deduplicates to the existing run. New status endpoints allow polling for progress (bars/combinations processed) via `IDistributedCache` (key = RunKey, value = progress int) and return the full results via a nullable result field upon completion. Locally backed by `AddDistributedMemoryCache()`; swappable to Redis via DI. The frontend polls automatically using TanStack Query's `refetchInterval` and displays "Processed X / Total" progress. Cancellation is supported via dedicated cancel endpoints that trigger `CancellationTokenSource`.
 
 ## Technical Context
 
 **Language/Version**: C# 14 / .NET 10
-**Primary Dependencies**: ASP.NET Core (minimal APIs), System.Threading (Task.Run, ConcurrentDictionary, Interlocked, CancellationTokenSource), existing Domain/Application/Infrastructure layers
-**Storage**: SQLite (existing, via SqliteRunRepository) for completed results; ConcurrentDictionary (in-memory, volatile) for in-progress state
+**Primary Dependencies**: ASP.NET Core (minimal APIs), System.Threading (Task.Run, Interlocked, CancellationTokenSource), Microsoft.Extensions.Caching.Distributed (IDistributedCache), existing Domain/Application/Infrastructure layers
+**Storage**: SQLite (existing, via SqliteRunRepository) for completed results; `IDistributedCache` (`AddDistributedMemoryCache()`) for in-progress state (swappable to Redis via DI)
 **Testing**: xUnit + NSubstitute
 **Target Platform**: Windows (local single-user development tool)
 **Project Type**: Web application (C# backend + Next.js frontend)
 **Performance Goals**: POST submission response < 2 seconds; status poll response < 100ms
-**Constraints**: Single-user, single-node; no distributed coordination; in-memory progress does not survive server restart
+**Constraints**: Single-user, single-node; no distributed coordination; in-memory progress (via AddDistributedMemoryCache) does not survive server restart; swappable to Redis via DI
 **Scale/Scope**: One concurrent user, up to ~100K optimization combinations
 
 ## Constitution Check
@@ -31,12 +31,12 @@ Redesign the backtest and optimization command handlers from synchronous HTTP-bl
 | IV. Observability | Structured telemetry for background ops | PASS | Background task errors logged via Serilog |
 | V. Separation of Concerns | Backend MUST NOT block on long-running ops | PASS | **This feature fixes this violation** |
 | VI. Simplicity & YAGNI | Simplest solution that meets requirements | PASS | Simple Task.Run + ConcurrentDictionary |
-| Background Jobs | Job framework with persistence | JUSTIFIED DEVIATION | See Complexity Tracking |
+| Background Jobs | Ephemeral compute run rules (v1.6.0) | PASS | RunKey dedup via IDistributedCache; no DLQ/checkpoint needed per constitution |
 | Async/Concurrency | async/await, CancellationToken propagation | PASS | Already wired end-to-end |
-| DI Lifetimes | Singleton for progress store (no captive deps) | PASS | Store is thread-safe, no scoped injections |
+| DI Lifetimes | IDistributedCache registered via AddDistributedMemoryCache() | PASS | Standard Singleton registration, no captive deps |
 | Int64 Money Convention | long for Domain money types | PASS | Existing convention maintained |
 
-**Post-Design Re-check**: All gates remain PASS. The justified deviation from the Background Jobs requirement is documented below.
+**Post-Design Re-check**: All gates PASS. Constitution v1.6.0 classifies backtests/optimizations as Ephemeral Compute Runs with appropriate rules.
 
 ## Project Structure
 
@@ -61,10 +61,7 @@ src/
 ├── AlgoTradeForge.Application/
 │   ├── Progress/                       # NEW — Progress tracking types
 │   │   ├── RunStatus.cs                # Enum: Pending, Running, Completed, Failed, Cancelled
-│   │   ├── BacktestProgress.cs         # In-memory backtest progress state
-│   │   ├── OptimizationProgress.cs     # In-memory optimization progress state
-│   │   ├── IRunProgressStore.cs        # Interface for volatile progress store
-│   │   └── InMemoryRunProgressStore.cs # ConcurrentDictionary-based implementation
+│   │   └── RunKeyBuilder.cs            # Deterministic RunKey generation (Strategy+Version+Period+ParamsHash)
 │   ├── Backtests/
 │   │   ├── RunBacktestCommandHandler.cs        # MODIFIED — fire-and-forget pattern
 │   │   └── ProgressTrackingEventBusSink.cs     # NEW — IEventBus sink counting BarEvents
@@ -72,7 +69,7 @@ src/
 │   │   └── RunOptimizationCommandHandler.cs    # MODIFIED — fire-and-forget + per-trial error handling
 │   ├── Persistence/
 │   │   └── BacktestRunRecord.cs                # MODIFIED — add ErrorMessage, ErrorStackTrace
-│   └── DependencyInjection.cs                  # MODIFIED — register IRunProgressStore
+│   └── DependencyInjection.cs                  # MODIFIED — register AddDistributedMemoryCache()
 ├── AlgoTradeForge.Infrastructure/
 │   └── Persistence/
 │       └── SqliteRunRepository.cs              # MODIFIED — handle error columns
@@ -102,20 +99,21 @@ frontend/
 tests/
 ├── AlgoTradeForge.Application.Tests/            # NEW test project (if not exists) or existing
 │   ├── Progress/
-│   │   └── InMemoryRunProgressStoreTests.cs     # NEW
+│   │   └── RunKeyBuilderTests.cs                # NEW
 │   └── Backtests/
 │       └── ProgressTrackingEventBusSinkTests.cs # NEW
 ```
 
-**Structure Decision**: Follows existing clean architecture layout. New `Progress/` folder in Application layer for all progress-tracking types (interface + implementation collocated, matching `InMemoryDebugSessionStore` pattern). No new projects needed.
+**Structure Decision**: Follows existing clean architecture layout. New `Progress/` folder in Application layer for RunKey generation and status enum. Progress tracking uses `IDistributedCache` (standard .NET abstraction) — no custom store interface needed. `AddDistributedMemoryCache()` registered in DI; swappable to Redis with zero code changes.
 
 ## Complexity Tracking
 
-> **Justified deviations from Constitution Background Jobs requirements**
+> **Constitution Compliance (v1.6.0 — Ephemeral Compute Runs)**
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| No job framework (Hangfire/Quartz) | Single-user local tool; `Task.Run()` + `ConcurrentDictionary` is sufficient | Hangfire adds persistence layer, dashboard, serialization constraints — violates Principle VI (YAGNI) for a local dev tool |
-| No checkpoint/resumability | Spec explicitly states in-memory state is volatile and doesn't survive restarts | Checkpoint persistence adds DB tables, serialization, recovery logic for a scenario (server restart mid-run) that is rare and acceptable to lose |
-| No dead-letter queue | Failed runs store error info in BacktestRunRecord fields | Dead-letter queue adds messaging infrastructure for a single-user local tool |
-| No distributed locking | Single-node, single-user system with no concurrent access concerns | N/A — the constraint doesn't apply |
+| Requirement | Implementation | Status |
+|-------------|---------------|--------|
+| Deduplicate by RunKey | Deterministic key = `{Strategy}_{Version}_{Period}_{ParamsHash}`; checked in `IDistributedCache` before starting a new run | COMPLIANT |
+| Progress via `IDistributedCache` | `AddDistributedMemoryCache()` locally; key = RunKey, value = progress `int`; swappable to Redis via DI registration | COMPLIANT |
+| No DLQ required | Failed runs store error in `BacktestRunRecord` columns; client can resubmit | N/A per constitution |
+| No checkpoint/resumability required | Atomic compute — partial results carry no value | N/A per constitution |
+| No distributed locking required | Single-node deployment | N/A per constitution |

@@ -97,7 +97,7 @@ A trader who has submitted a backtest or optimization can cancel it before it co
 
 - **FR-001**: System MUST return a run identifier and summary details (total bars for backtest, total combinations for optimization) within 2 seconds of receiving a valid run request.
 - **FR-002**: System MUST process backtests and optimizations in the background without blocking the request that initiated them.
-- **FR-003**: System MUST expose a single status-check endpoint for each run type that returns the current progress (processed count vs. total count) and the run status. The response MUST include a nullable result field that is only populated when the run reaches a terminal state (completed, failed, or cancelled). No separate endpoint is needed to retrieve results.
+- **FR-003**: System MUST expose a single status-check endpoint for each run type that returns the current progress (processed count vs. total count) and the run status. The response MUST include a nullable result field that is populated only when the run completes successfully. For failed or cancelled runs, the result field remains null and error details are provided via separate error fields. No separate endpoint is needed to retrieve results.
 - **FR-004**: System MUST track progress during backtest execution as the number of bars processed out of the total.
 - **FR-005**: System MUST track progress during optimization execution as the number of parameter combinations evaluated out of the total.
 - **FR-006**: During optimization, the status poll response MUST include only progress counts (completed and failed trial counts vs. total). The full trial results are included in the nullable result field only upon completion — they are NOT returned incrementally on each poll.

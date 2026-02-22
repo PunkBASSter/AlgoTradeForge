@@ -127,14 +127,19 @@
 
 **Independent Test**: Submit a long-running operation, send cancel request, verify status changes to Cancelled and processing stops within 10 seconds
 
+### Tests for User Story 4
+
+- [ ] T039 [P] [US4] Write tests for cancel endpoints: verify POST /api/backtests/{id}/cancel returns 200 with Cancelled status when run is Running or Pending, returns 409 Conflict when run is in terminal state (Completed/Failed), returns 404 when run ID not found; same cases for POST /api/optimizations/{id}/cancel in `tests/AlgoTradeForge.WebApi.Tests/Endpoints/CancelEndpointsTests.cs`
+- [ ] T040 [P] [US4] Write tests for cancellation handling in command handlers: verify `RunBacktestCommandHandler` catches `OperationCanceledException` and sets progress status to Cancelled (not Failed); verify `RunOptimizationCommandHandler` catches `OperationCanceledException` from `Parallel.ForEachAsync` and sets status to Cancelled in `tests/AlgoTradeForge.Application.Tests/Backtests/RunBacktestCommandHandlerCancellationTests.cs` and `tests/AlgoTradeForge.Application.Tests/Optimization/RunOptimizationCommandHandlerCancellationTests.cs`
+
 ### Implementation for User Story 4
 
-- [ ] T039 [US4] Add `POST /api/backtests/{id}/cancel` endpoint that: (1) looks up `BacktestProgress` in `IRunProgressStore`, (2) if found and status is Running/Pending, calls `CancellationTokenSource.Cancel()` and sets status to Cancelled, returns 200 with `{id, status}`, (3) if terminal state, returns 409 Conflict, (4) if not found, returns 404 in `src/AlgoTradeForge.WebApi/Endpoints/BacktestEndpoints.cs`
-- [ ] T040 [US4] Add `POST /api/optimizations/{id}/cancel` endpoint with same logic as backtest cancel in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs`
-- [ ] T041 [US4] Ensure `RunBacktestCommandHandler` background task catches `OperationCanceledException` from `ct.ThrowIfCancellationRequested()` in the engine loop and sets progress status to Cancelled (not Failed) in `src/AlgoTradeForge.Application/Backtests/RunBacktestCommandHandler.cs`
-- [ ] T042 [US4] Ensure `RunOptimizationCommandHandler` background task catches `OperationCanceledException` from the `Parallel.ForEachAsync` cancellation and sets progress status to Cancelled (not Failed) in `src/AlgoTradeForge.Application/Optimization/RunOptimizationCommandHandler.cs`
-- [ ] T043 [US4] Add cancel button to the `RunProgress` frontend component that calls `cancelBacktest(id)` or `cancelOptimization(id)` and updates UI to show Cancelled state in `frontend/components/features/dashboard/run-progress.tsx`
-- [ ] T044 [US4] Verify US4 end-to-end: submit a long-running operation, click cancel, verify status changes to Cancelled and processing stops
+- [ ] T041 [US4] Add `POST /api/backtests/{id}/cancel` endpoint that: (1) looks up `BacktestProgress` in `IRunProgressStore`, (2) if found and status is Running/Pending, calls `CancellationTokenSource.Cancel()` and sets status to Cancelled, returns 200 with `{id, status}`, (3) if terminal state, returns 409 Conflict, (4) if not found, returns 404 in `src/AlgoTradeForge.WebApi/Endpoints/BacktestEndpoints.cs`
+- [ ] T042 [US4] Add `POST /api/optimizations/{id}/cancel` endpoint with same logic as backtest cancel in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs`
+- [ ] T043 [US4] Ensure `RunBacktestCommandHandler` background task catches `OperationCanceledException` from `ct.ThrowIfCancellationRequested()` in the engine loop and sets progress status to Cancelled (not Failed) in `src/AlgoTradeForge.Application/Backtests/RunBacktestCommandHandler.cs`
+- [ ] T044 [US4] Ensure `RunOptimizationCommandHandler` background task catches `OperationCanceledException` from the `Parallel.ForEachAsync` cancellation and sets progress status to Cancelled (not Failed) in `src/AlgoTradeForge.Application/Optimization/RunOptimizationCommandHandler.cs`
+- [ ] T045 [US4] Add cancel button to the `RunProgress` frontend component that calls `cancelBacktest(id)` or `cancelOptimization(id)` and updates UI to show Cancelled state in `frontend/components/features/dashboard/run-progress.tsx`
+- [ ] T046 [US4] Verify US4 end-to-end: submit a long-running operation, click cancel, verify status changes to Cancelled and processing stops
 
 **Checkpoint**: Full cancellation flow works end-to-end from frontend through backend.
 
@@ -144,10 +149,10 @@
 
 **Purpose**: Final validation, cleanup, and edge case handling
 
-- [ ] T045 Add structured logging (Serilog) to background processing in both `RunBacktestCommandHandler` and `RunOptimizationCommandHandler`: log at Information level on run start/completion, Warning on per-trial failures, Error on full run failures, with run ID and timing context per Constitution Principle IV (Observability)
-- [ ] T046 Ensure progress store entries are cleaned up after completed/failed/cancelled runs are persisted (remove from `ConcurrentDictionary` after save to prevent unbounded memory growth) — verify in both `RunBacktestCommandHandler` and `RunOptimizationCommandHandler`
-- [ ] T047 Run the full test suite (`dotnet test AlgoTradeForge.slnx`) and fix any regressions
-- [ ] T048 Run quickstart.md validation scenario end-to-end (backend API + frontend + polling + results)
+- [ ] T047 Add structured logging (Serilog) to background processing in both `RunBacktestCommandHandler` and `RunOptimizationCommandHandler`: log at Information level on run start/completion, Warning on per-trial failures, Error on full run failures, with run ID and timing context per Constitution Principle IV (Observability)
+- [ ] T048 Ensure progress store entries are cleaned up after completed/failed/cancelled runs are persisted (remove from `ConcurrentDictionary` after save to prevent unbounded memory growth) — verify in both `RunBacktestCommandHandler` and `RunOptimizationCommandHandler`
+- [ ] T049 Run the full test suite (`dotnet test AlgoTradeForge.slnx`) and fix any regressions
+- [ ] T050 Run quickstart.md validation scenario end-to-end (backend API + frontend + polling + results)
 
 ---
 
