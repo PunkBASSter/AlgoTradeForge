@@ -51,6 +51,18 @@ builder.Services.AddInfrastructure(typeof(AlgoTradeForge.Domain.Strategy.Strateg
 
 builder.Services.AddSingleton<IAssetRepository, InMemoryAssetRepository>();
 
+// CORS for frontend dev server
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins("http://localhost:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 var app = builder.Build();
 
 // Configure HTTP pipeline
@@ -62,8 +74,12 @@ if (app.Environment.IsDevelopment())
         options.SwaggerEndpoint("/swagger/v1/swagger.json", "AlgoTradeForge API v1");
     });
 }
+else
+{
+    app.UseHttpsRedirection();
+}
 
-app.UseHttpsRedirection();
+app.UseCors();
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 
 // Map endpoints
