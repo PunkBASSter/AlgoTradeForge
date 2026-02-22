@@ -10,7 +10,7 @@ $ARGUMENTS
 
 ## Instructions
 
-You are running a backtest against the AlgoTradeForge WebApi. Parse the user input to extract parameters, fill in defaults for anything not specified, then execute the backtest.
+You are running a backtest against the AlgoTradeForge WebApi. The API uses an async submit-and-poll pattern: POST submits the run and returns immediately with an ID, then you poll for status until the result is ready.
 
 ### 1. Parse Parameters
 
@@ -58,9 +58,9 @@ dotnet run --project src/AlgoTradeForge.WebApi 2>&1
 
 Wait a few seconds and verify it's listening before proceeding.
 
-### 3. Execute Backtest
+### 3. Submit Backtest
 
-Send the POST request:
+Send the POST request. The API returns **202 Accepted** with a submission response (not the final result):
 
 ```bash
 curl -s -X POST https://localhost:55908/api/backtests/ \
@@ -70,9 +70,43 @@ curl -s -X POST https://localhost:55908/api/backtests/ \
 
 **Important:** Strategy parameter keys must be PascalCase (e.g. `DzzDepth`, not `dzzDepth`).
 
-### 4. Display Results
+**Submission response:** `{ "id": "<guid>", "totalBars": <int> }`
 
-Format the JSON response as a readable summary table:
+Capture the `id` for polling. Tell the user the backtest was submitted and how many bars will be processed.
+
+### 4. Poll for Completion
+
+Poll the status endpoint until the `result` field is non-null:
+
+```bash
+curl -s -k https://localhost:55908/api/backtests/<id>/status
+```
+
+**Status response:**
+```json
+{
+  "id": "<guid>",
+  "processedBars": 500,
+  "totalBars": 1000,
+  "result": null
+}
+```
+
+- While `result` is `null`: the run is still in progress. Report progress (`processedBars/totalBars`) and wait before polling again.
+- When `result` is non-null: the run is complete. The `result` contains the full backtest data.
+
+**Polling strategy:**
+- Poll every 3 seconds initially
+- Show a progress update to the user each poll (e.g. "Processing: 500/1000 bars (50%)")
+- Use a maximum timeout of 10 minutes
+
+**Error/cancellation detection** (check `result` fields when present):
+- `result.runMode === "Cancelled"` → run was cancelled
+- `result.errorMessage` is non-null → run failed with an error
+
+### 5. Display Results
+
+Once `result` is available, format it as a readable summary table:
 
 ```
 Backtest Results: {strategyName} on {assetName}
@@ -97,6 +131,8 @@ Trade Statistics:
   Profit Factor:     {profitFactor}
 ```
 
-### 5. Cleanup
+The metrics are in `result.metrics` as camelCase keys (e.g. `netProfit`, `sharpeRatio`, `maxDrawdownPct`).
+
+### 6. Cleanup
 
 Do NOT stop the API after the backtest. Leave it running for subsequent requests.

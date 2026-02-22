@@ -10,7 +10,7 @@ $ARGUMENTS
 
 ## Instructions
 
-You are running a brute-force parameter optimization against the AlgoTradeForge WebApi. Parse the user input to extract parameters, fill in defaults for anything not specified, then execute the optimization.
+You are running a brute-force parameter optimization against the AlgoTradeForge WebApi. The API uses an async submit-and-poll pattern: POST submits the run and returns immediately with an ID, then you poll for status until the result is ready.
 
 ### 1. Parse Parameters
 
@@ -87,9 +87,9 @@ dotnet run --project src/AlgoTradeForge.WebApi 2>&1
 
 Wait a few seconds and verify it's listening before proceeding.
 
-### 3. Execute Optimization
+### 3. Submit Optimization
 
-Send the POST request:
+Send the POST request. The API returns **202 Accepted** with a submission response (not the final result):
 
 ```bash
 curl -s -X POST https://localhost:55908/api/optimizations/ \
@@ -123,11 +123,39 @@ curl -s -X POST https://localhost:55908/api/optimizations/ \
 
 **Important:** Axis keys must be PascalCase (e.g. `DzzDepth`, not `dzzDepth`).
 
-**Note:** This call can take a long time depending on the number of combinations. Use a generous timeout (up to 10 minutes). Inform the user of the estimated combination count before sending.
+**Submission response:** `{ "id": "<guid>", "totalCombinations": <long> }`
 
-### 4. Display Results
+Capture the `id` for polling. Tell the user the optimization was submitted and the total combination count.
 
-Format the JSON response as a readable summary. Show the top 10 trials (or fewer if less returned):
+### 4. Poll for Completion
+
+Poll the status endpoint until the `result` field is non-null:
+
+```bash
+curl -s -k https://localhost:55908/api/optimizations/<id>/status
+```
+
+**Status response:**
+```json
+{
+  "id": "<guid>",
+  "completedCombinations": 500,
+  "totalCombinations": 2340,
+  "result": null
+}
+```
+
+- While `result` is `null`: the run is still in progress. Report progress (`completedCombinations/totalCombinations`) and wait before polling again.
+- When `result` is non-null: the run is complete. The `result` contains the full optimization data with all trials.
+
+**Polling strategy:**
+- Poll every 5 seconds initially
+- Show a progress update to the user each poll (e.g. "Processing: 500/2340 combinations (21%)")
+- Use a maximum timeout of 30 minutes for large optimizations
+
+### 5. Display Results
+
+Once `result` is available, format it as a readable summary. Show the top 10 trials (or fewer if less returned):
 
 ```
 Optimization Results: {strategyName}
@@ -149,12 +177,14 @@ Top 10 Parameter Sets (by {sortBy}):
 #2  ...
 ```
 
+The trials are in `result.trials[]`. Each trial has `parameters` (dict), `metrics` (camelCase keys), `errorMessage` (if the trial failed). Skip failed trials in the ranking.
+
 After the top 10, add a brief summary line:
 
 ```
 Best {sortBy}: #{rank} with {bestMetricValue}
 ```
 
-### 5. Cleanup
+### 6. Cleanup
 
 Do NOT stop the API after the optimization. Leave it running for subsequent requests.
