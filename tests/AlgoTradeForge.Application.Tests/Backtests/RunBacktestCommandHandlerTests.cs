@@ -88,7 +88,7 @@ public class RunBacktestCommandHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_DedupHit_ReturnsExistingIdWithIsDedupTrue()
+    public async Task HandleAsync_DedupHit_ReturnsExistingId()
     {
         // Arrange
         SetupPreparerMocks();
@@ -113,11 +113,10 @@ public class RunBacktestCommandHandlerTests
 
         // Assert
         Assert.Equal(existingId, result.Id);
-        Assert.True(result.IsDedup);
     }
 
     [Fact]
-    public async Task HandleAsync_NewRun_ReturnsSubmissionWithIsDedupFalse()
+    public async Task HandleAsync_NewRun_ReturnsSubmissionWithTotalBars()
     {
         // Arrange
         SetupPreparerMocks();
@@ -128,7 +127,6 @@ public class RunBacktestCommandHandlerTests
         var result = await handler.HandleAsync(command);
 
         // Assert
-        Assert.False(result.IsDedup);
         Assert.Equal(10, result.TotalBars);
         Assert.NotEqual(Guid.Empty, result.Id);
     }
@@ -187,7 +185,6 @@ public class RunBacktestCommandHandlerTests
 
         // Assert — new run created, not the stale ID
         Assert.NotEqual(staleId, result.Id);
-        Assert.False(result.IsDedup);
     }
 
     [Fact]

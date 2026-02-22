@@ -76,8 +76,6 @@ public static class OptimizationEndpoints
             {
                 Id = submission.Id,
                 TotalCombinations = submission.TotalCombinations,
-                Status = submission.IsDedup ? "Running" : "Pending",
-                IsDedup = submission.IsDedup
             };
             return Results.Accepted($"/api/optimizations/{submission.Id}/status", response);
         }

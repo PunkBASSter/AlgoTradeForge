@@ -91,8 +91,6 @@ public static class BacktestEndpoints
             {
                 Id = submission.Id,
                 TotalBars = submission.TotalBars,
-                Status = submission.IsDedup ? "Running" : "Pending",
-                IsDedup = submission.IsDedup
             };
             return Results.Accepted($"/api/backtests/{submission.Id}/status", response);
         }

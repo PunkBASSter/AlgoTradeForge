@@ -38,7 +38,6 @@ public sealed class RunBacktestCommandHandler(
                 {
                     Id = existingId.Value,
                     TotalBars = (int)existing.Total,
-                    IsDedup = true
                 };
             }
 
@@ -77,7 +76,6 @@ public sealed class RunBacktestCommandHandler(
         {
             Id = runId,
             TotalBars = totalBars,
-            IsDedup = false
         };
     }
 

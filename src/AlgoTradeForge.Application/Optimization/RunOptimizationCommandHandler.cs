@@ -47,7 +47,6 @@ public sealed class RunOptimizationCommandHandler(
                 {
                     Id = existingId.Value,
                     TotalCombinations = existing.Total,
-                    IsDedup = true
                 };
             }
 
@@ -138,7 +137,6 @@ public sealed class RunOptimizationCommandHandler(
         {
             Id = optimizationRunId,
             TotalCombinations = estimatedCount,
-            IsDedup = false
         };
     }
 

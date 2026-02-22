@@ -101,7 +101,7 @@ public class RunOptimizationCommandHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_DedupHit_ReturnsExistingIdWithIsDedupTrue()
+    public async Task HandleAsync_DedupHit_ReturnsExistingId()
     {
         // Arrange
         SetupStandardMocks();
@@ -126,7 +126,6 @@ public class RunOptimizationCommandHandlerTests
 
         // Assert
         Assert.Equal(existingId, result.Id);
-        Assert.True(result.IsDedup);
     }
 
     [Fact]
@@ -141,7 +140,6 @@ public class RunOptimizationCommandHandlerTests
         var result = await handler.HandleAsync(command);
 
         // Assert
-        Assert.False(result.IsDedup);
         Assert.Equal(3, result.TotalCombinations);
         Assert.NotEqual(Guid.Empty, result.Id);
     }
@@ -222,6 +220,5 @@ public class RunOptimizationCommandHandlerTests
 
         // Assert
         Assert.NotEqual(staleId, result.Id);
-        Assert.False(result.IsDedup);
     }
 }
