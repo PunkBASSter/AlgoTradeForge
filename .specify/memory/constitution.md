@@ -1,21 +1,23 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.5.0 → 1.6.0
-Modified principles:
-  - V. Separation of Concerns: Added ephemeral compute run exception —
-    backtests/optimizations need not be resumable but MUST deduplicate
-    by deterministic RunKey.
+Version change: 1.6.0 → 1.6.1
+Modified principles: None
 Added sections: None
 Removed sections: None
 Modified sections:
-  - Background Jobs: Split into Durable Jobs (unchanged requirements) and
-    Ephemeral Compute Runs (backtests, optimizations) with relaxed rules:
-    no DLQ, no checkpoint/resumability, no distributed locking required.
-    MUST deduplicate by RunKey via IDistributedCache.
-Trigger: speckit.analyze C1/C2 findings on 009-long-running-ops — Background
-  Jobs MUST statements were overly broad for atomic compute runs whose partial
-  results carry no value.
+  - Backend > Code Style: Added two guidelines —
+    (1) MUST prefer non-nesting `using` declarations (`using var x = ...;`)
+        over block-scoped `using (var x = ...) { }` unless early disposal
+        within a larger scope is required.
+    (2) MUST prefer explicit `FileStream` constructor over static `File`
+        class helpers (e.g., `File.ReadLines`, `File.ReadAllText`) when
+        `FileShare` or `FileMode` control is needed; static `File` helpers
+        are acceptable only for simple one-shot reads/writes with no
+        concurrent access.
+Trigger: Windows file-locking bugs in PostRunPipeline — `File.ReadLines`
+  defaults to `FileShare.Read` which conflicts with concurrent writers;
+  explicit `FileStream(FileShare.ReadWrite)` resolves the issue.
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible
   - .specify/templates/spec-template.md ✅ compatible
@@ -186,6 +188,16 @@ frontend/
   the Domain engine, and converts `long` results back to `decimal` via
   `value * asset.TickSize` for the returned response. Quantities and percentages
   stay `decimal`.
+- MUST prefer non-nesting `using` declarations (`using var x = ...;`) over
+  block-scoped `using (var x = ...) { }` unless early disposal within a
+  larger scope is required (e.g., releasing a file handle before a
+  subsequent read in the same method)
+- MUST prefer explicit `FileStream` constructor over static `File` class
+  helpers (`File.ReadLines`, `File.ReadAllText`, `File.Open`, etc.) when
+  `FileShare` or `FileMode` control is needed. Static `File` helpers are
+  acceptable only for simple one-shot reads/writes with no concurrent
+  access. This prevents Windows file-locking issues where default
+  `FileShare.Read` conflicts with concurrent writers.
 
 **API Design**:
 
@@ -344,6 +356,8 @@ Background jobs fall into two categories:
 - Shared test utilities (builders, fakes, assertion helpers) MUST NOT be
   duplicated across test projects; extract to a shared test utilities project
   or reference from the primary test project via `InternalsVisibleTo`
+- API endpoint additions or changes MUST be reflected in the WebApi
+  integration test project (`AlgoTradeForge.WebApi.Tests`)
 
 ### Test Framework Stack
 
@@ -388,4 +402,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.6.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-22
+**Version**: 1.6.1 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-23

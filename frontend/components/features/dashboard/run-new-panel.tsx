@@ -207,6 +207,7 @@ export function RunNewPanel({
           </p>
           <div
             ref={editorContainerRef}
+            data-testid="json-editor"
             className="rounded-lg overflow-hidden border border-border-default"
           />
           <div className="flex gap-2">
@@ -214,6 +215,7 @@ export function RunNewPanel({
               variant="primary"
               onClick={handleSubmit}
               loading={submitting}
+              data-testid="submit-run"
             >
               Run
             </Button>

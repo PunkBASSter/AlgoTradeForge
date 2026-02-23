@@ -77,6 +77,7 @@ export function OptimizationTrialsTable({
       rowKey="id"
       onRowClick={(row) => router.push(`/report/backtest/${row.id}`)}
       emptyMessage="No trials found"
+      testId="trials-table"
     />
   );
 }

@@ -42,6 +42,8 @@ public sealed class DebugWebSocketIntegrationTests
         using var probe = new GatingDebugProbe();
         await using var wsSink = new WebSocketSink();
         var (serverWs, clientWs) = DuplexStreamPair.CreateLinkedWebSockets();
+        using var _s = serverWs;
+        using var _c = clientWs;
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         wsSink.Attach(serverWs, cts.Token);
@@ -114,11 +116,15 @@ public sealed class DebugWebSocketIntegrationTests
         using var probe1 = new GatingDebugProbe();
         await using var sink1 = new WebSocketSink();
         var (server1, client1) = DuplexStreamPair.CreateLinkedWebSockets();
+        using var _s1 = server1;
+        using var _c1 = client1;
 
         // Arrange session 2: 4 bars
         using var probe2 = new GatingDebugProbe();
         await using var sink2 = new WebSocketSink();
         var (server2, client2) = DuplexStreamPair.CreateLinkedWebSockets();
+        using var _s2 = server2;
+        using var _c2 = client2;
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         sink1.Attach(server1, cts.Token);

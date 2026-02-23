@@ -1,9 +1,10 @@
 using AlgoTradeForge.Application.CandleIngestion;
+using AlgoTradeForge.Application.IO;
 using AlgoTradeForge.Domain.History;
 
 namespace AlgoTradeForge.Infrastructure.CandleIngestion;
 
-public sealed class CsvInt64BarLoader : IInt64BarLoader
+public sealed class CsvInt64BarLoader(IFileStorage fileStorage) : IInt64BarLoader
 {
     public TimeSeries<Int64Bar> Load(
         string dataRoot,
@@ -24,7 +25,7 @@ public sealed class CsvInt64BarLoader : IInt64BarLoader
             var filePath = GetPartitionPath(dataRoot, exchange, symbol, current);
             if (File.Exists(filePath))
             {
-                foreach (var line in File.ReadLines(filePath))
+                foreach (var line in fileStorage.ReadLines(filePath))
                 {
                     if (line.StartsWith("Timestamp", StringComparison.Ordinal))
                         continue;
@@ -93,10 +94,10 @@ public sealed class CsvInt64BarLoader : IInt64BarLoader
         return Path.Combine(dataRoot, exchange, symbol, month.Year.ToString(), $"{month:yyyy-MM}.csv");
     }
 
-    private static string? ReadLastDataLine(string filePath)
+    private string? ReadLastDataLine(string filePath)
     {
         string? lastLine = null;
-        foreach (var line in File.ReadLines(filePath))
+        foreach (var line in fileStorage.ReadLines(filePath))
         {
             if (!line.StartsWith("Timestamp", StringComparison.Ordinal) && line.Length > 0)
                 lastLine = line;

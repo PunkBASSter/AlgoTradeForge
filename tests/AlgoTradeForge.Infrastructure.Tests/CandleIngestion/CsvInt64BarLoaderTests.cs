@@ -1,4 +1,5 @@
 using AlgoTradeForge.Infrastructure.CandleIngestion;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.Infrastructure.Tests.CandleIngestion;
@@ -6,12 +7,14 @@ namespace AlgoTradeForge.Infrastructure.Tests.CandleIngestion;
 public class CsvInt64BarLoaderTests : IDisposable
 {
     private readonly string _testDataRoot;
-    private readonly CsvInt64BarLoader _loader = new();
+    private readonly FileStorage _fs = new();
+    private readonly CsvInt64BarLoader _loader;
 
     public CsvInt64BarLoaderTests()
     {
         _testDataRoot = Path.Combine(Path.GetTempPath(), $"CsvLoaderTest_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testDataRoot);
+        _loader = new CsvInt64BarLoader(_fs);
     }
 
     public void Dispose()
@@ -27,7 +30,7 @@ public class CsvInt64BarLoaderTests : IDisposable
         var filePath = Path.Combine(dir, $"{year}-{month:D2}.csv");
         var lines = new List<string> { "Timestamp,Open,High,Low,Close,Volume" };
         lines.AddRange(rows);
-        File.WriteAllLines(filePath, lines);
+        _fs.WriteAllLines(filePath, lines);
     }
 
     [Fact]

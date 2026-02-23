@@ -98,3 +98,5 @@ app.MapDebugEndpoints();
 app.MapDebugWebSocket();
 
 app.Run();
+
+public partial class Program { }

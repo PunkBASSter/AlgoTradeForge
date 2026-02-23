@@ -148,7 +148,9 @@ public sealed class SqliteTradeDbWriter(
         var orders = new Dictionary<long, OrderRow>();
         var trades = new List<TradeRow>();
 
-        foreach (var line in File.ReadLines(eventsPath))
+        using var fs = new FileStream(eventsPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(fs);
+        while (reader.ReadLine() is { } line)
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
 

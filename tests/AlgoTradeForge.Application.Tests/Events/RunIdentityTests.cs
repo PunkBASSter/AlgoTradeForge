@@ -38,9 +38,9 @@ public class RunIdentityTests
 
         var folder = id.ComputeFolderName();
 
-        // Pattern: {strategy}_v{version}_{asset}_{startYear}-{endYear}_{hash}_{yyyyMMddTHHmmss}
+        // Pattern: {strategy}_v{version}_{asset}_{startYear}-{endYear}_{hash}_{yyyyMMddTHHmmssfff}
         Assert.StartsWith("SmaStrategy_v0_BTCUSDT_2024-2024_", folder);
-        Assert.EndsWith("_20250615T143000", folder);
+        Assert.EndsWith("_20250615T143000000", folder);
         // hash is 6 hex chars for null params
         Assert.Contains("_000000_", folder);
     }

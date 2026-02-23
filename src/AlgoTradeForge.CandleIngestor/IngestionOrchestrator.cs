@@ -1,3 +1,4 @@
+using AlgoTradeForge.CandleIngestor.IO;
 using AlgoTradeForge.CandleIngestor.State;
 using AlgoTradeForge.CandleIngestor.Storage;
 using AlgoTradeForge.Domain.History;
@@ -9,6 +10,7 @@ public sealed class IngestionOrchestrator(
     IServiceProvider serviceProvider,
     CsvCandleWriter writer,
     IngestionStateManager stateManager,
+    IngestorFileStorage fileStorage,
     IOptions<CandleIngestorOptions> options,
     ILogger<IngestionOrchestrator> logger)
 {
@@ -41,7 +43,7 @@ public sealed class IngestionOrchestrator(
 
         var heartbeatPath = Path.Combine(config.DataRoot, "candle-ingestor-heartbeat.txt");
         Directory.CreateDirectory(Path.GetDirectoryName(heartbeatPath)!);
-        await File.WriteAllTextAsync(heartbeatPath, DateTimeOffset.UtcNow.ToString("O"), ct);
+        await fileStorage.WriteAllTextAsync(heartbeatPath, DateTimeOffset.UtcNow.ToString("O"), ct);
 
         logger.LogInformation("IngestionCompleted");
     }

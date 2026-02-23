@@ -19,12 +19,12 @@ public sealed record RunIdentity
 
     /// <summary>
     /// Computes the run folder name:
-    /// {strategy}_v{version}_{asset}_{startYear}-{endYear}_{hash}_{yyyyMMddTHHmmss}
+    /// {strategy}_v{version}_{asset}_{startYear}-{endYear}_{hash}_{yyyyMMddTHHmmssfff}
     /// </summary>
     public string ComputeFolderName()
     {
         var hash = ComputeParamsHash(StrategyParameters);
-        var ts = RunTimestamp.UtcDateTime.ToString("yyyyMMdd'T'HHmmss");
+        var ts = RunTimestamp.UtcDateTime.ToString("yyyyMMdd'T'HHmmssfff");
         return $"{StrategyName}_v{StrategyVersion}_{AssetName}_{StartTime.Year}-{EndTime.Year}_{hash}_{ts}";
     }
 

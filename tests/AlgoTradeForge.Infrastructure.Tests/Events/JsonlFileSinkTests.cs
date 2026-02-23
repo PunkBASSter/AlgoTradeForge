@@ -3,6 +3,7 @@ using System.Text.Json;
 using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Infrastructure.Events;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.Infrastructure.Tests.Events;
@@ -10,6 +11,7 @@ namespace AlgoTradeForge.Infrastructure.Tests.Events;
 public class JsonlFileSinkTests : IDisposable
 {
     private readonly string _testRoot;
+    private readonly FileStorage _fs = new();
 
     public JsonlFileSinkTests()
     {
@@ -37,26 +39,12 @@ public class JsonlFileSinkTests : IDisposable
 
     private EventLogStorageOptions MakeOptions() => new() { Root = _testRoot };
 
-    /// <summary>
-    /// Reads all lines from a file using FileShare.ReadWrite so it works
-    /// while the sink still has a write handle open.
-    /// </summary>
-    private static string[] ReadLinesShared(string path)
-    {
-        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var reader = new StreamReader(fs, Encoding.UTF8);
-        var lines = new List<string>();
-        while (reader.ReadLine() is { } line)
-            lines.Add(line);
-        return lines.ToArray();
-    }
-
     [Fact]
     public void Constructor_CreatesRunDirectory()
     {
         var identity = MakeIdentity();
 
-        using var sink = new JsonlFileSink(identity, MakeOptions());
+        using var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
 
         Assert.True(Directory.Exists(sink.RunFolderPath));
     }
@@ -65,7 +53,7 @@ public class JsonlFileSinkTests : IDisposable
     public void Write_ProducesValidJsonlLines()
     {
         var identity = MakeIdentity();
-        var sink = new JsonlFileSink(identity, MakeOptions());
+        var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
 
         var line1 = Encoding.UTF8.GetBytes("""{"sq":1,"_t":"bar"}""");
         var line2 = Encoding.UTF8.GetBytes("""{"sq":2,"_t":"bar"}""");
@@ -74,7 +62,7 @@ public class JsonlFileSinkTests : IDisposable
         sink.Dispose();
 
         var path = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var lines = File.ReadAllLines(path);
+        var lines = _fs.ReadAllLines(path);
         Assert.Equal(2, lines.Length);
 
         var doc1 = JsonDocument.Parse(lines[0]);
@@ -87,7 +75,7 @@ public class JsonlFileSinkTests : IDisposable
     public void Write_SequenceOrdering_Preserved()
     {
         var identity = MakeIdentity();
-        var sink = new JsonlFileSink(identity, MakeOptions());
+        var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
 
         for (var i = 1; i <= 5; i++)
             sink.Write(Encoding.UTF8.GetBytes($"{{\"sq\":{i}}}"));
@@ -95,7 +83,7 @@ public class JsonlFileSinkTests : IDisposable
         sink.Dispose();
 
         var path = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var lines = File.ReadAllLines(path);
+        var lines = _fs.ReadAllLines(path);
         Assert.Equal(5, lines.Length);
 
         for (var i = 0; i < 5; i++)
@@ -109,13 +97,13 @@ public class JsonlFileSinkTests : IDisposable
     public void ConcurrentRead_WhileWriting_Succeeds()
     {
         var identity = MakeIdentity();
-        using var sink = new JsonlFileSink(identity, MakeOptions());
+        using var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
 
         sink.Write(Encoding.UTF8.GetBytes("""{"sq":1}"""));
 
         // Read with FileShare.ReadWrite so we can read while sink is writing
         var path = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var lines = ReadLinesShared(path);
+        var lines = _fs.ReadAllLines(path);
         Assert.Single(lines);
     }
 
@@ -123,7 +111,7 @@ public class JsonlFileSinkTests : IDisposable
     public void WriteMeta_CreatesMetaJson()
     {
         var identity = MakeIdentity();
-        using var sink = new JsonlFileSink(identity, MakeOptions());
+        using var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
 
         var summary = new RunSummary(1000, 105_000, 42, TimeSpan.FromSeconds(3.5));
         sink.WriteMeta(summary);
@@ -131,7 +119,7 @@ public class JsonlFileSinkTests : IDisposable
         var metaPath = Path.Combine(sink.RunFolderPath, "meta.json");
         Assert.True(File.Exists(metaPath));
 
-        var json = File.ReadAllText(metaPath);
+        var json = _fs.ReadAllText(metaPath);
         var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
@@ -147,7 +135,7 @@ public class JsonlFileSinkTests : IDisposable
     public void MetaJson_NotCreated_UntilWriteMetaCalled()
     {
         var identity = MakeIdentity();
-        using var sink = new JsonlFileSink(identity, MakeOptions());
+        using var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
 
         sink.Write(Encoding.UTF8.GetBytes("""{"sq":1}"""));
 
@@ -159,7 +147,7 @@ public class JsonlFileSinkTests : IDisposable
     public void Dispose_ClosesFileHandle()
     {
         var identity = MakeIdentity();
-        var sink = new JsonlFileSink(identity, MakeOptions());
+        var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
 
         sink.Write(Encoding.UTF8.GetBytes("""{"sq":1}"""));
         var path = Path.Combine(sink.RunFolderPath, "events.jsonl");
@@ -175,7 +163,7 @@ public class JsonlFileSinkTests : IDisposable
     public void Integration_ThroughEventBus_WritesEvents()
     {
         var identity = MakeIdentity();
-        using var sink = new JsonlFileSink(identity, MakeOptions());
+        using var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var ts = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
@@ -183,7 +171,7 @@ public class JsonlFileSinkTests : IDisposable
 
         // Read with FileShare.ReadWrite so we can read while sink is writing
         var path = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var lines = ReadLinesShared(path);
+        var lines = _fs.ReadAllLines(path);
         Assert.Single(lines);
 
         var doc = JsonDocument.Parse(lines[0]);
@@ -195,7 +183,7 @@ public class JsonlFileSinkTests : IDisposable
     public void Factory_CreatesSinkWithCorrectPath()
     {
         var options = Microsoft.Extensions.Options.Options.Create(MakeOptions());
-        var factory = new JsonlRunSinkFactory(options);
+        var factory = new JsonlRunSinkFactory(options, _fs);
         var identity = MakeIdentity();
 
         using var sink = factory.Create(identity);

@@ -22,7 +22,7 @@ export function DebugToolbar({
   const [exportEnabled, setExportEnabled] = useState(false);
 
   return (
-    <div className="flex flex-wrap items-center gap-2 p-3 bg-bg-panel rounded-lg border border-border-default">
+    <div data-testid="debug-toolbar" className="flex flex-wrap items-center gap-2 p-3 bg-bg-panel rounded-lg border border-border-default">
       {/* Step controls */}
       <Button
         variant="secondary"

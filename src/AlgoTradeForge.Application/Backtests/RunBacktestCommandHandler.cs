@@ -100,24 +100,32 @@ public sealed class RunBacktestCommandHandler(
                 StrategyParameters = command.StrategyParameters,
             };
 
-            using var fileSink = runSinkFactory.Create(identity);
-            var eventBus = new EventBus(ExportMode.Backtest, [fileSink]);
+            BacktestResult result;
+            RunSummary runSummary;
+            string runFolderPath;
 
-            var result = engine.Run(setup.Series, setup.Strategy, setup.Options, ct, bus: eventBus,
-                onBarsProcessed: bars =>
-                {
-                    if (bars % ProgressUpdateInterval == 0)
-                        _ = progressCache.SetProgressAsync(runId, bars, totalBars);
-                });
+            using (var fileSink = runSinkFactory.Create(identity))
+            {
+                var eventBus = new EventBus(ExportMode.Backtest, [fileSink]);
 
-            var runSummary = new RunSummary(
-                result.TotalBarsProcessed,
-                result.EquityCurve.Count > 0 ? result.EquityCurve[^1].Value : setup.Options.InitialCash,
-                result.Fills.Count,
-                result.Duration);
+                result = engine.Run(setup.Series, setup.Strategy, setup.Options, ct, bus: eventBus,
+                    onBarsProcessed: bars =>
+                    {
+                        if (bars % ProgressUpdateInterval == 0)
+                            _ = progressCache.SetProgressAsync(runId, bars, totalBars);
+                    });
 
-            fileSink.WriteMeta(runSummary);
-            postRunPipeline.Execute(fileSink.RunFolderPath, identity, runSummary);
+                runSummary = new RunSummary(
+                    result.TotalBarsProcessed,
+                    result.EquityCurve.Count > 0 ? result.EquityCurve[^1].Value : setup.Options.InitialCash,
+                    result.Fills.Count,
+                    result.Duration);
+
+                fileSink.WriteMeta(runSummary);
+                runFolderPath = fileSink.RunFolderPath;
+            }
+
+            postRunPipeline.Execute(runFolderPath, identity, runSummary);
 
             // Calculate metrics
             var equityValues = result.EquityCurve.Select(e => e.Value).ToList();
@@ -153,7 +161,7 @@ public sealed class RunBacktestCommandHandler(
                 TotalBars = result.TotalBarsProcessed,
                 Metrics = scaledMetrics,
                 EquityCurve = equityCurve,
-                RunFolderPath = fileSink.RunFolderPath,
+                RunFolderPath = runFolderPath,
                 RunMode = RunModes.Backtest,
             };
 
