@@ -1,5 +1,5 @@
 using AlgoTradeForge.WebApi.PlaywrightTests.Infrastructure;
-using Microsoft.Playwright;
+using AlgoTradeForge.WebApi.PlaywrightTests.Pages;
 
 namespace AlgoTradeForge.WebApi.PlaywrightTests.Tests;
 
@@ -21,63 +21,27 @@ public sealed class BacktestE2eTests(PlaywrightFixture fixture) : PlaywrightTest
     [Fact]
     public async Task FullBacktestLifecycle_SubmitWaitAndViewReport()
     {
-        // Navigate to dashboard
-        await NavigateAndWaitAsync("/dashboard");
+        var dashboard = new DashboardPage(Page, BaseUrl);
+        await dashboard.NavigateAsync();
+        await dashboard.SelectTabAsync("Backtest");
 
-        // Ensure we're on the Backtest tab
-        var backtestTab = Page.GetByRole(AriaRole.Tab, new() { Name = "Backtest" });
-        await backtestTab.ClickAsync();
+        await dashboard.OpenRunNewPanelAsync();
+        await dashboard.Editor.WaitForReadyAsync();
+        await dashboard.Editor.SetContentAsync(BacktestConfig);
+        await dashboard.SubmitRunAsync();
+        await dashboard.WaitForRunCompletedAsync(120_000);
+        await dashboard.Panel.CloseAsync();
+        await dashboard.Panel.WaitForHiddenAsync();
 
-        // Click "+ Run New" to open the slide-over panel
-        var runNewButton = Page.GetByRole(AriaRole.Button, new() { Name = "Run New" });
-        await runNewButton.ClickAsync();
+        await dashboard.WaitForRunTableRowAsync(10_000);
+        await dashboard.ClickFirstRunRowAsync();
 
-        // Wait for the CodeMirror editor to appear
-        await Page.Locator(".cm-editor").WaitForAsync(new() { Timeout = 10_000 });
-
-        // Set the backtest config JSON
-        await SetCodeMirrorContentAsync(BacktestConfig);
-
-        // Click "Run" to submit
-        var runButton = Page.GetByRole(AriaRole.Button, new() { Name = "Run" }).Last;
-        await runButton.ClickAsync();
-
-        // Wait for the "Completed" badge to appear (120s timeout for backtest execution)
-        await Page.GetByText("Completed").WaitForAsync(new() { Timeout = 120_000 });
-
-        // Close the slide-over panel
-        var closeButton = Page.Locator("[role='dialog'] button").First;
-        await closeButton.ClickAsync();
-
-        // Wait for the panel to close
-        await Page.Locator("[role='dialog']").WaitForAsync(new()
-        {
-            State = WaitForSelectorState.Hidden,
-            Timeout = 5_000,
-        });
-
-        // Verify a row appeared in the runs table
-        var tableRow = Page.Locator("table tbody tr").First;
-        await tableRow.WaitForAsync(new() { Timeout = 10_000 });
-
-        // Click the row to navigate to the report page
-        await tableRow.ClickAsync();
-
-        // Wait for the report page to load
-        await Page.WaitForURLAsync("**/report/backtest/**", new() { Timeout = 10_000 });
-
-        // Wait for metrics to load (async data fetch)
-        await Page.GetByText("Total Trades").WaitForAsync(new() { Timeout = 15_000 });
-
-        // Verify key metrics are displayed
-        var metricsText = await Page.TextContentAsync("body");
-        Assert.Contains("Total Trades", metricsText, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Sharpe Ratio", metricsText, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Net Profit", metricsText, StringComparison.OrdinalIgnoreCase);
-
-        // Verify the equity curve section exists
-        var equityCurve = Page.GetByText("Equity Curve", new() { Exact = false });
-        await equityCurve.WaitForAsync(new() { Timeout = 10_000 });
+        var report = new BacktestReportPage(Page);
+        await report.WaitForLoadAsync(15_000);
+        await report.AssertHasMetric("Total Trades");
+        await report.AssertHasMetric("Sharpe Ratio");
+        await report.AssertHasMetric("Net Profit");
+        await report.AssertHasSection("Equity Curve");
 
         AssertNoConsoleErrors();
         AssertNoNetworkFailures();

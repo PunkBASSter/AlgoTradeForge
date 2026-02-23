@@ -1,5 +1,5 @@
 using AlgoTradeForge.WebApi.PlaywrightTests.Infrastructure;
-using Microsoft.Playwright;
+using AlgoTradeForge.WebApi.PlaywrightTests.Pages;
 
 namespace AlgoTradeForge.WebApi.PlaywrightTests.Tests;
 
@@ -21,65 +21,28 @@ public sealed class DebugE2eTests(PlaywrightFixture fixture) : PlaywrightTestBas
     [Fact]
     public async Task DebugSessionLifecycle_StartStepPlayPauseStop()
     {
-        // Navigate to the debug page
-        await NavigateAndWaitAsync("/debug");
+        var debug = new DebugPage(Page, BaseUrl);
+        await debug.NavigateAsync();
 
-        // Wait for the CodeMirror editor to appear
-        await Page.Locator(".cm-editor").WaitForAsync(new() { Timeout = 10_000 });
+        await debug.Editor.WaitForReadyAsync();
+        await debug.Editor.SetContentAsync(DebugConfig);
+        await debug.StartSessionAsync();
+        await debug.WaitForToolbarAsync(30_000);
 
-        // Set the debug session config JSON
-        await SetCodeMirrorContentAsync(DebugConfig);
-
-        // Click "Start Debug Session" to begin
-        var startButton = Page.GetByRole(AriaRole.Button,
-            new() { Name = "Start Debug Session" });
-        await startButton.ClickAsync();
-
-        // Wait for the debug toolbar to appear (session becomes "active")
-        // Use "To Next Bar" as the sentinel — it's unique and only visible when toolbar is active
-        var toNextBarButton = Page.GetByRole(AriaRole.Button,
-            new() { Name = "To Next Bar", Exact = true });
-        await toNextBarButton.WaitForAsync(new() { Timeout = 30_000 });
-
-        // Execute "Next" — step one event (use Exact to avoid matching "To Next ...")
-        var nextButton = Page.GetByRole(AriaRole.Button,
-            new() { Name = "Next", Exact = true });
-        await nextButton.ClickAsync();
+        await debug.Toolbar.ClickNextAsync();
         await Task.Delay(500);
-
-        // Execute "To Next Bar"
-        await toNextBarButton.ClickAsync();
+        await debug.Toolbar.ClickToNextBarAsync();
         await Task.Delay(500);
-
-        // Click "Play" to run continuously
-        var playButton = Page.GetByRole(AriaRole.Button,
-            new() { Name = "Play", Exact = true });
-        await playButton.ClickAsync();
-
-        // Let it run for 2 seconds
+        await debug.Toolbar.ClickPlayAsync();
         await Task.Delay(2_000);
-
-        // Click "Pause" to stop continuous execution
-        var pauseButton = Page.GetByRole(AriaRole.Button,
-            new() { Name = "Pause", Exact = true });
-        await pauseButton.ClickAsync();
+        await debug.Toolbar.ClickPauseAsync();
         await Task.Delay(500);
 
-        // Verify the Session Metrics panel is visible and has data
-        await Page.GetByText("Session Metrics").WaitForAsync(new() { Timeout = 5_000 });
+        await debug.WaitForMetricsVisibleAsync();
+        await debug.AssertHasMetricText("Sequence");
 
-        // Verify some metric values are displayed
-        var bodyText = await Page.TextContentAsync("body");
-        Assert.Contains("Sequence", bodyText, StringComparison.OrdinalIgnoreCase);
-
-        // Click "Stop" to end the session
-        var stopButton = Page.GetByRole(AriaRole.Button,
-            new() { Name = "Stop", Exact = true });
-        await stopButton.ClickAsync();
-
-        // Wait for the session to return to idle — config editor should reappear
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Start Debug Session" })
-            .WaitForAsync(new() { Timeout = 10_000 });
+        await debug.Toolbar.ClickStopAsync();
+        await debug.WaitForIdleAsync(10_000);
 
         AssertNoConsoleErrors();
         AssertNoNetworkFailures();

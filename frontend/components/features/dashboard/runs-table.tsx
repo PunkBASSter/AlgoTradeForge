@@ -91,6 +91,7 @@ export function RunsTable({
         rowKey="id"
         onRowClick={(row) => router.push(`/report/backtest/${row.id}`)}
         emptyMessage="No backtest runs found"
+        testId="runs-table"
       />
     );
   }
@@ -102,6 +103,7 @@ export function RunsTable({
       rowKey="id"
       onRowClick={(row) => router.push(`/report/optimization/${row.id}`)}
       emptyMessage="No optimization runs found"
+      testId="runs-table"
     />
   );
 }

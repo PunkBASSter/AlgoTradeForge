@@ -1,5 +1,5 @@
 using AlgoTradeForge.WebApi.PlaywrightTests.Infrastructure;
-using Microsoft.Playwright;
+using AlgoTradeForge.WebApi.PlaywrightTests.Pages;
 
 namespace AlgoTradeForge.WebApi.PlaywrightTests.Tests;
 
@@ -30,63 +30,26 @@ public sealed class OptimizationE2eTests(PlaywrightFixture fixture) : Playwright
     [Fact]
     public async Task FullOptimizationLifecycle_SubmitWaitAndViewReport()
     {
-        // Navigate to dashboard
-        await NavigateAndWaitAsync("/dashboard");
+        var dashboard = new DashboardPage(Page, BaseUrl);
+        await dashboard.NavigateAsync();
+        await dashboard.SelectTabAsync("Optimization");
 
-        // Switch to the Optimization tab
-        var optimizationTab = Page.GetByRole(AriaRole.Tab, new() { Name = "Optimization" });
-        await optimizationTab.ClickAsync();
+        await dashboard.OpenRunNewPanelAsync();
+        await dashboard.Editor.WaitForReadyAsync();
+        await dashboard.Editor.SetContentAsync(OptimizationConfig);
+        await dashboard.SubmitRunAsync();
+        await dashboard.WaitForRunCompletedAsync(180_000);
+        await dashboard.Panel.CloseAsync();
+        await dashboard.Panel.WaitForHiddenAsync();
 
-        // Click "+ Run New" to open the slide-over panel
-        var runNewButton = Page.GetByRole(AriaRole.Button, new() { Name = "Run New" });
-        await runNewButton.ClickAsync();
+        await dashboard.WaitForRunTableRowAsync(10_000);
+        await dashboard.ClickFirstRunRowAsync();
 
-        // Wait for the CodeMirror editor to appear
-        await Page.Locator(".cm-editor").WaitForAsync(new() { Timeout = 10_000 });
+        var report = new OptimizationReportPage(Page);
+        await report.WaitForLoadAsync(10_000);
+        await report.AssertHasTrialsSection();
 
-        // Set the optimization config JSON
-        await SetCodeMirrorContentAsync(OptimizationConfig);
-
-        // Click "Run" to submit
-        var runButton = Page.GetByRole(AriaRole.Button, new() { Name = "Run" }).Last;
-        await runButton.ClickAsync();
-
-        // Wait for the "Completed" badge (180s for optimization with 8 combos)
-        var completedBadge = Page.GetByText("Completed");
-        await completedBadge.WaitForAsync(new() { Timeout = 180_000 });
-
-        // Close the slide-over panel
-        var closeButton = Page.Locator("[role='dialog'] button").First;
-        await closeButton.ClickAsync();
-
-        // Wait for the panel to close
-        await Page.Locator("[role='dialog']").WaitForAsync(new()
-        {
-            State = WaitForSelectorState.Hidden,
-            Timeout = 5_000,
-        });
-
-        // Verify a row appeared in the optimization table
-        var tableRow = Page.Locator("table tbody tr").First;
-        await tableRow.WaitForAsync(new() { Timeout = 10_000 });
-
-        // Click the row to navigate to the optimization report
-        await tableRow.ClickAsync();
-
-        // Wait for the optimization report page to load
-        await Page.WaitForURLAsync("**/report/optimization/**", new() { Timeout = 10_000 });
-
-        // Verify the summary info — "Total Combinations" with value 8
-        var combinationsText = Page.GetByText("Total Combinations");
-        await combinationsText.WaitForAsync(new() { Timeout = 10_000 });
-
-        // Verify the "Trials" section is present
-        var trialsSection = Page.GetByText("Trials", new() { Exact = false });
-        await trialsSection.First.WaitForAsync(new() { Timeout = 10_000 });
-
-        // Verify trial rows appear in the table (should be 8 or thereabouts)
-        var trialRows = Page.Locator("table tbody tr");
-        var rowCount = await trialRows.CountAsync();
+        var rowCount = await report.GetTrialRowCountAsync();
         Assert.True(rowCount >= 1, $"Expected at least 1 trial row, found {rowCount}");
 
         AssertNoConsoleErrors();

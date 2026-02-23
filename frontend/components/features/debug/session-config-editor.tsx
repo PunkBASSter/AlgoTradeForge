@@ -97,6 +97,7 @@ export function SessionConfigEditor({
       </h2>
       <div
         ref={editorContainerRef}
+        data-testid="json-editor"
         className="rounded-lg overflow-hidden border border-border-default"
       />
       {validationError && (

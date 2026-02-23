@@ -94,36 +94,6 @@ public abstract class PlaywrightTestBase : IAsyncLifetime
     }
 
     /// <summary>
-    /// Navigate to a path and wait for the page to be fully loaded.
-    /// </summary>
-    protected async Task NavigateAndWaitAsync(string path)
-    {
-        var url = BaseUrl + path;
-        await Page.GotoAsync(url, new PageGotoOptions
-        {
-            WaitUntil = WaitUntilState.NetworkIdle,
-            Timeout = 30_000,
-        });
-    }
-
-    /// <summary>
-    /// Set CodeMirror 6 editor content by dispatching a transaction via the view API.
-    /// FillAsync doesn't work with CM6 because it uses contenteditable, not a native input.
-    /// </summary>
-    protected async Task SetCodeMirrorContentAsync(string json)
-    {
-        await Page.EvaluateAsync(@"(newContent) => {
-            const content = document.querySelector('.cm-content');
-            if (!content) throw new Error('CodeMirror content element not found');
-            const view = content.cmTile?.view;
-            if (!view) throw new Error('CodeMirror EditorView not found on .cm-content.cmTile');
-            view.dispatch({
-                changes: { from: 0, to: view.state.doc.length, insert: newContent }
-            });
-        }", json);
-    }
-
-    /// <summary>
     /// Assert that no unexpected console errors occurred during the test.
     /// </summary>
     protected void AssertNoConsoleErrors()

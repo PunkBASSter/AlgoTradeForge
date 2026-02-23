@@ -15,6 +15,7 @@ interface TableProps<T extends object> {
   onRowClick?: (row: T) => void;
   rowKey: keyof T & string;
   emptyMessage?: string;
+  testId?: string;
 }
 
 export function Table<T extends object>({
@@ -23,9 +24,10 @@ export function Table<T extends object>({
   onRowClick,
   rowKey,
   emptyMessage = "No data available",
+  testId,
 }: TableProps<T>) {
   return (
-    <div className="overflow-x-auto rounded-md border border-border-default">
+    <div className="overflow-x-auto rounded-md border border-border-default" data-testid={testId}>
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-border-default bg-bg-panel">
