@@ -344,6 +344,8 @@ Background jobs fall into two categories:
 - Shared test utilities (builders, fakes, assertion helpers) MUST NOT be
   duplicated across test projects; extract to a shared test utilities project
   or reference from the primary test project via `InternalsVisibleTo`
+- API endpoint additions or changes MUST be reflected in the WebApi
+  integration test project (`AlgoTradeForge.WebApi.Tests`)
 
 ### Test Framework Stack
 

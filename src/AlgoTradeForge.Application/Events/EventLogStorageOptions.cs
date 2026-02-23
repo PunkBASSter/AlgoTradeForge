@@ -9,5 +9,5 @@ public sealed record EventLogStorageOptions
             "Data",
             "EventLogs");
 
-    public string Root { get; init; } = DefaultRoot;
+    public string Root { get; set; } = DefaultRoot;
 }

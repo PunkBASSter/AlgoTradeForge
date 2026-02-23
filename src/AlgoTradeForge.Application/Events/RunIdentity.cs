@@ -24,7 +24,7 @@ public sealed record RunIdentity
     public string ComputeFolderName()
     {
         var hash = ComputeParamsHash(StrategyParameters);
-        var ts = RunTimestamp.UtcDateTime.ToString("yyyyMMdd'T'HHmmss");
+        var ts = RunTimestamp.UtcDateTime.ToString("yyyyMMdd'T'HHmmssfff");
         return $"{StrategyName}_v{StrategyVersion}_{AssetName}_{StartTime.Year}-{EndTime.Year}_{hash}_{ts}";
     }
 
