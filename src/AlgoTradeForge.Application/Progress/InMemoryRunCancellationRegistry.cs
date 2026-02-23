@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 
 namespace AlgoTradeForge.Application.Progress;
 
-public sealed class InMemoryRunCancellationRegistry : IRunCancellationRegistry
+public sealed class InMemoryRunCancellationRegistry : IRunCancellationRegistry, IDisposable
 {
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _registry = new();
 
@@ -29,5 +29,17 @@ public sealed class InMemoryRunCancellationRegistry : IRunCancellationRegistry
     {
         if (_registry.TryRemove(id, out var cts))
             cts.Dispose();
+    }
+
+    public void Dispose()
+    {
+        foreach (var kvp in _registry)
+        {
+            if (_registry.TryRemove(kvp.Key, out var cts))
+            {
+                try { cts.Cancel(); } catch { }
+                cts.Dispose();
+            }
+        }
     }
 }

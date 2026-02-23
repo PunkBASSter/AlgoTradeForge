@@ -20,7 +20,16 @@ public sealed class KestrelWebApplicationFactory : WebApplicationFactory<Program
 
     private IHost? _kestrelHost;
 
-    public string BaseUrl { get; } = "http://localhost:5180";
+    public KestrelWebApplicationFactory(int backendPort, int frontendPort)
+    {
+        BackendPort = backendPort;
+        FrontendPort = frontendPort;
+        BaseUrl = $"http://localhost:{backendPort}";
+    }
+
+    public int BackendPort { get; }
+    public int FrontendPort { get; }
+    public string BaseUrl { get; }
 
     public void EnsureStarted()
     {
@@ -69,7 +78,7 @@ public sealed class KestrelWebApplicationFactory : WebApplicationFactory<Program
                 {
                     options.AddDefaultPolicy(policy =>
                     {
-                        policy.WithOrigins("http://localhost:3000", "http://localhost:3180")
+                        policy.WithOrigins("http://localhost:3000", $"http://localhost:{FrontendPort}")
                               .AllowAnyHeader()
                               .AllowAnyMethod()
                               .AllowCredentials();

@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 
 namespace AlgoTradeForge.Application.Debug;
 
-public sealed class InMemoryDebugSessionStore : IDebugSessionStore
+public sealed class InMemoryDebugSessionStore : IDebugSessionStore, IAsyncDisposable
 {
     public const int DefaultMaxSessions = 10;
 
@@ -39,4 +39,16 @@ public sealed class InMemoryDebugSessionStore : IDebugSessionStore
         _sessions.TryRemove(sessionId, out session);
 
     public IReadOnlyList<DebugSession> GetAll() => [.. _sessions.Values];
+
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var kvp in _sessions)
+        {
+            if (_sessions.TryRemove(kvp.Key, out var session))
+            {
+                try { await session.DisposeAsync(); }
+                catch { }
+            }
+        }
+    }
 }

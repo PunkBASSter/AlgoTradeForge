@@ -14,6 +14,8 @@ public sealed class WebSocketSinkTests
         // Arrange
         await using var sink = new WebSocketSink();
         var (serverWs, clientWs) = DuplexStreamPair.CreateLinkedWebSockets();
+        using var _s = serverWs;
+        using var _c = clientWs;
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         sink.Attach(serverWs, cts.Token);
@@ -53,6 +55,8 @@ public sealed class WebSocketSinkTests
         // Arrange
         await using var sink = new WebSocketSink();
         var (serverWs, clientWs) = DuplexStreamPair.CreateLinkedWebSockets();
+        using var _s = serverWs;
+        using var _c = clientWs;
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         sink.Attach(serverWs, cts.Token);
@@ -77,6 +81,8 @@ public sealed class WebSocketSinkTests
         // Arrange — tiny capacity to force backpressure
         await using var sink = new WebSocketSink(capacity: 2);
         var (serverWs, clientWs) = DuplexStreamPair.CreateLinkedWebSockets();
+        using var _s = serverWs;
+        using var _c = clientWs;
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         sink.Attach(serverWs, cts.Token);
@@ -94,7 +100,7 @@ public sealed class WebSocketSinkTests
         var buffer = new byte[4096];
         while (true)
         {
-            var readCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            using var readCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
             try
             {
                 var result = await clientWs.ReceiveAsync(buffer.AsMemory(), readCts.Token);
@@ -117,6 +123,8 @@ public sealed class WebSocketSinkTests
         // Arrange
         await using var sink = new WebSocketSink();
         var (serverWs, clientWs) = DuplexStreamPair.CreateLinkedWebSockets();
+        using var _s = serverWs;
+        using var _c = clientWs;
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         sink.Attach(serverWs, cts.Token);
@@ -150,6 +158,8 @@ public sealed class WebSocketSinkTests
         // Arrange
         await using var sink = new WebSocketSink();
         var (serverWs1, clientWs1) = DuplexStreamPair.CreateLinkedWebSockets();
+        using var _s1 = serverWs1;
+        using var _c1 = clientWs1;
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         sink.Attach(serverWs1, cts.Token);
@@ -166,6 +176,8 @@ public sealed class WebSocketSinkTests
         await sink.DetachAsync();
 
         var (serverWs2, clientWs2) = DuplexStreamPair.CreateLinkedWebSockets();
+        using var _s2 = serverWs2;
+        using var _c2 = clientWs2;
         sink.Attach(serverWs2, cts.Token);
 
         // Verify second connection works

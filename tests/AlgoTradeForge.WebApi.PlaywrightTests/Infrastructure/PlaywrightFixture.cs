@@ -1,35 +1,58 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using Microsoft.Playwright;
 
 namespace AlgoTradeForge.WebApi.PlaywrightTests.Infrastructure;
 
 public sealed class PlaywrightFixture : IAsyncLifetime
 {
-    private const string BackendUrl = "http://localhost:5180";
-    private const string FrontendUrl = "http://localhost:3180";
-    private const int FrontendPort = 3180;
+    private static readonly string PidFilePath =
+        Path.Combine(Path.GetTempPath(), "AlgoTradeForge_E2ETests", "frontend.pid");
 
     private KestrelWebApplicationFactory? _factory;
     private Process? _frontendProcess;
     private IPlaywright? _playwright;
     private string? _envLocalPath;
 
+    private int _backendPort;
+    private int _frontendPort;
+
     public IBrowser Browser { get; private set; } = null!;
-    public string FrontendBaseUrl => FrontendUrl;
+    public string FrontendBaseUrl => $"http://localhost:{_frontendPort}";
+
+    /// <summary>
+    /// Finds an available TCP port by binding to port 0 and reading the assigned port.
+    /// </summary>
+    private static int GetFreePort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
 
     public async Task InitializeAsync()
     {
-        // 1. Start backend on Kestrel
-        _factory = new KestrelWebApplicationFactory();
+        // 0. Kill any stale frontend from a previous run that wasn't cleaned up
+        KillStaleFrontend();
+
+        // 1. Allocate free ports to avoid collisions with other test runs or dev servers
+        _backendPort = GetFreePort();
+        _frontendPort = GetFreePort();
+
+        // 2. Start backend on Kestrel
+        _factory = new KestrelWebApplicationFactory(_backendPort, _frontendPort);
         _factory.EnsureStarted();
-        await WaitForHealthAsync(BackendUrl + "/swagger/index.html", "Backend",
+        await WaitForHealthAsync(_factory.BaseUrl + "/swagger/index.html", "Backend",
             TimeSpan.FromSeconds(30));
 
-        // 2. Start Next.js frontend dev server
+        // 3. Start Next.js frontend dev server
         StartFrontend();
-        await WaitForHealthAsync(FrontendUrl, "Frontend", TimeSpan.FromSeconds(90));
+        await WaitForHealthAsync(FrontendBaseUrl, "Frontend", TimeSpan.FromSeconds(90));
 
-        // 3. Install and launch Playwright browser
+        // 4. Install and launch Playwright browser
         var exitCode = Microsoft.Playwright.Program.Main(["install", "chromium"]);
         if (exitCode != 0)
             throw new InvalidOperationException(
@@ -64,9 +87,15 @@ public sealed class PlaywrightFixture : IAsyncLifetime
     {
         var frontendDir = FindFrontendDirectory();
 
-        // Write .env.local so Next.js Turbopack picks up the API URL at compile time
+        // Write .env.local so Next.js Turbopack picks up the API URL at compile time.
+        // Use FileShare.ReadWrite to avoid IOException when a lingering Next.js watcher
+        // still holds the file open (common Windows file-locking scenario).
         _envLocalPath = Path.Combine(frontendDir, ".env.local");
-        File.WriteAllText(_envLocalPath, $"NEXT_PUBLIC_API_URL={BackendUrl}\n");
+        var envContent = System.Text.Encoding.UTF8.GetBytes($"NEXT_PUBLIC_API_URL={_factory!.BaseUrl}\n");
+        using (var fs = new FileStream(_envLocalPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite))
+        {
+            fs.Write(envContent);
+        }
 
         // Use cmd.exe /c on Windows for reliable .cmd script resolution
         if (OperatingSystem.IsWindows())
@@ -76,7 +105,7 @@ public sealed class PlaywrightFixture : IAsyncLifetime
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = "cmd.exe",
-                    Arguments = $"/c npm run dev -- --port {FrontendPort}",
+                    Arguments = $"/c npm run dev -- --port {_frontendPort}",
                     WorkingDirectory = frontendDir,
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
@@ -92,7 +121,7 @@ public sealed class PlaywrightFixture : IAsyncLifetime
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = "npm",
-                    Arguments = $"run dev -- --port {FrontendPort}",
+                    Arguments = $"run dev -- --port {_frontendPort}",
                     WorkingDirectory = frontendDir,
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
@@ -103,10 +132,12 @@ public sealed class PlaywrightFixture : IAsyncLifetime
         }
 
         // Also set in process env for belt-and-suspenders
-        _frontendProcess.StartInfo.Environment["NEXT_PUBLIC_API_URL"] = BackendUrl;
+        _frontendProcess.StartInfo.Environment["NEXT_PUBLIC_API_URL"] = _factory.BaseUrl;
 
         if (!_frontendProcess.Start())
             throw new InvalidOperationException("Failed to start frontend process");
+
+        WritePidFile(_frontendProcess.Id);
 
         // Drain stdout/stderr to avoid blocking
         _frontendProcess.BeginOutputReadLine();
@@ -125,35 +156,91 @@ public sealed class PlaywrightFixture : IAsyncLifetime
     private void KillFrontendProcess()
     {
         if (_frontendProcess is null || _frontendProcess.HasExited)
+        {
+            DeletePidFile();
+            _frontendProcess?.Dispose();
+            return;
+        }
+
+        try
+        {
+            KillProcessTree(_frontendProcess.Id);
+            _frontendProcess.WaitForExit(10_000);
+        }
+        catch { /* best-effort */ }
+        finally
+        {
+            DeletePidFile();
+            _frontendProcess.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Kills a stale frontend process from a previous run that wasn't cleaned up
+    /// (e.g., the test runner crashed or was force-killed).
+    /// </summary>
+    private static void KillStaleFrontend()
+    {
+        if (!File.Exists(PidFilePath))
             return;
 
         try
         {
-            // Kill the process tree (npm spawns child processes)
-            if (OperatingSystem.IsWindows())
+            var pidText = File.ReadAllText(PidFilePath).Trim();
+            if (int.TryParse(pidText, out var pid))
             {
-                using var killer = Process.Start(new ProcessStartInfo
+                try
                 {
-                    FileName = "taskkill",
-                    Arguments = $"/T /F /PID {_frontendProcess.Id}",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                });
-                killer?.WaitForExit(5000);
-            }
-            else
-            {
-                _frontendProcess.Kill(entireProcessTree: true);
+                    using var stale = Process.GetProcessById(pid);
+                    KillProcessTree(pid);
+                    stale.WaitForExit(10_000);
+                }
+                catch (ArgumentException) { /* process already exited */ }
             }
         }
-        catch
-        {
-            /* best-effort cleanup */
-        }
+        catch { /* best-effort */ }
         finally
         {
-            _frontendProcess.Dispose();
+            DeletePidFile();
         }
+    }
+
+    private static void KillProcessTree(int pid)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            using var killer = Process.Start(new ProcessStartInfo
+            {
+                FileName = "taskkill",
+                Arguments = $"/T /F /PID {pid}",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+            killer?.WaitForExit(10_000);
+        }
+        else
+        {
+            try
+            {
+                using var process = Process.GetProcessById(pid);
+                process.Kill(entireProcessTree: true);
+            }
+            catch (ArgumentException) { /* already exited */ }
+        }
+    }
+
+    private static void WritePidFile(int pid)
+    {
+        var dir = Path.GetDirectoryName(PidFilePath);
+        if (dir is not null)
+            Directory.CreateDirectory(dir);
+        File.WriteAllText(PidFilePath, pid.ToString());
+    }
+
+    private static void DeletePidFile()
+    {
+        try { if (File.Exists(PidFilePath)) File.Delete(PidFilePath); }
+        catch { /* best-effort */ }
     }
 
     private static string FindFrontendDirectory()

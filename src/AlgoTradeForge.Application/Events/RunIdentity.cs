@@ -19,7 +19,7 @@ public sealed record RunIdentity
 
     /// <summary>
     /// Computes the run folder name:
-    /// {strategy}_v{version}_{asset}_{startYear}-{endYear}_{hash}_{yyyyMMddTHHmmss}
+    /// {strategy}_v{version}_{asset}_{startYear}-{endYear}_{hash}_{yyyyMMddTHHmmssfff}
     /// </summary>
     public string ComputeFolderName()
     {

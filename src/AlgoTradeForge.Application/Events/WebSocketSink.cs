@@ -66,13 +66,15 @@ public sealed class WebSocketSink : ISink, IAsyncDisposable, IDisposable
 
         if (cts is not null)
         {
-            await cts.CancelAsync().ConfigureAwait(false);
+            try { await cts.CancelAsync().ConfigureAwait(false); }
+            catch (ObjectDisposedException) { /* Linked CTS already disposed by request pipeline */ }
             if (loop is not null)
             {
                 try { await loop.ConfigureAwait(false); }
                 catch (OperationCanceledException) { }
             }
-            cts.Dispose();
+            try { cts.Dispose(); }
+            catch (ObjectDisposedException) { }
         }
 
         // Drain stale messages that may have been enqueued after the send loop stopped
@@ -151,13 +153,15 @@ public sealed class WebSocketSink : ISink, IAsyncDisposable, IDisposable
 
         if (cts is not null)
         {
-            await cts.CancelAsync().ConfigureAwait(false);
+            try { await cts.CancelAsync().ConfigureAwait(false); }
+            catch (ObjectDisposedException) { }
             if (loop is not null)
             {
                 try { await loop.ConfigureAwait(false); }
                 catch (OperationCanceledException) { }
             }
-            cts.Dispose();
+            try { cts.Dispose(); }
+            catch (ObjectDisposedException) { }
         }
     }
 
@@ -166,9 +170,8 @@ public sealed class WebSocketSink : ISink, IAsyncDisposable, IDisposable
         _channel.Writer.TryComplete();
         lock (_lock)
         {
-            _sendCts?.Cancel();
-            // Do not dispose CTS here — send loop may still be running.
-            // Prefer DisposeAsync for proper cleanup.
+            try { _sendCts?.Cancel(); }
+            catch (ObjectDisposedException) { }
         }
     }
 }
