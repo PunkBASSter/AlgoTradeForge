@@ -2,6 +2,7 @@ using System.Text;
 using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Infrastructure.Events;
+using AlgoTradeForge.Infrastructure.IO;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -13,6 +14,7 @@ public class SqliteTradeDbWriterTests : IDisposable
     private readonly string _testRoot;
     private readonly string _runFolder;
     private readonly string _tradeDbPath;
+    private readonly FileStorage _fs = new();
 
     public SqliteTradeDbWriterTests()
     {
@@ -71,7 +73,7 @@ public class SqliteTradeDbWriterTests : IDisposable
         sb.AppendLine("""{"ts":"2024-01-01T00:02:00+00:00","sq":9,"_t":"ord.fill","src":"engine","d":{"orderId":2,"assetName":"AAPL","side":"sell","price":1100,"quantity":10,"commission":5}}""");
         sb.AppendLine("""{"ts":"2024-01-01T00:02:00+00:00","sq":10,"_t":"pos","src":"engine","d":{"assetName":"AAPL","quantity":0,"averageEntryPrice":0,"realizedPnl":500}}""");
         sb.AppendLine("""{"ts":"2024-01-01T00:03:00+00:00","sq":11,"_t":"run.end","src":"engine","d":{"totalBars":2}}""");
-        File.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString());
+        _fs.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString());
     }
 
     [Fact]
@@ -184,7 +186,7 @@ public class SqliteTradeDbWriterTests : IDisposable
         sb.AppendLine("""{"ts":"2024-01-02T00:01:00+00:00","sq":2,"_t":"ord.place","src":"engine","d":{"orderId":1,"assetName":"AAPL","side":"buy","type":"market","quantity":5}}""");
         sb.AppendLine("""{"ts":"2024-01-02T00:01:00+00:00","sq":3,"_t":"ord.fill","src":"engine","d":{"orderId":1,"assetName":"AAPL","side":"buy","price":2000,"quantity":5,"commission":3}}""");
         sb.AppendLine("""{"ts":"2024-01-02T00:02:00+00:00","sq":4,"_t":"run.end","src":"engine","d":{"totalBars":1}}""");
-        File.WriteAllText(Path.Combine(runFolder2, "events.jsonl"), sb.ToString());
+        _fs.WriteAllText(Path.Combine(runFolder2, "events.jsonl"), sb.ToString());
 
         var identity1 = MakeIdentity();
         var identity2 = MakeIdentity() with
@@ -235,7 +237,7 @@ public class SqliteTradeDbWriterTests : IDisposable
         var sb = new StringBuilder();
         sb.AppendLine("""{"ts":"2024-01-01T00:01:00+00:00","sq":1,"_t":"ord.place","src":"engine","d":{"orderId":1,"assetName":"AAPL","side":"buy","type":"market","quantity":10}}""");
         sb.AppendLine("""{"ts":"2024-01-01T00:01:00+00:00","sq":2,"_t":"ord.fill","src":"engine","d":{"orderId":1,"assetName":"AAPL","side":"buy","price":1050,"quantity":10,"commission":5}}""");
-        File.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString());
+        _fs.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString());
 
         writer.RebuildFromJsonl(_runFolder, identity, new RunSummary(500, 103_000L, 1, TimeSpan.FromSeconds(2)));
 

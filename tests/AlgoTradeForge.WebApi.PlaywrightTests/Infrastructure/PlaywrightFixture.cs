@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using AlgoTradeForge.Infrastructure.IO;
 using Microsoft.Playwright;
 
 namespace AlgoTradeForge.WebApi.PlaywrightTests.Infrastructure;
@@ -9,6 +10,7 @@ public sealed class PlaywrightFixture : IAsyncLifetime
 {
     private static readonly string PidFilePath =
         Path.Combine(Path.GetTempPath(), "AlgoTradeForge_E2ETests", "frontend.pid");
+    private static readonly FileStorage Fs = new();
 
     private KestrelWebApplicationFactory? _factory;
     private Process? _frontendProcess;
@@ -186,7 +188,7 @@ public sealed class PlaywrightFixture : IAsyncLifetime
 
         try
         {
-            var pidText = File.ReadAllText(PidFilePath).Trim();
+            var pidText = Fs.ReadAllText(PidFilePath).Trim();
             if (int.TryParse(pidText, out var pid))
             {
                 try
@@ -234,7 +236,7 @@ public sealed class PlaywrightFixture : IAsyncLifetime
         var dir = Path.GetDirectoryName(PidFilePath);
         if (dir is not null)
             Directory.CreateDirectory(dir);
-        File.WriteAllText(PidFilePath, pid.ToString());
+        Fs.WriteAllText(PidFilePath, pid.ToString());
     }
 
     private static void DeletePidFile()

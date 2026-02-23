@@ -9,6 +9,7 @@ using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
 using AlgoTradeForge.Infrastructure.Events;
+using AlgoTradeForge.Infrastructure.IO;
 using AlgoTradeForge.Infrastructure.Tests.TestUtilities;
 using Xunit;
 
@@ -21,6 +22,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
     private static readonly Asset Aapl = Asset.Equity("AAPL", "NASDAQ");
 
     private readonly string _testRoot;
+    private readonly FileStorage _fs = new();
 
     public JsonlEventStreamIntegrationTests()
     {
@@ -50,7 +52,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         };
 
         var options = new EventLogStorageOptions { Root = _testRoot };
-        using var sink = new JsonlFileSink(identity, options);
+        using var sink = new JsonlFileSink(identity, options, _fs);
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
@@ -73,7 +75,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         // Assert — read the events.jsonl file
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var lines = File.ReadAllLines(eventsPath);
+        var lines = _fs.ReadAllLines(eventsPath);
 
         // Must have at least run.start, 3x bar, ord.place, risk, ord.fill, pos, run.end
         Assert.True(lines.Length >= 9, $"Expected at least 9 lines but got {lines.Length}");
@@ -140,7 +142,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         };
 
         var options = new EventLogStorageOptions { Root = _testRoot };
-        using var sink = new JsonlFileSink(identity, options);
+        using var sink = new JsonlFileSink(identity, options, _fs);
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
@@ -163,7 +165,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         // Assert
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var typeIds = File.ReadAllLines(eventsPath)
+        var typeIds = _fs.ReadAllLines(eventsPath)
             .Select(l => JsonDocument.Parse(l).RootElement.GetProperty("_t").GetString()!)
             .ToList();
 
@@ -194,7 +196,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         };
 
         var options = new EventLogStorageOptions { Root = _testRoot };
-        using var sink = new JsonlFileSink(identity, options);
+        using var sink = new JsonlFileSink(identity, options, _fs);
         var bus = new EventBus(ExportMode.Backtest, [sink]);
         var indicatorFactory = new EmittingIndicatorFactory(bus);
 
@@ -218,14 +220,14 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         // Assert
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var typeIds = File.ReadAllLines(eventsPath)
+        var typeIds = _fs.ReadAllLines(eventsPath)
             .Select(l => JsonDocument.Parse(l).RootElement.GetProperty("_t").GetString()!)
             .ToList();
 
         Assert.Contains("ind", typeIds);
 
         // Verify ind event has correct structure
-        var indLines = File.ReadAllLines(eventsPath)
+        var indLines = _fs.ReadAllLines(eventsPath)
             .Where(l => JsonDocument.Parse(l).RootElement.GetProperty("_t").GetString() == "ind")
             .ToList();
         Assert.True(indLines.Count >= 3, $"Expected at least 3 ind events (one per bar), got {indLines.Count}");
@@ -251,7 +253,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         };
 
         var options = new EventLogStorageOptions { Root = _testRoot };
-        using var sink = new JsonlFileSink(identity, options);
+        using var sink = new JsonlFileSink(identity, options, _fs);
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
@@ -274,7 +276,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         // Assert
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var typeIds = File.ReadAllLines(eventsPath)
+        var typeIds = _fs.ReadAllLines(eventsPath)
             .Select(l => JsonDocument.Parse(l).RootElement.GetProperty("_t").GetString()!)
             .ToList();
 

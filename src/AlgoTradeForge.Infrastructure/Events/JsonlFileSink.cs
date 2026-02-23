@@ -2,6 +2,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AlgoTradeForge.Application.Events;
+using AlgoTradeForge.Application.IO;
+
 
 namespace AlgoTradeForge.Infrastructure.Events;
 
@@ -18,15 +20,17 @@ public sealed class JsonlFileSink : IRunSink
     };
 
     private readonly RunIdentity _identity;
+    private readonly IFileStorage _fileStorage;
     private readonly FileStream _stream;
     private readonly Lock _writeLock = new();
     private bool _disposed;
 
     public string RunFolderPath { get; }
 
-    public JsonlFileSink(RunIdentity identity, EventLogStorageOptions options)
+    public JsonlFileSink(RunIdentity identity, EventLogStorageOptions options, IFileStorage fileStorage)
     {
         _identity = identity;
+        _fileStorage = fileStorage;
         RunFolderPath = Path.Combine(options.Root, identity.ComputeFolderName());
         Directory.CreateDirectory(RunFolderPath);
 
@@ -66,7 +70,7 @@ public sealed class JsonlFileSink : IRunSink
 
         var metaPath = Path.Combine(RunFolderPath, "meta.json");
         var json = JsonSerializer.Serialize(meta, MetaJsonOptions);
-        File.WriteAllText(metaPath, json, Encoding.UTF8);
+        _fileStorage.WriteAllText(metaPath, json, Encoding.UTF8);
     }
 
     public void Dispose()

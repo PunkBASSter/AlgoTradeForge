@@ -1,6 +1,7 @@
 using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.CandleIngestor.Storage;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.Infrastructure.Tests.CandleIngestion;
@@ -8,6 +9,7 @@ namespace AlgoTradeForge.Infrastructure.Tests.CandleIngestion;
 public class CsvCandleWriterTests : IDisposable
 {
     private readonly string _testDataRoot;
+    private readonly FileStorage _fs = new();
 
     public CsvCandleWriterTests()
     {
@@ -49,7 +51,7 @@ public class CsvCandleWriterTests : IDisposable
         writer.Dispose();
 
         var path = Path.Combine(_testDataRoot, "Binance", "BTCUSDT", "2024", "2024-01.csv");
-        var lines = File.ReadAllLines(path);
+        var lines = _fs.ReadAllLines(path);
         Assert.Equal("Timestamp,Open,High,Low,Close,Volume", lines[0]);
     }
 
@@ -65,7 +67,7 @@ public class CsvCandleWriterTests : IDisposable
         writer.Dispose();
 
         var path = Path.Combine(_testDataRoot, "Binance", "BTCUSDT", "2024", "2024-01.csv");
-        var lines = File.ReadAllLines(path);
+        var lines = _fs.ReadAllLines(path);
         Assert.Equal(2, lines.Length);
 
         var parts = lines[1].Split(',');
@@ -105,7 +107,7 @@ public class CsvCandleWriterTests : IDisposable
         writer2.Dispose();
 
         var path = Path.Combine(_testDataRoot, "Binance", "BTCUSDT", "2024", "2024-01.csv");
-        var lines = File.ReadAllLines(path);
+        var lines = _fs.ReadAllLines(path);
         var headerCount = lines.Count(l => l.StartsWith("Timestamp"));
         Assert.Equal(1, headerCount);
     }
@@ -123,7 +125,7 @@ public class CsvCandleWriterTests : IDisposable
         writer.Dispose();
 
         var path = Path.Combine(_testDataRoot, "Binance", "BTCUSDT", "2024", "2024-01.csv");
-        var lines = File.ReadAllLines(path);
+        var lines = _fs.ReadAllLines(path);
         Assert.Equal(2, lines.Length); // header + 1 data row
     }
 

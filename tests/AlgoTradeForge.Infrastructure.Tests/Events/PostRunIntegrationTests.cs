@@ -7,6 +7,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
 using AlgoTradeForge.Infrastructure.Events;
+using AlgoTradeForge.Infrastructure.IO;
 using AlgoTradeForge.Infrastructure.Tests.TestUtilities;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -55,7 +56,7 @@ public class PostRunIntegrationTests : IDisposable
 
         var eventLogRoot = Path.Combine(_testRoot, "EventLogs");
         var storageOptions = new EventLogStorageOptions { Root = eventLogRoot };
-        using var sink = new JsonlFileSink(identity, storageOptions);
+        using var sink = new JsonlFileSink(identity, storageOptions, new FileStorage());
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
@@ -182,7 +183,7 @@ public class PostRunIntegrationTests : IDisposable
 
         var eventLogRoot = Path.Combine(_testRoot, "EventLogs");
         var storageOptions = new EventLogStorageOptions { Root = eventLogRoot };
-        using var sink = new JsonlFileSink(identity, storageOptions);
+        using var sink = new JsonlFileSink(identity, storageOptions, new FileStorage());
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);

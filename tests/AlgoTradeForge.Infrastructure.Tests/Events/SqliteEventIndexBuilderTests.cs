@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using AlgoTradeForge.Infrastructure.Events;
+using AlgoTradeForge.Infrastructure.IO;
 using Microsoft.Data.Sqlite;
 using Xunit;
 
@@ -10,6 +11,7 @@ public class SqliteEventIndexBuilderTests : IDisposable
 {
     private readonly string _testRoot;
     private readonly string _runFolder;
+    private readonly FileStorage _fs = new();
     private readonly SqliteEventIndexBuilder _builder = new();
 
     public SqliteEventIndexBuilderTests()
@@ -34,7 +36,7 @@ public class SqliteEventIndexBuilderTests : IDisposable
             var type = i % 3 == 0 ? "ord.fill" : i % 2 == 0 ? "ord.place" : "bar";
             sb.AppendLine($"{{\"ts\":\"2024-01-01T00:0{i:D2}:00+00:00\",\"sq\":{i},\"_t\":\"{type}\",\"src\":\"engine\",\"d\":{{\"v\":{i}}}}}");
         }
-        File.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString());
+        _fs.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString());
     }
 
     [Fact]
@@ -130,7 +132,7 @@ public class SqliteEventIndexBuilderTests : IDisposable
     public void Build_TransactionalOnFailure_NoPartialIndex()
     {
         // Write corrupt JSONL
-        File.WriteAllText(
+        _fs.WriteAllText(
             Path.Combine(_runFolder, "events.jsonl"),
             """
             {"ts":"2024-01-01T00:00:00+00:00","sq":1,"_t":"bar","src":"engine","d":{}}
@@ -208,7 +210,7 @@ public class SqliteEventIndexBuilderTests : IDisposable
         var sb = new StringBuilder();
         for (var i = 1; i <= 100_000; i++)
             sb.AppendLine($"{{\"ts\":\"2024-01-01T00:00:00+00:00\",\"sq\":{i},\"_t\":\"bar\",\"src\":\"engine\",\"d\":{{\"v\":{i}}}}}");
-        File.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString());
+        _fs.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString());
 
         var sw = Stopwatch.StartNew();
         _builder.Build(_runFolder);

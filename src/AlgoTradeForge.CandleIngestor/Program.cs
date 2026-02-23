@@ -1,5 +1,6 @@
 using AlgoTradeForge.CandleIngestor;
 using AlgoTradeForge.CandleIngestor.DataSourceAdapters;
+using AlgoTradeForge.CandleIngestor.IO;
 using AlgoTradeForge.CandleIngestor.State;
 using AlgoTradeForge.CandleIngestor.Storage;
 using AlgoTradeForge.Domain.History;
@@ -45,11 +46,13 @@ foreach (var adapterSection in adaptersConfig)
     }
 }
 
+builder.Services.AddSingleton<IngestorFileStorage>();
 builder.Services.AddSingleton(sp =>
     new CsvCandleWriter(sp.GetRequiredService<IOptions<CandleIngestorOptions>>().Value.DataRoot));
 builder.Services.AddSingleton(sp =>
     new IngestionStateManager(
         sp.GetRequiredService<IOptions<CandleIngestorOptions>>().Value.DataRoot,
+        sp.GetRequiredService<IngestorFileStorage>(),
         sp.GetRequiredService<ILogger<IngestionStateManager>>()));
 builder.Services.AddSingleton<IngestionOrchestrator>();
 builder.Services.AddHostedService<IngestionWorker>();

@@ -1,9 +1,10 @@
 using System.Text.Json;
+using AlgoTradeForge.CandleIngestor.IO;
 using AlgoTradeForge.CandleIngestor.Storage;
 
 namespace AlgoTradeForge.CandleIngestor.State;
 
-public sealed class IngestionStateManager(string dataRoot, ILogger<IngestionStateManager> logger)
+public sealed class IngestionStateManager(string dataRoot, IngestorFileStorage fileStorage, ILogger<IngestionStateManager> logger)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -21,7 +22,7 @@ public sealed class IngestionStateManager(string dataRoot, ILogger<IngestionStat
 
         try
         {
-            var json = File.ReadAllText(path);
+            var json = fileStorage.ReadAllText(path);
             return JsonSerializer.Deserialize<IngestionState>(json, JsonOptions);
         }
         catch (Exception ex)
@@ -39,7 +40,7 @@ public sealed class IngestionStateManager(string dataRoot, ILogger<IngestionStat
 
         var tmpPath = path + ".tmp";
         var json = JsonSerializer.Serialize(state, JsonOptions);
-        File.WriteAllText(tmpPath, json);
+        fileStorage.WriteAllText(tmpPath, json);
         File.Move(tmpPath, path, overwrite: true);
 
         logger.LogDebug("StateSaved: {Path}", path);
