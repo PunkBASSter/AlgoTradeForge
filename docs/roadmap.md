@@ -12,7 +12,7 @@ Challenges:
   - No ATR-based volatility filters
   - No reliable indicator export?
 
-5. Lack of testing (manual) - TEST; solution - tasks for VS
+5. Lack of testing (manual) - TEST !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
 
