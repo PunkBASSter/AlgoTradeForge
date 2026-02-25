@@ -61,7 +61,8 @@ public class IndicatorFactoryTests
         var inner = new DeltaZigZag(0.5m, 100L);
         var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
 
-        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050) };
+        var barTime = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050, timestampMs: barTime.ToUnixTimeMilliseconds()) };
         decorated.Compute(bars);
 
         var evt = Assert.Single(bus.Events);
@@ -72,6 +73,30 @@ public class IndicatorFactoryTests
         Assert.True(indEvent.IsExportable);
         Assert.True(indEvent.Values.ContainsKey("Value"));
         Assert.Equal(1100L, indEvent.Values["Value"]);
+        Assert.Equal(barTime, indEvent.Timestamp);
+    }
+
+    [Fact]
+    public void DecoratedIndicator_EventTimestamp_MatchesBarTimestamp()
+    {
+        var bus = new CapturingEventBus();
+        var inner = new DeltaZigZag(0.5m, 100L);
+        var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
+
+        var t1 = new DateTimeOffset(2025, 3, 1, 10, 0, 0, TimeSpan.Zero);
+        var t2 = new DateTimeOffset(2025, 3, 1, 10, 1, 0, TimeSpan.Zero);
+
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050, timestampMs: t1.ToUnixTimeMilliseconds()) };
+        decorated.Compute(bars);
+
+        bars.Add(TestBars.Create(1050, 1200, 1000, 1150, timestampMs: t2.ToUnixTimeMilliseconds()));
+        decorated.Compute(bars);
+
+        Assert.Equal(2, bus.Events.Count);
+        var evt1 = Assert.IsType<IndicatorEvent>(bus.Events[0]);
+        var evt2 = Assert.IsType<IndicatorEvent>(bus.Events[1]);
+        Assert.Equal(t1, evt1.Timestamp);
+        Assert.Equal(t2, evt2.Timestamp);
     }
 
     [Fact]
@@ -81,16 +106,19 @@ public class IndicatorFactoryTests
         var inner = new DeltaZigZag(0.5m, 100L);
         var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
 
-        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050) };
+        var barTime = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        var barMs = barTime.ToUnixTimeMilliseconds();
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050, timestampMs: barMs) };
         decorated.Compute(bars);
         bus.Events.Clear();
 
         // Same series length → mutation
-        bars[0] = TestBars.Create(1000, 1200, 900, 1150);
+        bars[0] = TestBars.Create(1000, 1200, 900, 1150, timestampMs: barMs);
         decorated.Compute(bars);
 
         var evt = Assert.Single(bus.Events);
-        Assert.IsType<IndicatorMutationEvent>(evt);
+        var mutEvent = Assert.IsType<IndicatorMutationEvent>(evt);
+        Assert.Equal(barTime, mutEvent.Timestamp);
     }
 
     [Fact]

@@ -32,79 +32,165 @@ logger.ts:32 [DebugWebSocket] Connected
 Looks good at this stage.
 All next parragrahp assume this step executed beforehand.
 
-## 1. Restart debug - sometimes no events
-1. Press any control button, e.g. `Next` or `To Next Bar`
-
-### Actual Result:
-In console:
-```
-[DebugWebSocket] Run ended {totalBarsProcessed: 35040, finalEquity: 1071193, totalFills: 236, duration: '00:01:32.1239239'}
-``` 
-and in the Session Metrics panel:
-```
-Session Active
-No
-Sequence
-35040
-Timestamp
-2025-12-31 23:45:00.000 UTC
-Portfolio Equity
-1,071,193.00
-Fills This Bar
-0
-Subscription Index
-0
-```
-On the chart NOTHING is drawn.
-
-### Expected result
-1. Debug is controlled by the control buttons and does not look finished
-2. The data is displayed on the chart (prices, orders, trades, fills, indicators)
-
-## 2. What is Export Off/On? Deoes it start the events stream?
-1. I press `Export Off/On` ending up with `ON`, see ```[DebugWebSocket] Export ack {mutations: true}``` in the console. This is a bit confusing from UX perspective.
-2. I wait a minute and press `Next`, seeing in the console:
+## Debug fail after 2 consequent `To Next Bar`
+1. Start debugging
+2. Click `To Next Bar` several times
 
 ### Actual Result
-In Console
+In console
 ```
-[DebugWebSocket] Run ended {totalBarsProcessed: 35040, finalEquity: 1071193, totalFills: 236, duration: '00:01:32.1239239'}
-``` 
-and in the Session Metrics panel:
-```
-Session Active
-No
-Sequence
-35040
-Timestamp
-2025-12-31 23:45:00.000 UTC
-Portfolio Equity
-1,071,193.00
-Fills This Bar
-0
-Subscription Index
-0
-```
-On the chart NOTHING is drawn.
+error-boundary-callbacks.ts:90 
+ Error: Assertion failed: data must be asc ordered by time, index=2, time=1772052643, prev time=1772052643
+    at CandlestickChart.useEffect (candlestick-chart.tsx:228:16)
 
-### Expected result
-1. Debug is controlled by the control buttons and does not look finished
-2. The data is displayed on the chart (prices, orders, trades, fills, indicators)
 
-## Conclusion
-Initially I managed to get some Session Active: Yes in Session Metrics panel, and for `To Next Bar` there were bar timestamps changing (but still nothing was drawn on the chart), but after several restarting attempts I never saw Session Active: Yes any more.
-Receiving only:
-```
-[DebugWebSocket] Connecting {sessionId: 'e6c2920f-3c39-4ba3-a33d-4f789afbca56', wsUrl: 'ws://localhost:5000/api/debug-sessions/e6c2920f-3c39-4ba3-a33d-4f789afbca56/ws'}
-logger.ts:32 [DebugWebSocket] Connected
-logger.ts:30 [DebugWebSocket] Run ended {totalBarsProcessed: 35040, finalEquity: 1071193, totalFills: 236, duration: '00:02:51.0051107'}
+The above error occurred in the <CandlestickChart> component. It was handled by the <ErrorBoundaryHandler> error boundary.
+onCaughtError	@	error-boundary-callbacks.ts:90
+logCaughtError	@	react-dom-client.development.js:9772
+runWithFiberInDEV	@	react-dom-client.development.js:986
+update.callback	@	react-dom-client.development.js:9805
+callCallback	@	react-dom-client.development.js:7735
+commitCallbacks	@	react-dom-client.development.js:7755
+runWithFiberInDEV	@	react-dom-client.development.js:986
+commitClassCallbacks	@	react-dom-client.development.js:13820
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15060
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14988
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14988
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14988
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14988
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15099
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15099
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15099
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14988
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14988
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14988
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14988
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:14983
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15204
+recursivelyTraverseLayoutEffects	@	react-dom-client.development.js:16370
+commitLayoutEffectOnFiber	@	react-dom-client.development.js:15065
+flushLayoutEffects	@	react-dom-client.development.js:19570
+commitRoot	@	react-dom-client.development.js:19335
+commitRootWhenReady	@	react-dom-client.development.js:18178
+performWorkOnRoot	@	react-dom-client.development.js:18054
+performSyncWorkOnRoot	@	react-dom-client.development.js:20399
+flushSyncWorkAcrossRoots_impl	@	react-dom-client.development.js:20241
+processRootScheduleInMicrotask	@	react-dom-client.development.js:20280
+(anonymous)	@	react-dom-client.development.js:20418
 logger.ts:32 [DebugWebSocket] Disconnected
-logger.ts:30 [DebugWebSocket] Connecting {sessionId: '0a9738e0-a920-4669-8236-c4af8e5c1541', wsUrl: 'ws://localhost:5000/api/debug-sessions/0a9738e0-a920-4669-8236-c4af8e5c1541/ws'}
-logger.ts:32 [DebugWebSocket] Connected
-logger.ts:30 [DebugWebSocket] Run ended {totalBarsProcessed: 35040, finalEquity: 1071193, totalFills: 236, duration: '00:00:01.2663981'}
-logger.ts:32 [DebugWebSocket] Disconnected
-logger.ts:30 [DebugWebSocket] Connecting {sessionId: '782fcc57-5426-485f-b11e-d33ae7704bec', wsUrl: 'ws://localhost:5000/api/debug-sessions/782fcc57-5426-485f-b11e-d33ae7704bec/ws'}
-logger.ts:32 [DebugWebSocket] Connected
-logger.ts:30 [DebugWebSocket] Run ended {totalBarsProcessed: 35040, finalEquity: 1071193, totalFills: 236, duration: '00:00:00.6884065'}
 ```
-from several last attempts.
+On the page:
+```
+Assertion failed: data must be asc ordered by time, index=2, time=1772052643, prev time=1772052643
+```
+
+Assumption: maybe mutation events or other event types were received and attempted to be rendered on the chart causing an error

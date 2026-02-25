@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.Events;
+using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Strategy;
 
@@ -29,11 +30,12 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
 
         var source = EventSources.Indicator(inner.Name);
         var values = ExtractLatestValues();
+        var timestamp = series[^1] is Int64Bar bar ? bar.Timestamp : DateTimeOffset.UtcNow;
 
         if (isMutation)
         {
             bus.Emit(new IndicatorMutationEvent(
-                DateTimeOffset.UtcNow,
+                timestamp,
                 source,
                 inner.Name,
                 inner.Measure,
@@ -43,7 +45,7 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
         else
         {
             bus.Emit(new IndicatorEvent(
-                DateTimeOffset.UtcNow,
+                timestamp,
                 source,
                 inner.Name,
                 inner.Measure,

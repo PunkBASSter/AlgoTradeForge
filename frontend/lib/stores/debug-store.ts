@@ -56,7 +56,16 @@ export const useDebugStore = create<DebugStoreState>((set) => ({
   setSessionId: (sessionId) => set({ sessionId }),
 
   addCandle: (candle) =>
-    set((state) => ({ candles: [...state.candles, candle] })),
+    set((state) => {
+      const updated = [...state.candles];
+      const idx = updated.findIndex((c) => c.time === candle.time);
+      if (idx >= 0) {
+        updated[idx] = candle;
+      } else {
+        updated.push(candle);
+      }
+      return { candles: updated };
+    }),
 
   updateCandle: (candle) =>
     set((state) => {
@@ -74,12 +83,17 @@ export const useDebugStore = create<DebugStoreState>((set) => ({
     set((state) => {
       const newMap = new Map(state.indicators);
       const points = newMap.get(data.indicatorName) ?? [];
-      points.push({
+      const newPoint: DebugIndicatorPoint = {
         time,
         indicatorName: data.indicatorName,
         measure: data.measure,
         values: data.values,
-      });
+      };
+      if (points.length > 0 && points[points.length - 1].time === time) {
+        points[points.length - 1] = newPoint;
+      } else {
+        points.push(newPoint);
+      }
       newMap.set(data.indicatorName, points);
       return { indicators: newMap };
     }),
