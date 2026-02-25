@@ -7,6 +7,26 @@
 export type StrategyList = string[];
 
 // ---------------------------------------------------------------------------
+// Strategy descriptor (from GET /api/strategies/available)
+// ---------------------------------------------------------------------------
+
+export interface StrategyDescriptor {
+  name: string;
+  parameterDefaults: Record<string, unknown>;
+  optimizationAxes: ParameterAxisDescriptor[];
+}
+
+export interface ParameterAxisDescriptor {
+  name: string;
+  type: "numeric" | "module";
+  min?: number;
+  max?: number;
+  step?: number;
+  clrType?: string;
+  variants?: { typeKey: string; axes: ParameterAxisDescriptor[] }[];
+}
+
+// ---------------------------------------------------------------------------
 // Paged response wrapper
 // ---------------------------------------------------------------------------
 

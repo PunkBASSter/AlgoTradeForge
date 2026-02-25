@@ -2,7 +2,7 @@
 
 // T060 - RunNewPanel with slide-over and mode-aware CodeMirror JSON editor
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useMemo } from "react";
 import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
@@ -14,7 +14,14 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { getClient } from "@/lib/services";
 import { RunProgress } from "@/components/features/dashboard/run-progress";
-import type { RunBacktestRequest, RunOptimizationRequest } from "@/types/api";
+import { useAvailableStrategies } from "@/hooks/use-available-strategies";
+import type {
+  RunBacktestRequest,
+  RunOptimizationRequest,
+  StrategyDescriptor,
+  ParameterAxisDescriptor,
+  OptimizationAxisOverride,
+} from "@/types/api";
 
 const BACKTEST_TEMPLATE: RunBacktestRequest = {
   assetName: "BTCUSDT",
@@ -46,6 +53,49 @@ const OPTIMIZATION_TEMPLATE: RunOptimizationRequest = {
   sortBy: "sortinoRatio",
 };
 
+function buildAxisOverride(axis: ParameterAxisDescriptor): OptimizationAxisOverride {
+  if (axis.type === "module" && axis.variants) {
+    const variants: Record<string, Record<string, OptimizationAxisOverride> | null> = {};
+    for (const v of axis.variants) {
+      if (v.axes.length === 0) {
+        variants[v.typeKey] = null;
+      } else {
+        const subAxes: Record<string, OptimizationAxisOverride> = {};
+        for (const sub of v.axes) {
+          subAxes[sub.name] = buildAxisOverride(sub);
+        }
+        variants[v.typeKey] = subAxes;
+      }
+    }
+    return { variants };
+  }
+  return { min: axis.min ?? 0, max: axis.max ?? 1, step: axis.step ?? 1 };
+}
+
+function buildBacktestTemplate(descriptor: StrategyDescriptor): RunBacktestRequest {
+  return {
+    ...BACKTEST_TEMPLATE,
+    strategyName: descriptor.name,
+    strategyParameters: { ...descriptor.parameterDefaults },
+  };
+}
+
+function buildOptimizationTemplate(descriptor: StrategyDescriptor): RunOptimizationRequest {
+  const axes: Record<string, OptimizationAxisOverride> = {};
+  for (const axis of descriptor.optimizationAxes) {
+    axes[axis.name] = buildAxisOverride(axis);
+  }
+
+  return {
+    ...OPTIMIZATION_TEMPLATE,
+    strategyName: descriptor.name,
+    optimizationAxes: Object.keys(axes).length > 0 ? axes : undefined,
+    dataSubscriptions: [
+      { asset: "BTCUSDT", exchange: "Binance", timeFrame: "00:15:00" },
+    ],
+  };
+}
+
 const EDITOR_EXTENSIONS = [
   basicSetup,
   json(),
@@ -61,6 +111,7 @@ interface RunNewPanelProps {
   open: boolean;
   onClose: () => void;
   mode: "backtest" | "optimization";
+  selectedStrategy: string | null;
   onSuccess: () => void;
 }
 
@@ -68,6 +119,7 @@ export function RunNewPanel({
   open,
   onClose,
   mode,
+  selectedStrategy,
   onSuccess,
 }: RunNewPanelProps) {
   const editorContainerRef = useRef<HTMLDivElement>(null);
@@ -77,15 +129,26 @@ export function RunNewPanel({
   const { toast } = useToast();
   const client = getClient();
 
+  const { data: strategies } = useAvailableStrategies();
+
+  const descriptor = useMemo(
+    () => strategies?.find((s) => s.name === selectedStrategy) ?? null,
+    [strategies, selectedStrategy],
+  );
+
+  const template = useMemo(() => {
+    if (mode === "backtest") {
+      return descriptor ? buildBacktestTemplate(descriptor) : BACKTEST_TEMPLATE;
+    }
+    return descriptor ? buildOptimizationTemplate(descriptor) : OPTIMIZATION_TEMPLATE;
+  }, [mode, descriptor]);
+
   // Create editor once when the slide-over opens
   useEffect(() => {
     if (!open || !editorContainerRef.current) return;
 
     // Reuse existing editor if it's already attached to this container
     if (editorViewRef.current) return;
-
-    const template =
-      mode === "backtest" ? BACKTEST_TEMPLATE : OPTIMIZATION_TEMPLATE;
 
     const state = EditorState.create({
       doc: JSON.stringify(template, null, 2),
@@ -103,24 +166,23 @@ export function RunNewPanel({
       view.destroy();
       editorViewRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mode changes handled by separate effect below
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mode/strategy changes handled by separate effect below
   }, [open]);
 
-  // Update editor content when mode changes (without recreating the view)
-  const prevModeRef = useRef(mode);
+  // Update editor content when mode or selectedStrategy changes
+  const prevKeyRef = useRef(`${mode}:${selectedStrategy}`);
   useEffect(() => {
-    if (!open || !editorViewRef.current || mode === prevModeRef.current) return;
-    prevModeRef.current = mode;
+    const key = `${mode}:${selectedStrategy}`;
+    if (!open || !editorViewRef.current || key === prevKeyRef.current) return;
+    prevKeyRef.current = key;
 
-    const template =
-      mode === "backtest" ? BACKTEST_TEMPLATE : OPTIMIZATION_TEMPLATE;
     const newDoc = JSON.stringify(template, null, 2);
     const view = editorViewRef.current;
 
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: newDoc },
     });
-  }, [open, mode]);
+  }, [open, mode, selectedStrategy, template]);
 
   const handleSubmit = async () => {
     if (!editorViewRef.current) return;

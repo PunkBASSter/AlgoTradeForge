@@ -15,11 +15,18 @@ import type {
   StartDebugSessionRequest,
   DebugSession,
   DebugSessionStatus,
+  StrategyDescriptor,
 } from "@/types/api";
 
 import type { BacktestListParams, OptimizationListParams } from "./api-client";
 
 import strategiesData from "./mock-data/strategies.json";
+
+const mockStrategyDescriptors: StrategyDescriptor[] = strategiesData.map((name) => ({
+  name,
+  parameterDefaults: {},
+  optimizationAxes: [],
+}));
 import backtestsData from "./mock-data/backtests.json";
 import optimizationsData from "./mock-data/optimizations.json";
 import equityData from "./mock-data/equity.json";
@@ -57,9 +64,9 @@ export const mockClient: typeof import("./api-client").apiClient & {
     return strategiesData;
   },
 
-  async getAvailableStrategies(): Promise<string[]> {
+  async getAvailableStrategies(): Promise<StrategyDescriptor[]> {
     await delay();
-    return strategiesData;
+    return mockStrategyDescriptors;
   },
 
   // --- Backtests ---

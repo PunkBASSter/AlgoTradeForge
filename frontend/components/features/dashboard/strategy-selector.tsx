@@ -33,17 +33,17 @@ export function StrategySelector({
       {isLoading && (
         <div className="px-3 py-2 text-sm text-text-muted">Loading...</div>
       )}
-      {strategies?.map((name) => (
+      {strategies?.map((s) => (
         <button
-          key={name}
-          onClick={() => onSelect(name)}
+          key={s.name}
+          onClick={() => onSelect(s.name)}
           className={`w-full text-left px-3 py-2 text-sm rounded transition-colors ${
-            selected === name
+            selected === s.name
               ? "bg-accent-blue text-white"
               : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
           }`}
         >
-          {name}
+          {s.name}
         </button>
       ))}
     </div>

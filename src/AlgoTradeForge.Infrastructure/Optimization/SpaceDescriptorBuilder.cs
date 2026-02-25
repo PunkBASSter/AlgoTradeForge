@@ -55,10 +55,32 @@ public sealed class SpaceDescriptorBuilder : IOptimizationSpaceProvider
     IOptimizationSpaceDescriptor? IOptimizationSpaceProvider.GetDescriptor(string strategyName)
         => GetDescriptor(strategyName);
 
+    IReadOnlyDictionary<string, IOptimizationSpaceDescriptor> IOptimizationSpaceProvider.GetAll()
+    {
+        var concrete = Build();
+        return concrete.ToDictionary(
+            kvp => kvp.Key,
+            kvp => (IOptimizationSpaceDescriptor)kvp.Value);
+    }
+
     public OptimizationSpaceDescriptor? GetDescriptor(string strategyName)
     {
         var descriptors = Build();
         return descriptors.GetValueOrDefault(strategyName);
+    }
+
+    public IReadOnlyDictionary<string, object> GetParameterDefaults(IOptimizationSpaceDescriptor descriptor)
+    {
+        var instance = Activator.CreateInstance(descriptor.ParamsType)!;
+        var defaults = new Dictionary<string, object>();
+        foreach (var prop in descriptor.ParamsType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (prop.Name == nameof(StrategyParamsBase.DataSubscriptions)) continue;
+            var value = prop.GetValue(instance);
+            if (value is not null)
+                defaults[prop.Name] = value;
+        }
+        return defaults;
     }
 
     private static Type? ExtractParamsType(Type strategyType)

@@ -50,6 +50,32 @@ public class SpaceDescriptorBuilderTests
     }
 
     [Fact]
+    public void GetParameterDefaults_ReturnsPropertyInitializerValues()
+    {
+        var builder = new SpaceDescriptorBuilder([typeof(ZigZagBreakoutStrategy).Assembly]);
+        var descriptor = builder.GetDescriptor("ZigZagBreakout")!;
+
+        var defaults = builder.GetParameterDefaults(descriptor);
+
+        Assert.Equal(5m, defaults["DzzDepth"]);
+        Assert.Equal(10_000L, defaults["MinimumThreshold"]);
+        Assert.Equal(1m, defaults["RiskPercentPerTrade"]);
+        Assert.Equal(0.01m, defaults["MinPositionSize"]);
+        Assert.Equal(1000m, defaults["MaxPositionSize"]);
+    }
+
+    [Fact]
+    public void GetParameterDefaults_ExcludesDataSubscriptions()
+    {
+        var builder = new SpaceDescriptorBuilder([typeof(ZigZagBreakoutStrategy).Assembly]);
+        var descriptor = builder.GetDescriptor("ZigZagBreakout")!;
+
+        var defaults = builder.GetParameterDefaults(descriptor);
+
+        Assert.False(defaults.ContainsKey("DataSubscriptions"));
+    }
+
+    [Fact]
     public void GetDescriptor_UnknownStrategy_ReturnsNull()
     {
         var builder = new SpaceDescriptorBuilder([typeof(ZigZagBreakoutStrategy).Assembly]);

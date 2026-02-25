@@ -15,6 +15,7 @@ import type {
   StartDebugSessionRequest,
   DebugSession,
   DebugSessionStatus,
+  StrategyDescriptor,
 } from "@/types/api";
 
 // ---------------------------------------------------------------------------
@@ -145,8 +146,8 @@ export const apiClient = {
     return request<string[]>("/api/strategies");
   },
 
-  getAvailableStrategies(): Promise<string[]> {
-    return request<string[]>("/api/strategies/available");
+  getAvailableStrategies(): Promise<StrategyDescriptor[]> {
+    return request<StrategyDescriptor[]>("/api/strategies/available");
   },
 
   // --- Backtests ---

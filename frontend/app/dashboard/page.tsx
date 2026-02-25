@@ -137,6 +137,7 @@ export default function DashboardPage() {
         open={runNewOpen}
         onClose={() => setRunNewOpen(false)}
         mode={mode}
+        selectedStrategy={selectedStrategy}
         onSuccess={handleRunNewSuccess}
       />
     </div>
