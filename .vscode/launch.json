@@ -1,0 +1,42 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Backend: WebApi",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/AlgoTradeForge.WebApi/bin/Debug/net10.0/AlgoTradeForge.WebApi.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/AlgoTradeForge.WebApi",
+            "env": { "ASPNETCORE_ENVIRONMENT": "Development" },
+            "preLaunchTask": "build-backend"
+        },
+        {
+            "name": "CandleIngestor",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/AlgoTradeForge.CandleIngestor/bin/Debug/net10.0/AlgoTradeForge.CandleIngestor.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/AlgoTradeForge.CandleIngestor",
+            "env": { "DOTNET_ENVIRONMENT": "Development" },
+            "preLaunchTask": "build-backend"
+        },
+        {
+            "name": "Frontend: npm run dev",
+            "type": "node",
+            "request": "launch",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": ["run", "dev"],
+            "cwd": "${workspaceFolder}/frontend",
+            "console": "integratedTerminal",
+            "skipFiles": ["<node_internals>/**"]
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Full Stack: Backend + Frontend",
+            "configurations": ["Backend: WebApi", "Frontend: npm run dev"],
+            "stopAll": true
+        }
+    ]
+}
