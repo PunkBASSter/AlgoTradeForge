@@ -57,6 +57,11 @@ export const mockClient: typeof import("./api-client").apiClient & {
     return strategiesData;
   },
 
+  async getAvailableStrategies(): Promise<string[]> {
+    await delay();
+    return strategiesData;
+  },
+
   // --- Backtests ---
 
   async getBacktests(

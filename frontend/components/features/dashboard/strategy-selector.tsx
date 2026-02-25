@@ -2,7 +2,7 @@
 
 // T053 - Strategy selector sidebar component
 
-import { useStrategies } from "@/hooks/use-strategies";
+import { useAvailableStrategies } from "@/hooks/use-available-strategies";
 
 interface StrategySelectorProps {
   selected: string | null;
@@ -13,7 +13,7 @@ export function StrategySelector({
   selected,
   onSelect,
 }: StrategySelectorProps) {
-  const { data: strategies, isLoading } = useStrategies();
+  const { data: strategies, isLoading } = useAvailableStrategies();
 
   return (
     <div className="space-y-1">

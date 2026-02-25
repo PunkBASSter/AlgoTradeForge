@@ -32,4 +32,25 @@ public sealed class StrategyEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
         Assert.NotNull(names);
         Assert.Contains("ZigZagBreakout", names);
     }
+
+    [Fact]
+    public async Task GetAvailableStrategies_Returns200()
+    {
+        var response = await Client.GetAsync("/api/strategies/available");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var names = await response.Content.ReadFromJsonAsync<List<string>>(Json);
+        Assert.NotNull(names);
+    }
+
+    [Fact]
+    public async Task GetAvailableStrategies_ContainsZigZagBreakout()
+    {
+        var response = await Client.GetAsync("/api/strategies/available");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var names = await response.Content.ReadFromJsonAsync<List<string>>(Json);
+        Assert.NotNull(names);
+        Assert.Contains("ZigZagBreakout", names);
+    }
 }

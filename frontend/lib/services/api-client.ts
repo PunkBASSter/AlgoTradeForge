@@ -145,6 +145,10 @@ export const apiClient = {
     return request<string[]>("/api/strategies");
   },
 
+  getAvailableStrategies(): Promise<string[]> {
+    return request<string[]>("/api/strategies/available");
+  },
+
   // --- Backtests ---
 
   getBacktests(
