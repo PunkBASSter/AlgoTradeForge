@@ -62,6 +62,15 @@ export default function DebugPage() {
     async (config: StartDebugSessionRequest) => {
       const s = useDebugStore.getState();
       try {
+        // Clean up previous session on server before creating a new one,
+        // otherwise zombie sessions accumulate and exhaust the session store.
+        if (s.sessionId) {
+          try {
+            await client.deleteDebugSession(s.sessionId);
+          } catch {
+            // Session may already be gone
+          }
+        }
         s.reset();
         s.setSessionState("configuring");
         const session = await client.createDebugSession(config);

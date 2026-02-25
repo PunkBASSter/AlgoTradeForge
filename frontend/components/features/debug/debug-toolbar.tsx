@@ -125,7 +125,7 @@ export function DebugToolbar({
         Pause
       </Button>
 
-      {/* Export toggle */}
+      {/* Mutation events toggle (bar.mut, ind.mut) */}
       <Button
         variant={exportEnabled ? "primary" : "ghost"}
         onClick={() => {
@@ -135,7 +135,7 @@ export function DebugToolbar({
         }}
         disabled={disabled}
       >
-        {exportEnabled ? "Export On" : "Export Off"}
+        {exportEnabled ? "Mutations On" : "Mutations Off"}
       </Button>
 
       {/* Separator */}
