@@ -23,7 +23,7 @@ public class DebugProbeTests
         };
 
     private static BacktestEngine CreateEngine() =>
-        new(new BarMatcher(), new BasicRiskEvaluator());
+        new(new BarMatcher());
 
     [Fact]
     public void Run_WithoutProbe_DoesNotThrow()

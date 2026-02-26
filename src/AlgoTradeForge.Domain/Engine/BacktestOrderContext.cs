@@ -33,8 +33,41 @@ internal sealed class BacktestOrderContext : IOrderContext
 
     public long Submit(Order order)
     {
+        var rejection = ValidateOrderQuantity(order);
+        if (rejection is not null)
+        {
+            order.Status = OrderStatus.Rejected;
+            if (_busActive)
+            {
+                _bus.Emit(new OrderRejectEvent(
+                    _currentTimestamp,
+                    EventSources.Engine,
+                    order.Id,
+                    order.Asset.Name,
+                    rejection));
+
+                _bus.Emit(new WarningEvent(
+                    _currentTimestamp,
+                    EventSources.Engine,
+                    $"Order {order.Id} rejected: {rejection} for {order.Side} {order.Quantity} {order.Asset.Name}"));
+            }
+            return order.Id;
+        }
+
         _queue.Submit(order);
         return order.Id;
+    }
+
+    private static string? ValidateOrderQuantity(Order order)
+    {
+        var asset = order.Asset;
+        if (order.Quantity < asset.MinOrderQuantity)
+            return $"Quantity {order.Quantity} below minimum {asset.MinOrderQuantity}";
+        if (order.Quantity > asset.MaxOrderQuantity)
+            return $"Quantity {order.Quantity} above maximum {asset.MaxOrderQuantity}";
+        if (asset.QuantityStepSize > 0m && order.Quantity % asset.QuantityStepSize != 0m)
+            return $"Quantity {order.Quantity} not aligned to step size {asset.QuantityStepSize}";
+        return null;
     }
 
     public Order? Cancel(long orderId)

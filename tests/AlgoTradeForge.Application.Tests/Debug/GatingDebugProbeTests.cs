@@ -26,7 +26,7 @@ public class GatingDebugProbeTests
         };
 
     private static BacktestEngine CreateEngine() =>
-        new(new BarMatcher(), new BasicRiskEvaluator());
+        new(new BarMatcher());
 
     [Fact]
     public async Task NextBar_StepsOneBarAtATime()

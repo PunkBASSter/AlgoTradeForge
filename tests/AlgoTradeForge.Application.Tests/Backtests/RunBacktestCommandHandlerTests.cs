@@ -43,8 +43,7 @@ public class RunBacktestCommandHandlerTests
     private RunBacktestCommandHandler CreateHandler()
     {
         var engine = new BacktestEngine(
-            Substitute.For<IBarMatcher>(),
-            Substitute.For<IRiskEvaluator>());
+            Substitute.For<IBarMatcher>());
 
         var preparer = new BacktestPreparer(
             _assetRepository, _strategyFactory, _historyRepository);

@@ -9,7 +9,7 @@ namespace AlgoTradeForge.Domain.Engine;
 /// <summary>
 /// Stateless backtest engine. Safe for concurrent use — all mutable state is local to <see cref="Run"/>.
 /// </summary>
-public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEvaluator)
+public sealed class BacktestEngine(IBarMatcher barMatcher)
 {
     private const string Source = EventSources.Engine;
 
@@ -253,24 +253,16 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 continue;
             }
 
-            var quantityRejection = ValidateOrderQuantity(order, asset);
-            if (quantityRejection is not null)
+            if (order.Side == OrderSide.Buy)
             {
-                order.Status = OrderStatus.Rejected;
-                state.ToRemoveBuffer.Add(order.Id);
-                EmitOrderRejected(state, order, timestamp, quantityRejection);
-                continue;
-            }
-
-            var riskPassed = riskEvaluator.CanFill(order, fillPrice.Value, state.Portfolio, state.Options);
-            EmitRiskCheck(state, order, riskPassed, timestamp);
-
-            if (!riskPassed)
-            {
-                order.Status = OrderStatus.Rejected;
-                state.ToRemoveBuffer.Add(order.Id);
-                EmitOrderRejected(state, order, timestamp, "Insufficient cash");
-                continue;
+                var cost = (long)(fillPrice.Value * order.Quantity * order.Asset.Multiplier) + state.Options.CommissionPerTrade;
+                if (cost > state.Portfolio.Cash)
+                {
+                    order.Status = OrderStatus.Rejected;
+                    state.ToRemoveBuffer.Add(order.Id);
+                    EmitOrderRejected(state, order, timestamp, "Insufficient cash");
+                    continue;
+                }
             }
 
             var fill = new Fill(
@@ -381,31 +373,6 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             bar.Close,
             bar.Volume,
             subscription.IsExportable));
-    }
-
-    private static void EmitRiskCheck(RunState state, Order order, bool passed, DateTimeOffset timestamp)
-    {
-        if (!state.BusActive)
-            return;
-
-        state.Bus.Emit(new RiskEvent(
-            timestamp,
-            Source,
-            order.Asset.Name,
-            passed,
-            "CashCheck",
-            passed ? null : "Insufficient cash"));
-    }
-
-    private static string? ValidateOrderQuantity(Order order, Asset asset)
-    {
-        if (order.Quantity < asset.MinOrderQuantity)
-            return $"Quantity {order.Quantity} below minimum {asset.MinOrderQuantity}";
-        if (order.Quantity > asset.MaxOrderQuantity)
-            return $"Quantity {order.Quantity} above maximum {asset.MaxOrderQuantity}";
-        if (asset.QuantityStepSize > 0m && order.Quantity % asset.QuantityStepSize != 0m)
-            return $"Quantity {order.Quantity} not aligned to step size {asset.QuantityStepSize}";
-        return null;
     }
 
     private static void EmitOrderRejected(RunState state, Order order, DateTimeOffset timestamp, string reason)

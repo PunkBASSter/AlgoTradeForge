@@ -22,7 +22,7 @@ public class BacktestEventOrderingTests
         };
 
     private static BacktestEngine CreateEngine() =>
-        new(new BarMatcher(), new BasicRiskEvaluator());
+        new(new BarMatcher());
 
     [Fact]
     public void OnBarStart_ReceivesSyntheticBar_OpenOnlyAndZeroVolume()
