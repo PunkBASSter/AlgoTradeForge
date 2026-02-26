@@ -78,4 +78,31 @@ describe("debug-store", () => {
     expect(indicators.get("SMA")![0].time).toBe(1000);
     expect(indicators.get("SMA")![1].time).toBe(2000);
   });
+
+  it("removes indicator point when all values are null", () => {
+    const store = useDebugStore.getState();
+    store.addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: 1100 } }, 1000);
+    store.addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: 1200 } }, 2000);
+
+    // Retroactive removal: all-null values at time=1000
+    useDebugStore.getState().addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: null } }, 1000);
+
+    const points = useDebugStore.getState().indicators.get("DZZ")!;
+    expect(points).toHaveLength(1);
+    expect(points[0].time).toBe(2000);
+  });
+
+  it("updates past-timestamp indicator point", () => {
+    const store = useDebugStore.getState();
+    store.addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: 1100 } }, 1000);
+    store.addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: 1200 } }, 2000);
+    store.addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: 1300 } }, 3000);
+
+    // Update past point at time=1000 (not the latest)
+    useDebugStore.getState().addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: 999 } }, 1000);
+
+    const points = useDebugStore.getState().indicators.get("DZZ")!;
+    expect(points).toHaveLength(3);
+    expect(points[0].values.Value).toBe(999);
+  });
 });

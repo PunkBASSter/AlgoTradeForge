@@ -82,17 +82,37 @@ export const useDebugStore = create<DebugStoreState>((set) => ({
   addIndicator: (data, time) =>
     set((state) => {
       const newMap = new Map(state.indicators);
-      const points = newMap.get(data.indicatorName) ?? [];
+      const points = [...(newMap.get(data.indicatorName) ?? [])];
+      const allNull = Object.values(data.values).every((v) => v === null);
+
+      if (allNull) {
+        // Retroactive removal: delete the point at this timestamp
+        const idx = points.findIndex((p) => p.time === time);
+        if (idx >= 0) {
+          points.splice(idx, 1);
+        }
+        newMap.set(data.indicatorName, points);
+        return { indicators: newMap };
+      }
+
       const newPoint: DebugIndicatorPoint = {
         time,
         indicatorName: data.indicatorName,
         measure: data.measure,
         values: data.values,
       };
+
+      // Check latest point first (hot path)
       if (points.length > 0 && points[points.length - 1].time === time) {
         points[points.length - 1] = newPoint;
       } else {
-        points.push(newPoint);
+        // Past-timestamp update: find and replace existing point
+        const idx = points.findIndex((p) => p.time === time);
+        if (idx >= 0) {
+          points[idx] = newPoint;
+        } else {
+          points.push(newPoint);
+        }
       }
       newMap.set(data.indicatorName, points);
       return { indicators: newMap };

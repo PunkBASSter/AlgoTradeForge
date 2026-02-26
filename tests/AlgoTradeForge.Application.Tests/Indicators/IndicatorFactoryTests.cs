@@ -92,11 +92,14 @@ public class IndicatorFactoryTests
         bars.Add(TestBars.Create(1050, 1200, 1000, 1150, timestampMs: t2.ToUnixTimeMilliseconds()));
         decorated.Compute(bars);
 
-        Assert.Equal(2, bus.Events.Count);
+        // 3 events: IndicatorEvent(t1), IndicatorEvent(t2), IndicatorMutationEvent(t1 retroactive clear)
+        Assert.Equal(3, bus.Events.Count);
         var evt1 = Assert.IsType<IndicatorEvent>(bus.Events[0]);
         var evt2 = Assert.IsType<IndicatorEvent>(bus.Events[1]);
+        var mutEvt = Assert.IsType<IndicatorMutationEvent>(bus.Events[2]);
         Assert.Equal(t1, evt1.Timestamp);
         Assert.Equal(t2, evt2.Timestamp);
+        Assert.Equal(t1, mutEvt.Timestamp); // Retroactive clear uses the old bar's timestamp
     }
 
     [Fact]
@@ -161,6 +164,40 @@ public class IndicatorFactoryTests
         bars.Add(TestBars.Create(1100, 1150, 1110, 1120));
         decorated.Compute(bars);
         Assert.Single(bus.Events);
+    }
+
+    [Fact]
+    public void EmitsRetroactiveMutation_OnPivotRelocation()
+    {
+        var bus = new CapturingEventBus();
+        var inner = new DeltaZigZag(0.5m, 100L);
+        var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
+
+        var t1 = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        var t2 = new DateTimeOffset(2025, 6, 15, 12, 1, 0, TimeSpan.Zero);
+
+        // Bar 1: High=1100, pivot at index 0
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050, timestampMs: t1.ToUnixTimeMilliseconds()) };
+        decorated.Compute(bars);
+
+        // Bar 2: High=1200 > 1100, pivot relocates to index 1, old pivot at index 0 zeroed
+        bars.Add(TestBars.Create(1050, 1200, 1000, 1150, timestampMs: t2.ToUnixTimeMilliseconds()));
+        decorated.Compute(bars);
+
+        // Should have: IndicatorEvent(bar1), IndicatorEvent(bar2), IndicatorMutationEvent(retroactive clear of bar1)
+        Assert.Equal(3, bus.Events.Count);
+
+        var evt1 = Assert.IsType<IndicatorEvent>(bus.Events[0]);
+        Assert.Equal(t1, evt1.Timestamp);
+
+        var evt2 = Assert.IsType<IndicatorEvent>(bus.Events[1]);
+        Assert.Equal(t2, evt2.Timestamp);
+
+        // Retroactive mutation for old pivot zeroed at index 0
+        var mutEvt = Assert.IsType<IndicatorMutationEvent>(bus.Events[2]);
+        Assert.Equal(t1, mutEvt.Timestamp); // Timestamp of the cleared bar, not the current bar
+        Assert.True(mutEvt.Values.ContainsKey("Value"));
+        Assert.Null(mutEvt.Values["Value"]); // null because SkipZeroValues=true and value=0L
     }
 
     [Fact]
@@ -247,7 +284,7 @@ public class IndicatorFactoryTests
 
         public string Name => name;
         public IndicatorMeasure Measure => _inner.Measure;
-        public IReadOnlyDictionary<string, IReadOnlyList<long>> Buffers => _inner.Buffers;
+        public IReadOnlyDictionary<string, IndicatorBuffer<long>> Buffers => _inner.Buffers;
         public int MinimumHistory => _inner.MinimumHistory;
         public int? CapacityLimit => _inner.CapacityLimit;
         public bool SkipZeroValues => _inner.SkipZeroValues;
