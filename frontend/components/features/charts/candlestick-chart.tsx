@@ -337,14 +337,14 @@ export function CandlestickChart({
       const endTime = order.endTime ?? lastCandleTime;
       if (endTime === null || endTime <= order.startTime) continue;
 
-      const color = order.resolution === "cancelled"
-        ? "#6b7280"
-        : order.side === "buy" ? CHART_COLORS.up : CHART_COLORS.down;
+      const color = order.side === "buy" ? CHART_COLORS.up : CHART_COLORS.down;
 
       const lineSeries = addLineSeries(chart, {
         color,
         priceScaleId: "right",
         lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false,
       });
       lineSeries.setData([
         { time: order.startTime as Time, value: order.price },

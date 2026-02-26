@@ -72,6 +72,8 @@ export function addLineSeries(
     title?: string;
     priceScaleId?: string;
     lineWidth?: number;
+    lastValueVisible?: boolean;
+    priceLineVisible?: boolean;
   },
 ) {
   return chart.addSeries(LineSeries, {
@@ -79,6 +81,8 @@ export function addLineSeries(
     title: options.title,
     priceScaleId: options.priceScaleId,
     lineWidth: (options.lineWidth ?? 2) as DeepPartial<LineWidth>,
+    lastValueVisible: options.lastValueVisible,
+    priceLineVisible: options.priceLineVisible,
   });
 }
 
