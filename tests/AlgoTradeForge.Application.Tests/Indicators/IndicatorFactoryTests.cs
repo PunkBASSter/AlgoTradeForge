@@ -146,6 +146,24 @@ public class IndicatorFactoryTests
     }
 
     [Fact]
+    public void DecoratedIndicator_SkipsEvent_WhenAllValuesAreDefault()
+    {
+        var bus = new CapturingEventBus();
+        var inner = new DeltaZigZag(0.5m, 100L);
+        var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
+
+        // Bar 1: H=1200 → initial pivot, buffer[0]=1200 → event emitted
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1200, 900, 1100) };
+        decorated.Compute(bars);
+        Assert.Single(bus.Events);
+
+        // Bar 2: H=1150 (no new high), L=1110 (above reversal threshold 1200-100=1100) → buffer[1]=0 → event suppressed
+        bars.Add(TestBars.Create(1100, 1150, 1110, 1120));
+        decorated.Compute(bars);
+        Assert.Single(bus.Events);
+    }
+
+    [Fact]
     public void MultiTimeframe_EachSubscription_EmitsIndependently()
     {
         // Arrange — M1 + H1 subscriptions, each with its own decorated DeltaZigZag
@@ -232,6 +250,7 @@ public class IndicatorFactoryTests
         public IReadOnlyDictionary<string, IReadOnlyList<long>> Buffers => _inner.Buffers;
         public int MinimumHistory => _inner.MinimumHistory;
         public int? CapacityLimit => _inner.CapacityLimit;
+        public bool SkipZeroValues => _inner.SkipZeroValues;
         public void Compute(IReadOnlyList<Int64Bar> series) => _inner.Compute(series);
     }
 }

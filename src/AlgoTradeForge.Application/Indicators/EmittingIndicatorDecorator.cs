@@ -17,6 +17,7 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
     public IReadOnlyDictionary<string, IReadOnlyList<TBuff>> Buffers => inner.Buffers;
     public int MinimumHistory => inner.MinimumHistory;
     public int? CapacityLimit => inner.CapacityLimit;
+    public bool SkipZeroValues => inner.SkipZeroValues;
 
     public void Compute(IReadOnlyList<TInp> series)
     {
@@ -30,6 +31,9 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
 
         var source = EventSources.Indicator(inner.Name);
         var values = ExtractLatestValues();
+        if (values.Count == 0)
+            return;
+
         var timestamp = series[^1] is Int64Bar bar ? bar.Timestamp : DateTimeOffset.UtcNow;
 
         if (isMutation)
@@ -59,7 +63,14 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
         var values = new Dictionary<string, object?>();
         foreach (var (key, buffer) in inner.Buffers)
         {
-            values[key] = buffer.Count > 0 ? (object?)buffer[^1] : null;
+            if (buffer.Count == 0)
+                continue;
+
+            var value = buffer[^1];
+            if (inner.SkipZeroValues && EqualityComparer<TBuff>.Default.Equals(value, default!))
+                continue;
+
+            values[key] = value;
         }
         return values;
     }

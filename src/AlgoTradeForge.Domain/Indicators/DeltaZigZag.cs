@@ -28,6 +28,7 @@ public sealed class DeltaZigZag : Int64IndicatorBase
     }
 
     public override IReadOnlyDictionary<string, IReadOnlyList<long>> Buffers => _buffers;
+    public override bool SkipZeroValues => true;
 
     public override void Compute(IReadOnlyList<Int64Bar> series)
     {
