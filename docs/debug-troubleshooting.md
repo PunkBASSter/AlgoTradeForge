@@ -12,7 +12,7 @@ Debug was launched with settings:
   "endTime": "2025-12-31T23:59:59Z",
   "commissionPerTrade": 0.001,
   "slippageTicks": 2,
-  "timeFrame": "01:00:00",
+  "timeFrame": "00:15:00",
   "strategyParameters": {
     "DzzDepth": 5,
     "MinimumThreshold": 10000,
@@ -37,13 +37,28 @@ Not sure if it's on strategy side or the debug displaying:
 Orders moment of placing is working as expected: At the last confifmed peak we place a buy order.
 
 ### What's wrong
+Screenshot:
+@docs\Debug_reject.png
 
-1. [DEBUG FE] The actual order price is unclear - there is a green circle below the bar, no price level drawn. 
-#### Expected:
-A horizontal line from the bar of placement until the bar of filling/cancellation. ORD label is redundant. Instead of a circle, there could be an arrow in the direction of the order.
+Session Metrics:
+```
+Session Active
+Yes
+Sequence
+46
+Timestamp
+2025-01-01 11:15:00.000 UTC
+Portfolio Equity
+1,000,000.00
+Fills This Bar
+0
+Subscription Index
+0
+```
 
-2. [STRATEGY | DEBUGGER | BACKTEST ENGINE] I expect the order to be at the last confirmed ZZ peak. On the next bar after one marked with Circle + ORD there is a breakout of the last confirmed ZZ peak, but no fill is displayed.
-#### Expected:
-When orders placed at the last confirmed ZZ peak have the peak level broken, a FILL happens.
+Why the order got rejected? I expected to get a fill here (2025-01-01 11:15:00.000 UTC).
+Why it was not drawn unlike the previous order that's been cancelled?
 
-3. FILL event happen very rearly comparing to the order events displayed, they have a FILL label, which is also not necessary as ORD label; it's better to have another mark instead. But getting rid of ORD and FILL is not a priority, we can decide later on their replacement.
+## Reject event marks are redrawn (moved) to the next bar
+1. They redrawn to the new bars. @docs\Debug_reject2.png
+2. If another reject appears, the reject marks are drawn all together on the last bar being stacked one over another.
