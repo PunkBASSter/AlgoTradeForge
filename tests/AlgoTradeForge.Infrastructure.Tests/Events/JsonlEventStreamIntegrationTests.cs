@@ -59,7 +59,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         var strategy = new BuyOnFirstBarStrategy(new BuyOnFirstBarParams { DataSubscriptions = [sub] });
 
         var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
-        var engine = new BacktestEngine(new BarMatcher());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var btOptions = new BacktestOptions
         {
@@ -148,7 +148,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         var strategy = new BuyOnFirstBarStrategy(new BuyOnFirstBarParams { DataSubscriptions = [sub] });
 
         var bars = CreateSeries(Start, OneMinute, 1, startPrice: 1000);
-        var engine = new BacktestEngine(new BarMatcher());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var btOptions = new BacktestOptions
         {
@@ -203,7 +203,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         var strategy = new IndicatorUsingStrategy(new IndicatorUsingParams { DataSubscriptions = [sub] }, indicatorFactory);
 
         var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
-        var engine = new BacktestEngine(new BarMatcher());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var btOptions = new BacktestOptions
         {
@@ -259,7 +259,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         var strategy = new IndicatorUsingStrategy(new IndicatorUsingParams { DataSubscriptions = [sub] });
 
         var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
-        var engine = new BacktestEngine(new BarMatcher());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var btOptions = new BacktestOptions
         {

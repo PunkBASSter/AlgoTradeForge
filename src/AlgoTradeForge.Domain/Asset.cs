@@ -9,6 +9,7 @@ public sealed record Asset
     public decimal TickValue => TickSize * Multiplier;
     public string Currency { get; init; } = "USD";
     public decimal? MarginRequirement { get; init; }
+    public decimal ShortMarginRate { get; init; } = 1.0m;
     public required string Exchange { get; init; }
     public int DecimalDigits { get; init; } = 2;
     public TimeSpan SmallestInterval { get; init; } = TimeSpan.FromMinutes(1);
@@ -25,18 +26,21 @@ public sealed record Asset
     }
 
     public static Asset Equity(string name, string exchange,
-        decimal minOrderQuantity = 1m, decimal maxOrderQuantity = decimal.MaxValue, decimal quantityStepSize = 1m) =>
+        decimal minOrderQuantity = 1m, decimal maxOrderQuantity = decimal.MaxValue, decimal quantityStepSize = 1m,
+        decimal shortMarginRate = 1.0m) =>
         new()
         {
             Name = name,
             Exchange = exchange,
             MinOrderQuantity = minOrderQuantity,
             MaxOrderQuantity = maxOrderQuantity,
-            QuantityStepSize = quantityStepSize
+            QuantityStepSize = quantityStepSize,
+            ShortMarginRate = shortMarginRate
         };
 
     public static Asset Future(string name, string exchange, decimal multiplier, decimal tickSize, decimal? margin = null,
-        decimal minOrderQuantity = 1m, decimal maxOrderQuantity = decimal.MaxValue, decimal quantityStepSize = 1m) =>
+        decimal minOrderQuantity = 1m, decimal maxOrderQuantity = decimal.MaxValue, decimal quantityStepSize = 1m,
+        decimal shortMarginRate = 1.0m) =>
         new()
         {
             Name = name,
@@ -47,11 +51,13 @@ public sealed record Asset
             MarginRequirement = margin,
             MinOrderQuantity = minOrderQuantity,
             MaxOrderQuantity = maxOrderQuantity,
-            QuantityStepSize = quantityStepSize
+            QuantityStepSize = quantityStepSize,
+            ShortMarginRate = shortMarginRate
         };
 
     public static Asset Crypto(string name, string exchange, int decimalDigits, DateOnly? historyStart = null,
-        decimal minOrderQuantity = 0m, decimal maxOrderQuantity = decimal.MaxValue, decimal quantityStepSize = 0m) =>
+        decimal minOrderQuantity = 0m, decimal maxOrderQuantity = decimal.MaxValue, decimal quantityStepSize = 0m,
+        decimal shortMarginRate = 1.0m) =>
         new()
         {
             Name = name,
@@ -62,7 +68,8 @@ public sealed record Asset
             TickSize = 1m / (decimal)Math.Pow(10, decimalDigits),
             MinOrderQuantity = minOrderQuantity,
             MaxOrderQuantity = maxOrderQuantity,
-            QuantityStepSize = quantityStepSize
+            QuantityStepSize = quantityStepSize,
+            ShortMarginRate = shortMarginRate
         };
 
     public override string ToString() => Name;

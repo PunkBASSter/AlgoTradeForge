@@ -24,7 +24,7 @@ public class DebugSessionHandlerTests
     private readonly IStrategyFactory _strategyFactory = Substitute.For<IStrategyFactory>();
     private readonly IHistoryRepository _historyRepo = Substitute.For<IHistoryRepository>();
     private readonly IMetricsCalculator _metricsCalc = new MetricsCalculator();
-    private readonly BacktestEngine _engine = new(new BarMatcher());
+    private readonly BacktestEngine _engine = new(new BarMatcher(), new OrderValidator());
     private readonly IDebugSessionStore _sessionStore = new InMemoryDebugSessionStore();
     private readonly IRunSinkFactory _runSinkFactory = Substitute.For<IRunSinkFactory>();
     private readonly IPostRunPipeline _postRunPipeline = Substitute.For<IPostRunPipeline>();

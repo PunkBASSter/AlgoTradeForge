@@ -9,7 +9,7 @@ namespace AlgoTradeForge.Domain.Engine;
 /// <summary>
 /// Stateless backtest engine. Safe for concurrent use — all mutable state is local to <see cref="Run"/>.
 /// </summary>
-public sealed class BacktestEngine(IBarMatcher barMatcher)
+public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator orderValidator)
 {
     private const string Source = EventSources.Engine;
 
@@ -23,7 +23,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
         Action<int>? onBarsProcessed = null)
     {
         var stopwatch = Stopwatch.StartNew();
-        var state = InitializeRun(seriesPerSubscription, strategy, options, probe, bus);
+        var state = InitializeRun(seriesPerSubscription, strategy, options, probe, bus, orderValidator);
         state.OnBarsProcessed = onBarsProcessed;
 
         try
@@ -53,7 +53,8 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
         IInt64BarStrategy strategy,
         BacktestOptions options,
         IDebugProbe? probe,
-        IEventBus? bus)
+        IEventBus? bus,
+        IOrderValidator orderValidator)
     {
         probe ??= NullDebugProbe.Instance;
         bus ??= NullEventBus.Instance;
@@ -78,7 +79,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
             Subscriptions = subscriptions,
             Series = series,
             Portfolio = portfolio,
-            OrderContext = new BacktestOrderContext(orderQueue, fills, portfolio, bus),
+            OrderContext = new BacktestOrderContext(orderQueue, fills, portfolio, bus, orderValidator),
             OrderQueue = orderQueue,
             Fills = fills,
             Cursors = new int[subscriptions.Count],
@@ -253,16 +254,13 @@ public sealed class BacktestEngine(IBarMatcher barMatcher)
                 continue;
             }
 
-            if (order.Side == OrderSide.Buy)
+            var settlementRejection = orderValidator.ValidateSettlement(order, fillPrice.Value, state.Portfolio, state.Options);
+            if (settlementRejection is not null)
             {
-                var cost = (long)(fillPrice.Value * order.Quantity * order.Asset.Multiplier) + state.Options.CommissionPerTrade;
-                if (cost > state.Portfolio.Cash)
-                {
-                    order.Status = OrderStatus.Rejected;
-                    state.ToRemoveBuffer.Add(order.Id);
-                    EmitOrderRejected(state, order, timestamp, "Insufficient cash");
-                    continue;
-                }
+                order.Status = OrderStatus.Rejected;
+                state.ToRemoveBuffer.Add(order.Id);
+                EmitOrderRejected(state, order, timestamp, settlementRejection);
+                continue;
             }
 
             var fill = new Fill(

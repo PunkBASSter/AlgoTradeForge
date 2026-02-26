@@ -23,7 +23,7 @@ public class EngineEventEmissionTests
         };
 
     private static BacktestEngine CreateEngine() =>
-        new(new BarMatcher());
+        new(new BarMatcher(), new OrderValidator());
 
     // ── run.start / bar / run.end ordering ──────────────────────────────
 

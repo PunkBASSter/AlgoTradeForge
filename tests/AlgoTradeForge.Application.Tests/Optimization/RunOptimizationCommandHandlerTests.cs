@@ -42,7 +42,7 @@ public class RunOptimizationCommandHandlerTests
     private RunOptimizationCommandHandler CreateHandler()
     {
         var engine = new BacktestEngine(
-            Substitute.For<IBarMatcher>());
+            Substitute.For<IBarMatcher>(), new OrderValidator());
 
         return new RunOptimizationCommandHandler(
             engine, _strategyFactory, _assetRepository, _historyRepository,

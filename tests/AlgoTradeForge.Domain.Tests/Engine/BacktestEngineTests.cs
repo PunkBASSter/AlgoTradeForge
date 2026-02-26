@@ -20,7 +20,7 @@ public class BacktestEngineTests
     public BacktestEngineTests()
     {
         _barMatcher = Substitute.For<IBarMatcher>();
-        _engine = new BacktestEngine(_barMatcher);
+        _engine = new BacktestEngine(_barMatcher, new OrderValidator());
     }
 
     private static BacktestOptions CreateOptions() =>
@@ -220,7 +220,7 @@ public class BacktestEngineTests
     public void Run_StrategySubmitsMarketBuy_FillGeneratedOnNextBar()
     {
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
         // 3 bars: strategy places a market buy on bar 0, fill processed on bar 1
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 15000);
@@ -256,7 +256,7 @@ public class BacktestEngineTests
     public void Run_StrategySubmitsLimitOrder_FillsWhenPriceReached()
     {
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
         // 5 bars with ascending opens (15000, 15100, ..., 15400)
         // Place a limit sell at 15350 -- should fill when bar high >= limit
@@ -283,7 +283,7 @@ public class BacktestEngineTests
                 }
             });
 
-        var result = engine.Run([bars], strategy, CreateOptions());
+        var result = engine.Run([bars], strategy, CreateOptions() with { InitialCash = 200_000L });
 
         // Bars have High = open + 200, so bar at 15200 has High=15400 >= 15350
         Assert.Single(result.Fills);
@@ -294,7 +294,7 @@ public class BacktestEngineTests
     public void Run_StrategySubmitsStopOrder_FillsWhenTriggered()
     {
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 5, startPrice: 15000);
         var strategy = MockStrategy(sub);
@@ -330,7 +330,7 @@ public class BacktestEngineTests
     public void Run_StrategySubmitsStopLimitOrder_TriggersAndFills()
     {
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 5, startPrice: 15000);
         var strategy = MockStrategy(sub);
@@ -366,7 +366,7 @@ public class BacktestEngineTests
     public void Run_FillsObservableViaOrderContext()
     {
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 15000);
         var strategy = MockStrategy(sub);
@@ -410,7 +410,7 @@ public class BacktestEngineTests
     public void Run_InsufficientCash_OrderRejected()
     {
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 15000);
         var strategy = MockStrategy(sub);
@@ -454,7 +454,7 @@ public class BacktestEngineTests
     {
         // SC-005: 100 orders processed without queue corruption, lost orders, or duplicate fills
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
         // 200 bars with low prices so limit buys are affordable (price 10..210, 1 share each = ~$100 per fill)
         var bars = TestBars.CreateSeries(Start, OneMinute, 200, startPrice: 10, priceIncrement: 1);
@@ -508,7 +508,7 @@ public class BacktestEngineTests
     public void Run_BuyWithSl_SlTriggersOnSubsequentBar()
     {
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
 
         // Bar 0: Open=100, H=102, L=99, C=101 -- market buy fills at Open=101 (bar 1)
@@ -552,7 +552,7 @@ public class BacktestEngineTests
     public void Run_BuyWithTp_TpTriggersOnSubsequentBar()
     {
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
 
         var bars = TestBars.CreateSeries(Start, OneMinute,
@@ -592,7 +592,7 @@ public class BacktestEngineTests
     public void Run_BuyWithPartialTp_TwoTpLevelsClosure()
     {
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
 
         // Use lower prices so 10 shares fit in $100K budget
@@ -651,7 +651,7 @@ public class BacktestEngineTests
         // SC-007: Baseline SLA of 500K bars/min
         const int barCount = 500_000;
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, barCount, startPrice: 10000, priceIncrement: 1);
 
@@ -672,7 +672,7 @@ public class BacktestEngineTests
         // SC-007 extended: three subscriptions over one year of 1-minute data (~525K bars each, ~1.575M total)
         const int barsPerSub = 525_000;
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
 
         var btcSub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
         var ethAsset = Asset.Crypto("ETHUSDT", "Binance", 2);
@@ -706,7 +706,7 @@ public class BacktestEngineTests
     {
         var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 10m, maxOrderQuantity: 1000m, quantityStepSize: 1m);
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(asset, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 100);
         var strategy = MockStrategy(sub);
@@ -748,7 +748,7 @@ public class BacktestEngineTests
     {
         var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 1m, maxOrderQuantity: 10m, quantityStepSize: 1m);
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(asset, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 100);
         var strategy = MockStrategy(sub);
@@ -790,7 +790,7 @@ public class BacktestEngineTests
     {
         var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 1m, maxOrderQuantity: 1000m, quantityStepSize: 5m);
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(asset, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 100);
         var strategy = MockStrategy(sub);
@@ -832,7 +832,7 @@ public class BacktestEngineTests
     {
         var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 1m, maxOrderQuantity: 100m, quantityStepSize: 5m);
         var realMatcher = new BarMatcher();
-        var engine = new BacktestEngine(realMatcher);
+        var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(asset, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 100);
         var strategy = MockStrategy(sub);

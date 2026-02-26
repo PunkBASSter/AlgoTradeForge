@@ -10,16 +10,19 @@ internal sealed class BacktestOrderContext : IOrderContext
     private readonly List<Fill> _allFills;
     private readonly Portfolio _portfolio;
     private readonly IEventBus _bus;
+    private readonly IOrderValidator _orderValidator;
     private readonly bool _busActive;
     private int _fillSnapshotStart;
     private DateTimeOffset _currentTimestamp;
 
-    public BacktestOrderContext(OrderQueue queue, List<Fill> allFills, Portfolio portfolio, IEventBus bus)
+    public BacktestOrderContext(OrderQueue queue, List<Fill> allFills, Portfolio portfolio, IEventBus bus,
+        IOrderValidator orderValidator)
     {
         _queue = queue;
         _allFills = allFills;
         _portfolio = portfolio;
         _bus = bus;
+        _orderValidator = orderValidator;
         _busActive = bus is not NullEventBus;
     }
 
@@ -33,7 +36,7 @@ internal sealed class BacktestOrderContext : IOrderContext
 
     public long Submit(Order order)
     {
-        var rejection = ValidateOrderQuantity(order);
+        var rejection = _orderValidator.ValidateSubmission(order);
         if (rejection is not null)
         {
             order.Status = OrderStatus.Rejected;
@@ -56,18 +59,6 @@ internal sealed class BacktestOrderContext : IOrderContext
 
         _queue.Submit(order);
         return order.Id;
-    }
-
-    private static string? ValidateOrderQuantity(Order order)
-    {
-        var asset = order.Asset;
-        if (order.Quantity < asset.MinOrderQuantity)
-            return $"Quantity {order.Quantity} below minimum {asset.MinOrderQuantity}";
-        if (order.Quantity > asset.MaxOrderQuantity)
-            return $"Quantity {order.Quantity} above maximum {asset.MaxOrderQuantity}";
-        if (asset.QuantityStepSize > 0m && order.Quantity % asset.QuantityStepSize != 0m)
-            return $"Quantity {order.Quantity} not aligned to step size {asset.QuantityStepSize}";
-        return null;
     }
 
     public Order? Cancel(long orderId)

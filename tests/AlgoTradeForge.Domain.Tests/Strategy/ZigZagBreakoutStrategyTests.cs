@@ -72,7 +72,7 @@ public class ZigZagBreakoutStrategyTests
         var asset = TestAssets.Aapl;
         var strategy = CreateStrategy(asset, OneMinute);
         var series = TestBars.CreateSeries(Start, OneMinute, BuildBreakoutBars());
-        var engine = new BacktestEngine(new BarMatcher());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var result = engine.Run([series], strategy, CreateOptions(asset));
 
@@ -103,7 +103,7 @@ public class ZigZagBreakoutStrategyTests
         });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 20, startPrice: 1000);
-        var engine = new BacktestEngine(new BarMatcher());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var result = engine.Run([bars], strategy, CreateOptions(asset));
 
@@ -132,7 +132,7 @@ public class ZigZagBreakoutStrategyTests
         // New pivots include 1800 and 1900, changing last 3
 
         var series = TestBars.CreateSeries(Start, OneMinute, bars.ToArray());
-        var engine = new BacktestEngine(new BarMatcher());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
         var result = engine.Run([series], strategy, CreateOptions(asset));
 
         // All bars processed without errors
@@ -146,7 +146,7 @@ public class ZigZagBreakoutStrategyTests
         var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 1m, maxOrderQuantity: 5m, quantityStepSize: 1m);
         var strategy = CreateStrategy(asset, OneMinute, riskPct: 2m);
         var series = TestBars.CreateSeries(Start, OneMinute, BuildBreakoutBars());
-        var engine = new BacktestEngine(new BarMatcher());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var result = engine.Run([series], strategy, CreateOptions(asset));
 
@@ -166,7 +166,7 @@ public class ZigZagBreakoutStrategyTests
 
         // Single bar — should not throw (OnInit called by engine)
         var bars = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 1000);
-        var engine = new BacktestEngine(new BarMatcher());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var result = engine.Run([bars], strategy, CreateOptions(asset));
 

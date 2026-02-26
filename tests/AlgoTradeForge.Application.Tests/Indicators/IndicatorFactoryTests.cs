@@ -216,7 +216,7 @@ public class IndicatorFactoryTests
         var m1Series = TestBars.CreateSeries(start, TimeSpan.FromMinutes(1), 3, startPrice: 1000);
         var h1Series = TestBars.CreateSeries(start, TimeSpan.FromHours(1), 1, startPrice: 5000);
 
-        var engine = new BacktestEngine(new BarMatcher());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
         var options = new BacktestOptions
         {
             InitialCash = 100_000L,
