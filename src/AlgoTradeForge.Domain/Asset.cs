@@ -14,9 +14,29 @@ public sealed record Asset
     public TimeSpan SmallestInterval { get; init; } = TimeSpan.FromMinutes(1);
     public DateOnly? HistoryStart { get; init; }
 
-    public static Asset Equity(string name, string exchange) => new() { Name = name, Exchange = exchange };
+    public decimal MinOrderQuantity { get; init; }
+    public decimal MaxOrderQuantity { get; init; } = decimal.MaxValue;
+    public decimal QuantityStepSize { get; init; }
 
-    public static Asset Future(string name, string exchange, decimal multiplier, decimal tickSize, decimal? margin = null) =>
+    public decimal RoundQuantityDown(decimal quantity)
+    {
+        if (QuantityStepSize <= 0m) return quantity;
+        return Math.Floor(quantity / QuantityStepSize) * QuantityStepSize;
+    }
+
+    public static Asset Equity(string name, string exchange,
+        decimal minOrderQuantity = 1m, decimal maxOrderQuantity = decimal.MaxValue, decimal quantityStepSize = 1m) =>
+        new()
+        {
+            Name = name,
+            Exchange = exchange,
+            MinOrderQuantity = minOrderQuantity,
+            MaxOrderQuantity = maxOrderQuantity,
+            QuantityStepSize = quantityStepSize
+        };
+
+    public static Asset Future(string name, string exchange, decimal multiplier, decimal tickSize, decimal? margin = null,
+        decimal minOrderQuantity = 1m, decimal maxOrderQuantity = decimal.MaxValue, decimal quantityStepSize = 1m) =>
         new()
         {
             Name = name,
@@ -24,10 +44,14 @@ public sealed record Asset
             Exchange = exchange,
             Multiplier = multiplier,
             TickSize = tickSize,
-            MarginRequirement = margin
+            MarginRequirement = margin,
+            MinOrderQuantity = minOrderQuantity,
+            MaxOrderQuantity = maxOrderQuantity,
+            QuantityStepSize = quantityStepSize
         };
 
-    public static Asset Crypto(string name, string exchange, int decimalDigits, DateOnly? historyStart = null) =>
+    public static Asset Crypto(string name, string exchange, int decimalDigits, DateOnly? historyStart = null,
+        decimal minOrderQuantity = 0m, decimal maxOrderQuantity = decimal.MaxValue, decimal quantityStepSize = 0m) =>
         new()
         {
             Name = name,
@@ -35,7 +59,10 @@ public sealed record Asset
             Exchange = exchange,
             DecimalDigits = decimalDigits,
             HistoryStart = historyStart,
-            TickSize = 1m / (decimal)Math.Pow(10, decimalDigits)
+            TickSize = 1m / (decimal)Math.Pow(10, decimalDigits),
+            MinOrderQuantity = minOrderQuantity,
+            MaxOrderQuantity = maxOrderQuantity,
+            QuantityStepSize = quantityStepSize
         };
 
     public override string ToString() => Name;

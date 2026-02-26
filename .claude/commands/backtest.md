@@ -34,8 +34,6 @@ Extract these from the user input (defaults shown in parentheses):
 - `DzzDepth` (decimal, default: 5)
 - `MinimumThreshold` (long, default: 10000)
 - `RiskPercentPerTrade` (decimal, default: 1)
-- `MinPositionSize` (decimal, default: 0.01)
-- `MaxPositionSize` (decimal, default: 1000)
 
 **Known assets and exchanges:**
 - BTCUSDT (Binance), ETHUSDT (Binance)

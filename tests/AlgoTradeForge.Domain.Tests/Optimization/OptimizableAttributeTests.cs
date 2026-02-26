@@ -100,12 +100,4 @@ public class OptimizableAttributeTests
         Assert.Equal(0.5, attr.Step);
     }
 
-    [Fact]
-    public void ZigZagBreakoutParams_MinPositionSize_HasNoOptimizableAttribute()
-    {
-        var prop = typeof(ZigZagBreakoutParams).GetProperty(nameof(ZigZagBreakoutParams.MinPositionSize));
-        var attr = prop!.GetCustomAttributes(typeof(OptimizableAttribute), false);
-
-        Assert.Empty(attr);
-    }
 }

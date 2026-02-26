@@ -698,4 +698,177 @@ public class BacktestEngineTests
     }
 
     #endregion
+
+    #region Quantity Validation (Asset Constraints)
+
+    [Fact]
+    public void Run_QuantityBelowMin_OrderRejected()
+    {
+        var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 10m, maxOrderQuantity: 1000m, quantityStepSize: 1m);
+        var realMatcher = new BarMatcher();
+        var engine = new BacktestEngine(realMatcher, new BasicRiskEvaluator());
+        var sub = new DataSubscription(asset, OneMinute);
+        var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 100);
+        var strategy = MockStrategy(sub);
+        var orderPlaced = false;
+
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+            .Do(ci =>
+            {
+                if (!orderPlaced)
+                {
+                    orderPlaced = true;
+                    var ctx = ci.ArgAt<IOrderContext>(2);
+                    ctx.Submit(new Order
+                    {
+                        Id = 1,
+                        Asset = asset,
+                        Side = OrderSide.Buy,
+                        Type = OrderType.Market,
+                        Quantity = 5m // below min of 10
+                    });
+                }
+            });
+
+        var opts = new BacktestOptions
+        {
+            InitialCash = 100_000L,
+            Asset = asset,
+            StartTime = DateTimeOffset.MinValue,
+            EndTime = DateTimeOffset.MaxValue,
+        };
+
+        var result = engine.Run([bars], strategy, opts);
+
+        Assert.Empty(result.Fills);
+    }
+
+    [Fact]
+    public void Run_QuantityAboveMax_OrderRejected()
+    {
+        var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 1m, maxOrderQuantity: 10m, quantityStepSize: 1m);
+        var realMatcher = new BarMatcher();
+        var engine = new BacktestEngine(realMatcher, new BasicRiskEvaluator());
+        var sub = new DataSubscription(asset, OneMinute);
+        var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 100);
+        var strategy = MockStrategy(sub);
+        var orderPlaced = false;
+
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+            .Do(ci =>
+            {
+                if (!orderPlaced)
+                {
+                    orderPlaced = true;
+                    var ctx = ci.ArgAt<IOrderContext>(2);
+                    ctx.Submit(new Order
+                    {
+                        Id = 1,
+                        Asset = asset,
+                        Side = OrderSide.Buy,
+                        Type = OrderType.Market,
+                        Quantity = 50m // above max of 10
+                    });
+                }
+            });
+
+        var opts = new BacktestOptions
+        {
+            InitialCash = 100_000L,
+            Asset = asset,
+            StartTime = DateTimeOffset.MinValue,
+            EndTime = DateTimeOffset.MaxValue,
+        };
+
+        var result = engine.Run([bars], strategy, opts);
+
+        Assert.Empty(result.Fills);
+    }
+
+    [Fact]
+    public void Run_QuantityMisalignedStep_OrderRejected()
+    {
+        var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 1m, maxOrderQuantity: 1000m, quantityStepSize: 5m);
+        var realMatcher = new BarMatcher();
+        var engine = new BacktestEngine(realMatcher, new BasicRiskEvaluator());
+        var sub = new DataSubscription(asset, OneMinute);
+        var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 100);
+        var strategy = MockStrategy(sub);
+        var orderPlaced = false;
+
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+            .Do(ci =>
+            {
+                if (!orderPlaced)
+                {
+                    orderPlaced = true;
+                    var ctx = ci.ArgAt<IOrderContext>(2);
+                    ctx.Submit(new Order
+                    {
+                        Id = 1,
+                        Asset = asset,
+                        Side = OrderSide.Buy,
+                        Type = OrderType.Market,
+                        Quantity = 7m // not a multiple of step 5
+                    });
+                }
+            });
+
+        var opts = new BacktestOptions
+        {
+            InitialCash = 100_000L,
+            Asset = asset,
+            StartTime = DateTimeOffset.MinValue,
+            EndTime = DateTimeOffset.MaxValue,
+        };
+
+        var result = engine.Run([bars], strategy, opts);
+
+        Assert.Empty(result.Fills);
+    }
+
+    [Fact]
+    public void Run_ValidQuantity_OrderFills()
+    {
+        var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 1m, maxOrderQuantity: 100m, quantityStepSize: 5m);
+        var realMatcher = new BarMatcher();
+        var engine = new BacktestEngine(realMatcher, new BasicRiskEvaluator());
+        var sub = new DataSubscription(asset, OneMinute);
+        var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 100);
+        var strategy = MockStrategy(sub);
+        var orderPlaced = false;
+
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+            .Do(ci =>
+            {
+                if (!orderPlaced)
+                {
+                    orderPlaced = true;
+                    var ctx = ci.ArgAt<IOrderContext>(2);
+                    ctx.Submit(new Order
+                    {
+                        Id = 1,
+                        Asset = asset,
+                        Side = OrderSide.Buy,
+                        Type = OrderType.Market,
+                        Quantity = 10m // valid: >= min, <= max, multiple of step
+                    });
+                }
+            });
+
+        var opts = new BacktestOptions
+        {
+            InitialCash = 100_000L,
+            Asset = asset,
+            StartTime = DateTimeOffset.MinValue,
+            EndTime = DateTimeOffset.MaxValue,
+        };
+
+        var result = engine.Run([bars], strategy, opts);
+
+        Assert.Single(result.Fills);
+        Assert.Equal(10m, result.Fills[0].Quantity);
+    }
+
+    #endregion
 }

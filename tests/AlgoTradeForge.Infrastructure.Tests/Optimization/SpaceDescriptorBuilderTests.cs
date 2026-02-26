@@ -60,8 +60,6 @@ public class SpaceDescriptorBuilderTests
         Assert.Equal(5m, defaults["DzzDepth"]);
         Assert.Equal(10_000L, defaults["MinimumThreshold"]);
         Assert.Equal(1m, defaults["RiskPercentPerTrade"]);
-        Assert.Equal(0.01m, defaults["MinPositionSize"]);
-        Assert.Equal(1000m, defaults["MaxPositionSize"]);
     }
 
     [Fact]

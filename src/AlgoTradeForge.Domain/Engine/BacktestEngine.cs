@@ -253,6 +253,15 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 continue;
             }
 
+            var quantityRejection = ValidateOrderQuantity(order, asset);
+            if (quantityRejection is not null)
+            {
+                order.Status = OrderStatus.Rejected;
+                state.ToRemoveBuffer.Add(order.Id);
+                EmitOrderRejected(state, order, timestamp, quantityRejection);
+                continue;
+            }
+
             var riskPassed = riskEvaluator.CanFill(order, fillPrice.Value, state.Portfolio, state.Options);
             EmitRiskCheck(state, order, riskPassed, timestamp);
 
@@ -260,7 +269,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             {
                 order.Status = OrderStatus.Rejected;
                 state.ToRemoveBuffer.Add(order.Id);
-                EmitOrderRejected(state, order, timestamp);
+                EmitOrderRejected(state, order, timestamp, "Insufficient cash");
                 continue;
             }
 
@@ -388,7 +397,18 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             passed ? null : "Insufficient cash"));
     }
 
-    private static void EmitOrderRejected(RunState state, Order order, DateTimeOffset timestamp)
+    private static string? ValidateOrderQuantity(Order order, Asset asset)
+    {
+        if (order.Quantity < asset.MinOrderQuantity)
+            return $"Quantity {order.Quantity} below minimum {asset.MinOrderQuantity}";
+        if (order.Quantity > asset.MaxOrderQuantity)
+            return $"Quantity {order.Quantity} above maximum {asset.MaxOrderQuantity}";
+        if (asset.QuantityStepSize > 0m && order.Quantity % asset.QuantityStepSize != 0m)
+            return $"Quantity {order.Quantity} not aligned to step size {asset.QuantityStepSize}";
+        return null;
+    }
+
+    private static void EmitOrderRejected(RunState state, Order order, DateTimeOffset timestamp, string reason)
     {
         if (!state.BusActive)
             return;
@@ -398,12 +418,12 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             Source,
             order.Id,
             order.Asset.Name,
-            "Insufficient cash"));
+            reason));
 
         state.Bus.Emit(new WarningEvent(
             timestamp,
             Source,
-            $"Order {order.Id} rejected: insufficient cash for {order.Side} {order.Quantity} {order.Asset.Name}"));
+            $"Order {order.Id} rejected: {reason} for {order.Side} {order.Quantity} {order.Asset.Name}"));
     }
 
     private static void EmitFillAndPosition(RunState state, DateTimeOffset timestamp, Fill fill)

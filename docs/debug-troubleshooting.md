@@ -16,9 +16,7 @@ Debug was launched with settings:
   "strategyParameters": {
     "DzzDepth": 5,
     "MinimumThreshold": 10000,
-    "RiskPercentPerTrade": 1,
-    "MinPositionSize": 0.01,
-    "MaxPositionSize": 1000
+    "RiskPercentPerTrade": 1
   }
 }
 ```
@@ -38,7 +36,7 @@ Orders moment of placing is working as expected: At the last confifmed peak we p
 
 ### What's wrong
 Screenshot:
-@docs\Debug_reject.png
+@docs\rejection_examples.png
 
 Session Metrics:
 ```
@@ -55,10 +53,20 @@ Fills This Bar
 Subscription Index
 0
 ```
+and
+Session Active
+Yes
+Sequence
+50
+Timestamp
+2025-01-01 12:15:00.000 UTC
+Portfolio Equity
+1,000,000.00
+Fills This Bar
+0
+Subscription Index
+0
 
-Why the order got rejected? I expected to get a fill here (2025-01-01 11:15:00.000 UTC).
-Why it was not drawn unlike the previous order that's been cancelled?
+Why the orders got rejected?
+I expected to get a fill at sequence #46 and #50.
 
-## Reject event marks are redrawn (moved) to the next bar
-1. They redrawn to the new bars. @docs\Debug_reject2.png
-2. If another reject appears, the reject marks are drawn all together on the last bar being stacked one over another.

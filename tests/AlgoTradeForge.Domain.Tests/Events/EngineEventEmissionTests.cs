@@ -540,6 +540,51 @@ public class EngineEventEmissionTests
         Assert.Equal(nameof(SignalEmittingTestStrategy), signals[0].Source);
     }
 
+    // ── Quantity validation rejection events ───────────────────────────
+
+    [Fact]
+    public void QuantityBelowMin_EmitsOrdRejectAndWarning()
+    {
+        var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 10m, maxOrderQuantity: 1000m, quantityStepSize: 1m);
+        var bus = new CapturingEventBus();
+        var sub = new DataSubscription(asset, OneMinute);
+        var submitted = false;
+
+        var strategy = new ActionStrategy(sub)
+        {
+            OnBarCompleteAction = (_, _, orders) =>
+            {
+                if (submitted) return;
+                submitted = true;
+                orders.Submit(new Order
+                {
+                    Id = 0,
+                    Asset = asset,
+                    Side = OrderSide.Buy,
+                    Type = OrderType.Market,
+                    Quantity = 3m // below min of 10
+                });
+            }
+        };
+
+        var opts = new BacktestOptions
+        {
+            InitialCash = 100_000L,
+            Asset = asset,
+            StartTime = DateTimeOffset.MinValue,
+            EndTime = DateTimeOffset.MaxValue,
+        };
+
+        var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 100);
+        CreateEngine().Run([bars], strategy, opts, bus: bus);
+
+        var reject = Assert.Single(bus.Events.OfType<OrderRejectEvent>());
+        Assert.Contains("below minimum", reject.Reason);
+
+        var warn = Assert.Single(bus.Events.OfType<WarningEvent>());
+        Assert.Contains("rejected", warn.Message);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private sealed class ActionStrategy(DataSubscription subscription) : IInt64BarStrategy
