@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import type { DebugSnapshot, CandleData } from "@/types/api";
-import type { IndicatorEventData, OrderPlaceEventData, OrderFillEventData, PositionEventData } from "@/lib/events/types";
+import type { IndicatorEventData, OrderPlaceEventData, OrderFillEventData, OrderCancelEventData, OrderRejectEventData, PositionEventData } from "@/lib/events/types";
 import type { DebugTrade } from "@/components/features/charts/candlestick-chart";
 
 export type DebugSessionState =

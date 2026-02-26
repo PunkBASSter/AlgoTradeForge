@@ -16,6 +16,8 @@ import type { CandleData, IndicatorSeries, TradeData } from "@/types/api";
 import type {
   OrderPlaceEventData,
   OrderFillEventData,
+  OrderCancelEventData,
+  OrderRejectEventData,
   PositionEventData,
 } from "@/lib/events/types";
 
@@ -28,8 +30,8 @@ const INDICATOR_COLORS = [
 
 export interface DebugTrade {
   time: number;
-  type: "ord.place" | "ord.fill" | "pos";
-  data: OrderPlaceEventData | OrderFillEventData | PositionEventData;
+  type: "ord.place" | "ord.fill" | "ord.cancel" | "ord.reject" | "pos";
+  data: OrderPlaceEventData | OrderFillEventData | OrderCancelEventData | OrderRejectEventData | PositionEventData;
 }
 
 interface DebugIndicatorPoint {
@@ -52,7 +54,7 @@ interface CandlestickChartProps {
   height?: number;
 }
 
-function getTradeMarkerSide(data: OrderPlaceEventData | OrderFillEventData | PositionEventData): "buy" | "sell" {
+function getTradeMarkerSide(data: DebugTrade["data"]): "buy" | "sell" {
   if ("side" in data) return data.side;
   return "buy";
 }
@@ -71,6 +73,7 @@ export function CandlestickChart({
   const candleSeriesRef = useRef<ReturnType<typeof addCandlestickSeries> | null>(null);
   const indicatorSeriesRef = useRef<Map<string, ReturnType<typeof addLineSeries>>>(new Map());
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const orderLinesRef = useRef<ReturnType<typeof addLineSeries>[]>([]);
   const lastCandleCountRef = useRef(0);
   const lastTradeCountRef = useRef(0);
 
@@ -90,6 +93,7 @@ export function CandlestickChart({
         markersRef.current.detach();
         markersRef.current = null;
       }
+      orderLinesRef.current = [];
       cleanupChart(chart);
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -239,12 +243,25 @@ export function CandlestickChart({
     const markers: SeriesMarker<Time>[] = debugTrades.map((t) => {
       const side = getTradeMarkerSide(t.data);
       const isBuy = side === "buy";
+      const isCancelOrReject = t.type === "ord.cancel" || t.type === "ord.reject";
       return {
         time: t.time as Time,
         position: isBuy ? "belowBar" : "aboveBar",
-        color: isBuy ? CHART_COLORS.up : CHART_COLORS.down,
-        shape: t.type === "ord.place" ? "circle" : isBuy ? "arrowUp" : "arrowDown",
-        text: t.type === "ord.place" ? "ORD" : t.type === "ord.fill" ? "FILL" : "POS",
+        color: isCancelOrReject ? "#6b7280" : isBuy ? CHART_COLORS.up : CHART_COLORS.down,
+        shape: isCancelOrReject
+          ? "square"
+          : t.type === "ord.place"
+            ? "circle"
+            : isBuy ? "arrowUp" : "arrowDown",
+        text: t.type === "ord.place"
+          ? "ORD"
+          : t.type === "ord.fill"
+            ? "FILL"
+            : t.type === "ord.cancel"
+              ? "CXL"
+              : t.type === "ord.reject"
+                ? "REJ"
+                : "POS",
       };
     });
     markers.sort((a, b) => (a.time as number) - (b.time as number));
@@ -253,6 +270,89 @@ export function CandlestickChart({
     markersRef.current = createSeriesMarkers(candleSeriesRef.current, markers);
     lastTradeCountRef.current = debugTrades.length;
   }, [debugTrades]);
+
+  // Order price level lines (debug mode)
+  useEffect(() => {
+    if (!debugTrades || !candles || !chartRef.current) return;
+
+    // Remove previous order lines
+    const chart = chartRef.current;
+    for (const line of orderLinesRef.current) {
+      try { chart.removeSeries(line); } catch { /* already removed */ }
+    }
+    orderLinesRef.current = [];
+
+    // Build order lifecycle map
+    const orders = new Map<number, {
+      startTime: number;
+      endTime: number | null;
+      price: number;
+      side: "buy" | "sell";
+      resolution: "pending" | "filled" | "cancelled" | "rejected";
+    }>();
+
+    for (const t of debugTrades) {
+      if (t.type === "ord.place") {
+        const d = t.data as OrderPlaceEventData;
+        const price = d.stopPrice ?? d.limitPrice ?? 0;
+        if (price > 0) {
+          orders.set(d.orderId, {
+            startTime: t.time,
+            endTime: null,
+            price,
+            side: d.side,
+            resolution: "pending",
+          });
+        }
+      } else if (t.type === "ord.fill") {
+        const d = t.data as OrderFillEventData;
+        const order = orders.get(d.orderId);
+        if (order) {
+          order.endTime = t.time;
+          order.resolution = "filled";
+        }
+      } else if (t.type === "ord.cancel") {
+        const d = t.data as OrderCancelEventData;
+        const order = orders.get(d.orderId);
+        if (order) {
+          order.endTime = t.time;
+          order.resolution = "cancelled";
+        }
+      } else if (t.type === "ord.reject") {
+        const d = t.data as OrderRejectEventData;
+        const order = orders.get(d.orderId);
+        if (order) {
+          order.resolution = "rejected";
+        }
+      }
+    }
+
+    // Default endTime to last candle time for pending orders
+    const lastCandleTime = candles.length > 0 ? candles[candles.length - 1].time : null;
+
+    for (const order of orders.values()) {
+      if (order.resolution === "rejected") continue; // no line for instant rejections
+      if (order.price <= 0) continue;
+
+      const endTime = order.endTime ?? lastCandleTime;
+      if (endTime === null || endTime <= order.startTime) continue;
+
+      const color = order.resolution === "cancelled"
+        ? "#6b7280"
+        : order.side === "buy" ? CHART_COLORS.up : CHART_COLORS.down;
+
+      const lineSeries = addLineSeries(chart, {
+        color,
+        priceScaleId: "right",
+        lineWidth: 1,
+      });
+      lineSeries.setData([
+        { time: order.startTime as Time, value: order.price },
+        { time: endTime as Time, value: order.price },
+      ]);
+      orderLinesRef.current.push(lineSeries);
+    }
+  }, [debugTrades, candles]);
 
   return (
     <div

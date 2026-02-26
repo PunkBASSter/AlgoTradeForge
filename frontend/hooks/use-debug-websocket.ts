@@ -12,6 +12,8 @@ import type {
   IndicatorEventData,
   OrderPlaceEventData,
   OrderFillEventData,
+  OrderCancelEventData,
+  OrderRejectEventData,
   PositionEventData,
   BacktestEvent,
 } from "@/lib/events/types";
@@ -68,6 +70,16 @@ function processEvent(event: BacktestEvent) {
     case "ord.fill": {
       const data = event.d as OrderFillEventData;
       store.addTrade({ time: timeSec, type: "ord.fill", data });
+      break;
+    }
+    case "ord.cancel": {
+      const data = event.d as OrderCancelEventData;
+      store.addTrade({ time: timeSec, type: "ord.cancel", data });
+      break;
+    }
+    case "ord.reject": {
+      const data = event.d as OrderRejectEventData;
+      store.addTrade({ time: timeSec, type: "ord.reject", data });
       break;
     }
     case "pos": {
