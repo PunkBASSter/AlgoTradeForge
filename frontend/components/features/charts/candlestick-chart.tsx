@@ -322,6 +322,7 @@ export function CandlestickChart({
         const d = t.data as OrderRejectEventData;
         const order = orders.get(d.orderId);
         if (order) {
+          order.endTime = t.time;
           order.resolution = "rejected";
         }
       }
@@ -331,18 +332,21 @@ export function CandlestickChart({
     const lastCandleTime = candles.length > 0 ? candles[candles.length - 1].time : null;
 
     for (const order of orders.values()) {
-      if (order.resolution === "rejected") continue; // no line for instant rejections
       if (order.price <= 0) continue;
 
       const endTime = order.endTime ?? lastCandleTime;
       if (endTime === null || endTime <= order.startTime) continue;
 
-      const color = order.side === "buy" ? CHART_COLORS.up : CHART_COLORS.down;
+      const isRejected = order.resolution === "rejected";
+      const color = isRejected
+        ? "#6b7280"
+        : order.side === "buy" ? CHART_COLORS.up : CHART_COLORS.down;
 
       const lineSeries = addLineSeries(chart, {
         color,
         priceScaleId: "right",
         lineWidth: 1,
+        lineStyle: isRejected ? 2 : 0, // dashed for rejected, solid otherwise
         lastValueVisible: false,
         priceLineVisible: false,
       });

@@ -254,13 +254,13 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             }
 
             var riskPassed = riskEvaluator.CanFill(order, fillPrice.Value, state.Portfolio, state.Options);
-            EmitRiskCheck(state, order, riskPassed);
+            EmitRiskCheck(state, order, riskPassed, timestamp);
 
             if (!riskPassed)
             {
                 order.Status = OrderStatus.Rejected;
                 state.ToRemoveBuffer.Add(order.Id);
-                EmitOrderRejected(state, order);
+                EmitOrderRejected(state, order, timestamp);
                 continue;
             }
 
@@ -374,13 +374,13 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             subscription.IsExportable));
     }
 
-    private static void EmitRiskCheck(RunState state, Order order, bool passed)
+    private static void EmitRiskCheck(RunState state, Order order, bool passed, DateTimeOffset timestamp)
     {
         if (!state.BusActive)
             return;
 
         state.Bus.Emit(new RiskEvent(
-            DateTimeOffset.UtcNow,
+            timestamp,
             Source,
             order.Asset.Name,
             passed,
@@ -388,20 +388,20 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             passed ? null : "Insufficient cash"));
     }
 
-    private static void EmitOrderRejected(RunState state, Order order)
+    private static void EmitOrderRejected(RunState state, Order order, DateTimeOffset timestamp)
     {
         if (!state.BusActive)
             return;
 
         state.Bus.Emit(new OrderRejectEvent(
-            DateTimeOffset.UtcNow,
+            timestamp,
             Source,
             order.Id,
             order.Asset.Name,
             "Insufficient cash"));
 
         state.Bus.Emit(new WarningEvent(
-            DateTimeOffset.UtcNow,
+            timestamp,
             Source,
             $"Order {order.Id} rejected: insufficient cash for {order.Side} {order.Quantity} {order.Asset.Name}"));
     }
