@@ -7,6 +7,5 @@ public interface IIndicator<TInp, TBuff>
     IReadOnlyDictionary<string, IndicatorBuffer<TBuff>> Buffers { get; }
     int MinimumHistory { get; }
     int? CapacityLimit { get; }
-    bool SkipZeroValues { get; }
     void Compute(IReadOnlyList<TInp> series);
 }

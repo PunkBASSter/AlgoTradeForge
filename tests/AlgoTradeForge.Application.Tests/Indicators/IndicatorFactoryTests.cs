@@ -287,7 +287,6 @@ public class IndicatorFactoryTests
         public IReadOnlyDictionary<string, IndicatorBuffer<long>> Buffers => _inner.Buffers;
         public int MinimumHistory => _inner.MinimumHistory;
         public int? CapacityLimit => _inner.CapacityLimit;
-        public bool SkipZeroValues => _inner.SkipZeroValues;
         public void Compute(IReadOnlyList<Int64Bar> series) => _inner.Compute(series);
     }
 }

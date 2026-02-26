@@ -11,7 +11,7 @@ public sealed class DeltaZigZag : Int64IndicatorBase
     private readonly decimal _delta;
     private readonly long _minimumThreshold;
 
-    private readonly IndicatorBuffer<long> _buffer = new("Value");
+    private readonly IndicatorBuffer<long> _buffer = new("Value", skipDefaultValues: true);
     private readonly Dictionary<string, IndicatorBuffer<long>> _buffers;
 
     private int _direction = 1;       // 1 = up, -1 = down
@@ -28,7 +28,6 @@ public sealed class DeltaZigZag : Int64IndicatorBase
     }
 
     public override IReadOnlyDictionary<string, IndicatorBuffer<long>> Buffers => _buffers;
-    public override bool SkipZeroValues => true;
 
     public override void Compute(IReadOnlyList<Int64Bar> series)
     {

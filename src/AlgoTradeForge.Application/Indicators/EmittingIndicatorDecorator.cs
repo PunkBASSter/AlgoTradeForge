@@ -19,7 +19,6 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
     public IReadOnlyDictionary<string, IndicatorBuffer<TBuff>> Buffers => inner.Buffers;
     public int MinimumHistory => inner.MinimumHistory;
     public int? CapacityLimit => inner.CapacityLimit;
-    public bool SkipZeroValues => inner.SkipZeroValues;
 
     public void Compute(IReadOnlyList<TInp> series)
     {
@@ -90,8 +89,9 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
                 ? bar.Timestamp
                 : DateTimeOffset.UtcNow;
 
+            var buffer = inner.Buffers[bufferName];
             var mutValues = new Dictionary<string, object?>();
-            if (inner.SkipZeroValues && EqualityComparer<TBuff>.Default.Equals(value, default!))
+            if (buffer.SkipDefaultValues && EqualityComparer<TBuff>.Default.Equals(value, default!))
                 mutValues[bufferName] = null;
             else
                 mutValues[bufferName] = value;
@@ -115,7 +115,7 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
                 continue;
 
             var value = buffer[^1];
-            if (inner.SkipZeroValues && EqualityComparer<TBuff>.Default.Equals(value, default!))
+            if (buffer.SkipDefaultValues && EqualityComparer<TBuff>.Default.Equals(value, default!))
                 continue;
 
             values[key] = value;
