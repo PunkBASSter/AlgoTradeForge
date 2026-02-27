@@ -241,16 +241,25 @@ export function CandlestickChart({
     if (debugTrades.length === lastTradeCountRef.current) return;
 
     const markers: SeriesMarker<Time>[] = debugTrades
-      .filter((t) => t.type === "ord.reject")
+      .filter((t) => t.type === "ord.fill" || t.type === "ord.reject")
       .map((t) => {
         const side = getTradeMarkerSide(t.data);
         const isBuy = side === "buy";
+        if (t.type === "ord.reject") {
+          return {
+            time: t.time as Time,
+            position: isBuy ? "belowBar" : "aboveBar",
+            color: "#6b7280",
+            shape: "square" as const,
+            text: "REJ",
+          };
+        }
         return {
           time: t.time as Time,
           position: isBuy ? "belowBar" : "aboveBar",
-          color: "#6b7280",
-          shape: "square" as const,
-          text: "REJ",
+          color: isBuy ? CHART_COLORS.up : CHART_COLORS.down,
+          shape: isBuy ? "arrowUp" : "arrowDown",
+          text: "FILL",
         };
       });
     markers.sort((a, b) => (a.time as number) - (b.time as number));

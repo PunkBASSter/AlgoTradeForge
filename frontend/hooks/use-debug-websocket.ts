@@ -174,7 +174,7 @@ export function useDebugWebSocket({
         switch (msg.kind) {
           case "snapshot":
             store.setSnapshot(msg.data);
-            if (msg.data.isExportableSubscription) {
+            if (msg.data.isExportableSubscription && msg.data.fillsThisBar > 0) {
               store.addEquityPoint(msg.data.timestampMs, msg.data.portfolioEquity);
             }
             // Generalized auto-step: check stop condition for any active mode
@@ -248,7 +248,7 @@ export function useDebugWebSocket({
         switch (msg.kind) {
           case "snapshot":
             store.setSnapshot(msg.data);
-            if (msg.data.isExportableSubscription) {
+            if (msg.data.isExportableSubscription && msg.data.fillsThisBar > 0) {
               store.addEquityPoint(msg.data.timestampMs, msg.data.portfolioEquity);
             }
             break;
