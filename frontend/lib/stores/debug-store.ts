@@ -12,6 +12,13 @@ export type DebugSessionState =
   | "active"
   | "stopped";
 
+export type AutoStepMode =
+  | { kind: "play" }
+  | { kind: "next_trade" }
+  | { kind: "next_signal" }
+  | { kind: "run_to_timestamp"; targetMs: number }
+  | { kind: "run_to_sequence"; targetSq: number };
+
 export interface DebugIndicatorPoint {
   time: number;
   indicatorName: string;
@@ -33,6 +40,7 @@ interface DebugStoreState {
   equityHistory: EquityPoint[];
   latestSnapshot: DebugSnapshot | null;
   errorMessage: string | null;
+  autoStep: AutoStepMode | null;
 
   setSessionState: (state: DebugSessionState) => void;
   setSessionId: (id: string | null) => void;
@@ -43,6 +51,7 @@ interface DebugStoreState {
   addEquityPoint: (timestampMs: number, equity: number) => void;
   setSnapshot: (snapshot: DebugSnapshot) => void;
   setError: (message: string | null) => void;
+  setAutoStep: (mode: AutoStepMode | null) => void;
   reset: () => void;
 }
 
@@ -55,6 +64,7 @@ const initialState = {
   equityHistory: [] as EquityPoint[],
   latestSnapshot: null as DebugSnapshot | null,
   errorMessage: null as string | null,
+  autoStep: null as AutoStepMode | null,
 };
 
 export const useDebugStore = create<DebugStoreState>((set) => ({
@@ -141,5 +151,7 @@ export const useDebugStore = create<DebugStoreState>((set) => ({
 
   setError: (errorMessage) => set({ errorMessage, sessionState: "stopped" }),
 
-  reset: () => set({ ...initialState, indicators: new Map(), equityHistory: [] }),
+  setAutoStep: (autoStep) => set({ autoStep }),
+
+  reset: () => set({ ...initialState, indicators: new Map(), equityHistory: [], autoStep: null }),
 }));

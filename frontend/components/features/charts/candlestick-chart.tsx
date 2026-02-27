@@ -240,30 +240,19 @@ export function CandlestickChart({
     if (!debugTrades || !candleSeriesRef.current) return;
     if (debugTrades.length === lastTradeCountRef.current) return;
 
-    const markers: SeriesMarker<Time>[] = debugTrades.map((t) => {
-      const side = getTradeMarkerSide(t.data);
-      const isBuy = side === "buy";
-      const isCancelOrReject = t.type === "ord.cancel" || t.type === "ord.reject";
-      return {
-        time: t.time as Time,
-        position: isBuy ? "belowBar" : "aboveBar",
-        color: isCancelOrReject ? "#6b7280" : isBuy ? CHART_COLORS.up : CHART_COLORS.down,
-        shape: isCancelOrReject
-          ? "square"
-          : t.type === "ord.place"
-            ? "circle"
-            : isBuy ? "arrowUp" : "arrowDown",
-        text: t.type === "ord.place"
-          ? "ORD"
-          : t.type === "ord.fill"
-            ? "FILL"
-            : t.type === "ord.cancel"
-              ? "CXL"
-              : t.type === "ord.reject"
-                ? "REJ"
-                : "POS",
-      };
-    });
+    const markers: SeriesMarker<Time>[] = debugTrades
+      .filter((t) => t.type === "ord.reject")
+      .map((t) => {
+        const side = getTradeMarkerSide(t.data);
+        const isBuy = side === "buy";
+        return {
+          time: t.time as Time,
+          position: isBuy ? "belowBar" : "aboveBar",
+          color: "#6b7280",
+          shape: "square" as const,
+          text: "REJ",
+        };
+      });
     markers.sort((a, b) => (a.time as number) - (b.time as number));
 
     if (markersRef.current) markersRef.current.detach();
