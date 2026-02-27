@@ -42,6 +42,11 @@ export function createDarkChart(
       vertLines: { color: "#2e323f" },
       horzLines: { color: "#2e323f" },
     },
+    timeScale: {
+      timeVisible: true,
+      secondsVisible: false,
+      borderColor: "#2e323f",
+    },
     width: options?.width,
     height: options?.height,
     autoSize: options?.autoSize ?? true,
