@@ -19,12 +19,18 @@ export interface DebugIndicatorPoint {
   values: Record<string, number | null>;
 }
 
+export interface EquityPoint {
+  time: number;
+  equity: number;
+}
+
 interface DebugStoreState {
   sessionState: DebugSessionState;
   sessionId: string | null;
   candles: CandleData[];
   indicators: Map<string, DebugIndicatorPoint[]>;
   trades: DebugTrade[];
+  equityHistory: EquityPoint[];
   latestSnapshot: DebugSnapshot | null;
   errorMessage: string | null;
 
@@ -34,6 +40,7 @@ interface DebugStoreState {
   updateCandle: (candle: CandleData) => void;
   addIndicator: (data: IndicatorEventData, time: number) => void;
   addTrade: (trade: DebugTrade) => void;
+  addEquityPoint: (timestampMs: number, equity: number) => void;
   setSnapshot: (snapshot: DebugSnapshot) => void;
   setError: (message: string | null) => void;
   reset: () => void;
@@ -45,6 +52,7 @@ const initialState = {
   candles: [] as CandleData[],
   indicators: new Map<string, DebugIndicatorPoint[]>(),
   trades: [] as DebugTrade[],
+  equityHistory: [] as EquityPoint[],
   latestSnapshot: null as DebugSnapshot | null,
   errorMessage: null as string | null,
 };
@@ -121,9 +129,17 @@ export const useDebugStore = create<DebugStoreState>((set) => ({
   addTrade: (trade) =>
     set((state) => ({ trades: [...state.trades, trade] })),
 
+  addEquityPoint: (timestampMs, equity) =>
+    set((state) => {
+      const timeSec = Math.floor(timestampMs / 1000);
+      const last = state.equityHistory[state.equityHistory.length - 1];
+      if (last && last.time === timeSec) return state;
+      return { equityHistory: [...state.equityHistory, { time: timeSec, equity }] };
+    }),
+
   setSnapshot: (latestSnapshot) => set({ latestSnapshot }),
 
   setError: (errorMessage) => set({ errorMessage, sessionState: "stopped" }),
 
-  reset: () => set({ ...initialState, indicators: new Map() }),
+  reset: () => set({ ...initialState, indicators: new Map(), equityHistory: [] }),
 }));

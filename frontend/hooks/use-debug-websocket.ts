@@ -148,6 +148,9 @@ export function useDebugWebSocket({
         switch (msg.kind) {
           case "snapshot":
             store.setSnapshot(msg.data);
+            if (msg.data.isExportableSubscription) {
+              store.addEquityPoint(msg.data.timestampMs, msg.data.portfolioEquity);
+            }
             break;
           case "error":
             log.error("Server error", { message: msg.message });
@@ -204,6 +207,9 @@ export function useDebugWebSocket({
         switch (msg.kind) {
           case "snapshot":
             store.setSnapshot(msg.data);
+            if (msg.data.isExportableSubscription) {
+              store.addEquityPoint(msg.data.timestampMs, msg.data.portfolioEquity);
+            }
             break;
           case "error":
             store.setError(msg.message);

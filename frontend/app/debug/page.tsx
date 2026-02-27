@@ -22,6 +22,14 @@ const CandlestickChart = dynamic(
   { ssr: false, loading: () => <ChartSkeleton /> }
 );
 
+const PnlChart = dynamic(
+  () =>
+    import("@/components/features/charts/pnl-chart").then(
+      (m) => m.PnlChart
+    ),
+  { ssr: false }
+);
+
 export default function DebugPage() {
   const store = useDebugStore();
   const { toast } = useToast();
@@ -138,11 +146,16 @@ export default function DebugPage() {
           />
 
           <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4">
-            <CandlestickChart
-              candles={store.candles}
-              debugIndicators={store.indicators}
-              debugTrades={store.trades}
-            />
+            <div className="space-y-2">
+              <CandlestickChart
+                candles={store.candles}
+                debugIndicators={store.indicators}
+                debugTrades={store.trades}
+              />
+              {store.equityHistory.length > 0 && (
+                <PnlChart equityHistory={store.equityHistory} />
+              )}
+            </div>
             <DebugMetrics snapshot={store.latestSnapshot} />
           </div>
         </>
