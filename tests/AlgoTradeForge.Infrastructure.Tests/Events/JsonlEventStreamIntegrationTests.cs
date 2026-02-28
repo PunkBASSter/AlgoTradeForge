@@ -59,7 +59,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         var strategy = new BuyOnFirstBarStrategy(new BuyOnFirstBarParams { DataSubscriptions = [sub] });
 
         var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
-        var engine = new BacktestEngine(new BarMatcher(), new BasicRiskEvaluator());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var btOptions = new BacktestOptions
         {
@@ -77,8 +77,8 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
         var lines = _fs.ReadAllLines(eventsPath);
 
-        // Must have at least run.start, 3x bar, ord.place, risk, ord.fill, pos, run.end
-        Assert.True(lines.Length >= 9, $"Expected at least 9 lines but got {lines.Length}");
+        // Must have at least run.start, 3x bar, ord.place, ord.fill, pos, run.end
+        Assert.True(lines.Length >= 8, $"Expected at least 8 lines but got {lines.Length}");
 
         // First line is run.start
         var first = JsonDocument.Parse(lines[0]);
@@ -107,12 +107,11 @@ public class JsonlEventStreamIntegrationTests : IDisposable
             return doc.RootElement.GetProperty("_t").GetString()!;
         }).ToList();
 
-        // Intermediate lines include bar, ord.place, ord.fill, pos, risk
+        // Intermediate lines include bar, ord.place, ord.fill, pos
         Assert.Contains("bar", typeIds);
         Assert.Contains("ord.place", typeIds);
         Assert.Contains("ord.fill", typeIds);
         Assert.Contains("pos", typeIds);
-        Assert.Contains("risk", typeIds);
 
         // Sequence numbers are monotonically increasing starting from 1
         var sequences = lines.Select(l =>
@@ -149,7 +148,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         var strategy = new BuyOnFirstBarStrategy(new BuyOnFirstBarParams { DataSubscriptions = [sub] });
 
         var bars = CreateSeries(Start, OneMinute, 1, startPrice: 1000);
-        var engine = new BacktestEngine(new BarMatcher(), new BasicRiskEvaluator());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var btOptions = new BacktestOptions
         {
@@ -204,7 +203,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         var strategy = new IndicatorUsingStrategy(new IndicatorUsingParams { DataSubscriptions = [sub] }, indicatorFactory);
 
         var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
-        var engine = new BacktestEngine(new BarMatcher(), new BasicRiskEvaluator());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var btOptions = new BacktestOptions
         {
@@ -260,7 +259,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         var strategy = new IndicatorUsingStrategy(new IndicatorUsingParams { DataSubscriptions = [sub] });
 
         var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
-        var engine = new BacktestEngine(new BarMatcher(), new BasicRiskEvaluator());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var btOptions = new BacktestOptions
         {

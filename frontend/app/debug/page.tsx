@@ -22,6 +22,14 @@ const CandlestickChart = dynamic(
   { ssr: false, loading: () => <ChartSkeleton /> }
 );
 
+const PnlChart = dynamic(
+  () =>
+    import("@/components/features/charts/pnl-chart").then(
+      (m) => m.PnlChart
+    ),
+  { ssr: false }
+);
+
 export default function DebugPage() {
   const store = useDebugStore();
   const { toast } = useToast();
@@ -62,6 +70,15 @@ export default function DebugPage() {
     async (config: StartDebugSessionRequest) => {
       const s = useDebugStore.getState();
       try {
+        // Clean up previous session on server before creating a new one,
+        // otherwise zombie sessions accumulate and exhaust the session store.
+        if (s.sessionId) {
+          try {
+            await client.deleteDebugSession(s.sessionId);
+          } catch {
+            // Session may already be gone
+          }
+        }
         s.reset();
         s.setSessionState("configuring");
         const session = await client.createDebugSession(config);
@@ -129,11 +146,16 @@ export default function DebugPage() {
           />
 
           <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4">
-            <CandlestickChart
-              candles={store.candles}
-              debugIndicators={store.indicators}
-              debugTrades={store.trades}
-            />
+            <div className="space-y-2">
+              <CandlestickChart
+                candles={store.candles}
+                debugIndicators={store.indicators}
+                debugTrades={store.trades}
+              />
+              {store.equityHistory.length > 0 && (
+                <PnlChart equityHistory={store.equityHistory} />
+              )}
+            </div>
             <DebugMetrics snapshot={store.latestSnapshot} />
           </div>
         </>

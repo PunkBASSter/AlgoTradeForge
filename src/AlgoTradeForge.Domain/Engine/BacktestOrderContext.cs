@@ -10,16 +10,19 @@ internal sealed class BacktestOrderContext : IOrderContext
     private readonly List<Fill> _allFills;
     private readonly Portfolio _portfolio;
     private readonly IEventBus _bus;
+    private readonly IOrderValidator _orderValidator;
     private readonly bool _busActive;
     private int _fillSnapshotStart;
     private DateTimeOffset _currentTimestamp;
 
-    public BacktestOrderContext(OrderQueue queue, List<Fill> allFills, Portfolio portfolio, IEventBus bus)
+    public BacktestOrderContext(OrderQueue queue, List<Fill> allFills, Portfolio portfolio, IEventBus bus,
+        IOrderValidator orderValidator)
     {
         _queue = queue;
         _allFills = allFills;
         _portfolio = portfolio;
         _bus = bus;
+        _orderValidator = orderValidator;
         _busActive = bus is not NullEventBus;
     }
 
@@ -33,6 +36,27 @@ internal sealed class BacktestOrderContext : IOrderContext
 
     public long Submit(Order order)
     {
+        var rejection = _orderValidator.ValidateSubmission(order);
+        if (rejection is not null)
+        {
+            order.Status = OrderStatus.Rejected;
+            if (_busActive)
+            {
+                _bus.Emit(new OrderRejectEvent(
+                    _currentTimestamp,
+                    EventSources.Engine,
+                    order.Id,
+                    order.Asset.Name,
+                    rejection));
+
+                _bus.Emit(new WarningEvent(
+                    _currentTimestamp,
+                    EventSources.Engine,
+                    $"Order {order.Id} rejected: {rejection} for {order.Side} {order.Quantity} {order.Asset.Name}"));
+            }
+            return order.Id;
+        }
+
         _queue.Submit(order);
         return order.Id;
     }

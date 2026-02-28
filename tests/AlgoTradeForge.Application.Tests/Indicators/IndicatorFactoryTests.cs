@@ -61,7 +61,8 @@ public class IndicatorFactoryTests
         var inner = new DeltaZigZag(0.5m, 100L);
         var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
 
-        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050) };
+        var barTime = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050, timestampMs: barTime.ToUnixTimeMilliseconds()) };
         decorated.Compute(bars);
 
         var evt = Assert.Single(bus.Events);
@@ -72,6 +73,33 @@ public class IndicatorFactoryTests
         Assert.True(indEvent.IsExportable);
         Assert.True(indEvent.Values.ContainsKey("Value"));
         Assert.Equal(1100L, indEvent.Values["Value"]);
+        Assert.Equal(barTime, indEvent.Timestamp);
+    }
+
+    [Fact]
+    public void DecoratedIndicator_EventTimestamp_MatchesBarTimestamp()
+    {
+        var bus = new CapturingEventBus();
+        var inner = new DeltaZigZag(0.5m, 100L);
+        var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
+
+        var t1 = new DateTimeOffset(2025, 3, 1, 10, 0, 0, TimeSpan.Zero);
+        var t2 = new DateTimeOffset(2025, 3, 1, 10, 1, 0, TimeSpan.Zero);
+
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050, timestampMs: t1.ToUnixTimeMilliseconds()) };
+        decorated.Compute(bars);
+
+        bars.Add(TestBars.Create(1050, 1200, 1000, 1150, timestampMs: t2.ToUnixTimeMilliseconds()));
+        decorated.Compute(bars);
+
+        // 3 events: IndicatorEvent(t1), IndicatorEvent(t2), IndicatorMutationEvent(t1 retroactive clear)
+        Assert.Equal(3, bus.Events.Count);
+        var evt1 = Assert.IsType<IndicatorEvent>(bus.Events[0]);
+        var evt2 = Assert.IsType<IndicatorEvent>(bus.Events[1]);
+        var mutEvt = Assert.IsType<IndicatorMutationEvent>(bus.Events[2]);
+        Assert.Equal(t1, evt1.Timestamp);
+        Assert.Equal(t2, evt2.Timestamp);
+        Assert.Equal(t1, mutEvt.Timestamp); // Retroactive clear uses the old bar's timestamp
     }
 
     [Fact]
@@ -81,16 +109,19 @@ public class IndicatorFactoryTests
         var inner = new DeltaZigZag(0.5m, 100L);
         var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
 
-        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050) };
+        var barTime = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        var barMs = barTime.ToUnixTimeMilliseconds();
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050, timestampMs: barMs) };
         decorated.Compute(bars);
         bus.Events.Clear();
 
         // Same series length → mutation
-        bars[0] = TestBars.Create(1000, 1200, 900, 1150);
+        bars[0] = TestBars.Create(1000, 1200, 900, 1150, timestampMs: barMs);
         decorated.Compute(bars);
 
         var evt = Assert.Single(bus.Events);
-        Assert.IsType<IndicatorMutationEvent>(evt);
+        var mutEvent = Assert.IsType<IndicatorMutationEvent>(evt);
+        Assert.Equal(barTime, mutEvent.Timestamp);
     }
 
     [Fact]
@@ -118,6 +149,58 @@ public class IndicatorFactoryTests
     }
 
     [Fact]
+    public void DecoratedIndicator_SkipsEvent_WhenAllValuesAreDefault()
+    {
+        var bus = new CapturingEventBus();
+        var inner = new DeltaZigZag(0.5m, 100L);
+        var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
+
+        // Bar 1: H=1200 → initial pivot, buffer[0]=1200 → event emitted
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1200, 900, 1100) };
+        decorated.Compute(bars);
+        Assert.Single(bus.Events);
+
+        // Bar 2: H=1150 (no new high), L=1110 (above reversal threshold 1200-100=1100) → buffer[1]=0 → event suppressed
+        bars.Add(TestBars.Create(1100, 1150, 1110, 1120));
+        decorated.Compute(bars);
+        Assert.Single(bus.Events);
+    }
+
+    [Fact]
+    public void EmitsRetroactiveMutation_OnPivotRelocation()
+    {
+        var bus = new CapturingEventBus();
+        var inner = new DeltaZigZag(0.5m, 100L);
+        var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
+
+        var t1 = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        var t2 = new DateTimeOffset(2025, 6, 15, 12, 1, 0, TimeSpan.Zero);
+
+        // Bar 1: High=1100, pivot at index 0
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050, timestampMs: t1.ToUnixTimeMilliseconds()) };
+        decorated.Compute(bars);
+
+        // Bar 2: High=1200 > 1100, pivot relocates to index 1, old pivot at index 0 zeroed
+        bars.Add(TestBars.Create(1050, 1200, 1000, 1150, timestampMs: t2.ToUnixTimeMilliseconds()));
+        decorated.Compute(bars);
+
+        // Should have: IndicatorEvent(bar1), IndicatorEvent(bar2), IndicatorMutationEvent(retroactive clear of bar1)
+        Assert.Equal(3, bus.Events.Count);
+
+        var evt1 = Assert.IsType<IndicatorEvent>(bus.Events[0]);
+        Assert.Equal(t1, evt1.Timestamp);
+
+        var evt2 = Assert.IsType<IndicatorEvent>(bus.Events[1]);
+        Assert.Equal(t2, evt2.Timestamp);
+
+        // Retroactive mutation for old pivot zeroed at index 0
+        var mutEvt = Assert.IsType<IndicatorMutationEvent>(bus.Events[2]);
+        Assert.Equal(t1, mutEvt.Timestamp); // Timestamp of the cleared bar, not the current bar
+        Assert.True(mutEvt.Values.ContainsKey("Value"));
+        Assert.Null(mutEvt.Values["Value"]); // null because SkipZeroValues=true and value=0L
+    }
+
+    [Fact]
     public void MultiTimeframe_EachSubscription_EmitsIndependently()
     {
         // Arrange — M1 + H1 subscriptions, each with its own decorated DeltaZigZag
@@ -133,7 +216,7 @@ public class IndicatorFactoryTests
         var m1Series = TestBars.CreateSeries(start, TimeSpan.FromMinutes(1), 3, startPrice: 1000);
         var h1Series = TestBars.CreateSeries(start, TimeSpan.FromHours(1), 1, startPrice: 5000);
 
-        var engine = new BacktestEngine(new BarMatcher(), new BasicRiskEvaluator());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
         var options = new BacktestOptions
         {
             InitialCash = 100_000L,
@@ -201,7 +284,7 @@ public class IndicatorFactoryTests
 
         public string Name => name;
         public IndicatorMeasure Measure => _inner.Measure;
-        public IReadOnlyDictionary<string, IReadOnlyList<long>> Buffers => _inner.Buffers;
+        public IReadOnlyDictionary<string, IndicatorBuffer<long>> Buffers => _inner.Buffers;
         public int MinimumHistory => _inner.MinimumHistory;
         public int? CapacityLimit => _inner.CapacityLimit;
         public void Compute(IReadOnlyList<Int64Bar> series) => _inner.Compute(series);

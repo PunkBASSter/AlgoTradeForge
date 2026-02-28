@@ -23,7 +23,7 @@ public class EngineEventEmissionTests
         };
 
     private static BacktestEngine CreateEngine() =>
-        new(new BarMatcher(), new BasicRiskEvaluator());
+        new(new BarMatcher(), new OrderValidator());
 
     // ── run.start / bar / run.end ordering ──────────────────────────────
 
@@ -136,45 +136,10 @@ public class EngineEventEmissionTests
         Assert.Equal(1000L, pos.AverageEntryPrice);
     }
 
-    // ── risk pass ───────────────────────────────────────────────────────
+    // ── insufficient cash → ord.reject + warn ─────────────────────────
 
     [Fact]
-    public void SuccessfulFill_EmitsRiskPassedTrue()
-    {
-        var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
-        var submitted = false;
-
-        var strategy = new ActionStrategy(sub)
-        {
-            OnBarStartAction = (_, _, orders) =>
-            {
-                if (submitted) return;
-                submitted = true;
-                orders.Submit(new Order
-                {
-                    Id = 0,
-                    Asset = TestAssets.Aapl,
-                    Side = OrderSide.Buy,
-                    Type = OrderType.Market,
-                    Quantity = 1m
-                });
-            }
-        };
-
-        var bars = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 1000);
-        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
-
-        var risk = Assert.Single(bus.Events.OfType<RiskEvent>());
-        Assert.True(risk.Passed);
-        Assert.Equal("CashCheck", risk.CheckName);
-        Assert.Null(risk.Reason);
-    }
-
-    // ── risk fail + ord.reject + warn ───────────────────────────────────
-
-    [Fact]
-    public void InsufficientCash_EmitsRiskFail_OrdReject_Warning()
+    public void InsufficientCash_EmitsOrdReject_Warning()
     {
         var bus = new CapturingEventBus();
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
@@ -199,10 +164,6 @@ public class EngineEventEmissionTests
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 15000);
         CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
-
-        var risk = Assert.Single(bus.Events.OfType<RiskEvent>());
-        Assert.False(risk.Passed);
-        Assert.Equal("Insufficient cash", risk.Reason);
 
         var reject = Assert.Single(bus.Events.OfType<OrderRejectEvent>());
         Assert.Equal("Insufficient cash", reject.Reason);
@@ -400,10 +361,6 @@ public class EngineEventEmissionTests
         var fillIdx = types.IndexOf(nameof(OrderFillEvent));
         Assert.True(placeIdx < fillIdx, "ord.place should precede ord.fill");
 
-        // risk comes before fill
-        var riskIdx = types.IndexOf(nameof(RiskEvent));
-        Assert.True(riskIdx < fillIdx, "risk should precede ord.fill");
-
         // fill comes before pos
         var posIdx = types.IndexOf(nameof(PositionEvent));
         Assert.True(fillIdx < posIdx, "ord.fill should precede pos");
@@ -538,6 +495,51 @@ public class EngineEventEmissionTests
         Assert.Equal(0.9m, signals[0].Strength);
         Assert.Equal("Test reason", signals[0].Reason);
         Assert.Equal(nameof(SignalEmittingTestStrategy), signals[0].Source);
+    }
+
+    // ── Quantity validation rejection events ───────────────────────────
+
+    [Fact]
+    public void QuantityBelowMin_EmitsOrdRejectAndWarning()
+    {
+        var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 10m, maxOrderQuantity: 1000m, quantityStepSize: 1m);
+        var bus = new CapturingEventBus();
+        var sub = new DataSubscription(asset, OneMinute);
+        var submitted = false;
+
+        var strategy = new ActionStrategy(sub)
+        {
+            OnBarCompleteAction = (_, _, orders) =>
+            {
+                if (submitted) return;
+                submitted = true;
+                orders.Submit(new Order
+                {
+                    Id = 0,
+                    Asset = asset,
+                    Side = OrderSide.Buy,
+                    Type = OrderType.Market,
+                    Quantity = 3m // below min of 10
+                });
+            }
+        };
+
+        var opts = new BacktestOptions
+        {
+            InitialCash = 100_000L,
+            Asset = asset,
+            StartTime = DateTimeOffset.MinValue,
+            EndTime = DateTimeOffset.MaxValue,
+        };
+
+        var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 100);
+        CreateEngine().Run([bars], strategy, opts, bus: bus);
+
+        var reject = Assert.Single(bus.Events.OfType<OrderRejectEvent>());
+        Assert.Contains("below minimum", reject.Reason);
+
+        var warn = Assert.Single(bus.Events.OfType<WarningEvent>());
+        Assert.Contains("rejected", warn.Message);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import {
   ColorType,
   CandlestickSeries,
   LineSeries,
+  BaselineSeries,
   type IChartApi,
   type DeepPartial,
   type ChartOptions,
@@ -42,6 +43,11 @@ export function createDarkChart(
       vertLines: { color: "#2e323f" },
       horzLines: { color: "#2e323f" },
     },
+    timeScale: {
+      timeVisible: true,
+      secondsVisible: false,
+      borderColor: "#2e323f",
+    },
     width: options?.width,
     height: options?.height,
     autoSize: options?.autoSize ?? true,
@@ -72,6 +78,9 @@ export function addLineSeries(
     title?: string;
     priceScaleId?: string;
     lineWidth?: number;
+    lineStyle?: number;
+    lastValueVisible?: boolean;
+    priceLineVisible?: boolean;
   },
 ) {
   return chart.addSeries(LineSeries, {
@@ -79,6 +88,25 @@ export function addLineSeries(
     title: options.title,
     priceScaleId: options.priceScaleId,
     lineWidth: (options.lineWidth ?? 2) as DeepPartial<LineWidth>,
+    lineStyle: options.lineStyle,
+    lastValueVisible: options.lastValueVisible,
+    priceLineVisible: options.priceLineVisible,
+  });
+}
+
+export function addBaselineSeries(
+  chart: IChartApi,
+  options?: { baseValue?: number; title?: string },
+) {
+  return chart.addSeries(BaselineSeries, {
+    baseValue: { type: "price", price: options?.baseValue ?? 0 },
+    topLineColor: CHART_COLORS.up,
+    topFillColor1: "rgba(34, 197, 94, 0.28)",
+    topFillColor2: "rgba(34, 197, 94, 0.05)",
+    bottomLineColor: CHART_COLORS.down,
+    bottomFillColor1: "rgba(239, 68, 68, 0.05)",
+    bottomFillColor2: "rgba(239, 68, 68, 0.28)",
+    title: options?.title,
   });
 }
 

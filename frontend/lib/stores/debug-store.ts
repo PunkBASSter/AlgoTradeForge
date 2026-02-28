@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import type { DebugSnapshot, CandleData } from "@/types/api";
-import type { IndicatorEventData, OrderPlaceEventData, OrderFillEventData, PositionEventData } from "@/lib/events/types";
+import type { IndicatorEventData, OrderPlaceEventData, OrderFillEventData, OrderCancelEventData, OrderRejectEventData, PositionEventData } from "@/lib/events/types";
 import type { DebugTrade } from "@/components/features/charts/candlestick-chart";
 
 export type DebugSessionState =
@@ -12,11 +12,23 @@ export type DebugSessionState =
   | "active"
   | "stopped";
 
+export type AutoStepMode =
+  | { kind: "play" }
+  | { kind: "next_trade" }
+  | { kind: "next_signal" }
+  | { kind: "run_to_timestamp"; targetMs: number }
+  | { kind: "run_to_sequence"; targetSq: number };
+
 export interface DebugIndicatorPoint {
   time: number;
   indicatorName: string;
   measure: string;
   values: Record<string, number | null>;
+}
+
+export interface EquityPoint {
+  time: number;
+  equity: number;
 }
 
 interface DebugStoreState {
@@ -25,8 +37,10 @@ interface DebugStoreState {
   candles: CandleData[];
   indicators: Map<string, DebugIndicatorPoint[]>;
   trades: DebugTrade[];
+  equityHistory: EquityPoint[];
   latestSnapshot: DebugSnapshot | null;
   errorMessage: string | null;
+  autoStep: AutoStepMode | null;
 
   setSessionState: (state: DebugSessionState) => void;
   setSessionId: (id: string | null) => void;
@@ -34,8 +48,10 @@ interface DebugStoreState {
   updateCandle: (candle: CandleData) => void;
   addIndicator: (data: IndicatorEventData, time: number) => void;
   addTrade: (trade: DebugTrade) => void;
+  addEquityPoint: (timestampMs: number, equity: number) => void;
   setSnapshot: (snapshot: DebugSnapshot) => void;
   setError: (message: string | null) => void;
+  setAutoStep: (mode: AutoStepMode | null) => void;
   reset: () => void;
 }
 
@@ -45,8 +61,10 @@ const initialState = {
   candles: [] as CandleData[],
   indicators: new Map<string, DebugIndicatorPoint[]>(),
   trades: [] as DebugTrade[],
+  equityHistory: [] as EquityPoint[],
   latestSnapshot: null as DebugSnapshot | null,
   errorMessage: null as string | null,
+  autoStep: null as AutoStepMode | null,
 };
 
 export const useDebugStore = create<DebugStoreState>((set) => ({
@@ -56,7 +74,16 @@ export const useDebugStore = create<DebugStoreState>((set) => ({
   setSessionId: (sessionId) => set({ sessionId }),
 
   addCandle: (candle) =>
-    set((state) => ({ candles: [...state.candles, candle] })),
+    set((state) => {
+      const updated = [...state.candles];
+      const idx = updated.findIndex((c) => c.time === candle.time);
+      if (idx >= 0) {
+        updated[idx] = candle;
+      } else {
+        updated.push(candle);
+      }
+      return { candles: updated };
+    }),
 
   updateCandle: (candle) =>
     set((state) => {
@@ -73,13 +100,38 @@ export const useDebugStore = create<DebugStoreState>((set) => ({
   addIndicator: (data, time) =>
     set((state) => {
       const newMap = new Map(state.indicators);
-      const points = newMap.get(data.indicatorName) ?? [];
-      points.push({
+      const points = [...(newMap.get(data.indicatorName) ?? [])];
+      const allNull = Object.values(data.values).every((v) => v === null);
+
+      if (allNull) {
+        // Retroactive removal: delete the point at this timestamp
+        const idx = points.findIndex((p) => p.time === time);
+        if (idx >= 0) {
+          points.splice(idx, 1);
+        }
+        newMap.set(data.indicatorName, points);
+        return { indicators: newMap };
+      }
+
+      const newPoint: DebugIndicatorPoint = {
         time,
         indicatorName: data.indicatorName,
         measure: data.measure,
         values: data.values,
-      });
+      };
+
+      // Check latest point first (hot path)
+      if (points.length > 0 && points[points.length - 1].time === time) {
+        points[points.length - 1] = newPoint;
+      } else {
+        // Past-timestamp update: find and replace existing point
+        const idx = points.findIndex((p) => p.time === time);
+        if (idx >= 0) {
+          points[idx] = newPoint;
+        } else {
+          points.push(newPoint);
+        }
+      }
       newMap.set(data.indicatorName, points);
       return { indicators: newMap };
     }),
@@ -87,9 +139,19 @@ export const useDebugStore = create<DebugStoreState>((set) => ({
   addTrade: (trade) =>
     set((state) => ({ trades: [...state.trades, trade] })),
 
+  addEquityPoint: (timestampMs, equity) =>
+    set((state) => {
+      const timeSec = Math.floor(timestampMs / 1000);
+      const last = state.equityHistory[state.equityHistory.length - 1];
+      if (last && last.time === timeSec) return state;
+      return { equityHistory: [...state.equityHistory, { time: timeSec, equity }] };
+    }),
+
   setSnapshot: (latestSnapshot) => set({ latestSnapshot }),
 
   setError: (errorMessage) => set({ errorMessage, sessionState: "stopped" }),
 
-  reset: () => set({ ...initialState, indicators: new Map() }),
+  setAutoStep: (autoStep) => set({ autoStep }),
+
+  reset: () => set({ ...initialState, indicators: new Map(), equityHistory: [], autoStep: null }),
 }));

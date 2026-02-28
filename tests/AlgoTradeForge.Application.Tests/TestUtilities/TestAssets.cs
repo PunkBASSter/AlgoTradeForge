@@ -12,5 +12,6 @@ public static class TestAssets
 
     public static Asset MicroEs => Asset.Future("MES", "CME", multiplier: 5m, tickSize: 0.25m, margin: 1500m);
 
-    public static Asset BtcUsdt => Asset.Crypto("BTCUSDT", "Binance", decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1));
+    public static Asset BtcUsdt => Asset.Crypto("BTCUSDT", "Binance", decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1),
+        minOrderQuantity: 0.00001m, maxOrderQuantity: 9000m, quantityStepSize: 0.00001m);
 }

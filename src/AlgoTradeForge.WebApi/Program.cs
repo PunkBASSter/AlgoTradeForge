@@ -29,7 +29,7 @@ builder.Services.AddSwaggerGen(options =>
 
 // Register Domain services
 builder.Services.AddSingleton<IBarMatcher, BarMatcher>();
-builder.Services.AddSingleton<IRiskEvaluator, BasicRiskEvaluator>();
+builder.Services.AddSingleton<IOrderValidator, OrderValidator>();
 builder.Services.AddSingleton<IMetricsCalculator, MetricsCalculator>();
 builder.Services.AddSingleton<BacktestEngine>();
 

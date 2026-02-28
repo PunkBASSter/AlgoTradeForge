@@ -3,15 +3,17 @@
 // T023 - useDebugWebSocket hook
 
 import { useRef, useEffect, useCallback } from "react";
-import { useDebugStore } from "@/lib/stores/debug-store";
+import { useDebugStore, type AutoStepMode } from "@/lib/stores/debug-store";
 import { parseMessage } from "@/lib/events/parser";
 import { createLogger } from "@/lib/utils/logger";
-import type { DebugCommand, CandleData } from "@/types/api";
+import type { DebugCommand, CandleData, DebugSnapshot } from "@/types/api";
 import type {
   BarEventData,
   IndicatorEventData,
   OrderPlaceEventData,
   OrderFillEventData,
+  OrderCancelEventData,
+  OrderRejectEventData,
   PositionEventData,
   BacktestEvent,
 } from "@/lib/events/types";
@@ -37,6 +39,25 @@ function barToCandle(bar: BarEventData, timeSec: number): CandleData {
 
 function isoToUnixSec(iso: string): number {
   return Math.floor(new Date(iso).getTime() / 1000);
+}
+
+function checkStopCondition(
+  mode: AutoStepMode,
+  snapshot: DebugSnapshot,
+  signalSeen: boolean
+): boolean {
+  switch (mode.kind) {
+    case "play":
+      return false;
+    case "next_trade":
+      return snapshot.fillsThisBar > 0;
+    case "next_signal":
+      return signalSeen;
+    case "run_to_timestamp":
+      return snapshot.timestampMs >= mode.targetMs;
+    case "run_to_sequence":
+      return snapshot.sequenceNumber >= mode.targetSq;
+  }
 }
 
 function processEvent(event: BacktestEvent) {
@@ -70,6 +91,16 @@ function processEvent(event: BacktestEvent) {
       store.addTrade({ time: timeSec, type: "ord.fill", data });
       break;
     }
+    case "ord.cancel": {
+      const data = event.d as OrderCancelEventData;
+      store.addTrade({ time: timeSec, type: "ord.cancel", data });
+      break;
+    }
+    case "ord.reject": {
+      const data = event.d as OrderRejectEventData;
+      store.addTrade({ time: timeSec, type: "ord.reject", data });
+      break;
+    }
     case "pos": {
       const data = event.d as PositionEventData;
       store.addTrade({ time: timeSec, type: "pos", data });
@@ -93,6 +124,7 @@ export function useDebugWebSocket({
   // T064: Event buffer for requestAnimationFrame batching
   const eventBufferRef = useRef<BacktestEvent[]>([]);
   const rafIdRef = useRef<number | null>(null);
+  const signalSeenRef = useRef(false);
   const store = useDebugStore();
 
   // Flush buffered events in a single animation frame
@@ -133,9 +165,33 @@ export function useDebugWebSocket({
     ws.onmessage = (msgEvent: MessageEvent) => {
       try {
         const msg = parseMessage(msgEvent.data as string);
+
+        // Track signal events for next_signal auto-step
+        if (msg.kind === "event" && msg.data._t === "sig") {
+          signalSeenRef.current = true;
+        }
+
         switch (msg.kind) {
           case "snapshot":
             store.setSnapshot(msg.data);
+            if (msg.data.isExportableSubscription && msg.data.fillsThisBar > 0) {
+              store.addEquityPoint(msg.data.timestampMs, msg.data.portfolioEquity);
+            }
+            // Generalized auto-step: check stop condition for any active mode
+            if (!msg.data.sessionActive) {
+              useDebugStore.getState().setAutoStep(null);
+            } else {
+              const autoStep = useDebugStore.getState().autoStep;
+              if (autoStep !== null) {
+                const shouldStop = checkStopCondition(autoStep, msg.data, signalSeenRef.current);
+                signalSeenRef.current = false;
+                if (shouldStop) {
+                  useDebugStore.getState().setAutoStep(null);
+                } else if (wsRef.current?.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(JSON.stringify({ command: "next" }));
+                }
+              }
+            }
             break;
           case "error":
             log.error("Server error", { message: msg.message });
@@ -192,6 +248,9 @@ export function useDebugWebSocket({
         switch (msg.kind) {
           case "snapshot":
             store.setSnapshot(msg.data);
+            if (msg.data.isExportableSubscription && msg.data.fillsThisBar > 0) {
+              store.addEquityPoint(msg.data.timestampMs, msg.data.portfolioEquity);
+            }
             break;
           case "error":
             store.setError(msg.message);

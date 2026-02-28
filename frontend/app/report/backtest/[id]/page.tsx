@@ -22,6 +22,14 @@ const EquityChart = dynamic(
   { ssr: false, loading: () => <ChartSkeleton /> }
 );
 
+const BacktestPnlChart = dynamic(
+  () =>
+    import("@/components/features/charts/backtest-pnl-chart").then(
+      (m) => m.BacktestPnlChart
+    ),
+  { ssr: false, loading: () => <ChartSkeleton /> }
+);
+
 const CandlestickChart = dynamic(
   () =>
     import("@/components/features/charts/candlestick-chart").then(
@@ -116,6 +124,22 @@ export default function BacktestReportPage({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <MetricsPanel metrics={backtest.metrics} />
         <ParamsPanel parameters={backtest.parameters} />
+      </div>
+
+      {/* PnL chart */}
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
+          Profit &amp; Loss
+        </h2>
+        {equityLoading ? (
+          <ChartSkeleton />
+        ) : equity && equity.length > 0 ? (
+          <BacktestPnlChart data={equity} />
+        ) : (
+          <div className="rounded-lg border border-border-default bg-bg-panel p-8 text-center text-text-muted">
+            No equity data available
+          </div>
+        )}
       </div>
 
       {/* Equity chart */}

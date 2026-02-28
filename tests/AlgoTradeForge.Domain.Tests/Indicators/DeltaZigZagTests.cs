@@ -182,6 +182,45 @@ public class DeltaZigZagTests
     }
 
     [Fact]
+    public void Revise_FiresOnRevisedHook()
+    {
+        var dzz = CreateIndicator(delta: 0.5m, minThreshold: 100L);
+        var revisions = new List<(string Name, int Index, long Value)>();
+        dzz.Buffers["Value"].OnRevised = (name, index, value) =>
+            revisions.Add((name, index, value));
+
+        // Bar 0: High=1100, pivot at 0
+        // Bar 1: High=1200 > 1100, pivot relocates → Revise(0, 0L) fires
+        var bars = new List<Int64Bar>
+        {
+            TestBars.Create(1000, 1100, 900, 1050),
+            TestBars.Create(1050, 1200, 1000, 1150),
+        };
+
+        dzz.Compute(bars);
+
+        Assert.Single(revisions);
+        Assert.Equal("Value", revisions[0].Name);
+        Assert.Equal(0, revisions[0].Index);
+        Assert.Equal(0L, revisions[0].Value);
+    }
+
+    [Fact]
+    public void Set_DoesNotFireHook()
+    {
+        var dzz = CreateIndicator(delta: 0.5m, minThreshold: 100L);
+        var revisions = new List<(string Name, int Index, long Value)>();
+        dzz.Buffers["Value"].OnRevised = (name, index, value) =>
+            revisions.Add((name, index, value));
+
+        // Single bar: only Set is called for the new pivot, no Revise
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050) };
+        dzz.Compute(bars);
+
+        Assert.Empty(revisions);
+    }
+
+    [Fact]
     public void EmptySeries_NoBufferEntries()
     {
         var dzz = CreateIndicator();

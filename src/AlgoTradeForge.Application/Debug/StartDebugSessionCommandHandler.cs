@@ -57,6 +57,16 @@ public sealed class StartDebugSessionCommandHandler(
 
         var runSink = sink ?? throw new InvalidOperationException("Indicator factory callback was not invoked.");
 
+        // Debug sessions must export bar/indicator events for the visual debugger.
+        // The default IsExportable=false is correct for normal backtests and optimization,
+        // but debug sessions need all subscriptions exportable so events reach the WS sink.
+        for (var i = 0; i < setup.Strategy.DataSubscriptions.Count; i++)
+        {
+            var sub = setup.Strategy.DataSubscriptions[i];
+            if (!sub.IsExportable)
+                setup.Strategy.DataSubscriptions[i] = sub with { IsExportable = true };
+        }
+
         session.RunTask = Task.Factory.StartNew(
             () =>
             {

@@ -62,7 +62,7 @@ public class PostRunIntegrationTests : IDisposable
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
         var strategy = new BuyOnFirstBarStrategy(new BuyOnFirstBarParams { DataSubscriptions = [sub] });
         var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
-        var engine = new BacktestEngine(new BarMatcher(), new BasicRiskEvaluator());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var btOptions = new BacktestOptions
         {
@@ -189,7 +189,7 @@ public class PostRunIntegrationTests : IDisposable
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
         var strategy = new BuyOnFirstBarStrategy(new BuyOnFirstBarParams { DataSubscriptions = [sub] });
         var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
-        var engine = new BacktestEngine(new BarMatcher(), new BasicRiskEvaluator());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
 
         var btOptions = new BacktestOptions
         {

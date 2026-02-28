@@ -11,8 +11,8 @@ public sealed class DeltaZigZag : Int64IndicatorBase
     private readonly decimal _delta;
     private readonly long _minimumThreshold;
 
-    private readonly List<long> _buffer = [];
-    private readonly Dictionary<string, IReadOnlyList<long>> _buffers;
+    private readonly IndicatorBuffer<long> _buffer = new("Value", skipDefaultValues: true);
+    private readonly Dictionary<string, IndicatorBuffer<long>> _buffers;
 
     private int _direction = 1;       // 1 = up, -1 = down
     private int _lastPivotIndex;
@@ -24,16 +24,16 @@ public sealed class DeltaZigZag : Int64IndicatorBase
     {
         _delta = delta;
         _minimumThreshold = minimumThreshold;
-        _buffers = new Dictionary<string, IReadOnlyList<long>> { ["Value"] = _buffer };
+        _buffers = new Dictionary<string, IndicatorBuffer<long>> { ["Value"] = _buffer };
     }
 
-    public override IReadOnlyDictionary<string, IReadOnlyList<long>> Buffers => _buffers;
+    public override IReadOnlyDictionary<string, IndicatorBuffer<long>> Buffers => _buffers;
 
     public override void Compute(IReadOnlyList<Int64Bar> series)
     {
         // Extend buffer to match series length
         for (var i = _buffer.Count; i < series.Count; i++)
-            _buffer.Add(0L);
+            _buffer.Append(0L);
 
         var startIndex = _lastProcessedIndex + 1;
 
@@ -48,10 +48,10 @@ public sealed class DeltaZigZag : Int64IndicatorBase
                 {
                     // Pivot relocates: zero out old pivot, set new one
                     if (_lastPivotIndex != i)
-                        _buffer[_lastPivotIndex] = 0L;
+                        _buffer.Revise(_lastPivotIndex, 0L);
 
                     _currentExtremum = bar.High;
-                    _buffer[i] = bar.High;
+                    _buffer.Set(i, bar.High);
                     _lastPivotIndex = i;
                 }
                 else if (bar.Low < _currentExtremum - threshold)
@@ -59,7 +59,7 @@ public sealed class DeltaZigZag : Int64IndicatorBase
                     // Reversal confirmed: record swing, switch direction
                     _lastSwingSize = _currentExtremum - bar.Low;
                     _currentExtremum = bar.Low;
-                    _buffer[i] = bar.Low;
+                    _buffer.Set(i, bar.Low);
                     _direction = -1;
                     _lastPivotIndex = i;
                 }
@@ -69,17 +69,17 @@ public sealed class DeltaZigZag : Int64IndicatorBase
                 if (bar.Low < _currentExtremum)
                 {
                     if (_lastPivotIndex != i)
-                        _buffer[_lastPivotIndex] = 0L;
+                        _buffer.Revise(_lastPivotIndex, 0L);
 
                     _currentExtremum = bar.Low;
-                    _buffer[i] = bar.Low;
+                    _buffer.Set(i, bar.Low);
                     _lastPivotIndex = i;
                 }
                 else if (bar.High > _currentExtremum + threshold)
                 {
                     _lastSwingSize = bar.High - _currentExtremum;
                     _currentExtremum = bar.High;
-                    _buffer[i] = bar.High;
+                    _buffer.Set(i, bar.High);
                     _direction = 1;
                     _lastPivotIndex = i;
                 }

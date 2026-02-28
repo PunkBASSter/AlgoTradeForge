@@ -7,8 +7,10 @@ public sealed class InMemoryAssetRepository : IAssetRepository
 {
     private static readonly Dictionary<string, Asset> Assets = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["BTCUSDT|Binance"] = Asset.Crypto("BTCUSDT", "Binance", decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1)),
-        ["ETHUSDT|Binance"] = Asset.Crypto("ETHUSDT", "Binance", decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1)),
+        ["BTCUSDT|Binance"] = Asset.Crypto("BTCUSDT", "Binance", decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1),
+            minOrderQuantity: 0.00001m, maxOrderQuantity: 9000m, quantityStepSize: 0.00001m),
+        ["ETHUSDT|Binance"] = Asset.Crypto("ETHUSDT", "Binance", decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1),
+            minOrderQuantity: 0.0001m, maxOrderQuantity: 9000m, quantityStepSize: 0.0001m),
         ["AAPL|NASDAQ"] = Asset.Equity("AAPL", "NASDAQ"),
         ["MSFT|NASDAQ"] = Asset.Equity("MSFT", "NASDAQ"),
         ["ES|CME"] = Asset.Future("ES", "CME", multiplier: 50m, tickSize: 0.25m, margin: 15000m),

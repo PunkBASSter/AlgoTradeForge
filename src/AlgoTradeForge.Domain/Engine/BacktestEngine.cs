@@ -9,7 +9,7 @@ namespace AlgoTradeForge.Domain.Engine;
 /// <summary>
 /// Stateless backtest engine. Safe for concurrent use — all mutable state is local to <see cref="Run"/>.
 /// </summary>
-public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEvaluator)
+public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator orderValidator)
 {
     private const string Source = EventSources.Engine;
 
@@ -23,7 +23,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         Action<int>? onBarsProcessed = null)
     {
         var stopwatch = Stopwatch.StartNew();
-        var state = InitializeRun(seriesPerSubscription, strategy, options, probe, bus);
+        var state = InitializeRun(seriesPerSubscription, strategy, options, probe, bus, orderValidator);
         state.OnBarsProcessed = onBarsProcessed;
 
         try
@@ -53,7 +53,8 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
         IInt64BarStrategy strategy,
         BacktestOptions options,
         IDebugProbe? probe,
-        IEventBus? bus)
+        IEventBus? bus,
+        IOrderValidator orderValidator)
     {
         probe ??= NullDebugProbe.Instance;
         bus ??= NullEventBus.Instance;
@@ -78,7 +79,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             Subscriptions = subscriptions,
             Series = series,
             Portfolio = portfolio,
-            OrderContext = new BacktestOrderContext(orderQueue, fills, portfolio, bus),
+            OrderContext = new BacktestOrderContext(orderQueue, fills, portfolio, bus, orderValidator),
             OrderQueue = orderQueue,
             Fills = fills,
             Cursors = new int[subscriptions.Count],
@@ -253,14 +254,12 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
                 continue;
             }
 
-            var riskPassed = riskEvaluator.CanFill(order, fillPrice.Value, state.Portfolio, state.Options);
-            EmitRiskCheck(state, order, riskPassed);
-
-            if (!riskPassed)
+            var settlementRejection = orderValidator.ValidateSettlement(order, fillPrice.Value, state.Portfolio, state.Options);
+            if (settlementRejection is not null)
             {
                 order.Status = OrderStatus.Rejected;
                 state.ToRemoveBuffer.Add(order.Id);
-                EmitOrderRejected(state, order);
+                EmitOrderRejected(state, order, timestamp, settlementRejection);
                 continue;
             }
 
@@ -374,36 +373,22 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IRiskEvaluator riskEv
             subscription.IsExportable));
     }
 
-    private static void EmitRiskCheck(RunState state, Order order, bool passed)
-    {
-        if (!state.BusActive)
-            return;
-
-        state.Bus.Emit(new RiskEvent(
-            DateTimeOffset.UtcNow,
-            Source,
-            order.Asset.Name,
-            passed,
-            "CashCheck",
-            passed ? null : "Insufficient cash"));
-    }
-
-    private static void EmitOrderRejected(RunState state, Order order)
+    private static void EmitOrderRejected(RunState state, Order order, DateTimeOffset timestamp, string reason)
     {
         if (!state.BusActive)
             return;
 
         state.Bus.Emit(new OrderRejectEvent(
-            DateTimeOffset.UtcNow,
+            timestamp,
             Source,
             order.Id,
             order.Asset.Name,
-            "Insufficient cash"));
+            reason));
 
         state.Bus.Emit(new WarningEvent(
-            DateTimeOffset.UtcNow,
+            timestamp,
             Source,
-            $"Order {order.Id} rejected: insufficient cash for {order.Side} {order.Quantity} {order.Asset.Name}"));
+            $"Order {order.Id} rejected: {reason} for {order.Side} {order.Quantity} {order.Asset.Name}"));
     }
 
     private static void EmitFillAndPosition(RunState state, DateTimeOffset timestamp, Fill fill)

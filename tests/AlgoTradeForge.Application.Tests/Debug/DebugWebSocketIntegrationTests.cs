@@ -28,7 +28,7 @@ public sealed class DebugWebSocketIntegrationTests
         };
 
     private static BacktestEngine CreateEngine() =>
-        new(new BarMatcher(), new BasicRiskEvaluator());
+        new(new BarMatcher(), new OrderValidator());
 
     /// <summary>
     /// Full integration test:

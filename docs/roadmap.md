@@ -10,13 +10,12 @@ Challenges:
   - Scaling for splits with stock event data
   - 
 4. Lack of optimizeable modules - DEV
-  - No ATR-based volatility filters
-  - No reliable indicator export?
+  - ATR-based volatility filters
+  - Timing-based exit modules (close at eod, eow)
 
 5. Lack of testing (manual) - TEST
-  - TEST OPTIMIZATION
   - TEST DEBUG
-
+  - TEST OPTIMIZATION
 
 ## Candle Ingestor
 Upd CandleIngestor - prepare for using on server: use DI, host as WebAPI for control with scheduling config; update partitioning - add TF in file names; add ingestors for stock data (alpha vantage, yahoo finance); ingest events metadata and add a scaling factor for splits;

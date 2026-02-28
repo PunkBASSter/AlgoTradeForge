@@ -52,11 +52,18 @@ public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters, IInd
         // Bullish breakout pattern: price > sl (higher high) and l1 < price (higher low pullback)
         if (price > sl && l1 < price)
         {
+            var asset = subscription.Asset;
             var tp = price + Math.Abs(price - sl);
             var slDistance = Math.Abs(price - sl);
-            var positionSize = slDistance > 0
-                ? Math.Clamp(orders.Cash * (Params.RiskPercentPerTrade / 100m) / slDistance, Params.MinPositionSize, Params.MaxPositionSize)
-                : Params.MinPositionSize;
+            var riskBased = slDistance > 0
+                ? orders.Cash * (Params.RiskPercentPerTrade / 100m) / slDistance
+                : asset.MinOrderQuantity;
+            var maxAffordable = price > 0 ? orders.Cash / (decimal)price : asset.MinOrderQuantity;
+            var positionSize = Math.Clamp(Math.Min(riskBased, maxAffordable), asset.MinOrderQuantity, asset.MaxOrderQuantity);
+            positionSize = asset.RoundQuantityDown(positionSize);
+
+            if (positionSize < asset.MinOrderQuantity)
+                return;
 
             // Check if existing pending order already matches this signal
             if (_pendingOrderId.HasValue)
@@ -72,7 +79,6 @@ public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters, IInd
             }
 
             var orderId = _nextOrderId++;
-            var asset = subscription.Asset;
             orders.Submit(new Order
             {
                 Id = orderId,

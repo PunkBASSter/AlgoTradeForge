@@ -25,7 +25,7 @@ public class NullEventBusBenchmarkTests
         var series = Generate500KBars();
         var sub = new DataSubscription(TestAssets.Aapl, TimeSpan.FromMinutes(1));
         var strategy = new NoOpStrategy(sub);
-        var engine = new BacktestEngine(new BarMatcher(), new BasicRiskEvaluator());
+        var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
         var options = new BacktestOptions
         {
             InitialCash = 100_000L,
