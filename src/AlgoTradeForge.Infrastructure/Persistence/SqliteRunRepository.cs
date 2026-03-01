@@ -287,7 +287,39 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             await InsertBacktestRunAsync(conn, tx, trial, ct);
         }
 
+        // Insert failed trial details
+        foreach (var failure in record.FailedTrialDetails)
+        {
+            await InsertFailedTrialAsync(conn, tx, failure, ct);
+        }
+
         tx.Commit();
+    }
+
+    private static async Task InsertFailedTrialAsync(
+        SqliteConnection conn, SqliteTransaction tx, FailedTrialRecord r, CancellationToken ct)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = """
+            INSERT INTO optimization_failed_trials (
+                id, optimization_run_id, exception_type, exception_message,
+                stack_trace, sample_parameters_json, occurrence_count
+            ) VALUES (
+                $id, $optId, $exType, $exMsg,
+                $stack, $paramsJson, $count
+            )
+            """;
+
+        cmd.Parameters.AddWithValue("$id", r.Id.ToString());
+        cmd.Parameters.AddWithValue("$optId", r.OptimizationRunId.ToString());
+        cmd.Parameters.AddWithValue("$exType", r.ExceptionType);
+        cmd.Parameters.AddWithValue("$exMsg", r.ExceptionMessage);
+        cmd.Parameters.AddWithValue("$stack", r.StackTrace);
+        cmd.Parameters.AddWithValue("$paramsJson", JsonSerializer.Serialize(r.SampleParameters, JsonOptions));
+        cmd.Parameters.AddWithValue("$count", r.OccurrenceCount);
+
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     // ── Get optimization by ID ─────────────────────────────────────────
@@ -324,8 +356,35 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: false));
         }
 
-        return record with { Trials = trials };
+        // Load failed trial details
+        var failedDetails = new List<FailedTrialRecord>();
+        await using (var failedCmd = conn.CreateCommand())
+        {
+            failedCmd.CommandText = """
+                SELECT * FROM optimization_failed_trials
+                WHERE optimization_run_id = $optId
+                ORDER BY occurrence_count DESC
+                """;
+            failedCmd.Parameters.AddWithValue("$optId", id.ToString());
+
+            await using var failedReader = await failedCmd.ExecuteReaderAsync(ct);
+            while (await failedReader.ReadAsync(ct))
+                failedDetails.Add(ReadFailedTrial(failedReader));
+        }
+
+        return record with { Trials = trials, FailedTrialDetails = failedDetails };
     }
+
+    private static FailedTrialRecord ReadFailedTrial(DbDataReader reader) => new()
+    {
+        Id = Guid.Parse(reader.GetString(reader.GetOrdinal("id"))),
+        OptimizationRunId = Guid.Parse(reader.GetString(reader.GetOrdinal("optimization_run_id"))),
+        ExceptionType = reader.GetString(reader.GetOrdinal("exception_type")),
+        ExceptionMessage = reader.GetString(reader.GetOrdinal("exception_message")),
+        StackTrace = reader.GetString(reader.GetOrdinal("stack_trace")),
+        SampleParameters = DeserializeParameters(reader.GetString(reader.GetOrdinal("sample_parameters_json"))),
+        OccurrenceCount = reader.GetInt64(reader.GetOrdinal("occurrence_count")),
+    };
 
     // ── Query optimizations ────────────────────────────────────────────
 

@@ -154,6 +154,7 @@ public sealed class RunOptimizationCommandHandler(
 
         var filter = new TrialFilter(command);
         var topTrials = new BoundedTrialQueue(command.MaxTrialsToKeep, command.SortBy);
+        var failedTrials = new FailedTrialCollector(capacity: 100);
         long filteredOutCount = 0;
         long failedTrialCount = 0;
         try
@@ -209,6 +210,7 @@ public sealed class RunOptimizationCommandHandler(
                                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                                 {
                                     Interlocked.Increment(ref failedTrialCount);
+                                    failedTrials.RecordTimeout(combination.Values, trialTimeout);
                                     logger.LogWarning("Optimization {RunId}: trial timed out after {Timeout}",
                                         optimizationRunId, trialTimeout);
                                 }
@@ -219,6 +221,11 @@ public sealed class RunOptimizationCommandHandler(
                                 catch (Exception ex)
                                 {
                                     Interlocked.Increment(ref failedTrialCount);
+                                    failedTrials.Record(
+                                        combination.Values,
+                                        ex.GetType().FullName ?? ex.GetType().Name,
+                                        ex.Message,
+                                        ex.StackTrace ?? string.Empty);
                                     logger.LogWarning(ex, "Optimization {RunId}: trial failed", optimizationRunId);
                                 }
 
@@ -245,6 +252,7 @@ public sealed class RunOptimizationCommandHandler(
                 optimizationRunId, Interlocked.Read(ref processedCount), estimatedCount, ct);
 
             var trials = topTrials.DrainSorted();
+            var failedTrialDetails = failedTrials.Drain(optimizationRunId);
             var optPrimarySub = command.DataSubscriptions![0];
 
             var optimizationRecord = new OptimizationRunRecord
@@ -267,6 +275,7 @@ public sealed class RunOptimizationCommandHandler(
                 Exchange = optPrimarySub.Exchange,
                 TimeFrame = optPrimarySub.TimeFrame,
                 Trials = trials,
+                FailedTrialDetails = failedTrialDetails,
                 FilteredTrials = Interlocked.Read(ref filteredOutCount),
                 FailedTrials = Interlocked.Read(ref failedTrialCount),
             };
@@ -282,14 +291,14 @@ public sealed class RunOptimizationCommandHandler(
             logger.LogInformation("Optimization {RunId} was cancelled", optimizationRunId);
             await SaveErrorOptimizationAsync(
                 command, optimizationRunId, startedAt, estimatedCount, topTrials,
-                filteredOutCount, failedTrialCount, "Run was cancelled by user.");
+                failedTrials, filteredOutCount, failedTrialCount, "Run was cancelled by user.");
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Optimization {RunId} failed", optimizationRunId);
             await SaveErrorOptimizationAsync(
                 command, optimizationRunId, startedAt, estimatedCount, topTrials,
-                filteredOutCount, failedTrialCount, ex.Message, ex.StackTrace);
+                failedTrials, filteredOutCount, failedTrialCount, ex.Message, ex.StackTrace);
         }
         finally
         {
@@ -389,7 +398,8 @@ public sealed class RunOptimizationCommandHandler(
     private async Task SaveErrorOptimizationAsync(
         RunOptimizationCommand command, Guid optimizationRunId,
         DateTimeOffset startedAt, long estimatedCount,
-        BoundedTrialQueue topTrials, long filteredOutCount, long failedTrialCount,
+        BoundedTrialQueue topTrials, FailedTrialCollector failedTrials,
+        long filteredOutCount, long failedTrialCount,
         string errorMessage, string? errorStackTrace = null)
     {
         try
@@ -420,6 +430,7 @@ public sealed class RunOptimizationCommandHandler(
                 Exchange = optPrimarySub.Exchange,
                 TimeFrame = optPrimarySub.TimeFrame,
                 Trials = topTrials.DrainSorted(),
+                FailedTrialDetails = failedTrials.Drain(optimizationRunId),
                 FilteredTrials = filteredOutCount,
                 FailedTrials = failedTrialCount,
                 ErrorMessage = errorMessage,

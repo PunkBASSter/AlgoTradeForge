@@ -192,6 +192,14 @@ public static class OptimizationEndpoints
         Exchange = r.Exchange,
         TimeFrame = r.TimeFrame,
         Trials = r.Trials.Select(MapTrialToResponse).ToList(),
+        FailedTrialDetails = r.FailedTrialDetails.Select(f => new FailedTrialResponse
+        {
+            ExceptionType = f.ExceptionType,
+            ExceptionMessage = f.ExceptionMessage,
+            StackTrace = _isDevelopment ? f.StackTrace : null,
+            SampleParameters = new Dictionary<string, object>(f.SampleParameters),
+            OccurrenceCount = f.OccurrenceCount,
+        }).ToList(),
     };
 
     private static BacktestRunResponse MapTrialToResponse(BacktestRunRecord r) => new()

@@ -69,10 +69,13 @@ public sealed class StrategyEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
         // Verify defaults contain DzzDepth
         Assert.True(zigzag.ParameterDefaults.ContainsKey("DzzDepth"));
 
-        // Verify 3 optimization axes
-        Assert.Equal(3, zigzag.OptimizationAxes.Count);
+        // Verify 6 optimization axes (3 original + 3 ATR filter)
+        Assert.Equal(6, zigzag.OptimizationAxes.Count);
         Assert.Contains(zigzag.OptimizationAxes, a => a.Name == "DzzDepth" && a.Type == "numeric");
         Assert.Contains(zigzag.OptimizationAxes, a => a.Name == "MinimumThreshold" && a.Type == "numeric");
         Assert.Contains(zigzag.OptimizationAxes, a => a.Name == "RiskPercentPerTrade" && a.Type == "numeric");
+        Assert.Contains(zigzag.OptimizationAxes, a => a.Name == "AtrPeriod" && a.Type == "numeric");
+        Assert.Contains(zigzag.OptimizationAxes, a => a.Name == "AtrMin" && a.Type == "numeric");
+        Assert.Contains(zigzag.OptimizationAxes, a => a.Name == "AtrMax" && a.Type == "numeric");
     }
 }
