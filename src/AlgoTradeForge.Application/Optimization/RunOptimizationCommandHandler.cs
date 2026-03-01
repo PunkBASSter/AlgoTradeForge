@@ -34,8 +34,6 @@ public sealed class RunOptimizationCommandHandler(
     IOptions<RunTimeoutOptions> timeoutOptions,
     ILogger<RunOptimizationCommandHandler> logger) : ICommandHandler<RunOptimizationCommand, OptimizationSubmissionDto>
 {
-    private const int ProgressUpdateInterval = 100;
-
     public async Task<OptimizationSubmissionDto> HandleAsync(RunOptimizationCommand command, CancellationToken ct = default)
     {
         // 1. Compute RunKey and check for dedup (under lock to prevent TOCTOU races)
@@ -159,53 +157,82 @@ public sealed class RunOptimizationCommandHandler(
             string? strategyVersion = null;
             long processedCount = 0;
 
-            var parallelOptions = new ParallelOptions
-            {
-                MaxDegreeOfParallelism = command.MaxDegreeOfParallelism > 0
-                    ? command.MaxDegreeOfParallelism
-                    : Environment.ProcessorCount,
-                CancellationToken = ct
-            };
-
+            var maxParallelism = command.MaxDegreeOfParallelism > 0
+                ? command.MaxDegreeOfParallelism
+                : Environment.ProcessorCount;
             var trialTimeout = timeoutOptions.Value.BacktestTimeout;
+            var progressInterval = (long)Math.Clamp(estimatedCount / 10_000.0, 100, 10_000);
 
-            await Parallel.ForEachAsync(combinations, parallelOptions, async (combination, token) =>
+            // Dedicated LongRunning threads — isolated from the ASP.NET ThreadPool
+            var partitions = Partitioner.Create(combinations, EnumerablePartitionerOptions.NoBuffering)
+                .GetPartitions(maxParallelism);
+            var tasks = new Task[partitions.Count];
+            for (var p = 0; p < partitions.Count; p++)
             {
-                try
+                var partition = partitions[p];
+                tasks[p] = Task.Factory.StartNew(() =>
                 {
-                    using var trialCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-                    trialCts.CancelAfter(trialTimeout);
+                    using (partition)
+                    {
+                        // Reuse a single linked CTS per partition via TryReset (P4)
+                        var trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                        try
+                        {
+                            while (partition.MoveNext())
+                            {
+                                ct.ThrowIfCancellationRequested();
+                                var combination = partition.Current;
 
-                    var trial = ExecuteTrial(
-                        command, combination, factory, resolvedSubscriptions, dataCache,
-                        optimizationRunId, startedAt, ref strategyVersion, trialCts.Token);
-                    results.Add(trial);
-                }
-                catch (OperationCanceledException) when (!token.IsCancellationRequested)
-                {
-                    // Per-trial timeout — treat as a failed trial, not a full cancellation
-                    results.Add(CreateFailedTrial(
-                        command, combination, resolvedSubscriptions, optimizationRunId,
-                        startedAt, strategyVersion,
-                        new TimeoutException($"Trial exceeded timeout of {trialTimeout}.")));
-                    logger.LogWarning("Optimization {RunId}: trial timed out after {Timeout}", optimizationRunId, trialTimeout);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw; // Overall cancellation — re-throw to let Parallel.ForEachAsync handle it
-                }
-                catch (Exception ex)
-                {
-                    results.Add(CreateFailedTrial(
-                        command, combination, resolvedSubscriptions, optimizationRunId,
-                        startedAt, strategyVersion, ex));
-                    logger.LogWarning(ex, "Optimization {RunId}: trial failed", optimizationRunId);
-                }
+                                if (!trialCts.TryReset())
+                                {
+                                    trialCts.Dispose();
+                                    trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                                }
+                                trialCts.CancelAfter(trialTimeout);
 
-                var count = Interlocked.Increment(ref processedCount);
-                if (count % ProgressUpdateInterval == 0)
-                    await progressCache.SetProgressAsync(optimizationRunId, count, estimatedCount, token);
-            });
+                                try
+                                {
+                                    var trial = ExecuteTrial(
+                                        command, combination, factory, resolvedSubscriptions, dataCache,
+                                        optimizationRunId, startedAt, ref strategyVersion, trialCts.Token);
+                                    results.Add(trial);
+                                }
+                                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                                {
+                                    results.Add(CreateFailedTrial(
+                                        command, combination, resolvedSubscriptions, optimizationRunId,
+                                        startedAt, strategyVersion,
+                                        new TimeoutException($"Trial exceeded timeout of {trialTimeout}.")));
+                                    logger.LogWarning("Optimization {RunId}: trial timed out after {Timeout}",
+                                        optimizationRunId, trialTimeout);
+                                }
+                                catch (OperationCanceledException)
+                                {
+                                    throw;
+                                }
+                                catch (Exception ex)
+                                {
+                                    results.Add(CreateFailedTrial(
+                                        command, combination, resolvedSubscriptions, optimizationRunId,
+                                        startedAt, strategyVersion, ex));
+                                    logger.LogWarning(ex, "Optimization {RunId}: trial failed", optimizationRunId);
+                                }
+
+                                var count = Interlocked.Increment(ref processedCount);
+                                if (count % progressInterval == 0)
+                                    _ = progressCache.SetProgressAsync(
+                                        optimizationRunId, count, estimatedCount, CancellationToken.None);
+                            }
+                        }
+                        finally
+                        {
+                            trialCts.Dispose();
+                        }
+                    }
+                }, ct, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            }
+
+            await Task.WhenAll(tasks);
 
             stopwatch.Stop();
 
@@ -215,9 +242,6 @@ public sealed class RunOptimizationCommandHandler(
 
             var sortedResults = SortTrials(results, command.SortBy);
             var optPrimarySub = command.DataSubscriptions![0];
-            var maxParallelism = command.MaxDegreeOfParallelism > 0
-                ? command.MaxDegreeOfParallelism
-                : Environment.ProcessorCount;
 
             var optimizationRecord = new OptimizationRunRecord
             {
@@ -336,9 +360,8 @@ public sealed class RunOptimizationCommandHandler(
 
         var result = engine.Run(seriesArray, strategy, backOptions, token);
 
-        var equityValues = result.EquityCurve.Select(e => e.Value).ToList();
         var metrics = metricsCalculator.Calculate(
-            result.Fills, equityValues, backOptions.InitialCash,
+            result.Fills, new EquityValueProjection(result.EquityCurve), backOptions.InitialCash,
             command.StartTime, command.EndTime);
 
         var scaledMetrics = MetricsScaler.ScaleDown(metrics, trialScaleFactor);
@@ -482,5 +505,18 @@ public sealed class RunOptimizationCommandHandler(
         {
             logger.LogError(ex, "Failed to save error record for optimization {RunId}", optimizationRunId);
         }
+    }
+
+    /// <summary>Zero-allocation projection: exposes <c>EquitySnapshot.Value</c> as <c>IReadOnlyList&lt;long&gt;</c>.</summary>
+    private sealed class EquityValueProjection(IReadOnlyList<EquitySnapshot> source) : IReadOnlyList<long>
+    {
+        public long this[int index] => source[index].Value;
+        public int Count => source.Count;
+        public IEnumerator<long> GetEnumerator()
+        {
+            for (var i = 0; i < source.Count; i++)
+                yield return source[i].Value;
+        }
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }
