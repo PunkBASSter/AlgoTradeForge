@@ -7,9 +7,10 @@
   - Timing-based exit modules (close at eod, eow)
   - Trend filters
   - Multi-order strategy module, **Order Groups**
+  - `Strategy-framework.md`
 
 ## Optimization
-- TEST OPTIMIZATION as is
+- TEST OPTIMIZATION: On 97k hangs after 40k and: Failed to fetch status: signal is aborted without reason -- investigate
 - Walk Forward OPTI
 - Permutations test
 - Overfitting evaluation, effective param ranges
