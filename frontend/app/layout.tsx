@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 };
 
 const navLinks = [
-  { href: "/dashboard", label: "Dashboard" },
+  { href: "/all/backtest", label: "Dashboard" },
   { href: "/debug", label: "Debug" },
 ];
 
@@ -37,7 +37,7 @@ export default function RootLayout({
         <Providers>
           <header className="flex items-center justify-between px-6 py-3 border-b border-border-default bg-bg-surface">
             <Link
-              href="/dashboard"
+              href="/all/backtest"
               className="text-lg font-bold text-text-primary tracking-tight"
             >
               AlgoTradeForge

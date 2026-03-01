@@ -26,24 +26,25 @@ import type {
 const BACKTEST_TEMPLATE: RunBacktestRequest = {
   assetName: "BTCUSDT",
   exchange: "Binance",
-  strategyName: "SmaCrossover",
+  strategyName: "ZigZagBreakout",
   initialCash: 10000,
   startTime: "2025-01-01T00:00:00Z",
   endTime: "2025-12-31T23:59:59Z",
   commissionPerTrade: 0.001,
   slippageTicks: 2,
-  timeFrame: "00:15:00",
-  strategyParameters: { fastPeriod: 10, slowPeriod: 30 },
+  timeFrame: "01:00:00",
+  strategyParameters: { DzzDepth: 5, MinimumThreshold: 10000, RiskPercentPerTrade: 1 },
 };
 
 const OPTIMIZATION_TEMPLATE: RunOptimizationRequest = {
-  strategyName: "SmaCrossover",
+  strategyName: "ZigZagBreakout",
   optimizationAxes: {
-    fastPeriod: { min: 5, max: 20, step: 5 },
-    slowPeriod: { min: 20, max: 50, step: 10 },
+    DzzDepth: { min: 1, max: 20, step: 0.5 },
+    MinimumThreshold: { min: 5000, max: 50000, step: 5000 },
+    RiskPercentPerTrade: { min: 0.5, max: 3, step: 0.5 },
   },
   dataSubscriptions: [
-    { asset: "BTCUSDT", exchange: "Binance", timeFrame: "00:15:00" },
+    { asset: "BTCUSDT", exchange: "Binance", timeFrame: "01:00:00" },
   ],
   initialCash: 10000,
   startTime: "2025-01-01T00:00:00Z",
