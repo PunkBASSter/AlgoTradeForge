@@ -318,7 +318,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
 
             await using var trialReader = await trialCmd.ExecuteReaderAsync(ct);
             while (await trialReader.ReadAsync(ct))
-                trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: true));
+                trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: false));
         }
 
         return record with { Trials = trials };

@@ -120,15 +120,12 @@ public sealed class RunOptimizationCommandHandler(
         await progressCache.SetProgressAsync(optimizationRunId, 0, estimatedCount, ct);
         await progressCache.SetRunKeyAsync(runKey, optimizationRunId, ct);
 
-        var cts = new CancellationTokenSource(timeoutOptions.Value.OptimizationTimeout);
-        cancellationRegistry.Register(optimizationRunId, cts);
-
         // 4. Start background task on a dedicated thread (coordinates long-running parallel work)
         _ = Task.Factory.StartNew(
             () => RunOptimizationAsync(
                 command, resolvedSubscriptions, dataCache, activeAxes,
                 estimatedCount, optimizationRunId, runKey, startedAt,
-                strategyFactory, cts.Token),
+                strategyFactory),
             CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
         return new OptimizationSubmissionDto
@@ -148,9 +145,12 @@ public sealed class RunOptimizationCommandHandler(
         Guid optimizationRunId,
         string runKey,
         DateTimeOffset startedAt,
-        IOptimizationStrategyFactory factory,
-        CancellationToken ct)
+        IOptimizationStrategyFactory factory)
     {
+        using var cts = new CancellationTokenSource(timeoutOptions.Value.OptimizationTimeout);
+        cancellationRegistry.Register(optimizationRunId, cts);
+        var ct = cts.Token;
+
         var results = new ConcurrentBag<(OptimizationTrialResultDto Dto, BacktestRunRecord Record)>();
         try
         {
@@ -204,14 +204,14 @@ public sealed class RunOptimizationCommandHandler(
 
                 var count = Interlocked.Increment(ref processedCount);
                 if (count % ProgressUpdateInterval == 0)
-                    await progressCache.SetProgressAsync(optimizationRunId, count, estimatedCount);
+                    await progressCache.SetProgressAsync(optimizationRunId, count, estimatedCount, token);
             });
 
             stopwatch.Stop();
 
             // Final progress flush (handles case where total % ProgressUpdateInterval != 0)
             await progressCache.SetProgressAsync(
-                optimizationRunId, Interlocked.Read(ref processedCount), estimatedCount);
+                optimizationRunId, Interlocked.Read(ref processedCount), estimatedCount, ct);
 
             var sortedResults = SortTrials(results, command.SortBy);
             var optPrimarySub = command.DataSubscriptions![0];
@@ -351,7 +351,6 @@ public sealed class RunOptimizationCommandHandler(
             Duration = trialWatch.Elapsed
         };
 
-        var equityCurve = MetricsScaler.ScaleEquityCurve(result.EquityCurve, trialScaleFactor);
         var trialPrimarySub = strategy.DataSubscriptions[0];
         var trialRecord = new BacktestRunRecord
         {
@@ -372,7 +371,7 @@ public sealed class RunOptimizationCommandHandler(
             DurationMs = (long)trialWatch.Elapsed.TotalMilliseconds,
             TotalBars = result.TotalBarsProcessed,
             Metrics = scaledMetrics,
-            EquityCurve = equityCurve,
+            EquityCurve = [],
             RunFolderPath = null,
             RunMode = RunModes.Backtest,
             OptimizationRunId = optimizationRunId,
