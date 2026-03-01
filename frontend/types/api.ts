@@ -227,6 +227,12 @@ export interface RunOptimizationRequest {
   maxDegreeOfParallelism?: number;
   maxCombinations?: number;
   sortBy?: string;
+  maxTrialsToKeep?: number;
+  minProfitFactor?: number | null;
+  maxDrawdownPct?: number | null;
+  minSharpeRatio?: number | null;
+  minSortinoRatio?: number | null;
+  minAnnualizedReturnPct?: number | null;
 }
 
 export type OptimizationAxisOverride =
