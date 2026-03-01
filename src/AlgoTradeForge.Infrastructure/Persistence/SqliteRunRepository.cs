@@ -248,13 +248,13 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                     started_at, completed_at, duration_ms, total_combinations,
                     sort_by, data_start, data_end,
                     initial_cash, commission, slippage_ticks, max_parallelism,
-                    asset_name, exchange, timeframe
+                    asset_name, exchange, timeframe, filtered_trials, failed_trials
                 ) VALUES (
                     $id, $stratName, $stratVer,
                     $startedAt, $completedAt, $durationMs, $totalCombinations,
                     $sortBy, $dataStart, $dataEnd,
                     $cash, $commission, $slippage, $maxParallelism,
-                    $asset, $exchange, $tf
+                    $asset, $exchange, $tf, $filteredTrials, $failedTrials
                 )
                 """;
 
@@ -275,6 +275,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             cmd.Parameters.AddWithValue("$asset", record.AssetName);
             cmd.Parameters.AddWithValue("$exchange", record.Exchange);
             cmd.Parameters.AddWithValue("$tf", record.TimeFrame);
+            cmd.Parameters.AddWithValue("$filteredTrials", record.FilteredTrials);
+            cmd.Parameters.AddWithValue("$failedTrials", record.FailedTrials);
 
             await cmd.ExecuteNonQueryAsync(ct);
         }
@@ -309,11 +311,12 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             record = ReadOptimizationRun(reader);
         }
 
-        // Load child trials
+        // Load child trials sorted by the optimization's sort metric
         var trials = new List<BacktestRunRecord>();
         await using (var trialCmd = conn.CreateCommand())
         {
-            trialCmd.CommandText = "SELECT * FROM backtest_runs WHERE optimization_run_id = $optId";
+            var orderClause = GetTrialOrderByClause(record.SortBy);
+            trialCmd.CommandText = $"SELECT * FROM backtest_runs WHERE optimization_run_id = $optId{orderClause}";
             trialCmd.Parameters.AddWithValue("$optId", id.ToString());
 
             await using var trialReader = await trialCmd.ExecuteReaderAsync(ct);
@@ -485,7 +488,20 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
         Exchange = reader.GetString(reader.GetOrdinal("exchange")),
         TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
+        FilteredTrials = reader.GetInt64(reader.GetOrdinal("filtered_trials")),
+        FailedTrials = reader.GetInt64(reader.GetOrdinal("failed_trials")),
         Trials = [], // loaded separately
+    };
+
+    private static string GetTrialOrderByClause(string sortBy) => sortBy switch
+    {
+        "SharpeRatio"    => " ORDER BY json_extract(metrics_json, '$.sharpeRatio') DESC",
+        "NetProfit"      => " ORDER BY json_extract(metrics_json, '$.netProfit') DESC",
+        "SortinoRatio"   => " ORDER BY json_extract(metrics_json, '$.sortinoRatio') DESC",
+        "ProfitFactor"   => " ORDER BY json_extract(metrics_json, '$.profitFactor') DESC",
+        "WinRatePct"     => " ORDER BY json_extract(metrics_json, '$.winRatePct') DESC",
+        "MaxDrawdownPct" => " ORDER BY json_extract(metrics_json, '$.maxDrawdownPct') ASC",
+        _                => " ORDER BY json_extract(metrics_json, '$.sharpeRatio') DESC",
     };
 
     private static string SerializeEquityCurve(IReadOnlyList<EquityPoint> curve)

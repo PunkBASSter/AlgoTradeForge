@@ -68,7 +68,13 @@ public static class OptimizationEndpoints
             SlippageTicks = request.SlippageTicks,
             MaxDegreeOfParallelism = request.MaxDegreeOfParallelism,
             MaxCombinations = request.MaxCombinations,
-            SortBy = request.SortBy
+            SortBy = request.SortBy,
+            MaxTrialsToKeep = request.MaxTrialsToKeep,
+            MinProfitFactor = request.MinProfitFactor,
+            MaxDrawdownPct = request.MaxDrawdownPct,
+            MinSharpeRatio = request.MinSharpeRatio,
+            MinSortinoRatio = request.MinSortinoRatio,
+            MinAnnualizedReturnPct = request.MinAnnualizedReturnPct,
         };
 
         try
@@ -101,6 +107,8 @@ public static class OptimizationEndpoints
             Id = dto.Id,
             CompletedCombinations = dto.CompletedCombinations,
             TotalCombinations = dto.TotalCombinations,
+            FilteredTrials = dto.Result?.FilteredTrials ?? 0,
+            FailedTrials = dto.Result?.FailedTrials ?? 0,
             Result = dto.Result is not null ? MapToResponse(dto.Result) : null,
         });
     }
@@ -171,6 +179,8 @@ public static class OptimizationEndpoints
         CompletedAt = r.CompletedAt,
         DurationMs = r.DurationMs,
         TotalCombinations = r.TotalCombinations,
+        FilteredTrials = r.FilteredTrials,
+        FailedTrials = r.FailedTrials,
         SortBy = r.SortBy,
         DataStart = r.DataStart,
         DataEnd = r.DataEnd,

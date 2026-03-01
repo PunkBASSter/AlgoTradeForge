@@ -149,7 +149,13 @@ public sealed class RunOptimizationCommandHandler(
         cancellationRegistry.Register(optimizationRunId, cts);
         var ct = cts.Token;
 
-        var results = new ConcurrentBag<(OptimizationTrialResultDto Dto, BacktestRunRecord Record)>();
+        if (command.MaxTrialsToKeep < 1)
+            throw new ArgumentException("MaxTrialsToKeep must be at least 1.");
+
+        var filter = new TrialFilter(command);
+        var topTrials = new BoundedTrialQueue(command.MaxTrialsToKeep, command.SortBy);
+        long filteredOutCount = 0;
+        long failedTrialCount = 0;
         try
         {
             var stopwatch = Stopwatch.StartNew();
@@ -192,17 +198,17 @@ public sealed class RunOptimizationCommandHandler(
 
                                 try
                                 {
-                                    var trial = ExecuteTrial(
+                                    var record = ExecuteTrial(
                                         command, combination, factory, resolvedSubscriptions, dataCache,
                                         optimizationRunId, startedAt, ref strategyVersion, trialCts.Token);
-                                    results.Add(trial);
+                                    if (filter.Passes(record.Metrics))
+                                        topTrials.TryAdd(record);
+                                    else
+                                        Interlocked.Increment(ref filteredOutCount);
                                 }
                                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                                 {
-                                    results.Add(CreateFailedTrial(
-                                        command, combination, resolvedSubscriptions, optimizationRunId,
-                                        startedAt, strategyVersion,
-                                        new TimeoutException($"Trial exceeded timeout of {trialTimeout}.")));
+                                    Interlocked.Increment(ref failedTrialCount);
                                     logger.LogWarning("Optimization {RunId}: trial timed out after {Timeout}",
                                         optimizationRunId, trialTimeout);
                                 }
@@ -212,9 +218,7 @@ public sealed class RunOptimizationCommandHandler(
                                 }
                                 catch (Exception ex)
                                 {
-                                    results.Add(CreateFailedTrial(
-                                        command, combination, resolvedSubscriptions, optimizationRunId,
-                                        startedAt, strategyVersion, ex));
+                                    Interlocked.Increment(ref failedTrialCount);
                                     logger.LogWarning(ex, "Optimization {RunId}: trial failed", optimizationRunId);
                                 }
 
@@ -240,7 +244,7 @@ public sealed class RunOptimizationCommandHandler(
             await progressCache.SetProgressAsync(
                 optimizationRunId, Interlocked.Read(ref processedCount), estimatedCount, ct);
 
-            var sortedResults = SortTrials(results, command.SortBy);
+            var trials = topTrials.DrainSorted();
             var optPrimarySub = command.DataSubscriptions![0];
 
             var optimizationRecord = new OptimizationRunRecord
@@ -262,27 +266,30 @@ public sealed class RunOptimizationCommandHandler(
                 AssetName = optPrimarySub.Asset,
                 Exchange = optPrimarySub.Exchange,
                 TimeFrame = optPrimarySub.TimeFrame,
-                Trials = sortedResults.Select(r => r.Record).ToList(),
+                Trials = trials,
+                FilteredTrials = Interlocked.Read(ref filteredOutCount),
+                FailedTrials = Interlocked.Read(ref failedTrialCount),
             };
 
             await runRepository.SaveOptimizationAsync(optimizationRecord);
 
-            logger.LogInformation("Optimization {RunId} completed in {Duration}ms with {Trials} trials",
-                optimizationRunId, stopwatch.ElapsedMilliseconds, results.Count);
+            logger.LogInformation(
+                "Optimization {RunId}: {Total} executed, {Kept} kept, {Filtered} filtered, {Failed} failed in {Duration}ms",
+                optimizationRunId, processedCount, trials.Count, filteredOutCount, failedTrialCount, stopwatch.ElapsedMilliseconds);
         }
         catch (OperationCanceledException)
         {
             logger.LogInformation("Optimization {RunId} was cancelled", optimizationRunId);
             await SaveErrorOptimizationAsync(
-                command, optimizationRunId, startedAt, estimatedCount, results,
-                "Run was cancelled by user.");
+                command, optimizationRunId, startedAt, estimatedCount, topTrials,
+                filteredOutCount, failedTrialCount, "Run was cancelled by user.");
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Optimization {RunId} failed", optimizationRunId);
             await SaveErrorOptimizationAsync(
-                command, optimizationRunId, startedAt, estimatedCount, results,
-                ex.Message, ex.StackTrace);
+                command, optimizationRunId, startedAt, estimatedCount, topTrials,
+                filteredOutCount, failedTrialCount, ex.Message, ex.StackTrace);
         }
         finally
         {
@@ -292,22 +299,7 @@ public sealed class RunOptimizationCommandHandler(
         }
     }
 
-    private static IReadOnlyList<(OptimizationTrialResultDto Dto, BacktestRunRecord Record)> SortTrials(
-        IEnumerable<(OptimizationTrialResultDto Dto, BacktestRunRecord Record)> trials, string sortBy)
-    {
-        return sortBy switch
-        {
-            SharpeRatio => trials.OrderByDescending(t => t.Dto.Metrics.SharpeRatio).ToList(),
-            NetProfit => trials.OrderByDescending(t => t.Dto.Metrics.NetProfit).ToList(),
-            SortinoRatio => trials.OrderByDescending(t => t.Dto.Metrics.SortinoRatio).ToList(),
-            ProfitFactor => trials.OrderByDescending(t => t.Dto.Metrics.ProfitFactor).ToList(),
-            WinRatePct => trials.OrderByDescending(t => t.Dto.Metrics.WinRatePct).ToList(),
-            MaxDrawdownPct => trials.OrderBy(t => t.Dto.Metrics.MaxDrawdownPct).ToList(),
-            _ => trials.OrderByDescending(t => t.Dto.Metrics.SharpeRatio).ToList()
-        };
-    }
-
-    private (OptimizationTrialResultDto Dto, BacktestRunRecord Record) ExecuteTrial(
+    private BacktestRunRecord ExecuteTrial(
         RunOptimizationCommand command,
         ParameterCombination combination,
         IOptimizationStrategyFactory factory,
@@ -367,15 +359,8 @@ public sealed class RunOptimizationCommandHandler(
         var scaledMetrics = MetricsScaler.ScaleDown(metrics, trialScaleFactor);
         trialWatch.Stop();
 
-        var dto = new OptimizationTrialResultDto
-        {
-            Parameters = combination.Values,
-            Metrics = scaledMetrics,
-            Duration = trialWatch.Elapsed
-        };
-
         var trialPrimarySub = strategy.DataSubscriptions[0];
-        var trialRecord = new BacktestRunRecord
+        return new BacktestRunRecord
         {
             Id = Guid.NewGuid(),
             StrategyName = command.StrategyName,
@@ -399,73 +384,12 @@ public sealed class RunOptimizationCommandHandler(
             RunMode = RunModes.Backtest,
             OptimizationRunId = optimizationRunId,
         };
-
-        return (dto, trialRecord);
-    }
-
-    private static (OptimizationTrialResultDto Dto, BacktestRunRecord Record) CreateFailedTrial(
-        RunOptimizationCommand command,
-        ParameterCombination combination,
-        List<DataSubscription> resolvedSubscriptions,
-        Guid optimizationRunId,
-        DateTimeOffset startedAt,
-        string? strategyVersion,
-        Exception ex)
-    {
-        var zeroMetrics = new PerformanceMetrics
-        {
-            TotalTrades = 0, WinningTrades = 0, LosingTrades = 0,
-            NetProfit = 0, GrossProfit = 0, GrossLoss = 0, TotalCommissions = 0,
-            TotalReturnPct = 0, AnnualizedReturnPct = 0,
-            SharpeRatio = 0, SortinoRatio = 0, MaxDrawdownPct = 0,
-            WinRatePct = 0, ProfitFactor = 0, AverageWin = 0, AverageLoss = 0,
-            InitialCapital = command.InitialCash, FinalEquity = command.InitialCash,
-            TradingDays = 0,
-        };
-
-        var dto = new OptimizationTrialResultDto
-        {
-            Parameters = combination.Values,
-            Metrics = zeroMetrics,
-            Duration = TimeSpan.Zero,
-            ErrorMessage = ex.Message,
-            ErrorStackTrace = ex.StackTrace
-        };
-
-        var record = new BacktestRunRecord
-        {
-            Id = Guid.NewGuid(),
-            StrategyName = command.StrategyName,
-            StrategyVersion = strategyVersion ?? "0",
-            Parameters = combination.Values,
-            AssetName = resolvedSubscriptions[0].Asset.Name,
-            Exchange = resolvedSubscriptions[0].Asset.Exchange,
-            TimeFrame = TimeFrameFormatter.Format(resolvedSubscriptions[0].TimeFrame),
-            InitialCash = command.InitialCash,
-            Commission = command.CommissionPerTrade,
-            SlippageTicks = checked((int)command.SlippageTicks),
-            StartedAt = startedAt,
-            CompletedAt = DateTimeOffset.UtcNow,
-            DataStart = command.StartTime,
-            DataEnd = command.EndTime,
-            DurationMs = 0,
-            TotalBars = 0,
-            Metrics = zeroMetrics,
-            EquityCurve = [],
-            RunFolderPath = null,
-            RunMode = RunModes.Backtest,
-            OptimizationRunId = optimizationRunId,
-            ErrorMessage = ex.Message,
-            ErrorStackTrace = ex.StackTrace,
-        };
-
-        return (dto, record);
     }
 
     private async Task SaveErrorOptimizationAsync(
         RunOptimizationCommand command, Guid optimizationRunId,
         DateTimeOffset startedAt, long estimatedCount,
-        ConcurrentBag<(OptimizationTrialResultDto Dto, BacktestRunRecord Record)> results,
+        BoundedTrialQueue topTrials, long filteredOutCount, long failedTrialCount,
         string errorMessage, string? errorStackTrace = null)
     {
         try
@@ -495,7 +419,9 @@ public sealed class RunOptimizationCommandHandler(
                 AssetName = optPrimarySub.Asset,
                 Exchange = optPrimarySub.Exchange,
                 TimeFrame = optPrimarySub.TimeFrame,
-                Trials = results.Select(r => r.Record).ToList(),
+                Trials = topTrials.DrainSorted(),
+                FilteredTrials = filteredOutCount,
+                FailedTrials = failedTrialCount,
                 ErrorMessage = errorMessage,
                 ErrorStackTrace = errorStackTrace,
             };
