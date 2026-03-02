@@ -1,3 +1,4 @@
+using System.Reflection;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
@@ -10,6 +11,7 @@ using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Infrastructure;
 using AlgoTradeForge.Infrastructure.CandleIngestion;
 using AlgoTradeForge.Infrastructure.History;
+using AlgoTradeForge.Infrastructure.Plugins;
 using AlgoTradeForge.Infrastructure.Repositories;
 using AlgoTradeForge.WebApi.Endpoints;
 
@@ -54,8 +56,25 @@ builder.Services.AddSingleton<IInt64BarLoader, CsvInt64BarLoader>();
 builder.Services.AddSingleton<IDataSource, CsvDataSource>();
 builder.Services.AddSingleton<IHistoryRepository, HistoryRepository>();
 
-// Register optimization infrastructure
-builder.Services.AddInfrastructure(typeof(AlgoTradeForge.Domain.Strategy.StrategyBase<>).Assembly);
+// Load plugin assemblies
+var pluginPaths = builder.Configuration.GetSection("Plugins:Paths").Get<string[]>() ?? ["plugins"];
+using var loggerFactory = LoggerFactory.Create(b => b.AddConsole());
+var pluginLogger = loggerFactory.CreateLogger("PluginLoader");
+var pluginAssemblies = PluginLoader.LoadFrom(pluginPaths, pluginLogger, builder.Environment.ContentRootPath);
+
+// Invoke plugin initializers
+foreach (var asm in pluginAssemblies)
+{
+    foreach (var type in asm.GetTypes().Where(t => !t.IsAbstract && typeof(IPluginInitializer).IsAssignableFrom(t)))
+    {
+        var initializer = (IPluginInitializer)Activator.CreateInstance(type)!;
+        initializer.ConfigureServices(builder.Services);
+    }
+}
+
+// Register optimization infrastructure (domain + plugin assemblies)
+Assembly[] strategyAssemblies = [typeof(AlgoTradeForge.Domain.Strategy.StrategyBase<>).Assembly, .. pluginAssemblies];
+builder.Services.AddInfrastructure(strategyAssemblies);
 
 builder.Services.AddSingleton<IAssetRepository, InMemoryAssetRepository>();
 

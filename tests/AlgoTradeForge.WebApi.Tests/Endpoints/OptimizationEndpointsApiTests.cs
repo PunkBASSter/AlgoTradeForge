@@ -12,7 +12,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
 {
     private static RunOptimizationRequest MakeOptimizationRequest() => new()
     {
-        StrategyName = "ZigZagBreakout",
+        StrategyName = "BuyAndHold",
         DataSubscriptions =
         [
             new DataSubscriptionDto
@@ -24,7 +24,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         ],
         OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
         {
-            ["DzzDepth"] = new RangeOverride(4m, 6m, 2m), // 2 values: 4, 6
+            ["Quantity"] = new RangeOverride(1m, 3m, 2m), // 2 values: 1, 3
         },
         InitialCash = 10_000m,
         StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
@@ -122,7 +122,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
     {
         var request = new RunOptimizationRequest
         {
-            StrategyName = "ZigZagBreakout",
+            StrategyName = "BuyAndHold",
             DataSubscriptions =
             [
                 new DataSubscriptionDto
@@ -171,7 +171,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         // Optimization might complete before we cancel, so accept 200 (cancelled) or 404 (already done)
         var request = new RunOptimizationRequest
         {
-            StrategyName = "ZigZagBreakout",
+            StrategyName = "BuyAndHold",
             DataSubscriptions =
             [
                 new DataSubscriptionDto
@@ -183,8 +183,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
             ],
             OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
             {
-                ["DzzDepth"] = new RangeOverride(1m, 20m, 0.5m),
-                ["RiskPercentPerTrade"] = new RangeOverride(0.5m, 3m, 0.5m),
+                ["Quantity"] = new RangeOverride(0.1m, 10m, 0.1m),
             },
             InitialCash = 10_000m,
             StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),

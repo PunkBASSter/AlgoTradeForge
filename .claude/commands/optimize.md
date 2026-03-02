@@ -97,7 +97,17 @@ Quick sweep = 128 combinations.
 - AAPL (NASDAQ), MSFT (NASDAQ)
 - ES (CME), MES (CME)
 
-### 2. Ensure API is Running
+### 2. Build Plugin Assemblies (if private repo exists)
+
+If `../AlgoTradeForge.Private/src/AlgoTradeForge.Strategies.Private/` exists, build it so the plugin DLL is copied to `plugins/`:
+
+```bash
+dotnet build ../AlgoTradeForge.Private/src/AlgoTradeForge.Strategies.Private
+```
+
+Skip this step silently if the directory does not exist.
+
+### 3. Ensure API is Running
 
 Check if the API is already listening:
 
@@ -113,7 +123,7 @@ dotnet run --project src/AlgoTradeForge.WebApi 2>&1
 
 Wait a few seconds and verify it's listening before proceeding.
 
-### 3. Submit Optimization
+### 4. Submit Optimization
 
 Send the POST request. The API returns **202 Accepted** with a submission response (not the final result):
 
@@ -187,7 +197,7 @@ curl -s -X POST https://localhost:55908/api/optimizations/ \
 
 Capture the `id` for polling. Tell the user the optimization was submitted and the total combination count.
 
-### 4. Poll for Completion
+### 5. Poll for Completion
 
 Poll the status endpoint until the `result` field is non-null:
 
@@ -213,7 +223,7 @@ curl -s -k https://localhost:55908/api/optimizations/<id>/status
 - Show a progress update to the user each poll (e.g. "Processing: 500/2340 combinations (21%)")
 - Use a maximum timeout of 30 minutes for large optimizations
 
-### 5. Display Results
+### 6. Display Results
 
 Once `result` is available, format it as a readable summary. Show the top 10 trials (or fewer if less returned):
 
@@ -246,6 +256,6 @@ After the top 10, add a brief summary line:
 Best {sortBy}: #{rank} with {bestMetricValue}
 ```
 
-### 6. Cleanup
+### 7. Cleanup
 
 Do NOT stop the API after the optimization. Leave it running for subsequent requests.

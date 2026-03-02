@@ -20,7 +20,7 @@ Extract these from the user input (defaults shown in parentheses):
 |---|---|
 | `assetName` | `BTCUSDT` |
 | `exchange` | `Binance` |
-| `strategyName` | `ZigZagBreakout` |
+| `strategyName` | `BuyAndHold` (or `ZigZagBreakout` if private plugin is loaded) |
 | `initialCash` | `10000` |
 | `startTime` | `2024-01-01T00:00:00Z` |
 | `endTime` | `2026-01-31T23:59:59Z` |
@@ -40,7 +40,17 @@ Extract these from the user input (defaults shown in parentheses):
 - AAPL (NASDAQ), MSFT (NASDAQ)
 - ES (CME), MES (CME)
 
-### 2. Ensure API is Running
+### 2. Build Plugin Assemblies (if private repo exists)
+
+If `../AlgoTradeForge.Private/src/AlgoTradeForge.Strategies.Private/` exists, build it so the plugin DLL is copied to `plugins/`:
+
+```bash
+dotnet build ../AlgoTradeForge.Private/src/AlgoTradeForge.Strategies.Private
+```
+
+Skip this step silently if the directory does not exist.
+
+### 3. Ensure API is Running
 
 Check if the API is already listening:
 
@@ -56,7 +66,7 @@ dotnet run --project src/AlgoTradeForge.WebApi 2>&1
 
 Wait a few seconds and verify it's listening before proceeding.
 
-### 3. Submit Backtest
+### 4. Submit Backtest
 
 Send the POST request. The API returns **202 Accepted** with a submission response (not the final result):
 
@@ -72,7 +82,7 @@ curl -s -X POST https://localhost:55908/api/backtests/ \
 
 Capture the `id` for polling. Tell the user the backtest was submitted and how many bars will be processed.
 
-### 4. Poll for Completion
+### 5. Poll for Completion
 
 Poll the status endpoint until the `result` field is non-null:
 
@@ -102,7 +112,7 @@ curl -s -k https://localhost:55908/api/backtests/<id>/status
 - `result.runMode === "Cancelled"` → run was cancelled
 - `result.errorMessage` is non-null → run failed with an error
 
-### 5. Display Results
+### 6. Display Results
 
 Once `result` is available, format it as a readable summary table:
 
@@ -131,6 +141,6 @@ Trade Statistics:
 
 The metrics are in `result.metrics` as camelCase keys (e.g. `netProfit`, `sharpeRatio`, `maxDrawdownPct`).
 
-### 6. Cleanup
+### 7. Cleanup
 
 Do NOT stop the API after the backtest. Leave it running for subsequent requests.

@@ -33,4 +33,18 @@ C# 14 / .NET 10: Follow standard conventions
 
 
 <!-- MANUAL ADDITIONS START -->
+
+## Private Strategies Repo
+
+Sibling repo at `../AlgoTradeForge.Private/` contains private strategy plugins.
+
+- **Source:** `../AlgoTradeForge.Private/src/AlgoTradeForge.Strategies.Private/`
+- **Tests:** `../AlgoTradeForge.Private/tests/AlgoTradeForge.Strategies.Private.Tests/`
+- **Full solution:** `../AlgoTradeForge.Private/AlgoTradeForge.Full.slnx` (public + private)
+- **Build private:** `dotnet build ../AlgoTradeForge.Private/AlgoTradeForge.Full.slnx`
+- **Test private:** `dotnet test ../AlgoTradeForge.Private/tests/AlgoTradeForge.Strategies.Private.Tests/`
+- Post-build copies plugin DLL to `src/AlgoTradeForge.WebApi/plugins/`
+
+When searching for strategy code, also search `../AlgoTradeForge.Private/` if not found locally.
+
 <!-- MANUAL ADDITIONS END -->

@@ -2,8 +2,8 @@ using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.BuyAndHold;
 using AlgoTradeForge.Domain.Strategy.Modules;
-using AlgoTradeForge.Domain.Strategy.ZigZagBreakout;
 using AlgoTradeForge.Infrastructure.Optimization;
 using Xunit;
 
@@ -12,80 +12,50 @@ namespace AlgoTradeForge.Infrastructure.Tests.Optimization;
 public class SpaceDescriptorBuilderTests
 {
     [Fact]
-    public void Build_DiscoversZigZagBreakoutStrategy()
+    public void Build_DiscoversBuyAndHoldStrategy()
     {
-        var builder = new SpaceDescriptorBuilder([typeof(ZigZagBreakoutStrategy).Assembly]);
+        var builder = new SpaceDescriptorBuilder([typeof(BuyAndHoldStrategy).Assembly]);
         var descriptors = builder.Build();
 
-        Assert.True(descriptors.ContainsKey("ZigZagBreakout"));
+        Assert.True(descriptors.ContainsKey("BuyAndHold"));
     }
 
     [Fact]
-    public void ZigZagBreakout_HasSixOptimizableAxes()
+    public void BuyAndHold_HasOneOptimizableAxis()
     {
-        var builder = new SpaceDescriptorBuilder([typeof(ZigZagBreakoutStrategy).Assembly]);
-        var descriptor = builder.GetDescriptor("ZigZagBreakout");
+        var builder = new SpaceDescriptorBuilder([typeof(BuyAndHoldStrategy).Assembly]);
+        var descriptor = builder.GetDescriptor("BuyAndHold");
 
         Assert.NotNull(descriptor);
-        Assert.Equal(typeof(ZigZagBreakoutStrategy), descriptor!.StrategyType);
-        Assert.Equal(typeof(ZigZagBreakoutParams), descriptor.ParamsType);
+        Assert.Equal(typeof(BuyAndHoldStrategy), descriptor!.StrategyType);
+        Assert.Equal(typeof(BuyAndHoldParams), descriptor.ParamsType);
 
         var numericAxes = descriptor.Axes.OfType<NumericRangeAxis>().ToList();
-        Assert.Equal(6, numericAxes.Count);
+        Assert.Single(numericAxes);
 
-        var dzzAxis = numericAxes.Single(a => a.Name == "DzzDepth");
-        Assert.Equal(1m, dzzAxis.Min);
-        Assert.Equal(20m, dzzAxis.Max);
-        Assert.Equal(0.5m, dzzAxis.Step);
-        Assert.Equal(typeof(decimal), dzzAxis.ClrType);
-
-        var thresholdAxis = numericAxes.Single(a => a.Name == "MinimumThreshold");
-        Assert.Equal(50m, thresholdAxis.Min);
-        Assert.Equal(500m, thresholdAxis.Max);
-        Assert.Equal(typeof(long), thresholdAxis.ClrType);
-        Assert.Equal(ParamUnit.QuoteAsset, thresholdAxis.Unit);
-
-        var riskAxis = numericAxes.Single(a => a.Name == "RiskPercentPerTrade");
-        Assert.Equal(0.5m, riskAxis.Min);
-        Assert.Equal(3m, riskAxis.Max);
-        Assert.Equal(ParamUnit.Raw, riskAxis.Unit);
-
-        var atrPeriodAxis = numericAxes.Single(a => a.Name == "AtrPeriod");
-        Assert.Equal(5m, atrPeriodAxis.Min);
-        Assert.Equal(50m, atrPeriodAxis.Max);
-
-        var atrMinAxis = numericAxes.Single(a => a.Name == "AtrMin");
-        Assert.Equal(0m, atrMinAxis.Min);
-        Assert.Equal(50m, atrMinAxis.Max);
-        Assert.Equal(ParamUnit.QuoteAsset, atrMinAxis.Unit);
-
-        var atrMaxAxis = numericAxes.Single(a => a.Name == "AtrMax");
-        Assert.Equal(0m, atrMaxAxis.Min);
-        Assert.Equal(500m, atrMaxAxis.Max);
-        Assert.Equal(ParamUnit.QuoteAsset, atrMaxAxis.Unit);
+        var qtyAxis = numericAxes.Single(a => a.Name == "Quantity");
+        Assert.Equal(0.1m, qtyAxis.Min);
+        Assert.Equal(10m, qtyAxis.Max);
+        Assert.Equal(0.1m, qtyAxis.Step);
+        Assert.Equal(typeof(decimal), qtyAxis.ClrType);
     }
 
     [Fact]
     public void GetParameterDefaults_ReturnsPropertyInitializerValues()
     {
-        var builder = new SpaceDescriptorBuilder([typeof(ZigZagBreakoutStrategy).Assembly]);
-        var descriptor = builder.GetDescriptor("ZigZagBreakout")!;
+        var builder = new SpaceDescriptorBuilder([typeof(BuyAndHoldStrategy).Assembly]);
+        var descriptor = builder.GetDescriptor("BuyAndHold")!;
 
         var defaults = builder.GetParameterDefaults(descriptor);
 
-        Assert.Equal(5m, defaults["DzzDepth"]);
-        Assert.Equal(10_000L, defaults["MinimumThreshold"]);
-        Assert.Equal(1m, defaults["RiskPercentPerTrade"]);
-        Assert.Equal(14, defaults["AtrPeriod"]);
-        Assert.Equal(0L, defaults["AtrMin"]);
-        Assert.Equal(0L, defaults["AtrMax"]);
+        Assert.Equal(1m, defaults["Quantity"]);
     }
 
     [Fact]
     public void GetParameterDefaults_ExcludesDataSubscriptions()
     {
-        var builder = new SpaceDescriptorBuilder([typeof(ZigZagBreakoutStrategy).Assembly]);
-        var descriptor = builder.GetDescriptor("ZigZagBreakout")!;
+        var builder = new SpaceDescriptorBuilder([typeof(BuyAndHoldStrategy).Assembly]);
+        var descriptor = builder.GetDescriptor("BuyAndHold")!;
 
         var defaults = builder.GetParameterDefaults(descriptor);
 
@@ -95,7 +65,7 @@ public class SpaceDescriptorBuilderTests
     [Fact]
     public void GetDescriptor_UnknownStrategy_ReturnsNull()
     {
-        var builder = new SpaceDescriptorBuilder([typeof(ZigZagBreakoutStrategy).Assembly]);
+        var builder = new SpaceDescriptorBuilder([typeof(BuyAndHoldStrategy).Assembly]);
         var descriptor = builder.GetDescriptor("NonExistent");
 
         Assert.Null(descriptor);
@@ -104,7 +74,7 @@ public class SpaceDescriptorBuilderTests
     [Fact]
     public void Build_CachesResult()
     {
-        var builder = new SpaceDescriptorBuilder([typeof(ZigZagBreakoutStrategy).Assembly]);
+        var builder = new SpaceDescriptorBuilder([typeof(BuyAndHoldStrategy).Assembly]);
 
         var first = builder.Build();
         var second = builder.Build();

@@ -10,7 +10,7 @@ public sealed class DebugE2eTests(PlaywrightFixture fixture) : PlaywrightTestBas
         {
           "assetName": "BTCUSDT",
           "exchange": "Binance",
-          "strategyName": "ZigZagBreakout",
+          "strategyName": "BuyAndHold",
           "initialCash": 10000,
           "startTime": "2025-01-01T00:00:00Z",
           "endTime": "2025-01-05T00:00:00Z",

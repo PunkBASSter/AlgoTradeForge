@@ -48,7 +48,7 @@ public sealed class DebugEndpointsApiTests : ApiTestBase
 
         Assert.NotEqual(Guid.Empty, session.SessionId);
         Assert.Equal("BTCUSDT", session.AssetName);
-        Assert.Equal("ZigZagBreakout", session.StrategyName);
+        Assert.Equal("BuyAndHold", session.StrategyName);
 
         await CleanupSessionAsync(session.SessionId);
     }

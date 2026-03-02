@@ -1,6 +1,6 @@
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Space;
-using AlgoTradeForge.Domain.Strategy.ZigZagBreakout;
+using AlgoTradeForge.Domain.Strategy.BuyAndHold;
 using AlgoTradeForge.Infrastructure.Optimization;
 using Xunit;
 
@@ -13,22 +13,20 @@ public class OptimizationStrategyFactoryTests
 
     public OptimizationStrategyFactoryTests()
     {
-        _builder = new SpaceDescriptorBuilder([typeof(ZigZagBreakoutStrategy).Assembly]);
+        _builder = new SpaceDescriptorBuilder([typeof(BuyAndHoldStrategy).Assembly]);
         _factory = new OptimizationStrategyFactory(_builder);
     }
 
     [Fact]
     public void Create_WithDictionary_SetsParameters()
     {
-        var strategy = _factory.Create("ZigZagBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
+        var strategy = _factory.Create("BuyAndHold", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
         {
-            ["DzzDepth"] = 8m,
-            ["MinimumThreshold"] = 50L,
-            ["RiskPercentPerTrade"] = 2m
+            ["Quantity"] = 5m,
         });
 
         Assert.NotNull(strategy);
-        Assert.IsType<ZigZagBreakoutStrategy>(strategy);
+        Assert.IsType<BuyAndHoldStrategy>(strategy);
     }
 
     [Fact]
@@ -36,21 +34,19 @@ public class OptimizationStrategyFactoryTests
     {
         var combination = new ParameterCombination(new Dictionary<string, object>
         {
-            ["DzzDepth"] = 8m,
-            ["MinimumThreshold"] = 50L,
-            ["RiskPercentPerTrade"] = 2m
+            ["Quantity"] = 5m,
         });
 
-        var strategy = _factory.Create("ZigZagBreakout", combination);
+        var strategy = _factory.Create("BuyAndHold", combination);
 
         Assert.NotNull(strategy);
-        Assert.IsType<ZigZagBreakoutStrategy>(strategy);
+        Assert.IsType<BuyAndHoldStrategy>(strategy);
     }
 
     [Fact]
     public void Create_WithDefaults_UsesDefaultParamValues()
     {
-        var strategy = _factory.Create("ZigZagBreakout", PassthroughIndicatorFactory.Instance);
+        var strategy = _factory.Create("BuyAndHold", PassthroughIndicatorFactory.Instance);
         Assert.NotNull(strategy);
     }
 
@@ -68,26 +64,14 @@ public class OptimizationStrategyFactoryTests
     }
 
     [Fact]
-    public void Create_TypeConversion_DecimalToLong()
-    {
-        var combination = new ParameterCombination(new Dictionary<string, object>
-        {
-            ["MinimumThreshold"] = 50m
-        });
-
-        var strategy = _factory.Create("ZigZagBreakout", combination);
-        Assert.NotNull(strategy);
-    }
-
-    [Fact]
     public void Create_WithDictionary_UnknownProperty_Throws()
     {
         var ex = Assert.Throws<ArgumentException>(() =>
-            _factory.Create("ZigZagBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
+            _factory.Create("BuyAndHold", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
             {
-                ["DzzDpeth"] = 8m // typo
+                ["Qantity"] = 8m // typo
             }));
-        Assert.Contains("DzzDpeth", ex.Message);
+        Assert.Contains("Qantity", ex.Message);
     }
 
     [Fact]
@@ -99,14 +83,14 @@ public class OptimizationStrategyFactoryTests
         });
 
         var ex = Assert.Throws<ArgumentException>(() =>
-            _factory.Create("ZigZagBreakout", combination));
+            _factory.Create("BuyAndHold", combination));
         Assert.Contains("Nonexistent", ex.Message);
     }
 
     [Fact]
     public void Create_DataSubscriptionsKey_SilentlySkipped()
     {
-        var strategy = _factory.Create("ZigZagBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
+        var strategy = _factory.Create("BuyAndHold", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
         {
             ["DataSubscriptions"] = new object()
         });
