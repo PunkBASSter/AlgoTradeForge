@@ -60,8 +60,6 @@ public sealed class RunOptimizationCommandHandler(
         var descriptor = spaceProvider.GetDescriptor(command.StrategyName)
             ?? throw new ArgumentException($"Strategy '{command.StrategyName}' not found.");
 
-        var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes);
-
         var dataSubs = command.DataSubscriptions;
         if (dataSubs is null or { Count: 0 })
             throw new ArgumentException("At least one DataSubscription must be provided.");
@@ -86,6 +84,9 @@ public sealed class RunOptimizationCommandHandler(
             var key = $"{sub.Asset}|{sub.TimeFrame}";
             dataCache[key] = (asset, series);
         }
+
+        var primaryAsset = resolvedSubscriptions[0].Asset;
+        var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes, primaryAsset.TickSize);
 
         if (resolvedSubscriptions.Count > 1)
         {

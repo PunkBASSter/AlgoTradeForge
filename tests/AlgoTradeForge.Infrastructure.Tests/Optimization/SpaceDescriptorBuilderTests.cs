@@ -40,13 +40,15 @@ public class SpaceDescriptorBuilderTests
         Assert.Equal(typeof(decimal), dzzAxis.ClrType);
 
         var thresholdAxis = numericAxes.Single(a => a.Name == "MinimumThreshold");
-        Assert.Equal(5_000m, thresholdAxis.Min);
-        Assert.Equal(50_000m, thresholdAxis.Max);
+        Assert.Equal(50m, thresholdAxis.Min);
+        Assert.Equal(500m, thresholdAxis.Max);
         Assert.Equal(typeof(long), thresholdAxis.ClrType);
+        Assert.Equal(ParamUnit.QuoteAsset, thresholdAxis.Unit);
 
         var riskAxis = numericAxes.Single(a => a.Name == "RiskPercentPerTrade");
         Assert.Equal(0.5m, riskAxis.Min);
         Assert.Equal(3m, riskAxis.Max);
+        Assert.Equal(ParamUnit.Raw, riskAxis.Unit);
 
         var atrPeriodAxis = numericAxes.Single(a => a.Name == "AtrPeriod");
         Assert.Equal(5m, atrPeriodAxis.Min);
@@ -54,11 +56,13 @@ public class SpaceDescriptorBuilderTests
 
         var atrMinAxis = numericAxes.Single(a => a.Name == "AtrMin");
         Assert.Equal(0m, atrMinAxis.Min);
-        Assert.Equal(5_000m, atrMinAxis.Max);
+        Assert.Equal(50m, atrMinAxis.Max);
+        Assert.Equal(ParamUnit.QuoteAsset, atrMinAxis.Unit);
 
         var atrMaxAxis = numericAxes.Single(a => a.Name == "AtrMax");
         Assert.Equal(0m, atrMaxAxis.Min);
-        Assert.Equal(50_000m, atrMaxAxis.Max);
+        Assert.Equal(500m, atrMaxAxis.Max);
+        Assert.Equal(ParamUnit.QuoteAsset, atrMaxAxis.Unit);
     }
 
     [Fact]

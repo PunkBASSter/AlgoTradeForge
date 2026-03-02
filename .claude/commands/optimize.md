@@ -38,11 +38,37 @@ Extract these from the user input (defaults shown in parentheses):
 
 Multiple subscriptions can be specified by the user (e.g. "BTCUSDT H1 and ETHUSDT H1").
 
-**Optimization axes** control which parameters to sweep. Three override formats are supported:
+**Optimization axes** control which parameters to sweep. Four override formats are supported:
 
 - **Range**: `{ "min": 1, "max": 10, "step": 1 }` — sweep from min to max
 - **Fixed**: `{ "fixed": 5 }` — lock to a single value
 - **Discrete set**: `{ "values": [1, 3, 5, 10] }` — try specific values
+- **Module choice**: `{ "variants": { "VariantA": { ... }, "VariantB": { ... } } }` — sweep pluggable module variants
+
+**Module-dependent parameters** — Strategy params can contain `[OptimizableModule]` slots (e.g., `ExitModule`, `TrendFilter`). Each module slot has multiple registered variants, and each variant has its own sub-parameters. Key behavior:
+
+- Parameters are **variant-scoped**: when variant A is selected for a trial, only A's sub-parameters are present. Variant B's parameters do not exist in that trial, and vice versa.
+- Variants are **additive** across the module slot: if A has 6 sub-combos and B has 3, the module slot contributes 6 + 3 = 9 trials (not 18).
+- Sub-parameters use the same override formats (range, fixed, discrete set). Nested module slots are supported recursively.
+- Only variants listed in the request are included. Omitting a variant excludes it entirely.
+
+Module choice JSON format:
+
+```json
+"ExitModule": {
+  "variants": {
+    "AtrExit": {
+      "Multiplier": { "min": 2.0, "max": 3.0, "step": 0.5 },
+      "Period": { "min": 14, "max": 28, "step": 7 }
+    },
+    "FibTp": {
+      "Level": { "fixed": 0.5 }
+    }
+  }
+}
+```
+
+In results, module parameters appear as nested objects: `ExitModule=AtrExit(Multiplier=2.5, Period=14)`.
 
 If the user doesn't specify axes, use the strategy's default ranges below.
 
@@ -121,6 +147,40 @@ curl -s -X POST https://localhost:55908/api/optimizations/ \
 }
 ```
 
+**Payload with module slots** (when the strategy has `[OptimizableModule]` properties):
+
+```json
+{
+  "strategyName": "ZigZagBreakout",
+  "dataSubscriptions": [
+    { "asset": "BTCUSDT", "exchange": "Binance", "timeFrame": "01:00:00" }
+  ],
+  "optimizationAxes": {
+    "DzzDepth": { "min": 3, "max": 10, "step": 1 },
+    "RiskPercentPerTrade": { "fixed": 1.0 },
+    "ExitModule": {
+      "variants": {
+        "AtrExit": {
+          "Multiplier": { "min": 1.5, "max": 3.0, "step": 0.5 },
+          "Period": { "min": 14, "max": 28, "step": 7 }
+        },
+        "FibTp": {
+          "Level": { "min": 0.382, "max": 0.786, "step": 0.202 }
+        }
+      }
+    }
+  },
+  "initialCash": 10000,
+  "startTime": "2024-01-01T00:00:00Z",
+  "endTime": "2026-01-31T23:59:59Z",
+  "commissionPerTrade": 3,
+  "slippageTicks": 1,
+  "maxDegreeOfParallelism": -1,
+  "maxCombinations": 100000,
+  "sortBy": "SharpeRatio"
+}
+```
+
 **Important:** Axis keys must be PascalCase (e.g. `DzzDepth`, not `dzzDepth`).
 
 **Submission response:** `{ "id": "<guid>", "totalCombinations": <long> }`
@@ -170,6 +230,7 @@ Top 10 Parameter Sets (by {sortBy}):
 ─────────────────────────────────────
 
 #1  DzzDepth={val}  MinimumThreshold={val}  RiskPercentPerTrade={val}
+    ExitModule=AtrExit(Multiplier=2.5, Period=14)
     Net Profit: ${netProfit}  |  Return: {totalReturnPct}%
     Sharpe: {sharpe}  |  Sortino: {sortino}  |  Max DD: {maxDD}%
     Trades: {totalTrades}  |  Win Rate: {winRate}%  |  PF: {profitFactor}

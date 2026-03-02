@@ -33,14 +33,14 @@ const BACKTEST_TEMPLATE: RunBacktestRequest = {
   commissionPerTrade: 0.001,
   slippageTicks: 2,
   timeFrame: "01:00:00",
-  strategyParameters: { DzzDepth: 5, MinimumThreshold: 10000, RiskPercentPerTrade: 1 },
+  strategyParameters: { DzzDepth: 5, MinimumThreshold: 10000, RiskPercentPerTrade: 1, AtrPeriod: 14, AtrMin: 0, AtrMax: 0 },
 };
 
 const OPTIMIZATION_TEMPLATE: RunOptimizationRequest = {
   strategyName: "ZigZagBreakout",
   optimizationAxes: {
     DzzDepth: { min: 1, max: 20, step: 0.5 },
-    MinimumThreshold: { min: 5000, max: 50000, step: 5000 },
+    MinimumThreshold: { min: 50, max: 500, step: 50 },
     RiskPercentPerTrade: { min: 0.5, max: 3, step: 0.5 },
   },
   dataSubscriptions: [

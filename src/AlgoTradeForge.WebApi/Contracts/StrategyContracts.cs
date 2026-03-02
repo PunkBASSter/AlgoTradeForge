@@ -15,6 +15,7 @@ public sealed record ParameterAxisResponse
     public decimal? Max { get; init; }
     public decimal? Step { get; init; }
     public string? ClrType { get; init; }
+    public string? Unit { get; init; }
     public List<ModuleVariantResponse>? Variants { get; init; }
 }
 

@@ -1,3 +1,5 @@
+using AlgoTradeForge.Domain.Optimization.Attributes;
+
 namespace AlgoTradeForge.Domain.Optimization.Space;
 
 public abstract record ParameterAxis(string Name);
@@ -7,7 +9,8 @@ public sealed record NumericRangeAxis(
     decimal Min,
     decimal Max,
     decimal Step,
-    Type ClrType) : ParameterAxis(Name);
+    Type ClrType,
+    ParamUnit Unit = ParamUnit.Raw) : ParameterAxis(Name);
 
 /// <summary>
 /// Axis with an explicit set of allowed values. Not yet emitted by the builder; serves as an extension point.

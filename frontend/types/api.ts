@@ -23,6 +23,7 @@ export interface ParameterAxisDescriptor {
   max?: number;
   step?: number;
   clrType?: string;
+  unit?: "quoteAsset";
   variants?: { typeKey: string; axes: ParameterAxisDescriptor[] }[];
 }
 

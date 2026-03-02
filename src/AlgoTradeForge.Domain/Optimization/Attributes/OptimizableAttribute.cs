@@ -10,4 +10,5 @@ public sealed class OptimizableAttribute : Attribute
     public double Min { get; init; }
     public double Max { get; init; }
     public double Step { get; init; }
+    public ParamUnit Unit { get; init; } = ParamUnit.Raw;
 }
