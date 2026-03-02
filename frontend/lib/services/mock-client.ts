@@ -206,6 +206,10 @@ export const mockClient: typeof import("./api-client").apiClient & {
     return { id, status: "Cancelled" };
   },
 
+  async deleteOptimization(_id: string): Promise<void> {
+    await delay();
+  },
+
   // --- Debug sessions ---
 
   async createDebugSession(

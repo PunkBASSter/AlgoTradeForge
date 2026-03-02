@@ -49,6 +49,13 @@ public static class OptimizationEndpoints
             .WithOpenApi()
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapDelete("/{id:guid}", DeleteOptimization)
+            .WithName("DeleteOptimization")
+            .WithSummary("Delete an optimization and all related runs")
+            .WithOpenApi()
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> RunOptimization(
@@ -168,6 +175,18 @@ public static class OptimizationEndpoints
             return Results.NotFound(new { error = $"Optimization with ID '{id}' not found." });
 
         return Results.Ok(MapToResponse(record));
+    }
+
+    private static async Task<IResult> DeleteOptimization(
+        Guid id,
+        ICommandHandler<DeleteOptimizationCommand, bool> handler,
+        CancellationToken ct)
+    {
+        var deleted = await handler.HandleAsync(new DeleteOptimizationCommand(id), ct);
+        if (!deleted)
+            return Results.NotFound(new { error = $"Optimization with ID '{id}' not found." });
+
+        return Results.NoContent();
     }
 
     private static OptimizationRunResponse MapToResponse(OptimizationRunRecord r) => new()
