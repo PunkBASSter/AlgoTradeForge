@@ -3,7 +3,8 @@
 // T048 - Optimization report page
 
 import React from "react";
-import { useOptimizationDetail } from "@/hooks/use-optimizations";
+import { useRouter } from "next/navigation";
+import { useOptimizationDetail, useDeleteOptimization } from "@/hooks/use-optimizations";
 import { OptimizationTrialsTable } from "@/components/features/report/optimization-trials-table";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -80,12 +81,22 @@ export default function OptimizationReportPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = React.use(params);
+  const router = useRouter();
 
   const {
     data: optimization,
     isLoading,
     error,
   } = useOptimizationDetail(id);
+
+  const deleteMutation = useDeleteOptimization();
+
+  const handleDelete = () => {
+    if (!confirm("Delete this optimization and all its trials? This cannot be undone.")) return;
+    deleteMutation.mutate(id, {
+      onSuccess: () => router.push("/"),
+    });
+  };
 
   if (error) {
     return (
@@ -114,21 +125,31 @@ export default function OptimizationReportPage({
 
   return (
     <div className="p-6 space-y-6">
-      {/* Title */}
-      <div>
-        <h1 className="text-xl font-bold text-text-primary">
-          Optimization: {optimization.strategyName}
-          <span className="ml-2 text-sm font-normal text-text-muted">
-            v{optimization.strategyVersion}
-          </span>
-        </h1>
-        <p className="text-sm text-text-secondary mt-1">
-          {optimization.assetName} / {optimization.exchange} /{" "}
-          {optimization.timeFrame}
-          {" -- "}
-          {new Date(optimization.dataStart).toLocaleDateString()} to{" "}
-          {new Date(optimization.dataEnd).toLocaleDateString()}
-        </p>
+      {/* Title + Delete */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-text-primary">
+            Optimization: {optimization.strategyName}
+            <span className="ml-2 text-sm font-normal text-text-muted">
+              v{optimization.strategyVersion}
+            </span>
+          </h1>
+          <p className="text-sm text-text-secondary mt-1">
+            {optimization.assetName} / {optimization.exchange} /{" "}
+            {optimization.timeFrame}
+            {" -- "}
+            {new Date(optimization.dataStart).toLocaleDateString()} to{" "}
+            {new Date(optimization.dataEnd).toLocaleDateString()}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleteMutation.isPending}
+          className="shrink-0 px-3 py-1.5 rounded-md text-sm font-medium bg-accent-red text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+        >
+          {deleteMutation.isPending ? "Deleting..." : "Delete"}
+        </button>
       </div>
 
       {/* Run Info */}

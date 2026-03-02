@@ -460,6 +460,48 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         return new PagedResult<OptimizationRunRecord>(results, totalCount);
     }
 
+    // ── Delete optimization (cascade) ───────────────────────────────────
+
+    public async Task<bool> DeleteOptimizationAsync(Guid id, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
+        using var tx = conn.BeginTransaction();
+
+        var idStr = id.ToString();
+
+        // Delete failed trial details
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "DELETE FROM optimization_failed_trials WHERE optimization_run_id = $id";
+            cmd.Parameters.AddWithValue("$id", idStr);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Delete child backtest runs
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "DELETE FROM backtest_runs WHERE optimization_run_id = $id";
+            cmd.Parameters.AddWithValue("$id", idStr);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Delete parent optimization run
+        int affected;
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "DELETE FROM optimization_runs WHERE id = $id";
+            cmd.Parameters.AddWithValue("$id", idStr);
+            affected = await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        tx.Commit();
+        return affected > 0;
+    }
+
     // ── Distinct strategy names ────────────────────────────────────────
 
     public async Task<IReadOnlyList<string>> GetDistinctStrategyNamesAsync(CancellationToken ct = default)

@@ -236,6 +236,13 @@ export const apiClient = {
     );
   },
 
+  async deleteOptimization(id: string): Promise<void> {
+    await requestVoid(
+      `/api/optimizations/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+  },
+
   // --- Debug sessions ---
 
   createDebugSession(

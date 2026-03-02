@@ -2,16 +2,22 @@
 
 ## Launch optimized but not overtrained Delta ZigZag Breakout to live on multiple (30+) assets: crypto, stocks, maybe FX, maybe FUT.
 
+## Strategy development
+- Add another strategy to the framework, maybe a simple mean reversion for trading in ranges
+- Add a strategy with a different logic, e.g. price patterns, volume patterns, market profile etc.
+
 ## Strategy modules
-  - Timing-based exit modules (close at eod, eow)
-  - Multi-order strategy module, **Order Groups**
-  - `Strategy-framework.md`
+- Timing-based exit modules (close at eod, eow)
+- Multi-order strategy module, **Order Groups**
+- `Strategy-framework.md`
 
 ## Optimization
-- Ability to make a cascade delete of optimization result and related runs
+- Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
+- Test optimization with pluggable modules
 - Walk Forward OPTI
 - Permutations test
 - Overfitting evaluation, effective param ranges
+- Implement other optimizers (genetic, bayesian, random search)
 
 ## Candle Ingestor
 Upd CandleIngestor - prepare for using on server: use DI, host as WebAPI for control with scheduling config; update partitioning - add TF in file names; add ingestors for stock data (alpha vantage, yahoo finance); ingest events metadata and add a scaling factor for splits;
