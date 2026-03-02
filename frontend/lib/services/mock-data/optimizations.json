@@ -8,6 +8,8 @@
       "completedAt": "2025-11-20T10:15:34Z",
       "durationMs": 934200,
       "totalCombinations": 48,
+      "filteredTrials": 12,
+      "failedTrials": 0,
       "sortBy": "sharpeRatio",
       "dataStart": "2025-01-01T00:00:00Z",
       "dataEnd": "2025-10-31T23:59:59Z",
@@ -18,6 +20,7 @@
       "assetName": "BTCUSDT",
       "exchange": "Binance",
       "timeFrame": "01:00:00",
+      "failedTrialDetails": [],
       "trials": [
         {
           "id": "bt-opt1-t1",
@@ -204,6 +207,8 @@
       "completedAt": "2026-01-10T14:22:11Z",
       "durationMs": 1331400,
       "totalCombinations": 72,
+      "filteredTrials": 8,
+      "failedTrials": 2,
       "sortBy": "netProfit",
       "dataStart": "2025-04-01T00:00:00Z",
       "dataEnd": "2025-12-31T23:59:59Z",
@@ -214,6 +219,15 @@
       "assetName": "ETHUSDT",
       "exchange": "Binance",
       "timeFrame": "01:00:00",
+      "failedTrialDetails": [
+        {
+          "exceptionType": "DivideByZeroException",
+          "exceptionMessage": "Attempted to divide by zero.",
+          "stackTrace": null,
+          "sampleParameters": { "rsiPeriod": 3, "overbought": 90, "oversold": 10 },
+          "occurrenceCount": 2
+        }
+      ],
       "trials": [
         {
           "id": "bt-opt2-t1",
@@ -365,6 +379,8 @@
       "completedAt": "2026-02-05T10:02:48Z",
       "durationMs": 1968200,
       "totalCombinations": 120,
+      "filteredTrials": 25,
+      "failedTrials": 0,
       "sortBy": "profitFactor",
       "dataStart": "2025-06-01T00:00:00Z",
       "dataEnd": "2026-01-31T23:59:59Z",
@@ -375,6 +391,7 @@
       "assetName": "SOLUSDT",
       "exchange": "Binance",
       "timeFrame": "00:15:00",
+      "failedTrialDetails": [],
       "trials": [
         {
           "id": "bt-opt3-t1",

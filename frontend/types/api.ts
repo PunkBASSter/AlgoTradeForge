@@ -79,6 +79,8 @@ export interface OptimizationRun {
   completedAt: string;
   durationMs: number;
   totalCombinations: number;
+  filteredTrials: number;
+  failedTrials: number;
   sortBy: string;
   dataStart: string;
   dataEnd: string;
@@ -90,6 +92,15 @@ export interface OptimizationRun {
   exchange: string;
   timeFrame: string;
   trials: BacktestRun[];
+  failedTrialDetails: FailedTrialDetail[];
+}
+
+export interface FailedTrialDetail {
+  exceptionType: string;
+  exceptionMessage: string;
+  stackTrace?: string | null;
+  sampleParameters: Record<string, unknown>;
+  occurrenceCount: number;
 }
 
 // ---------------------------------------------------------------------------

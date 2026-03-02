@@ -3,14 +3,16 @@
 ## Launch optimized but not overtrained Delta ZigZag Breakout to live on multiple (30+) assets: crypto, stocks, maybe FX, maybe FUT.
 
 ## Strategy modules
-  - ATR-based volatility filters
+  - ATR-based
   - Timing-based exit modules (close at eod, eow)
-  - Trend filters
   - Multi-order strategy module, **Order Groups**
   - `Strategy-framework.md`
 
 ## Optimization
-- TEST OPTIMIZATION: On 97k hangs after 40k and: Failed to fetch status: signal is aborted without reason -- investigate
+- Price format consistency in optimization, backtest parameters. Monetary numbers in domain is long, but for user should be decimal or double. In which format is the data for optimization attributes?
+- Module-dependent parameters for optimization: are accounted only when the relevant module is included but are presented in the request?
+- Ability to make a cascade delete of optimization result and deleted runs
+- Display optimization trials statistics instead of raw json with params 
 - Walk Forward OPTI
 - Permutations test
 - Overfitting evaluation, effective param ranges

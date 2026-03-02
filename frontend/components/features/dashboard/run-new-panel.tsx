@@ -53,11 +53,11 @@ const OPTIMIZATION_TEMPLATE: RunOptimizationRequest = {
   slippageTicks: 2,
   sortBy: "sortinoRatio",
   maxTrialsToKeep: 10000,
-  minProfitFactor: 1.2,
-  maxDrawdownPct: 40.0,
-  minSharpeRatio: 0.5,
-  minSortinoRatio: 0.5,
-  minAnnualizedReturnPct: 2.0,
+  minProfitFactor: 0.5,
+  maxDrawdownPct: 95.0,
+  minSharpeRatio: -5.0,
+  minSortinoRatio: -5.0,
+  minAnnualizedReturnPct: -100.0,
 };
 
 function buildAxisOverride(axis: ParameterAxisDescriptor): OptimizationAxisOverride {

@@ -552,14 +552,14 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         Trials = [], // loaded separately
     };
 
-    private static string GetTrialOrderByClause(string sortBy) => sortBy switch
+    private static string GetTrialOrderByClause(string sortBy) => sortBy.ToLowerInvariant() switch
     {
-        "SharpeRatio"    => " ORDER BY json_extract(metrics_json, '$.sharpeRatio') DESC",
-        "NetProfit"      => " ORDER BY json_extract(metrics_json, '$.netProfit') DESC",
-        "SortinoRatio"   => " ORDER BY json_extract(metrics_json, '$.sortinoRatio') DESC",
-        "ProfitFactor"   => " ORDER BY json_extract(metrics_json, '$.profitFactor') DESC",
-        "WinRatePct"     => " ORDER BY json_extract(metrics_json, '$.winRatePct') DESC",
-        "MaxDrawdownPct" => " ORDER BY json_extract(metrics_json, '$.maxDrawdownPct') ASC",
+        "sharperatio"    => " ORDER BY json_extract(metrics_json, '$.sharpeRatio') DESC",
+        "netprofit"      => " ORDER BY json_extract(metrics_json, '$.netProfit') DESC",
+        "sortinoratio"   => " ORDER BY json_extract(metrics_json, '$.sortinoRatio') DESC",
+        "profitfactor"   => " ORDER BY json_extract(metrics_json, '$.profitFactor') DESC",
+        "winratepct"     => " ORDER BY json_extract(metrics_json, '$.winRatePct') DESC",
+        "maxdrawdownpct" => " ORDER BY json_extract(metrics_json, '$.maxDrawdownPct') ASC",
         _                => " ORDER BY json_extract(metrics_json, '$.sharpeRatio') DESC",
     };
 
