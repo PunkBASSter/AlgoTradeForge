@@ -9,7 +9,6 @@
 
 ## Optimization
 - Ability to make a cascade delete of optimization result and related runs
-- Display optimization trials statistics instead of raw json with params (reuse the same view as on backtest tab for listing trials of an optimization)
 - Walk Forward OPTI
 - Permutations test
 - Overfitting evaluation, effective param ranges
