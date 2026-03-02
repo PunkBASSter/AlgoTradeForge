@@ -248,13 +248,13 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                     started_at, completed_at, duration_ms, total_combinations,
                     sort_by, data_start, data_end,
                     initial_cash, commission, slippage_ticks, max_parallelism,
-                    asset_name, exchange, timeframe
+                    asset_name, exchange, timeframe, filtered_trials, failed_trials
                 ) VALUES (
                     $id, $stratName, $stratVer,
                     $startedAt, $completedAt, $durationMs, $totalCombinations,
                     $sortBy, $dataStart, $dataEnd,
                     $cash, $commission, $slippage, $maxParallelism,
-                    $asset, $exchange, $tf
+                    $asset, $exchange, $tf, $filteredTrials, $failedTrials
                 )
                 """;
 
@@ -275,6 +275,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             cmd.Parameters.AddWithValue("$asset", record.AssetName);
             cmd.Parameters.AddWithValue("$exchange", record.Exchange);
             cmd.Parameters.AddWithValue("$tf", record.TimeFrame);
+            cmd.Parameters.AddWithValue("$filteredTrials", record.FilteredTrials);
+            cmd.Parameters.AddWithValue("$failedTrials", record.FailedTrials);
 
             await cmd.ExecuteNonQueryAsync(ct);
         }
@@ -285,7 +287,39 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             await InsertBacktestRunAsync(conn, tx, trial, ct);
         }
 
+        // Insert failed trial details
+        foreach (var failure in record.FailedTrialDetails)
+        {
+            await InsertFailedTrialAsync(conn, tx, failure, ct);
+        }
+
         tx.Commit();
+    }
+
+    private static async Task InsertFailedTrialAsync(
+        SqliteConnection conn, SqliteTransaction tx, FailedTrialRecord r, CancellationToken ct)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = """
+            INSERT INTO optimization_failed_trials (
+                id, optimization_run_id, exception_type, exception_message,
+                stack_trace, sample_parameters_json, occurrence_count
+            ) VALUES (
+                $id, $optId, $exType, $exMsg,
+                $stack, $paramsJson, $count
+            )
+            """;
+
+        cmd.Parameters.AddWithValue("$id", r.Id.ToString());
+        cmd.Parameters.AddWithValue("$optId", r.OptimizationRunId.ToString());
+        cmd.Parameters.AddWithValue("$exType", r.ExceptionType);
+        cmd.Parameters.AddWithValue("$exMsg", r.ExceptionMessage);
+        cmd.Parameters.AddWithValue("$stack", r.StackTrace);
+        cmd.Parameters.AddWithValue("$paramsJson", JsonSerializer.Serialize(r.SampleParameters, JsonOptions));
+        cmd.Parameters.AddWithValue("$count", r.OccurrenceCount);
+
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     // ── Get optimization by ID ─────────────────────────────────────────
@@ -309,20 +343,48 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             record = ReadOptimizationRun(reader);
         }
 
-        // Load child trials
+        // Load child trials sorted by the optimization's sort metric
         var trials = new List<BacktestRunRecord>();
         await using (var trialCmd = conn.CreateCommand())
         {
-            trialCmd.CommandText = "SELECT * FROM backtest_runs WHERE optimization_run_id = $optId";
+            var orderClause = GetTrialOrderByClause(record.SortBy);
+            trialCmd.CommandText = $"SELECT * FROM backtest_runs WHERE optimization_run_id = $optId{orderClause}";
             trialCmd.Parameters.AddWithValue("$optId", id.ToString());
 
             await using var trialReader = await trialCmd.ExecuteReaderAsync(ct);
             while (await trialReader.ReadAsync(ct))
-                trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: true));
+                trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: false));
         }
 
-        return record with { Trials = trials };
+        // Load failed trial details
+        var failedDetails = new List<FailedTrialRecord>();
+        await using (var failedCmd = conn.CreateCommand())
+        {
+            failedCmd.CommandText = """
+                SELECT * FROM optimization_failed_trials
+                WHERE optimization_run_id = $optId
+                ORDER BY occurrence_count DESC
+                """;
+            failedCmd.Parameters.AddWithValue("$optId", id.ToString());
+
+            await using var failedReader = await failedCmd.ExecuteReaderAsync(ct);
+            while (await failedReader.ReadAsync(ct))
+                failedDetails.Add(ReadFailedTrial(failedReader));
+        }
+
+        return record with { Trials = trials, FailedTrialDetails = failedDetails };
     }
+
+    private static FailedTrialRecord ReadFailedTrial(DbDataReader reader) => new()
+    {
+        Id = Guid.Parse(reader.GetString(reader.GetOrdinal("id"))),
+        OptimizationRunId = Guid.Parse(reader.GetString(reader.GetOrdinal("optimization_run_id"))),
+        ExceptionType = reader.GetString(reader.GetOrdinal("exception_type")),
+        ExceptionMessage = reader.GetString(reader.GetOrdinal("exception_message")),
+        StackTrace = reader.GetString(reader.GetOrdinal("stack_trace")),
+        SampleParameters = DeserializeParameters(reader.GetString(reader.GetOrdinal("sample_parameters_json"))),
+        OccurrenceCount = reader.GetInt64(reader.GetOrdinal("occurrence_count")),
+    };
 
     // ── Query optimizations ────────────────────────────────────────────
 
@@ -485,7 +547,20 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
         Exchange = reader.GetString(reader.GetOrdinal("exchange")),
         TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
+        FilteredTrials = reader.GetInt64(reader.GetOrdinal("filtered_trials")),
+        FailedTrials = reader.GetInt64(reader.GetOrdinal("failed_trials")),
         Trials = [], // loaded separately
+    };
+
+    private static string GetTrialOrderByClause(string sortBy) => sortBy.ToLowerInvariant() switch
+    {
+        "sharperatio"    => " ORDER BY json_extract(metrics_json, '$.sharpeRatio') DESC",
+        "netprofit"      => " ORDER BY json_extract(metrics_json, '$.netProfit') DESC",
+        "sortinoratio"   => " ORDER BY json_extract(metrics_json, '$.sortinoRatio') DESC",
+        "profitfactor"   => " ORDER BY json_extract(metrics_json, '$.profitFactor') DESC",
+        "winratepct"     => " ORDER BY json_extract(metrics_json, '$.winRatePct') DESC",
+        "maxdrawdownpct" => " ORDER BY json_extract(metrics_json, '$.maxDrawdownPct') ASC",
+        _                => " ORDER BY json_extract(metrics_json, '$.sharpeRatio') DESC",
     };
 
     private static string SerializeEquityCurve(IReadOnlyList<EquityPoint> curve)

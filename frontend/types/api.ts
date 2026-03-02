@@ -23,6 +23,7 @@ export interface ParameterAxisDescriptor {
   max?: number;
   step?: number;
   clrType?: string;
+  unit?: "quoteAsset";
   variants?: { typeKey: string; axes: ParameterAxisDescriptor[] }[];
 }
 
@@ -79,6 +80,8 @@ export interface OptimizationRun {
   completedAt: string;
   durationMs: number;
   totalCombinations: number;
+  filteredTrials: number;
+  failedTrials: number;
   sortBy: string;
   dataStart: string;
   dataEnd: string;
@@ -90,6 +93,15 @@ export interface OptimizationRun {
   exchange: string;
   timeFrame: string;
   trials: BacktestRun[];
+  failedTrialDetails: FailedTrialDetail[];
+}
+
+export interface FailedTrialDetail {
+  exceptionType: string;
+  exceptionMessage: string;
+  stackTrace?: string | null;
+  sampleParameters: Record<string, unknown>;
+  occurrenceCount: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +239,12 @@ export interface RunOptimizationRequest {
   maxDegreeOfParallelism?: number;
   maxCombinations?: number;
   sortBy?: string;
+  maxTrialsToKeep?: number;
+  minProfitFactor?: number | null;
+  maxDrawdownPct?: number | null;
+  minSharpeRatio?: number | null;
+  minSortinoRatio?: number | null;
+  minAnnualizedReturnPct?: number | null;
 }
 
 export type OptimizationAxisOverride =

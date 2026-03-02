@@ -16,16 +16,17 @@ import type { StartDebugSessionRequest, StrategyDescriptor } from "@/types/api";
 const DEFAULT_CONFIG: StartDebugSessionRequest = {
   assetName: "BTCUSDT",
   exchange: "Binance",
-  strategyName: "SmaCrossover",
+  strategyName: "ZigZagBreakout",
   initialCash: 10000,
   startTime: "2025-01-01T00:00:00Z",
   endTime: "2025-12-31T23:59:59Z",
   commissionPerTrade: 0.001,
   slippageTicks: 2,
-  timeFrame: "00:15:00",
+  timeFrame: "01:00:00",
   strategyParameters: {
-    fastPeriod: 10,
-    slowPeriod: 30,
+    DzzDepth: 5,
+    MinimumThreshold: 10000,
+    RiskPercentPerTrade: 1,
   },
 };
 

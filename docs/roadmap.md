@@ -3,13 +3,12 @@
 ## Launch optimized but not overtrained Delta ZigZag Breakout to live on multiple (30+) assets: crypto, stocks, maybe FX, maybe FUT.
 
 ## Strategy modules
-  - ATR-based volatility filters
   - Timing-based exit modules (close at eod, eow)
-  - Trend filters
   - Multi-order strategy module, **Order Groups**
+  - `Strategy-framework.md`
 
 ## Optimization
-- TEST OPTIMIZATION as is
+- Ability to make a cascade delete of optimization result and related runs
 - Walk Forward OPTI
 - Permutations test
 - Overfitting evaluation, effective param ranges

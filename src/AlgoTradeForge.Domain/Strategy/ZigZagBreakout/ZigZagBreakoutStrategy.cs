@@ -8,9 +8,10 @@ namespace AlgoTradeForge.Domain.Strategy.ZigZagBreakout;
 [StrategyKey("ZigZagBreakout")]
 public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters, IIndicatorFactory? indicators = null) : StrategyBase<ZigZagBreakoutParams>(parameters, indicators)
 {
-    public override string Version => "1.0.0";
+    public override string Version => "1.1.0";
 
     private IIndicator<Int64Bar, long> _dzz = null!;
+    private IIndicator<Int64Bar, long> _atr = null!;
     private readonly List<Int64Bar> _barHistory = [];
 
     private long? _pendingOrderId;
@@ -20,15 +21,23 @@ public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters, IInd
     public override void OnInit()
     {
         _dzz = Indicators.Create(new DeltaZigZag(Params.DzzDepth / 10m, Params.MinimumThreshold), DataSubscriptions[0]);
+        _atr = Indicators.Create(new Atr(Params.AtrPeriod), DataSubscriptions[0]);
     }
 
     public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
     {
         _barHistory.Add(bar);
         _dzz.Compute(_barHistory);
+        _atr.Compute(_barHistory);
 
         if (_isInPosition)
             return;
+
+        if (!IsVolatilityAllowed())
+        {
+            CancelPending(orders);
+            return;
+        }
 
         var values = _dzz.Buffers["Value"];
         var recentStart = Math.Max(0, values.Count - 20);
@@ -111,6 +120,25 @@ public sealed class ZigZagBreakoutStrategy(ZigZagBreakoutParams parameters, IInd
             // Exit fill (SL or TP)
             _isInPosition = false;
         }
+    }
+
+    private bool IsVolatilityAllowed()
+    {
+        var values = _atr.Buffers["Value"];
+        if (values.Count == 0)
+            return false;
+
+        var currentAtr = values[^1];
+        if (currentAtr == 0)
+            return false;
+
+        if (Params.AtrMin > 0 && currentAtr < Params.AtrMin)
+            return false;
+
+        if (Params.AtrMax > 0 && currentAtr > Params.AtrMax)
+            return false;
+
+        return true;
     }
 
     private void CancelPending(IOrderContext orders)

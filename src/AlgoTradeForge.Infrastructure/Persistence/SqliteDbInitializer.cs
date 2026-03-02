@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 3;
+    private const int CurrentVersion = 5;
 
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -30,7 +30,9 @@ internal static class SqliteDbInitializer
             max_parallelism     INTEGER NOT NULL,
             asset_name          TEXT    NOT NULL,
             exchange            TEXT    NOT NULL,
-            timeframe           TEXT    NOT NULL
+            timeframe           TEXT    NOT NULL,
+            filtered_trials     INTEGER NOT NULL DEFAULT 0,
+            failed_trials       INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS backtest_runs (
@@ -64,11 +66,40 @@ internal static class SqliteDbInitializer
         CREATE INDEX IF NOT EXISTS ix_br_opt_id ON backtest_runs(optimization_run_id);
         CREATE INDEX IF NOT EXISTS ix_br_asset ON backtest_runs(asset_name, exchange, timeframe);
         CREATE INDEX IF NOT EXISTS ix_opr_asset ON optimization_runs(asset_name, exchange, timeframe);
+
+        CREATE TABLE IF NOT EXISTS optimization_failed_trials (
+            id                     TEXT    NOT NULL PRIMARY KEY,
+            optimization_run_id    TEXT    NOT NULL REFERENCES optimization_runs(id),
+            exception_type         TEXT    NOT NULL,
+            exception_message      TEXT    NOT NULL,
+            stack_trace            TEXT    NOT NULL,
+            sample_parameters_json TEXT    NOT NULL,
+            occurrence_count       INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_oft_opt_id ON optimization_failed_trials(optimization_run_id);
         """;
 
     private const string MigrationV3 = """
         ALTER TABLE backtest_runs ADD COLUMN error_message TEXT NULL;
         ALTER TABLE backtest_runs ADD COLUMN error_stack_trace TEXT NULL;
+        """;
+
+    private const string MigrationV4 = """
+        ALTER TABLE optimization_runs ADD COLUMN filtered_trials INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE optimization_runs ADD COLUMN failed_trials INTEGER NOT NULL DEFAULT 0;
+        """;
+
+    private const string MigrationV5 = """
+        CREATE TABLE IF NOT EXISTS optimization_failed_trials (
+            id                     TEXT    NOT NULL PRIMARY KEY,
+            optimization_run_id    TEXT    NOT NULL REFERENCES optimization_runs(id),
+            exception_type         TEXT    NOT NULL,
+            exception_message      TEXT    NOT NULL,
+            stack_trace            TEXT    NOT NULL,
+            sample_parameters_json TEXT    NOT NULL,
+            occurrence_count       INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_oft_opt_id ON optimization_failed_trials(optimization_run_id);
         """;
 
     public static async Task EnsureCreatedAsync(string connectionString)
@@ -97,6 +128,22 @@ internal static class SqliteDbInitializer
             migrateCmd.CommandText = MigrationV3;
             await migrateCmd.ExecuteNonQueryAsync();
             await SetVersionAsync(connection, 3);
+        }
+
+        if (currentVersion < 4)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV4;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 4);
+        }
+
+        if (currentVersion < 5)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV5;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 5);
         }
     }
 

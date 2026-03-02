@@ -62,6 +62,7 @@ public class ZigZagBreakoutStrategyTests
             DzzDepth = 5m, // delta = 0.5
             MinimumThreshold = 50L,
             RiskPercentPerTrade = riskPct,
+            AtrPeriod = 3, // Low period so ATR warms up within test bar count
             DataSubscriptions = [sub],
         });
     }

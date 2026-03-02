@@ -1,6 +1,7 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Strategies;
+using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.WebApi.Contracts;
 
@@ -60,6 +61,7 @@ public static class StrategyEndpoints
             Max = n.Max,
             Step = n.Step,
             ClrType = MapClrTypeName(n.ClrType),
+            Unit = n.Unit == ParamUnit.Raw ? null : n.Unit.ToString().ToLowerInvariant(),
         },
         ModuleSlotAxis m => new ParameterAxisResponse
         {

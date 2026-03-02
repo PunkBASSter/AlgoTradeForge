@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Optimization.Space;
 
 namespace AlgoTradeForge.Application.Optimization;
@@ -6,7 +7,8 @@ public sealed class OptimizationAxisResolver
 {
     public IReadOnlyList<ResolvedAxis> Resolve(
         IOptimizationSpaceDescriptor descriptor,
-        Dictionary<string, OptimizationAxisOverride>? overrides)
+        Dictionary<string, OptimizationAxisOverride>? overrides,
+        decimal? tickSize = null)
     {
         var resolved = new List<ResolvedAxis>();
 
@@ -17,9 +19,9 @@ public sealed class OptimizationAxisResolver
 
             resolved.Add(axis switch
             {
-                NumericRangeAxis numeric => ResolveNumeric(numeric, axisOverride),
+                NumericRangeAxis numeric => ResolveNumeric(numeric, axisOverride, tickSize),
                 DiscreteSetAxis discrete => ResolveDiscrete(discrete, axisOverride),
-                ModuleSlotAxis module => ResolveModuleSlot(module, axisOverride),
+                ModuleSlotAxis module => ResolveModuleSlot(module, axisOverride, tickSize),
                 _ => throw new InvalidOperationException($"Unknown axis type: {axis.GetType().Name}")
             });
         }
@@ -30,8 +32,23 @@ public sealed class OptimizationAxisResolver
         return resolved;
     }
 
-    private static ResolvedAxis ResolveNumeric(NumericRangeAxis axis, OptimizationAxisOverride? axisOverride)
+    private static decimal GetScaleFactor(NumericRangeAxis axis, decimal? tickSize)
     {
+        if (axis.Unit != ParamUnit.QuoteAsset)
+            return 1m;
+
+        if (tickSize is null or <= 0m)
+            throw new InvalidOperationException(
+                $"Axis '{axis.Name}' has Unit=QuoteAsset but no tickSize was provided.");
+
+        return 1m / tickSize.Value;
+    }
+
+    private static ResolvedAxis ResolveNumeric(
+        NumericRangeAxis axis, OptimizationAxisOverride? axisOverride, decimal? tickSize)
+    {
+        var scaleFactor = GetScaleFactor(axis, tickSize);
+
         switch (axisOverride)
         {
             case null:
@@ -40,9 +57,9 @@ public sealed class OptimizationAxisResolver
 
             case FixedOverride fix:
             {
-                var fixedValue = ConvertNumeric(fix.Value, axis.ClrType);
-                var decimalVal = Convert.ToDecimal(fixedValue);
+                var decimalVal = Convert.ToDecimal(fix.Value);
                 ValidateWithinBounds(axis, decimalVal, decimalVal);
+                var fixedValue = ConvertNumeric(decimalVal * scaleFactor, axis.ClrType);
                 return new ResolvedNumericAxis(axis.Name, [fixedValue]);
             }
 
@@ -52,20 +69,18 @@ public sealed class OptimizationAxisResolver
                 if (range.Step <= 0)
                     throw new ArgumentException($"Step for '{axis.Name}' must be positive.");
 
-                var values = ExpandRange(range.Min, range.Max, range.Step, axis.ClrType);
+                var values = ExpandRange(range.Min, range.Max, range.Step, scaleFactor, axis.ClrType);
                 return new ResolvedNumericAxis(axis.Name, values);
             }
 
             case DiscreteSetOverride discrete:
             {
-                var converted = discrete.Values
-                    .Select(v => ConvertNumeric(v, axis.ClrType))
-                    .ToList();
-
-                foreach (var v in converted)
+                var converted = new List<object>();
+                foreach (var v in discrete.Values)
                 {
                     var d = Convert.ToDecimal(v);
                     ValidateWithinBounds(axis, d, d);
+                    converted.Add(ConvertNumeric(d * scaleFactor, axis.ClrType));
                 }
 
                 return new ResolvedNumericAxis(axis.Name, converted);
@@ -90,7 +105,7 @@ public sealed class OptimizationAxisResolver
     }
 
     private static ResolvedAxis ResolveModuleSlot(
-        ModuleSlotAxis axis, OptimizationAxisOverride? axisOverride)
+        ModuleSlotAxis axis, OptimizationAxisOverride? axisOverride, decimal? tickSize)
     {
         if (axisOverride is null)
         {
@@ -111,7 +126,7 @@ public sealed class OptimizationAxisResolver
                 throw new ArgumentException(
                     $"Unknown module variant '{variantKey}' for slot '{axis.Name}'.");
 
-            var subAxes = ResolveSubAxes(variantDesc.Axes, subOverrides);
+            var subAxes = ResolveSubAxes(variantDesc.Axes, subOverrides, tickSize);
             resolvedVariants.Add(new ResolvedModuleVariant(variantKey, subAxes));
         }
 
@@ -120,7 +135,8 @@ public sealed class OptimizationAxisResolver
 
     private static IReadOnlyList<ResolvedAxis> ResolveSubAxes(
         IReadOnlyList<ParameterAxis> axes,
-        Dictionary<string, OptimizationAxisOverride>? overrides)
+        Dictionary<string, OptimizationAxisOverride>? overrides,
+        decimal? tickSize)
     {
         var resolved = new List<ResolvedAxis>();
 
@@ -131,9 +147,9 @@ public sealed class OptimizationAxisResolver
 
             resolved.Add(axis switch
             {
-                NumericRangeAxis numeric => ResolveNumeric(numeric, axisOverride),
+                NumericRangeAxis numeric => ResolveNumeric(numeric, axisOverride, tickSize),
                 DiscreteSetAxis discrete => ResolveDiscrete(discrete, axisOverride),
-                ModuleSlotAxis module => ResolveModuleSlot(module, axisOverride),
+                ModuleSlotAxis module => ResolveModuleSlot(module, axisOverride, tickSize),
                 _ => throw new InvalidOperationException($"Unknown axis type in module: {axis.GetType().Name}")
             });
         }
@@ -172,12 +188,13 @@ public sealed class OptimizationAxisResolver
                 $"Min value {min} for '{axis.Name}' exceeds max value {max}.");
     }
 
-    private static IReadOnlyList<object> ExpandRange(decimal min, decimal max, decimal step, Type clrType)
+    private static IReadOnlyList<object> ExpandRange(
+        decimal min, decimal max, decimal step, decimal scaleFactor, Type clrType)
     {
         var values = new List<object>();
         for (var i = 0; min + i * step <= max; i++)
         {
-            values.Add(ConvertNumeric(min + i * step, clrType));
+            values.Add(ConvertNumeric((min + i * step) * scaleFactor, clrType));
         }
 
         return values;

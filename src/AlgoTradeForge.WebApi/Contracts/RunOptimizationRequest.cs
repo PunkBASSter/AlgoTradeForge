@@ -21,6 +21,12 @@ public sealed record RunOptimizationRequest
     public int MaxDegreeOfParallelism { get; init; } = -1;
     public long MaxCombinations { get; init; } = 100_000;
     public string SortBy { get; init; } = MetricNames.Default;
+    public int MaxTrialsToKeep { get; init; } = 10_000;
+    public double? MinProfitFactor { get; init; }
+    public double? MaxDrawdownPct { get; init; }
+    public double? MinSharpeRatio { get; init; }
+    public double? MinSortinoRatio { get; init; }
+    public double? MinAnnualizedReturnPct { get; init; }
 }
 
 public sealed class OptimizationAxesConverter : JsonConverter<Dictionary<string, OptimizationAxisOverride>>

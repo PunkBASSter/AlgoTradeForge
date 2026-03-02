@@ -58,6 +58,15 @@ public static class MetricsMapping
     };
 }
 
+public sealed record FailedTrialResponse
+{
+    public required string ExceptionType { get; init; }
+    public required string ExceptionMessage { get; init; }
+    public string? StackTrace { get; init; }
+    public required Dictionary<string, object> SampleParameters { get; init; }
+    public required long OccurrenceCount { get; init; }
+}
+
 public sealed record OptimizationRunResponse
 {
     public required Guid Id { get; init; }
@@ -67,6 +76,8 @@ public sealed record OptimizationRunResponse
     public required DateTimeOffset CompletedAt { get; init; }
     public required long DurationMs { get; init; }
     public required long TotalCombinations { get; init; }
+    public long FilteredTrials { get; init; }
+    public long FailedTrials { get; init; }
     public required string SortBy { get; init; }
     public required DateTimeOffset DataStart { get; init; }
     public required DateTimeOffset DataEnd { get; init; }
@@ -78,4 +89,5 @@ public sealed record OptimizationRunResponse
     public required string Exchange { get; init; }
     public required string TimeFrame { get; init; }
     public required List<BacktestRunResponse> Trials { get; init; }
+    public List<FailedTrialResponse> FailedTrialDetails { get; init; } = [];
 }

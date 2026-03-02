@@ -137,7 +137,8 @@ public sealed class SpaceDescriptorBuilder : IOptimizationSpaceProvider
                     (decimal)optimizable.Min,
                     (decimal)optimizable.Max,
                     (decimal)optimizable.Step,
-                    prop.PropertyType));
+                    prop.PropertyType,
+                    optimizable.Unit));
             }
             else if (moduleSlot is not null)
             {

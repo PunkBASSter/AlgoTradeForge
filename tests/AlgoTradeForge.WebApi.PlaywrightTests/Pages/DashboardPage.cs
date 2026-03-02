@@ -13,7 +13,7 @@ public sealed class DashboardPage(IPage page, string baseUrl)
 
     public async Task NavigateAsync()
     {
-        await page.GotoAsync(baseUrl + "/dashboard", new PageGotoOptions
+        await page.GotoAsync(baseUrl + "/all/backtest", new PageGotoOptions
         {
             WaitUntil = WaitUntilState.NetworkIdle,
             Timeout = 30_000,

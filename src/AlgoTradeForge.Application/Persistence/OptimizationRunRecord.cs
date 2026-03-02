@@ -19,7 +19,10 @@ public sealed record OptimizationRunRecord
     public required string AssetName { get; init; }
     public required string Exchange { get; init; }
     public required string TimeFrame { get; init; }
+    public long FilteredTrials { get; init; }
+    public long FailedTrials { get; init; }
     public required IReadOnlyList<BacktestRunRecord> Trials { get; init; }
+    public IReadOnlyList<FailedTrialRecord> FailedTrialDetails { get; init; } = [];
     public string? ErrorMessage { get; init; }
     public string? ErrorStackTrace { get; init; }
 }

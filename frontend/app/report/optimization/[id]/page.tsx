@@ -6,7 +6,73 @@ import React from "react";
 import { useOptimizationDetail } from "@/hooks/use-optimizations";
 import { OptimizationTrialsTable } from "@/components/features/report/optimization-trials-table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatDuration } from "@/lib/utils/format";
+import {
+  formatCurrency,
+  formatDuration,
+  formatNumber,
+  toTitleCase,
+} from "@/lib/utils/format";
+import type { FailedTrialDetail } from "@/types/api";
+
+function StatItem({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
+        {label}
+      </span>
+      <p className="text-lg font-semibold text-text-primary mt-1">{value}</p>
+    </div>
+  );
+}
+
+function FailedTrialDetails({ details }: { details: FailedTrialDetail[] }) {
+  const [open, setOpen] = React.useState(false);
+
+  if (details.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-border-default bg-bg-panel">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between p-4 text-left"
+      >
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
+          Failed Trial Details ({details.length})
+        </h2>
+        <span className="text-text-muted text-xs">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-border-default divide-y divide-border-default">
+          {details.map((d, i) => (
+            <div key={i} className="p-4 space-y-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-sm font-semibold text-accent-red">
+                  {d.exceptionType}
+                </span>
+                <span className="text-xs text-text-muted">
+                  x{d.occurrenceCount.toLocaleString()}
+                </span>
+              </div>
+              <p className="text-sm text-text-secondary">{d.exceptionMessage}</p>
+              <p className="text-xs text-text-muted">
+                Sample params:{" "}
+                {Object.entries(d.sampleParameters)
+                  .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+                  .join(", ")}
+              </p>
+              {d.stackTrace && (
+                <pre className="text-xs text-text-muted mt-2 overflow-x-auto whitespace-pre-wrap">
+                  {d.stackTrace}
+                </pre>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function OptimizationReportPage({
   params,
@@ -65,35 +131,62 @@ export default function OptimizationReportPage({
         </p>
       </div>
 
-      {/* Summary info */}
+      {/* Run Info */}
       <div className="rounded-lg border border-border-default bg-bg-panel p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
-              Total Combinations
-            </span>
-            <p className="text-lg font-semibold text-text-primary mt-1">
-              {optimization.totalCombinations.toLocaleString()}
-            </p>
-          </div>
-          <div>
-            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
-              Duration
-            </span>
-            <p className="text-lg font-semibold text-text-primary mt-1">
-              {formatDuration(optimization.durationMs)}
-            </p>
-          </div>
-          <div>
-            <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
-              Sorted By
-            </span>
-            <p className="text-lg font-semibold text-text-primary mt-1">
-              {optimization.sortBy}
-            </p>
-          </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <StatItem
+            label="Total Combinations"
+            value={formatNumber(optimization.totalCombinations, 0)}
+          />
+          <StatItem
+            label="Kept Trials"
+            value={formatNumber(optimization.trials.length, 0)}
+          />
+          <StatItem
+            label="Filtered"
+            value={formatNumber(optimization.filteredTrials, 0)}
+          />
+          <StatItem
+            label="Failed"
+            value={formatNumber(optimization.failedTrials, 0)}
+          />
+          <StatItem
+            label="Duration"
+            value={formatDuration(optimization.durationMs)}
+          />
+          <StatItem
+            label="Started"
+            value={new Date(optimization.startedAt).toLocaleString()}
+          />
+          <StatItem
+            label="Completed"
+            value={new Date(optimization.completedAt).toLocaleString()}
+          />
+          <StatItem
+            label="Sort By"
+            value={toTitleCase(optimization.sortBy)}
+          />
+          <StatItem
+            label="Initial Cash"
+            value={formatCurrency(optimization.initialCash)}
+          />
+          <StatItem
+            label="Commission"
+            value={formatCurrency(optimization.commission)}
+          />
+          <StatItem
+            label="Slippage Ticks"
+            value={formatNumber(optimization.slippageTicks, 0)}
+          />
+          <StatItem
+            label="Max Parallelism"
+            value={formatNumber(optimization.maxParallelism, 0)}
+          />
         </div>
       </div>
+
+      {/* Failed trial details (collapsible) */}
+      <FailedTrialDetails details={optimization.failedTrialDetails} />
 
       {/* Trials table */}
       <div className="space-y-2">
