@@ -33,7 +33,7 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
 
         Assert.NotNull(status.Result);
         Assert.Equal(submission.Id, status.Result.Id);
-        Assert.Equal("ZigZagBreakout", status.Result.StrategyName);
+        Assert.Equal("BuyAndHold", status.Result.StrategyName);
         Assert.Equal("BTCUSDT", status.Result.AssetName);
         Assert.Equal("Binance", status.Result.Exchange);
         Assert.True(status.Result.Metrics.ContainsKey("totalTrades"));
@@ -96,7 +96,7 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     }
 
     [Theory]
-    [InlineData("strategyName=ZigZagBreakout", true)]
+    [InlineData("strategyName=BuyAndHold", true)]
     [InlineData("assetName=BTCUSDT", true)]
     [InlineData("exchange=Binance", true)]
     [InlineData("strategyName=NonExistent", false)]
@@ -148,7 +148,7 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
         {
             AssetName = "FAKEUSDT",
             Exchange = "FakeExchange",
-            StrategyName = "ZigZagBreakout",
+            StrategyName = "BuyAndHold",
             InitialCash = 10_000m,
             StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
             EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),

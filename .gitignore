@@ -56,6 +56,9 @@ nunit-*.xml
 .claude/settings.local.json
 /.vs/
 
+# Plugin assemblies
+**/plugins/
+
 # Candle data (ingested)
 Data/
 

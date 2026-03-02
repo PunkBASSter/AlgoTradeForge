@@ -2,6 +2,12 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "try-build-plugins",
+            "type": "shell",
+            "command": "if (Test-Path '../AlgoTradeForge.Private/src/AlgoTradeForge.Strategies.Private') { dotnet build ../AlgoTradeForge.Private/src/AlgoTradeForge.Strategies.Private } else { Write-Host 'No private plugins repo, skipping' }",
+            "problemMatcher": "$msCompile"
+        },
+        {
             "label": "build-backend",
             "type": "process",
             "command": "dotnet",
@@ -11,6 +17,7 @@
                 "-c",
                 "Debug"
             ],
+            "dependsOn": "try-build-plugins",
             "problemMatcher": "$msCompile"
         }
     ]

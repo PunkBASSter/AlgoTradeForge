@@ -31,7 +31,7 @@ public sealed class StrategyEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var names = await response.Content.ReadFromJsonAsync<List<string>>(Json);
         Assert.NotNull(names);
-        Assert.Contains("ZigZagBreakout", names);
+        Assert.Contains("BuyAndHold", names);
     }
 
     [Fact]
@@ -45,14 +45,14 @@ public sealed class StrategyEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     }
 
     [Fact]
-    public async Task GetAvailableStrategies_ContainsZigZagBreakout()
+    public async Task GetAvailableStrategies_ContainsBuyAndHold()
     {
         var response = await Client.GetAsync("/api/strategies/available");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var strategies = await response.Content.ReadFromJsonAsync<List<StrategyDescriptorResponse>>(Json);
         Assert.NotNull(strategies);
-        Assert.Contains(strategies, s => s.Name == "ZigZagBreakout");
+        Assert.Contains(strategies, s => s.Name == "BuyAndHold");
     }
 
     [Fact]
@@ -64,18 +64,13 @@ public sealed class StrategyEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
         var strategies = await response.Content.ReadFromJsonAsync<List<StrategyDescriptorResponse>>(Json);
         Assert.NotNull(strategies);
 
-        var zigzag = strategies.Single(s => s.Name == "ZigZagBreakout");
+        var buyAndHold = strategies.Single(s => s.Name == "BuyAndHold");
 
-        // Verify defaults contain DzzDepth
-        Assert.True(zigzag.ParameterDefaults.ContainsKey("DzzDepth"));
+        // Verify defaults contain Quantity
+        Assert.True(buyAndHold.ParameterDefaults.ContainsKey("Quantity"));
 
-        // Verify 6 optimization axes (3 original + 3 ATR filter)
-        Assert.Equal(6, zigzag.OptimizationAxes.Count);
-        Assert.Contains(zigzag.OptimizationAxes, a => a.Name == "DzzDepth" && a.Type == "numeric");
-        Assert.Contains(zigzag.OptimizationAxes, a => a.Name == "MinimumThreshold" && a.Type == "numeric");
-        Assert.Contains(zigzag.OptimizationAxes, a => a.Name == "RiskPercentPerTrade" && a.Type == "numeric");
-        Assert.Contains(zigzag.OptimizationAxes, a => a.Name == "AtrPeriod" && a.Type == "numeric");
-        Assert.Contains(zigzag.OptimizationAxes, a => a.Name == "AtrMin" && a.Type == "numeric");
-        Assert.Contains(zigzag.OptimizationAxes, a => a.Name == "AtrMax" && a.Type == "numeric");
+        // Verify 1 optimization axis
+        Assert.Single(buyAndHold.OptimizationAxes);
+        Assert.Contains(buyAndHold.OptimizationAxes, a => a.Name == "Quantity" && a.Type == "numeric");
     }
 }

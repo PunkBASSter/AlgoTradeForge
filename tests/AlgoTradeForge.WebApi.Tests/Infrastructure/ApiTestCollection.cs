@@ -92,7 +92,7 @@ public abstract class ApiTestBase : IDisposable
     {
         AssetName = "BTCUSDT",
         Exchange = "Binance",
-        StrategyName = strategyName ?? "ZigZagBreakout",
+        StrategyName = strategyName ?? "BuyAndHold",
         InitialCash = 10_000m,
         StartTime = startTime ?? new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
         EndTime = endTime ?? new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
@@ -103,7 +103,7 @@ public abstract class ApiTestBase : IDisposable
     {
         AssetName = "BTCUSDT",
         Exchange = "Binance",
-        StrategyName = "ZigZagBreakout",
+        StrategyName = "BuyAndHold",
         InitialCash = 10_000m,
         StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
         EndTime = new DateTimeOffset(2025, 1, 5, 0, 0, 0, TimeSpan.Zero),

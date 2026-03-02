@@ -12,6 +12,16 @@ $ARGUMENTS
 
 You are validating that the AlgoTradeForge backend (WebApi) and frontend (Next.js dashboard) launch correctly and can communicate. Use Playwright MCP tools for browser interaction.
 
+### 0. Build Plugin Assemblies (if private repo exists)
+
+If `../AlgoTradeForge.Private/src/AlgoTradeForge.Strategies.Private/` exists, build it so the plugin DLL is copied to `plugins/`:
+
+```bash
+dotnet build ../AlgoTradeForge.Private/src/AlgoTradeForge.Strategies.Private
+```
+
+Skip this step silently if the directory does not exist.
+
 ### 1. Start the Backend
 
 Launch the .NET WebApi in the background:

@@ -6,14 +6,12 @@ namespace AlgoTradeForge.WebApi.PlaywrightTests.Tests;
 [Collection("E2E")]
 public sealed class OptimizationE2eTests(PlaywrightFixture fixture) : PlaywrightTestBase(fixture)
 {
-    // 8 combinations: DzzDepth(4,6) x MinimumThreshold(5000,10000) x RiskPercentPerTrade(0.5,1.0)
+    // 4 combinations: Quantity(1,3,5,7)
     private const string OptimizationConfig = """
         {
-          "strategyName": "ZigZagBreakout",
+          "strategyName": "BuyAndHold",
           "optimizationAxes": {
-            "DzzDepth": { "min": 4, "max": 6, "step": 2 },
-            "MinimumThreshold": { "min": 5000, "max": 10000, "step": 5000 },
-            "RiskPercentPerTrade": { "min": 0.5, "max": 1, "step": 0.5 }
+            "Quantity": { "min": 1, "max": 7, "step": 2 }
           },
           "dataSubscriptions": [
             { "asset": "BTCUSDT", "exchange": "Binance", "timeFrame": "01:00:00" }

@@ -51,7 +51,7 @@ public class SqliteRunRepositoryTests : IDisposable
 
     private static BacktestRunRecord MakeBacktestRecord(
         Guid? id = null,
-        string strategyName = "ZigZagBreakout",
+        string strategyName = "BuyAndHold",
         string? runFolderPath = "/data/events/run1",
         Guid? optimizationRunId = null)
     {
@@ -60,7 +60,7 @@ public class SqliteRunRepositoryTests : IDisposable
             Id = id ?? Guid.NewGuid(),
             StrategyName = strategyName,
             StrategyVersion = "1.0.0",
-            Parameters = new Dictionary<string, object> { ["DzzDepth"] = 5L, ["MinimumThreshold"] = 0.01m },
+            Parameters = new Dictionary<string, object> { ["Quantity"] = 1.5m },
             AssetName = "BTCUSDT",
             Exchange = "Binance",
             TimeFrame = "1h",
@@ -125,7 +125,7 @@ public class SqliteRunRepositoryTests : IDisposable
         }
 
         // Parameters
-        Assert.Equal(5L, loaded.Parameters["DzzDepth"]);
+        Assert.Equal(1.5m, loaded.Parameters["Quantity"]);
 
         // Data subscription fields
         Assert.Equal("BTCUSDT", loaded.AssetName);
@@ -147,14 +147,14 @@ public class SqliteRunRepositoryTests : IDisposable
     [Fact]
     public async Task Query_FiltersByStrategyName()
     {
-        await _repo.SaveAsync(MakeBacktestRecord(strategyName: "ZigZagBreakout"));
+        await _repo.SaveAsync(MakeBacktestRecord(strategyName: "BuyAndHold"));
         await _repo.SaveAsync(MakeBacktestRecord(strategyName: "MomentumStrategy"));
 
-        var results = await _repo.QueryAsync(new BacktestRunQuery { StrategyName = "ZigZagBreakout" });
+        var results = await _repo.QueryAsync(new BacktestRunQuery { StrategyName = "BuyAndHold" });
 
         Assert.Equal(1, results.TotalCount);
         Assert.Single(results.Items);
-        Assert.Equal("ZigZagBreakout", results.Items[0].StrategyName);
+        Assert.Equal("BuyAndHold", results.Items[0].StrategyName);
     }
 
     // ── Query by asset + exchange ──────────────────────────────────────
@@ -300,18 +300,18 @@ public class SqliteRunRepositoryTests : IDisposable
         var optId = Guid.NewGuid();
         var trial1 = MakeBacktestRecord(optimizationRunId: optId, runFolderPath: null) with
         {
-            Parameters = new Dictionary<string, object> { ["DzzDepth"] = 3L },
+            Parameters = new Dictionary<string, object> { ["Quantity"] = 1m },
         };
         var trial2 = MakeBacktestRecord(optimizationRunId: optId, runFolderPath: null) with
         {
             Id = Guid.NewGuid(),
-            Parameters = new Dictionary<string, object> { ["DzzDepth"] = 5L },
+            Parameters = new Dictionary<string, object> { ["Quantity"] = 3m },
         };
 
         var optRecord = new OptimizationRunRecord
         {
             Id = optId,
-            StrategyName = "ZigZagBreakout",
+            StrategyName = "BuyAndHold",
             StrategyVersion = "1.0.0",
             StartedAt = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
             CompletedAt = new DateTimeOffset(2025, 1, 1, 0, 1, 0, TimeSpan.Zero),
@@ -336,7 +336,7 @@ public class SqliteRunRepositoryTests : IDisposable
 
         Assert.NotNull(loaded);
         Assert.Equal(optId, loaded.Id);
-        Assert.Equal("ZigZagBreakout", loaded.StrategyName);
+        Assert.Equal("BuyAndHold", loaded.StrategyName);
         Assert.Equal("1.0.0", loaded.StrategyVersion);
         Assert.Equal(2, loaded.TotalCombinations);
         Assert.Equal("SharpeRatio", loaded.SortBy);
@@ -422,7 +422,7 @@ public class SqliteRunRepositoryTests : IDisposable
         var opt = new OptimizationRunRecord
         {
             Id = optId,
-            StrategyName = "ZigZagBreakout",
+            StrategyName = "BuyAndHold",
             StrategyVersion = "1.0.0",
             StartedAt = DateTimeOffset.UtcNow,
             CompletedAt = DateTimeOffset.UtcNow,
@@ -550,7 +550,7 @@ public class SqliteRunRepositoryTests : IDisposable
             await _repo.SaveOptimizationAsync(new OptimizationRunRecord
             {
                 Id = optId,
-                StrategyName = "ZigZagBreakout",
+                StrategyName = "BuyAndHold",
                 StrategyVersion = "1.0.0",
                 StartedAt = new DateTimeOffset(2025, 1, 1 + i, 0, 0, 0, TimeSpan.Zero),
                 CompletedAt = new DateTimeOffset(2025, 1, 1 + i, 0, 1, 0, TimeSpan.Zero),

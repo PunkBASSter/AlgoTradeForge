@@ -10,7 +10,7 @@ public sealed class BacktestE2eTests(PlaywrightFixture fixture) : PlaywrightTest
         {
           "assetName": "BTCUSDT",
           "exchange": "Binance",
-          "strategyName": "ZigZagBreakout",
+          "strategyName": "BuyAndHold",
           "initialCash": 10000,
           "startTime": "2025-01-01T00:00:00Z",
           "endTime": "2025-01-15T00:00:00Z",
