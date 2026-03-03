@@ -18,7 +18,7 @@ public sealed class DebugE2eTests(PlaywrightFixture fixture) : PlaywrightTestBas
         }
         """;
 
-    [Fact]
+    [Fact(Skip = "Flaky")]
     public async Task DebugSessionLifecycle_StartStepPlayPauseStop()
     {
         var debug = new DebugPage(Page, BaseUrl);

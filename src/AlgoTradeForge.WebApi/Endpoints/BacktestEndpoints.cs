@@ -105,7 +105,7 @@ public static class BacktestEndpoints
 
     private static async Task<IResult> GetBacktestStatus(
         Guid id,
-        ICommandHandler<GetBacktestStatusQuery, BacktestStatusDto?> handler,
+        IQueryHandler<GetBacktestStatusQuery, BacktestStatusDto?> handler,
         CancellationToken ct)
     {
         var dto = await handler.HandleAsync(new GetBacktestStatusQuery(id), ct);
@@ -134,7 +134,7 @@ public static class BacktestEndpoints
     }
 
     private static async Task<IResult> ListBacktests(
-        ICommandHandler<ListBacktestRunsQuery, PagedResult<BacktestRunRecord>> handler,
+        IQueryHandler<ListBacktestRunsQuery, PagedResult<BacktestRunRecord>> handler,
         string? strategyName,
         string? assetName,
         string? exchange,
@@ -170,7 +170,7 @@ public static class BacktestEndpoints
 
     private static async Task<IResult> GetBacktest(
         Guid id,
-        ICommandHandler<GetBacktestByIdQuery, BacktestRunRecord?> handler,
+        IQueryHandler<GetBacktestByIdQuery, BacktestRunRecord?> handler,
         CancellationToken ct)
     {
         var record = await handler.HandleAsync(new GetBacktestByIdQuery(id), ct);
@@ -182,7 +182,7 @@ public static class BacktestEndpoints
 
     private static async Task<IResult> GetEquityCurve(
         Guid id,
-        ICommandHandler<GetBacktestByIdQuery, BacktestRunRecord?> handler,
+        IQueryHandler<GetBacktestByIdQuery, BacktestRunRecord?> handler,
         CancellationToken ct)
     {
         var record = await handler.HandleAsync(new GetBacktestByIdQuery(id), ct);

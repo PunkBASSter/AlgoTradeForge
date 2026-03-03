@@ -28,7 +28,7 @@ public static class StrategyEndpoints
     }
 
     private static async Task<IResult> GetStrategies(
-        ICommandHandler<GetDistinctStrategyNamesQuery, IReadOnlyList<string>> handler,
+        IQueryHandler<GetDistinctStrategyNamesQuery, IReadOnlyList<string>> handler,
         CancellationToken ct)
     {
         var names = await handler.HandleAsync(new GetDistinctStrategyNamesQuery(), ct);
@@ -36,7 +36,7 @@ public static class StrategyEndpoints
     }
 
     private static async Task<IResult> GetAvailableStrategies(
-        ICommandHandler<GetAvailableStrategiesQuery, IReadOnlyList<StrategyDescriptorDto>> handler,
+        IQueryHandler<GetAvailableStrategiesQuery, IReadOnlyList<StrategyDescriptorDto>> handler,
         CancellationToken ct)
     {
         var descriptors = await handler.HandleAsync(new GetAvailableStrategiesQuery(), ct);

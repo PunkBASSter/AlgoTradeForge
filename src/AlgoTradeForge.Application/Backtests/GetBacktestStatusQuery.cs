@@ -12,11 +12,11 @@ public sealed record BacktestStatusDto
     public BacktestRunRecord? Result { get; init; }
 }
 
-public sealed record GetBacktestStatusQuery(Guid Id) : ICommand<BacktestStatusDto?>;
+public sealed record GetBacktestStatusQuery(Guid Id) : IQuery<BacktestStatusDto?>;
 
 public sealed class GetBacktestStatusQueryHandler(
     RunProgressCache progressCache,
-    IRunRepository repository) : ICommandHandler<GetBacktestStatusQuery, BacktestStatusDto?>
+    IRunRepository repository) : IQueryHandler<GetBacktestStatusQuery, BacktestStatusDto?>
 {
     public async Task<BacktestStatusDto?> HandleAsync(GetBacktestStatusQuery query, CancellationToken ct = default)
     {
