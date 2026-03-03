@@ -10,6 +10,7 @@
 - Timing-based exit modules (close at eod, eow)
 - Multi-order strategy module, **Order Groups**
 - `Strategy-framework.md`
+- Kelly-based risk module
 
 ## Optimization
 - Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
