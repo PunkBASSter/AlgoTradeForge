@@ -1,5 +1,6 @@
 namespace AlgoTradeForge.Application.Live;
 
+// TODO: try to extract binance details to infra layer
 public sealed class BinanceLiveOptions
 {
     public Dictionary<string, BinanceAccountConfig> Accounts { get; init; } = new();
