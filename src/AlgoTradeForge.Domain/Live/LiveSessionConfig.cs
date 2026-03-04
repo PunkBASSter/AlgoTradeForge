@@ -11,5 +11,5 @@ public sealed record LiveSessionConfig
     public required decimal InitialCash { get; init; }
     public long CommissionPerTrade { get; init; }
     public LiveEventRouting Routing { get; init; } = LiveEventRouting.OnBarComplete | LiveEventRouting.OnTrade;
-    public bool PaperTrading { get; init; }
+    public required string AccountName { get; init; }
 }

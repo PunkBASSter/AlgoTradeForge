@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Globalization;
 using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
@@ -7,114 +9,82 @@ using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Infrastructure.Live.Binance;
 
 public sealed class BinanceLiveConnector : ILiveConnector
 {
-    private readonly BinanceLiveOptions _options;
+    private readonly BinanceAccountConfig _accountConfig;
+    private readonly BinanceLiveOptions _sharedOptions;
     private readonly IOrderValidator _orderValidator;
     private readonly ILogger<BinanceLiveConnector> _logger;
 
-    private readonly Lock _lock = new();
     private CancellationTokenSource? _cts;
     private BinanceApiClient? _apiClient;
     private BinanceWebSocketManager? _wsManager;
-    private LiveOrderContext? _orderContext;
-    private LiveSessionConfig? _config;
     private Timer? _listenKeyTimer;
+    private string? _listenKey;
 
-    public Guid SessionId { get; private set; }
+    private readonly ConcurrentDictionary<Guid, LiveSessionEntry> _sessions = new();
+    private readonly ConcurrentDictionary<long, Guid> _binanceOrderToSession = new();
+
+    public string AccountName { get; }
     public LiveSessionStatus Status { get; private set; } = LiveSessionStatus.Idle;
+    public int SessionCount => _sessions.Count;
+
+    private sealed record LiveSessionEntry(
+        Guid SessionId,
+        IInt64BarStrategy Strategy,
+        LiveOrderContext OrderContext,
+        IList<DataSubscription> Subscriptions,
+        LiveEventRouting Routing,
+        Asset PrimaryAsset)
+    {
+        public Lock Lock { get; } = new();
+    }
 
     public BinanceLiveConnector(
-        IOptions<BinanceLiveOptions> options,
+        string accountName,
+        BinanceAccountConfig accountConfig,
+        BinanceLiveOptions sharedOptions,
         IOrderValidator orderValidator,
         ILogger<BinanceLiveConnector> logger)
     {
-        _options = options.Value;
+        AccountName = accountName;
+        _accountConfig = accountConfig;
+        _sharedOptions = sharedOptions;
         _orderValidator = orderValidator;
         _logger = logger;
     }
 
-    public async Task StartAsync(LiveSessionConfig config, CancellationToken ct = default)
+    public async Task ConnectAsync(CancellationToken ct = default)
     {
-        _config = config;
-        SessionId = config.SessionId;
         Status = LiveSessionStatus.Connecting;
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-
-        var paper = config.PaperTrading;
-        var mode = paper ? "PAPER (testnet)" : "LIVE";
+        _cts = new CancellationTokenSource();
 
         try
         {
-            // Resolve effective URLs and credentials based on trading mode
-            var restUrl = _options.GetRestUrl(paper);
-            var apiKey = _options.GetApiKey(paper);
-            var apiSecret = _options.GetApiSecret(paper);
-
-            if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(apiSecret))
+            if (string.IsNullOrEmpty(_accountConfig.ApiKey) || string.IsNullOrEmpty(_accountConfig.ApiSecret))
             {
-                var label = paper ? "Testnet" : "Production";
                 throw new InvalidOperationException(
-                    $"{label} API credentials are not configured. " +
-                    $"Set BinanceLive:{(paper ? "Testnet" : "")}ApiKey and BinanceLive:{(paper ? "Testnet" : "")}ApiSecret.");
+                    $"API credentials are not configured for account '{AccountName}'. " +
+                    $"Set BinanceLive:Accounts:{AccountName}:ApiKey and BinanceLive:Accounts:{AccountName}:ApiSecret.");
             }
 
-            _apiClient = new BinanceApiClient(restUrl, apiKey, apiSecret, _logger);
-
-            // Initialize portfolio
-            var initialCashScaled = (long)(config.InitialCash / config.PrimaryAsset.TickSize);
-            var portfolio = new Portfolio { InitialCash = initialCashScaled };
-            portfolio.Initialize();
-
-            _orderContext = new LiveOrderContext(
-                portfolio,
-                config.PrimaryAsset,
-                _orderValidator,
-                _logger,
-                _apiClient);
-
-            // Set event bus on strategy if supported
-            if (config.Strategy is IEventBusReceiver receiver)
-                receiver.SetEventBus(NullEventBus.Instance);
-
-            // Initialize strategy
-            config.Strategy.OnInit();
-
-            // Set up WebSocket manager
-            // Market data always from production (testnet streams are unreliable)
-            // User data stream goes to testnet when paper trading
-            var marketDataWsUrl = _options.GetMarketDataWsUrl(paper);
-            var userDataWsUrl = _options.GetUserDataWsUrl(paper);
+            _apiClient = new BinanceApiClient(
+                _accountConfig.RestUrl, _accountConfig.ApiKey, _accountConfig.ApiSecret, _logger);
 
             _wsManager = new BinanceWebSocketManager(
-                marketDataWsUrl, userDataWsUrl,
-                _options.ReconnectDelay, _options.MaxReconnectAttempts,
+                _accountConfig.WsUrl,
+                _sharedOptions.ReconnectDelay, _sharedOptions.MaxReconnectAttempts,
                 _logger);
             _wsManager.Start(_cts);
 
-            // Subscribe to kline streams for each data subscription
-            foreach (var sub in config.Subscriptions)
-            {
-                var symbol = sub.Asset.Name;
-                var interval = MapTimeFrameToInterval(sub.TimeFrame);
-                var capturedSub = sub;
-
-                _ = Task.Factory.StartNew(
-                    () => _wsManager.SubscribeKline(symbol, interval, msg => OnKlineMessage(msg, capturedSub)),
-                    _cts.Token,
-                    TaskCreationOptions.LongRunning,
-                    TaskScheduler.Default);
-            }
-
-            // Subscribe to user data stream (both live and paper — testnet has real order matching)
-            var listenKey = await _apiClient.CreateListenKeyAsync(ct);
+            // Subscribe to user data stream — use ct so the initial HTTP call can be aborted
+            _listenKey = await _apiClient.CreateListenKeyAsync(ct);
 
             _ = Task.Factory.StartNew(
-                () => _wsManager.SubscribeUserData(listenKey, OnExecutionReport),
+                () => _wsManager.SubscribeUserData(_listenKey, OnExecutionReport),
                 _cts.Token,
                 TaskCreationOptions.LongRunning,
                 TaskScheduler.Default);
@@ -125,30 +95,96 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 {
                     try
                     {
-                        if (_apiClient is not null)
-                            await _apiClient.KeepAliveListenKeyAsync(listenKey);
+                        if (_apiClient is not null && _listenKey is not null)
+                            await _apiClient.KeepAliveListenKeyAsync(_listenKey);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Failed to refresh listenKey");
+                        _logger.LogWarning(ex, "Failed to refresh listenKey for account '{Account}'", AccountName);
                     }
                 },
                 null,
-                _options.ListenKeyRefreshInterval,
-                _options.ListenKeyRefreshInterval);
+                _sharedOptions.ListenKeyRefreshInterval,
+                _sharedOptions.ListenKeyRefreshInterval);
 
             Status = LiveSessionStatus.Running;
-
             _logger.LogInformation(
-                "Live session {SessionId} started ({Mode}) for {Asset} with {SubCount} subscription(s). REST={RestUrl}",
-                config.SessionId, mode, config.PrimaryAsset.Name, config.Subscriptions.Count, restUrl);
+                "Connector for account '{Account}' connected. REST={RestUrl}",
+                AccountName, _accountConfig.RestUrl);
         }
         catch (Exception ex)
         {
             Status = LiveSessionStatus.Error;
-            _logger.LogError(ex, "Failed to start live session {SessionId}", config.SessionId);
+            _logger.LogError(ex, "Failed to connect account '{Account}'", AccountName);
             throw;
         }
+    }
+
+    public Task AddSessionAsync(LiveSessionConfig config, CancellationToken ct = default)
+    {
+        if (Status != LiveSessionStatus.Running)
+            throw new InvalidOperationException($"Connector for account '{AccountName}' is not running.");
+
+        var asset = config.PrimaryAsset;
+        var initialCashScaled = (long)(config.InitialCash / asset.TickSize);
+        var portfolio = new Portfolio { InitialCash = initialCashScaled };
+        portfolio.Initialize();
+
+        var orderContext = new LiveOrderContext(
+            portfolio, asset, _orderValidator, _logger, _apiClient!,
+            config.SessionId, _binanceOrderToSession);
+        orderContext.Start(_cts!.Token);
+
+        // Set event bus on strategy if supported
+        if (config.Strategy is IEventBusReceiver receiver)
+            receiver.SetEventBus(NullEventBus.Instance);
+
+        config.Strategy.OnInit();
+
+        var entry = new LiveSessionEntry(
+            config.SessionId,
+            config.Strategy,
+            orderContext,
+            config.Subscriptions,
+            config.Routing,
+            asset);
+
+        _sessions.TryAdd(config.SessionId, entry);
+
+        // Subscribe to kline streams for each data subscription
+        foreach (var sub in config.Subscriptions)
+        {
+            var symbol = sub.Asset.Name;
+            var interval = MapTimeFrameToInterval(sub.TimeFrame);
+            var capturedSub = sub;
+            var capturedEntry = entry;
+
+            _ = Task.Factory.StartNew(
+                () => _wsManager!.SubscribeKline(symbol, interval, msg => OnKlineMessage(msg, capturedSub, capturedEntry)),
+                _cts!.Token,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+        }
+
+        _logger.LogInformation(
+            "Session {SessionId} added to account '{Account}' for {Asset} with {SubCount} subscription(s)",
+            config.SessionId, AccountName, asset.Name, config.Subscriptions.Count);
+
+        return Task.CompletedTask;
+    }
+
+    public async Task RemoveSessionAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        if (!_sessions.TryRemove(sessionId, out var entry))
+            return;
+
+        // Cancel pending orders via API
+        foreach (var order in entry.OrderContext.GetPendingOrders())
+            entry.OrderContext.Cancel(order.Id);
+
+        await entry.OrderContext.StopAsync();
+
+        _logger.LogInformation("Session {SessionId} removed from account '{Account}'", sessionId, AccountName);
     }
 
     public async Task StopAsync(CancellationToken ct = default)
@@ -157,18 +193,20 @@ public sealed class BinanceLiveConnector : ILiveConnector
             return;
 
         Status = LiveSessionStatus.Stopping;
-        _logger.LogInformation("Stopping live session {SessionId}", SessionId);
+        _logger.LogInformation("Stopping connector for account '{Account}'", AccountName);
 
         try
         {
-            // Cancel all pending orders
-            if (_orderContext is not null)
+            // Stop all sessions
+            foreach (var entry in _sessions.Values)
             {
-                foreach (var order in _orderContext.GetPendingOrders())
-                    _orderContext.Cancel(order.Id);
-            }
+                foreach (var order in entry.OrderContext.GetPendingOrders())
+                    entry.OrderContext.Cancel(order.Id);
 
-            // Stop timers and cancel tasks
+                await entry.OrderContext.StopAsync();
+            }
+            _sessions.Clear();
+
             if (_listenKeyTimer is not null)
                 await _listenKeyTimer.DisposeAsync();
 
@@ -181,44 +219,43 @@ public sealed class BinanceLiveConnector : ILiveConnector
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error stopping live session {SessionId}", SessionId);
+            _logger.LogError(ex, "Error stopping connector for account '{Account}'", AccountName);
         }
         finally
         {
             Status = LiveSessionStatus.Stopped;
-            _logger.LogInformation("Live session {SessionId} stopped", SessionId);
+            _logger.LogInformation("Connector for account '{Account}' stopped", AccountName);
         }
     }
 
-    private void OnKlineMessage(BinanceKlineMessage msg, DataSubscription subscription)
+    private void OnKlineMessage(BinanceKlineMessage msg, DataSubscription subscription, LiveSessionEntry entry)
     {
         if (!msg.Kline.IsClosed)
             return;
 
-        var config = _config!;
         var asset = subscription.Asset;
         var tickSize = asset.TickSize;
 
         var bar = new Int64Bar(
             msg.Kline.OpenTime,
-            (long)(decimal.Parse(msg.Kline.Open) / tickSize),
-            (long)(decimal.Parse(msg.Kline.High) / tickSize),
-            (long)(decimal.Parse(msg.Kline.Low) / tickSize),
-            (long)(decimal.Parse(msg.Kline.Close) / tickSize),
-            (long)decimal.Parse(msg.Kline.Volume));
+            (long)(decimal.Parse(msg.Kline.Open, CultureInfo.InvariantCulture) / tickSize),
+            (long)(decimal.Parse(msg.Kline.High, CultureInfo.InvariantCulture) / tickSize),
+            (long)(decimal.Parse(msg.Kline.Low, CultureInfo.InvariantCulture) / tickSize),
+            (long)(decimal.Parse(msg.Kline.Close, CultureInfo.InvariantCulture) / tickSize),
+            (long)(decimal.Parse(msg.Kline.Volume, CultureInfo.InvariantCulture) / tickSize));
 
-        lock (_lock)
+        lock (entry.Lock)
         {
-            _orderContext!.ClearRecentFills();
+            entry.OrderContext.ClearRecentFills();
 
-            if (config.Routing.HasFlag(LiveEventRouting.OnBarStart))
+            if (entry.Routing.HasFlag(LiveEventRouting.OnBarStart))
             {
                 var startBar = new Int64Bar(bar.TimestampMs, bar.Open, bar.Open, bar.Open, bar.Open, 0);
-                config.Strategy.OnBarStart(startBar, subscription, _orderContext);
+                entry.Strategy.OnBarStart(startBar, subscription, entry.OrderContext);
             }
 
-            if (config.Routing.HasFlag(LiveEventRouting.OnBarComplete))
-                config.Strategy.OnBarComplete(bar, subscription, _orderContext);
+            if (entry.Routing.HasFlag(LiveEventRouting.OnBarComplete))
+                entry.Strategy.OnBarComplete(bar, subscription, entry.OrderContext);
         }
 
         _logger.LogDebug("Bar closed {Symbol} {Interval}: O={Open} H={High} L={Low} C={Close}",
@@ -230,15 +267,31 @@ public sealed class BinanceLiveConnector : ILiveConnector
         if (report.ExecutionType != "TRADE")
             return;
 
-        var config = _config!;
-        var asset = config.PrimaryAsset;
+        // Look up session via order routing map
+        if (!_binanceOrderToSession.TryGetValue(report.OrderId, out var sessionId))
+        {
+            _logger.LogWarning(
+                "Received execution report for unknown order {OrderId} — may be a manual order on Binance",
+                report.OrderId);
+            return;
+        }
+
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            _logger.LogWarning(
+                "Received execution report for order {OrderId} but session {SessionId} no longer exists",
+                report.OrderId, sessionId);
+            return;
+        }
+
+        var asset = entry.PrimaryAsset;
         var tickSize = asset.TickSize;
 
-        lock (_lock)
+        lock (entry.Lock)
         {
-            var fillPrice = (long)(decimal.Parse(report.LastFilledPrice) / tickSize);
-            var fillQty = decimal.Parse(report.LastFilledQty);
-            var commission = (long)(decimal.Parse(report.Commission) / tickSize);
+            var fillPrice = (long)(decimal.Parse(report.LastFilledPrice, CultureInfo.InvariantCulture) / tickSize);
+            var fillQty = decimal.Parse(report.LastFilledQty, CultureInfo.InvariantCulture);
+            var commission = (long)(decimal.Parse(report.Commission, CultureInfo.InvariantCulture) / tickSize);
             var side = report.Side == "BUY" ? OrderSide.Buy : OrderSide.Sell;
 
             var fill = new Fill(
@@ -250,17 +303,17 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 side,
                 commission);
 
-            _orderContext!.AddFill(fill);
+            entry.OrderContext.AddFill(fill);
 
             // Find matching pending order
-            var pendingOrder = _orderContext.GetPendingOrder(report.OrderId);
+            var pendingOrder = entry.OrderContext.GetPendingOrder(report.OrderId);
             if (pendingOrder is not null && report.OrderStatus == "FILLED")
             {
                 pendingOrder.Status = OrderStatus.Filled;
-                _orderContext.RemovePendingOrder(report.OrderId);
+                entry.OrderContext.RemovePendingOrder(report.OrderId);
             }
 
-            if (config.Routing.HasFlag(LiveEventRouting.OnTrade))
+            if (entry.Routing.HasFlag(LiveEventRouting.OnTrade))
             {
                 var order = pendingOrder ?? new Order
                 {
@@ -268,14 +321,14 @@ public sealed class BinanceLiveConnector : ILiveConnector
                     Asset = asset,
                     Side = side,
                     Type = MapBinanceOrderType(report.OrderType),
-                    Quantity = decimal.Parse(report.OriginalQuantity),
+                    Quantity = decimal.Parse(report.OriginalQuantity, CultureInfo.InvariantCulture),
                 };
 
-                config.Strategy.OnTrade(fill, order, _orderContext);
+                entry.Strategy.OnTrade(fill, order, entry.OrderContext);
             }
 
-            _logger.LogInformation("Execution report: {Side} {Qty} {Symbol} @ {Price}",
-                report.Side, report.LastFilledQty, report.Symbol, report.LastFilledPrice);
+            _logger.LogInformation("Execution report: {Side} {Qty} {Symbol} @ {Price} (session {SessionId})",
+                report.Side, report.LastFilledQty, report.Symbol, report.LastFilledPrice, entry.SessionId);
         }
     }
 

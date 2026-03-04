@@ -38,7 +38,7 @@ public static class DependencyInjection
         services.AddSingleton<IRunRepository, SqliteRunRepository>();
 
         // Live trading
-        services.AddSingleton<ILiveConnector, BinanceLiveConnector>();
+        services.AddSingleton<ILiveAccountManager, BinanceLiveAccountManager>();
 
         return services;
     }

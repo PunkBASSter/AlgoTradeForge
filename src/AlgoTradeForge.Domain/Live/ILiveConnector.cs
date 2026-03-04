@@ -2,9 +2,12 @@ namespace AlgoTradeForge.Domain.Live;
 
 public interface ILiveConnector : IAsyncDisposable
 {
-    Guid SessionId { get; }
+    string AccountName { get; }
     LiveSessionStatus Status { get; }
-    Task StartAsync(LiveSessionConfig config, CancellationToken ct = default);
+    int SessionCount { get; }
+    Task ConnectAsync(CancellationToken ct = default);
+    Task AddSessionAsync(LiveSessionConfig config, CancellationToken ct = default);
+    Task RemoveSessionAsync(Guid sessionId, CancellationToken ct = default);
     Task StopAsync(CancellationToken ct = default);
 }
 

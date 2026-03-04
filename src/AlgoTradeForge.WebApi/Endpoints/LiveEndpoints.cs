@@ -49,15 +49,12 @@ public static class LiveEndpoints
 
         var command = new StartLiveSessionCommand
         {
-            AssetName = request.AssetName,
-            Exchange = request.Exchange,
             StrategyName = request.StrategyName,
             InitialCash = request.InitialCash,
-            TimeFrame = request.TimeFrame,
             StrategyParameters = request.StrategyParameters,
             CommissionPerTrade = request.CommissionPerTrade,
             Routing = routing,
-            PaperTrading = request.PaperTrading,
+            AccountName = request.AccountName,
         };
 
         try
@@ -76,14 +73,14 @@ public static class LiveEndpoints
         Guid id,
         ILiveSessionStore store)
     {
-        var connector = store.Get(id);
-        if (connector is null)
+        var entry = store.Get(id);
+        if (entry is null)
             return Task.FromResult(Results.NotFound(new { error = $"Live session '{id}' not found." }));
 
         var response = new LiveSessionStatusResponse
         {
             SessionId = id,
-            Status = connector.Status.ToString(),
+            Status = entry.Connector.Status.ToString(),
         };
         return Task.FromResult(Results.Ok(response));
     }
@@ -105,11 +102,11 @@ public static class LiveEndpoints
         var sessionIds = store.GetActiveSessionIds();
         var sessions = sessionIds.Select(id =>
         {
-            var connector = store.Get(id);
+            var entry = store.Get(id);
             return new LiveSessionStatusResponse
             {
                 SessionId = id,
-                Status = connector?.Status.ToString() ?? "Unknown",
+                Status = entry?.Connector.Status.ToString() ?? "Unknown",
             };
         }).ToList();
 

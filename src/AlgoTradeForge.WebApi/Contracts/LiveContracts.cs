@@ -4,15 +4,12 @@ namespace AlgoTradeForge.WebApi.Contracts;
 
 public sealed record StartLiveSessionRequest
 {
-    public required string AssetName { get; init; }
-    public required string Exchange { get; init; }
     public required string StrategyName { get; init; }
     public required decimal InitialCash { get; init; }
-    public string? TimeFrame { get; init; }
     public Dictionary<string, object>? StrategyParameters { get; init; }
     public decimal CommissionPerTrade { get; init; }
     public string[]? EnabledEvents { get; init; }
-    public bool PaperTrading { get; init; }
+    public string AccountName { get; init; } = "paper";
 }
 
 public sealed record LiveSessionSubmissionResponse

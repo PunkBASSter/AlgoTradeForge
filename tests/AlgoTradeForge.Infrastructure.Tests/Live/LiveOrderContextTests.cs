@@ -1,4 +1,4 @@
-using AlgoTradeForge.Application.Live;
+using System.Collections.Concurrent;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Trading;
@@ -26,7 +26,8 @@ public class LiveOrderContextTests
 
         return new LiveOrderContext(
             portfolio, BtcUsdt, new OrderValidator(),
-            NullLogger.Instance, apiClient);
+            NullLogger.Instance, apiClient,
+            Guid.NewGuid(), new ConcurrentDictionary<long, Guid>());
     }
 
     [Fact]
@@ -116,6 +117,104 @@ public class LiveOrderContextTests
     public void GetPendingOrders_EmptyByDefault()
     {
         var ctx = CreateContext();
+        Assert.Empty(ctx.GetPendingOrders());
+    }
+
+    [Fact]
+    public void Submit_ValidOrder_SetsPendingStatus()
+    {
+        var ctx = CreateContext();
+        ctx.Start(CancellationToken.None);
+
+        var order = new Order
+        {
+            Id = 0,
+            Asset = BtcUsdt,
+            Side = OrderSide.Buy,
+            Type = OrderType.Limit,
+            Quantity = 0.001m,
+            LimitPrice = 5000000L,
+        };
+
+        var id = ctx.Submit(order);
+
+        Assert.True(id > 0);
+        Assert.Equal(OrderStatus.Pending, order.Status);
+        Assert.Single(ctx.GetPendingOrders());
+    }
+
+    [Fact]
+    public void AddFill_UpdatesPortfolioInsideLock()
+    {
+        // Issue 5: Verify AddFill is self-contained (portfolio updated inside lock)
+        var ctx = CreateContext();
+        var initialCash = ctx.Cash;
+
+        var fill = new Fill(1, BtcUsdt, DateTimeOffset.UtcNow, 5000000L, 0.001m, OrderSide.Buy, 0);
+        ctx.AddFill(fill);
+
+        // Cash should be updated atomically with the fill
+        Assert.True(ctx.Cash < initialCash);
+        Assert.Single(ctx.GetFills());
+    }
+
+    [Fact]
+    public void Cancel_ByLocalId_AfterRekeying_FindsOrderByBinanceId()
+    {
+        var ctx = CreateContext();
+        ctx.Start(CancellationToken.None);
+
+        var order = new Order
+        {
+            Id = 0,
+            Asset = BtcUsdt,
+            Side = OrderSide.Buy,
+            Type = OrderType.Limit,
+            Quantity = 0.001m,
+            LimitPrice = 5000000L,
+        };
+
+        var localId = ctx.Submit(order);
+
+        // Simulate Binance order placement response rekeying
+        const long binanceOrderId = 9999999L;
+        ctx.SimulateOrderPlaced(localId, binanceOrderId);
+
+        // The order should now be keyed by Binance ID, not local ID
+        Assert.Null(ctx.GetPendingOrder(localId));
+        Assert.NotNull(ctx.GetPendingOrder(binanceOrderId));
+
+        // Cancel using original local ID — should resolve to Binance ID
+        var cancelled = ctx.Cancel(localId);
+
+        Assert.NotNull(cancelled);
+        Assert.Equal(OrderStatus.Cancelled, cancelled.Status);
+        Assert.Empty(ctx.GetPendingOrders());
+    }
+
+    [Fact]
+    public void Cancel_ByLocalId_BeforePlacement_StillWorks()
+    {
+        var ctx = CreateContext();
+        ctx.Start(CancellationToken.None);
+
+        var order = new Order
+        {
+            Id = 0,
+            Asset = BtcUsdt,
+            Side = OrderSide.Buy,
+            Type = OrderType.Limit,
+            Quantity = 0.001m,
+            LimitPrice = 5000000L,
+        };
+
+        var localId = ctx.Submit(order);
+
+        // Cancel immediately before any placement (no rekeying happened)
+        var cancelled = ctx.Cancel(localId);
+
+        Assert.NotNull(cancelled);
+        Assert.Equal(OrderStatus.Cancelled, cancelled.Status);
         Assert.Empty(ctx.GetPendingOrders());
     }
 }

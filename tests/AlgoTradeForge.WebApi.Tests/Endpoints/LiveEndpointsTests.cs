@@ -45,32 +45,13 @@ public class LiveEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task StartSession_InvalidAsset_Returns400()
-    {
-        var request = new StartLiveSessionRequest
-        {
-            AssetName = "NONEXISTENT",
-            Exchange = "Binance",
-            StrategyName = "BuyAndHold",
-            InitialCash = 10000m,
-            PaperTrading = true,
-        };
-
-        var response = await _client.PostAsJsonAsync("/api/live/sessions", request);
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
     public async Task StartSession_InvalidStrategy_Returns400()
     {
         var request = new StartLiveSessionRequest
         {
-            AssetName = "BTCUSDT",
-            Exchange = "Binance",
             StrategyName = "NonExistentStrategy",
             InitialCash = 10000m,
-            PaperTrading = true,
+            AccountName = "paper",
         };
 
         var response = await _client.PostAsJsonAsync("/api/live/sessions", request);
@@ -79,23 +60,18 @@ public class LiveEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task StartSession_MissingCredentials_ReturnsError()
+    public async Task StartSession_NoSubscriptions_Returns400()
     {
-        // Without testnet API credentials configured, starting a paper session should fail
+        // BuyAndHold has no DataSubscriptions by default → should fail validation
         var request = new StartLiveSessionRequest
         {
-            AssetName = "BTCUSDT",
-            Exchange = "Binance",
             StrategyName = "BuyAndHold",
             InitialCash = 10000m,
-            PaperTrading = true,
-            TimeFrame = "00:01:00",
-            EnabledEvents = ["OnBarComplete", "OnTrade"],
+            AccountName = "paper",
         };
 
         var response = await _client.PostAsJsonAsync("/api/live/sessions", request);
 
-        // No API credentials in test environment → server error
-        Assert.False(response.IsSuccessStatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 }

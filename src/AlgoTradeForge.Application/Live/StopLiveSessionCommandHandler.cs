@@ -7,11 +7,11 @@ public sealed class StopLiveSessionCommandHandler(
 {
     public async Task<bool> HandleAsync(StopLiveSessionCommand command, CancellationToken ct = default)
     {
-        var connector = sessionStore.Get(command.SessionId);
-        if (connector is null)
+        var entry = sessionStore.Get(command.SessionId);
+        if (entry is null)
             return false;
 
-        await connector.StopAsync(ct);
+        await entry.Connector.RemoveSessionAsync(command.SessionId, ct);
         sessionStore.Remove(command.SessionId);
         return true;
     }

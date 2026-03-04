@@ -13,14 +13,14 @@ public class StopLiveSessionCommandHandlerTests
         var store = new InMemoryLiveSessionStore();
         var connector = Substitute.For<ILiveConnector>();
         var sessionId = Guid.NewGuid();
-        store.Add(sessionId, connector);
+        store.Add(sessionId, "paper", connector);
 
         var handler = new StopLiveSessionCommandHandler(store);
 
         var result = await handler.HandleAsync(new StopLiveSessionCommand(sessionId));
 
         Assert.True(result);
-        await connector.Received(1).StopAsync(Arg.Any<CancellationToken>());
+        await connector.Received(1).RemoveSessionAsync(sessionId, Arg.Any<CancellationToken>());
         Assert.Null(store.Get(sessionId));
     }
 

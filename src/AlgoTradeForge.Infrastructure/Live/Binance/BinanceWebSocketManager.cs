@@ -1,28 +1,25 @@
 using System.Net.WebSockets;
-using System.Text;
 using System.Text.Json;
-using AlgoTradeForge.Application.Live;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.Infrastructure.Live.Binance;
 
 public sealed class BinanceWebSocketManager : IAsyncDisposable
 {
-    private readonly string _marketDataWsUrl;
-    private readonly string _userDataWsUrl;
+    private readonly string _wsUrl;
     private readonly TimeSpan _reconnectDelay;
     private readonly int _maxReconnectAttempts;
     private readonly ILogger _logger;
+    private readonly Lock _connectionsLock = new();
     private readonly List<(ClientWebSocket Socket, Task ReadTask)> _connections = [];
     private CancellationTokenSource? _cts;
 
     public BinanceWebSocketManager(
-        string marketDataWsUrl, string userDataWsUrl,
+        string wsUrl,
         TimeSpan reconnectDelay, int maxReconnectAttempts,
         ILogger logger)
     {
-        _marketDataWsUrl = marketDataWsUrl;
-        _userDataWsUrl = userDataWsUrl;
+        _wsUrl = wsUrl;
         _reconnectDelay = reconnectDelay;
         _maxReconnectAttempts = maxReconnectAttempts;
         _logger = logger;
@@ -33,7 +30,7 @@ public sealed class BinanceWebSocketManager : IAsyncDisposable
     public Task SubscribeKline(string symbol, string interval, Action<BinanceKlineMessage> onMessage)
     {
         var stream = $"{symbol.ToLowerInvariant()}@kline_{interval}";
-        var url = $"{_marketDataWsUrl}/ws/{stream}";
+        var url = $"{_wsUrl}/ws/{stream}";
         return ConnectStream(url, stream, buffer =>
         {
             var msg = JsonSerializer.Deserialize<BinanceKlineMessage>(buffer.Span, BinanceJsonOptions.Default);
@@ -44,7 +41,7 @@ public sealed class BinanceWebSocketManager : IAsyncDisposable
 
     public Task SubscribeUserData(string listenKey, Action<BinanceExecutionReport> onExecution)
     {
-        var url = $"{_userDataWsUrl}/ws/{listenKey}";
+        var url = $"{_wsUrl}/ws/{listenKey}";
         return ConnectStream(url, "userData", buffer =>
         {
             using var doc = JsonDocument.Parse(buffer);
@@ -75,7 +72,10 @@ public sealed class BinanceWebSocketManager : IAsyncDisposable
                 attempts = 0;
 
                 var readTask = ReadLoop(ws, streamName, onMessage, ct);
-                _connections.Add((ws, readTask));
+                lock (_connectionsLock)
+                {
+                    _connections.Add((ws, readTask));
+                }
                 await readTask;
             }
             catch (OperationCanceledException)
@@ -134,7 +134,14 @@ public sealed class BinanceWebSocketManager : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var (socket, _) in _connections)
+        List<(ClientWebSocket Socket, Task ReadTask)> snapshot;
+        lock (_connectionsLock)
+        {
+            snapshot = [.. _connections];
+            _connections.Clear();
+        }
+
+        foreach (var (socket, _) in snapshot)
         {
             try
             {
@@ -147,6 +154,5 @@ public sealed class BinanceWebSocketManager : IAsyncDisposable
                 socket.Dispose();
             }
         }
-        _connections.Clear();
     }
 }

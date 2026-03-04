@@ -15,10 +15,12 @@ public class InMemoryLiveSessionStoreTests
         var id = Guid.NewGuid();
         var connector = Substitute.For<ILiveConnector>();
 
-        _store.Add(id, connector);
-        var retrieved = _store.Get(id);
+        _store.Add(id, "paper", connector);
+        var entry = _store.Get(id);
 
-        Assert.Same(connector, retrieved);
+        Assert.NotNull(entry);
+        Assert.Same(connector, entry.Connector);
+        Assert.Equal("paper", entry.AccountName);
     }
 
     [Fact]
@@ -31,7 +33,7 @@ public class InMemoryLiveSessionStoreTests
     public void Remove_ExistingSession_ReturnsTrue()
     {
         var id = Guid.NewGuid();
-        _store.Add(id, Substitute.For<ILiveConnector>());
+        _store.Add(id, "paper", Substitute.For<ILiveConnector>());
 
         Assert.True(_store.Remove(id));
         Assert.Null(_store.Get(id));
@@ -48,8 +50,8 @@ public class InMemoryLiveSessionStoreTests
     {
         var id1 = Guid.NewGuid();
         var id2 = Guid.NewGuid();
-        _store.Add(id1, Substitute.For<ILiveConnector>());
-        _store.Add(id2, Substitute.For<ILiveConnector>());
+        _store.Add(id1, "paper", Substitute.For<ILiveConnector>());
+        _store.Add(id2, "live", Substitute.For<ILiveConnector>());
 
         var ids = _store.GetActiveSessionIds();
 
