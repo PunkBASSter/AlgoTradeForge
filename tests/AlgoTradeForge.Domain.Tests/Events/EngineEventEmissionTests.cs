@@ -560,7 +560,7 @@ public class EngineEventEmissionTests
         public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders) =>
             OnBarCompleteAction?.Invoke(bar, subscription, orders);
 
-        public void OnTrade(Fill fill, Order order) { }
+        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
     }
 
     private sealed class SignalTestParams : StrategyParamsBase;

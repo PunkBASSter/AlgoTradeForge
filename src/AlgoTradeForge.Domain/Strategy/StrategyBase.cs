@@ -24,7 +24,7 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
 
     public virtual void OnInit() { }
 
-    public virtual void OnTrade(Fill fill, Order order) { }
+    public virtual void OnTrade(Fill fill, Order order, IOrderContext orders) { }
 
     protected void EmitSignal(DateTimeOffset timestamp, string signalName, string assetName,
         string direction, decimal strength, string? reason = null)

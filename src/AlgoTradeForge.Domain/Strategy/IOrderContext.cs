@@ -9,4 +9,5 @@ public interface IOrderContext
     Order? Cancel(long orderId);
     IReadOnlyList<Order> GetPendingOrders();
     IReadOnlyList<Fill> GetFills();
+    IReadOnlyDictionary<string, Position> GetPositions();
 }

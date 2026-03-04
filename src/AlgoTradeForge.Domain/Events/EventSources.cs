@@ -6,6 +6,7 @@ namespace AlgoTradeForge.Domain.Events;
 public static class EventSources
 {
     public const string Engine = "engine";
+    public const string Live = "live";
 
     public static string Indicator(string indicatorName) => $"indicator.{indicatorName}";
 }

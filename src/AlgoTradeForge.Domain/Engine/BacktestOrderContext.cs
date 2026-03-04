@@ -84,4 +84,6 @@ internal sealed class BacktestOrderContext : IOrderContext
             return [];
         return _allFills.GetRange(_fillSnapshotStart, _allFills.Count - _fillSnapshotStart);
     }
+
+    public IReadOnlyDictionary<string, Position> GetPositions() => _portfolio.Positions;
 }

@@ -74,6 +74,6 @@ public class NullEventBusBenchmarkTests
         public void OnInit() { }
         public void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders) { }
         public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders) { }
-        public void OnTrade(Fill fill, Order order) { }
+        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
     }
 }
