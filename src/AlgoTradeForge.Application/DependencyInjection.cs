@@ -59,7 +59,6 @@ public static class DependencyInjection
         services.AddSingleton<ILiveSessionStore, InMemoryLiveSessionStore>();
         services.AddScoped<ICommandHandler<StartLiveSessionCommand, LiveSessionSubmissionDto>, StartLiveSessionCommandHandler>();
         services.AddScoped<ICommandHandler<StopLiveSessionCommand, bool>, StopLiveSessionCommandHandler>();
-        services.Configure<BinanceLiveOptions>(_ => { });
 
         return services;
     }

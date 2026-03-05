@@ -1,17 +1,17 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
-using AlgoTradeForge.Infrastructure.Live.Binance;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.Infrastructure.Live;
 
 public sealed class LiveOrderContext : IOrderContext
 {
-    private readonly BinanceApiClient _apiClient;
+    private readonly IExchangeOrderClient _orderClient;
     private readonly IOrderValidator _orderValidator;
     private readonly Portfolio _portfolio;
     private readonly Asset _primaryAsset;
@@ -42,7 +42,7 @@ public sealed class LiveOrderContext : IOrderContext
         Asset primaryAsset,
         IOrderValidator orderValidator,
         ILogger logger,
-        BinanceApiClient apiClient,
+        IExchangeOrderClient orderClient,
         Guid sessionId,
         ConcurrentDictionary<long, Guid> binanceOrderToSession)
     {
@@ -50,7 +50,7 @@ public sealed class LiveOrderContext : IOrderContext
         _primaryAsset = primaryAsset;
         _orderValidator = orderValidator;
         _logger = logger;
-        _apiClient = apiClient;
+        _orderClient = orderClient;
         _sessionId = sessionId;
         _binanceOrderToSession = binanceOrderToSession;
     }
@@ -68,19 +68,22 @@ public sealed class LiveOrderContext : IOrderContext
 
     public async Task StopAsync()
     {
+        // Complete channels first so readers drain remaining items
         _orderChannel.Writer.TryComplete();
         _cancelChannel.Writer.TryComplete();
+
+        // Await processing tasks before cancelling CTS so queued
+        // orders/cancels are sent to the exchange
+        if (_orderProcessingTask is not null)
+            await IgnoreCancellation(_orderProcessingTask);
+        if (_cancelProcessingTask is not null)
+            await IgnoreCancellation(_cancelProcessingTask);
 
         if (_cts is not null)
         {
             await _cts.CancelAsync();
             _cts.Dispose();
         }
-
-        if (_orderProcessingTask is not null)
-            await IgnoreCancellation(_orderProcessingTask);
-        if (_cancelProcessingTask is not null)
-            await IgnoreCancellation(_cancelProcessingTask);
     }
 
     public long Submit(Order order)
@@ -184,17 +187,17 @@ public sealed class LiveOrderContext : IOrderContext
                         ? order.StopPrice.Value * _primaryAsset.TickSize
                         : null;
 
-                    var response = await _apiClient.PlaceOrderAsync(
+                    var exchangeOrderId = await _orderClient.PlaceOrderAsync(
                         order.Asset.Name, side, binanceType, order.Quantity,
                         price, stopPrice, ct);
 
-                    // Re-key from local ID to Binance order ID
+                    // Re-key from local ID to exchange order ID
                     _pendingOrders.TryRemove(request.LocalId, out var pending);
 
                     if (pending is not null)
                     {
-                        pending.Id = response.OrderId;
-                        _binanceOrderToSession.TryAdd(response.OrderId, _sessionId);
+                        pending.Id = exchangeOrderId;
+                        _binanceOrderToSession.TryAdd(exchangeOrderId, _sessionId);
 
                         if (order.Type == OrderType.Market)
                         {
@@ -202,14 +205,14 @@ public sealed class LiveOrderContext : IOrderContext
                         }
                         else
                         {
-                            _pendingOrders.TryAdd(response.OrderId, pending);
-                            _localToBinanceId.TryAdd(request.LocalId, response.OrderId);
+                            _pendingOrders.TryAdd(exchangeOrderId, pending);
+                            _localToBinanceId.TryAdd(request.LocalId, exchangeOrderId);
                         }
                     }
 
                     _logger.LogInformation(
-                        "Order placed: {BinanceOrderId} for local {LocalId} ({Side} {Qty} {Asset})",
-                        response.OrderId, request.LocalId, order.Side, order.Quantity, order.Asset.Name);
+                        "Order placed: {ExchangeOrderId} for local {LocalId} ({Side} {Qty} {Asset})",
+                        exchangeOrderId, request.LocalId, order.Side, order.Quantity, order.Asset.Name);
                 }
                 catch (Exception ex)
                 {
@@ -231,7 +234,7 @@ public sealed class LiveOrderContext : IOrderContext
             {
                 try
                 {
-                    await _apiClient.CancelOrderAsync(request.Order.Asset.Name, request.BinanceOrderId, ct);
+                    await _orderClient.CancelOrderAsync(request.Order.Asset.Name, request.BinanceOrderId, ct);
                 }
                 catch (Exception ex)
                 {

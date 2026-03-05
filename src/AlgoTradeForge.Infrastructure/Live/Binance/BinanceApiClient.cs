@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.Infrastructure.Live.Binance;
 
-public sealed class BinanceApiClient : IDisposable
+public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
 {
     private readonly HttpClient _http;
     private readonly byte[] _secretBytes;
@@ -49,6 +49,14 @@ public sealed class BinanceApiClient : IDisposable
 
         var json = await SendSignedAsync(HttpMethod.Post, "/api/v3/order", parameters, ct);
         return JsonSerializer.Deserialize<BinanceNewOrderResponse>(json, BinanceJsonOptions.Default)!;
+    }
+
+    async Task<long> IExchangeOrderClient.PlaceOrderAsync(
+        string symbol, string side, string type, decimal quantity,
+        decimal? price, decimal? stopPrice, CancellationToken ct)
+    {
+        var response = await PlaceOrderAsync(symbol, side, type, quantity, price, stopPrice, ct);
+        return response.OrderId;
     }
 
     public async Task CancelOrderAsync(string symbol, long orderId, CancellationToken ct = default)

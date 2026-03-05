@@ -12,6 +12,7 @@ using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Infrastructure;
 using AlgoTradeForge.Infrastructure.CandleIngestion;
 using AlgoTradeForge.Infrastructure.History;
+using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Plugins;
 using AlgoTradeForge.Infrastructure.Repositories;
 using AlgoTradeForge.WebApi.Endpoints;

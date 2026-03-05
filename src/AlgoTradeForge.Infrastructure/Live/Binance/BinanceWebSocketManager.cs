@@ -141,6 +141,7 @@ public sealed class BinanceWebSocketManager : IAsyncDisposable
             _connections.Clear();
         }
 
+        // Close sockets to trigger read loop exits
         foreach (var (socket, _) in snapshot)
         {
             try
@@ -149,10 +150,17 @@ public sealed class BinanceWebSocketManager : IAsyncDisposable
                     await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
             }
             catch { /* best effort */ }
-            finally
-            {
-                socket.Dispose();
-            }
         }
+
+        // Await all read tasks to ensure clean shutdown
+        foreach (var (_, readTask) in snapshot)
+        {
+            try { await readTask; }
+            catch { /* best effort */ }
+        }
+
+        // Dispose sockets after read loops have exited
+        foreach (var (socket, _) in snapshot)
+            socket.Dispose();
     }
 }

@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using AlgoTradeForge.Application.Live;
+using System.Threading.Channels;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
@@ -40,7 +40,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
         LiveEventRouting Routing,
         Asset PrimaryAsset)
     {
-        public Lock Lock { get; } = new();
+        public Channel<Action> EventQueue { get; } = Channel.CreateUnbounded<Action>(
+            new UnboundedChannelOptions { SingleReader = true });
+        public Task? ProcessingTask { get; set; }
     }
 
     public BinanceLiveConnector(
@@ -171,6 +173,23 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         _sessions.TryAdd(config.SessionId, entry);
 
+        // Start event processing loop for this session
+        entry.ProcessingTask = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var action in entry.EventQueue.Reader.ReadAllAsync(_cts!.Token))
+                {
+                    try { action(); }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error in session {SessionId} event callback", entry.SessionId);
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+
         // Subscribe to kline streams for each data subscription
         foreach (var sub in config.Subscriptions)
         {
@@ -200,6 +219,14 @@ public sealed class BinanceLiveConnector : ILiveConnector
         foreach (var order in entry.OrderContext.GetPendingOrders())
             entry.OrderContext.Cancel(order.Id);
 
+        // Drain event queue before stopping
+        entry.EventQueue.Writer.TryComplete();
+        if (entry.ProcessingTask is not null)
+        {
+            try { await entry.ProcessingTask; }
+            catch (OperationCanceledException) { }
+        }
+
         await entry.OrderContext.StopAsync();
 
         _logger.LogInformation("Session {SessionId} removed from account '{Account}'", sessionId, AccountName);
@@ -220,6 +247,13 @@ public sealed class BinanceLiveConnector : ILiveConnector
             {
                 foreach (var order in entry.OrderContext.GetPendingOrders())
                     entry.OrderContext.Cancel(order.Id);
+
+                entry.EventQueue.Writer.TryComplete();
+                if (entry.ProcessingTask is not null)
+                {
+                    try { await entry.ProcessingTask; }
+                    catch (OperationCanceledException) { }
+                }
 
                 await entry.OrderContext.StopAsync();
             }
@@ -260,9 +294,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
             (long)(decimal.Parse(msg.Kline.High, CultureInfo.InvariantCulture) / tickSize),
             (long)(decimal.Parse(msg.Kline.Low, CultureInfo.InvariantCulture) / tickSize),
             (long)(decimal.Parse(msg.Kline.Close, CultureInfo.InvariantCulture) / tickSize),
-            (long)(decimal.Parse(msg.Kline.Volume, CultureInfo.InvariantCulture) / tickSize));
+            (long)decimal.Parse(msg.Kline.Volume, CultureInfo.InvariantCulture));
 
-        lock (entry.Lock)
+        entry.EventQueue.Writer.TryWrite(() =>
         {
             entry.OrderContext.ClearRecentFills();
 
@@ -274,7 +308,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
             if (entry.Routing.HasFlag(LiveEventRouting.OnBarComplete))
                 entry.Strategy.OnBarComplete(bar, subscription, entry.OrderContext);
-        }
+        });
 
         _logger.LogDebug("Bar closed {Symbol} {Interval}: O={Open} H={High} L={Low} C={Close}",
             msg.Symbol, msg.Kline.Interval, msg.Kline.Open, msg.Kline.High, msg.Kline.Low, msg.Kline.Close);
@@ -321,13 +355,14 @@ public sealed class BinanceLiveConnector : ILiveConnector
         var asset = entry.PrimaryAsset;
         var tickSize = asset.TickSize;
 
-        lock (entry.Lock)
-        {
-            var fillPrice = (long)(decimal.Parse(report.LastFilledPrice, CultureInfo.InvariantCulture) / tickSize);
-            var fillQty = decimal.Parse(report.LastFilledQty, CultureInfo.InvariantCulture);
-            var commission = (long)(decimal.Parse(report.Commission, CultureInfo.InvariantCulture) / tickSize);
-            var side = report.Side == "BUY" ? OrderSide.Buy : OrderSide.Sell;
+        // Parse outside the callback for efficiency
+        var fillPrice = (long)(decimal.Parse(report.LastFilledPrice, CultureInfo.InvariantCulture) / tickSize);
+        var fillQty = decimal.Parse(report.LastFilledQty, CultureInfo.InvariantCulture);
+        var commission = (long)(decimal.Parse(report.Commission, CultureInfo.InvariantCulture) / tickSize);
+        var side = report.Side == "BUY" ? OrderSide.Buy : OrderSide.Sell;
 
+        entry.EventQueue.Writer.TryWrite(() =>
+        {
             var fill = new Fill(
                 report.OrderId,
                 asset,
@@ -372,12 +407,12 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 "Trade execution: {Side} {Qty} {Symbol} @ {Price} (status={Status}, session={SessionId})",
                 report.Side, report.LastFilledQty, report.Symbol, report.LastFilledPrice,
                 report.OrderStatus, entry.SessionId);
-        }
+        });
     }
 
     private void HandleOrderTermination(BinanceExecutionReport report, LiveSessionEntry entry, OrderStatus terminalStatus)
     {
-        lock (entry.Lock)
+        entry.EventQueue.Writer.TryWrite(() =>
         {
             var pendingOrder = entry.OrderContext.GetPendingOrder(report.OrderId);
             if (pendingOrder is not null)
@@ -387,7 +422,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
             }
 
             _binanceOrderToSession.TryRemove(report.OrderId, out _);
-        }
+        });
 
         _logger.LogInformation(
             "Order {OrderId} terminated: {ExecType} → {Status} (session={SessionId})",

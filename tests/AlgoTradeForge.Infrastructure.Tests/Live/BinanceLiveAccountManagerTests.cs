@@ -1,4 +1,3 @@
-using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Infrastructure.Live.Binance;

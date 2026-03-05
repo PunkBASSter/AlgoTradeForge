@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Live;
 using Microsoft.Extensions.Logging;
@@ -74,6 +73,16 @@ public sealed class BinanceLiveAccountManager(
         _connectors.Where(kv => kv.Value.Status == LiveSessionStatus.Running)
             .Select(kv => kv.Key)
             .ToList();
+
+    public async Task<bool> TryRemoveAsync(string accountName, CancellationToken ct = default)
+    {
+        if (!_connectors.TryRemove(accountName, out var connector))
+            return false;
+
+        await connector.DisposeAsync();
+        _accountLocks.TryRemove(accountName, out _);
+        return true;
+    }
 
     public async ValueTask DisposeAsync()
     {
