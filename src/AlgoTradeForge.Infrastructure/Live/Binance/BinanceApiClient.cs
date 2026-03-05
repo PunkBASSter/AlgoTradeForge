@@ -84,6 +84,24 @@ public sealed class BinanceApiClient : IDisposable
         return JsonSerializer.Deserialize<BinanceAccountInfo>(json, BinanceJsonOptions.Default)!;
     }
 
+    public async Task<BinanceExchangeSymbolInfo> GetExchangeInfoAsync(string symbol, CancellationToken ct = default)
+    {
+        var url = $"/api/v3/exchangeInfo?symbol={symbol.ToUpperInvariant()}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var response = await _http.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("Binance exchangeInfo error: {StatusCode} {Body}", response.StatusCode, body);
+            throw new HttpRequestException($"Binance exchangeInfo error {response.StatusCode}: {body}");
+        }
+
+        var info = JsonSerializer.Deserialize<BinanceExchangeInfoResponse>(body, BinanceJsonOptions.Default)!;
+        return info.Symbols.FirstOrDefault(s => s.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"Symbol '{symbol}' not found in Binance exchange info.");
+    }
+
     internal string Sign(string queryString)
     {
         var hash = HMACSHA256.HashData(_secretBytes, Encoding.UTF8.GetBytes(queryString));

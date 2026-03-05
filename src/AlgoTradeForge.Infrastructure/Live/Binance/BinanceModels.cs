@@ -61,3 +61,21 @@ public sealed record BinanceBalance
     [JsonPropertyName("locked")]
     public string Locked { get; init; } = "0";
 }
+
+public sealed record BinanceExchangeInfoResponse
+{
+    [JsonPropertyName("symbols")]
+    public List<BinanceExchangeSymbolInfo> Symbols { get; init; } = [];
+}
+
+public sealed record BinanceExchangeSymbolInfo
+{
+    [JsonPropertyName("symbol")]
+    public string Symbol { get; init; } = "";
+
+    [JsonPropertyName("baseAsset")]
+    public string BaseAsset { get; init; } = "";
+
+    [JsonPropertyName("quoteAsset")]
+    public string QuoteAsset { get; init; } = "";
+}

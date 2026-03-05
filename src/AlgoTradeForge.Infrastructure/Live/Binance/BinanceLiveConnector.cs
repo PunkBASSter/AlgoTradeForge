@@ -120,14 +120,34 @@ public sealed class BinanceLiveConnector : ILiveConnector
         }
     }
 
-    public Task AddSessionAsync(LiveSessionConfig config, CancellationToken ct = default)
+    public async Task AddSessionAsync(LiveSessionConfig config, CancellationToken ct = default)
     {
         if (Status != LiveSessionStatus.Running)
             throw new InvalidOperationException($"Connector for account '{AccountName}' is not running.");
 
         var asset = config.PrimaryAsset;
-        var initialCashScaled = (long)(config.InitialCash / asset.TickSize);
-        var portfolio = new Portfolio { InitialCash = initialCashScaled };
+
+        // Validate InitialCash against actual Binance account balance
+        var symbolInfo = await _apiClient!.GetExchangeInfoAsync(asset.Name, ct);
+        var accountInfo = await _apiClient.GetAccountInfoAsync(ct);
+
+        var quoteBalance = accountInfo.Balances
+            .FirstOrDefault(b => b.Asset.Equals(symbolInfo.QuoteAsset, StringComparison.OrdinalIgnoreCase));
+        var freeBalance = quoteBalance is not null
+            ? decimal.Parse(quoteBalance.Free, CultureInfo.InvariantCulture)
+            : 0m;
+        var availableScaled = (long)(freeBalance / asset.TickSize);
+
+        if (config.InitialCash > availableScaled)
+        {
+            var requestedDecimal = config.InitialCash * asset.TickSize;
+            throw new InvalidOperationException(
+                $"Insufficient {symbolInfo.QuoteAsset} balance on account '{AccountName}'. " +
+                $"Requested: {requestedDecimal:G29} {symbolInfo.QuoteAsset}, " +
+                $"Available: {freeBalance:G29} {symbolInfo.QuoteAsset}.");
+        }
+
+        var portfolio = new Portfolio { InitialCash = config.InitialCash };
         portfolio.Initialize();
 
         var orderContext = new LiveOrderContext(
@@ -169,8 +189,6 @@ public sealed class BinanceLiveConnector : ILiveConnector
         _logger.LogInformation(
             "Session {SessionId} added to account '{Account}' for {Asset} with {SubCount} subscription(s)",
             config.SessionId, AccountName, asset.Name, config.Subscriptions.Count);
-
-        return Task.CompletedTask;
     }
 
     public async Task RemoveSessionAsync(Guid sessionId, CancellationToken ct = default)
@@ -264,15 +282,12 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
     private void OnExecutionReport(BinanceExecutionReport report)
     {
-        if (report.ExecutionType != "TRADE")
-            return;
-
         // Look up session via order routing map
         if (!_binanceOrderToSession.TryGetValue(report.OrderId, out var sessionId))
         {
             _logger.LogWarning(
-                "Received execution report for unknown order {OrderId} — may be a manual order on Binance",
-                report.OrderId);
+                "Received execution report for unknown order {OrderId} (type={ExecType}) — may be a manual order on Binance",
+                report.OrderId, report.ExecutionType);
             return;
         }
 
@@ -284,6 +299,25 @@ public sealed class BinanceLiveConnector : ILiveConnector
             return;
         }
 
+        switch (report.ExecutionType)
+        {
+            case "TRADE":
+                HandleTradeExecution(report, entry);
+                break;
+
+            case "CANCELED":
+            case "EXPIRED":
+                HandleOrderTermination(report, entry, OrderStatus.Cancelled);
+                break;
+
+            case "REJECTED":
+                HandleOrderTermination(report, entry, OrderStatus.Rejected);
+                break;
+        }
+    }
+
+    private void HandleTradeExecution(BinanceExecutionReport report, LiveSessionEntry entry)
+    {
         var asset = entry.PrimaryAsset;
         var tickSize = asset.TickSize;
 
@@ -305,12 +339,19 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
             entry.OrderContext.AddFill(fill);
 
-            // Find matching pending order
+            // Update pending order status based on Binance order status
             var pendingOrder = entry.OrderContext.GetPendingOrder(report.OrderId);
-            if (pendingOrder is not null && report.OrderStatus == "FILLED")
+            if (pendingOrder is not null)
             {
-                pendingOrder.Status = OrderStatus.Filled;
-                entry.OrderContext.RemovePendingOrder(report.OrderId);
+                if (report.OrderStatus == "FILLED")
+                {
+                    pendingOrder.Status = OrderStatus.Filled;
+                    entry.OrderContext.RemovePendingOrder(report.OrderId);
+                }
+                else if (report.OrderStatus == "PARTIALLY_FILLED")
+                {
+                    pendingOrder.Status = OrderStatus.PartiallyFilled;
+                }
             }
 
             if (entry.Routing.HasFlag(LiveEventRouting.OnTrade))
@@ -327,9 +368,30 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 entry.Strategy.OnTrade(fill, order, entry.OrderContext);
             }
 
-            _logger.LogInformation("Execution report: {Side} {Qty} {Symbol} @ {Price} (session {SessionId})",
-                report.Side, report.LastFilledQty, report.Symbol, report.LastFilledPrice, entry.SessionId);
+            _logger.LogInformation(
+                "Trade execution: {Side} {Qty} {Symbol} @ {Price} (status={Status}, session={SessionId})",
+                report.Side, report.LastFilledQty, report.Symbol, report.LastFilledPrice,
+                report.OrderStatus, entry.SessionId);
         }
+    }
+
+    private void HandleOrderTermination(BinanceExecutionReport report, LiveSessionEntry entry, OrderStatus terminalStatus)
+    {
+        lock (entry.Lock)
+        {
+            var pendingOrder = entry.OrderContext.GetPendingOrder(report.OrderId);
+            if (pendingOrder is not null)
+            {
+                pendingOrder.Status = terminalStatus;
+                entry.OrderContext.RemovePendingOrder(report.OrderId);
+            }
+
+            _binanceOrderToSession.TryRemove(report.OrderId, out _);
+        }
+
+        _logger.LogInformation(
+            "Order {OrderId} terminated: {ExecType} → {Status} (session={SessionId})",
+            report.OrderId, report.ExecutionType, terminalStatus, entry.SessionId);
     }
 
     private static string MapTimeFrameToInterval(TimeSpan timeFrame) => timeFrame.TotalMinutes switch

@@ -22,6 +22,7 @@ public sealed class StartLiveSessionCommandHandler(
 
         var primaryAsset = subscriptions[0].Asset;
         var sessionId = Guid.NewGuid();
+        var initialCashScaled = (long)(command.InitialCash / primaryAsset.TickSize);
         var commissionScaled = (long)(command.CommissionPerTrade / primaryAsset.TickSize);
 
         var config = new LiveSessionConfig
@@ -30,7 +31,7 @@ public sealed class StartLiveSessionCommandHandler(
             Strategy = strategy,
             Subscriptions = subscriptions,
             PrimaryAsset = primaryAsset,
-            InitialCash = command.InitialCash,
+            InitialCash = initialCashScaled,
             CommissionPerTrade = commissionScaled,
             Routing = command.Routing,
             AccountName = command.AccountName,

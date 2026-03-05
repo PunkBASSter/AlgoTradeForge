@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AlgoTradeForge.Infrastructure.Live.Binance;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -33,5 +34,45 @@ public class BinanceApiClientTests
         Assert.NotNull(signature);
         Assert.NotEmpty(signature);
         Assert.Equal(64, signature.Length); // SHA-256 produces 64 hex chars
+    }
+
+    [Fact]
+    public void ExchangeInfo_Deserializes_SymbolInfo()
+    {
+        var json = """
+            {
+              "symbols": [
+                {
+                  "symbol": "BTCUSDT",
+                  "baseAsset": "BTC",
+                  "quoteAsset": "USDT",
+                  "status": "TRADING"
+                },
+                {
+                  "symbol": "ETHUSDT",
+                  "baseAsset": "ETH",
+                  "quoteAsset": "USDT",
+                  "status": "TRADING"
+                }
+              ]
+            }
+            """;
+
+        var result = JsonSerializer.Deserialize<BinanceExchangeInfoResponse>(json, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = false,
+        })!;
+
+        Assert.Equal(2, result.Symbols.Count);
+
+        var btc = result.Symbols[0];
+        Assert.Equal("BTCUSDT", btc.Symbol);
+        Assert.Equal("BTC", btc.BaseAsset);
+        Assert.Equal("USDT", btc.QuoteAsset);
+
+        var eth = result.Symbols[1];
+        Assert.Equal("ETHUSDT", eth.Symbol);
+        Assert.Equal("ETH", eth.BaseAsset);
+        Assert.Equal("USDT", eth.QuoteAsset);
     }
 }
