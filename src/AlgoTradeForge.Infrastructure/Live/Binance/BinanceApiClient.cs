@@ -93,6 +93,24 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
             ?? throw new InvalidOperationException($"Symbol '{symbol}' not found in Binance exchange info.");
     }
 
+    internal async Task<decimal> GetTickerPriceAsync(string symbol, CancellationToken ct = default)
+    {
+        var url = $"/api/v3/ticker/price?symbol={symbol.ToUpperInvariant()}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var response = await _http.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("Binance ticker/price error: {StatusCode} {Body}", response.StatusCode, body);
+            throw new HttpRequestException($"Binance ticker/price error {response.StatusCode}: {body}");
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        return decimal.Parse(doc.RootElement.GetProperty("price").GetString()!,
+            System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     internal string Sign(string queryString)
     {
         var hash = HMACSHA256.HashData(_secretBytes, Encoding.UTF8.GetBytes(queryString));

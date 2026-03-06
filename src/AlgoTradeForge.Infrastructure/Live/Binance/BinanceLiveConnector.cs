@@ -98,6 +98,13 @@ public sealed class BinanceLiveConnector : ILiveConnector
         }
     }
 
+    internal async Task<decimal> GetTickerPriceAsync(string symbol, CancellationToken ct = default)
+    {
+        if (_apiClient is null)
+            throw new InvalidOperationException("Connector is not connected.");
+        return await _apiClient.GetTickerPriceAsync(symbol, ct);
+    }
+
     public async Task AddSessionAsync(LiveSessionConfig config, CancellationToken ct = default)
     {
         if (Status != LiveSessionStatus.Running)

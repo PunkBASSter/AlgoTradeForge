@@ -1,31 +1,38 @@
 using System.Net;
+using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Events;
+using AlgoTradeForge.Domain.Indicators;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Infrastructure.Optimization;
+using AlgoTradeForge.Infrastructure.Tests.Live.Testnet;
+using AlgoTradeForge.WebApi.Tests.TestUtilities;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace AlgoTradeForge.WebApi.Tests.Infrastructure;
+namespace AlgoTradeForge.WebApi.Tests.Live.Testnet;
 
-public sealed class AlgoTradeForgeApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
+public sealed class TestnetApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     private static readonly string TestDataDir =
-        Path.Combine(Path.GetTempPath(), "AlgoTradeForge_ApiTests");
+        Path.Combine(Path.GetTempPath(), "AlgoTradeForge_TestnetE2E");
 
     private static readonly string EventLogsDir = Path.Combine(TestDataDir, "EventLogs");
     private readonly string _dbPath = Path.Combine(TestDataDir, "test-runs.sqlite");
 
+    internal TestnetE2EStrategy SharedStrategy { get; } = new(new TestnetE2EStrategyParams());
+
     public ValueTask InitializeAsync()
     {
-        // Delete old data from previous runs (best-effort)
         SqliteConnection.ClearAllPools();
         if (Directory.Exists(TestDataDir))
         {
             try { Directory.Delete(TestDataDir, recursive: true); }
-            catch { /* best-effort — may be locked by another process */ }
+            catch { /* best-effort */ }
         }
-
         Directory.CreateDirectory(TestDataDir);
         Directory.CreateDirectory(EventLogsDir);
         return ValueTask.CompletedTask;
@@ -36,17 +43,25 @@ public sealed class AlgoTradeForgeApiFactory : WebApplicationFactory<Program>, I
         var testDataRoot = Path.Combine(AppContext.BaseDirectory, "TestData", "Candles");
 
         builder.UseEnvironment("Development");
-
         builder.UseSetting("CandleStorage:DataRoot", testDataRoot);
         builder.UseSetting("RunStorage:DatabasePath", _dbPath);
+        builder.UseSetting("BinanceLive:Accounts:paper:ApiKey", BinanceTestnetCredentials.ApiKey);
+        builder.UseSetting("BinanceLive:Accounts:paper:ApiSecret", BinanceTestnetCredentials.ApiSecret);
 
         builder.ConfigureServices(services =>
         {
-            // Set loopback IP so LocalhostOnlyFilter allows debug endpoints
             services.AddSingleton<IStartupFilter, SetLoopbackIpStartupFilter>();
-
-            // Redirect event logs to the test data directory
             services.PostConfigure<EventLogStorageOptions>(o => o.Root = EventLogsDir);
+        });
+
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton<IStrategyFactory>(sp =>
+            {
+                var descriptorBuilder = sp.GetRequiredService<SpaceDescriptorBuilder>();
+                var original = new OptimizationStrategyFactory(descriptorBuilder);
+                return new TestnetStrategyFactoryWrapper(original, SharedStrategy);
+            });
         });
     }
 
@@ -67,6 +82,19 @@ public sealed class AlgoTradeForgeApiFactory : WebApplicationFactory<Program>, I
     {
         await base.DisposeAsync();
         SqliteConnection.ClearAllPools();
-        // Keep test data after run for investigation — it will be cleaned up on next run
+    }
+}
+
+internal sealed class TestnetStrategyFactoryWrapper(
+    IStrategyFactory inner,
+    TestnetE2EStrategy sharedStrategy) : IStrategyFactory
+{
+    public IInt64BarStrategy Create(string strategyName, IIndicatorFactory indicatorFactory,
+        IDictionary<string, object>? parameters = null)
+    {
+        if (strategyName == "TestnetE2E")
+            return sharedStrategy;
+
+        return inner.Create(strategyName, indicatorFactory, parameters);
     }
 }
