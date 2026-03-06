@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getClient } from "@/lib/services";
+import type { LiveSessionData } from "@/types/api";
 
 export function useLiveSessions(enabled = true) {
   const client = getClient();
@@ -18,6 +19,16 @@ export function useLiveSessionDetail(id: string) {
     queryFn: () => client.getLiveSession(id),
     enabled: !!id,
     refetchInterval: 5_000,
+  });
+}
+
+export function useLiveSessionData(id: string, enabled = true) {
+  const client = getClient();
+  return useQuery<LiveSessionData>({
+    queryKey: ["live-session-data", id],
+    queryFn: () => client.getLiveSessionData(id),
+    enabled: !!id && enabled,
+    refetchInterval: enabled ? 5_000 : false,
   });
 }
 

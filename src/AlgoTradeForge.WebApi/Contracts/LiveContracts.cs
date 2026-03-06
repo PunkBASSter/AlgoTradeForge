@@ -34,3 +34,20 @@ public sealed record LiveSessionListResponse
 {
     public required IReadOnlyList<LiveSessionStatusResponse> Sessions { get; init; }
 }
+
+public sealed record LiveSessionDataResponse
+{
+    public required IReadOnlyList<CandleResponse> Candles { get; init; }
+    public required IReadOnlyList<FillResponse> Fills { get; init; }
+    public required IReadOnlyList<PendingOrderResponse> PendingOrders { get; init; }
+    public required AccountResponse Account { get; init; }
+    public required string TimeFrame { get; init; }
+    public required IReadOnlyList<LastBarResponse> LastBars { get; init; }
+}
+
+public sealed record CandleResponse(long Time, decimal Open, decimal High, decimal Low, decimal Close, long Volume);
+public sealed record FillResponse(long OrderId, string Timestamp, decimal Price, decimal Quantity, string Side, decimal Commission);
+public sealed record PendingOrderResponse(long Id, string Side, string Type, decimal Quantity, decimal? LimitPrice, decimal? StopPrice);
+public sealed record AccountResponse(decimal InitialCash, decimal Cash, IReadOnlyList<PositionResponse> Positions);
+public sealed record PositionResponse(string Symbol, decimal Quantity, decimal AverageEntryPrice, decimal RealizedPnl);
+public sealed record LastBarResponse(string Symbol, string TimeFrame, long Time, decimal Open, decimal High, decimal Low, decimal Close, long Volume);

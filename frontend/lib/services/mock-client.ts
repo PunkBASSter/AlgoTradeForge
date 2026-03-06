@@ -17,6 +17,7 @@ import type {
   LiveSessionSubmission,
   LiveSession,
   LiveSessionListResponse,
+  LiveSessionData,
   DebugSession,
   DebugSessionStatus,
   StrategyDescriptor,
@@ -251,6 +252,26 @@ export const mockClient: typeof import("./api-client").apiClient & {
   async startLiveSession(_req: StartLiveSessionRequest): Promise<LiveSessionSubmission> {
     await delay(500);
     return { sessionId: "mock-live-session-002" };
+  },
+
+  async getLiveSessionData(_id: string): Promise<LiveSessionData> {
+    await delay();
+    const now = Date.now();
+    return {
+      candles: Array.from({ length: 30 }, (_, i) => ({
+        time: now - (30 - i) * 60_000,
+        open: 65000 + i * 10,
+        high: 65100 + i * 10,
+        low: 64900 + i * 10,
+        close: 65050 + i * 10,
+        volume: 100 + i,
+      })),
+      fills: [],
+      pendingOrders: [],
+      account: { initialCash: 100000, cash: 100000, positions: [] },
+      timeFrame: "00:01:00",
+      lastBars: [{ symbol: "BTCUSDT", timeFrame: "00:01:00", time: now, open: 65290, high: 65390, low: 65190, close: 65340, volume: 129 }],
+    };
   },
 
   async stopLiveSession(_id: string): Promise<void> {

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Threading.Channels;
 using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Domain;
+using AlgoTradeForge.Domain.Collections;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
@@ -23,6 +24,7 @@ public sealed class LiveOrderContext : IOrderContext
     private readonly ConcurrentDictionary<long, long> _localToBinanceId = new();
     private readonly Lock _recentFillsLock = new();
     private readonly List<Fill> _recentFills = [];
+    private readonly RingBuffer<Fill> _allFills = new(1_000);
     private long _nextOrderId;
 
     private readonly Channel<OrderRequest> _orderChannel = Channel.CreateUnbounded<OrderRequest>(
@@ -140,8 +142,15 @@ public sealed class LiveOrderContext : IOrderContext
         lock (_recentFillsLock)
         {
             _recentFills.Add(fill);
+            _allFills.Add(fill);
             _portfolio.Apply(fill);
         }
+    }
+
+    internal IReadOnlyList<Fill> GetAllFills()
+    {
+        lock (_recentFillsLock)
+            return _allFills.ToList();
     }
 
     internal void ClearRecentFills()
@@ -198,16 +207,8 @@ public sealed class LiveOrderContext : IOrderContext
                     {
                         pending.Id = exchangeOrderId;
                         _binanceOrderToSession.TryAdd(exchangeOrderId, _sessionId);
-
-                        if (order.Type == OrderType.Market)
-                        {
-                            pending.Status = OrderStatus.Filled;
-                        }
-                        else
-                        {
-                            _pendingOrders.TryAdd(exchangeOrderId, pending);
-                            _localToBinanceId.TryAdd(request.LocalId, exchangeOrderId);
-                        }
+                        _pendingOrders.TryAdd(exchangeOrderId, pending);
+                        _localToBinanceId.TryAdd(request.LocalId, exchangeOrderId);
                     }
 
                     _logger.LogInformation(

@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Threading.Channels;
+using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Domain;
+using AlgoTradeForge.Domain.Collections;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
@@ -41,6 +43,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
         public Channel<Action> EventQueue { get; } = Channel.CreateUnbounded<Action>(
             new UnboundedChannelOptions { SingleReader = true });
         public Task? ProcessingTask { get; set; }
+        public RingBuffer<Int64Bar> AccumulatedBars { get; } = new(10_000);
+        public Lock BarsLock { get; } = new();
+        public Dictionary<string, (Int64Bar Bar, DataSubscription Sub)> LastBarPerSub { get; } = new();
     }
 
     public BinanceLiveConnector(
@@ -225,6 +230,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         try
         {
+            // Cancel CTS first so kline/WebSocket callbacks stop firing
+            _cts?.Cancel();
+
             // Stop all sessions
             foreach (var entry in _sessions.Values)
             {
@@ -241,8 +249,6 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 await entry.OrderContext.StopAsync();
             }
             _sessions.Clear();
-
-            _cts?.Cancel();
 
             if (_wsManager is not null)
                 await _wsManager.DisposeAsync();
@@ -275,6 +281,13 @@ public sealed class BinanceLiveConnector : ILiveConnector
             (long)(decimal.Parse(msg.Kline.Low, CultureInfo.InvariantCulture) / tickSize),
             (long)(decimal.Parse(msg.Kline.Close, CultureInfo.InvariantCulture) / tickSize),
             (long)decimal.Parse(msg.Kline.Volume, CultureInfo.InvariantCulture));
+
+        var subKey = $"{subscription.Asset.Name}|{subscription.TimeFrame}";
+        lock (entry.BarsLock)
+        {
+            entry.AccumulatedBars.Add(bar);
+            entry.LastBarPerSub[subKey] = (bar, subscription);
+        }
 
         entry.EventQueue.Writer.TryWrite(() =>
         {
@@ -407,6 +420,34 @@ public sealed class BinanceLiveConnector : ILiveConnector
         _logger.LogInformation(
             "Order {OrderId} terminated: {ExecType} → {Status} (session={SessionId})",
             report.OrderId, report.ExecutionType, terminalStatus, entry.SessionId);
+    }
+
+    internal LiveSessionSnapshot? GetSessionSnapshot(Guid sessionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+            return null;
+
+        List<Int64Bar> bars;
+        List<SubscriptionLastBar> lastBars;
+        lock (entry.BarsLock)
+        {
+            bars = entry.AccumulatedBars.ToList();
+            lastBars = entry.LastBarPerSub.Values
+                .Select(v => new SubscriptionLastBar(v.Sub, v.Bar))
+                .ToList();
+        }
+
+        var ctx = entry.OrderContext;
+        return new LiveSessionSnapshot(
+            bars,
+            ctx.GetAllFills(),
+            ctx.GetPendingOrders(),
+            ctx.GetPositions(),
+            ctx.Cash,
+            ctx.Portfolio.InitialCash,
+            entry.PrimaryAsset,
+            entry.Subscriptions.ToList(),
+            lastBars);
     }
 
     private static string MapTimeFrameToInterval(TimeSpan timeFrame) => timeFrame.TotalMinutes switch

@@ -7,6 +7,7 @@ using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Infrastructure.Events;
 using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Optimization;
 using AlgoTradeForge.Infrastructure.Persistence;
@@ -40,6 +41,7 @@ public static class DependencyInjection
         // Live trading
         services.Configure<BinanceLiveOptions>(_ => { });
         services.AddSingleton<ILiveAccountManager, BinanceLiveAccountManager>();
+        services.AddSingleton<ILiveSessionDataProvider, BinanceLiveSessionDataProvider>();
 
         return services;
     }

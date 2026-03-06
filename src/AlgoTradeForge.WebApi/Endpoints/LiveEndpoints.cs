@@ -27,6 +27,13 @@ public static class LiveEndpoints
             .Produces<LiveSessionStatusResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{id:guid}/data", GetSessionData)
+            .WithName("GetLiveSessionData")
+            .WithSummary("Get live session market data, fills, and account state")
+            .WithOpenApi()
+            .Produces<LiveSessionDataResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapDelete("/{id:guid}", StopSession)
             .WithName("StopLiveSession")
             .WithSummary("Stop a live trading session")
@@ -129,6 +136,31 @@ public static class LiveEndpoints
 
         var response = new LiveSessionListResponse { Sessions = sessions };
         return Task.FromResult(Results.Ok(response));
+    }
+
+    private static async Task<IResult> GetSessionData(
+        Guid id,
+        IQueryHandler<GetLiveSessionDataQuery, LiveSessionDataDto?> handler,
+        CancellationToken ct)
+    {
+        var dto = await handler.HandleAsync(new GetLiveSessionDataQuery(id), ct);
+        if (dto is null)
+            return Results.NotFound(new { error = $"Live session '{id}' not found." });
+
+        var response = new LiveSessionDataResponse
+        {
+            Candles = dto.Candles.Select(c => new CandleResponse(c.Time, c.Open, c.High, c.Low, c.Close, c.Volume)).ToList(),
+            Fills = dto.Fills.Select(f => new FillResponse(f.OrderId, f.Timestamp, f.Price, f.Quantity, f.Side, f.Commission)).ToList(),
+            PendingOrders = dto.PendingOrders.Select(o => new PendingOrderResponse(o.Id, o.Side, o.Type, o.Quantity, o.LimitPrice, o.StopPrice)).ToList(),
+            Account = new AccountResponse(
+                dto.Account.InitialCash,
+                dto.Account.Cash,
+                dto.Account.Positions.Select(p => new PositionResponse(p.Symbol, p.Quantity, p.AverageEntryPrice, p.RealizedPnl)).ToList()),
+            TimeFrame = dto.TimeFrame,
+            LastBars = dto.LastBars.Select(b => new LastBarResponse(b.Symbol, b.TimeFrame, b.Time, b.Open, b.High, b.Low, b.Close, b.Volume)).ToList(),
+        };
+
+        return Results.Ok(response);
     }
 
     private static LiveEventRouting ParseRouting(string[]? enabledEvents)

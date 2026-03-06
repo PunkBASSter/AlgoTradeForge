@@ -20,6 +20,7 @@ import type {
   LiveSessionSubmission,
   LiveSession,
   LiveSessionListResponse,
+  LiveSessionData,
 } from "@/types/api";
 
 // ---------------------------------------------------------------------------
@@ -265,6 +266,12 @@ export const apiClient = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
     });
+  },
+
+  getLiveSessionData(id: string): Promise<LiveSessionData> {
+    return request<LiveSessionData>(
+      `/api/live/sessions/${encodeURIComponent(id)}/data`,
+    );
   },
 
   async stopLiveSession(id: string): Promise<void> {

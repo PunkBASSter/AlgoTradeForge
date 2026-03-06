@@ -59,6 +59,7 @@ public static class DependencyInjection
         services.AddSingleton<ILiveSessionStore, InMemoryLiveSessionStore>();
         services.AddScoped<ICommandHandler<StartLiveSessionCommand, LiveSessionSubmissionDto>, StartLiveSessionCommandHandler>();
         services.AddScoped<ICommandHandler<StopLiveSessionCommand, bool>, StopLiveSessionCommandHandler>();
+        services.AddScoped<IQueryHandler<GetLiveSessionDataQuery, LiveSessionDataDto?>, GetLiveSessionDataQueryHandler>();
 
         return services;
     }
