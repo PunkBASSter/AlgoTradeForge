@@ -57,7 +57,7 @@ nunit-*.xml
 /.vs/
 
 # Plugin assemblies
-**/plugins/
+**/AlgoTradeForge.WebApi/plugins/
 
 # Candle data (ingested)
 Data/
