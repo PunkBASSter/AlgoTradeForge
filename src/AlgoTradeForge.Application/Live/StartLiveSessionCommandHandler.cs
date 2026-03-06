@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Repositories;
@@ -125,7 +126,9 @@ public sealed class StartLiveSessionCommandHandler(
             if (!scaled.TryGetValue(axis.Name, out var value))
                 continue;
 
-            var decimalValue = Convert.ToDecimal(value);
+            var decimalValue = value is JsonElement je
+                ? je.GetDecimal()
+                : Convert.ToDecimal(value);
             scaled[axis.Name] = (long)(decimalValue * scaleFactor);
         }
 
