@@ -9,13 +9,16 @@ public class InMemoryLiveSessionStoreTests
 {
     private readonly InMemoryLiveSessionStore _store = new();
 
+    private static SessionDetails MakeDetails(string account, ILiveConnector connector, string fingerprint = "fp-default") =>
+        new(account, connector, "TestStrategy", "1.0", "Binance", "BTCUSDT", fingerprint, DateTimeOffset.UtcNow);
+
     [Fact]
-    public void Add_And_Get_ReturnsSameConnector()
+    public void TryAdd_And_Get_ReturnsSameConnector()
     {
         var id = Guid.NewGuid();
         var connector = Substitute.For<ILiveConnector>();
 
-        _store.Add(id, "paper", connector);
+        Assert.True(_store.TryAdd(id, MakeDetails("paper", connector, "fp-1")));
         var entry = _store.Get(id);
 
         Assert.NotNull(entry);
@@ -33,7 +36,7 @@ public class InMemoryLiveSessionStoreTests
     public void Remove_ExistingSession_ReturnsTrue()
     {
         var id = Guid.NewGuid();
-        _store.Add(id, "paper", Substitute.For<ILiveConnector>());
+        _store.TryAdd(id, MakeDetails("paper", Substitute.For<ILiveConnector>(), "fp-2"));
 
         Assert.True(_store.Remove(id));
         Assert.Null(_store.Get(id));
@@ -50,8 +53,8 @@ public class InMemoryLiveSessionStoreTests
     {
         var id1 = Guid.NewGuid();
         var id2 = Guid.NewGuid();
-        _store.Add(id1, "paper", Substitute.For<ILiveConnector>());
-        _store.Add(id2, "live", Substitute.For<ILiveConnector>());
+        _store.TryAdd(id1, MakeDetails("paper", Substitute.For<ILiveConnector>(), "fp-3"));
+        _store.TryAdd(id2, MakeDetails("live", Substitute.For<ILiveConnector>(), "fp-4"));
 
         var ids = _store.GetActiveSessionIds();
 
@@ -64,5 +67,39 @@ public class InMemoryLiveSessionStoreTests
     public void GetActiveSessionIds_Empty_ReturnsEmpty()
     {
         Assert.Empty(_store.GetActiveSessionIds());
+    }
+
+    [Fact]
+    public void TryAdd_DuplicateFingerprint_ReturnsFalse()
+    {
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+
+        Assert.True(_store.TryAdd(id1, MakeDetails("paper", Substitute.For<ILiveConnector>(), "same-fp")));
+        Assert.False(_store.TryAdd(id2, MakeDetails("paper", Substitute.For<ILiveConnector>(), "same-fp")));
+        Assert.Null(_store.Get(id2));
+    }
+
+    [Fact]
+    public void TryAdd_SameFingerprint_AllowedAfterRemove()
+    {
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+
+        _store.TryAdd(id1, MakeDetails("paper", Substitute.For<ILiveConnector>(), "reuse-fp"));
+        _store.Remove(id1);
+
+        Assert.True(_store.TryAdd(id2, MakeDetails("paper", Substitute.For<ILiveConnector>(), "reuse-fp")));
+        Assert.NotNull(_store.Get(id2));
+    }
+
+    [Fact]
+    public void TryAdd_DifferentFingerprints_BothSucceed()
+    {
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+
+        Assert.True(_store.TryAdd(id1, MakeDetails("paper", Substitute.For<ILiveConnector>(), "fp-a")));
+        Assert.True(_store.TryAdd(id2, MakeDetails("paper", Substitute.For<ILiveConnector>(), "fp-b")));
     }
 }

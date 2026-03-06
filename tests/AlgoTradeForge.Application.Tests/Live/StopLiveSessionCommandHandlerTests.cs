@@ -7,6 +7,9 @@ namespace AlgoTradeForge.Application.Tests.Live;
 
 public class StopLiveSessionCommandHandlerTests
 {
+    private static SessionDetails MakeDetails(string account, ILiveConnector connector) =>
+        new(account, connector, "TestStrategy", "1.0", "Binance", "BTCUSDT", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow);
+
     [Fact]
     public async Task Stop_ExistingSession_ReturnsTrue()
     {
@@ -14,7 +17,7 @@ public class StopLiveSessionCommandHandlerTests
         var connector = Substitute.For<ILiveConnector>();
         var accountManager = Substitute.For<ILiveAccountManager>();
         var sessionId = Guid.NewGuid();
-        store.Add(sessionId, "paper", connector);
+        store.TryAdd(sessionId, MakeDetails("paper", connector));
 
         var handler = new StopLiveSessionCommandHandler(store, accountManager);
 
@@ -45,7 +48,7 @@ public class StopLiveSessionCommandHandlerTests
         connector.SessionCount.Returns(0);
         var accountManager = Substitute.For<ILiveAccountManager>();
         var sessionId = Guid.NewGuid();
-        store.Add(sessionId, "paper", connector);
+        store.TryAdd(sessionId, MakeDetails("paper", connector));
 
         var handler = new StopLiveSessionCommandHandler(store, accountManager);
 
@@ -62,7 +65,7 @@ public class StopLiveSessionCommandHandlerTests
         connector.SessionCount.Returns(1);
         var accountManager = Substitute.For<ILiveAccountManager>();
         var sessionId = Guid.NewGuid();
-        store.Add(sessionId, "paper", connector);
+        store.TryAdd(sessionId, MakeDetails("paper", connector));
 
         var handler = new StopLiveSessionCommandHandler(store, accountManager);
 

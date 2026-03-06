@@ -13,6 +13,10 @@ import type {
   OptimizationSubmission,
   OptimizationStatus,
   StartDebugSessionRequest,
+  StartLiveSessionRequest,
+  LiveSessionSubmission,
+  LiveSession,
+  LiveSessionListResponse,
   DebugSession,
   DebugSessionStatus,
   StrategyDescriptor,
@@ -207,6 +211,49 @@ export const mockClient: typeof import("./api-client").apiClient & {
   },
 
   async deleteOptimization(_id: string): Promise<void> {
+    await delay();
+  },
+
+  // --- Live sessions ---
+
+  async getLiveSessions(): Promise<LiveSessionListResponse> {
+    await delay();
+    return {
+      sessions: [
+        {
+          sessionId: "mock-live-session-001",
+          status: "Running",
+          strategyName: "BuyAndHold",
+          strategyVersion: "1.0",
+          exchange: "Binance",
+          assetName: "BTCUSDT",
+          accountName: "paper",
+          startedAt: new Date().toISOString(),
+        },
+      ],
+    };
+  },
+
+  async getLiveSession(_id: string): Promise<LiveSession> {
+    await delay();
+    return {
+      sessionId: "mock-live-session-001",
+      status: "Running",
+      strategyName: "BuyAndHold",
+      strategyVersion: "1.0",
+      exchange: "Binance",
+      assetName: "BTCUSDT",
+      accountName: "paper",
+      startedAt: new Date().toISOString(),
+    };
+  },
+
+  async startLiveSession(_req: StartLiveSessionRequest): Promise<LiveSessionSubmission> {
+    await delay(500);
+    return { sessionId: "mock-live-session-002" };
+  },
+
+  async stopLiveSession(_id: string): Promise<void> {
     await delay();
   },
 

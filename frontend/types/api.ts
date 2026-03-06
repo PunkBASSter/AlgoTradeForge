@@ -260,6 +260,38 @@ export interface DataSubscription {
 }
 
 // ---------------------------------------------------------------------------
+// Live session types
+// ---------------------------------------------------------------------------
+
+export interface StartLiveSessionRequest {
+  strategyName: string;
+  initialCash: number;
+  strategyParameters?: Record<string, unknown>;
+  dataSubscriptions?: DataSubscription[];
+  enabledEvents?: string[];
+  accountName?: string;
+}
+
+export interface LiveSessionSubmission {
+  sessionId: string;
+}
+
+export interface LiveSession {
+  sessionId: string;
+  status: string;
+  strategyName: string;
+  strategyVersion: string;
+  exchange: string;
+  assetName: string;
+  accountName: string;
+  startedAt: string;
+}
+
+export interface LiveSessionListResponse {
+  sessions: LiveSession[];
+}
+
+// ---------------------------------------------------------------------------
 // Debug session types
 // ---------------------------------------------------------------------------
 

@@ -1,5 +1,6 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Live;
+using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.WebApi.Contracts;
 
@@ -52,7 +53,7 @@ public static class LiveEndpoints
             StrategyName = request.StrategyName,
             InitialCash = request.InitialCash,
             StrategyParameters = request.StrategyParameters,
-            CommissionPerTrade = request.CommissionPerTrade,
+            DataSubscriptions = request.DataSubscriptions,
             Routing = routing,
             AccountName = request.AccountName,
         };
@@ -81,6 +82,12 @@ public static class LiveEndpoints
         {
             SessionId = id,
             Status = entry.Connector.Status.ToString(),
+            StrategyName = entry.StrategyName,
+            StrategyVersion = entry.StrategyVersion,
+            Exchange = entry.Exchange,
+            AssetName = entry.AssetName,
+            AccountName = entry.AccountName,
+            StartedAt = entry.StartedAt,
         };
         return Task.FromResult(Results.Ok(response));
     }
@@ -107,6 +114,12 @@ public static class LiveEndpoints
             {
                 SessionId = id,
                 Status = entry?.Connector.Status.ToString() ?? "Unknown",
+                StrategyName = entry?.StrategyName ?? "Unknown",
+                StrategyVersion = entry?.StrategyVersion ?? "Unknown",
+                Exchange = entry?.Exchange ?? "Unknown",
+                AssetName = entry?.AssetName ?? "Unknown",
+                AccountName = entry?.AccountName ?? "Unknown",
+                StartedAt = entry?.StartedAt ?? DateTimeOffset.MinValue,
             };
         }).ToList();
 

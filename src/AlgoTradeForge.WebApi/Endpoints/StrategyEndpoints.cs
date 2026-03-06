@@ -61,7 +61,7 @@ public static class StrategyEndpoints
             Max = n.Max,
             Step = n.Step,
             ClrType = MapClrTypeName(n.ClrType),
-            Unit = n.Unit == ParamUnit.Raw ? null : n.Unit.ToString().ToLowerInvariant(),
+            Unit = n.Unit == ParamUnit.Raw ? null : char.ToLowerInvariant(n.Unit.ToString()[0]) + n.Unit.ToString()[1..],
         },
         ModuleSlotAxis m => new ParameterAxisResponse
         {

@@ -16,6 +16,10 @@ import type {
   DebugSession,
   DebugSessionStatus,
   StrategyDescriptor,
+  StartLiveSessionRequest,
+  LiveSessionSubmission,
+  LiveSession,
+  LiveSessionListResponse,
 } from "@/types/api";
 
 // ---------------------------------------------------------------------------
@@ -239,6 +243,33 @@ export const apiClient = {
   async deleteOptimization(id: string): Promise<void> {
     await requestVoid(
       `/api/optimizations/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  // --- Live sessions ---
+
+  getLiveSessions(): Promise<LiveSessionListResponse> {
+    return request<LiveSessionListResponse>("/api/live/sessions");
+  },
+
+  getLiveSession(id: string): Promise<LiveSession> {
+    return request<LiveSession>(
+      `/api/live/sessions/${encodeURIComponent(id)}`,
+    );
+  },
+
+  startLiveSession(req: StartLiveSessionRequest): Promise<LiveSessionSubmission> {
+    return request<LiveSessionSubmission>("/api/live/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    });
+  },
+
+  async stopLiveSession(id: string): Promise<void> {
+    await requestVoid(
+      `/api/live/sessions/${encodeURIComponent(id)}`,
       { method: "DELETE" },
     );
   },

@@ -6,6 +6,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { useOptimizationDetail, useDeleteOptimization } from "@/hooks/use-optimizations";
 import { OptimizationTrialsTable } from "@/components/features/report/optimization-trials-table";
+import { StatItem } from "@/components/ui/stat-item";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   formatCurrency,
@@ -14,17 +15,6 @@ import {
   toTitleCase,
 } from "@/lib/utils/format";
 import type { FailedTrialDetail } from "@/types/api";
-
-function StatItem({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
-        {label}
-      </span>
-      <p className="text-lg font-semibold text-text-primary mt-1">{value}</p>
-    </div>
-  );
-}
 
 function FailedTrialDetails({ details }: { details: FailedTrialDetail[] }) {
   const [open, setOpen] = React.useState(false);

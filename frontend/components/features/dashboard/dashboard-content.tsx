@@ -10,12 +10,14 @@ import { RunNewPanel } from "@/components/features/dashboard/run-new-panel";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/pagination";
+import { useLiveSessions } from "@/hooks/use-live-sessions";
 
 const LIMIT = 50;
 
 const modeTabs = [
   { id: "backtest", label: "Backtest" },
   { id: "optimization", label: "Optimization" },
+  { id: "live", label: "Live Trading" },
 ];
 
 const emptyFilters: FilterValues = {
@@ -28,7 +30,7 @@ const emptyFilters: FilterValues = {
 
 interface DashboardContentProps {
   strategy: string;
-  mode: "backtest" | "optimization";
+  mode: "backtest" | "optimization" | "live";
 }
 
 export function DashboardContent({ strategy, mode }: DashboardContentProps) {
@@ -68,7 +70,9 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
     enabled: mode === "optimization",
   });
 
-  const activeQuery = mode === "backtest" ? backtestQuery : optimizationQuery;
+  const liveSessionsQuery = useLiveSessions(mode === "live");
+
+  const activeQuery = mode === "live" ? null : mode === "backtest" ? backtestQuery : optimizationQuery;
 
   const handleTabChange = (tab: string) => {
     router.push(`/${strategy}/${tab}`);
@@ -82,6 +86,7 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
   const handleRunNewSuccess = () => {
     queryClient.invalidateQueries({ queryKey: ["backtests"] });
     queryClient.invalidateQueries({ queryKey: ["optimizations"] });
+    queryClient.invalidateQueries({ queryKey: ["live-sessions"] });
   };
 
   return (
@@ -95,16 +100,19 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
 
       <Tabs tabs={modeTabs} activeTab={mode} onTabChange={handleTabChange} />
 
-      <RunFilters filters={filters} onChange={handleFilterChange} />
+      {mode !== "live" && (
+        <RunFilters filters={filters} onChange={handleFilterChange} />
+      )}
 
       <RunsTable
         mode={mode}
         backtests={backtestQuery.data?.items}
         optimizations={optimizationQuery.data?.items}
-        isLoading={activeQuery.isLoading}
+        liveSessions={liveSessionsQuery.data?.sessions}
+        isLoading={mode === "live" ? liveSessionsQuery.isLoading : (activeQuery?.isLoading ?? false)}
       />
 
-      {activeQuery.data && (
+      {activeQuery?.data && (
         <Pagination
           offset={offset}
           limit={LIMIT}

@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Backtests;
+using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Progress;
 using Xunit;
@@ -79,6 +80,71 @@ public sealed class RunKeyBuilderTests
         Assert.Matches("^[0-9a-f]{64}$", key);
     }
 
+    // -----------------------------------------------------------------------
+    // Live session fingerprint
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void Build_Live_DeterministicForSameInput()
+    {
+        var cmd = MakeLiveCommand(new Dictionary<string, object> { ["lookback"] = 14, ["threshold"] = 0.5 });
+
+        var fp1 = RunKeyBuilder.Build(cmd);
+        var fp2 = RunKeyBuilder.Build(cmd);
+
+        Assert.Equal(fp1, fp2);
+    }
+
+    [Fact]
+    public void Build_Live_DiffersForDifferentParams()
+    {
+        var fp1 = RunKeyBuilder.Build(
+            MakeLiveCommand(new Dictionary<string, object> { ["lookback"] = 14 }));
+        var fp2 = RunKeyBuilder.Build(
+            MakeLiveCommand(new Dictionary<string, object> { ["lookback"] = 20 }));
+
+        Assert.NotEqual(fp1, fp2);
+    }
+
+    [Fact]
+    public void Build_Live_DiffersForDifferentSubscriptions()
+    {
+        var cmd1 = MakeLiveCommand() with
+        {
+            DataSubscriptions = [new DataSubscriptionDto { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }]
+        };
+        var cmd2 = MakeLiveCommand() with
+        {
+            DataSubscriptions = [new DataSubscriptionDto { Asset = "ETHUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }]
+        };
+
+        Assert.NotEqual(RunKeyBuilder.Build(cmd1), RunKeyBuilder.Build(cmd2));
+    }
+
+    [Fact]
+    public void Build_Live_Returns_SHA256_Hex_Format()
+    {
+        var fp = RunKeyBuilder.Build(MakeLiveCommand());
+
+        Assert.Equal(64, fp.Length);
+        Assert.Matches("^[0-9a-f]{64}$", fp);
+    }
+
+    [Fact]
+    public void Build_Live_ParameterOrderIndependence()
+    {
+        var fp1 = RunKeyBuilder.Build(
+            MakeLiveCommand(new Dictionary<string, object> { ["a"] = 1, ["b"] = 2 }));
+        var fp2 = RunKeyBuilder.Build(
+            MakeLiveCommand(new Dictionary<string, object> { ["b"] = 2, ["a"] = 1 }));
+
+        Assert.Equal(fp1, fp2);
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
     private static RunBacktestCommand MakeBacktestCommand() => new()
     {
         AssetName = "BTCUSDT",
@@ -91,6 +157,15 @@ public sealed class RunKeyBuilderTests
         SlippageTicks = 0,
         TimeFrame = TimeSpan.FromHours(1),
         StrategyParameters = new Dictionary<string, object> { ["fastPeriod"] = 10, ["slowPeriod"] = 30 }
+    };
+
+    private static StartLiveSessionCommand MakeLiveCommand(
+        IDictionary<string, object>? parameters = null) => new()
+    {
+        StrategyName = "Strat",
+        InitialCash = 10000m,
+        StrategyParameters = parameters,
+        DataSubscriptions = [new DataSubscriptionDto { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }],
     };
 
     private static RunOptimizationCommand MakeOptimizationCommand() => new()
