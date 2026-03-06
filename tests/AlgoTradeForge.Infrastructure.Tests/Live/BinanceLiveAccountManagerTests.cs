@@ -18,7 +18,8 @@ public class BinanceLiveAccountManagerTests
             options.Accounts[name] = new BinanceAccountConfig
             {
                 RestUrl = "https://testnet.binance.vision",
-                WsUrl = "wss://testnet.binance.vision",
+                MarketStreamUrl = "wss://stream.testnet.binance.vision",
+                WebSocketApiUrl = "wss://ws-api.testnet.binance.vision/ws-api/v3",
                 ApiKey = "test-key",
                 ApiSecret = "test-secret",
             };

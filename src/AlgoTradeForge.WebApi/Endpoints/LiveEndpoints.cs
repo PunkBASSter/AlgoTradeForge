@@ -68,6 +68,10 @@ public static class LiveEndpoints
         {
             return Results.BadRequest(new { error = ex.Message });
         }
+        catch (HttpRequestException ex)
+        {
+            return Results.Problem(ex.Message, statusCode: 502);
+        }
     }
 
     private static Task<IResult> GetSession(

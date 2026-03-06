@@ -22,8 +22,6 @@ public sealed class BinanceLiveConnector : ILiveConnector
     private CancellationTokenSource? _cts;
     private BinanceApiClient? _apiClient;
     private BinanceWebSocketManager? _wsManager;
-    private Timer? _listenKeyTimer;
-    private string? _listenKey;
 
     private readonly ConcurrentDictionary<Guid, LiveSessionEntry> _sessions = new();
     private readonly ConcurrentDictionary<long, Guid> _binanceOrderToSession = new();
@@ -77,37 +75,15 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 _accountConfig.RestUrl, _accountConfig.ApiKey, _accountConfig.ApiSecret, _logger);
 
             _wsManager = new BinanceWebSocketManager(
-                _accountConfig.WsUrl,
+                _accountConfig.MarketStreamUrl,
                 _sharedOptions.ReconnectDelay, _sharedOptions.MaxReconnectAttempts,
                 _logger);
             _wsManager.Start(_cts);
 
-            // Subscribe to user data stream — use ct so the initial HTTP call can be aborted
-            _listenKey = await _apiClient.CreateListenKeyAsync(ct);
-
-            _ = Task.Factory.StartNew(
-                () => _wsManager.SubscribeUserData(_listenKey, OnExecutionReport),
-                _cts.Token,
-                TaskCreationOptions.LongRunning,
-                TaskScheduler.Default);
-
-            // Start listenKey keepalive timer
-            _listenKeyTimer = new Timer(
-                async _ =>
-                {
-                    try
-                    {
-                        if (_apiClient is not null && _listenKey is not null)
-                            await _apiClient.KeepAliveListenKeyAsync(_listenKey);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to refresh listenKey for account '{Account}'", AccountName);
-                    }
-                },
-                null,
-                _sharedOptions.ListenKeyRefreshInterval,
-                _sharedOptions.ListenKeyRefreshInterval);
+            // Subscribe to user data via WebSocket API — awaited so we know it's active
+            await _wsManager.ConnectUserDataWsApi(
+                _accountConfig.WebSocketApiUrl, _accountConfig.ApiKey,
+                _apiClient.Sign, OnExecutionReport);
 
             Status = LiveSessionStatus.Running;
             _logger.LogInformation(
@@ -258,9 +234,6 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 await entry.OrderContext.StopAsync();
             }
             _sessions.Clear();
-
-            if (_listenKeyTimer is not null)
-                await _listenKeyTimer.DisposeAsync();
 
             _cts?.Cancel();
 

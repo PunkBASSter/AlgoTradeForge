@@ -69,23 +69,6 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
         await SendSignedAsync(HttpMethod.Delete, "/api/v3/order", parameters, ct);
     }
 
-    public async Task<string> CreateListenKeyAsync(CancellationToken ct = default)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v3/userDataStream");
-        using var response = await _http.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync(ct);
-        using var doc = JsonDocument.Parse(json);
-        return doc.RootElement.GetProperty("listenKey").GetString()!;
-    }
-
-    public async Task KeepAliveListenKeyAsync(string listenKey, CancellationToken ct = default)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v3/userDataStream?listenKey={listenKey}");
-        using var response = await _http.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
-    }
-
     public async Task<BinanceAccountInfo> GetAccountInfoAsync(CancellationToken ct = default)
     {
         var json = await SendSignedAsync(HttpMethod.Get, "/api/v3/account", new Dictionary<string, string>(), ct);
