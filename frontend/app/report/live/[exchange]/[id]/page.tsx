@@ -173,7 +173,7 @@ export default function LiveSessionPage({
             <h3 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">
               Exchange Trade History
             </h3>
-            <ExchangeTradesTable trades={exchangeTrades} />
+            <ExchangeTradesTable trades={exchangeTrades} assetName={session.assetName} />
           </div>
         )}
         {fills.length === 0 && exchangeTrades.length === 0 && (
@@ -423,11 +423,18 @@ function groupTradesByOrder(trades: LiveExchangeTrade[]): OrderGroup[] {
 }
 
 function formatCommission(commission: number, asset: string): string {
-  if (commission === 0) return "\u2014";
+  if (commission === 0) return `0 ${asset}`;
   return `${commission.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} ${asset}`;
 }
 
-function ExchangeTradesTable({ trades }: { trades: LiveExchangeTrade[] }) {
+function formatQty(qty: number): string {
+  // Avoid floating point artifacts (e.g. 0.029249999999998 → 0.02925)
+  // 8 decimals is standard for crypto base quantities
+  const fixed = qty.toFixed(8).replace(/0+$/, "").replace(/\.$/, "");
+  return fixed;
+}
+
+function ExchangeTradesTable({ trades, assetName }: { trades: LiveExchangeTrade[]; assetName: string }) {
   const groups = groupTradesByOrder(trades);
   const [expandedOrders, setExpandedOrders] = React.useState<Set<number>>(
     new Set(),
@@ -453,7 +460,7 @@ function ExchangeTradesTable({ trades }: { trades: LiveExchangeTrade[] }) {
           <th className="pb-2 font-medium">Time</th>
           <th className="pb-2 font-medium">Side</th>
           <th className="pb-2 font-medium text-right">Fills</th>
-          <th className="pb-2 font-medium text-right">Total Qty</th>
+          <th className="pb-2 font-medium text-right">Total Qty ({assetName})</th>
           <th className="pb-2 font-medium text-right">Avg Price</th>
           <th className="pb-2 font-medium text-right">Value</th>
           <th className="pb-2 font-medium text-right">Commission</th>
@@ -490,7 +497,7 @@ function ExchangeTradesTable({ trades }: { trades: LiveExchangeTrade[] }) {
                 <td className="py-2 text-right">
                   {isMultiFill ? group.fills.length : ""}
                 </td>
-                <td className="py-2 text-right">{group.totalQty}</td>
+                <td className="py-2 text-right">{formatQty(group.totalQty)}</td>
                 <td className="py-2 text-right">
                   {formatNumber(group.avgPrice)}
                 </td>
@@ -522,7 +529,7 @@ function ExchangeTradesTable({ trades }: { trades: LiveExchangeTrade[] }) {
                       <td className="py-1.5" />
                       <td className="py-1.5" />
                       <td className="py-1.5 text-right text-xs">
-                        {fill.quantity}
+                        {formatQty(fill.quantity)}
                       </td>
                       <td className="py-1.5 text-right text-xs">
                         {formatNumber(fill.price)}
