@@ -1,25 +1,15 @@
 # Live connector for Binance
 
-Research on the APIs and the way to authenticate.
-Create a domain class (designed as a lazy thread-safe singleton) connected to binance via its most recommended API (probably websockets).
-Class receives strategy instances and info about their data subscriptions. Each data subscription is listening to relevant data, that is routed to the strategy instances via their event hooks.
-The connector has (or is) an implementation of an IOrderContext passed to the relevant strategy hooks. Connector also routes relevant trade events to the strategy.
-Make sure strategy OnTrade hooks receive IOrderContext as well.
-Strategy live launch should be doable via UI. There should be an endpoint to setup the connector, receiving all the data. In UI should be the mocked data examples with all default settings real except the secrets. Suggest where to store the secrets for the local app for most balance of convenience and security.
+## Known Resilience Gaps
 
+### 1. No application-level heartbeat
 
-Feedback about session page:
-Now:
-```
-Market Data
-Bid/Ask quotes will appear here when the session is connected to the exchange.
+Connection loss detection relies on OS TCP timeout, which can take minutes for half-open connections (e.g., when a NAT gateway silently drops the session). A periodic ping frame or proactive `listenKey` renewal (PUT every ~30 min) would detect stale WebSocket connections much faster and trigger reconnection sooner.
 
-Recent Orders
-Order history will appear here once the session places trades.
+### 2. No recovery after max reconnect attempts
 
-Account Funds
-Account balance and equity will appear here when connected.
-```
-Can we fetch previous data and show it, then next to it show the data after session start.
+After exhausting the 10 configured reconnect attempts with exponential backoff, the connector stops completely. There is no automatic recovery path, no alerting mechanism, and no escalation beyond what Serilog logs. In production this means the strategy silently goes offline. Options to close this gap include: a supervisor loop that resets the attempt counter after a cooldown period, an alert via webhook/email, or an operator-facing health check endpoint that surfaces the failure.
 
-Bid/Ask quotes will appear here when the session is connected to the exchange. - This is not changed, even after a candle strategy launched for M1 did not show anything after several minutes, even after page refresh
+### 3. Cancel failures during shutdown are not retried
+
+If a cancel API call fails in `ProcessCancelsAsync` (e.g., due to a transient network error or rate limit), the order remains open on Binance. The current implementation logs the failure but does not retry. A bulk "cancel all open orders" REST call (`DELETE /api/v3/openOrders`) as a final safety net during graceful shutdown could prevent orphaned orders from lingering on the exchange.
