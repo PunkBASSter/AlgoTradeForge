@@ -11,7 +11,12 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { StatItem } from "@/components/ui/stat-item";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CandlestickChart } from "@/components/features/charts/candlestick-chart";
-import type { LiveFill, LivePendingOrder, LiveLastBar } from "@/types/api";
+import type {
+  LiveFill,
+  LiveExchangeTrade,
+  LivePendingOrder,
+  LiveLastBar,
+} from "@/types/api";
 
 function formatNumber(value: number, decimals = 2): string {
   return value.toLocaleString(undefined, {
@@ -168,7 +173,7 @@ export default function LiveSessionPage({
             <h3 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">
               Exchange Trade History
             </h3>
-            <FillsTable fills={exchangeTrades} />
+            <ExchangeTradesTable trades={exchangeTrades} />
           </div>
         )}
         {fills.length === 0 && exchangeTrades.length === 0 && (
@@ -337,6 +342,7 @@ function FillsTable({ fills }: { fills: LiveFill[] }) {
     <table className="w-full text-sm">
       <thead>
         <tr className="text-left text-text-muted border-b border-border-default">
+          <th className="pb-2 font-medium">Order</th>
           <th className="pb-2 font-medium">Time</th>
           <th className="pb-2 font-medium">Side</th>
           <th className="pb-2 font-medium text-right">Qty</th>
@@ -350,6 +356,7 @@ function FillsTable({ fills }: { fills: LiveFill[] }) {
             key={`${fill.orderId}-${i}`}
             className="border-b border-border-default last:border-0"
           >
+            <td className="py-2 font-mono text-text-muted">{fill.orderId}</td>
             <td className="py-2 text-text-secondary">
               {new Date(fill.timestamp).toLocaleString()}
             </td>
@@ -363,6 +370,175 @@ function FillsTable({ fills }: { fills: LiveFill[] }) {
             <td className="py-2 text-right">{formatNumber(fill.commission)}</td>
           </tr>
         ))}
+      </tbody>
+    </table>
+  );
+}
+
+interface OrderGroup {
+  orderId: number;
+  side: string;
+  timestamp: string;
+  fills: LiveExchangeTrade[];
+  totalQty: number;
+  avgPrice: number;
+  totalValue: number;
+  totalCommission: number;
+  commissionAsset: string;
+}
+
+function groupTradesByOrder(trades: LiveExchangeTrade[]): OrderGroup[] {
+  const map = new Map<number, LiveExchangeTrade[]>();
+  for (const trade of trades) {
+    const existing = map.get(trade.orderId);
+    if (existing) {
+      existing.push(trade);
+    } else {
+      map.set(trade.orderId, [trade]);
+    }
+  }
+
+  const groups: OrderGroup[] = [];
+  for (const [orderId, fills] of map) {
+    const totalQty = fills.reduce((sum, f) => sum + f.quantity, 0);
+    const totalValue = fills.reduce((sum, f) => sum + f.quantity * f.price, 0);
+    const avgPrice = totalQty > 0 ? totalValue / totalQty : 0;
+    const totalCommission = fills.reduce((sum, f) => sum + f.commission, 0);
+    groups.push({
+      orderId,
+      side: fills[0].side,
+      timestamp: fills[0].timestamp,
+      fills,
+      totalQty,
+      avgPrice,
+      totalValue,
+      totalCommission,
+      commissionAsset: fills[0].commissionAsset,
+    });
+  }
+
+  // Most recent order first
+  groups.reverse();
+  return groups;
+}
+
+function formatCommission(commission: number, asset: string): string {
+  if (commission === 0) return "\u2014";
+  return `${commission.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} ${asset}`;
+}
+
+function ExchangeTradesTable({ trades }: { trades: LiveExchangeTrade[] }) {
+  const groups = groupTradesByOrder(trades);
+  const [expandedOrders, setExpandedOrders] = React.useState<Set<number>>(
+    new Set(),
+  );
+
+  const toggleOrder = (orderId: number) => {
+    setExpandedOrders((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) {
+        next.delete(orderId);
+      } else {
+        next.add(orderId);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-text-muted border-b border-border-default">
+          <th className="pb-2 font-medium">Order</th>
+          <th className="pb-2 font-medium">Time</th>
+          <th className="pb-2 font-medium">Side</th>
+          <th className="pb-2 font-medium text-right">Fills</th>
+          <th className="pb-2 font-medium text-right">Total Qty</th>
+          <th className="pb-2 font-medium text-right">Avg Price</th>
+          <th className="pb-2 font-medium text-right">Value</th>
+          <th className="pb-2 font-medium text-right">Commission</th>
+        </tr>
+      </thead>
+      <tbody>
+        {groups.map((group) => {
+          const isMultiFill = group.fills.length > 1;
+          const isExpanded = expandedOrders.has(group.orderId);
+
+          return (
+            <React.Fragment key={group.orderId}>
+              {/* Summary row */}
+              <tr
+                className={`border-b border-border-default ${isMultiFill ? "cursor-pointer hover:bg-bg-surface" : ""}`}
+                onClick={isMultiFill ? () => toggleOrder(group.orderId) : undefined}
+              >
+                <td className="py-2 font-mono text-text-muted">
+                  {isMultiFill && (
+                    <span className="inline-block w-4 text-text-muted">
+                      {isExpanded ? "\u25BC" : "\u25B6"}
+                    </span>
+                  )}
+                  {group.orderId}
+                </td>
+                <td className="py-2 text-text-secondary">
+                  {new Date(group.timestamp).toLocaleString()}
+                </td>
+                <td
+                  className={`py-2 ${group.side === "Buy" ? "text-accent-green" : "text-accent-red"}`}
+                >
+                  {group.side}
+                </td>
+                <td className="py-2 text-right">
+                  {isMultiFill ? group.fills.length : ""}
+                </td>
+                <td className="py-2 text-right">{group.totalQty}</td>
+                <td className="py-2 text-right">
+                  {formatNumber(group.avgPrice)}
+                </td>
+                <td className="py-2 text-right">
+                  {formatNumber(group.totalValue)}
+                </td>
+                <td className="py-2 text-right">
+                  {formatCommission(group.totalCommission, group.commissionAsset)}
+                </td>
+              </tr>
+
+              {/* Expanded sub-rows for multi-fill orders */}
+              {isMultiFill &&
+                isExpanded &&
+                group.fills.map((fill, i) => {
+                  const isLast = i === group.fills.length - 1;
+                  const prefix = isLast ? "\u2514\u2500" : "\u251C\u2500";
+                  return (
+                    <tr
+                      key={`${fill.orderId}-${i}`}
+                      className="border-b border-border-default last:border-0 bg-bg-surface/50"
+                    >
+                      <td className="py-1.5 pl-6 text-text-muted font-mono text-xs">
+                        {prefix}
+                      </td>
+                      <td className="py-1.5 text-text-secondary text-xs">
+                        {new Date(fill.timestamp).toLocaleString()}
+                      </td>
+                      <td className="py-1.5" />
+                      <td className="py-1.5" />
+                      <td className="py-1.5 text-right text-xs">
+                        {fill.quantity}
+                      </td>
+                      <td className="py-1.5 text-right text-xs">
+                        {formatNumber(fill.price)}
+                      </td>
+                      <td className="py-1.5 text-right text-xs">
+                        {formatNumber(fill.quantity * fill.price)}
+                      </td>
+                      <td className="py-1.5 text-right text-xs">
+                        {formatCommission(fill.commission, fill.commissionAsset)}
+                      </td>
+                    </tr>
+                  );
+                })}
+            </React.Fragment>
+          );
+        })}
       </tbody>
     </table>
   );

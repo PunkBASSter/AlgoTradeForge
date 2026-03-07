@@ -542,7 +542,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
                     decimal.Parse(t.Price, CultureInfo.InvariantCulture),
                     decimal.Parse(t.Qty, CultureInfo.InvariantCulture),
                     t.IsBuyer ? "Buy" : "Sell",
-                    decimal.Parse(t.Commission, CultureInfo.InvariantCulture)))
+                    decimal.Parse(t.Commission, CultureInfo.InvariantCulture),
+                    t.CommissionAsset))
                 .ToList();
             _tradeCacheExpiry = DateTimeOffset.UtcNow.AddSeconds(15);
         }

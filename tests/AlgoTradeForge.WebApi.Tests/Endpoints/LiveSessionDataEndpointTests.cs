@@ -147,23 +147,24 @@ public class LiveSessionDataEndpointTests : IClassFixture<WebApplicationFactory<
     }
 
     [Fact]
-    public void LiveSessionDataResponse_ExchangeTrade_ReusesFillResponseShape()
+    public void LiveSessionDataResponse_ExchangeTrade_HasCommissionAsset()
     {
-        // ExchangeTrades reuse FillResponse — same shape as session fills
-        var trade = new FillResponse(
+        var trade = new ExchangeTradeResponse(
             OrderId: 99,
             Timestamp: "2026-03-05T18:30:00Z",
             Price: 64500.00m,
             Quantity: 0.1m,
             Side: "Sell",
-            Commission: 3.20m);
+            Commission: 0.00000827m,
+            CommissionAsset: "BNB");
 
         Assert.Equal(99, trade.OrderId);
         Assert.Equal("2026-03-05T18:30:00Z", trade.Timestamp);
         Assert.Equal(64500.00m, trade.Price);
         Assert.Equal(0.1m, trade.Quantity);
         Assert.Equal("Sell", trade.Side);
-        Assert.Equal(3.20m, trade.Commission);
+        Assert.Equal(0.00000827m, trade.Commission);
+        Assert.Equal("BNB", trade.CommissionAsset);
     }
 
     [Fact]
@@ -178,7 +179,7 @@ public class LiveSessionDataEndpointTests : IClassFixture<WebApplicationFactory<
             Account = new AccountResponse(100000m, 95000m, 100000m, [new PositionResponse("BTCUSDT", 0.5m, 65000m, 0m)]),
             TimeFrame = "00:01:00",
             LastBars = [new LastBarResponse("BTCUSDT", "00:01:00", 1709683200000, 65000m, 66000m, 64000m, 65500m, 100)],
-            ExchangeTrades = [new FillResponse(99, "2026-03-05T18:30:00Z", 64500m, 0.1m, "Sell", 3.2m)],
+            ExchangeTrades = [new ExchangeTradeResponse(99, "2026-03-05T18:30:00Z", 64500m, 0.1m, "Sell", 3.2m, "USDT")],
         };
 
         var json = JsonSerializer.Serialize(response, JsonOptions);
@@ -211,5 +212,6 @@ public class LiveSessionDataEndpointTests : IClassFixture<WebApplicationFactory<
         Assert.Equal(0.1m, trade.Quantity);
         Assert.Equal("Sell", trade.Side);
         Assert.Equal(3.2m, trade.Commission);
+        Assert.Equal("USDT", trade.CommissionAsset);
     }
 }

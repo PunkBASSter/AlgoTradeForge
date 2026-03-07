@@ -302,7 +302,7 @@ export interface LiveSessionData {
   account: LiveAccount;
   timeFrame: string;
   lastBars: LiveLastBar[];
-  exchangeTrades: LiveFill[];
+  exchangeTrades: LiveExchangeTrade[];
 }
 
 export interface LiveFill {
@@ -312,6 +312,10 @@ export interface LiveFill {
   quantity: number;
   side: string;
   commission: number;
+}
+
+export interface LiveExchangeTrade extends LiveFill {
+  commissionAsset: string;
 }
 
 export interface LivePendingOrder {

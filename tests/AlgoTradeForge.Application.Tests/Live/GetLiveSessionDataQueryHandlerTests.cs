@@ -260,7 +260,7 @@ public class GetLiveSessionDataQueryHandlerTests
 
         var trades = new List<ExchangeTradeDto>
         {
-            new(99, "2026-03-05T18:30:00Z", 64500.00m, 0.1m, "Sell", 3.20m),
+            new(99, "2026-03-05T18:30:00Z", 64500.00m, 0.1m, "Sell", 3.20m, "USDT"),
         };
 
         _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(exchangeTrades: trades));

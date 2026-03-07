@@ -23,7 +23,7 @@ public sealed record LiveSessionDataDto
 public sealed record CandleDto(long Time, decimal Open, decimal High, decimal Low, decimal Close, long Volume);
 public sealed record FillDto(long OrderId, string Timestamp, decimal Price, decimal Quantity, string Side, decimal Commission);
 public sealed record PendingOrderDto(long Id, string Side, string Type, decimal Quantity, decimal? LimitPrice, decimal? StopPrice);
-public sealed record ExchangeTradeDto(long OrderId, string Timestamp, decimal Price, decimal Quantity, string Side, decimal Commission);
+public sealed record ExchangeTradeDto(long OrderId, string Timestamp, decimal Price, decimal Quantity, string Side, decimal Commission, string CommissionAsset);
 public sealed record AccountDto(decimal InitialCash, decimal Cash, decimal ExchangeBalance, IReadOnlyList<PositionDto> Positions);
 public sealed record PositionDto(string Symbol, decimal Quantity, decimal AverageEntryPrice, decimal RealizedPnl);
 public sealed record LastBarDto(string Symbol, string TimeFrame, long Time, decimal Open, decimal High, decimal Low, decimal Close, long Volume);
