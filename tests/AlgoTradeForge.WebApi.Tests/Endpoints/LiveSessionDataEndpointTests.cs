@@ -115,6 +115,7 @@ public class LiveSessionDataEndpointTests : IClassFixture<WebApplicationFactory<
         var account = new AccountResponse(
             InitialCash: 100000m,
             Cash: 96000m,
+            ExchangeBalance: 100000m,
             Positions: [position]);
 
         Assert.Equal(100000m, account.InitialCash);
@@ -146,6 +147,26 @@ public class LiveSessionDataEndpointTests : IClassFixture<WebApplicationFactory<
     }
 
     [Fact]
+    public void LiveSessionDataResponse_ExchangeTrade_ReusesFillResponseShape()
+    {
+        // ExchangeTrades reuse FillResponse — same shape as session fills
+        var trade = new FillResponse(
+            OrderId: 99,
+            Timestamp: "2026-03-05T18:30:00Z",
+            Price: 64500.00m,
+            Quantity: 0.1m,
+            Side: "Sell",
+            Commission: 3.20m);
+
+        Assert.Equal(99, trade.OrderId);
+        Assert.Equal("2026-03-05T18:30:00Z", trade.Timestamp);
+        Assert.Equal(64500.00m, trade.Price);
+        Assert.Equal(0.1m, trade.Quantity);
+        Assert.Equal("Sell", trade.Side);
+        Assert.Equal(3.20m, trade.Commission);
+    }
+
+    [Fact]
     public void LiveSessionDataResponse_FullAssembly_SerializesCorrectly()
     {
         // Build a complete response and verify JSON round-trip
@@ -154,9 +175,10 @@ public class LiveSessionDataEndpointTests : IClassFixture<WebApplicationFactory<
             Candles = [new CandleResponse(1709683200000, 65000m, 66000m, 64000m, 65500m, 100)],
             Fills = [new FillResponse(1, "2026-03-06T12:00:00Z", 65000m, 0.5m, "Buy", 6.5m)],
             PendingOrders = [new PendingOrderResponse(2, "Sell", "Limit", 0.3m, 67000m, null)],
-            Account = new AccountResponse(100000m, 95000m, [new PositionResponse("BTCUSDT", 0.5m, 65000m, 0m)]),
+            Account = new AccountResponse(100000m, 95000m, 100000m, [new PositionResponse("BTCUSDT", 0.5m, 65000m, 0m)]),
             TimeFrame = "00:01:00",
             LastBars = [new LastBarResponse("BTCUSDT", "00:01:00", 1709683200000, 65000m, 66000m, 64000m, 65500m, 100)],
+            ExchangeTrades = [new FillResponse(99, "2026-03-05T18:30:00Z", 64500m, 0.1m, "Sell", 3.2m)],
         };
 
         var json = JsonSerializer.Serialize(response, JsonOptions);
@@ -179,5 +201,15 @@ public class LiveSessionDataEndpointTests : IClassFixture<WebApplicationFactory<
         Assert.Equal(64000m, lastBar.Low);
         Assert.Equal(65500m, lastBar.Close);
         Assert.Equal(100, lastBar.Volume);
+
+        // Verify ExchangeTrades round-trip
+        Assert.Single(deserialized.ExchangeTrades);
+        var trade = deserialized.ExchangeTrades[0];
+        Assert.Equal(99, trade.OrderId);
+        Assert.Equal("2026-03-05T18:30:00Z", trade.Timestamp);
+        Assert.Equal(64500m, trade.Price);
+        Assert.Equal(0.1m, trade.Quantity);
+        Assert.Equal("Sell", trade.Side);
+        Assert.Equal(3.2m, trade.Commission);
     }
 }

@@ -16,13 +16,15 @@ public sealed record LiveSessionDataDto
     public required AccountDto Account { get; init; }
     public required string TimeFrame { get; init; }
     public required IReadOnlyList<LastBarDto> LastBars { get; init; }
+    public required IReadOnlyList<ExchangeTradeDto> ExchangeTrades { get; init; }
 }
 
 /// <summary>Time is Unix seconds (not milliseconds) — required by TradingView lightweight-charts.</summary>
 public sealed record CandleDto(long Time, decimal Open, decimal High, decimal Low, decimal Close, long Volume);
 public sealed record FillDto(long OrderId, string Timestamp, decimal Price, decimal Quantity, string Side, decimal Commission);
 public sealed record PendingOrderDto(long Id, string Side, string Type, decimal Quantity, decimal? LimitPrice, decimal? StopPrice);
-public sealed record AccountDto(decimal InitialCash, decimal Cash, IReadOnlyList<PositionDto> Positions);
+public sealed record ExchangeTradeDto(long OrderId, string Timestamp, decimal Price, decimal Quantity, string Side, decimal Commission);
+public sealed record AccountDto(decimal InitialCash, decimal Cash, decimal ExchangeBalance, IReadOnlyList<PositionDto> Positions);
 public sealed record PositionDto(string Symbol, decimal Quantity, decimal AverageEntryPrice, decimal RealizedPnl);
 public sealed record LastBarDto(string Symbol, string TimeFrame, long Time, decimal Open, decimal High, decimal Low, decimal Close, long Volume);
 
@@ -39,7 +41,7 @@ public sealed class GetLiveSessionDataQueryHandler(
         if (details is null)
             return null;
 
-        var snapshot = dataProvider.GetSnapshot(query.SessionId);
+        var snapshot = await dataProvider.GetSnapshotAsync(query.SessionId, ct);
         if (snapshot is null)
             return null;
 
@@ -120,6 +122,7 @@ public sealed class GetLiveSessionDataQueryHandler(
         var account = new AccountDto(
             snapshot.InitialCash * tickSize,
             snapshot.Cash * tickSize,
+            snapshot.ExchangeBalance,
             positions);
 
         // Build last bar per subscription
@@ -135,6 +138,7 @@ public sealed class GetLiveSessionDataQueryHandler(
             Account = account,
             TimeFrame = timeFrame,
             LastBars = lastBars,
+            ExchangeTrades = snapshot.ExchangeTrades,
         };
 
         return dto;

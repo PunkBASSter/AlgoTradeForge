@@ -302,6 +302,7 @@ export interface LiveSessionData {
   account: LiveAccount;
   timeFrame: string;
   lastBars: LiveLastBar[];
+  exchangeTrades: LiveFill[];
 }
 
 export interface LiveFill {
@@ -325,6 +326,7 @@ export interface LivePendingOrder {
 export interface LiveAccount {
   initialCash: number;
   cash: number;
+  exchangeBalance: number;
   positions: LivePosition[];
 }
 

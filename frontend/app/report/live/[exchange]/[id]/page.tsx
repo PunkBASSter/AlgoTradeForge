@@ -70,6 +70,7 @@ export default function LiveSessionPage({
   const pendingOrders = sessionData?.pendingOrders ?? [];
   const account = sessionData?.account;
   const lastBars = sessionData?.lastBars ?? [];
+  const exchangeTrades = sessionData?.exchangeTrades ?? [];
   const latestClose =
     candles.length > 0 ? candles[candles.length - 1].close : null;
 
@@ -154,9 +155,23 @@ export default function LiveSessionPage({
         {pendingOrders.length > 0 && (
           <PendingOrdersTable orders={pendingOrders} />
         )}
-        {fills.length > 0 ? (
-          <FillsTable fills={fills} />
-        ) : (
+        {fills.length > 0 && (
+          <div className="mb-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">
+              Session Fills
+            </h3>
+            <FillsTable fills={fills} />
+          </div>
+        )}
+        {exchangeTrades.length > 0 && (
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">
+              Exchange Trade History
+            </h3>
+            <FillsTable fills={exchangeTrades} />
+          </div>
+        )}
+        {fills.length === 0 && exchangeTrades.length === 0 && (
           <p className="text-sm text-text-muted">No orders yet.</p>
         )}
       </div>
@@ -168,7 +183,11 @@ export default function LiveSessionPage({
         </h2>
         {account ? (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 mb-4">
+              <StatItem
+                label="Exchange Balance"
+                value={formatNumber(account.exchangeBalance)}
+              />
               <StatItem
                 label="Initial Cash"
                 value={formatNumber(account.initialCash)}

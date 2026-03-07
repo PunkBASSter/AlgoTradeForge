@@ -27,6 +27,13 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
     private readonly ConcurrentDictionary<Guid, LiveSessionEntry> _sessions = new();
     private readonly ConcurrentDictionary<long, Guid> _binanceOrderToSession = new();
+    private readonly ConcurrentDictionary<long, ConcurrentQueue<BinanceExecutionReport>> _bufferedReports = new();
+
+    private decimal _cachedQuoteBalance;
+    private DateTimeOffset _balanceCacheExpiry;
+
+    private IReadOnlyList<ExchangeTradeDto> _cachedTrades = [];
+    private DateTimeOffset _tradeCacheExpiry;
 
     public string AccountName { get; }
     public LiveSessionStatus Status { get; private set; } = LiveSessionStatus.Idle;
@@ -38,7 +45,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
         LiveOrderContext OrderContext,
         IList<DataSubscription> Subscriptions,
         LiveEventRouting Routing,
-        Asset PrimaryAsset)
+        Asset PrimaryAsset,
+        string QuoteAsset)
     {
         public Channel<Action> EventQueue { get; } = Channel.CreateUnbounded<Action>(
             new UnboundedChannelOptions { SingleReader = true });
@@ -131,6 +139,10 @@ public sealed class BinanceLiveConnector : ILiveConnector
             : 0m;
         var availableScaled = (long)(freeBalance / asset.TickSize);
 
+        // Seed balance cache from the account query we already made
+        _cachedQuoteBalance = freeBalance;
+        _balanceCacheExpiry = DateTimeOffset.UtcNow.AddSeconds(15);
+
         if (config.InitialCash > availableScaled)
         {
             var requestedDecimal = config.InitialCash * asset.TickSize;
@@ -147,6 +159,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
             portfolio, asset, _orderValidator, _logger, _apiClient!,
             config.SessionId, _binanceOrderToSession);
         orderContext.Start(_cts!.Token);
+        orderContext.OrderMapped += DrainBufferedReports;
 
         // Set event bus on strategy if supported
         if (config.Strategy is IEventBusReceiver receiver)
@@ -160,7 +173,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
             orderContext,
             config.Subscriptions,
             config.Routing,
-            asset);
+            asset,
+            symbolInfo.QuoteAsset);
 
         _sessions.TryAdd(config.SessionId, entry);
 
@@ -209,6 +223,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
         // Cancel pending orders via API
         foreach (var order in entry.OrderContext.GetPendingOrders())
             entry.OrderContext.Cancel(order.Id);
+
+        entry.OrderContext.OrderMapped -= DrainBufferedReports;
 
         // Drain event queue before stopping
         entry.EventQueue.Writer.TryComplete();
@@ -315,8 +331,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
         // Look up session via order routing map
         if (!_binanceOrderToSession.TryGetValue(report.OrderId, out var sessionId))
         {
-            _logger.LogWarning(
-                "Received execution report for unknown order {OrderId} (type={ExecType}) — may be a manual order on Binance",
+            var queue = _bufferedReports.GetOrAdd(report.OrderId, _ => new());
+            queue.Enqueue(report);
+            _logger.LogDebug("Buffered execution report for unmapped order {OrderId} (type={ExecType})",
                 report.OrderId, report.ExecutionType);
             return;
         }
@@ -346,8 +363,29 @@ public sealed class BinanceLiveConnector : ILiveConnector
         }
     }
 
+    private void DrainBufferedReports(long binanceOrderId)
+    {
+        if (!_bufferedReports.TryRemove(binanceOrderId, out var queue))
+            return;
+
+        _logger.LogInformation("Replaying {Count} buffered report(s) for order {OrderId}",
+            queue.Count, binanceOrderId);
+
+        while (queue.TryDequeue(out var report))
+            OnExecutionReport(report);
+    }
+
     private void HandleTradeExecution(BinanceExecutionReport report, LiveSessionEntry entry)
     {
+        // Skip if fills were already processed from REST response
+        if (entry.OrderContext.IsOrderRestFilled(report.OrderId))
+        {
+            _logger.LogDebug(
+                "Skipping WebSocket fill for order {OrderId} — already processed from REST",
+                report.OrderId);
+            return;
+        }
+
         var asset = entry.PrimaryAsset;
         var tickSize = asset.TickSize;
 
@@ -433,7 +471,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
         return await _apiClient.GetKlinesAsync(symbol, interval, tickSize, limit, ct);
     }
 
-    internal LiveSessionSnapshot? GetSessionSnapshot(Guid sessionId)
+    internal async Task<LiveSessionSnapshot?> GetSessionSnapshotAsync(Guid sessionId, CancellationToken ct = default)
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
             return null;
@@ -448,6 +486,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 .ToList();
         }
 
+        var exchangeBalance = await GetCachedQuoteBalanceAsync(entry.QuoteAsset, ct);
+        var exchangeTrades = await GetCachedTradesAsync(entry.PrimaryAsset.Name, ct);
+
         var ctx = entry.OrderContext;
         return new LiveSessionSnapshot(
             bars,
@@ -456,9 +497,61 @@ public sealed class BinanceLiveConnector : ILiveConnector
             ctx.GetPositions(),
             ctx.Cash,
             ctx.Portfolio.InitialCash,
+            exchangeBalance,
             entry.PrimaryAsset,
             entry.Subscriptions.ToList(),
-            lastBars);
+            lastBars,
+            exchangeTrades);
+    }
+
+    private async Task<decimal> GetCachedQuoteBalanceAsync(string quoteAsset, CancellationToken ct)
+    {
+        if (DateTimeOffset.UtcNow < _balanceCacheExpiry)
+            return _cachedQuoteBalance;
+
+        try
+        {
+            var accountInfo = await _apiClient!.GetAccountInfoAsync(ct);
+            var balance = accountInfo.Balances
+                .FirstOrDefault(b => b.Asset.Equals(quoteAsset, StringComparison.OrdinalIgnoreCase));
+            _cachedQuoteBalance = balance is not null
+                ? decimal.Parse(balance.Free, CultureInfo.InvariantCulture)
+                : 0m;
+            _balanceCacheExpiry = DateTimeOffset.UtcNow.AddSeconds(15);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to refresh exchange balance for {QuoteAsset}", quoteAsset);
+        }
+
+        return _cachedQuoteBalance;
+    }
+
+    private async Task<IReadOnlyList<ExchangeTradeDto>> GetCachedTradesAsync(string symbol, CancellationToken ct)
+    {
+        if (DateTimeOffset.UtcNow < _tradeCacheExpiry)
+            return _cachedTrades;
+
+        try
+        {
+            var trades = await _apiClient!.GetMyTradesAsync(symbol, 50, ct);
+            _cachedTrades = trades
+                .Select(t => new ExchangeTradeDto(
+                    t.OrderId,
+                    DateTimeOffset.FromUnixTimeMilliseconds(t.Time).ToString("O"),
+                    decimal.Parse(t.Price, CultureInfo.InvariantCulture),
+                    decimal.Parse(t.Qty, CultureInfo.InvariantCulture),
+                    t.IsBuyer ? "Buy" : "Sell",
+                    decimal.Parse(t.Commission, CultureInfo.InvariantCulture)))
+                .ToList();
+            _tradeCacheExpiry = DateTimeOffset.UtcNow.AddSeconds(15);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch exchange trades for {Symbol}", symbol);
+        }
+
+        return _cachedTrades;
     }
 
     private static string MapTimeFrameToInterval(TimeSpan timeFrame) => timeFrame.TotalMinutes switch

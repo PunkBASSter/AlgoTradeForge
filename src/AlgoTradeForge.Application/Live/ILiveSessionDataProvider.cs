@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Application.Live;
 
 public interface ILiveSessionDataProvider
 {
-    LiveSessionSnapshot? GetSnapshot(Guid sessionId);
+    Task<LiveSessionSnapshot?> GetSnapshotAsync(Guid sessionId, CancellationToken ct = default);
 
     /// <summary>
     /// Fetches recent candles from the exchange REST API to fill the gap

@@ -12,8 +12,10 @@ public sealed record LiveSessionSnapshot(
     IReadOnlyDictionary<string, Position> Positions,
     long Cash,
     long InitialCash,
+    decimal ExchangeBalance,
     Asset PrimaryAsset,
     IReadOnlyList<DataSubscription> Subscriptions,
-    IReadOnlyList<SubscriptionLastBar> LastBarsPerSubscription);
+    IReadOnlyList<SubscriptionLastBar> LastBarsPerSubscription,
+    IReadOnlyList<ExchangeTradeDto> ExchangeTrades);
 
 public sealed record SubscriptionLastBar(DataSubscription Subscription, Int64Bar Bar);

@@ -217,4 +217,48 @@ public class LiveOrderContextTests
         Assert.Equal(OrderStatus.Cancelled, cancelled.Status);
         Assert.Empty(ctx.GetPendingOrders());
     }
+
+    [Fact]
+    public void OrderMapped_FiredAfterSimulateOrderPlaced()
+    {
+        var ctx = CreateContext();
+        ctx.Start(CancellationToken.None);
+
+        long? mappedOrderId = null;
+        ctx.OrderMapped += id => mappedOrderId = id;
+
+        var order = new Order
+        {
+            Id = 0,
+            Asset = BtcUsdt,
+            Side = OrderSide.Buy,
+            Type = OrderType.Limit,
+            Quantity = 0.001m,
+            LimitPrice = 5000000L,
+        };
+
+        var localId = ctx.Submit(order);
+        const long binanceOrderId = 12345L;
+        ctx.SimulateOrderPlaced(localId, binanceOrderId);
+
+        Assert.Equal(binanceOrderId, mappedOrderId);
+    }
+
+    [Fact]
+    public void AddFill_UpdatesCashAndPositions()
+    {
+        var ctx = CreateContext();
+        var initialCash = ctx.Cash;
+
+        var fill = new Fill(1, BtcUsdt, DateTimeOffset.UtcNow, 5000000L, 0.001m, OrderSide.Buy, 100);
+        ctx.AddFill(fill);
+
+        // Cash should decrease (cost of fill + commission)
+        Assert.True(ctx.Cash < initialCash);
+
+        // Position should exist
+        var positions = ctx.GetPositions();
+        Assert.Single(positions);
+        Assert.Equal(0.001m, positions["BTCUSDT"].Quantity);
+    }
 }

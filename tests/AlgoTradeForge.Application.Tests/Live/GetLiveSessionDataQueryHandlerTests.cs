@@ -35,7 +35,9 @@ public class GetLiveSessionDataQueryHandlerTests
         IReadOnlyDictionary<string, Position>? positions = null,
         long cash = 10_000_000,
         long initialCash = 10_000_000,
-        IReadOnlyList<SubscriptionLastBar>? lastBars = null)
+        decimal exchangeBalance = 100_000m,
+        IReadOnlyList<SubscriptionLastBar>? lastBars = null,
+        IReadOnlyList<ExchangeTradeDto>? exchangeTrades = null)
     {
         return new LiveSessionSnapshot(
             bars ?? [],
@@ -44,9 +46,11 @@ public class GetLiveSessionDataQueryHandlerTests
             positions ?? new Dictionary<string, Position>(),
             cash,
             initialCash,
+            exchangeBalance,
             TestAsset,
             [TestSubscription],
-            lastBars ?? []);
+            lastBars ?? [],
+            exchangeTrades ?? []);
     }
 
     [Fact]
@@ -65,7 +69,7 @@ public class GetLiveSessionDataQueryHandlerTests
         var handler = CreateHandler();
         var sessionId = Guid.NewGuid();
         _store.TryAdd(sessionId, MakeDetails());
-        _dataProvider.GetSnapshot(sessionId).Returns((LiveSessionSnapshot?)null);
+        _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns((LiveSessionSnapshot?)null);
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
@@ -81,7 +85,7 @@ public class GetLiveSessionDataQueryHandlerTests
 
         // Bar with Int64 values: 6_500_000 * 0.01 = 65,000.00
         var bar = new Int64Bar(1_741_292_400_000, 6_500_000, 6_600_000, 6_400_000, 6_550_000, 100);
-        _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(bars: [bar]));
+        _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(bars: [bar]));
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
@@ -109,7 +113,7 @@ public class GetLiveSessionDataQueryHandlerTests
         var sessionBar = new Int64Bar(ts1, 110, 210, 60, 160, 20); // same timestamp
         var sessionBar2 = new Int64Bar(ts2, 120, 220, 70, 170, 30); // different timestamp
 
-        _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(bars: [sessionBar, sessionBar2]));
+        _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(bars: [sessionBar, sessionBar2]));
         _dataProvider.GetRecentKlinesAsync(sessionId, Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<decimal>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([klineBar]);
@@ -135,7 +139,7 @@ public class GetLiveSessionDataQueryHandlerTests
         var fill = new Fill(42, TestAsset, DateTimeOffset.Parse("2026-03-06T12:00:00Z"),
             6_500_000, 0.5m, OrderSide.Buy, 650);
 
-        _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(fills: [fill]));
+        _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(fills: [fill]));
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
@@ -167,7 +171,7 @@ public class GetLiveSessionDataQueryHandlerTests
             StopPrice = null,
         };
 
-        _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(pendingOrders: [order]));
+        _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(pendingOrders: [order]));
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
@@ -192,7 +196,7 @@ public class GetLiveSessionDataQueryHandlerTests
             ["ETHUSDT"] = new(TestAsset, 0m, 0, 500), // closed position — should be filtered
         };
 
-        _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(positions: positions));
+        _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(positions: positions));
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
@@ -208,7 +212,7 @@ public class GetLiveSessionDataQueryHandlerTests
         var sessionId = Guid.NewGuid();
         _store.TryAdd(sessionId, MakeDetails());
 
-        _dataProvider.GetSnapshot(sessionId).Returns(
+        _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(
             MakeSnapshot(cash: 9_500_000, initialCash: 10_000_000));
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
@@ -231,7 +235,7 @@ public class GetLiveSessionDataQueryHandlerTests
             new(TestSubscription, bar),
         };
 
-        _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(lastBars: lastBars));
+        _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(lastBars: lastBars));
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
@@ -248,6 +252,30 @@ public class GetLiveSessionDataQueryHandlerTests
     }
 
     [Fact]
+    public async Task PassesExchangeTradesThrough()
+    {
+        var handler = CreateHandler();
+        var sessionId = Guid.NewGuid();
+        _store.TryAdd(sessionId, MakeDetails());
+
+        var trades = new List<ExchangeTradeDto>
+        {
+            new(99, "2026-03-05T18:30:00Z", 64500.00m, 0.1m, "Sell", 3.20m),
+        };
+
+        _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(exchangeTrades: trades));
+
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
+
+        Assert.NotNull(result);
+        Assert.Single(result.ExchangeTrades);
+        var trade = result.ExchangeTrades[0];
+        Assert.Equal(99, trade.OrderId);
+        Assert.Equal(64500.00m, trade.Price);
+        Assert.Equal("Sell", trade.Side);
+    }
+
+    [Fact]
     public async Task GracefullyHandlesKlinesFetchFailure()
     {
         var handler = CreateHandler();
@@ -255,7 +283,7 @@ public class GetLiveSessionDataQueryHandlerTests
         _store.TryAdd(sessionId, MakeDetails());
 
         var sessionBar = new Int64Bar(1_741_292_400_000, 100, 200, 50, 150, 10);
-        _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(bars: [sessionBar]));
+        _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(bars: [sessionBar]));
         _dataProvider.GetRecentKlinesAsync(sessionId, Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<decimal>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns<IReadOnlyList<Int64Bar>>(_ => throw new HttpRequestException("API down"));
@@ -276,8 +304,8 @@ public class GetLiveSessionDataQueryHandlerTests
         // Snapshot with no subscriptions
         var snapshot = new LiveSessionSnapshot(
             [], [], [], new Dictionary<string, Position>(),
-            10_000_000, 10_000_000, TestAsset, [], []);
-        _dataProvider.GetSnapshot(sessionId).Returns(snapshot);
+            10_000_000, 10_000_000, 100_000m, TestAsset, [], [], []);
+        _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(snapshot);
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 

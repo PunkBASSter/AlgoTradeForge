@@ -83,12 +83,18 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
         return JsonSerializer.Deserialize<BinanceNewOrderResponse>(json, BinanceJsonOptions.Default)!;
     }
 
-    async Task<long> IExchangeOrderClient.PlaceOrderAsync(
+    async Task<ExchangeOrderResult> IExchangeOrderClient.PlaceOrderAsync(
         string symbol, string side, string type, decimal quantity,
         decimal? price, decimal? stopPrice, CancellationToken ct)
     {
         var response = await PlaceOrderAsync(symbol, side, type, quantity, price, stopPrice, ct);
-        return response.OrderId;
+        var fills = response.Fills
+            .Select(f => new ExchangeFill(
+                decimal.Parse(f.Price, CultureInfo.InvariantCulture),
+                decimal.Parse(f.Qty, CultureInfo.InvariantCulture),
+                decimal.Parse(f.Commission, CultureInfo.InvariantCulture)))
+            .ToList();
+        return new ExchangeOrderResult(response.OrderId, fills);
     }
 
     public async Task CancelOrderAsync(string symbol, long orderId, CancellationToken ct = default)
@@ -182,6 +188,18 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
         }
 
         return bars;
+    }
+
+    public async Task<IReadOnlyList<BinanceMyTrade>> GetMyTradesAsync(
+        string symbol, int limit = 50, CancellationToken ct = default)
+    {
+        var parameters = new Dictionary<string, string>
+        {
+            ["symbol"] = symbol.ToUpperInvariant(),
+            ["limit"] = limit.ToString(),
+        };
+        var json = await SendSignedAsync(HttpMethod.Get, "/api/v3/myTrades", parameters, ct);
+        return JsonSerializer.Deserialize<List<BinanceMyTrade>>(json, BinanceJsonOptions.Default) ?? [];
     }
 
     internal string Sign(string queryString)

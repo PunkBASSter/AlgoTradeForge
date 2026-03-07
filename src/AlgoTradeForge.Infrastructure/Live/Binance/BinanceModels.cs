@@ -79,3 +79,16 @@ public sealed record BinanceExchangeSymbolInfo
     [JsonPropertyName("quoteAsset")]
     public string QuoteAsset { get; init; } = "";
 }
+
+public sealed record BinanceMyTrade
+{
+    [JsonPropertyName("symbol")] public string Symbol { get; init; } = "";
+    [JsonPropertyName("id")] public long Id { get; init; }
+    [JsonPropertyName("orderId")] public long OrderId { get; init; }
+    [JsonPropertyName("price")] public string Price { get; init; } = "0";
+    [JsonPropertyName("qty")] public string Qty { get; init; } = "0";
+    [JsonPropertyName("commission")] public string Commission { get; init; } = "0";
+    [JsonPropertyName("commissionAsset")] public string CommissionAsset { get; init; } = "";
+    [JsonPropertyName("time")] public long Time { get; init; }
+    [JsonPropertyName("isBuyer")] public bool IsBuyer { get; init; }
+}

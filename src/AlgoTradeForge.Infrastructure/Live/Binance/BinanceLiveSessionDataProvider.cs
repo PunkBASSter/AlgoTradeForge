@@ -5,7 +5,7 @@ namespace AlgoTradeForge.Infrastructure.Live.Binance;
 
 public sealed class BinanceLiveSessionDataProvider(ILiveSessionStore sessionStore) : ILiveSessionDataProvider
 {
-    public LiveSessionSnapshot? GetSnapshot(Guid sessionId)
+    public async Task<LiveSessionSnapshot?> GetSnapshotAsync(Guid sessionId, CancellationToken ct = default)
     {
         var details = sessionStore.Get(sessionId);
         if (details is null)
@@ -14,7 +14,7 @@ public sealed class BinanceLiveSessionDataProvider(ILiveSessionStore sessionStor
         if (details.Connector is not BinanceLiveConnector binanceConnector)
             return null;
 
-        return binanceConnector.GetSessionSnapshot(sessionId);
+        return await binanceConnector.GetSessionSnapshotAsync(sessionId, ct);
     }
 
     public async Task<IReadOnlyList<Int64Bar>> GetRecentKlinesAsync(

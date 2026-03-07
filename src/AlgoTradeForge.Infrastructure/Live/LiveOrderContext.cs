@@ -22,6 +22,7 @@ public sealed class LiveOrderContext : IOrderContext
 
     private readonly ConcurrentDictionary<long, Order> _pendingOrders = new();
     private readonly ConcurrentDictionary<long, long> _localToBinanceId = new();
+    private readonly ConcurrentDictionary<long, byte> _restFilledOrders = new();
     private readonly Lock _recentFillsLock = new();
     private readonly List<Fill> _recentFills = [];
     private readonly RingBuffer<Fill> _allFills = new(1_000);
@@ -173,8 +174,13 @@ public sealed class LiveOrderContext : IOrderContext
             _pendingOrders.TryAdd(binanceOrderId, order);
             _localToBinanceId.TryAdd(localId, binanceOrderId);
             _binanceOrderToSession.TryAdd(binanceOrderId, _sessionId);
+            OrderMapped?.Invoke(binanceOrderId);
         }
     }
+
+    internal event Action<long>? OrderMapped;
+
+    internal bool IsOrderRestFilled(long orderId) => _restFilledOrders.ContainsKey(orderId);
 
     internal Portfolio Portfolio => _portfolio;
 
@@ -196,9 +202,11 @@ public sealed class LiveOrderContext : IOrderContext
                         ? order.StopPrice.Value * _primaryAsset.TickSize
                         : null;
 
-                    var exchangeOrderId = await _orderClient.PlaceOrderAsync(
+                    var result = await _orderClient.PlaceOrderAsync(
                         order.Asset.Name, side, binanceType, order.Quantity,
                         price, stopPrice, ct);
+
+                    var exchangeOrderId = result.OrderId;
 
                     // Re-key from local ID to exchange order ID
                     _pendingOrders.TryRemove(request.LocalId, out var pending);
@@ -209,6 +217,38 @@ public sealed class LiveOrderContext : IOrderContext
                         _binanceOrderToSession.TryAdd(exchangeOrderId, _sessionId);
                         _pendingOrders.TryAdd(exchangeOrderId, pending);
                         _localToBinanceId.TryAdd(request.LocalId, exchangeOrderId);
+                        OrderMapped?.Invoke(exchangeOrderId);
+                    }
+
+                    // Process fills from REST response (reliable path for MARKET orders)
+                    if (result.Fills.Count > 0)
+                    {
+                        _restFilledOrders.TryAdd(exchangeOrderId, 0);
+
+                        var tickSize = _primaryAsset.TickSize;
+                        foreach (var restFill in result.Fills)
+                        {
+                            var fill = new Fill(
+                                exchangeOrderId,
+                                order.Asset,
+                                DateTimeOffset.UtcNow,
+                                (long)(restFill.Price / tickSize),
+                                restFill.Quantity,
+                                order.Side,
+                                (long)(restFill.Commission / tickSize));
+
+                            AddFill(fill);
+                        }
+
+                        if (pending is not null)
+                        {
+                            pending.Status = OrderStatus.Filled;
+                            RemovePendingOrder(exchangeOrderId);
+                        }
+
+                        _logger.LogInformation(
+                            "Processed {FillCount} fill(s) from REST response for order {OrderId}",
+                            result.Fills.Count, exchangeOrderId);
                     }
 
                     _logger.LogInformation(

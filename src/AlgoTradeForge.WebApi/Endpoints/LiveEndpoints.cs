@@ -155,9 +155,11 @@ public static class LiveEndpoints
             Account = new AccountResponse(
                 dto.Account.InitialCash,
                 dto.Account.Cash,
+                dto.Account.ExchangeBalance,
                 dto.Account.Positions.Select(p => new PositionResponse(p.Symbol, p.Quantity, p.AverageEntryPrice, p.RealizedPnl)).ToList()),
             TimeFrame = dto.TimeFrame,
             LastBars = dto.LastBars.Select(b => new LastBarResponse(b.Symbol, b.TimeFrame, b.Time, b.Open, b.High, b.Low, b.Close, b.Volume)).ToList(),
+            ExchangeTrades = dto.ExchangeTrades.Select(t => new FillResponse(t.OrderId, t.Timestamp, t.Price, t.Quantity, t.Side, t.Commission)).ToList(),
         };
 
         return Results.Ok(response);
