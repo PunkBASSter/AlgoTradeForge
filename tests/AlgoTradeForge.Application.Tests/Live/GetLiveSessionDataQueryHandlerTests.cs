@@ -19,10 +19,9 @@ public class GetLiveSessionDataQueryHandlerTests
 
     private readonly ILiveSessionStore _store = new InMemoryLiveSessionStore();
     private readonly ILiveSessionDataProvider _dataProvider = Substitute.For<ILiveSessionDataProvider>();
-    private readonly IHistoryRepository _historyRepo = Substitute.For<IHistoryRepository>();
 
     private GetLiveSessionDataQueryHandler CreateHandler() =>
-        new(_store, _dataProvider, _historyRepo, NullLogger<GetLiveSessionDataQueryHandler>.Instance);
+        new(_store, _dataProvider, NullLogger<GetLiveSessionDataQueryHandler>.Instance);
 
     private static SessionDetails MakeDetails(ILiveConnector? connector = null) =>
         new("paper", connector ?? Substitute.For<ILiveConnector>(),
@@ -81,10 +80,8 @@ public class GetLiveSessionDataQueryHandlerTests
         _store.TryAdd(sessionId, MakeDetails());
 
         // Bar with Int64 values: 6_500_000 * 0.01 = 65,000.00
-        var bar = new Int64Bar(1000, 6_500_000, 6_600_000, 6_400_000, 6_550_000, 100);
+        var bar = new Int64Bar(1_741_292_400_000, 6_500_000, 6_600_000, 6_400_000, 6_550_000, 100);
         _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(bars: [bar]));
-        _historyRepo.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns(new TimeSeries<Int64Bar>());
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
@@ -105,26 +102,26 @@ public class GetLiveSessionDataQueryHandlerTests
         var sessionId = Guid.NewGuid();
         _store.TryAdd(sessionId, MakeDetails());
 
-        // Historical and session bar share same timestamp — should deduplicate
-        var historicalBar = new Int64Bar(1000, 100, 200, 50, 150, 10);
-        var sessionBar = new Int64Bar(1000, 110, 210, 60, 160, 20); // same timestamp
-        var sessionBar2 = new Int64Bar(2000, 120, 220, 70, 170, 30); // different timestamp
-
-        var historicalSeries = new TimeSeries<Int64Bar>();
-        historicalSeries.Add(historicalBar);
+        // REST kline and session bar share same timestamp — should deduplicate
+        long ts1 = 1_741_292_400_000; // some ms timestamp
+        long ts2 = 1_741_292_460_000; // 60s later
+        var klineBar = new Int64Bar(ts1, 100, 200, 50, 150, 10);
+        var sessionBar = new Int64Bar(ts1, 110, 210, 60, 160, 20); // same timestamp
+        var sessionBar2 = new Int64Bar(ts2, 120, 220, 70, 170, 30); // different timestamp
 
         _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(bars: [sessionBar, sessionBar2]));
-        _historyRepo.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns(historicalSeries);
+        _dataProvider.GetRecentKlinesAsync(sessionId, Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<decimal>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([klineBar]);
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
         Assert.NotNull(result);
-        // Should have 2 candles: historical wins for ts=1000, session bar for ts=2000
+        // Should have 2 candles: REST kline wins for ts1, session bar for ts2
         Assert.Equal(2, result.Candles.Count);
-        Assert.Equal(1000, result.Candles[0].Time);
-        Assert.Equal(2000, result.Candles[1].Time);
-        // The first candle should have the historical bar's values (first-write-wins dedup)
+        Assert.Equal(ts1 / 1000, result.Candles[0].Time);
+        Assert.Equal(ts2 / 1000, result.Candles[1].Time);
+        // The first candle should have the kline bar's values (first-write-wins dedup)
         Assert.Equal(100 * TestAsset.TickSize, result.Candles[0].Open);
     }
 
@@ -139,8 +136,6 @@ public class GetLiveSessionDataQueryHandlerTests
             6_500_000, 0.5m, OrderSide.Buy, 650);
 
         _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(fills: [fill]));
-        _historyRepo.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns(new TimeSeries<Int64Bar>());
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
@@ -173,8 +168,6 @@ public class GetLiveSessionDataQueryHandlerTests
         };
 
         _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(pendingOrders: [order]));
-        _historyRepo.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns(new TimeSeries<Int64Bar>());
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
@@ -200,8 +193,6 @@ public class GetLiveSessionDataQueryHandlerTests
         };
 
         _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(positions: positions));
-        _historyRepo.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns(new TimeSeries<Int64Bar>());
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
@@ -219,8 +210,6 @@ public class GetLiveSessionDataQueryHandlerTests
 
         _dataProvider.GetSnapshot(sessionId).Returns(
             MakeSnapshot(cash: 9_500_000, initialCash: 10_000_000));
-        _historyRepo.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns(new TimeSeries<Int64Bar>());
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
@@ -243,8 +232,6 @@ public class GetLiveSessionDataQueryHandlerTests
         };
 
         _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(lastBars: lastBars));
-        _historyRepo.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns(new TimeSeries<Int64Bar>());
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
@@ -261,21 +248,22 @@ public class GetLiveSessionDataQueryHandlerTests
     }
 
     [Fact]
-    public async Task GracefullyHandlesHistoryLoadFailure()
+    public async Task GracefullyHandlesKlinesFetchFailure()
     {
         var handler = CreateHandler();
         var sessionId = Guid.NewGuid();
         _store.TryAdd(sessionId, MakeDetails());
 
-        var sessionBar = new Int64Bar(1000, 100, 200, 50, 150, 10);
+        var sessionBar = new Int64Bar(1_741_292_400_000, 100, 200, 50, 150, 10);
         _dataProvider.GetSnapshot(sessionId).Returns(MakeSnapshot(bars: [sessionBar]));
-        _historyRepo.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
-            .Returns(_ => throw new FileNotFoundException("No CSV data"));
+        _dataProvider.GetRecentKlinesAsync(sessionId, Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<decimal>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<Int64Bar>>(_ => throw new HttpRequestException("API down"));
 
         var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
 
         Assert.NotNull(result);
-        Assert.Single(result.Candles); // session bar still present despite history failure
+        Assert.Single(result.Candles);
     }
 
     [Fact]

@@ -45,6 +45,7 @@ public sealed class BinanceWebSocketManager : IAsyncDisposable
     /// </summary>
     public async Task ConnectUserDataWsApi(
         string wsApiUrl, string apiKey, Func<string, string> signFunc,
+        Func<long> getTimestamp,
         Action<BinanceExecutionReport> onExecution)
     {
         var ct = _cts?.Token ?? CancellationToken.None;
@@ -86,7 +87,7 @@ public sealed class BinanceWebSocketManager : IAsyncDisposable
         var ws = new ClientWebSocket();
         await ws.ConnectAsync(new Uri(wsApiUrl), ct);
         _logger.LogInformation("Connected to userData-wsapi");
-        await SendSubscribeSignature(ws, apiKey, signFunc);
+        await SendSubscribeSignature(ws, apiKey, signFunc, getTimestamp);
 
         var readTask = ReadLoop(ws, "userData-wsapi", onMessage, ct);
         lock (_connectionsLock)
@@ -117,7 +118,7 @@ public sealed class BinanceWebSocketManager : IAsyncDisposable
                     _logger.LogInformation("Reconnecting userData-wsapi (attempt {Attempt}/{Max})",
                         attempts, _maxReconnectAttempts);
                     await reconnectWs.ConnectAsync(new Uri(wsApiUrl), ct);
-                    await SendSubscribeSignature(reconnectWs, apiKey, signFunc);
+                    await SendSubscribeSignature(reconnectWs, apiKey, signFunc, getTimestamp);
                     _logger.LogInformation("Reconnected to userData-wsapi");
                     attempts = 0;
 
@@ -139,9 +140,9 @@ public sealed class BinanceWebSocketManager : IAsyncDisposable
         }, ct);
     }
 
-    private async Task SendSubscribeSignature(ClientWebSocket ws, string apiKey, Func<string, string> signFunc)
+    private async Task SendSubscribeSignature(ClientWebSocket ws, string apiKey, Func<string, string> signFunc, Func<long> getTimestamp)
     {
-        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var timestamp = getTimestamp();
         var queryString = $"apiKey={apiKey}&timestamp={timestamp}";
         var signature = signFunc(queryString);
 

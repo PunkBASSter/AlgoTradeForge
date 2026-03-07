@@ -79,6 +79,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
             _apiClient = new BinanceApiClient(
                 _accountConfig.RestUrl, _accountConfig.ApiKey, _accountConfig.ApiSecret, _logger);
 
+            // Sync local clock with Binance server to avoid timestamp rejection
+            await _apiClient.SyncTimeAsync(ct);
+
             _wsManager = new BinanceWebSocketManager(
                 _accountConfig.MarketStreamUrl,
                 _sharedOptions.ReconnectDelay, _sharedOptions.MaxReconnectAttempts,
@@ -88,7 +91,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
             // Subscribe to user data via WebSocket API — awaited so we know it's active
             await _wsManager.ConnectUserDataWsApi(
                 _accountConfig.WebSocketApiUrl, _accountConfig.ApiKey,
-                _apiClient.Sign, OnExecutionReport);
+                _apiClient.Sign, _apiClient.GetTimestamp, OnExecutionReport);
 
             Status = LiveSessionStatus.Running;
             _logger.LogInformation(
@@ -420,6 +423,14 @@ public sealed class BinanceLiveConnector : ILiveConnector
         _logger.LogInformation(
             "Order {OrderId} terminated: {ExecType} → {Status} (session={SessionId})",
             report.OrderId, report.ExecutionType, terminalStatus, entry.SessionId);
+    }
+
+    internal async Task<IReadOnlyList<Int64Bar>> GetRecentKlinesAsync(
+        string symbol, string interval, decimal tickSize, int limit = 500, CancellationToken ct = default)
+    {
+        if (_apiClient is null)
+            return [];
+        return await _apiClient.GetKlinesAsync(symbol, interval, tickSize, limit, ct);
     }
 
     internal LiveSessionSnapshot? GetSessionSnapshot(Guid sessionId)

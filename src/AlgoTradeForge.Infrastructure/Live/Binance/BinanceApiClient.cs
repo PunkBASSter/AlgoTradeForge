@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using AlgoTradeForge.Application.Live;
+using AlgoTradeForge.Domain.History;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.Infrastructure.Live.Binance;
@@ -12,6 +14,7 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
     private readonly HttpClient _http;
     private readonly byte[] _secretBytes;
     private readonly ILogger _logger;
+    private long _serverTimeOffsetMs;
 
     public BinanceApiClient(string baseRestUrl, string apiKey, string apiSecret, ILogger logger)
     {
@@ -20,6 +23,35 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
         _http = new HttpClient { BaseAddress = new Uri(baseRestUrl) };
         _http.DefaultRequestHeaders.Add("X-MBX-APIKEY", apiKey);
     }
+
+    /// <summary>
+    /// Syncs the local clock with Binance server time to avoid timestamp errors.
+    /// Must be called before any signed request.
+    /// </summary>
+    public async Task SyncTimeAsync(CancellationToken ct = default)
+    {
+        var localBefore = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v3/time");
+        using var response = await _http.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        var localAfter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("Failed to sync Binance server time: {StatusCode} {Body}", response.StatusCode, body);
+            return;
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        var serverTime = doc.RootElement.GetProperty("serverTime").GetInt64();
+        var localMid = (localBefore + localAfter) / 2;
+        _serverTimeOffsetMs = serverTime - localMid;
+
+        _logger.LogInformation("Binance time sync: offset={OffsetMs}ms", _serverTimeOffsetMs);
+    }
+
+    internal long GetTimestamp() =>
+        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + _serverTimeOffsetMs;
 
     public async Task<BinanceNewOrderResponse> PlaceOrderAsync(
         string symbol, string side, string type, decimal quantity,
@@ -111,6 +143,47 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
             System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    /// <summary>
+    /// Fetch klines (candlestick bars) from Binance REST API.
+    /// Returns raw arrays: [openTime, open, high, low, close, volume, ...].
+    /// </summary>
+    internal async Task<List<Int64Bar>> GetKlinesAsync(
+        string symbol, string interval, decimal tickSize, int limit = 500, CancellationToken ct = default)
+    {
+        var url = $"/api/v3/klines?symbol={symbol.ToUpperInvariant()}&interval={interval}&limit={limit}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var response = await _http.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("Binance klines error: {StatusCode} {Body}", response.StatusCode, body);
+            throw new HttpRequestException($"Binance klines error {response.StatusCode}: {body}");
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        var bars = new List<Int64Bar>();
+        foreach (var kline in doc.RootElement.EnumerateArray())
+        {
+            var openTime = kline[0].GetInt64();
+            var open = decimal.Parse(kline[1].GetString()!, CultureInfo.InvariantCulture);
+            var high = decimal.Parse(kline[2].GetString()!, CultureInfo.InvariantCulture);
+            var low = decimal.Parse(kline[3].GetString()!, CultureInfo.InvariantCulture);
+            var close = decimal.Parse(kline[4].GetString()!, CultureInfo.InvariantCulture);
+            var volume = decimal.Parse(kline[5].GetString()!, CultureInfo.InvariantCulture);
+
+            bars.Add(new Int64Bar(
+                openTime,
+                (long)(open / tickSize),
+                (long)(high / tickSize),
+                (long)(low / tickSize),
+                (long)(close / tickSize),
+                (long)volume));
+        }
+
+        return bars;
+    }
+
     internal string Sign(string queryString)
     {
         var hash = HMACSHA256.HashData(_secretBytes, Encoding.UTF8.GetBytes(queryString));
@@ -121,7 +194,7 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
         HttpMethod method, string endpoint, Dictionary<string, string> parameters,
         CancellationToken ct)
     {
-        parameters["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
+        parameters["timestamp"] = GetTimestamp().ToString();
         var queryString = string.Join('&', parameters.Select(kv => $"{kv.Key}={Uri.EscapeDataString(kv.Value)}"));
         var signature = Sign(queryString);
         var fullQuery = $"{queryString}&signature={signature}";

@@ -1,6 +1,5 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain.History;
-using AlgoTradeForge.Domain.Strategy;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.Application.Live;
@@ -19,6 +18,7 @@ public sealed record LiveSessionDataDto
     public required IReadOnlyList<LastBarDto> LastBars { get; init; }
 }
 
+/// <summary>Time is Unix seconds (not milliseconds) — required by TradingView lightweight-charts.</summary>
 public sealed record CandleDto(long Time, decimal Open, decimal High, decimal Low, decimal Close, long Volume);
 public sealed record FillDto(long OrderId, string Timestamp, decimal Price, decimal Quantity, string Side, decimal Commission);
 public sealed record PendingOrderDto(long Id, string Side, string Type, decimal Quantity, decimal? LimitPrice, decimal? StopPrice);
@@ -31,45 +31,47 @@ public sealed record LastBarDto(string Symbol, string TimeFrame, long Time, deci
 public sealed class GetLiveSessionDataQueryHandler(
     ILiveSessionStore sessionStore,
     ILiveSessionDataProvider dataProvider,
-    IHistoryRepository historyRepository,
     ILogger<GetLiveSessionDataQueryHandler> logger) : IQueryHandler<GetLiveSessionDataQuery, LiveSessionDataDto?>
 {
-    public Task<LiveSessionDataDto?> HandleAsync(GetLiveSessionDataQuery query, CancellationToken ct = default)
+    public async Task<LiveSessionDataDto?> HandleAsync(GetLiveSessionDataQuery query, CancellationToken ct = default)
     {
         var details = sessionStore.Get(query.SessionId);
         if (details is null)
-            return Task.FromResult<LiveSessionDataDto?>(null);
+            return null;
 
         var snapshot = dataProvider.GetSnapshot(query.SessionId);
         if (snapshot is null)
-            return Task.FromResult<LiveSessionDataDto?>(null);
+            return null;
 
         var asset = snapshot.PrimaryAsset;
         var tickSize = asset.TickSize;
 
-        // Load last 30 days of historical candles for the primary subscription
         var primarySub = snapshot.Subscriptions.Count > 0 ? snapshot.Subscriptions[0] : null;
-        var historicalBars = new List<Int64Bar>();
+
+        // Fetch a small number of recent candles from exchange REST API
+        // to give context around the live session bars.
+        const int BackfillLimit = 20;
+        var recentBars = new List<Int64Bar>();
         if (primarySub is not null)
         {
             try
             {
-                var to = DateOnly.FromDateTime(DateTime.UtcNow);
-                var from = to.AddDays(-30);
-                var series = historyRepository.Load(primarySub, from, to);
-                historicalBars.AddRange(series);
+                var interval = MapTimeFrameToInterval(primarySub.TimeFrame);
+                recentBars.AddRange(
+                    await dataProvider.GetRecentKlinesAsync(
+                        query.SessionId, asset.Name, interval, tickSize, BackfillLimit, ct));
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to load historical candles for {Asset}", primarySub.Asset.Name);
+                logger.LogWarning(ex, "Failed to fetch recent klines for {Asset}", asset.Name);
             }
         }
 
-        // Merge: historical first, then session bars, dedup by TimestampMs
+        // Merge: historical/REST first, then session bars, dedup by TimestampMs
         var seen = new HashSet<long>();
         var merged = new List<CandleDto>();
 
-        foreach (var bar in historicalBars)
+        foreach (var bar in recentBars)
         {
             if (seen.Add(bar.TimestampMs))
                 merged.Add(ConvertBar(bar, tickSize));
@@ -133,11 +135,19 @@ public sealed class GetLiveSessionDataQueryHandler(
             LastBars = lastBars,
         };
 
-        return Task.FromResult<LiveSessionDataDto?>(dto);
+        return dto;
     }
 
     private static CandleDto ConvertBar(Int64Bar bar, decimal tickSize) =>
-        new(bar.TimestampMs, bar.Open * tickSize, bar.High * tickSize, bar.Low * tickSize, bar.Close * tickSize, bar.Volume);
+        new(bar.TimestampMs / 1000, bar.Open * tickSize, bar.High * tickSize, bar.Low * tickSize, bar.Close * tickSize, bar.Volume);
+
+    private static string MapTimeFrameToInterval(TimeSpan timeFrame) => timeFrame.TotalMinutes switch
+    {
+        1 => "1m", 3 => "3m", 5 => "5m", 15 => "15m", 30 => "30m",
+        60 => "1h", 120 => "2h", 240 => "4h", 360 => "6h", 480 => "8h",
+        720 => "12h", 1440 => "1d", 4320 => "3d", 10080 => "1w",
+        _ => "1m",
+    };
 
     private static IReadOnlyList<LastBarDto> BuildLastBars(LiveSessionSnapshot snapshot, decimal tickSize)
     {
@@ -145,7 +155,7 @@ public sealed class GetLiveSessionDataQueryHandler(
             .Select(entry => new LastBarDto(
                 entry.Subscription.Asset.Name,
                 entry.Subscription.TimeFrame.ToString(),
-                entry.Bar.TimestampMs,
+                entry.Bar.TimestampMs / 1000,
                 entry.Bar.Open * tickSize,
                 entry.Bar.High * tickSize,
                 entry.Bar.Low * tickSize,
