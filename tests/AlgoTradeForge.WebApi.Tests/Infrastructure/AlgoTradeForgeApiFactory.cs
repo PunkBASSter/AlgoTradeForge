@@ -16,7 +16,7 @@ public sealed class AlgoTradeForgeApiFactory : WebApplicationFactory<Program>, I
     private static readonly string EventLogsDir = Path.Combine(TestDataDir, "EventLogs");
     private readonly string _dbPath = Path.Combine(TestDataDir, "test-runs.sqlite");
 
-    public Task InitializeAsync()
+    public ValueTask InitializeAsync()
     {
         // Delete old data from previous runs (best-effort)
         SqliteConnection.ClearAllPools();
@@ -28,7 +28,7 @@ public sealed class AlgoTradeForgeApiFactory : WebApplicationFactory<Program>, I
 
         Directory.CreateDirectory(TestDataDir);
         Directory.CreateDirectory(EventLogsDir);
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -63,7 +63,7 @@ public sealed class AlgoTradeForgeApiFactory : WebApplicationFactory<Program>, I
         };
     }
 
-    async Task IAsyncLifetime.DisposeAsync()
+    async ValueTask IAsyncDisposable.DisposeAsync()
     {
         await base.DisposeAsync();
         SqliteConnection.ClearAllPools();

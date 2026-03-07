@@ -275,7 +275,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
             order.Status = OrderStatus.Filled;
             state.Fills.Add(fill);
             state.Portfolio.Apply(fill);
-            state.Strategy.OnTrade(fill, order);
+            state.Strategy.OnTrade(fill, order, state.OrderContext);
             state.ToRemoveBuffer.Add(order.Id);
 
             EmitFillAndPosition(state, timestamp, fill);
@@ -331,7 +331,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
 
             state.Fills.Add(fill);
             state.Portfolio.Apply(fill);
-            state.Strategy.OnTrade(fill, pos.OriginalOrder);
+            state.Strategy.OnTrade(fill, pos.OriginalOrder, state.OrderContext);
 
             EmitFillAndPosition(state, timestamp, fill);
 

@@ -7,7 +7,7 @@ Make base strategy class do all the necessary infrastructure and initialization 
 Suggested modules:
 - TradeRegistry for tracking orders, order groups, fills, positions, SL/TP, belonging of the orders/positions/order groups to the current strategy, proxying trade events, handling orders on reconnections during live sessions. The key is the convenient API to create an order group owned by the strategy and track it (with persistence when live), giving virtual isolated order management for the strategy trading on the account, so that it
 - Context module for holding all available history data, some custom info for all modules, needs to be accessible by all of them. Maybe have an event-routing mechanism so that a module can publish an event, and others receive it. 
-- ? Signal for sending a collection of orders to place
+- ? Signal for sending a collection of order groups to place consisting of (opening order, SL and multiple possible TPs)
 - ? Filter for evaluation which trade directions are possible at the moment
 - Exit module for making decisions on positions closing
 - MoneyManagement evaluates risk per deal, can adjust it according to the current context.

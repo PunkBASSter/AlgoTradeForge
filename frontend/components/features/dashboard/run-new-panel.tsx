@@ -18,6 +18,7 @@ import { useAvailableStrategies } from "@/hooks/use-available-strategies";
 import type {
   RunBacktestRequest,
   RunOptimizationRequest,
+  StartLiveSessionRequest,
   StrategyDescriptor,
   ParameterAxisDescriptor,
   OptimizationAxisOverride,
@@ -53,6 +54,50 @@ const OPTIMIZATION_TEMPLATE: RunOptimizationRequest = {
   minSortinoRatio: -5.0,
   minAnnualizedReturnPct: -100.0,
 };
+
+const LIVE_SESSION_TEMPLATE: StartLiveSessionRequest = {
+  strategyName: "",
+  initialCash: 10000,
+  accountName: "paper",
+  dataSubscriptions: [
+    { asset: "BTCUSDT", exchange: "Binance", timeFrame: "00:01:00" },
+  ],
+};
+
+function toHumanReadable(rawDefault: unknown, axis: ParameterAxisDescriptor): unknown {
+  if (
+    axis.unit !== "quoteAsset" ||
+    axis.max == null ||
+    typeof rawDefault !== "number"
+  )
+    return rawDefault;
+
+  // Raw long default may be in tick units; convert to human-readable
+  // by finding the power-of-10 scale where value falls within [min, max]
+  if (rawDefault <= axis.max) return rawDefault;
+  for (let scale = 10; scale <= 1_000_000; scale *= 10) {
+    const human = rawDefault / scale;
+    if (human >= (axis.min ?? 0) && human <= axis.max) return human;
+  }
+  return rawDefault;
+}
+
+function buildLiveSessionTemplate(descriptor: StrategyDescriptor): StartLiveSessionRequest {
+  const params = { ...descriptor.parameterDefaults };
+
+  // Convert QuoteAsset params from internal tick units to human-readable
+  for (const axis of descriptor.optimizationAxes) {
+    if (axis.name in params) {
+      params[axis.name] = toHumanReadable(params[axis.name], axis);
+    }
+  }
+
+  return {
+    ...LIVE_SESSION_TEMPLATE,
+    strategyName: descriptor.name,
+    strategyParameters: params,
+  };
+}
 
 function buildAxisOverride(axis: ParameterAxisDescriptor): OptimizationAxisOverride {
   if (axis.type === "module" && axis.variants) {
@@ -111,7 +156,7 @@ const EDITOR_EXTENSIONS = [
 interface RunNewPanelProps {
   open: boolean;
   onClose: () => void;
-  mode: "backtest" | "optimization";
+  mode: "backtest" | "optimization" | "live";
   selectedStrategy: string | null;
   onSuccess: () => void;
 }
@@ -140,6 +185,9 @@ export function RunNewPanel({
   const template = useMemo(() => {
     if (mode === "backtest") {
       return descriptor ? buildBacktestTemplate(descriptor) : BACKTEST_TEMPLATE;
+    }
+    if (mode === "live") {
+      return descriptor ? buildLiveSessionTemplate(descriptor) : LIVE_SESSION_TEMPLATE;
     }
     return descriptor ? buildOptimizationTemplate(descriptor) : OPTIMIZATION_TEMPLATE;
   }, [mode, descriptor]);
@@ -206,6 +254,13 @@ export function RunNewPanel({
         toast(`Missing required fields: ${missing.join(", ")}`, "error");
         return;
       }
+    } else if (mode === "live") {
+      const missing = ["strategyName", "initialCash"]
+        .filter((k) => obj[k] === undefined || obj[k] === null);
+      if (missing.length > 0) {
+        toast(`Missing required fields: ${missing.join(", ")}`, "error");
+        return;
+      }
     } else {
       const missing = ["strategyName", "initialCash", "startTime", "endTime"]
         .filter((k) => obj[k] === undefined || obj[k] === null);
@@ -217,16 +272,23 @@ export function RunNewPanel({
 
     setSubmitting(true);
     try {
-      let runId: string;
-      if (mode === "backtest") {
-        const submission = await client.runBacktest(parsed as RunBacktestRequest);
-        runId = submission.id;
+      if (mode === "live") {
+        await client.startLiveSession(parsed as StartLiveSessionRequest);
+        toast("Live session started", "success");
+        onSuccess();
+        onClose();
       } else {
-        const submission = await client.runOptimization(parsed as RunOptimizationRequest);
-        runId = submission.id;
+        let runId: string;
+        if (mode === "backtest") {
+          const submission = await client.runBacktest(parsed as RunBacktestRequest);
+          runId = submission.id;
+        } else {
+          const submission = await client.runOptimization(parsed as RunOptimizationRequest);
+          runId = submission.id;
+        }
+        toast(`${mode === "backtest" ? "Backtest" : "Optimization"} submitted`, "success");
+        setActiveRunId(runId);
       }
-      toast(`${mode === "backtest" ? "Backtest" : "Optimization"} submitted`, "success");
-      setActiveRunId(runId);
     } catch (err) {
       toast(String(err), "error");
     } finally {
@@ -250,13 +312,13 @@ export function RunNewPanel({
     <SlideOver
       open={open}
       onClose={handleClose}
-      title={`New ${mode === "backtest" ? "Backtest" : "Optimization"}`}
+      title={`New ${mode === "backtest" ? "Backtest" : mode === "live" ? "Live Session" : "Optimization"}`}
     >
       {activeRunId ? (
         <div className="space-y-4">
           <RunProgress
             runId={activeRunId}
-            mode={mode}
+            mode={mode as "backtest" | "optimization"}
             onComplete={handleRunComplete}
           />
           <Button variant="ghost" onClick={handleClose}>

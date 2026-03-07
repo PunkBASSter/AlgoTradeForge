@@ -35,7 +35,7 @@ public sealed class PlaywrightFixture : IAsyncLifetime
         return port;
     }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // 0. Kill any stale frontend from a previous run that wasn't cleaned up
         KillStaleFrontend();
@@ -70,7 +70,7 @@ public sealed class PlaywrightFixture : IAsyncLifetime
         });
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (Browser is not null)
         {

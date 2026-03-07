@@ -102,7 +102,7 @@ public static class OptimizationEndpoints
 
     private static async Task<IResult> GetOptimizationStatus(
         Guid id,
-        ICommandHandler<GetOptimizationStatusQuery, OptimizationStatusDto?> handler,
+        IQueryHandler<GetOptimizationStatusQuery, OptimizationStatusDto?> handler,
         CancellationToken ct)
     {
         var dto = await handler.HandleAsync(new GetOptimizationStatusQuery(id), ct);
@@ -133,7 +133,7 @@ public static class OptimizationEndpoints
     }
 
     private static async Task<IResult> ListOptimizations(
-        ICommandHandler<ListOptimizationRunsQuery, PagedResult<OptimizationRunRecord>> handler,
+        IQueryHandler<ListOptimizationRunsQuery, PagedResult<OptimizationRunRecord>> handler,
         string? strategyName,
         string? assetName,
         string? exchange,
@@ -167,7 +167,7 @@ public static class OptimizationEndpoints
 
     private static async Task<IResult> GetOptimization(
         Guid id,
-        ICommandHandler<GetOptimizationByIdQuery, OptimizationRunRecord?> handler,
+        IQueryHandler<GetOptimizationByIdQuery, OptimizationRunRecord?> handler,
         CancellationToken ct)
     {
         var record = await handler.HandleAsync(new GetOptimizationByIdQuery(id), ct);

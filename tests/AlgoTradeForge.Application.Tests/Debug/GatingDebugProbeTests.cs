@@ -398,7 +398,7 @@ public class GatingDebugProbeTests
         public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
         public void OnInit() { }
-        public void OnTrade(Fill fill, Order order) { }
+        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
 
         public void OnBarComplete(Int64Bar bar, DataSubscription sub, IOrderContext orders)
         {
@@ -501,7 +501,7 @@ public class GatingDebugProbeTests
         public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
         public void OnInit() { }
-        public void OnTrade(Fill fill, Order order) { }
+        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
 
         public void OnBarComplete(Int64Bar bar, DataSubscription sub, IOrderContext orders)
             => onBarComplete?.Invoke(bar, sub, orders);
@@ -519,7 +519,7 @@ public class GatingDebugProbeTests
         public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
         public void OnInit() { }
-        public void OnTrade(Fill fill, Order order) { }
+        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
 
         public void OnBarComplete(Int64Bar bar, DataSubscription sub, IOrderContext orders)
         {

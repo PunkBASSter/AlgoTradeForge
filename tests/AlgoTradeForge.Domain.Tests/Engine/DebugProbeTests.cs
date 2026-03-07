@@ -279,7 +279,7 @@ public class DebugProbeTests
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
 
         public void OnInit() { }
-        public void OnTrade(Fill fill, Order order) { }
+        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
 
         public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
             => onBarComplete(bar, subscription, orders);

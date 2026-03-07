@@ -260,6 +260,99 @@ export interface DataSubscription {
 }
 
 // ---------------------------------------------------------------------------
+// Live session types
+// ---------------------------------------------------------------------------
+
+export interface StartLiveSessionRequest {
+  strategyName: string;
+  initialCash: number;
+  strategyParameters?: Record<string, unknown>;
+  dataSubscriptions?: DataSubscription[];
+  enabledEvents?: string[];
+  accountName?: string;
+}
+
+export interface LiveSessionSubmission {
+  sessionId: string;
+}
+
+export interface LiveSession {
+  sessionId: string;
+  status: string;
+  strategyName: string;
+  strategyVersion: string;
+  exchange: string;
+  assetName: string;
+  accountName: string;
+  startedAt: string;
+}
+
+export interface LiveSessionListResponse {
+  sessions: LiveSession[];
+}
+
+// ---------------------------------------------------------------------------
+// Live session data (from GET /api/live/sessions/{id}/data)
+// ---------------------------------------------------------------------------
+
+export interface LiveSessionData {
+  candles: CandleData[];
+  fills: LiveFill[];
+  pendingOrders: LivePendingOrder[];
+  account: LiveAccount;
+  timeFrame: string;
+  lastBars: LiveLastBar[];
+  exchangeTrades: LiveExchangeTrade[];
+}
+
+export interface LiveFill {
+  orderId: number;
+  timestamp: string;
+  price: number;
+  quantity: number;
+  side: string;
+  commission: number;
+}
+
+export interface LiveExchangeTrade extends LiveFill {
+  commissionAsset: string;
+}
+
+export interface LivePendingOrder {
+  id: number;
+  side: string;
+  type: string;
+  quantity: number;
+  limitPrice?: number;
+  stopPrice?: number;
+}
+
+export interface LiveAccount {
+  initialCash: number;
+  cash: number;
+  exchangeBalance: number;
+  positions: LivePosition[];
+}
+
+export interface LivePosition {
+  symbol: string;
+  quantity: number;
+  averageEntryPrice: number;
+  realizedPnl: number;
+}
+
+export interface LiveLastBar {
+  symbol: string;
+  timeFrame: string;
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+// ---------------------------------------------------------------------------
 // Debug session types
 // ---------------------------------------------------------------------------
 

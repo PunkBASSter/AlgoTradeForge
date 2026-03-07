@@ -2,6 +2,7 @@ using System.Reflection;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
+using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Domain.Engine;
@@ -11,6 +12,7 @@ using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Infrastructure;
 using AlgoTradeForge.Infrastructure.CandleIngestion;
 using AlgoTradeForge.Infrastructure.History;
+using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Plugins;
 using AlgoTradeForge.Infrastructure.Repositories;
 using AlgoTradeForge.WebApi.Endpoints;
@@ -48,6 +50,10 @@ builder.Services.Configure<RunTimeoutOptions>(
 // Register run persistence config
 builder.Services.Configure<RunStorageOptions>(
     builder.Configuration.GetSection("RunStorage"));
+
+// Register live trading config
+builder.Services.Configure<BinanceLiveOptions>(
+    builder.Configuration.GetSection("BinanceLive"));
 
 // Register Infrastructure services
 builder.Services.Configure<CandleStorageOptions>(
@@ -115,6 +121,7 @@ app.MapOptimizationEndpoints();
 app.MapStrategyEndpoints();
 app.MapDebugEndpoints();
 app.MapDebugWebSocket();
+app.MapLiveEndpoints();
 
 app.Run();
 

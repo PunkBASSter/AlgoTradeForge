@@ -12,11 +12,11 @@ public sealed record OptimizationStatusDto
     public OptimizationRunRecord? Result { get; init; }
 }
 
-public sealed record GetOptimizationStatusQuery(Guid Id) : ICommand<OptimizationStatusDto?>;
+public sealed record GetOptimizationStatusQuery(Guid Id) : IQuery<OptimizationStatusDto?>;
 
 public sealed class GetOptimizationStatusQueryHandler(
     RunProgressCache progressCache,
-    IRunRepository repository) : ICommandHandler<GetOptimizationStatusQuery, OptimizationStatusDto?>
+    IRunRepository repository) : IQueryHandler<GetOptimizationStatusQuery, OptimizationStatusDto?>
 {
     public async Task<OptimizationStatusDto?> HandleAsync(GetOptimizationStatusQuery query, CancellationToken ct = default)
     {

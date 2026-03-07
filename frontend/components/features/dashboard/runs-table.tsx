@@ -1,16 +1,15 @@
 "use client";
 
-// T055 - Runs table component for backtests and optimizations
-
 import { useRouter } from "next/navigation";
 import { Table, type Column } from "@/components/ui/table";
 import { formatNumber, formatPercent } from "@/lib/utils/format";
-import type { BacktestRun, OptimizationRun } from "@/types/api";
+import type { BacktestRun, OptimizationRun, LiveSession } from "@/types/api";
 
 interface RunsTableProps {
-  mode: "backtest" | "optimization";
+  mode: "backtest" | "optimization" | "live";
   backtests?: BacktestRun[];
   optimizations?: OptimizationRun[];
+  liveSessions?: LiveSession[];
   isLoading?: boolean;
 }
 
@@ -67,10 +66,49 @@ const optimizationColumns: Column<OptimizationRun>[] = [
   },
 ];
 
+const statusColors: Record<string, string> = {
+  Running: "text-green-400",
+  Connecting: "text-yellow-400",
+  Idle: "text-text-muted",
+  Stopping: "text-yellow-400",
+  Stopped: "text-red-400",
+  Error: "text-red-400",
+};
+
+const liveSessionColumns: Column<LiveSession>[] = [
+  {
+    key: "sessionId",
+    header: "Session ID",
+    render: (v) => String(v).substring(0, 8),
+  },
+  { key: "strategyName", header: "Strategy" },
+  { key: "assetName", header: "Asset" },
+  { key: "exchange", header: "Exchange" },
+  { key: "accountName", header: "Account" },
+  {
+    key: "status",
+    header: "Status",
+    render: (v) => {
+      const s = String(v);
+      return (
+        <span className={`font-medium ${statusColors[s] ?? "text-text-secondary"}`}>
+          {s}
+        </span>
+      );
+    },
+  },
+  {
+    key: "startedAt",
+    header: "Started",
+    render: (v) => new Date(String(v)).toLocaleString(),
+  },
+];
+
 export function RunsTable({
   mode,
   backtests,
   optimizations,
+  liveSessions,
   isLoading,
 }: RunsTableProps) {
   const router = useRouter();
@@ -91,6 +129,21 @@ export function RunsTable({
         rowKey="id"
         onRowClick={(row) => router.push(`/report/backtest/${row.id}`)}
         emptyMessage="No backtest runs found"
+        testId="runs-table"
+      />
+    );
+  }
+
+  if (mode === "live") {
+    return (
+      <Table<LiveSession>
+        columns={liveSessionColumns}
+        data={liveSessions ?? []}
+        rowKey="sessionId"
+        onRowClick={(row) =>
+          router.push(`/report/live/${encodeURIComponent(row.exchange)}/${row.sessionId}`)
+        }
+        emptyMessage="No active live sessions"
         testId="runs-table"
       />
     );

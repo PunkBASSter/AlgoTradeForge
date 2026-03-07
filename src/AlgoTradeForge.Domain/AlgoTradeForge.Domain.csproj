@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="AlgoTradeForge.Domain.Tests" />
+    <InternalsVisibleTo Include="AlgoTradeForge.Infrastructure" />
+    <InternalsVisibleTo Include="AlgoTradeForge.Infrastructure.Tests" />
   </ItemGroup>
 
   <ItemGroup>

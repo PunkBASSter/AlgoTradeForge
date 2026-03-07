@@ -52,7 +52,7 @@ public abstract class PlaywrightTestBase : IAsyncLifetime
         _fixture = fixture;
     }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _context = await _fixture.Browser.NewContextAsync(new BrowserNewContextOptions
         {
@@ -87,7 +87,7 @@ public abstract class PlaywrightTestBase : IAsyncLifetime
         };
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_context is not null)
             await _context.CloseAsync();

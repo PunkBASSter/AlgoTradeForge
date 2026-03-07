@@ -2,10 +2,10 @@ using AlgoTradeForge.Application.Abstractions;
 
 namespace AlgoTradeForge.Application.Strategies;
 
-public sealed record GetAvailableStrategiesQuery : ICommand<IReadOnlyList<StrategyDescriptorDto>>;
+public sealed record GetAvailableStrategiesQuery : IQuery<IReadOnlyList<StrategyDescriptorDto>>;
 
 public sealed class GetAvailableStrategiesQueryHandler(
-    IOptimizationSpaceProvider provider) : ICommandHandler<GetAvailableStrategiesQuery, IReadOnlyList<StrategyDescriptorDto>>
+    IOptimizationSpaceProvider provider) : IQueryHandler<GetAvailableStrategiesQuery, IReadOnlyList<StrategyDescriptorDto>>
 {
     public Task<IReadOnlyList<StrategyDescriptorDto>> HandleAsync(
         GetAvailableStrategiesQuery query, CancellationToken ct = default)

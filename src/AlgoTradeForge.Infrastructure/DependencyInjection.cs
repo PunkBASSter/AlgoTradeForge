@@ -3,9 +3,12 @@ using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Application.IO;
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Infrastructure.Events;
 using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Application.Live;
+using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Optimization;
 using AlgoTradeForge.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +37,11 @@ public static class DependencyInjection
         services.AddSingleton<IPostRunPipeline, PostRunPipeline>();
 
         services.AddSingleton<IRunRepository, SqliteRunRepository>();
+
+        // Live trading
+        services.Configure<BinanceLiveOptions>(_ => { });
+        services.AddSingleton<ILiveAccountManager, BinanceLiveAccountManager>();
+        services.AddSingleton<ILiveSessionDataProvider, BinanceLiveSessionDataProvider>();
 
         return services;
     }

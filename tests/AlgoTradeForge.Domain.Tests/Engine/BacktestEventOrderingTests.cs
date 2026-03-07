@@ -314,7 +314,7 @@ public class BacktestEventOrderingTests
             OnBarCompleteAction?.Invoke(bar, subscription, orders);
         }
 
-        public void OnTrade(Fill fill, Order order) =>
+        public void OnTrade(Fill fill, Order order, IOrderContext orders) =>
             Events.Add($"OnTrade:{fill.Side}:{fill.Price}");
     }
 }
