@@ -83,6 +83,8 @@ public sealed class GetLiveSessionDataQueryHandler(
                 merged.Add(ConvertBar(bar, tickSize));
         }
 
+        merged.Sort((a, b) => a.Time.CompareTo(b.Time));
+
         // Convert fills
         var fills = snapshot.Fills
             .Select(f => new FillDto(
