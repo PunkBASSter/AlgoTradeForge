@@ -133,12 +133,12 @@ public sealed class RunBacktestCommandHandler(
                 result.Fills, equityValues, setup.Options.InitialCash,
                 command.StartTime, command.EndTime);
 
-            var scaledMetrics = MetricsScaler.ScaleDown(metrics, setup.ScaleFactor);
+            var scaledMetrics = MetricsScaler.ScaleDown(metrics, setup.Scale);
 
             var completedAt = DateTimeOffset.UtcNow;
             var primarySub = setup.Strategy.DataSubscriptions[0];
 
-            var equityCurve = MetricsScaler.ScaleEquityCurve(result.EquityCurve, setup.ScaleFactor);
+            var equityCurve = MetricsScaler.ScaleEquityCurve(result.EquityCurve, setup.Scale);
 
             var record = new BacktestRunRecord
             {

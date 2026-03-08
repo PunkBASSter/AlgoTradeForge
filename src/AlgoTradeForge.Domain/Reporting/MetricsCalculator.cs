@@ -109,7 +109,7 @@ public class MetricsCalculator : IMetricsCalculator
             {
                 // Adding to position — weighted average entry
                 var totalCost = pos.Quantity * pos.AvgEntry + fillQuantity * fill.Price;
-                pos = (newQuantity, (long)(totalCost / newQuantity), fill.Asset);
+                pos = (newQuantity, MoneyConvert.ToLong(totalCost / newQuantity), fill.Asset);
             }
 
             positions[key] = pos;

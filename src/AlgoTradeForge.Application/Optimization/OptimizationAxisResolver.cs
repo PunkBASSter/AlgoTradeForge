@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Optimization.Space;
 
@@ -207,7 +208,7 @@ public sealed class OptimizationAxisResolver
         if (targetType == typeof(decimal)) return decimalVal;
         if (targetType == typeof(double)) return (double)decimalVal;
         if (targetType == typeof(int)) return (int)decimalVal;
-        if (targetType == typeof(long)) return (long)decimalVal;
+        if (targetType == typeof(long)) return MoneyConvert.ToLong(decimalVal);
 
         throw new InvalidOperationException($"Unsupported numeric type: {targetType.Name}");
     }

@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using AlgoTradeForge.Application.Live;
+using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using Microsoft.Extensions.Logging;
 
@@ -168,6 +169,7 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
         }
 
         using var doc = JsonDocument.Parse(body);
+        var scale = new ScaleContext(tickSize);
         var bars = new List<Int64Bar>();
         foreach (var kline in doc.RootElement.EnumerateArray())
         {
@@ -180,11 +182,11 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
 
             bars.Add(new Int64Bar(
                 openTime,
-                (long)(open / tickSize),
-                (long)(high / tickSize),
-                (long)(low / tickSize),
-                (long)(close / tickSize),
-                (long)volume));
+                scale.FromMarketPrice(open),
+                scale.FromMarketPrice(high),
+                scale.FromMarketPrice(low),
+                scale.FromMarketPrice(close),
+                MoneyConvert.ToLong(volume)));
         }
 
         return bars;

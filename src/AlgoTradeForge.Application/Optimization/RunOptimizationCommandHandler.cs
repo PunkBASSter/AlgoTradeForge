@@ -348,15 +348,15 @@ public sealed class RunOptimizationCommandHandler(
         }
 
         var trialAsset = strategy.DataSubscriptions[0].Asset;
-        var trialScaleFactor = 1m / trialAsset.TickSize;
+        var scale = new ScaleContext(trialAsset);
 
         var backOptions = new BacktestOptions
         {
-            InitialCash = (long)(command.InitialCash * trialScaleFactor),
+            InitialCash = scale.AmountToTicks(command.InitialCash),
             Asset = trialAsset,
             StartTime = command.StartTime,
             EndTime = command.EndTime,
-            CommissionPerTrade = (long)(command.CommissionPerTrade * trialScaleFactor),
+            CommissionPerTrade = scale.AmountToTicks(command.CommissionPerTrade),
             SlippageTicks = command.SlippageTicks
         };
 
@@ -366,7 +366,7 @@ public sealed class RunOptimizationCommandHandler(
             result.Fills, new EquityValueProjection(result.EquityCurve), backOptions.InitialCash,
             command.StartTime, command.EndTime);
 
-        var scaledMetrics = MetricsScaler.ScaleDown(metrics, trialScaleFactor);
+        var scaledMetrics = MetricsScaler.ScaleDown(metrics, scale);
         trialWatch.Stop();
 
         var trialPrimarySub = strategy.DataSubscriptions[0];

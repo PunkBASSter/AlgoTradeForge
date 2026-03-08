@@ -59,7 +59,8 @@ public sealed class StartLiveSessionCommandHandler(
         var fingerprint = RunKeyBuilder.Build(command);
 
         var sessionId = Guid.NewGuid();
-        var initialCashScaled = (long)(command.InitialCash / primaryAsset.TickSize);
+        var scale = new ScaleContext(primaryAsset);
+        var initialCashScaled = scale.AmountToTicks(command.InitialCash);
 
         var config = new LiveSessionConfig
         {
@@ -115,7 +116,7 @@ public sealed class StartLiveSessionCommandHandler(
         if (descriptor is null)
             return parameters;
 
-        var scaleFactor = 1m / primaryAsset.TickSize;
+        var scale = new ScaleContext(primaryAsset);
         var scaled = new Dictionary<string, object>(parameters);
 
         foreach (var axis in descriptor.Axes.OfType<NumericRangeAxis>())
@@ -129,7 +130,7 @@ public sealed class StartLiveSessionCommandHandler(
             var decimalValue = value is JsonElement je
                 ? je.GetDecimal()
                 : Convert.ToDecimal(value);
-            scaled[axis.Name] = (long)(decimalValue * scaleFactor);
+            scaled[axis.Name] = scale.AmountToTicks(decimalValue);
         }
 
         return scaled;

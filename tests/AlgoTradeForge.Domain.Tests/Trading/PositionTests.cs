@@ -112,8 +112,8 @@ public class PositionTests
         position.Apply(fill);
 
         Assert.Equal(-150m, position.Quantity);
-        // Weighted average: (-100*150 + -50*140) / -150 = 146.67 → truncated to 146
-        Assert.Equal(146L, position.AverageEntryPrice);
+        // Weighted average: (-100*150 + -50*140) / -150 = 146.67 → rounds to 147
+        Assert.Equal(147L, position.AverageEntryPrice);
         Assert.Equal(0L, position.RealizedPnl);
     }
 

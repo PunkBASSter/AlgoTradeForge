@@ -137,7 +137,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
         var freeBalance = quoteBalance is not null
             ? decimal.Parse(quoteBalance.Free, CultureInfo.InvariantCulture)
             : 0m;
-        var availableScaled = (long)(freeBalance / asset.TickSize);
+        var scale = new ScaleContext(asset);
+        var availableScaled = scale.FromMarketPrice(freeBalance);
 
         // Seed balance cache from the account query we already made
         _cachedQuoteBalance = freeBalance;
@@ -291,15 +292,15 @@ public sealed class BinanceLiveConnector : ILiveConnector
             return;
 
         var asset = subscription.Asset;
-        var tickSize = asset.TickSize;
+        var scale = new ScaleContext(asset);
 
         var bar = new Int64Bar(
             msg.Kline.OpenTime,
-            (long)(decimal.Parse(msg.Kline.Open, CultureInfo.InvariantCulture) / tickSize),
-            (long)(decimal.Parse(msg.Kline.High, CultureInfo.InvariantCulture) / tickSize),
-            (long)(decimal.Parse(msg.Kline.Low, CultureInfo.InvariantCulture) / tickSize),
-            (long)(decimal.Parse(msg.Kline.Close, CultureInfo.InvariantCulture) / tickSize),
-            (long)decimal.Parse(msg.Kline.Volume, CultureInfo.InvariantCulture));
+            scale.FromMarketPrice(decimal.Parse(msg.Kline.Open, CultureInfo.InvariantCulture)),
+            scale.FromMarketPrice(decimal.Parse(msg.Kline.High, CultureInfo.InvariantCulture)),
+            scale.FromMarketPrice(decimal.Parse(msg.Kline.Low, CultureInfo.InvariantCulture)),
+            scale.FromMarketPrice(decimal.Parse(msg.Kline.Close, CultureInfo.InvariantCulture)),
+            MoneyConvert.ToLong(decimal.Parse(msg.Kline.Volume, CultureInfo.InvariantCulture)));
 
         var subKey = $"{subscription.Asset.Name}|{subscription.TimeFrame}";
         lock (entry.BarsLock)
@@ -387,12 +388,12 @@ public sealed class BinanceLiveConnector : ILiveConnector
         }
 
         var asset = entry.PrimaryAsset;
-        var tickSize = asset.TickSize;
+        var scale = new ScaleContext(asset);
 
         // Parse outside the callback for efficiency
-        var fillPrice = (long)(decimal.Parse(report.LastFilledPrice, CultureInfo.InvariantCulture) / tickSize);
+        var fillPrice = scale.FromMarketPrice(decimal.Parse(report.LastFilledPrice, CultureInfo.InvariantCulture));
         var fillQty = decimal.Parse(report.LastFilledQty, CultureInfo.InvariantCulture);
-        var commission = (long)(decimal.Parse(report.Commission, CultureInfo.InvariantCulture) / tickSize);
+        var commission = scale.FromMarketPrice(decimal.Parse(report.Commission, CultureInfo.InvariantCulture));
         var side = report.Side == "BUY" ? OrderSide.Buy : OrderSide.Sell;
 
         entry.EventQueue.Writer.TryWrite(() =>

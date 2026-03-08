@@ -16,7 +16,7 @@ public sealed class Position
     }
 
     public long UnrealizedPnl(long currentPrice) =>
-        Quantity == 0m ? 0L : (long)((currentPrice - AverageEntryPrice) * Quantity * Asset.Multiplier);
+        Quantity == 0m ? 0L : MoneyConvert.ToLong((currentPrice - AverageEntryPrice) * Quantity * Asset.Multiplier);
 
     internal void Apply(Fill fill)
     {
@@ -33,17 +33,17 @@ public sealed class Position
             if (Math.Abs(newQuantity) > Math.Abs(Quantity))
             {
                 var totalCost = Quantity * AverageEntryPrice + fillQuantity * fill.Price;
-                AverageEntryPrice = (long)(totalCost / newQuantity);
+                AverageEntryPrice = MoneyConvert.ToLong(totalCost / newQuantity);
             }
             else
             {
                 var closedQuantity = Quantity - newQuantity;
-                RealizedPnl += (long)(closedQuantity * (fill.Price - AverageEntryPrice) * Asset.Multiplier);
+                RealizedPnl += MoneyConvert.ToLong(closedQuantity * (fill.Price - AverageEntryPrice) * Asset.Multiplier);
             }
         }
         else
         {
-            RealizedPnl += (long)(Quantity * (fill.Price - AverageEntryPrice) * Asset.Multiplier);
+            RealizedPnl += MoneyConvert.ToLong(Quantity * (fill.Price - AverageEntryPrice) * Asset.Multiplier);
             AverageEntryPrice = fill.Price;
         }
 

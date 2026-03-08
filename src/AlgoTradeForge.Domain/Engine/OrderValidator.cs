@@ -20,7 +20,7 @@ public sealed class OrderValidator : IOrderValidator
     {
         if (order.Side == OrderSide.Buy)
         {
-            var cost = (long)(fillPrice * order.Quantity * order.Asset.Multiplier) + options.CommissionPerTrade;
+            var cost = MoneyConvert.ToLong(fillPrice * order.Quantity * order.Asset.Multiplier) + options.CommissionPerTrade;
             if (cost > portfolio.Cash)
                 return "Insufficient cash";
         }
@@ -31,7 +31,7 @@ public sealed class OrderValidator : IOrderValidator
             var shortQuantity = Math.Max(0m, order.Quantity - Math.Max(0m, currentQty));
             if (shortQuantity > 0m)
             {
-                var marginRequired = (long)(shortQuantity * fillPrice * order.Asset.Multiplier * order.Asset.ShortMarginRate)
+                var marginRequired = MoneyConvert.ToLong(shortQuantity * fillPrice * order.Asset.Multiplier * order.Asset.ShortMarginRate)
                     + options.CommissionPerTrade;
                 if (marginRequired > portfolio.Cash)
                     return "Insufficient margin for short";

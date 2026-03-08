@@ -86,24 +86,26 @@ public sealed class StartDebugSessionCommandHandler(
                     result.Fills, equityValues, setup.Options.InitialCash,
                     command.StartTime, command.EndTime);
 
+                var scaledMetrics = MetricsScaler.ScaleDown(metrics, setup.Scale);
+
                 return new BacktestResultDto
                 {
                     Id = session.Id,
                     AssetName = command.AssetName,
                     StrategyName = command.StrategyName,
-                    InitialCapital = metrics.InitialCapital / setup.ScaleFactor,
-                    FinalEquity = metrics.FinalEquity / setup.ScaleFactor,
-                    NetProfit = metrics.NetProfit / setup.ScaleFactor,
-                    TotalCommissions = metrics.TotalCommissions / setup.ScaleFactor,
-                    TotalReturnPct = metrics.TotalReturnPct,
-                    AnnualizedReturnPct = metrics.AnnualizedReturnPct,
-                    SharpeRatio = metrics.SharpeRatio,
-                    SortinoRatio = metrics.SortinoRatio,
-                    MaxDrawdownPct = metrics.MaxDrawdownPct,
-                    TotalTrades = metrics.TotalTrades,
-                    WinRatePct = metrics.WinRatePct,
-                    ProfitFactor = metrics.ProfitFactor,
-                    TradingDays = metrics.TradingDays,
+                    InitialCapital = scaledMetrics.InitialCapital,
+                    FinalEquity = scaledMetrics.FinalEquity,
+                    NetProfit = scaledMetrics.NetProfit,
+                    TotalCommissions = scaledMetrics.TotalCommissions,
+                    TotalReturnPct = scaledMetrics.TotalReturnPct,
+                    AnnualizedReturnPct = scaledMetrics.AnnualizedReturnPct,
+                    SharpeRatio = scaledMetrics.SharpeRatio,
+                    SortinoRatio = scaledMetrics.SortinoRatio,
+                    MaxDrawdownPct = scaledMetrics.MaxDrawdownPct,
+                    TotalTrades = scaledMetrics.TotalTrades,
+                    WinRatePct = scaledMetrics.WinRatePct,
+                    ProfitFactor = scaledMetrics.ProfitFactor,
+                    TradingDays = scaledMetrics.TradingDays,
                     Duration = result.Duration,
                     CompletedAt = DateTimeOffset.UtcNow
                 };

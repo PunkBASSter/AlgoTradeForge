@@ -95,7 +95,7 @@ public sealed class DeltaZigZag : Int64IndicatorBase
         if (_lastSwingSize == 0)
             return _minimumThreshold;
 
-        var dynamic = (long)(_lastSwingSize * _delta);
+        var dynamic = MoneyConvert.ToLong(_lastSwingSize * _delta);
         return Math.Max(dynamic, _minimumThreshold);
     }
 }

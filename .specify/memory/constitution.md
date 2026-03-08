@@ -1,23 +1,18 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.6.0 → 1.6.1
+Version change: 1.6.1 → 1.7.0
 Modified principles: None
 Added sections: None
 Removed sections: None
 Modified sections:
-  - Backend > Code Style: Added two guidelines —
-    (1) MUST prefer non-nesting `using` declarations (`using var x = ...;`)
-        over block-scoped `using (var x = ...) { }` unless early disposal
-        within a larger scope is required.
-    (2) MUST prefer explicit `FileStream` constructor over static `File`
-        class helpers (e.g., `File.ReadLines`, `File.ReadAllText`) when
-        `FileShare` or `FileMode` control is needed; static `File` helpers
-        are acceptable only for simple one-shot reads/writes with no
-        concurrent access.
-Trigger: Windows file-locking bugs in PostRunPipeline — `File.ReadLines`
-  defaults to `FileShare.Read` which conflicts with concurrent writers;
-  explicit `FileStream(FileShare.ReadWrite)` resolves the issue.
+  - Backend > Code Style: Updated Int64 money convention to mandate
+    `MoneyConvert.ToLong()` instead of raw `(long)` casts for monetary
+    values, and `ScaleContext` instead of scattered `scaleFactor`
+    calculations at the Application/Infrastructure boundary.
+Trigger: Int64 safety hardening — ~25 raw truncating casts replaced with
+  rounding helpers to eliminate truncation bugs (e.g., 146.67 → 146
+  instead of 147).
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible
   - .specify/templates/spec-template.md ✅ compatible
@@ -183,11 +178,22 @@ frontend/
   - Documenting a `TODO` or `HACK` with justification
 - Code MUST be self-documenting through clear naming, small methods, and explicit types
 - MUST use `long` (Int64) for all monetary and price values within the Domain layer
-  (cash, fill prices, commissions, equity curve). The Application layer converts
-  `decimal` inputs to `long` via `(long)(value / asset.TickSize)` before calling
-  the Domain engine, and converts `long` results back to `decimal` via
-  `value * asset.TickSize` for the returned response. Quantities and percentages
+  (cash, fill prices, commissions, equity curve). Quantities and percentages
   stay `decimal`.
+- Domain code that casts `decimal` to `long` MUST use `MoneyConvert.ToLong()`
+  (which rounds via `MidpointRounding.AwayFromZero`) instead of raw `(long)` casts
+  that truncate. Raw `(long)` casts are only acceptable for non-monetary values
+  (timestamps, durations, indices).
+- Application layer code MUST use `ScaleContext` (constructed from `Asset` or
+  `decimal tickSize`) at the conversion boundary:
+  - `scale.AmountToTicks(decimal)` — converts human-readable amounts (e.g., $10,000
+    initial cash) to tick-denominated `long` values for Domain processing
+  - `scale.TicksToAmount(long)` / `scale.ToMarketPrice(long)` — converts tick values
+    back to `decimal` for API responses
+  - `scale.FromMarketPrice(decimal)` — converts exchange prices (e.g., parsed
+    Binance kline data) to tick-denominated `long`
+  Scattered `var scaleFactor = 1m / asset.TickSize` calculations followed by
+  raw `(long)(value * scaleFactor)` casts MUST NOT be used.
 - MUST prefer non-nesting `using` declarations (`using var x = ...;`) over
   block-scoped `using (var x = ...) { }` unless early disposal within a
   larger scope is required (e.g., releasing a file handle before a
@@ -402,4 +408,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.6.1 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-02-23
+**Version**: 1.7.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-03-07
