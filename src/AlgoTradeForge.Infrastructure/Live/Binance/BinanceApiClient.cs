@@ -186,7 +186,7 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
                 scale.FromMarketPrice(high),
                 scale.FromMarketPrice(low),
                 scale.FromMarketPrice(close),
-                MoneyConvert.ToLong(volume)));
+                MoneyConvert.ToLong(volume))); // Volume: not monetary, rounding is correct for fractional quantities
         }
 
         return bars;

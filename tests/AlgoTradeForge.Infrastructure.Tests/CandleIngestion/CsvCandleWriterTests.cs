@@ -130,6 +130,25 @@ public class CsvCandleWriterTests : IDisposable
     }
 
     [Fact]
+    public void WriteCandle_FractionalPrice_RoundsCorrectly()
+    {
+        // 67432.155 * 100 = 6743215.5 → should round to 6743216 (AwayFromZero), not truncate to 6743215
+        var writer = CreateWriter();
+        var candle = new RawCandle(
+            new DateTimeOffset(2024, 1, 15, 0, 0, 0, TimeSpan.Zero),
+            67432.155m, 67432.155m, 67432.155m, 67432.155m, 10.5m);
+
+        writer.WriteCandle(candle, "Binance", "BTCUSDT", 2);
+        writer.Dispose();
+
+        var path = Path.Combine(_testDataRoot, "Binance", "BTCUSDT", "2024", "2024-01.csv");
+        var lines = _fs.ReadAllLines(path);
+        var parts = lines[1].Split(',');
+        Assert.Equal("6743216", parts[1]); // Rounds up, not truncates
+        Assert.Equal("1050", parts[5]);    // Volume 10.5 * 100 = 1050 (exact)
+    }
+
+    [Fact]
     public void GetLastTimestamp_NoData_ReturnsNull()
     {
         using var writer = CreateWriter();

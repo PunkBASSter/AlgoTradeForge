@@ -300,7 +300,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
             scale.FromMarketPrice(decimal.Parse(msg.Kline.High, CultureInfo.InvariantCulture)),
             scale.FromMarketPrice(decimal.Parse(msg.Kline.Low, CultureInfo.InvariantCulture)),
             scale.FromMarketPrice(decimal.Parse(msg.Kline.Close, CultureInfo.InvariantCulture)),
-            MoneyConvert.ToLong(decimal.Parse(msg.Kline.Volume, CultureInfo.InvariantCulture)));
+            MoneyConvert.ToLong(decimal.Parse(msg.Kline.Volume, CultureInfo.InvariantCulture))); // Volume: not monetary, rounding is correct
 
         var subKey = $"{subscription.Asset.Name}|{subscription.TimeFrame}";
         lock (entry.BarsLock)

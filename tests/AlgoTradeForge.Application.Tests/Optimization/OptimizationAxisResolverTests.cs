@@ -130,6 +130,27 @@ public class OptimizationAxisResolverTests
     }
 
     [Fact]
+    public void RangeOverride_WithQuoteAssetUnit_RoundsHalfTick()
+    {
+        // step=0.005 with tickSize=0.01 → scaleFactor=100
+        // min=50 → 50*100=5000, step=0.005 → 50.005*100=5000.5 → should round to 5001 (not truncate to 5000)
+        var axis = new NumericRangeAxis("Threshold", 50, 500, 0.005m, typeof(long), ParamUnit.QuoteAsset);
+        var descriptor = MakeDescriptor(axis);
+        var overrides = new Dictionary<string, OptimizationAxisOverride>
+        {
+            ["Threshold"] = new RangeOverride(50, 50.01m, 0.005m)
+        };
+
+        var result = _resolver.Resolve(descriptor, overrides, tickSize: 0.01m);
+
+        var numeric = Assert.IsType<ResolvedNumericAxis>(Assert.Single(result));
+        Assert.Equal(3, numeric.Values.Count);
+        Assert.Equal(5000L, numeric.Values[0]);  // 50.000 * 100 = 5000 (exact)
+        Assert.Equal(5001L, numeric.Values[1]);  // 50.005 * 100 = 5000.5 → rounds to 5001
+        Assert.Equal(5001L, numeric.Values[2]);  // 50.010 * 100 = 5001 (exact)
+    }
+
+    [Fact]
     public void RangeOverride_WithRawUnit_NoTickSize_Succeeds()
     {
         // Raw axes should work fine even without tickSize

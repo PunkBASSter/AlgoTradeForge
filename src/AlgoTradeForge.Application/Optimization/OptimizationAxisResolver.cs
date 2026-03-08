@@ -208,6 +208,9 @@ public sealed class OptimizationAxisResolver
         if (targetType == typeof(decimal)) return decimalVal;
         if (targetType == typeof(double)) return (double)decimalVal;
         if (targetType == typeof(int)) return (int)decimalVal;
+        // All long axes are currently QuoteAsset-scaled; MoneyConvert.ToLong handles
+        // floating-point drift after scaleFactor multiplication. If a Raw+long axis
+        // is ever added, the input will be integer-valued so rounding == truncation.
         if (targetType == typeof(long)) return MoneyConvert.ToLong(decimalVal);
 
         throw new InvalidOperationException($"Unsupported numeric type: {targetType.Name}");
