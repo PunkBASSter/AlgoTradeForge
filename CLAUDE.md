@@ -36,6 +36,9 @@ All monetary/price values in the Domain layer use `long` (Int64). When convertin
   - `scale.TicksToAmount(ticks)` / `scale.ToMarketPrice(ticks)` — long → decimal
   - `scale.FromMarketPrice(price)` — exchange price → tick-denominated long
 - Raw `(long)` casts are ONLY acceptable for non-monetary values (timestamps, durations, indices)
+- **Strategy parameters**: `ParamUnit.QuoteAsset` properties are scaled automatically by `ParameterScaler.ScaleQuoteAssetParams()` (backtest/live) or `OptimizationAxisResolver` (optimization). Do not manually scale.
+- **Declaring `[Optimizable]` params**: Use `Unit = ParamUnit.QuoteAsset` for monetary `long` params (thresholds, ATR bounds); declare `Min`/`Max`/`Step` in human-readable units (dollars, not ticks). Use `ParamUnit.Raw` (default) for dimensionless params (periods, ratios).
+- **Module sub-param scaling**: `ParameterScaler` recurses into `ModuleSelection` values to scale nested `QuoteAsset` sub-params. Both backtest/live (`ParameterScaler`) and optimization (`OptimizationAxisResolver`) paths handle module sub-param scaling.
 
 ## Recent Changes
 - 009-long-running-ops: Added C# 14 / .NET 10 + ASP.NET Core (minimal APIs), System.Threading (Task.Run, Interlocked, CancellationTokenSource), IDistributedCache for progress tracking

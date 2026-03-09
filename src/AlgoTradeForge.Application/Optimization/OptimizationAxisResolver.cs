@@ -9,7 +9,7 @@ public sealed class OptimizationAxisResolver
     public IReadOnlyList<ResolvedAxis> Resolve(
         IOptimizationSpaceDescriptor descriptor,
         Dictionary<string, OptimizationAxisOverride>? overrides,
-        decimal? tickSize = null)
+        ScaleContext? scale = null)
     {
         var resolved = new List<ResolvedAxis>();
 
@@ -20,9 +20,9 @@ public sealed class OptimizationAxisResolver
 
             resolved.Add(axis switch
             {
-                NumericRangeAxis numeric => ResolveNumeric(numeric, axisOverride, tickSize),
+                NumericRangeAxis numeric => ResolveNumeric(numeric, axisOverride, scale),
                 DiscreteSetAxis discrete => ResolveDiscrete(discrete, axisOverride),
-                ModuleSlotAxis module => ResolveModuleSlot(module, axisOverride, tickSize),
+                ModuleSlotAxis module => ResolveModuleSlot(module, axisOverride, scale),
                 _ => throw new InvalidOperationException($"Unknown axis type: {axis.GetType().Name}")
             });
         }
@@ -33,34 +33,23 @@ public sealed class OptimizationAxisResolver
         return resolved;
     }
 
-    private static decimal GetScaleFactor(NumericRangeAxis axis, decimal? tickSize)
-    {
-        if (axis.Unit != ParamUnit.QuoteAsset)
-            return 1m;
-
-        if (tickSize is null or <= 0m)
-            throw new InvalidOperationException(
-                $"Axis '{axis.Name}' has Unit=QuoteAsset but no tickSize was provided.");
-
-        return 1m / tickSize.Value;
-    }
-
     private static ResolvedAxis ResolveNumeric(
-        NumericRangeAxis axis, OptimizationAxisOverride? axisOverride, decimal? tickSize)
+        NumericRangeAxis axis, OptimizationAxisOverride? axisOverride, ScaleContext? scale)
     {
-        var scaleFactor = GetScaleFactor(axis, tickSize);
+        if (axis.Unit == ParamUnit.QuoteAsset && scale is null && axisOverride is not null)
+            throw new InvalidOperationException(
+                $"Axis '{axis.Name}' has Unit=QuoteAsset but no scale was provided.");
 
         switch (axisOverride)
         {
             case null:
-                // Omitted — not optimized. Return empty axis so the factory applies the param default.
                 return new ResolvedNumericAxis(axis.Name, []);
 
             case FixedOverride fix:
             {
                 var decimalVal = Convert.ToDecimal(fix.Value);
                 ValidateWithinBounds(axis, decimalVal, decimalVal);
-                var fixedValue = ConvertNumeric(decimalVal * scaleFactor, axis.ClrType);
+                var fixedValue = ConvertAxisValue(decimalVal, axis.Unit, axis.ClrType, scale);
                 return new ResolvedNumericAxis(axis.Name, [fixedValue]);
             }
 
@@ -70,7 +59,7 @@ public sealed class OptimizationAxisResolver
                 if (range.Step <= 0)
                     throw new ArgumentException($"Step for '{axis.Name}' must be positive.");
 
-                var values = ExpandRange(range.Min, range.Max, range.Step, scaleFactor, axis.ClrType);
+                var values = ExpandRange(range.Min, range.Max, range.Step, axis.Unit, axis.ClrType, scale);
                 return new ResolvedNumericAxis(axis.Name, values);
             }
 
@@ -81,7 +70,7 @@ public sealed class OptimizationAxisResolver
                 {
                     var d = Convert.ToDecimal(v);
                     ValidateWithinBounds(axis, d, d);
-                    converted.Add(ConvertNumeric(d * scaleFactor, axis.ClrType));
+                    converted.Add(ConvertAxisValue(d, axis.Unit, axis.ClrType, scale));
                 }
 
                 return new ResolvedNumericAxis(axis.Name, converted);
@@ -106,11 +95,10 @@ public sealed class OptimizationAxisResolver
     }
 
     private static ResolvedAxis ResolveModuleSlot(
-        ModuleSlotAxis axis, OptimizationAxisOverride? axisOverride, decimal? tickSize)
+        ModuleSlotAxis axis, OptimizationAxisOverride? axisOverride, ScaleContext? scale)
     {
         if (axisOverride is null)
         {
-            // Omitted — no module variants selected, skip
             return new ResolvedModuleSlotAxis(axis.Name, []);
         }
 
@@ -127,7 +115,7 @@ public sealed class OptimizationAxisResolver
                 throw new ArgumentException(
                     $"Unknown module variant '{variantKey}' for slot '{axis.Name}'.");
 
-            var subAxes = ResolveSubAxes(variantDesc.Axes, subOverrides, tickSize);
+            var subAxes = ResolveSubAxes(variantDesc.Axes, subOverrides, scale);
             resolvedVariants.Add(new ResolvedModuleVariant(variantKey, subAxes));
         }
 
@@ -137,7 +125,7 @@ public sealed class OptimizationAxisResolver
     private static IReadOnlyList<ResolvedAxis> ResolveSubAxes(
         IReadOnlyList<ParameterAxis> axes,
         Dictionary<string, OptimizationAxisOverride>? overrides,
-        decimal? tickSize)
+        ScaleContext? scale)
     {
         var resolved = new List<ResolvedAxis>();
 
@@ -148,9 +136,9 @@ public sealed class OptimizationAxisResolver
 
             resolved.Add(axis switch
             {
-                NumericRangeAxis numeric => ResolveNumeric(numeric, axisOverride, tickSize),
+                NumericRangeAxis numeric => ResolveNumeric(numeric, axisOverride, scale),
                 DiscreteSetAxis discrete => ResolveDiscrete(discrete, axisOverride),
-                ModuleSlotAxis module => ResolveModuleSlot(module, axisOverride, tickSize),
+                ModuleSlotAxis module => ResolveModuleSlot(module, axisOverride, scale),
                 _ => throw new InvalidOperationException($"Unknown axis type in module: {axis.GetType().Name}")
             });
         }
@@ -190,29 +178,37 @@ public sealed class OptimizationAxisResolver
     }
 
     private static IReadOnlyList<object> ExpandRange(
-        decimal min, decimal max, decimal step, decimal scaleFactor, Type clrType)
+        decimal min, decimal max, decimal step, ParamUnit unit, Type clrType, ScaleContext? scale)
     {
         var values = new List<object>();
         for (var i = 0; min + i * step <= max; i++)
         {
-            values.Add(ConvertNumeric((min + i * step) * scaleFactor, clrType));
+            values.Add(ConvertAxisValue(min + i * step, unit, clrType, scale));
         }
 
         return values;
     }
 
-    private static object ConvertNumeric(object value, Type targetType)
+    private static object ConvertAxisValue(
+        decimal rawValue, ParamUnit unit, Type clrType, ScaleContext? scale)
     {
-        var decimalVal = Convert.ToDecimal(value);
+        if (unit == ParamUnit.QuoteAsset)
+        {
+            var sc = scale ?? throw new InvalidOperationException(
+                "ScaleContext is required for QuoteAsset conversion.");
+            if (clrType == typeof(long)) return sc.AmountToTicks(rawValue);
+            if (clrType == typeof(decimal)) return rawValue / sc.TickSize;
+            if (clrType == typeof(double)) return (double)(rawValue / sc.TickSize);
+            if (clrType == typeof(int)) return (int)(rawValue / sc.TickSize);
+        }
+        else
+        {
+            if (clrType == typeof(decimal)) return rawValue;
+            if (clrType == typeof(double)) return (double)rawValue;
+            if (clrType == typeof(int)) return (int)rawValue;
+            if (clrType == typeof(long)) return MoneyConvert.ToLong(rawValue);
+        }
 
-        if (targetType == typeof(decimal)) return decimalVal;
-        if (targetType == typeof(double)) return (double)decimalVal;
-        if (targetType == typeof(int)) return (int)decimalVal;
-        // All long axes are currently QuoteAsset-scaled; MoneyConvert.ToLong handles
-        // floating-point drift after scaleFactor multiplication. If a Raw+long axis
-        // is ever added, the input will be integer-valued so rounding == truncation.
-        if (targetType == typeof(long)) return MoneyConvert.ToLong(decimalVal);
-
-        throw new InvalidOperationException($"Unsupported numeric type: {targetType.Name}");
+        throw new InvalidOperationException($"Unsupported numeric type: {clrType.Name}");
     }
 }

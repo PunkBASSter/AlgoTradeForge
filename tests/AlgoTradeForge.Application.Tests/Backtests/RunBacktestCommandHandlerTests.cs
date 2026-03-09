@@ -26,6 +26,7 @@ public class RunBacktestCommandHandlerTests
     private readonly IAssetRepository _assetRepository = Substitute.For<IAssetRepository>();
     private readonly IStrategyFactory _strategyFactory = Substitute.For<IStrategyFactory>();
     private readonly IHistoryRepository _historyRepository = Substitute.For<IHistoryRepository>();
+    private readonly IOptimizationSpaceProvider _spaceProvider = Substitute.For<IOptimizationSpaceProvider>();
     private readonly IMetricsCalculator _metricsCalculator = Substitute.For<IMetricsCalculator>();
     private readonly IRunSinkFactory _runSinkFactory = Substitute.For<IRunSinkFactory>();
     private readonly IPostRunPipeline _postRunPipeline = Substitute.For<IPostRunPipeline>();
@@ -46,7 +47,7 @@ public class RunBacktestCommandHandlerTests
             Substitute.For<IBarMatcher>(), new OrderValidator());
 
         var preparer = new BacktestPreparer(
-            _assetRepository, _strategyFactory, _historyRepository);
+            _assetRepository, _strategyFactory, _historyRepository, _spaceProvider);
 
         return new RunBacktestCommandHandler(
             engine, preparer, _metricsCalculator,

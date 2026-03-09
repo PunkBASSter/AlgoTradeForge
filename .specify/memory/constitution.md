@@ -194,6 +194,29 @@ frontend/
     Binance kline data) to tick-denominated `long`
   Scattered `var scaleFactor = 1m / asset.TickSize` calculations followed by
   raw `(long)(value * scaleFactor)` casts MUST NOT be used.
+- Strategy parameters decorated with `[Optimizable(Unit = ParamUnit.QuoteAsset)]`
+  MUST be scaled via `ScaleContext.AmountToTicks()` before passing to the
+  strategy factory. Use `ParameterScaler.ScaleQuoteAssetParams()` for
+  dictionary-based parameters (backtests, live sessions). The optimization
+  resolver handles this internally via `ConvertAxisValue`.
+- When declaring `[Optimizable]` on strategy or module parameters:
+  - Use `Unit = ParamUnit.QuoteAsset` for monetary/price parameters whose
+    backing field is `long` (e.g., thresholds, ATR bounds, stop distances).
+    The `Min`, `Max`, `Step` values in the attribute MUST be in
+    human-readable quote-asset units (e.g., dollars), NOT tick-scaled.
+    The framework scales them automatically.
+  - Use `Unit = ParamUnit.Raw` (default) for dimensionless parameters
+    (periods, counts, ratios) or `decimal`/`double` parameters that do
+    not represent money.
+  - MUST NOT manually scale `[Optimizable]` parameter values in strategy
+    code or API endpoints — `ParameterScaler` and `OptimizationAxisResolver`
+    handle this at the Application boundary.
+  - **Scaling scope**: `ParameterScaler` scales both top-level strategy
+    parameters and module sub-parameters (when passed as `ModuleSelection`
+    values). It recurses into `ModuleSlotAxis.Variants[].Axes` to scale
+    nested `QuoteAsset` sub-params. `OptimizationAxisResolver` handles the
+    same recursion independently in the optimization path via
+    `ConvertAxisValue`.
 - MUST prefer non-nesting `using` declarations (`using var x = ...;`) over
   block-scoped `using (var x = ...) { }` unless early disposal within a
   larger scope is required (e.g., releasing a file handle before a

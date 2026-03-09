@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
@@ -11,7 +12,8 @@ namespace AlgoTradeForge.Application.Backtests;
 public sealed class BacktestPreparer(
     IAssetRepository assetRepository,
     IStrategyFactory strategyFactory,
-    IHistoryRepository historyRepository)
+    IHistoryRepository historyRepository,
+    IOptimizationSpaceProvider spaceProvider)
 {
     public Task<BacktestSetup> PrepareAsync(
         IBacktestSetupCommand command,
@@ -41,7 +43,9 @@ public sealed class BacktestPreparer(
         };
 
         var indicatorFactory = indicatorFactoryProvider(options);
-        var strategy = strategyFactory.Create(command.StrategyName, indicatorFactory, command.StrategyParameters);
+        var scaledParams = ParameterScaler.ScaleQuoteAssetParams(
+            spaceProvider, command.StrategyName, command.StrategyParameters, scale);
+        var strategy = strategyFactory.Create(command.StrategyName, indicatorFactory, scaledParams);
 
         if (strategy.DataSubscriptions.Count == 0)
         {

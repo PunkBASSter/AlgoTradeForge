@@ -86,7 +86,7 @@ public sealed class RunOptimizationCommandHandler(
         }
 
         var primaryAsset = resolvedSubscriptions[0].Asset;
-        var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes, primaryAsset.TickSize);
+        var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes, new ScaleContext(primaryAsset));
 
         if (resolvedSubscriptions.Count > 1)
         {

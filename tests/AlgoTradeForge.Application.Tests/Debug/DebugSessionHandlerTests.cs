@@ -23,6 +23,7 @@ public class DebugSessionHandlerTests
     private readonly IAssetRepository _assetRepo = Substitute.For<IAssetRepository>();
     private readonly IStrategyFactory _strategyFactory = Substitute.For<IStrategyFactory>();
     private readonly IHistoryRepository _historyRepo = Substitute.For<IHistoryRepository>();
+    private readonly IOptimizationSpaceProvider _spaceProvider = Substitute.For<IOptimizationSpaceProvider>();
     private readonly IMetricsCalculator _metricsCalc = new MetricsCalculator();
     private readonly BacktestEngine _engine = new(new BarMatcher(), new OrderValidator());
     private readonly IDebugSessionStore _sessionStore = new InMemoryDebugSessionStore();
@@ -37,7 +38,7 @@ public class DebugSessionHandlerTests
     }
 
     private BacktestPreparer CreatePreparer() =>
-        new(_assetRepo, _strategyFactory, _historyRepo);
+        new(_assetRepo, _strategyFactory, _historyRepo, _spaceProvider);
 
     private StartDebugSessionCommandHandler CreateStartHandler() =>
         new(_engine, CreatePreparer(), _metricsCalc, _sessionStore, _runSinkFactory, _postRunPipeline);
