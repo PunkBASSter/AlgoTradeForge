@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Reporting;
 
@@ -6,26 +7,26 @@ namespace AlgoTradeForge.Application.Backtests;
 
 internal static class MetricsScaler
 {
-    public static PerformanceMetrics ScaleDown(PerformanceMetrics metrics, decimal scaleFactor)
+    public static PerformanceMetrics ScaleDown(PerformanceMetrics metrics, ScaleContext scale)
     {
         return metrics with
         {
-            InitialCapital = metrics.InitialCapital / scaleFactor,
-            FinalEquity = metrics.FinalEquity / scaleFactor,
-            NetProfit = metrics.NetProfit / scaleFactor,
-            GrossProfit = metrics.GrossProfit / scaleFactor,
-            GrossLoss = metrics.GrossLoss / scaleFactor,
-            TotalCommissions = metrics.TotalCommissions / scaleFactor,
-            AverageWin = metrics.AverageWin / (double)scaleFactor,
-            AverageLoss = metrics.AverageLoss / (double)scaleFactor,
+            InitialCapital = scale.TicksToAmount(metrics.InitialCapital),
+            FinalEquity = scale.TicksToAmount(metrics.FinalEquity),
+            NetProfit = scale.TicksToAmount(metrics.NetProfit),
+            GrossProfit = scale.TicksToAmount(metrics.GrossProfit),
+            GrossLoss = scale.TicksToAmount(metrics.GrossLoss),
+            TotalCommissions = scale.TicksToAmount(metrics.TotalCommissions),
+            AverageWin = (double)scale.TicksToAmount((decimal)metrics.AverageWin),
+            AverageLoss = (double)scale.TicksToAmount((decimal)metrics.AverageLoss),
         };
     }
 
-    public static EquityPoint[] ScaleEquityCurve(IReadOnlyList<EquitySnapshot> curve, decimal scaleFactor)
+    public static EquityPoint[] ScaleEquityCurve(IReadOnlyList<EquitySnapshot> curve, ScaleContext scale)
     {
         var result = new EquityPoint[curve.Count];
         for (var i = 0; i < curve.Count; i++)
-            result[i] = new EquityPoint(curve[i].TimestampMs, curve[i].Value / scaleFactor);
+            result[i] = new EquityPoint(curve[i].TimestampMs, scale.TicksToAmount(curve[i].Value));
         return result;
     }
 }

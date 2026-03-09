@@ -1,13 +1,11 @@
 using System.Globalization;
-using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Live;
-using AlgoTradeForge.Domain.Optimization.Attributes;
-using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
 
 namespace AlgoTradeForge.Application.Live;
@@ -40,7 +38,9 @@ public sealed class StartLiveSessionCommandHandler(
         var primaryAsset = resolvedSubscriptions[0].Asset;
 
         // Scale QuoteAsset strategy params from human-readable to tick units
-        var scaledParams = ScaleQuoteAssetParams(command.StrategyName, command.StrategyParameters, primaryAsset);
+        var scale = new ScaleContext(primaryAsset);
+        var scaledParams = ParameterScaler.ScaleQuoteAssetParams(
+            spaceProvider, command.StrategyName, command.StrategyParameters, scale);
 
         var strategy = strategyFactory.Create(
             command.StrategyName,
@@ -59,7 +59,7 @@ public sealed class StartLiveSessionCommandHandler(
         var fingerprint = RunKeyBuilder.Build(command);
 
         var sessionId = Guid.NewGuid();
-        var initialCashScaled = (long)(command.InitialCash / primaryAsset.TickSize);
+        var initialCashScaled = scale.AmountToTicks(command.InitialCash);
 
         var config = new LiveSessionConfig
         {
@@ -103,35 +103,5 @@ public sealed class StartLiveSessionCommandHandler(
         }
 
         return new LiveSessionSubmissionDto { SessionId = sessionId };
-    }
-
-    private IDictionary<string, object>? ScaleQuoteAssetParams(
-        string strategyName, IDictionary<string, object>? parameters, Asset primaryAsset)
-    {
-        if (parameters is null or { Count: 0 })
-            return parameters;
-
-        var descriptor = spaceProvider.GetDescriptor(strategyName);
-        if (descriptor is null)
-            return parameters;
-
-        var scaleFactor = 1m / primaryAsset.TickSize;
-        var scaled = new Dictionary<string, object>(parameters);
-
-        foreach (var axis in descriptor.Axes.OfType<NumericRangeAxis>())
-        {
-            if (axis.Unit != ParamUnit.QuoteAsset)
-                continue;
-
-            if (!scaled.TryGetValue(axis.Name, out var value))
-                continue;
-
-            var decimalValue = value is JsonElement je
-                ? je.GetDecimal()
-                : Convert.ToDecimal(value);
-            scaled[axis.Name] = (long)(decimalValue * scaleFactor);
-        }
-
-        return scaled;
     }
 }

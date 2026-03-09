@@ -28,7 +28,7 @@ public sealed class Portfolio
         {
             positionValue += position.Quantity * currentPrice * position.Asset.Multiplier;
         }
-        return Cash + (long)positionValue;
+        return Cash + MoneyConvert.ToLong(positionValue);
     }
 
     public long Equity(IReadOnlyDictionary<string, long> prices)
@@ -41,7 +41,7 @@ public sealed class Portfolio
                 positionValue += position.Quantity * price * position.Asset.Multiplier;
             }
         }
-        return Cash + (long)positionValue;
+        return Cash + MoneyConvert.ToLong(positionValue);
     }
 
     internal void Initialize()
@@ -57,7 +57,7 @@ public sealed class Portfolio
     internal void Apply(Fill fill)
     {
         var direction = fill.Side == OrderSide.Buy ? -1 : 1;
-        var cashChange = (long)(fill.Price * fill.Quantity * fill.Asset.Multiplier * direction) - fill.Commission;
+        var cashChange = MoneyConvert.ToLong(fill.Price * fill.Quantity * fill.Asset.Multiplier * direction) - fill.Commission;
         Cash += cashChange;
 
         var position = GetOrCreatePosition(fill.Asset);

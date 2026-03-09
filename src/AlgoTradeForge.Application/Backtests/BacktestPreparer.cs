@@ -1,5 +1,7 @@
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Repositories;
+using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Indicators;
@@ -10,7 +12,8 @@ namespace AlgoTradeForge.Application.Backtests;
 public sealed class BacktestPreparer(
     IAssetRepository assetRepository,
     IStrategyFactory strategyFactory,
-    IHistoryRepository historyRepository)
+    IHistoryRepository historyRepository,
+    IOptimizationSpaceProvider spaceProvider)
 {
     public Task<BacktestSetup> PrepareAsync(
         IBacktestSetupCommand command,
@@ -26,21 +29,23 @@ public sealed class BacktestPreparer(
         var asset = await assetRepository.GetByNameAsync(command.AssetName, command.Exchange, ct)
             ?? throw new ArgumentException($"Asset '{command.AssetName}' not found.", nameof(command));
 
-        var scaleFactor = 1m / asset.TickSize;
+        var scale = new ScaleContext(asset);
 
         var options = new BacktestOptions
         {
-            InitialCash = (long)(command.InitialCash * scaleFactor),
+            InitialCash = scale.AmountToTicks(command.InitialCash),
             Asset = asset,
             StartTime = command.StartTime,
             EndTime = command.EndTime,
-            CommissionPerTrade = (long)(command.CommissionPerTrade * scaleFactor),
+            CommissionPerTrade = scale.AmountToTicks(command.CommissionPerTrade),
             SlippageTicks = command.SlippageTicks,
             UseDetailedExecutionLogic = command.UseDetailedExecutionLogic
         };
 
         var indicatorFactory = indicatorFactoryProvider(options);
-        var strategy = strategyFactory.Create(command.StrategyName, indicatorFactory, command.StrategyParameters);
+        var scaledParams = ParameterScaler.ScaleQuoteAssetParams(
+            spaceProvider, command.StrategyName, command.StrategyParameters, scale);
+        var strategy = strategyFactory.Create(command.StrategyName, indicatorFactory, scaledParams);
 
         if (strategy.DataSubscriptions.Count == 0)
         {
@@ -57,6 +62,6 @@ public sealed class BacktestPreparer(
             seriesArray[i] = historyRepository.Load(strategy.DataSubscriptions[i], fromDate, toDate);
         }
 
-        return new BacktestSetup(asset, scaleFactor, options, strategy, seriesArray);
+        return new BacktestSetup(asset, scale, options, strategy, seriesArray);
     }
 }

@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Optimization;
+using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Optimization.Space;
 using Xunit;
@@ -23,7 +24,7 @@ public class OptimizationAxisResolverTests
             ["MinThreshold"] = new RangeOverride(50, 150, 50)
         };
 
-        var result = _resolver.Resolve(descriptor, overrides, tickSize: 0.01m);
+        var result = _resolver.Resolve(descriptor, overrides, scale: new ScaleContext(0.01m));
 
         var numeric = Assert.IsType<ResolvedNumericAxis>(Assert.Single(result));
         // 50*100=5000, 100*100=10000, 150*100=15000
@@ -43,7 +44,7 @@ public class OptimizationAxisResolverTests
             ["Period"] = new RangeOverride(10, 12, 1)
         };
 
-        var result = _resolver.Resolve(descriptor, overrides, tickSize: 0.01m);
+        var result = _resolver.Resolve(descriptor, overrides, scale: new ScaleContext(0.01m));
 
         var numeric = Assert.IsType<ResolvedNumericAxis>(Assert.Single(result));
         Assert.Equal(3, numeric.Values.Count);
@@ -62,7 +63,7 @@ public class OptimizationAxisResolverTests
             ["AtrMin"] = new FixedOverride(25m)
         };
 
-        var result = _resolver.Resolve(descriptor, overrides, tickSize: 0.01m);
+        var result = _resolver.Resolve(descriptor, overrides, scale: new ScaleContext(0.01m));
 
         var numeric = Assert.IsType<ResolvedNumericAxis>(Assert.Single(result));
         Assert.Single(numeric.Values);
@@ -79,7 +80,7 @@ public class OptimizationAxisResolverTests
             ["MinThreshold"] = new DiscreteSetOverride([100m, 200m])
         };
 
-        var result = _resolver.Resolve(descriptor, overrides, tickSize: 0.01m);
+        var result = _resolver.Resolve(descriptor, overrides, scale: new ScaleContext(0.01m));
 
         var numeric = Assert.IsType<ResolvedNumericAxis>(Assert.Single(result));
         Assert.Equal(2, numeric.Values.Count);
@@ -88,7 +89,7 @@ public class OptimizationAxisResolverTests
     }
 
     [Fact]
-    public void QuoteAssetUnit_WithoutTickSize_Throws()
+    public void QuoteAssetUnit_WithoutScale_Throws()
     {
         var axis = new NumericRangeAxis("MinThreshold", 50, 500, 50, typeof(long), ParamUnit.QuoteAsset);
         var descriptor = MakeDescriptor(axis);
@@ -98,7 +99,7 @@ public class OptimizationAxisResolverTests
         };
 
         Assert.Throws<InvalidOperationException>(
-            () => _resolver.Resolve(descriptor, overrides, tickSize: null));
+            () => _resolver.Resolve(descriptor, overrides, scale: null));
     }
 
     [Fact]
@@ -119,7 +120,7 @@ public class OptimizationAxisResolverTests
             })
         };
 
-        var result = _resolver.Resolve(descriptor, overrides, tickSize: 0.01m);
+        var result = _resolver.Resolve(descriptor, overrides, scale: new ScaleContext(0.01m));
 
         var moduleSlot = Assert.IsType<ResolvedModuleSlotAxis>(Assert.Single(result));
         Assert.Single(moduleSlot.Variants);
@@ -130,9 +131,30 @@ public class OptimizationAxisResolverTests
     }
 
     [Fact]
-    public void RangeOverride_WithRawUnit_NoTickSize_Succeeds()
+    public void RangeOverride_WithQuoteAssetUnit_RoundsHalfTick()
     {
-        // Raw axes should work fine even without tickSize
+        // step=0.005 with tickSize=0.01 → scaleFactor=100
+        // min=50 → 50*100=5000, step=0.005 → 50.005*100=5000.5 → should round to 5001 (not truncate to 5000)
+        var axis = new NumericRangeAxis("Threshold", 50, 500, 0.005m, typeof(long), ParamUnit.QuoteAsset);
+        var descriptor = MakeDescriptor(axis);
+        var overrides = new Dictionary<string, OptimizationAxisOverride>
+        {
+            ["Threshold"] = new RangeOverride(50, 50.01m, 0.005m)
+        };
+
+        var result = _resolver.Resolve(descriptor, overrides, scale: new ScaleContext(0.01m));
+
+        var numeric = Assert.IsType<ResolvedNumericAxis>(Assert.Single(result));
+        Assert.Equal(3, numeric.Values.Count);
+        Assert.Equal(5000L, numeric.Values[0]);  // 50.000 * 100 = 5000 (exact)
+        Assert.Equal(5001L, numeric.Values[1]);  // 50.005 * 100 = 5000.5 → rounds to 5001
+        Assert.Equal(5001L, numeric.Values[2]);  // 50.010 * 100 = 5001 (exact)
+    }
+
+    [Fact]
+    public void RangeOverride_WithRawUnit_NoScale_Succeeds()
+    {
+        // Raw axes should work fine even without scale
         var axis = new NumericRangeAxis("Period", 5, 50, 1, typeof(int));
         var descriptor = MakeDescriptor(axis);
         var overrides = new Dictionary<string, OptimizationAxisOverride>

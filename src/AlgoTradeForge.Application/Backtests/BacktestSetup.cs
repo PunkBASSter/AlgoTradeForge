@@ -7,7 +7,7 @@ namespace AlgoTradeForge.Application.Backtests;
 
 public sealed record BacktestSetup(
     Asset Asset,
-    decimal ScaleFactor,
+    ScaleContext Scale,
     BacktestOptions Options,
     IInt64BarStrategy Strategy,
     TimeSeries<Int64Bar>[] Series);

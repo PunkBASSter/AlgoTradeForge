@@ -195,11 +195,12 @@ public sealed class LiveOrderContext : IOrderContext
                     var order = request.Order;
                     var binanceType = MapOrderType(order.Type);
                     var side = order.Side == OrderSide.Buy ? "BUY" : "SELL";
+                    var scale = new ScaleContext(_primaryAsset);
                     decimal? price = order.LimitPrice.HasValue
-                        ? order.LimitPrice.Value * _primaryAsset.TickSize
+                        ? scale.ToMarketPrice(order.LimitPrice.Value)
                         : null;
                     decimal? stopPrice = order.StopPrice.HasValue
-                        ? order.StopPrice.Value * _primaryAsset.TickSize
+                        ? scale.ToMarketPrice(order.StopPrice.Value)
                         : null;
 
                     var result = await _orderClient.PlaceOrderAsync(
@@ -225,17 +226,16 @@ public sealed class LiveOrderContext : IOrderContext
                     {
                         _restFilledOrders.TryAdd(exchangeOrderId, 0);
 
-                        var tickSize = _primaryAsset.TickSize;
                         foreach (var restFill in result.Fills)
                         {
                             var fill = new Fill(
                                 exchangeOrderId,
                                 order.Asset,
                                 DateTimeOffset.UtcNow,
-                                (long)(restFill.Price / tickSize),
+                                scale.FromMarketPrice(restFill.Price),
                                 restFill.Quantity,
                                 order.Side,
-                                (long)(restFill.Commission / tickSize));
+                                scale.FromMarketPrice(restFill.Commission));
 
                             AddFill(fill);
                         }

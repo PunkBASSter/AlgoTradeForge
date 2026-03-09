@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 
 namespace AlgoTradeForge.CandleIngestor.Storage;
@@ -42,11 +43,11 @@ public sealed class CsvCandleWriter(string dataRoot) : IDisposable
         }
 
         var multiplier = (decimal)Math.Pow(10, decimalDigits);
-        var open = (long)Math.Round(candle.Open * multiplier, MidpointRounding.AwayFromZero);
-        var high = (long)Math.Round(candle.High * multiplier, MidpointRounding.AwayFromZero);
-        var low = (long)Math.Round(candle.Low * multiplier, MidpointRounding.AwayFromZero);
-        var close = (long)Math.Round(candle.Close * multiplier, MidpointRounding.AwayFromZero);
-        var volume = (long)Math.Round(candle.Volume * multiplier, MidpointRounding.AwayFromZero);
+        var open = MoneyConvert.ToLong(candle.Open * multiplier);
+        var high = MoneyConvert.ToLong(candle.High * multiplier);
+        var low = MoneyConvert.ToLong(candle.Low * multiplier);
+        var close = MoneyConvert.ToLong(candle.Close * multiplier);
+        var volume = MoneyConvert.ToLong(candle.Volume * multiplier);
 
         _currentWriter!.WriteLine($"{candle.Timestamp:yyyy-MM-ddTHH:mm:ss+00:00},{open},{high},{low},{close},{volume}");
         _lastWrittenTimestamp = candle.Timestamp;
