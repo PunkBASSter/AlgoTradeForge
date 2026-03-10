@@ -192,6 +192,34 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
         return bars;
     }
 
+    public async Task<IReadOnlyList<ExchangeOpenOrder>> GetOpenOrdersAsync(
+        string symbol, CancellationToken ct = default)
+    {
+        var parameters = new Dictionary<string, string>
+        {
+            ["symbol"] = symbol.ToUpperInvariant(),
+        };
+        var json = await SendSignedAsync(HttpMethod.Get, "/api/v3/openOrders", parameters, ct);
+        var orders = JsonSerializer.Deserialize<List<BinanceOpenOrder>>(json, BinanceJsonOptions.Default) ?? [];
+        return orders
+            .Select(o => new ExchangeOpenOrder(
+                o.OrderId, o.Symbol, o.Side, o.Type,
+                decimal.Parse(o.OrigQty, CultureInfo.InvariantCulture),
+                decimal.Parse(o.Price, CultureInfo.InvariantCulture),
+                decimal.Parse(o.StopPrice, CultureInfo.InvariantCulture),
+                o.Status))
+            .ToList();
+    }
+
+    public async Task CancelAllOpenOrdersAsync(string symbol, CancellationToken ct = default)
+    {
+        var parameters = new Dictionary<string, string>
+        {
+            ["symbol"] = symbol.ToUpperInvariant(),
+        };
+        await SendSignedAsync(HttpMethod.Delete, "/api/v3/openOrders", parameters, ct);
+    }
+
     public async Task<IReadOnlyList<BinanceMyTrade>> GetMyTradesAsync(
         string symbol, int limit = 50, CancellationToken ct = default)
     {

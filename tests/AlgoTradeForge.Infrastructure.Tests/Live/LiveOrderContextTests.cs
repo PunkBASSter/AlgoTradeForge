@@ -27,8 +27,18 @@ public class LiveOrderContextTests
         return new LiveOrderContext(
             portfolio, BtcUsdt, new OrderValidator(),
             NullLogger.Instance, apiClient,
-            Guid.NewGuid(), new ConcurrentDictionary<long, Guid>());
+            Guid.NewGuid(), new ConcurrentDictionary<long, Guid>(),
+            MapTestOrderType);
     }
+
+    private static string MapTestOrderType(OrderType type) => type switch
+    {
+        OrderType.Market => "MARKET",
+        OrderType.Limit => "LIMIT",
+        OrderType.Stop => "STOP_LOSS",
+        OrderType.StopLimit => "STOP_LOSS_LIMIT",
+        _ => throw new ArgumentException($"Unsupported order type: {type}"),
+    };
 
     [Fact]
     public void Cancel_NonExistentOrder_ReturnsNull()

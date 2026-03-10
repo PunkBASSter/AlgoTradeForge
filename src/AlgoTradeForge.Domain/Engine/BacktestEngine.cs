@@ -237,6 +237,11 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
 
         foreach (var order in pending)
         {
+            // Defensive: an earlier fill's OnTrade callback may have cancelled this order
+            // (e.g., SL fills → strategy cancels sibling TP). Skip if no longer actionable.
+            if (order.Status is not (OrderStatus.Pending or OrderStatus.Triggered))
+                continue;
+
             var fillPrice = barMatcher.GetFillPrice(order, bar, state.Options);
             if (fillPrice is null)
             {

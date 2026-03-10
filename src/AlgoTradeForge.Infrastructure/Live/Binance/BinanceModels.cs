@@ -80,6 +80,18 @@ public sealed record BinanceExchangeSymbolInfo
     public string QuoteAsset { get; init; } = "";
 }
 
+public sealed record BinanceOpenOrder
+{
+    [JsonPropertyName("orderId")] public long OrderId { get; init; }
+    [JsonPropertyName("symbol")] public string Symbol { get; init; } = "";
+    [JsonPropertyName("side")] public string Side { get; init; } = "";
+    [JsonPropertyName("type")] public string Type { get; init; } = "";
+    [JsonPropertyName("origQty")] public string OrigQty { get; init; } = "0";
+    [JsonPropertyName("price")] public string Price { get; init; } = "0";
+    [JsonPropertyName("stopPrice")] public string StopPrice { get; init; } = "0";
+    [JsonPropertyName("status")] public string Status { get; init; } = "";
+}
+
 public sealed record BinanceMyTrade
 {
     [JsonPropertyName("symbol")] public string Symbol { get; init; } = "";

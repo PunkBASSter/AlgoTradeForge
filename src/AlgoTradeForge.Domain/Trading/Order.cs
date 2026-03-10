@@ -11,6 +11,7 @@ public sealed class Order
     public long? StopPrice { get; init; }
     public long? StopLossPrice { get; init; }
     public IReadOnlyList<TakeProfitLevel>? TakeProfitLevels { get; init; }
+    public long? GroupId { get; init; }
     public OrderStatus Status { get; internal set; } = OrderStatus.Pending;
     public DateTimeOffset SubmittedAt { get; internal set; }
 }

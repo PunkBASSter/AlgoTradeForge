@@ -9,6 +9,7 @@ using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Trading;
 using Microsoft.Extensions.Logging;
 
@@ -28,6 +29,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
     private readonly ConcurrentDictionary<Guid, LiveSessionEntry> _sessions = new();
     private readonly ConcurrentDictionary<long, Guid> _binanceOrderToSession = new();
     private readonly ConcurrentDictionary<long, ConcurrentQueue<BinanceExecutionReport>> _bufferedReports = new();
+
+    private OrderGroupReconciler? _reconciler;
+    private Task? _reconcileTask;
 
     private decimal _cachedQuoteBalance;
     private DateTimeOffset _balanceCacheExpiry;
@@ -101,6 +105,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 _accountConfig.WebSocketApiUrl, _accountConfig.ApiKey,
                 _apiClient.Sign, _apiClient.GetTimestamp, OnExecutionReport);
 
+            _reconciler = new OrderGroupReconciler(_apiClient, _logger);
+            _reconcileTask = RunReconciliationLoopAsync(_cts.Token);
+
             Status = LiveSessionStatus.Running;
             _logger.LogInformation(
                 "Connector for account '{Account}' connected. REST={RestUrl}",
@@ -158,7 +165,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         var orderContext = new LiveOrderContext(
             portfolio, asset, _orderValidator, _logger, _apiClient!,
-            config.SessionId, _binanceOrderToSession);
+            config.SessionId, _binanceOrderToSession, MapBinanceOrderType);
         orderContext.Start(_cts!.Token);
         orderContext.OrderMapped += DrainBufferedReports;
 
@@ -253,6 +260,13 @@ public sealed class BinanceLiveConnector : ILiveConnector
             // Cancel CTS first so kline/WebSocket callbacks stop firing
             _cts?.Cancel();
 
+            // Stop reconciliation loop
+            if (_reconcileTask is not null)
+            {
+                try { await _reconcileTask; }
+                catch (OperationCanceledException) { }
+            }
+
             // Stop all sessions
             foreach (var entry in _sessions.Values)
             {
@@ -268,6 +282,23 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
                 await entry.OrderContext.StopAsync();
             }
+
+            // Safety-net: cancel all open orders on exchange per symbol
+            if (_apiClient is not null)
+            {
+                foreach (var entry in _sessions.Values)
+                {
+                    try
+                    {
+                        await _apiClient.CancelAllOpenOrdersAsync(entry.PrimaryAsset.Name);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Safety-net cancel-all failed for {Symbol}", entry.PrimaryAsset.Name);
+                    }
+                }
+            }
+
             _sessions.Clear();
 
             if (_wsManager is not null)
@@ -284,6 +315,60 @@ public sealed class BinanceLiveConnector : ILiveConnector
             Status = LiveSessionStatus.Stopped;
             _logger.LogInformation("Connector for account '{Account}' stopped", AccountName);
         }
+    }
+
+    private async Task RunReconciliationLoopAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(_sharedOptions.ReconciliationInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                foreach (var entry in _sessions.Values)
+                {
+                    if (entry.Strategy is not ITradeRegistryProvider provider)
+                        continue;
+
+                    try
+                    {
+                        // Phase 1: Snapshot expected orders on EventQueue (thread-safe read)
+                        var tcs = new TaskCompletionSource<IReadOnlyList<ExpectedOrder>>();
+                        entry.EventQueue.Writer.TryWrite(() =>
+                            tcs.SetResult(provider.TradeRegistry.GetExpectedOrders()));
+                        var expected = await tcs.Task;
+
+                        // Phase 2: Detect on timer thread (exchange query, pure comparison)
+                        var pendingIds = entry.OrderContext.GetPendingOrders()
+                            .Select(o => o.Id).Where(id => id > 0).ToHashSet();
+                        var result = await _reconciler!.DetectAsync(
+                            entry.PrimaryAsset.Name, expected,
+                            entry.OrderContext.ResolveExchangeOrderId, pendingIds, ct);
+
+                        // Phase 3a: Repair on EventQueue (module mutation serialized)
+                        if (result.MissingByGroup.Count > 0)
+                        {
+                            var repairTcs = new TaskCompletionSource();
+                            entry.EventQueue.Writer.TryWrite(() =>
+                            {
+                                foreach (var (groupId, missingIds) in result.MissingByGroup)
+                                    provider.TradeRegistry.RepairGroup(groupId, missingIds, entry.OrderContext);
+                                repairTcs.SetResult();
+                            });
+                            await repairTcs.Task;
+                        }
+
+                        // Phase 3b: Cancel orphans directly on exchange (no module state)
+                        if (result.OrphanIds.Count > 0)
+                            await _reconciler.CancelOrphansAsync(entry.PrimaryAsset.Name, result.OrphanIds, ct);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        _logger.LogError(ex, "Reconciliation failed for session {SessionId}", entry.SessionId);
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private void OnKlineMessage(BinanceKlineMessage msg, DataSubscription subscription, LiveSessionEntry entry)
@@ -431,7 +516,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
                     Id = report.OrderId,
                     Asset = asset,
                     Side = side,
-                    Type = MapBinanceOrderType(report.OrderType),
+                    Type = ParseBinanceOrderType(report.OrderType),
                     Quantity = decimal.Parse(report.OriginalQuantity, CultureInfo.InvariantCulture),
                 };
 
@@ -575,7 +660,16 @@ public sealed class BinanceLiveConnector : ILiveConnector
         _ => throw new ArgumentException($"Unsupported timeframe: {timeFrame}"),
     };
 
-    private static OrderType MapBinanceOrderType(string type) => type switch
+    private static string MapBinanceOrderType(OrderType type) => type switch
+    {
+        OrderType.Market => "MARKET",
+        OrderType.Limit => "LIMIT",
+        OrderType.Stop => "STOP_LOSS",
+        OrderType.StopLimit => "STOP_LOSS_LIMIT",
+        _ => throw new ArgumentException($"Unsupported order type: {type}"),
+    };
+
+    private static OrderType ParseBinanceOrderType(string type) => type switch
     {
         "MARKET" => OrderType.Market,
         "LIMIT" => OrderType.Limit,
