@@ -15,6 +15,12 @@ using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.Infrastructure.Live.Binance;
 
+/// <remarks>
+/// State machine invariant: <c>_apiClient</c> and <c>_reconciler</c> are set in <c>ConnectAsync</c>
+/// before <c>Status</c> transitions to <c>Running</c>. All methods that use <c>_apiClient!</c> or
+/// <c>_reconciler!</c> are only reachable after that transition (guarded by Status checks or
+/// by being callbacks from subsystems started during <c>ConnectAsync</c>).
+/// </remarks>
 public sealed class BinanceLiveConnector : ILiveConnector
 {
     private readonly BinanceAccountConfig _accountConfig;
@@ -33,6 +39,10 @@ public sealed class BinanceLiveConnector : ILiveConnector
     private OrderGroupReconciler? _reconciler;
     private Task? _reconcileTask;
 
+    // Cache fields are accessed from multiple threads (snapshot requests + kline callbacks).
+    // decimal (128-bit) and DateTimeOffset are not atomically readable on x64, so we
+    // protect all reads/writes with _cacheLock to prevent torn reads.
+    private readonly Lock _cacheLock = new();
     private decimal _cachedQuoteBalance;
     private DateTimeOffset _balanceCacheExpiry;
 
@@ -148,8 +158,11 @@ public sealed class BinanceLiveConnector : ILiveConnector
         var availableScaled = scale.FromMarketPrice(freeBalance);
 
         // Seed balance cache from the account query we already made
-        _cachedQuoteBalance = freeBalance;
-        _balanceCacheExpiry = DateTimeOffset.UtcNow.AddSeconds(15);
+        lock (_cacheLock)
+        {
+            _cachedQuoteBalance = freeBalance;
+            _balanceCacheExpiry = DateTimeOffset.UtcNow.AddSeconds(15);
+        }
 
         if (config.InitialCash > availableScaled)
         {
@@ -165,7 +178,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         var orderContext = new LiveOrderContext(
             portfolio, asset, _orderValidator, _logger, _apiClient!,
-            config.SessionId, _binanceOrderToSession, MapBinanceOrderType);
+            config.SessionId, _binanceOrderToSession);
         orderContext.Start(_cts!.Token);
         orderContext.OrderMapped += DrainBufferedReports;
 
@@ -257,17 +270,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         try
         {
-            // Cancel CTS first so kline/WebSocket callbacks stop firing
-            _cts?.Cancel();
-
-            // Stop reconciliation loop
-            if (_reconcileTask is not null)
-            {
-                try { await _reconcileTask; }
-                catch (OperationCanceledException) { }
-            }
-
-            // Stop all sessions
+            // 1. Drain sessions: complete event queues and await processing tasks
+            //    BEFORE cancelling CTS so queued callbacks (fills, protectives) are not dropped
             foreach (var entry in _sessions.Values)
             {
                 foreach (var order in entry.OrderContext.GetPendingOrders())
@@ -280,10 +284,21 @@ public sealed class BinanceLiveConnector : ILiveConnector
                     catch (OperationCanceledException) { }
                 }
 
+                // 2. Drain order/cancel channels before CTS cancellation
                 await entry.OrderContext.StopAsync();
             }
 
-            // Safety-net: cancel all open orders on exchange per symbol
+            // 3. Now cancel CTS — stops WebSocket/kline/reconciliation loops
+            _cts?.Cancel();
+
+            // 4. Await reconciliation task (already signalled by CTS)
+            if (_reconcileTask is not null)
+            {
+                try { await _reconcileTask; }
+                catch (OperationCanceledException) { }
+            }
+
+            // 5. Safety-net: cancel all open orders on exchange per symbol
             if (_apiClient is not null)
             {
                 foreach (var entry in _sessions.Values)
@@ -299,6 +314,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 }
             }
 
+            // 6. Cleanup
             _sessions.Clear();
 
             if (_wsManager is not null)
@@ -319,7 +335,12 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
     private async Task RunReconciliationLoopAsync(CancellationToken ct)
     {
+        // Known edge case: if a fill is in-progress (WebSocket report received but not yet
+        // processed on the event queue), reconciliation may see the protective order as missing
+        // and submit a duplicate. The duplicate will be rejected by the exchange (order already
+        // exists) or cleaned up on the next reconciliation cycle as an orphan.
         using var timer = new PeriodicTimer(_sharedOptions.ReconciliationInterval);
+        var consecutiveFailures = 0;
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
@@ -360,10 +381,18 @@ public sealed class BinanceLiveConnector : ILiveConnector
                         // Phase 3b: Cancel orphans directly on exchange (no module state)
                         if (result.OrphanIds.Count > 0)
                             await _reconciler.CancelOrphansAsync(entry.PrimaryAsset.Name, result.OrphanIds, ct);
+
+                        consecutiveFailures = 0;
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        _logger.LogError(ex, "Reconciliation failed for session {SessionId}", entry.SessionId);
+                        consecutiveFailures++;
+                        if (consecutiveFailures >= 3)
+                            _logger.LogWarning(ex,
+                                "Reconciliation has failed {Count} consecutive times for session {SessionId}",
+                                consecutiveFailures, entry.SessionId);
+                        else
+                            _logger.LogError(ex, "Reconciliation failed for session {SessionId}", entry.SessionId);
                     }
                 }
             }
@@ -592,36 +621,47 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
     private async Task<decimal> GetCachedQuoteBalanceAsync(string quoteAsset, CancellationToken ct)
     {
-        if (DateTimeOffset.UtcNow < _balanceCacheExpiry)
-            return _cachedQuoteBalance;
+        lock (_cacheLock)
+        {
+            if (DateTimeOffset.UtcNow < _balanceCacheExpiry)
+                return _cachedQuoteBalance;
+        }
 
         try
         {
             var accountInfo = await _apiClient!.GetAccountInfoAsync(ct);
             var balance = accountInfo.Balances
                 .FirstOrDefault(b => b.Asset.Equals(quoteAsset, StringComparison.OrdinalIgnoreCase));
-            _cachedQuoteBalance = balance is not null
-                ? decimal.Parse(balance.Free, CultureInfo.InvariantCulture)
-                : 0m;
-            _balanceCacheExpiry = DateTimeOffset.UtcNow.AddSeconds(15);
+
+            lock (_cacheLock)
+            {
+                _cachedQuoteBalance = balance is not null
+                    ? decimal.Parse(balance.Free, CultureInfo.InvariantCulture)
+                    : 0m;
+                _balanceCacheExpiry = DateTimeOffset.UtcNow.AddSeconds(15);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to refresh exchange balance for {QuoteAsset}", quoteAsset);
         }
 
-        return _cachedQuoteBalance;
+        lock (_cacheLock)
+            return _cachedQuoteBalance;
     }
 
     private async Task<IReadOnlyList<ExchangeTradeDto>> GetCachedTradesAsync(string symbol, CancellationToken ct)
     {
-        if (DateTimeOffset.UtcNow < _tradeCacheExpiry)
-            return _cachedTrades;
+        lock (_cacheLock)
+        {
+            if (DateTimeOffset.UtcNow < _tradeCacheExpiry)
+                return _cachedTrades;
+        }
 
         try
         {
             var trades = await _apiClient!.GetMyTradesAsync(symbol, 50, ct);
-            _cachedTrades = trades
+            var result = trades
                 .Select(t => new ExchangeTradeDto(
                     t.OrderId,
                     DateTimeOffset.FromUnixTimeMilliseconds(t.Time).ToString("O"),
@@ -631,14 +671,20 @@ public sealed class BinanceLiveConnector : ILiveConnector
                     decimal.Parse(t.Commission, CultureInfo.InvariantCulture),
                     t.CommissionAsset))
                 .ToList();
-            _tradeCacheExpiry = DateTimeOffset.UtcNow.AddSeconds(15);
+
+            lock (_cacheLock)
+            {
+                _cachedTrades = result;
+                _tradeCacheExpiry = DateTimeOffset.UtcNow.AddSeconds(15);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to fetch exchange trades for {Symbol}", symbol);
         }
 
-        return _cachedTrades;
+        lock (_cacheLock)
+            return _cachedTrades;
     }
 
     private static string MapTimeFrameToInterval(TimeSpan timeFrame) => timeFrame.TotalMinutes switch
@@ -658,15 +704,6 @@ public sealed class BinanceLiveConnector : ILiveConnector
         4320 => "3d",
         10080 => "1w",
         _ => throw new ArgumentException($"Unsupported timeframe: {timeFrame}"),
-    };
-
-    private static string MapBinanceOrderType(OrderType type) => type switch
-    {
-        OrderType.Market => "MARKET",
-        OrderType.Limit => "LIMIT",
-        OrderType.Stop => "STOP_LOSS",
-        OrderType.StopLimit => "STOP_LOSS_LIMIT",
-        _ => throw new ArgumentException($"Unsupported order type: {type}"),
     };
 
     private static OrderType ParseBinanceOrderType(string type) => type switch

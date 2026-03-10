@@ -19,7 +19,6 @@ public sealed class LiveOrderContext : IOrderContext
     private readonly ILogger _logger;
     private readonly Guid _sessionId;
     private readonly ConcurrentDictionary<long, Guid> _exchangeOrderToSession;
-    private readonly Func<OrderType, string> _mapOrderType;
 
     private readonly ConcurrentDictionary<long, Order> _pendingOrders = new();
     private readonly ConcurrentDictionary<long, long> _localToExchangeId = new();
@@ -48,8 +47,7 @@ public sealed class LiveOrderContext : IOrderContext
         ILogger logger,
         IExchangeOrderClient orderClient,
         Guid sessionId,
-        ConcurrentDictionary<long, Guid> exchangeOrderToSession,
-        Func<OrderType, string> mapOrderType)
+        ConcurrentDictionary<long, Guid> exchangeOrderToSession)
     {
         _portfolio = portfolio;
         _primaryAsset = primaryAsset;
@@ -58,7 +56,6 @@ public sealed class LiveOrderContext : IOrderContext
         _orderClient = orderClient;
         _sessionId = sessionId;
         _exchangeOrderToSession = exchangeOrderToSession;
-        _mapOrderType = mapOrderType;
     }
 
     public long Cash => _portfolio.Cash;
@@ -169,7 +166,7 @@ public sealed class LiveOrderContext : IOrderContext
     internal void RemovePendingOrder(long orderId) =>
         _pendingOrders.TryRemove(orderId, out _);
 
-    internal void SimulateOrderPlaced(long localId, long exchangeOrderId)
+    internal void RekeyToExchangeId(long localId, long exchangeOrderId)
     {
         if (_pendingOrders.TryRemove(localId, out var order))
         {
@@ -199,8 +196,6 @@ public sealed class LiveOrderContext : IOrderContext
                 try
                 {
                     var order = request.Order;
-                    var exchangeType = _mapOrderType(order.Type);
-                    var side = order.Side == OrderSide.Buy ? "BUY" : "SELL";
                     var scale = new ScaleContext(_primaryAsset);
                     decimal? price = order.LimitPrice.HasValue
                         ? scale.ToMarketPrice(order.LimitPrice.Value)
@@ -210,7 +205,7 @@ public sealed class LiveOrderContext : IOrderContext
                         : null;
 
                     var result = await _orderClient.PlaceOrderAsync(
-                        order.Asset.Name, side, exchangeType, order.Quantity,
+                        order.Asset.Name, order.Side, order.Type, order.Quantity,
                         price, stopPrice, ct);
 
                     var exchangeOrderId = result.OrderId;

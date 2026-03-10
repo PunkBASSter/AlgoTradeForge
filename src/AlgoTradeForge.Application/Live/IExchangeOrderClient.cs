@@ -1,9 +1,11 @@
+using AlgoTradeForge.Domain.Trading;
+
 namespace AlgoTradeForge.Application.Live;
 
 public interface IExchangeOrderClient
 {
     Task<ExchangeOrderResult> PlaceOrderAsync(
-        string symbol, string side, string type, decimal quantity,
+        string symbol, OrderSide side, OrderType type, decimal quantity,
         decimal? price = null, decimal? stopPrice = null,
         CancellationToken ct = default);
 

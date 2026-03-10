@@ -14,8 +14,15 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
     private long _nextGroupId;
     private long _nextOrderId = -1_000_000; // Negative range to avoid collisions with engine-assigned IDs
     private IEventBus _bus = NullEventBus.Instance;
+    private Func<DateTimeOffset> _clock = () => DateTimeOffset.UtcNow;
 
     public void SetEventBus(IEventBus bus) => _bus = bus;
+
+    /// <summary>
+    /// Override the clock used for timestamps. In backtests, set to simulation time
+    /// (e.g., bar.Timestamp or fill.Timestamp) so events carry correct historical dates.
+    /// </summary>
+    public void SetClock(Func<DateTimeOffset> clock) => _clock = clock;
 
     // ── Queries ──────────────────────────────────────────────────
 
@@ -47,14 +54,19 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         if (_params.MaxConcurrentGroups > 0 && ActiveGroupCount >= _params.MaxConcurrentGroups)
             return null;
 
+        // TP closure < 100% is allowed; residual position is covered by SL only.
+        // Caller is responsible for ensuring SL/TP prices are on the correct side
+        // of the expected entry direction.
         var totalClosure = 0m;
         foreach (var tp in tpLevels)
             totalClosure += tp.ClosurePercentage;
         if (totalClosure > 1.0m)
             return null;
 
-        var groupId = Interlocked.Increment(ref _nextGroupId);
-        var entryOrderId = Interlocked.Decrement(ref _nextOrderId);
+        // Module is single-threaded by design: backtest uses the engine loop,
+        // live uses the per-session event queue for serialization.
+        var groupId = ++_nextGroupId;
+        var entryOrderId = --_nextOrderId;
 
         var group = new OrderGroup
         {
@@ -65,7 +77,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
             SlPrice = slPrice,
             TpLevels = tpLevels.ToArray(),
             Asset = asset,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = _clock(),
             Tag = tag,
             EntryOrderId = entryOrderId,
         };
@@ -256,7 +268,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         CancelSl(group, orders);
 
         var closeSide = group.EntrySide == OrderSide.Buy ? OrderSide.Sell : OrderSide.Buy;
-        var slOrderId = Interlocked.Decrement(ref _nextOrderId);
+        var slOrderId = --_nextOrderId;
         var slOrder = new Order
         {
             Id = slOrderId,
@@ -277,7 +289,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
     private void SubmitTp(OrderGroup group, IOrderContext orders, int tpIndex, OrderSide closeSide, long price, decimal quantity)
     {
-        var tpOrderId = Interlocked.Decrement(ref _nextOrderId);
+        var tpOrderId = --_nextOrderId;
         var tpOrder = new Order
         {
             Id = tpOrderId,
@@ -375,7 +387,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
     private void CloseGroup(OrderGroup group)
     {
         group.Status = OrderGroupStatus.Closed;
-        group.ClosedAt = DateTimeOffset.UtcNow;
+        group.ClosedAt = _clock();
     }
 
     private void EmitEvent(
@@ -386,7 +398,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         decimal? quantity)
     {
         _bus.Emit(new OrderGroupEvent(
-            DateTimeOffset.UtcNow,
+            _clock(),
             EventSources.TradeRegistry,
             group.GroupId,
             group.Asset.Name,

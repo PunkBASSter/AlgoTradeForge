@@ -27,18 +27,8 @@ public class LiveOrderContextTests
         return new LiveOrderContext(
             portfolio, BtcUsdt, new OrderValidator(),
             NullLogger.Instance, apiClient,
-            Guid.NewGuid(), new ConcurrentDictionary<long, Guid>(),
-            MapTestOrderType);
+            Guid.NewGuid(), new ConcurrentDictionary<long, Guid>());
     }
-
-    private static string MapTestOrderType(OrderType type) => type switch
-    {
-        OrderType.Market => "MARKET",
-        OrderType.Limit => "LIMIT",
-        OrderType.Stop => "STOP_LOSS",
-        OrderType.StopLimit => "STOP_LOSS_LIMIT",
-        _ => throw new ArgumentException($"Unsupported order type: {type}"),
-    };
 
     [Fact]
     public void Cancel_NonExistentOrder_ReturnsNull()
@@ -188,7 +178,7 @@ public class LiveOrderContextTests
 
         // Simulate Binance order placement response rekeying
         const long binanceOrderId = 9999999L;
-        ctx.SimulateOrderPlaced(localId, binanceOrderId);
+        ctx.RekeyToExchangeId(localId, binanceOrderId);
 
         // The order should now be keyed by Binance ID, not local ID
         Assert.Null(ctx.GetPendingOrder(localId));
@@ -229,7 +219,7 @@ public class LiveOrderContextTests
     }
 
     [Fact]
-    public void OrderMapped_FiredAfterSimulateOrderPlaced()
+    public void OrderMapped_FiredAfterRekeyToExchangeId()
     {
         var ctx = CreateContext();
         ctx.Start(CancellationToken.None);
@@ -249,7 +239,7 @@ public class LiveOrderContextTests
 
         var localId = ctx.Submit(order);
         const long binanceOrderId = 12345L;
-        ctx.SimulateOrderPlaced(localId, binanceOrderId);
+        ctx.RekeyToExchangeId(localId, binanceOrderId);
 
         Assert.Equal(binanceOrderId, mappedOrderId);
     }

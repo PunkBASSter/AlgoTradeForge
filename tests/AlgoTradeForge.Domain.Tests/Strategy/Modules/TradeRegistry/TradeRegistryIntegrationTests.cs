@@ -41,7 +41,12 @@ public class TradeRegistryIntegrationTests
         {
             _registry = registry;
             _onBar = onBar;
+
+            // Use simulation time so event timestamps reflect backtest dates, not wall-clock
+            _registry.SetClock(() => _simulationTime);
         }
+
+        private DateTimeOffset _simulationTime = DateTimeOffset.MinValue;
 
         public string Version => "1.0";
         public IList<DataSubscription> DataSubscriptions { get; init; } = new List<DataSubscription>();
@@ -49,11 +54,15 @@ public class TradeRegistryIntegrationTests
 
         public void SetEventBus(IEventBus bus) => _registry.SetEventBus(bus);
 
-        public void OnTrade(Fill fill, Order order, IOrderContext orders) =>
+        public void OnTrade(Fill fill, Order order, IOrderContext orders)
+        {
+            _simulationTime = fill.Timestamp;
             _registry.OnFill(fill, order, orders);
+        }
 
         public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
         {
+            _simulationTime = DateTimeOffset.FromUnixTimeMilliseconds(bar.TimestampMs);
             _onBar?.Invoke(bar, subscription, orders, _registry, _barIndex);
             _barIndex++;
         }
