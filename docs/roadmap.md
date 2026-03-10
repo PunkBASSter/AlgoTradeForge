@@ -8,7 +8,6 @@
 
 ## Strategy modules
 - Timing-based exit modules (close at eod, eow)
-- Multi-order strategy module, **Order Groups**
 - `Strategy-framework.md`
 - Kelly-based risk module
 
@@ -19,6 +18,11 @@
 - Permutations test
 - Overfitting evaluation, effective param ranges
 - Implement other optimizers (genetic, bayesian, random search)
+
+## Backtest/opt
+- Metrics enhancement: display number of opening trades, slippage loss, commissions loss, average profit, average loss, mean/dispersion, etc.
+- Delete backtest results
+- Display run start time on details, sort by descending timestamp
 
 ## Candle Ingestor
 Upd CandleIngestor - prepare for using on server: use DI, host as WebAPI for control with scheduling config; update partitioning - add TF in file names; add ingestors for stock data (alpha vantage, yahoo finance); ingest events metadata and add a scaling factor for splits;
