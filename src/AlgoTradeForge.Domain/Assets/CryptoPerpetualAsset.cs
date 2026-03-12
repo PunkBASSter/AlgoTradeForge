@@ -3,9 +3,10 @@ using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain;
 
-public sealed record CryptoPerpetualAsset : Asset
+public sealed record CryptoPerpetualAsset : Asset, IMarginAsset
 {
-    public override ISettlementCalculator SettlementCalculator => MarginSettlement.Instance;
+    public override SettlementMode Settlement => SettlementMode.Margin;
+    public decimal? MarginRequirement { get; init; }
 
     public override long ComputeAutoApplyDelta(AutoApplyType type, double rate, Position position, long lastPrice)
     {

@@ -5,7 +5,7 @@ using Xunit;
 
 namespace AlgoTradeForge.Domain.Tests.Engine;
 
-public class AutoApplyHandlerTests
+public class AssetAutoApplyTests
 {
     private static readonly Asset PerpAsset = CryptoPerpetualAsset.Create("BTCUSDT_PERP", "Binance", decimalDigits: 2);
 

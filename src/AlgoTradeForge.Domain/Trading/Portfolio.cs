@@ -26,7 +26,7 @@ public sealed class Portfolio
         var positionValue = 0L;
         foreach (var position in _positions.Values)
         {
-            positionValue += position.Asset.SettlementCalculator.ComputePositionValue(position, currentPrice);
+            positionValue += position.Asset.GetSettlementCalculator().ComputePositionValue(position, currentPrice);
         }
         return Cash + positionValue;
     }
@@ -38,7 +38,7 @@ public sealed class Portfolio
         {
             if (prices.TryGetValue(symbol, out var price))
             {
-                positionValue += position.Asset.SettlementCalculator.ComputePositionValue(position, price);
+                positionValue += position.Asset.GetSettlementCalculator().ComputePositionValue(position, price);
             }
         }
         return Cash + positionValue;
@@ -53,9 +53,9 @@ public sealed class Portfolio
         var margin = 0L;
         foreach (var position in _positions.Values)
         {
-            if (position.Asset.SettlementCalculator is not MarginSettlement) continue;
+            if (position.Asset is not IMarginAsset marginAsset) continue;
             if (position.Quantity == 0m) continue;
-            var marginReq = position.Asset.MarginRequirement ?? 1.0m;
+            var marginReq = marginAsset.MarginRequirement ?? 1.0m;
             margin += MoneyConvert.ToLong(
                 Math.Abs(position.Quantity) * (decimal)position.AverageEntryPrice
                 * position.Asset.Multiplier * marginReq);
@@ -85,6 +85,6 @@ public sealed class Portfolio
     {
         var position = GetOrCreatePosition(fill.Asset);
         var fillRealizedPnl = position.Apply(fill);
-        Cash += fill.Asset.SettlementCalculator.ComputeCashDelta(fill, fillRealizedPnl);
+        Cash += fill.Asset.GetSettlementCalculator().ComputeCashDelta(fill, fillRealizedPnl);
     }
 }

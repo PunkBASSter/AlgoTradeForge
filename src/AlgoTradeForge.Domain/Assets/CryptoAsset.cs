@@ -1,10 +1,9 @@
-using AlgoTradeForge.Domain.Trading;
-
 namespace AlgoTradeForge.Domain;
 
-public sealed record CryptoAsset : Asset
+public sealed record CryptoAsset : Asset, ICashSettledAsset
 {
-    public override ISettlementCalculator SettlementCalculator => CashAndCarrySettlement.Instance;
+    public override SettlementMode Settlement => SettlementMode.CashAndCarry;
+    public decimal ShortMarginRate { get; init; } = 1.0m;
 
     public static CryptoAsset Create(string name, string exchange, int decimalDigits,
         DateOnly? historyStart = null,

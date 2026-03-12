@@ -3,9 +3,10 @@ using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain;
 
-public sealed record EquityAsset : Asset
+public sealed record EquityAsset : Asset, ICashSettledAsset
 {
-    public override ISettlementCalculator SettlementCalculator => CashAndCarrySettlement.Instance;
+    public override SettlementMode Settlement => SettlementMode.CashAndCarry;
+    public decimal ShortMarginRate { get; init; } = 1.0m;
 
     public override long ComputeAutoApplyDelta(AutoApplyType type, double rate, Position position, long lastPrice)
     {

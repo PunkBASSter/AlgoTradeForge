@@ -12,6 +12,9 @@ public class OrderValidatorTests
         new() { Name = "TEST", Exchange = "NYSE", MinOrderQuantity = 1m, MaxOrderQuantity = 1000m, QuantityStepSize = 1m,
             ShortMarginRate = shortMarginRate };
 
+    private static FutureAsset TestFuture() =>
+        new() { Name = "TEST", Exchange = "CME", Multiplier = 1m, TickSize = 0.01m };
+
     private static Order CreateOrder(Asset asset, OrderSide side, decimal quantity) =>
         new()
         {
@@ -214,7 +217,7 @@ public class OrderValidatorTests
 
     #endregion
 
-    #region ShortMarginRate defaults
+    #region Asset interface segregation
 
     [Fact]
     public void DefaultShortMarginRate_Equity_IsOne()
@@ -224,17 +227,66 @@ public class OrderValidatorTests
     }
 
     [Fact]
-    public void DefaultShortMarginRate_Future_IsOne()
-    {
-        var asset = new FutureAsset { Name = "X", Exchange = "X", Multiplier = 1m, TickSize = 0.01m };
-        Assert.Equal(1.0m, asset.ShortMarginRate);
-    }
-
-    [Fact]
     public void DefaultShortMarginRate_Crypto_IsOne()
     {
         var asset = CryptoAsset.Create("X", "X", decimalDigits: 2);
         Assert.Equal(1.0m, asset.ShortMarginRate);
+    }
+
+    [Fact]
+    public void FutureAsset_IsNotCashSettled()
+    {
+        var asset = TestFuture();
+        Assert.IsNotAssignableFrom<ICashSettledAsset>(asset);
+    }
+
+    [Fact]
+    public void FutureAsset_IsMarginAsset()
+    {
+        var asset = TestFuture();
+        Assert.IsAssignableFrom<IMarginAsset>(asset);
+    }
+
+    [Fact]
+    public void EquityAsset_IsCashSettled()
+    {
+        var asset = new EquityAsset { Name = "X", Exchange = "X" };
+        Assert.IsAssignableFrom<ICashSettledAsset>(asset);
+    }
+
+    [Fact]
+    public void EquityAsset_IsNotMarginAsset()
+    {
+        var asset = new EquityAsset { Name = "X", Exchange = "X" };
+        Assert.IsNotAssignableFrom<IMarginAsset>(asset);
+    }
+
+    [Fact]
+    public void CryptoPerpetualAsset_IsMarginAsset()
+    {
+        var asset = CryptoPerpetualAsset.Create("X", "X", decimalDigits: 2);
+        Assert.IsAssignableFrom<IMarginAsset>(asset);
+    }
+
+    [Fact]
+    public void CryptoPerpetualAsset_IsNotCashSettled()
+    {
+        var asset = CryptoPerpetualAsset.Create("X", "X", decimalDigits: 2);
+        Assert.IsNotAssignableFrom<ICashSettledAsset>(asset);
+    }
+
+    [Fact]
+    public void CryptoAsset_IsCashSettled()
+    {
+        var asset = CryptoAsset.Create("X", "X", decimalDigits: 2);
+        Assert.IsAssignableFrom<ICashSettledAsset>(asset);
+    }
+
+    [Fact]
+    public void CryptoAsset_IsNotMarginAsset()
+    {
+        var asset = CryptoAsset.Create("X", "X", decimalDigits: 2);
+        Assert.IsNotAssignableFrom<IMarginAsset>(asset);
     }
 
     #endregion

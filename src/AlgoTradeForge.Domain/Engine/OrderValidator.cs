@@ -18,6 +18,6 @@ public sealed class OrderValidator : IOrderValidator
 
     public string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, BacktestOptions options)
     {
-        return order.Asset.SettlementCalculator.ValidateSettlement(order, fillPrice, portfolio, options.CommissionPerTrade);
+        return order.Asset.GetSettlementCalculator().ValidateSettlement(order, fillPrice, portfolio, options.CommissionPerTrade);
     }
 }

@@ -16,7 +16,7 @@ public sealed class MarginSettlement : ISettlementCalculator
 
     public string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, long commission)
     {
-        var marginRate = order.Asset.MarginRequirement ?? 1.0m;
+        var marginRate = (order.Asset as IMarginAsset)?.MarginRequirement ?? 1.0m;
         var marginRequired = MoneyConvert.ToLong(
             fillPrice * order.Quantity * order.Asset.Multiplier * marginRate) + commission;
         if (marginRequired > portfolio.Cash)

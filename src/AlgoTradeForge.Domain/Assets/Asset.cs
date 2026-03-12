@@ -11,8 +11,6 @@ public abstract record Asset
     public decimal TickSize { get; init; } = 0.01m;
     public decimal TickValue => TickSize * Multiplier;
     public string Currency { get; init; } = "USD";
-    public decimal? MarginRequirement { get; init; }
-    public decimal ShortMarginRate { get; init; } = 1.0m;
     public int DecimalDigits { get; init; } = 2;
     public TimeSpan SmallestInterval { get; init; } = TimeSpan.FromMinutes(1);
     public DateOnly? HistoryStart { get; init; }
@@ -21,7 +19,7 @@ public abstract record Asset
     public decimal MaxOrderQuantity { get; init; } = decimal.MaxValue;
     public decimal QuantityStepSize { get; init; }
 
-    public abstract ISettlementCalculator SettlementCalculator { get; }
+    public abstract SettlementMode Settlement { get; }
 
     public virtual long ComputeAutoApplyDelta(AutoApplyType type, double rate, Position position, long lastPrice) => 0L;
 

@@ -31,8 +31,9 @@ public sealed class CashAndCarrySettlement : ISettlementCalculator
             var shortQuantity = Math.Max(0m, order.Quantity - Math.Max(0m, currentQty));
             if (shortQuantity > 0m)
             {
+                var shortRate = (order.Asset as ICashSettledAsset)?.ShortMarginRate ?? 1.0m;
                 var marginRequired = MoneyConvert.ToLong(
-                    shortQuantity * fillPrice * order.Asset.Multiplier * order.Asset.ShortMarginRate) + commission;
+                    shortQuantity * fillPrice * order.Asset.Multiplier * shortRate) + commission;
                 if (marginRequired > portfolio.Cash)
                     return "Insufficient margin for short";
             }
