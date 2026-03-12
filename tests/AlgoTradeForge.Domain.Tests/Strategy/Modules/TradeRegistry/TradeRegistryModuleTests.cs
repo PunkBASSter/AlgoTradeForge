@@ -591,4 +591,259 @@ public class TradeRegistryModuleTests
         Assert.Null(group);
         ctx.DidNotReceive().Submit(Arg.Any<Order>());
     }
+
+    // ── GetExpectedOrders_IncludesLiquidationOrder ──────────────
+
+    [Fact]
+    public void GetExpectedOrders_IncludesLiquidationOrder()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+
+        var group = module.OpenGroup(
+            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId), ctx);
+
+        module.LiquidateGroup(group.GroupId, ctx);
+
+        var expected = module.GetExpectedOrders();
+
+        // SL and TP are cancelled by LiquidateGroup; only liquidation order remains
+        Assert.Single(expected);
+        var liq = expected[0];
+        Assert.Equal(ExpectedOrderType.Liquidation, liq.Type);
+        Assert.Equal(group.LiquidationOrderId, liq.OrderId);
+        Assert.Equal(group.GroupId, liq.GroupId);
+        Assert.Equal(10m, liq.Quantity);
+    }
+
+    // ── LiquidateGroup_CancelsSlTpAndSubmitsMarketClose ──────────
+
+    [Fact]
+    public void LiquidateGroup_CancelsSlTpAndSubmitsMarketClose()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        var submittedOrders = new List<Order>();
+        ctx.Submit(Arg.Any<Order>()).Returns(ci =>
+        {
+            var o = ci.ArgAt<Order>(0);
+            submittedOrders.Add(o);
+            return o.Id;
+        });
+
+        var group = module.OpenGroup(
+            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId), ctx);
+
+        var slId = group.SlOrderId;
+        var tpId = group.TpLevels[0].OrderId;
+
+        var result = module.LiquidateGroup(group.GroupId, ctx);
+
+        Assert.True(result);
+        ctx.Received(1).Cancel(slId);
+        ctx.Received(1).Cancel(tpId);
+
+        var liqOrder = submittedOrders.Last();
+        Assert.Equal(OrderType.Market, liqOrder.Type);
+        Assert.Equal(OrderSide.Sell, liqOrder.Side);
+        Assert.Equal(10m, liqOrder.Quantity);
+        Assert.Equal(group.LiquidationOrderId, liqOrder.Id);
+    }
+
+    // ── LiquidateGroup_FillArrival_ClosesGroupWithPnl ────────────
+
+    [Fact]
+    public void LiquidateGroup_FillArrival_ClosesGroupWithPnl()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+
+        var group = module.OpenGroup(
+            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId), ctx);
+
+        module.LiquidateGroup(group.GroupId, ctx);
+
+        // Simulate liquidation fill at 15200
+        var liqFill = MakeFill(group.LiquidationOrderId, 15200, 10m, OrderSide.Sell);
+        module.OnFill(liqFill, MakeOrder(group.LiquidationOrderId), ctx);
+
+        Assert.Equal(OrderGroupStatus.Closed, group.Status);
+        Assert.Equal(0m, group.RemainingQuantity);
+        // PnL: 1 * (15200 - 15000) * 10 * 1 = 2000
+        Assert.Equal(2000, group.RealizedPnl);
+    }
+
+    // ── LiquidateGroup_PendingEntry_ReturnsFalse ─────────────────
+
+    [Fact]
+    public void LiquidateGroup_PendingEntry_ReturnsFalse()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+
+        var group = module.OpenGroup(
+            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        var result = module.LiquidateGroup(group.GroupId, ctx);
+
+        Assert.False(result);
+        Assert.Equal(OrderGroupStatus.PendingEntry, group.Status);
+        Assert.Equal(0, group.LiquidationOrderId);
+    }
+
+    // ── LiquidateGroup_AlreadyLiquidating_ReturnsFalse ───────────
+
+    [Fact]
+    public void LiquidateGroup_AlreadyLiquidating_ReturnsFalse()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+
+        var group = module.OpenGroup(
+            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId), ctx);
+
+        Assert.True(module.LiquidateGroup(group.GroupId, ctx));
+        Assert.False(module.LiquidateGroup(group.GroupId, ctx));
+    }
+
+    // ── LiquidateGroup_AfterPartialTp_ClosesRemainingQty ─────────
+
+    [Fact]
+    public void LiquidateGroup_AfterPartialTp_ClosesRemainingQty()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        var submittedOrders = new List<Order>();
+        ctx.Submit(Arg.Any<Order>()).Returns(ci =>
+        {
+            var o = ci.ArgAt<Order>(0);
+            submittedOrders.Add(o);
+            return o.Id;
+        });
+
+        var group = module.OpenGroup(
+            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId), ctx);
+
+        // TP1 fills (50% = 5 units)
+        var tp1Id = group.TpLevels[0].OrderId;
+        module.OnFill(
+            MakeFill(tp1Id, 15500, 5m, OrderSide.Sell),
+            MakeOrder(tp1Id), ctx);
+
+        Assert.Equal(5m, group.RemainingQuantity);
+
+        module.LiquidateGroup(group.GroupId, ctx);
+
+        // Liquidation order should be for remaining 5 units
+        var liqOrder = submittedOrders.Last();
+        Assert.Equal(5m, liqOrder.Quantity);
+        Assert.Equal(OrderType.Market, liqOrder.Type);
+
+        // Simulate liquidation fill
+        var liqFill = MakeFill(group.LiquidationOrderId, 15800, 5m, OrderSide.Sell);
+        module.OnFill(liqFill, MakeOrder(group.LiquidationOrderId), ctx);
+
+        Assert.Equal(OrderGroupStatus.Closed, group.Status);
+        Assert.Equal(0m, group.RemainingQuantity);
+        // PnL: TP1 = 2500 + Liquidation = 1*(15800-15000)*5*1 = 4000 → total 6500
+        Assert.Equal(6500, group.RealizedPnl);
+    }
+
+    // ── LiquidateGroup_ShortSide_SubmitsBuyMarket ────────────────
+
+    [Fact]
+    public void LiquidateGroup_ShortSide_SubmitsBuyMarket()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        var submittedOrders = new List<Order>();
+        ctx.Submit(Arg.Any<Order>()).Returns(ci =>
+        {
+            var o = ci.ArgAt<Order>(0);
+            submittedOrders.Add(o);
+            return o.Id;
+        });
+
+        var group = module.OpenGroup(
+            ctx, DefaultAsset, OrderSide.Sell, OrderType.Market,
+            quantity: 10m, slPrice: 16000,
+            tpLevels: [new TpLevel { Price = 14000, ClosurePercentage = 1.0m }])!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Sell),
+            MakeOrder(group.EntryOrderId), ctx);
+
+        module.LiquidateGroup(group.GroupId, ctx);
+
+        var liqOrder = submittedOrders.Last();
+        Assert.Equal(OrderSide.Buy, liqOrder.Side);
+        Assert.Equal(OrderType.Market, liqOrder.Type);
+        Assert.Equal(10m, liqOrder.Quantity);
+    }
+
+    // ── CloseAllGroups_LiquidatesActiveGroups ─────────────────────
+
+    [Fact]
+    public void CloseAllGroups_LiquidatesActiveGroups()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        var submittedOrders = new List<Order>();
+        ctx.Submit(Arg.Any<Order>()).Returns(ci =>
+        {
+            var o = ci.ArgAt<Order>(0);
+            submittedOrders.Add(o);
+            return o.Id;
+        });
+
+        // Group 1: entry fills → ProtectionActive
+        var group1 = module.OpenGroup(
+            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        module.OnFill(
+            MakeFill(group1.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group1.EntryOrderId), ctx);
+
+        // Group 2: stays PendingEntry
+        var group2 = module.OpenGroup(
+            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 5m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        module.CloseAllGroups(ctx);
+
+        // Group 1 should have a liquidation order (market close)
+        Assert.NotEqual(0, group1.LiquidationOrderId);
+        Assert.Contains(submittedOrders, o => o.Id == group1.LiquidationOrderId && o.Type == OrderType.Market);
+
+        // Group 2 should be cancelled (entry cancelled)
+        Assert.Equal(OrderGroupStatus.Cancelled, group2.Status);
+        ctx.Received(1).Cancel(group2.EntryOrderId);
+    }
 }

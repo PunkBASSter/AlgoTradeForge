@@ -115,6 +115,8 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
             HandleEntryFill(group, fill, orders);
         else if (fill.OrderId == group.SlOrderId)
             HandleSlFill(group, fill, orders);
+        else if (fill.OrderId == group.LiquidationOrderId)
+            HandleLiquidationFill(group, fill);
         else
             HandleTpFill(group, fill, orders);
     }
@@ -183,6 +185,52 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         }
     }
 
+    // ── LiquidateGroup ───────────────────────────────────────────
+
+    public bool LiquidateGroup(long groupId, IOrderContext orders)
+    {
+        if (!_groups.TryGetValue(groupId, out var group))
+            return false;
+        if (group.Status != OrderGroupStatus.ProtectionActive)
+            return false;
+        if (group.LiquidationOrderId != 0)
+            return false;
+
+        CancelSl(group, orders);
+        CancelAllPendingTps(group, orders);
+
+        var closeSide = group.EntrySide == OrderSide.Buy ? OrderSide.Sell : OrderSide.Buy;
+        var liqOrderId = --_nextOrderId;
+        var liqOrder = new Order
+        {
+            Id = liqOrderId,
+            Asset = group.Asset,
+            Side = closeSide,
+            Type = OrderType.Market,
+            Quantity = group.RemainingQuantity,
+            GroupId = group.GroupId,
+        };
+
+        group.LiquidationOrderId = liqOrderId;
+        _orderToGroup[liqOrderId] = group;
+        orders.Submit(liqOrder);
+
+        EmitEvent(group, OrderGroupTransition.LiquidationSubmitted, liqOrderId, null, group.RemainingQuantity);
+
+        return true;
+    }
+
+    private void HandleLiquidationFill(OrderGroup group, Fill fill)
+    {
+        ComputePnl(group, fill);
+        group.RemainingQuantity = 0m;
+
+        EmitEvent(group, OrderGroupTransition.LiquidationFilled, fill.OrderId, fill.Price, fill.Quantity);
+
+        _orderToGroup.Remove(fill.OrderId);
+        CloseGroup(group);
+    }
+
     // ── CancelGroup ──────────────────────────────────────────────
 
     public bool CancelGroup(long groupId, IOrderContext orders)
@@ -225,15 +273,24 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
     // ── CloseAllGroups ───────────────────────────────────────────
 
+    /// <summary>
+    /// Cancels PendingEntry groups and liquidates ProtectionActive groups.
+    /// Liquidation submits a market close order, so the caller must ensure
+    /// at least one more bar/tick is processed for the fill to arrive.
+    /// </summary>
     public void CloseAllGroups(IOrderContext orders)
     {
-        var activeIds = _groups.Values
+        var activeGroups = _groups.Values
             .Where(g => g.Status is OrderGroupStatus.PendingEntry or OrderGroupStatus.ProtectionActive)
-            .Select(g => g.GroupId)
             .ToList();
 
-        foreach (var id in activeIds)
-            CancelGroup(id, orders);
+        foreach (var group in activeGroups)
+        {
+            if (group.Status == OrderGroupStatus.ProtectionActive)
+                LiquidateGroup(group.GroupId, orders);
+            else
+                CancelGroup(group.GroupId, orders);
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────
@@ -335,6 +392,13 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
                         tp.OrderId, group.GroupId,
                         ExpectedOrderType.TakeProfit, tp.Price, tpQuantity));
                 }
+            }
+
+            if (group.LiquidationOrderId != 0)
+            {
+                result.Add(new ExpectedOrder(
+                    group.LiquidationOrderId, group.GroupId,
+                    ExpectedOrderType.Liquidation, 0L, group.RemainingQuantity));
             }
         }
         return result;

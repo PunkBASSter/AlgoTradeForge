@@ -9,7 +9,9 @@ public enum OrderGroupTransition
     SlFilled,
     TpFilled,
     EntryCancelled,
-    ProtectiveCancelled
+    ProtectiveCancelled,
+    LiquidationSubmitted,
+    LiquidationFilled
 }
 
 public sealed record OrderGroupEvent(

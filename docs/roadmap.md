@@ -11,9 +11,7 @@
 - Timing-based exit modules (close at eod, eow)
 - Kelly-based risk module
 
-## Optimization
-- Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
-- Test optimization with pluggable modules
+## Overfitting control
 - Walk Forward OPTI
 - Permutations test
 - Overfitting evaluation, effective param ranges
@@ -23,6 +21,11 @@
 - Metrics enhancement: display number of opening trades, slippage loss, commissions loss, average profit, average loss, mean/dispersion, etc.
 - Delete backtest results
 - Display run start time on details, sort by descending timestamp
+
+## QA
+- Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
+- Test optimization with pluggable modules
+- Test trades isolation module with multiple simultaneous orders allowed?
 
 ## Candle Ingestor
 Upd CandleIngestor - prepare for using on server: use DI, host as WebAPI for control with scheduling config; update partitioning - add TF in file names; add ingestors for stock data (alpha vantage, yahoo finance); ingest events metadata and add a scaling factor for splits;
@@ -47,4 +50,7 @@ Split strategy API (local, actively developed) from platform API (remote - stabl
 
 ### IDistributedCache -> IHybridCache (?)
 ### Fix compiler warnings
-...
+
+## Warning system
+- instead of blocking errors/exceptions warn about corrupt/insufficient data
+- add validators layer (where?) for input data and for runtime (if input data is impossible)

@@ -28,6 +28,9 @@ public sealed class OrderGroup
     public TpLevel[] TpLevels { get; internal set; } = [];
     public int FilledTpCount { get; internal set; }
 
+    // Liquidation
+    public long LiquidationOrderId { get; internal set; }
+
     // Tracking
     public decimal RemainingQuantity { get; internal set; }
     public long RealizedPnl { get; internal set; }

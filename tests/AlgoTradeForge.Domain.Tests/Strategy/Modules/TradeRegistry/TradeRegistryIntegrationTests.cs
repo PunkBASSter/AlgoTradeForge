@@ -399,6 +399,203 @@ public class TradeRegistryIntegrationTests
         Assert.Equal(-2000, group.RealizedPnl);
     }
 
+    // ── T21: ConcurrentLimitEntries_OneFills_OtherPending ────────
+
+    [Fact]
+    public void ConcurrentLimitEntries_OneFills_OtherPending()
+    {
+        var registry = new TradeRegistryModule(new TradeRegistryParams());
+        var sub = new DataSubscription(TestAsset, OneMinute);
+        OrderGroup? groupA = null, groupB = null;
+
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        {
+            if (i == 0)
+            {
+                // Group A: Buy Limit at 14800, SL=14000, TP=16000
+                groupA = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Limit,
+                    quantity: 10m, slPrice: 14000,
+                    tpLevels: [new TpLevel { Price = 16000, ClosurePercentage = 1.0m }],
+                    entryLimitPrice: 14800);
+
+                // Group B: Buy Limit at 14500, SL=13500, TP=16000
+                groupB = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Limit,
+                    quantity: 10m, slPrice: 13500,
+                    tpLevels: [new TpLevel { Price = 16000, ClosurePercentage = 1.0m }],
+                    entryLimitPrice: 14500);
+            }
+        })
+        { DataSubscriptions = [sub] };
+
+        // Bar 0: orders submitted (open=15000, above both limits)
+        // Bar 1: Low=14700 → A fills (14700 <= 14800), B stays pending (14700 > 14500)
+        var bars = TestBars.CreateSeries(Start, OneMinute,
+            TestBars.Create(15000, 15200, 14900, 15100),  // bar 0: orders submitted
+            TestBars.Create(15000, 15100, 14700, 14800),  // bar 1: A fills, B stays pending
+            TestBars.Create(14800, 14900, 14600, 14800)); // bar 2: padding (B still pending, low 14600 > limit 14500)
+
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+
+        Assert.NotNull(groupA);
+        Assert.NotNull(groupB);
+        Assert.Equal(OrderGroupStatus.ProtectionActive, groupA.Status);
+        Assert.Equal(OrderGroupStatus.PendingEntry, groupB.Status);
+        Assert.Single(result.Fills); // only A's entry
+        Assert.Equal(2, registry.ActiveGroupCount);
+    }
+
+    // ── T22: ConcurrentGroups_SlOnOne_TpOnAnother ─────────────────
+
+    [Fact]
+    public void ConcurrentGroups_SlOnOne_TpOnAnother()
+    {
+        var registry = new TradeRegistryModule(new TradeRegistryParams());
+        var sub = new DataSubscription(TestAsset, OneMinute);
+        OrderGroup? groupA = null, groupB = null;
+
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        {
+            if (i == 0)
+            {
+                // Group A: Buy, SL=14500, TP=16000, qty=5
+                groupA = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                    quantity: 5m, slPrice: 14500,
+                    tpLevels: [new TpLevel { Price = 16000, ClosurePercentage = 1.0m }]);
+
+                // Group B: Buy, SL=14000, TP=15500, qty=5
+                groupB = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                    quantity: 5m, slPrice: 14000,
+                    tpLevels: [new TpLevel { Price = 15500, ClosurePercentage = 1.0m }]);
+            }
+        })
+        { DataSubscriptions = [sub] };
+
+        // Bar 0: orders submitted
+        // Bar 1: both entries fill at 15000
+        // Bar 2: Low=14400, High=15600
+        //   A's SL at 14500 triggers (14400 <= 14500), A's TP at 16000 doesn't (15600 < 16000)
+        //   B's SL at 14000 doesn't trigger (14400 > 14000), B's TP at 15500 triggers (15600 >= 15500)
+        var bars = TestBars.CreateSeries(Start, OneMinute,
+            TestBars.Create(15000, 15200, 14900, 15100),  // bar 0
+            TestBars.Create(15000, 15100, 14900, 15000),  // bar 1: both entries fill
+            TestBars.Create(15000, 15600, 14400, 15000)); // bar 2: A's SL + B's TP
+
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+
+        Assert.NotNull(groupA);
+        Assert.NotNull(groupB);
+        Assert.Equal(OrderGroupStatus.Closed, groupA.Status);
+        Assert.Equal(OrderGroupStatus.Closed, groupB.Status);
+        Assert.Equal(4, result.Fills.Count); // 2 entries + A's SL + B's TP
+
+        // A: SL loss = 1 * (14500 - 15000) * 5 * 1 = -2500
+        Assert.Equal(-2500, groupA.RealizedPnl);
+        // B: TP profit = 1 * (15500 - 15000) * 5 * 1 = 2500
+        Assert.Equal(2500, groupB.RealizedPnl);
+        Assert.True(registry.IsFlat);
+    }
+
+    // ── T23: LiquidateGroup_Integration_MarketCloseNextBar ────────
+
+    [Fact]
+    public void LiquidateGroup_Integration_MarketCloseNextBar()
+    {
+        var registry = new TradeRegistryModule(new TradeRegistryParams());
+        var sub = new DataSubscription(TestAsset, OneMinute);
+        OrderGroup? group = null;
+
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        {
+            if (i == 0)
+            {
+                group = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                    quantity: 10m, slPrice: 14000,
+                    tpLevels: [new TpLevel { Price = 20000, ClosurePercentage = 1.0m }]);
+            }
+            else if (i == 2 && group is { Status: OrderGroupStatus.ProtectionActive })
+            {
+                // Strategy decides to liquidate on bar 2
+                reg.LiquidateGroup(group.GroupId, ctx);
+            }
+        })
+        { DataSubscriptions = [sub] };
+
+        // Bar 0: order submitted
+        // Bar 1: entry fills at 15000
+        // Bar 2: strategy calls LiquidateGroup (market order submitted)
+        // Bar 3: market order fills at open=15300
+        var bars = TestBars.CreateSeries(Start, OneMinute,
+            TestBars.Create(15000, 15200, 14900, 15100),  // bar 0
+            TestBars.Create(15000, 15100, 14900, 15000),  // bar 1: entry fills
+            TestBars.Create(15100, 15300, 15000, 15200),  // bar 2: liquidation submitted
+            TestBars.Create(15300, 15400, 15200, 15350)); // bar 3: liquidation fills at open=15300
+
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+
+        Assert.NotNull(group);
+        Assert.Equal(OrderGroupStatus.Closed, group.Status);
+        Assert.Equal(2, result.Fills.Count); // entry + liquidation
+        // PnL: 1 * (15300 - 15000) * 10 * 1 = 3000
+        Assert.Equal(3000, group.RealizedPnl);
+        Assert.True(registry.IsFlat);
+    }
+
+    // ── T24: LiquidateGroup_ConcurrentGroups_OnlyTargetLiquidated ─
+
+    [Fact]
+    public void LiquidateGroup_ConcurrentGroups_OnlyTargetLiquidated()
+    {
+        var registry = new TradeRegistryModule(new TradeRegistryParams());
+        var sub = new DataSubscription(TestAsset, OneMinute);
+        OrderGroup? groupA = null, groupB = null;
+
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        {
+            if (i == 0)
+            {
+                // Group A: Buy, SL=14000, TP=20000 (wide TP — will be liquidated)
+                groupA = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                    quantity: 5m, slPrice: 14000,
+                    tpLevels: [new TpLevel { Price = 20000, ClosurePercentage = 1.0m }]);
+
+                // Group B: Buy, SL=14000, TP=15500 (will reach TP naturally)
+                groupB = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                    quantity: 5m, slPrice: 14000,
+                    tpLevels: [new TpLevel { Price = 15500, ClosurePercentage = 1.0m }]);
+            }
+            else if (i == 2 && groupA is { Status: OrderGroupStatus.ProtectionActive })
+            {
+                // Strategy liquidates A on bar 2
+                reg.LiquidateGroup(groupA.GroupId, ctx);
+            }
+        })
+        { DataSubscriptions = [sub] };
+
+        // Bar 0: orders submitted
+        // Bar 1: both entries fill at 15000
+        // Bar 2: strategy liquidates A (market close submitted)
+        // Bar 3: A's liquidation fills at open=15200. B's TP at 15500 reached (high=15600)
+        var bars = TestBars.CreateSeries(Start, OneMinute,
+            TestBars.Create(15000, 15200, 14900, 15100),  // bar 0
+            TestBars.Create(15000, 15100, 14900, 15000),  // bar 1: both fill
+            TestBars.Create(15100, 15300, 15000, 15200),  // bar 2: strategy liquidates A
+            TestBars.Create(15200, 15600, 15100, 15400)); // bar 3: A liq fills, B TP fills
+
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+
+        Assert.NotNull(groupA);
+        Assert.NotNull(groupB);
+        Assert.Equal(OrderGroupStatus.Closed, groupA.Status);
+        Assert.Equal(OrderGroupStatus.Closed, groupB.Status);
+        Assert.Equal(4, result.Fills.Count); // 2 entries + A liq + B TP
+
+        // A: liquidation PnL = 1 * (15200 - 15000) * 5 * 1 = 1000
+        Assert.Equal(1000, groupA.RealizedPnl);
+        // B: TP PnL = 1 * (15500 - 15000) * 5 * 1 = 2500
+        Assert.Equal(2500, groupB.RealizedPnl);
+        Assert.True(registry.IsFlat);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────
 
     /// <summary>
