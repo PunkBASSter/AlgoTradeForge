@@ -178,7 +178,7 @@ public class LiveOrderContextTests
 
         // Simulate Binance order placement response rekeying
         const long binanceOrderId = 9999999L;
-        ctx.SimulateOrderPlaced(localId, binanceOrderId);
+        ctx.RekeyToExchangeId(localId, binanceOrderId);
 
         // The order should now be keyed by Binance ID, not local ID
         Assert.Null(ctx.GetPendingOrder(localId));
@@ -219,7 +219,7 @@ public class LiveOrderContextTests
     }
 
     [Fact]
-    public void OrderMapped_FiredAfterSimulateOrderPlaced()
+    public void OrderMapped_FiredAfterRekeyToExchangeId()
     {
         var ctx = CreateContext();
         ctx.Start(CancellationToken.None);
@@ -239,7 +239,7 @@ public class LiveOrderContextTests
 
         var localId = ctx.Submit(order);
         const long binanceOrderId = 12345L;
-        ctx.SimulateOrderPlaced(localId, binanceOrderId);
+        ctx.RekeyToExchangeId(localId, binanceOrderId);
 
         Assert.Equal(binanceOrderId, mappedOrderId);
     }

@@ -6,15 +6,20 @@ using System.Text.Json;
 using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Trading;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.Infrastructure.Live.Binance;
 
+// TODO: Add rate limiting (Binance allows 1200 request weight/min for order endpoints).
+//       Consider a SemaphoreSlim-based token bucket or Polly rate limiter.
 public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
 {
     private readonly HttpClient _http;
     private readonly byte[] _secretBytes;
     private readonly ILogger _logger;
+    // Accessed from timer-sync thread and order-placement threads.
+    // Volatile.Read/Write used instead of volatile keyword (C# forbids volatile on long).
     private long _serverTimeOffsetMs;
 
     public BinanceApiClient(string baseRestUrl, string apiKey, string apiSecret, ILogger logger)
@@ -46,13 +51,13 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
         using var doc = JsonDocument.Parse(body);
         var serverTime = doc.RootElement.GetProperty("serverTime").GetInt64();
         var localMid = (localBefore + localAfter) / 2;
-        _serverTimeOffsetMs = serverTime - localMid;
+        Volatile.Write(ref _serverTimeOffsetMs, serverTime - localMid);
 
         _logger.LogInformation("Binance time sync: offset={OffsetMs}ms", _serverTimeOffsetMs);
     }
 
     internal long GetTimestamp() =>
-        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + _serverTimeOffsetMs;
+        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + Volatile.Read(ref _serverTimeOffsetMs);
 
     public async Task<BinanceNewOrderResponse> PlaceOrderAsync(
         string symbol, string side, string type, decimal quantity,
@@ -85,10 +90,20 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
     }
 
     async Task<ExchangeOrderResult> IExchangeOrderClient.PlaceOrderAsync(
-        string symbol, string side, string type, decimal quantity,
+        string symbol, OrderSide side, OrderType type, decimal quantity,
         decimal? price, decimal? stopPrice, CancellationToken ct)
     {
-        var response = await PlaceOrderAsync(symbol, side, type, quantity, price, stopPrice, ct);
+        var sideStr = side == OrderSide.Buy ? "BUY" : "SELL";
+        var typeStr = type switch
+        {
+            OrderType.Market => "MARKET",
+            OrderType.Limit => "LIMIT",
+            OrderType.Stop => "STOP_LOSS",
+            OrderType.StopLimit => "STOP_LOSS_LIMIT",
+            _ => throw new ArgumentException($"Unsupported order type: {type}"),
+        };
+
+        var response = await PlaceOrderAsync(symbol, sideStr, typeStr, quantity, price, stopPrice, ct);
         var fills = response.Fills
             .Select(f => new ExchangeFill(
                 decimal.Parse(f.Price, CultureInfo.InvariantCulture),
@@ -192,6 +207,34 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
         return bars;
     }
 
+    public async Task<IReadOnlyList<ExchangeOpenOrder>> GetOpenOrdersAsync(
+        string symbol, CancellationToken ct = default)
+    {
+        var parameters = new Dictionary<string, string>
+        {
+            ["symbol"] = symbol.ToUpperInvariant(),
+        };
+        var json = await SendSignedAsync(HttpMethod.Get, "/api/v3/openOrders", parameters, ct);
+        var orders = JsonSerializer.Deserialize<List<BinanceOpenOrder>>(json, BinanceJsonOptions.Default) ?? [];
+        return orders
+            .Select(o => new ExchangeOpenOrder(
+                o.OrderId, o.Symbol, o.Side, o.Type,
+                decimal.Parse(o.OrigQty, CultureInfo.InvariantCulture),
+                decimal.Parse(o.Price, CultureInfo.InvariantCulture),
+                decimal.Parse(o.StopPrice, CultureInfo.InvariantCulture),
+                o.Status))
+            .ToList();
+    }
+
+    public async Task CancelAllOpenOrdersAsync(string symbol, CancellationToken ct = default)
+    {
+        var parameters = new Dictionary<string, string>
+        {
+            ["symbol"] = symbol.ToUpperInvariant(),
+        };
+        await SendSignedAsync(HttpMethod.Delete, "/api/v3/openOrders", parameters, ct);
+    }
+
     public async Task<IReadOnlyList<BinanceMyTrade>> GetMyTradesAsync(
         string symbol, int limit = 50, CancellationToken ct = default)
     {
@@ -242,7 +285,11 @@ public sealed class BinanceApiClient : IExchangeOrderClient, IDisposable
         return body;
     }
 
-    public void Dispose() => _http.Dispose();
+    public void Dispose()
+    {
+        Array.Clear(_secretBytes);
+        _http.Dispose();
+    }
 }
 
 internal static class BinanceJsonOptions

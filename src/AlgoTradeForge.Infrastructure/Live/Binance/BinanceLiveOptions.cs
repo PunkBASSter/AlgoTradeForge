@@ -5,6 +5,7 @@ public sealed class BinanceLiveOptions
     public Dictionary<string, BinanceAccountConfig> Accounts { get; init; } = new();
     public TimeSpan ReconnectDelay { get; init; } = TimeSpan.FromSeconds(5);
     public int MaxReconnectAttempts { get; init; } = 10;
+    public TimeSpan ReconciliationInterval { get; init; } = TimeSpan.FromSeconds(30);
 }
 
 public sealed class BinanceAccountConfig

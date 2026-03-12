@@ -173,10 +173,45 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
             state.Strategy.OnBarStart(startBar, subscription, state.OrderContext);
             AssignOrderIds(state, barTimestamp);
 
-            // Process pending orders for this asset against the new bar
-            ProcessPendingOrders(state, subscription.Asset, bar, barTimestamp);
+            // ── Order processing ──────────────────────────────────────
+            //
+            // Two SL/TP execution paths coexist:
+            //
+            // 1. Module-based strategies (ITradeRegistryProvider):
+            //    Entry orders have NO attached StopLossPrice/TakeProfitLevels.
+            //    On entry fill, OnTrade → module places separate SL (Stop) and
+            //    TP (Limit) orders into the queue. The fill-loop below re-processes
+            //    the queue so these orders are evaluated on the SAME bar as entry.
+            //    Fill prices include slippage and gap-through modeling via GetFillPrice.
+            //    When both SL and TP are reachable, SL fills first (queue insertion
+            //    order — module places SL before TPs in PlaceProtectiveOrders).
+            //
+            // 2. Non-module strategies (attached SL/TP):
+            //    Entry orders carry StopLossPrice/TakeProfitLevels. On entry fill,
+            //    the engine adds them to ActiveSlTpPositions. EvaluateSlTpPositions
+            //    evaluates same-bar exits using BarMatcher.EvaluateSlTp, which fills
+            //    at exact SL/TP price (no slippage). When both SL and TP are reachable,
+            //    SL wins (conservative). UseDetailedExecutionLogic can override this.
+            //
+            // Both paths produce same-bar SL/TP evaluation. Module path is more
+            // realistic (slippage + gap); attached path is simpler for strategies
+            // that don't need independent SL/TP order management.
 
-            // Evaluate SL/TP for active positions on this asset
+            // Fill-loop: process pending orders, then re-process any orders added
+            // by fill callbacks (e.g., module SL/TP). Loop while new fills occur
+            // to handle multi-stage chains (entry → SL/TP → partial TP replaces SL).
+            int fillsBefore;
+            var pass = 0;
+            do
+            {
+                fillsBefore = state.Fills.Count;
+                ProcessPendingOrders(state, subscription.Asset, bar, barTimestamp);
+                if (state.Fills.Count > fillsBefore)
+                    AssignOrderIds(state, barTimestamp);
+            }
+            while (state.Fills.Count > fillsBefore && ++pass < 4);
+
+            // Evaluate SL/TP for active positions using attached levels (non-module path)
             EvaluateSlTpPositions(state, subscription.Asset, bar, barTimestamp);
 
             // Deliver completed bar to strategy
@@ -237,6 +272,11 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
 
         foreach (var order in pending)
         {
+            // Defensive: an earlier fill's OnTrade callback may have cancelled this order
+            // (e.g., SL fills → strategy cancels sibling TP). Skip if no longer actionable.
+            if (order.Status is not (OrderStatus.Pending or OrderStatus.Triggered))
+                continue;
+
             var fillPrice = barMatcher.GetFillPrice(order, bar, state.Options);
             if (fillPrice is null)
             {

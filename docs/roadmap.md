@@ -7,18 +7,25 @@
 - Add a strategy with a different logic, e.g. price patterns, volume patterns, market profile etc.
 
 ## Strategy modules
-- Timing-based exit modules (close at eod, eow)
-- Multi-order strategy module, **Order Groups**
 - `Strategy-framework.md`
+- Timing-based exit modules (close at eod, eow)
 - Kelly-based risk module
 
-## Optimization
-- Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
-- Test optimization with pluggable modules
+## Overfitting control
 - Walk Forward OPTI
 - Permutations test
 - Overfitting evaluation, effective param ranges
 - Implement other optimizers (genetic, bayesian, random search)
+
+## Backtest/opt
+- Metrics enhancement: display number of opening trades, slippage loss, commissions loss, average profit, average loss, mean/dispersion, etc.
+- Delete backtest results
+- Display run start time on details, sort by descending timestamp
+
+## QA
+- Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
+- Test optimization with pluggable modules
+- Test trades isolation module with multiple simultaneous orders allowed?
 
 ## Candle Ingestor
 Upd CandleIngestor - prepare for using on server: use DI, host as WebAPI for control with scheduling config; update partitioning - add TF in file names; add ingestors for stock data (alpha vantage, yahoo finance); ingest events metadata and add a scaling factor for splits;
@@ -33,6 +40,7 @@ Upd CandleIngestor - prepare for using on server: use DI, host as WebAPI for con
 ### Split domain / API
 Split strategies assembly and backtesting; maybe extract a shared contracts assembly
 Split strategy API (local, actively developed) from platform API (remote - stable, multi-user). FE calls 2 APIs. Don't forget CORS.
+@docs\split-local-remote-features.md
 
 ### Unify serialization, validation and error handling
 1. Ensure there are camelCase serializers for API
@@ -41,4 +49,8 @@ Split strategy API (local, actively developed) from platform API (remote - stabl
 4. Introduce Result<> pattern?
 
 ### IDistributedCache -> IHybridCache (?)
-...
+### Fix compiler warnings
+
+## Warning system
+- instead of blocking errors/exceptions warn about corrupt/insufficient data
+- add validators layer (where?) for input data and for runtime (if input data is impossible)

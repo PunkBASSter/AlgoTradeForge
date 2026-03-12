@@ -8,5 +8,7 @@ public static class EventSources
     public const string Engine = "engine";
     public const string Live = "live";
 
+    public const string TradeRegistry = "trade-registry";
+
     public static string Indicator(string indicatorName) => $"indicator.{indicatorName}";
 }

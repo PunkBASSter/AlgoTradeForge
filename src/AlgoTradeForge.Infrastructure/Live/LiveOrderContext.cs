@@ -18,10 +18,10 @@ public sealed class LiveOrderContext : IOrderContext
     private readonly Asset _primaryAsset;
     private readonly ILogger _logger;
     private readonly Guid _sessionId;
-    private readonly ConcurrentDictionary<long, Guid> _binanceOrderToSession;
+    private readonly ConcurrentDictionary<long, Guid> _exchangeOrderToSession;
 
     private readonly ConcurrentDictionary<long, Order> _pendingOrders = new();
-    private readonly ConcurrentDictionary<long, long> _localToBinanceId = new();
+    private readonly ConcurrentDictionary<long, long> _localToExchangeId = new();
     private readonly ConcurrentDictionary<long, byte> _restFilledOrders = new();
     private readonly Lock _recentFillsLock = new();
     private readonly List<Fill> _recentFills = [];
@@ -38,7 +38,7 @@ public sealed class LiveOrderContext : IOrderContext
     private CancellationTokenSource? _cts;
 
     private sealed record OrderRequest(Order Order, long LocalId);
-    private sealed record CancelRequest(Order Order, long BinanceOrderId);
+    private sealed record CancelRequest(Order Order, long ExchangeOrderId);
 
     public LiveOrderContext(
         Portfolio portfolio,
@@ -47,7 +47,7 @@ public sealed class LiveOrderContext : IOrderContext
         ILogger logger,
         IExchangeOrderClient orderClient,
         Guid sessionId,
-        ConcurrentDictionary<long, Guid> binanceOrderToSession)
+        ConcurrentDictionary<long, Guid> exchangeOrderToSession)
     {
         _portfolio = portfolio;
         _primaryAsset = primaryAsset;
@@ -55,7 +55,7 @@ public sealed class LiveOrderContext : IOrderContext
         _logger = logger;
         _orderClient = orderClient;
         _sessionId = sessionId;
-        _binanceOrderToSession = binanceOrderToSession;
+        _exchangeOrderToSession = exchangeOrderToSession;
     }
 
     public long Cash => _portfolio.Cash;
@@ -112,16 +112,16 @@ public sealed class LiveOrderContext : IOrderContext
 
     public Order? Cancel(long orderId)
     {
-        // Resolve to Binance order ID if mapped, otherwise use orderId as-is
-        var binanceOrderId = _localToBinanceId.TryGetValue(orderId, out var mapped) ? mapped : orderId;
+        // Resolve to exchange order ID if mapped, otherwise use orderId as-is
+        var exchangeOrderId = _localToExchangeId.TryGetValue(orderId, out var mapped) ? mapped : orderId;
 
-        // Try remove by Binance ID first (post-placement), then by local ID (pre-placement)
-        if (!_pendingOrders.TryRemove(binanceOrderId, out var order) &&
+        // Try remove by exchange ID first (post-placement), then by local ID (pre-placement)
+        if (!_pendingOrders.TryRemove(exchangeOrderId, out var order) &&
             !_pendingOrders.TryRemove(orderId, out order))
             return null;
 
         order.Status = OrderStatus.Cancelled;
-        _cancelChannel.Writer.TryWrite(new CancelRequest(order, binanceOrderId));
+        _cancelChannel.Writer.TryWrite(new CancelRequest(order, exchangeOrderId));
 
         return order;
     }
@@ -166,19 +166,22 @@ public sealed class LiveOrderContext : IOrderContext
     internal void RemovePendingOrder(long orderId) =>
         _pendingOrders.TryRemove(orderId, out _);
 
-    internal void SimulateOrderPlaced(long localId, long binanceOrderId)
+    internal void RekeyToExchangeId(long localId, long exchangeOrderId)
     {
         if (_pendingOrders.TryRemove(localId, out var order))
         {
-            order.Id = binanceOrderId;
-            _pendingOrders.TryAdd(binanceOrderId, order);
-            _localToBinanceId.TryAdd(localId, binanceOrderId);
-            _binanceOrderToSession.TryAdd(binanceOrderId, _sessionId);
-            OrderMapped?.Invoke(binanceOrderId);
+            order.Id = exchangeOrderId;
+            _pendingOrders.TryAdd(exchangeOrderId, order);
+            _localToExchangeId.TryAdd(localId, exchangeOrderId);
+            _exchangeOrderToSession.TryAdd(exchangeOrderId, _sessionId);
+            OrderMapped?.Invoke(exchangeOrderId);
         }
     }
 
     internal event Action<long>? OrderMapped;
+
+    internal long ResolveExchangeOrderId(long localOrderId) =>
+        _localToExchangeId.TryGetValue(localOrderId, out var exchangeId) ? exchangeId : localOrderId;
 
     internal bool IsOrderRestFilled(long orderId) => _restFilledOrders.ContainsKey(orderId);
 
@@ -193,8 +196,6 @@ public sealed class LiveOrderContext : IOrderContext
                 try
                 {
                     var order = request.Order;
-                    var binanceType = MapOrderType(order.Type);
-                    var side = order.Side == OrderSide.Buy ? "BUY" : "SELL";
                     var scale = new ScaleContext(_primaryAsset);
                     decimal? price = order.LimitPrice.HasValue
                         ? scale.ToMarketPrice(order.LimitPrice.Value)
@@ -204,7 +205,7 @@ public sealed class LiveOrderContext : IOrderContext
                         : null;
 
                     var result = await _orderClient.PlaceOrderAsync(
-                        order.Asset.Name, side, binanceType, order.Quantity,
+                        order.Asset.Name, order.Side, order.Type, order.Quantity,
                         price, stopPrice, ct);
 
                     var exchangeOrderId = result.OrderId;
@@ -215,9 +216,9 @@ public sealed class LiveOrderContext : IOrderContext
                     if (pending is not null)
                     {
                         pending.Id = exchangeOrderId;
-                        _binanceOrderToSession.TryAdd(exchangeOrderId, _sessionId);
+                        _exchangeOrderToSession.TryAdd(exchangeOrderId, _sessionId);
                         _pendingOrders.TryAdd(exchangeOrderId, pending);
-                        _localToBinanceId.TryAdd(request.LocalId, exchangeOrderId);
+                        _localToExchangeId.TryAdd(request.LocalId, exchangeOrderId);
                         OrderMapped?.Invoke(exchangeOrderId);
                     }
 
@@ -275,25 +276,16 @@ public sealed class LiveOrderContext : IOrderContext
             {
                 try
                 {
-                    await _orderClient.CancelOrderAsync(request.Order.Asset.Name, request.BinanceOrderId, ct);
+                    await _orderClient.CancelOrderAsync(request.Order.Asset.Name, request.ExchangeOrderId, ct);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to cancel order {OrderId}", request.BinanceOrderId);
+                    _logger.LogError(ex, "Failed to cancel order {OrderId}", request.ExchangeOrderId);
                 }
             }
         }
         catch (OperationCanceledException) { }
     }
-
-    private static string MapOrderType(OrderType type) => type switch
-    {
-        OrderType.Market => "MARKET",
-        OrderType.Limit => "LIMIT",
-        OrderType.Stop => "STOP_LOSS",
-        OrderType.StopLimit => "STOP_LOSS_LIMIT",
-        _ => throw new ArgumentException($"Unsupported order type: {type}"),
-    };
 
     private static async Task IgnoreCancellation(Task task)
     {
