@@ -22,7 +22,6 @@ public sealed class DebugWebSocketIntegrationTests
         new()
         {
             InitialCash = initialCash,
-            Asset = TestAssets.Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };

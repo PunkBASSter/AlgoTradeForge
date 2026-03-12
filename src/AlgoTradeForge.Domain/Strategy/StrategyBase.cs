@@ -5,7 +5,8 @@ using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Strategy;
 
-public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactory? indicators = null) : IInt64BarStrategy, IEventBusReceiver
+public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactory? indicators = null)
+    : IInt64BarStrategy, IEventBusReceiver, IFeedContextReceiver
     where TParams : StrategyParamsBase
 {
     public abstract string Version { get; }
@@ -13,6 +14,8 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
     protected TParams Params { get; } = parameters;
 
     protected IEventBus EventBus { get; private set; } = NullEventBus.Instance;
+
+    protected IFeedContext Feeds { get; private set; } = NullFeedContext.Instance;
 
     protected IIndicatorFactory Indicators { get; } = indicators ?? PassthroughIndicatorFactory.Instance;
 
@@ -35,4 +38,6 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
     }
 
     void IEventBusReceiver.SetEventBus(IEventBus bus) => EventBus = bus;
+
+    void IFeedContextReceiver.SetFeedContext(IFeedContext context) => Feeds = context;
 }

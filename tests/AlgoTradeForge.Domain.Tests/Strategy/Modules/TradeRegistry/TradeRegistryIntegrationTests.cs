@@ -22,7 +22,6 @@ public class TradeRegistryIntegrationTests
         new()
         {
             InitialCash = initialCash,
-            Asset = TestAsset,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };

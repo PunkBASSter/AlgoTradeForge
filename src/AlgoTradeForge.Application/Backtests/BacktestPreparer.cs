@@ -34,7 +34,6 @@ public sealed class BacktestPreparer(
         var options = new BacktestOptions
         {
             InitialCash = scale.AmountToTicks(command.InitialCash),
-            Asset = asset,
             StartTime = command.StartTime,
             EndTime = command.EndTime,
             CommissionPerTrade = scale.AmountToTicks(command.CommissionPerTrade),

@@ -27,7 +27,6 @@ public class BacktestEngineTests
         new()
         {
             InitialCash = 100_000L,
-            Asset = TestAssets.Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };
@@ -438,7 +437,6 @@ public class BacktestEngineTests
         var opts = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = TestAssets.Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };
@@ -485,7 +483,6 @@ public class BacktestEngineTests
         var opts = new BacktestOptions
         {
             InitialCash = 1_000_000L, // large cash pool so no rejections
-            Asset = TestAssets.Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };
@@ -733,7 +730,6 @@ public class BacktestEngineTests
         var opts = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = asset,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };
@@ -775,7 +771,6 @@ public class BacktestEngineTests
         var opts = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = asset,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };
@@ -817,7 +812,6 @@ public class BacktestEngineTests
         var opts = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = asset,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };
@@ -859,7 +853,6 @@ public class BacktestEngineTests
         var opts = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = asset,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };

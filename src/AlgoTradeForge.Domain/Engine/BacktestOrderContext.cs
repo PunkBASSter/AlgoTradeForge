@@ -9,6 +9,7 @@ internal sealed class BacktestOrderContext : IOrderContext
     private readonly OrderQueue _queue;
     private readonly List<Fill> _allFills;
     private readonly Portfolio _portfolio;
+    private readonly Dictionary<string, long> _lastPrices;
     private readonly IEventBus _bus;
     private readonly IOrderValidator _orderValidator;
     private readonly bool _busActive;
@@ -16,17 +17,20 @@ internal sealed class BacktestOrderContext : IOrderContext
     private DateTimeOffset _currentTimestamp;
 
     public BacktestOrderContext(OrderQueue queue, List<Fill> allFills, Portfolio portfolio, IEventBus bus,
-        IOrderValidator orderValidator)
+        IOrderValidator orderValidator, Dictionary<string, long> lastPrices)
     {
         _queue = queue;
         _allFills = allFills;
         _portfolio = portfolio;
         _bus = bus;
         _orderValidator = orderValidator;
+        _lastPrices = lastPrices;
         _busActive = bus is not NullEventBus;
     }
 
     public long Cash => _portfolio.Cash;
+    public long UsedMargin => _portfolio.ComputeUsedMargin();
+    public long AvailableMargin => _portfolio.AvailableMargin(_lastPrices);
 
     public void BeginBar(int currentFillCount, DateTimeOffset timestamp)
     {

@@ -19,7 +19,11 @@ public sealed class TestnetE2ETests(TestnetApiFactory factory) : IDisposable
 
     private readonly HttpClient _client = factory.CreateClient();
 
-    [Fact]
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
     public async Task FullHttpLifecycle_StartStreamOrderStop()
     {
         if (!BinanceTestnetCredentials.IsConfigured)

@@ -12,4 +12,8 @@ public static class TestAssets
 
     public static Asset BtcUsdt => Asset.Crypto("BTCUSDT", "Binance", decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1),
         minOrderQuantity: 0.00001m, maxOrderQuantity: 9000m, quantityStepSize: 0.00001m);
+
+    public static Asset BtcUsdtPerp => Asset.CryptoPerpetual("BTCUSDT_PERP", "Binance", decimalDigits: 2, margin: 0.1m,
+        historyStart: new DateOnly(2024, 1, 1),
+        minOrderQuantity: 0.001m, maxOrderQuantity: 1000m, quantityStepSize: 0.001m);
 }

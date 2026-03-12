@@ -220,7 +220,6 @@ public class IndicatorFactoryTests
         var options = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };

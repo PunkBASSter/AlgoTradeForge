@@ -67,7 +67,6 @@ public class PostRunIntegrationTests : IDisposable
         var btOptions = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };
@@ -194,7 +193,6 @@ public class PostRunIntegrationTests : IDisposable
         var btOptions = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };

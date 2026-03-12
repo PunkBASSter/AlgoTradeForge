@@ -26,7 +26,6 @@ public class OrderValidatorTests
         new()
         {
             InitialCash = initialCash,
-            Asset = TestEquity(),
             StartTime = DateTimeOffset.UtcNow,
             EndTime = DateTimeOffset.UtcNow.AddDays(1),
             CommissionPerTrade = commission

@@ -33,7 +33,11 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         Assert.NotEmpty(Strategy.ReceivedBars);
     }
 
-    [Fact]
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
     public async Task MarketBuy_ReceivesFill()
     {
         if (!BinanceTestnetCredentials.IsConfigured)
@@ -59,7 +63,11 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         Assert.Equal(MinQty, fill.Quantity);
     }
 
-    [Fact]
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
     public async Task MarketSell_AfterBuy_ReceivesFill()
     {
         if (!BinanceTestnetCredentials.IsConfigured)
@@ -98,7 +106,11 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         Assert.Equal(OrderSide.Sell, fill.Side);
     }
 
-    [Fact]
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
     public async Task LimitBuy_AggressivePrice_ReceivesFill()
     {
         if (!BinanceTestnetCredentials.IsConfigured)
@@ -126,7 +138,11 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         Assert.True(fill.Price <= limitPrice);
     }
 
-    [Fact]
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
     public async Task LimitSell_AggressivePrice_ReceivesFill()
     {
         if (!BinanceTestnetCredentials.IsConfigured)
@@ -169,7 +185,11 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         Assert.True(fill.Price >= limitPrice);
     }
 
-    [Fact]
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
     public async Task StopBuy_AlreadyTriggered_ReceivesFill()
     {
         if (!BinanceTestnetCredentials.IsConfigured)
@@ -202,7 +222,11 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         }
     }
 
-    [Fact]
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
     public async Task StopSell_AlreadyTriggered_ReceivesFill()
     {
         if (!BinanceTestnetCredentials.IsConfigured)
@@ -250,7 +274,11 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         }
     }
 
-    [Fact]
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
     public async Task StopLimitBuy_ReceivesFill()
     {
         if (!BinanceTestnetCredentials.IsConfigured)
@@ -285,7 +313,11 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         }
     }
 
-    [Fact]
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
     public async Task StopLimitSell_ReceivesFill()
     {
         if (!BinanceTestnetCredentials.IsConfigured)

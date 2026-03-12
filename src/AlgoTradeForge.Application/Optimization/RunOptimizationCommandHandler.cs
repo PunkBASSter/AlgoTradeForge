@@ -353,7 +353,6 @@ public sealed class RunOptimizationCommandHandler(
         var backOptions = new BacktestOptions
         {
             InitialCash = scale.AmountToTicks(command.InitialCash),
-            Asset = trialAsset,
             StartTime = command.StartTime,
             EndTime = command.EndTime,
             CommissionPerTrade = scale.AmountToTicks(command.CommissionPerTrade),

@@ -18,11 +18,12 @@ public sealed class Position
     public long UnrealizedPnl(long currentPrice) =>
         Quantity == 0m ? 0L : MoneyConvert.ToLong((currentPrice - AverageEntryPrice) * Quantity * Asset.Multiplier);
 
-    internal void Apply(Fill fill)
+    internal long Apply(Fill fill)
     {
         var direction = fill.Side == OrderSide.Buy ? 1 : -1;
         var fillQuantity = fill.Quantity * direction;
         var newQuantity = Quantity + fillQuantity;
+        var realizedFromFill = 0L;
 
         if (Quantity == 0m)
         {
@@ -38,16 +39,19 @@ public sealed class Position
             else
             {
                 var closedQuantity = Quantity - newQuantity;
-                RealizedPnl += MoneyConvert.ToLong(closedQuantity * (fill.Price - AverageEntryPrice) * Asset.Multiplier);
+                realizedFromFill = MoneyConvert.ToLong(closedQuantity * (fill.Price - AverageEntryPrice) * Asset.Multiplier);
+                RealizedPnl += realizedFromFill;
             }
         }
         else
         {
-            RealizedPnl += MoneyConvert.ToLong(Quantity * (fill.Price - AverageEntryPrice) * Asset.Multiplier);
+            realizedFromFill = MoneyConvert.ToLong(Quantity * (fill.Price - AverageEntryPrice) * Asset.Multiplier);
+            RealizedPnl += realizedFromFill;
             AverageEntryPrice = fill.Price;
         }
 
         Quantity = newQuantity;
+        return realizedFromFill;
     }
 
     internal void Reset()

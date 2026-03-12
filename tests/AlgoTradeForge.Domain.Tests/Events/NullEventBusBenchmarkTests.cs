@@ -29,7 +29,6 @@ public class NullEventBusBenchmarkTests
         var options = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = TestAssets.Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };

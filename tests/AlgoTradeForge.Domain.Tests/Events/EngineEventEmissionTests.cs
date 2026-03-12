@@ -17,7 +17,6 @@ public class EngineEventEmissionTests
         new()
         {
             InitialCash = initialCash,
-            Asset = TestAssets.Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };
@@ -527,7 +526,6 @@ public class EngineEventEmissionTests
         var opts = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = asset,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };
