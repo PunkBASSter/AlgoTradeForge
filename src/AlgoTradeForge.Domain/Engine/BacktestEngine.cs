@@ -310,7 +310,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
             if (lastPrice == 0L) continue;
 
             var rate = values[binding.RateColumnIndex];
-            var delta = AutoApplyHandler.ComputeCashDelta(binding.Type, rate, position, lastPrice);
+            var delta = binding.Asset.ComputeAutoApplyDelta(binding.Type, rate, position, lastPrice);
             if (delta != 0L)
                 portfolio.ApplyCashAdjustment(delta);
         }

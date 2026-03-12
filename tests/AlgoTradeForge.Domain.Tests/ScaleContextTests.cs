@@ -106,7 +106,7 @@ public class ScaleContextTests
     [Fact]
     public void Constructor_FromAsset_ThrowsOnZeroTickSize()
     {
-        var asset = new Asset { Name = "BAD", Exchange = "TEST", TickSize = 0m };
+        var asset = new EquityAsset { Name = "BAD", Exchange = "TEST", TickSize = 0m };
         Assert.Throws<ArgumentOutOfRangeException>(() => new ScaleContext(asset));
     }
 }

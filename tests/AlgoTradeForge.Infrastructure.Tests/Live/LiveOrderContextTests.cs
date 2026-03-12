@@ -11,7 +11,7 @@ namespace AlgoTradeForge.Infrastructure.Tests.Live;
 
 public class LiveOrderContextTests
 {
-    private static readonly Asset BtcUsdt = Asset.Crypto("BTCUSDT", "Binance",
+    private static readonly CryptoAsset BtcUsdt = CryptoAsset.Create("BTCUSDT", "Binance",
         decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1),
         minOrderQuantity: 0.00001m, maxOrderQuantity: 9000m, quantityStepSize: 0.00001m);
 

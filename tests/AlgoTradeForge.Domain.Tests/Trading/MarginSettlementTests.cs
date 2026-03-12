@@ -8,8 +8,8 @@ public class MarginSettlementTests
 {
     private readonly MarginSettlement _settlement = MarginSettlement.Instance;
 
-    private static Asset TestPerp => Asset.Future("BTCUSDT_PERP", "Binance",
-        multiplier: 1m, tickSize: 0.01m, margin: 0.10m);
+    private static FutureAsset TestPerp => new() { Name = "BTCUSDT_PERP", Exchange = "Binance",
+        Multiplier = 1m, TickSize = 0.01m, MarginRequirement = 0.10m };
 
     #region ComputeCashDelta
 
@@ -162,7 +162,7 @@ public class MarginSettlementTests
     public void ValidateSettlement_NoMarginRequirement_UsesFullNotional()
     {
         // Asset without MarginRequirement defaults to 1.0 (full notional)
-        var asset = Asset.Future("NQ", "CME", multiplier: 20m, tickSize: 0.25m);
+        var asset = new FutureAsset { Name = "NQ", Exchange = "CME", Multiplier = 20m, TickSize = 0.25m };
         var order = CreateOrder(asset, OrderSide.Buy, 1m);
         var portfolio = CreatePortfolio(100_000L);
 

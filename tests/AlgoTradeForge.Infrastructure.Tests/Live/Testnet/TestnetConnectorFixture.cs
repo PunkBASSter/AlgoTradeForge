@@ -32,7 +32,7 @@ public sealed class TestnetConnectorFixture : IAsyncLifetime
         Connector = new BinanceLiveConnector("testnet", accountConfig, sharedOptions, validator, logger);
         await Connector.ConnectAsync();
 
-        Asset = Asset.Crypto("BTCUSDT", "Binance", decimalDigits: 2,
+        Asset = CryptoAsset.Create("BTCUSDT", "Binance", decimalDigits: 2,
             minOrderQuantity: 0.00010m, maxOrderQuantity: 9000m, quantityStepSize: 0.00010m);
 
         // Fetch current price via the connector's API client — instant, no bar wait needed

@@ -234,10 +234,10 @@ public class CryptoFuturesIntegrationTests
     [Fact]
     public void CryptoPerpetualAsset_HasCorrectProperties()
     {
-        var asset = Asset.CryptoPerpetual("ETHUSDT_PERP", "Binance", decimalDigits: 2, margin: 0.05m);
+        var asset = CryptoPerpetualAsset.Create("ETHUSDT_PERP", "Binance", decimalDigits: 2, margin: 0.05m);
 
-        Assert.Equal(AssetType.CryptoPerpetual, asset.Type);
-        Assert.Equal(SettlementModel.Margin, asset.Settlement);
+        Assert.IsType<CryptoPerpetualAsset>(asset);
+        Assert.IsType<MarginSettlement>(asset.SettlementCalculator);
         Assert.Equal(1m, asset.Multiplier);
         Assert.Equal(0.01m, asset.TickSize);
         Assert.Equal(0.05m, asset.MarginRequirement);
@@ -246,10 +246,10 @@ public class CryptoFuturesIntegrationTests
     [Fact]
     public void StockFuture_DelegatesToFuture()
     {
-        var asset = Asset.StockFuture("ES", "CME", multiplier: 50m, tickSize: 0.25m, margin: 0.05m);
+        var asset = FutureAsset.CreateStock("ES", "CME", multiplier: 50m, tickSize: 0.25m, margin: 0.05m);
 
-        Assert.Equal(AssetType.Future, asset.Type);
-        Assert.Equal(SettlementModel.Margin, asset.Settlement);
+        Assert.IsType<FutureAsset>(asset);
+        Assert.IsType<MarginSettlement>(asset.SettlementCalculator);
         Assert.Equal(50m, asset.Multiplier);
         Assert.Equal(0.25m, asset.TickSize);
     }

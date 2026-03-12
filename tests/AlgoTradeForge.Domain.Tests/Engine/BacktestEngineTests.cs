@@ -61,7 +61,7 @@ public class BacktestEngineTests
     public void Run_TwoSubscriptions_SameTimeframe_ChronologicalOrder()
     {
         var btcSub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
-        var ethAsset = Asset.Crypto("ETHUSDT", "Binance", 2);
+        var ethAsset = CryptoAsset.Create("ETHUSDT", "Binance", 2);
         var ethSub = new DataSubscription(ethAsset, OneMinute);
 
         var btcBars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 40000);
@@ -106,7 +106,7 @@ public class BacktestEngineTests
     public void Run_DifferentTimeframes_ChronologicalMerge()
     {
         var btcSub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
-        var ethAsset = Asset.Crypto("ETHUSDT", "Binance", 2);
+        var ethAsset = CryptoAsset.Create("ETHUSDT", "Binance", 2);
         var ethSub = new DataSubscription(ethAsset, FiveMinutes);
 
         // 5 one-minute BTC bars, 1 five-minute ETH bar (same start time)
@@ -132,7 +132,7 @@ public class BacktestEngineTests
     public void Run_DataGap_SkipsGapContinuesNormally()
     {
         var btcSub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
-        var ethAsset = Asset.Crypto("ETHUSDT", "Binance", 2);
+        var ethAsset = CryptoAsset.Create("ETHUSDT", "Binance", 2);
         var ethSub = new DataSubscription(ethAsset, OneMinute);
 
         // BTC: 3 bars starting at T+0
@@ -672,9 +672,9 @@ public class BacktestEngineTests
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
 
         var btcSub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
-        var ethAsset = Asset.Crypto("ETHUSDT", "Binance", 2);
+        var ethAsset = CryptoAsset.Create("ETHUSDT", "Binance", 2);
         var ethSub = new DataSubscription(ethAsset, OneMinute);
-        var solAsset = Asset.Crypto("SOLUSDT", "Binance", 2);
+        var solAsset = CryptoAsset.Create("SOLUSDT", "Binance", 2);
         var solSub = new DataSubscription(solAsset, OneMinute);
 
         var btcBars = TestBars.CreateSeries(Start, OneMinute, barsPerSub, startPrice: 40000, priceIncrement: 1);
@@ -701,7 +701,7 @@ public class BacktestEngineTests
     [Fact]
     public void Run_QuantityBelowMin_OrderRejected()
     {
-        var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 10m, maxOrderQuantity: 1000m, quantityStepSize: 1m);
+        var asset = new EquityAsset { Name = "TEST", Exchange = "TEST", MinOrderQuantity = 10m, MaxOrderQuantity = 1000m, QuantityStepSize = 1m };
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(asset, OneMinute);
@@ -742,7 +742,7 @@ public class BacktestEngineTests
     [Fact]
     public void Run_QuantityAboveMax_OrderRejected()
     {
-        var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 1m, maxOrderQuantity: 10m, quantityStepSize: 1m);
+        var asset = new EquityAsset { Name = "TEST", Exchange = "TEST", MinOrderQuantity = 1m, MaxOrderQuantity = 10m, QuantityStepSize = 1m };
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(asset, OneMinute);
@@ -783,7 +783,7 @@ public class BacktestEngineTests
     [Fact]
     public void Run_QuantityMisalignedStep_OrderRejected()
     {
-        var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 1m, maxOrderQuantity: 1000m, quantityStepSize: 5m);
+        var asset = new EquityAsset { Name = "TEST", Exchange = "TEST", MinOrderQuantity = 1m, MaxOrderQuantity = 1000m, QuantityStepSize = 5m };
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(asset, OneMinute);
@@ -824,7 +824,7 @@ public class BacktestEngineTests
     [Fact]
     public void Run_ValidQuantity_OrderFills()
     {
-        var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 1m, maxOrderQuantity: 100m, quantityStepSize: 5m);
+        var asset = new EquityAsset { Name = "TEST", Exchange = "TEST", MinOrderQuantity = 1m, MaxOrderQuantity = 100m, QuantityStepSize = 5m };
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
         var sub = new DataSubscription(asset, OneMinute);

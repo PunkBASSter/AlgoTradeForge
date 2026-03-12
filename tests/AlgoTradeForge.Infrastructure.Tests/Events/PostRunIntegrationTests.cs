@@ -20,7 +20,7 @@ public class PostRunIntegrationTests : IDisposable
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
-    private static readonly Asset Aapl = Asset.Equity("AAPL", "NASDAQ");
+    private static readonly EquityAsset Aapl = new() { Name = "AAPL", Exchange = "NASDAQ" };
 
     private readonly string _testRoot;
     private readonly string _tradeDbPath;

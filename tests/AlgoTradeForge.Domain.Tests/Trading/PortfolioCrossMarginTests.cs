@@ -5,9 +5,9 @@ namespace AlgoTradeForge.Domain.Tests.Trading;
 
 public class PortfolioCrossMarginTests
 {
-    private static readonly Asset SpotBtc = Asset.Crypto("BTCUSDT", "Binance", 2);
-    private static readonly Asset PerpBtc = Asset.Future("BTCUSDT_PERP", "Binance", multiplier: 1m, tickSize: 0.01m, margin: 0.1m);
-    private static readonly Asset EsMini = Asset.Future("ES", "CME", multiplier: 50m, tickSize: 0.25m, margin: 0.05m);
+    private static readonly CryptoAsset SpotBtc = CryptoAsset.Create("BTCUSDT", "Binance", 2);
+    private static readonly FutureAsset PerpBtc = new() { Name = "BTCUSDT_PERP", Exchange = "Binance", Multiplier = 1m, TickSize = 0.01m, MarginRequirement = 0.1m };
+    private static readonly FutureAsset EsMini = new() { Name = "ES", Exchange = "CME", Multiplier = 50m, TickSize = 0.25m, MarginRequirement = 0.05m };
 
     #region ComputeUsedMargin
 

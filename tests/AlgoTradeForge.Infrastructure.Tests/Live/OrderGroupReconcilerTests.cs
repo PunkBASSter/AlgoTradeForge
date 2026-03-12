@@ -13,7 +13,7 @@ namespace AlgoTradeForge.Infrastructure.Tests.Live;
 
 public class OrderGroupReconcilerTests
 {
-    private static readonly Asset TestAsset = Asset.Crypto("BTCUSDT", "Binance",
+    private static readonly CryptoAsset TestAsset = CryptoAsset.Create("BTCUSDT", "Binance",
         decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1),
         minOrderQuantity: 0.00001m, maxOrderQuantity: 9000m, quantityStepSize: 0.00001m);
 

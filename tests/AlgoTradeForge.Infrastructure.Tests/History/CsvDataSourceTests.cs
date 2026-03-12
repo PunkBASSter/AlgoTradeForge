@@ -14,7 +14,7 @@ public class CsvDataSourceTests
     private static readonly DateTimeOffset End = new(2024, 1, 31, 23, 59, 0, TimeSpan.Zero);
     private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
 
-    private static readonly Asset TestAsset = Asset.Crypto("BTCUSDT", "Binance", 2);
+    private static readonly CryptoAsset TestAsset = CryptoAsset.Create("BTCUSDT", "Binance", 2);
 
     private readonly IInt64BarLoader _loader = Substitute.For<IInt64BarLoader>();
     private readonly IOptions<CandleStorageOptions> _options =

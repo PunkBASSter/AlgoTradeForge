@@ -83,7 +83,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         _connector = new BinanceLiveConnector("testnet-e2e", accountConfig, sharedOptions, validator, logger);
         await _connector.ConnectAsync();
 
-        _asset = Asset.Crypto("BTCUSDT", "Binance", decimalDigits: 2,
+        _asset = CryptoAsset.Create("BTCUSDT", "Binance", decimalDigits: 2,
             minOrderQuantity: 0.00010m, maxOrderQuantity: 9000m, quantityStepSize: 0.00010m);
 
         var tickerPrice = await _connector.GetTickerPriceAsync("BTCUSDT");

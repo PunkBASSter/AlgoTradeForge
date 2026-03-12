@@ -13,7 +13,7 @@ namespace AlgoTradeForge.Application.Tests.Live;
 
 public class GetLiveSessionDataQueryHandlerTests
 {
-    private static readonly Asset TestAsset = Asset.Crypto("BTCUSDT", "Binance", 2);
+    private static readonly CryptoAsset TestAsset = CryptoAsset.Create("BTCUSDT", "Binance", 2);
 
     private static readonly DataSubscription TestSubscription = new(TestAsset, TimeSpan.FromMinutes(1));
 

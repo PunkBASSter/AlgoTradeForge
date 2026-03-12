@@ -13,7 +13,7 @@ public class HistoryRepositoryTests
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
-    private static readonly Asset BtcUsdt = Asset.Crypto("BTCUSDT", "Binance", 2);
+    private static readonly CryptoAsset BtcUsdt = CryptoAsset.Create("BTCUSDT", "Binance", 2);
 
     private readonly IInt64BarLoader _loader;
     private readonly HistoryRepository _repo;

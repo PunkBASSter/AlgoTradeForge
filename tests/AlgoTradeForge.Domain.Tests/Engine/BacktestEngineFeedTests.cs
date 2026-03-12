@@ -16,8 +16,8 @@ public class BacktestEngineFeedTests
     private static readonly long StartMs = Start.ToUnixTimeMilliseconds();
     private static readonly long StepMs = (long)OneMinute.TotalMilliseconds;
 
-    private static readonly Asset PerpAsset = Asset.Future("BTCUSDT_PERP", "Binance",
-        multiplier: 1m, tickSize: 0.01m);
+    private static readonly CryptoPerpetualAsset PerpAsset = CryptoPerpetualAsset.Create("BTCUSDT_PERP", "Binance",
+        decimalDigits: 2);
 
     private readonly IBarMatcher _barMatcher;
     private readonly BacktestEngine _engine;

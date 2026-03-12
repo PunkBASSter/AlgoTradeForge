@@ -8,9 +8,9 @@ public class OrderValidatorTests
 {
     private readonly OrderValidator _validator = new();
 
-    private static Asset TestEquity(decimal shortMarginRate = 1.0m) =>
-        Asset.Equity("TEST", "NYSE", minOrderQuantity: 1m, maxOrderQuantity: 1000m, quantityStepSize: 1m,
-            shortMarginRate: shortMarginRate);
+    private static EquityAsset TestEquity(decimal shortMarginRate = 1.0m) =>
+        new() { Name = "TEST", Exchange = "NYSE", MinOrderQuantity = 1m, MaxOrderQuantity = 1000m, QuantityStepSize = 1m,
+            ShortMarginRate = shortMarginRate };
 
     private static Order CreateOrder(Asset asset, OrderSide side, decimal quantity) =>
         new()
@@ -219,21 +219,21 @@ public class OrderValidatorTests
     [Fact]
     public void DefaultShortMarginRate_Equity_IsOne()
     {
-        var asset = Asset.Equity("X", "X");
+        var asset = new EquityAsset { Name = "X", Exchange = "X" };
         Assert.Equal(1.0m, asset.ShortMarginRate);
     }
 
     [Fact]
     public void DefaultShortMarginRate_Future_IsOne()
     {
-        var asset = Asset.Future("X", "X", multiplier: 1m, tickSize: 0.01m);
+        var asset = new FutureAsset { Name = "X", Exchange = "X", Multiplier = 1m, TickSize = 0.01m };
         Assert.Equal(1.0m, asset.ShortMarginRate);
     }
 
     [Fact]
     public void DefaultShortMarginRate_Crypto_IsOne()
     {
-        var asset = Asset.Crypto("X", "X", decimalDigits: 2);
+        var asset = CryptoAsset.Create("X", "X", decimalDigits: 2);
         Assert.Equal(1.0m, asset.ShortMarginRate);
     }
 
