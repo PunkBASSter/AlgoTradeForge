@@ -1,18 +1,21 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.6.1 → 1.7.0
+Version change: 1.7.0 → 1.7.1
 Modified principles: None
 Added sections: None
 Removed sections: None
 Modified sections:
-  - Backend > Code Style: Updated Int64 money convention to mandate
-    `MoneyConvert.ToLong()` instead of raw `(long)` casts for monetary
-    values, and `ScaleContext` instead of scattered `scaleFactor`
-    calculations at the Application/Infrastructure boundary.
-Trigger: Int64 safety hardening — ~25 raw truncating casts replaced with
-  rounding helpers to eliminate truncation bugs (e.g., 146.67 → 146
-  instead of 147).
+  - Backend > Solution Layout: Updated directory tree to reflect current
+    project structure after branch 018 (extra-data-feeds). Added Domain
+    directories: Assets/, Collections/, Events/, Indicators/, Live/,
+    Optimization/ (with Attributes/, Space/), Strategy/Modules/.
+    Added Application directories: Events/, IO/, Optimization/, Progress/,
+    Strategies/. Added Infrastructure directories: Events/, Persistence/,
+    Plugins/. Added test directories: Events/, History/, Indicators/,
+    Live/, Optimization/, Reporting/, Strategy/. Added Application.Tests.
+Trigger: Solution Layout was stale — missing ~15 directories added across
+  branches 003–018.
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible
   - .specify/templates/spec-template.md ✅ compatible
@@ -268,20 +271,37 @@ AlgoTradeForge/
 ├── AlgoTradeForge.slnx         # Solution file (XML format)
 ├── src/
 │   ├── AlgoTradeForge.Domain/          # Domain models, interfaces, business logic
-│   │   ├── Engine/                     # Backtest engine, bar matching
-│   │   ├── History/                    # Data sources, bars, time series
+│   │   ├── Assets/                     # Asset hierarchy + settlement interfaces
+│   │   ├── Collections/               # RingBuffer and data structures
+│   │   ├── Engine/                     # BacktestEngine, OrderValidator, FeedContext
+│   │   ├── Events/                    # IEventBus, backtest event types
+│   │   ├── History/                    # Data sources, bars, time series, FeedSeries
 │   │   │   └── Metadata/              # Bar and sample metadata
+│   │   ├── Indicators/                # Technical indicators (ATR, DeltaZigZag)
+│   │   ├── Live/                      # Live connector interfaces
+│   │   ├── Optimization/             # Optimization space descriptors
+│   │   │   ├── Attributes/           # [Optimizable], ParamUnit, [StrategyKey]
+│   │   │   └── Space/                # ParameterAxis, ResolvedAxis
 │   │   ├── Reporting/                  # Performance metrics
 │   │   ├── Strategy/                   # Strategy interfaces and base types
-│   │   └── Trading/                    # Orders, fills, positions, portfolio
+│   │   │   └── Modules/              # Pluggable strategy modules
+│   │   └── Trading/                    # Orders, fills, positions, settlement
 │   ├── AlgoTradeForge.Application/     # Use cases (CQRS commands/queries)
 │   │   ├── Abstractions/              # ICommand, IQuery, handler interfaces
 │   │   ├── Backtests/                 # RunBacktest command + handler + DTOs
 │   │   ├── CandleIngestion/           # IInt64BarLoader interface
-│   │   └── Repositories/             # Repository interfaces
+│   │   ├── Events/                    # EventBus impl, sinks, post-run pipeline
+│   │   ├── IO/                        # IFileStorage
+│   │   ├── Optimization/             # Optimization orchestration
+│   │   ├── Progress/                  # RunProgressCache, cancellation registry
+│   │   ├── Repositories/             # Repository interfaces
+│   │   └── Strategies/               # Strategy listing queries
 │   ├── AlgoTradeForge.Infrastructure/  # Data access, external services
 │   │   ├── CandleIngestion/           # CsvInt64BarLoader (IInt64BarLoader impl)
-│   │   └── History/                   # History data context
+│   │   ├── Events/                    # Event infrastructure
+│   │   ├── History/                   # CsvDataSource, HistoryRepository
+│   │   ├── Persistence/              # SQLite repositories
+│   │   └── Plugins/                  # Plugin loader
 │   ├── AlgoTradeForge.CandleIngestor/ # Worker service (see note below)
 │   │   ├── BinanceAdapter.cs          # Binance API adapter
 │   │   ├── CsvCandleWriter.cs         # CSV partition writer
@@ -294,9 +314,18 @@ AlgoTradeForge/
 │       └── Endpoints/                 # Endpoint definitions
 ├── tests/
 │   ├── AlgoTradeForge.Domain.Tests/   # Domain unit tests (xUnit + NSubstitute)
-│   │   ├── Engine/                    # BacktestEngine, BarMatcher tests
-│   │   ├── Trading/                   # Portfolio, Position tests
+│   │   ├── Engine/                    # BacktestEngine, BarMatcher, OrderValidator
+│   │   ├── Events/                    # Event bus and emission tests
+│   │   ├── History/                   # FeedSeries, data source tests
+│   │   ├── Indicators/               # Indicator tests
+│   │   ├── Live/                      # Live connector tests
+│   │   ├── Optimization/             # Optimization space tests
+│   │   ├── Reporting/                # Metrics tests
+│   │   ├── Strategy/                 # Strategy + module tests
+│   │   ├── Trading/                   # Portfolio, Position, Settlement tests
 │   │   └── TestUtilities/             # Shared test data factories
+│   ├── AlgoTradeForge.Application.Tests/ # Application layer tests
+│   │   └── TestUtilities/
 │   └── AlgoTradeForge.Infrastructure.Tests/ # Infrastructure + CandleIngestor tests
 │       └── CandleIngestion/           # CsvInt64BarLoader, CsvCandleWriter,
 │                                      # BinanceAdapter tests
@@ -431,4 +460,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.7.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-03-07
+**Version**: 1.7.1 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-03-13

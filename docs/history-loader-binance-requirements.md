@@ -128,22 +128,43 @@ These endpoints are on the `/futures/data/` path and share a hard **30-day histo
 
 ### 3.1 Design Principles
 
-- **Flat CSV files** — consistent with existing CandleIngestor OHLCV pipeline
-- **Monthly partitions** — one file per symbol per month per metric type, matching existing directory structure
+- **Flat CSV files** — same format family as existing CandleIngestor OHLCV pipeline, but with a different directory layout and timestamp format (see below)
+- **Monthly partitions** — one file per symbol per month per metric type
 - **Timeframe-qualified filenames** — files include the collection resolution in the name (`{YYYY-MM}_{interval}.csv`) when the metric is resolution-dependent. Event-based or fixed-schedule metrics (funding rate, liquidations) omit the suffix since they have no configurable resolution. Uses Binance interval notation: `1m`, `5m`, `15m`, `1h`, `1d`, etc.
-- **Integer arithmetic** — all decimal values multiplied by a fixed precision multiplier before storage, consistent with `Int64IndicatorBase` pattern
-- **UTC timestamps** — millisecond epoch, stored as `int64`
+- **Candle data: int64 arithmetic** — OHLCV candle values use int64 with a precision multiplier defined in `feeds.json`, consistent with existing `Int64Bar` pipeline
+- **Non-candle feeds: double precision** — all auxiliary data feeds (funding rate, open interest, ratios, taker volume, liquidations, orderbook-agg) are stored as `double` in CSV. These are aggregated metrics and signals where money-exact precision is unnecessary, and `double` matches the runtime `FeedSeries.Columns` (`double[][]`) representation directly — no scaling/descaling overhead on load
+- **Schema file per asset** — each `{symbol}[_{type}]/` directory contains a `feeds.json` file describing all available data feeds, their columns, intervals, and auto-apply configuration. Deserialized into existing `FeedMetadata` class (`Domain/History/FeedMetadata.cs`) and used to build `DataFeedSchema` + `BacktestFeedContext` registrations
+- **UTC timestamps** — millisecond epoch, stored as `int64` (in all feed types including double-valued feeds)
 
-### 3.2 Directory Structure
+### 3.2 Differences from Existing CandleIngestor Storage
+
+The existing `CsvInt64BarLoader` / `CsvCandleWriter` pipeline uses a different layout and format. This document defines a **new** storage format for Binance futures data that will require a new loader implementation.
+
+| Aspect | Existing (`CsvInt64BarLoader`) | This spec |
+|--------|-------------------------------|-----------|
+| Root | `%LOCALAPPDATA%/AlgoTradeForge/Candles` | `History/` (configurable) |
+| Path | `{exchange}/{symbol}/{year}/{YYYY-MM}.csv` | `{exchange}/{symbol}[_{type}]/{feed_name}/{YYYY-MM}[_{interval}].csv` |
+| Timestamp col | `Timestamp` — ISO 8601 string (`2025-01-01T00:00:00+00:00`) | `ts` — int64 epoch ms |
+| Year subfolder | Yes (`/{year}/`) | No — flat under feed directory |
+| Interval in path | No | Yes — `_{interval}` suffix on filename |
+| CSV header | `Timestamp,Open,High,Low,Close,Volume` | `ts,o,h,l,c,vol` |
+
+The existing `CsvInt64BarLoader` (`Infrastructure/CandleIngestion/CsvInt64BarLoader.cs`) will continue to serve spot candle data. A new loader will implement `IInt64BarLoader` for the futures path layout, or the existing loader will be extended to support both formats.
+
+### 3.3 Directory Structure
 
 ```
 History/
   binance/
     BTCUSDT_fut/
+      feeds.json                  # Schema file — describes all feeds for this asset
       candles/
-        2024-01_1m.csv          # M1 collection
+        2024-01_1m.csv          # M1 collection — standard OHLCV
         2024-01_1d.csv          # D1 collection
         2024-02_1m.csv
+      candle-ext/
+        2024-01_1m.csv          # Extended kline fields (q_vol, trades, taker volumes)
+        2024-01_1d.csv
       mark-price/
         2024-01_1h.csv          # H1 collection
       funding-rate/
@@ -162,9 +183,9 @@ History/
         2024-01.csv             # No suffix — raw events
       orderbook-agg/
         2024-01_1m.csv          # 1m snapshot collection
-    BTCUSDT_spot/
+    BTCUSDT/
       candles/
-        2024-01_1m.csv
+        2024-01_1m.csv          # Spot — no type suffix
     ETHUSDT_fut/
       candles/
         2024-01_1m.csv
@@ -173,110 +194,185 @@ History/
       ...
 ```
 
-**Path pattern**: `History/{exchange}/{symbol}_{type}/{feed_name}/{YYYY-MM}[_{interval}].csv`
+**Path pattern**: `History/{exchange}/{symbol}[_{type}]/{feed_name}/{YYYY-MM}[_{interval}].csv`
 
 Where:
 - `{exchange}` — lowercase exchange name (e.g., `binance`)
-- `{symbol}_{type}` — trading pair + market type suffix: `_spot`, `_fut` (perpetual futures)
+- `{symbol}[_{type}]` — trading pair with optional market type suffix. No suffix = spot (e.g., `BTCUSDT`). `_fut` = perpetual futures (e.g., `BTCUSDT_fut`)
 - `{feed_name}` — data series name (e.g., `candles`, `open-interest`, `funding-rate`)
 - `[_{interval}]` — optional timeframe suffix, present only for resolution-dependent feeds
 
-### 3.3 CSV Schemas
+### 3.4 Schema File (`feeds.json`)
 
-All schemas use header rows. Decimal precision multipliers are documented per column.
+Each `{symbol}[_{type}]/` directory contains a `feeds.json` describing candle properties and all auxiliary data feeds. The `feeds` section maps to the existing `FeedMetadata.Feeds` dictionary (`Domain/History/FeedMetadata.cs` → `Dictionary<string, FeedDefinition>`). The top-level `candles` section is new and will require extending `FeedMetadata` with a `Candles` property (or a separate `CandleConfig` class). Used to build `DataFeedSchema` + `BacktestFeedContext` registrations at backtest startup.
 
-#### Futures Klines (file: `{YYYY-MM}_1m.csv` / `{YYYY-MM}_1d.csv`)
+Example for `BTCUSDT_fut/feeds.json`:
+
+```json
+{
+  "candles": {
+    "multiplier": 1e8,
+    "intervals": ["1m", "1d"]
+  },
+  "feeds": {
+    "candle-ext": {
+      "interval": "1m",
+      "columns": ["q_vol", "trades", "taker_buy_vol", "taker_buy_q_vol"]
+    },
+    "funding-rate": {
+      "interval": "",
+      "columns": ["rate", "mark_price"],
+      "autoApply": {
+        "type": "FundingRate",
+        "rateColumn": "rate"
+      }
+    },
+    "open-interest": {
+      "interval": "5m",
+      "columns": ["oi", "oi_usd"]
+    },
+    "ls-ratio-global": {
+      "interval": "15m",
+      "columns": ["long_pct", "short_pct", "ratio"]
+    },
+    "ls-ratio-top-accounts": {
+      "interval": "15m",
+      "columns": ["long_pct", "short_pct", "ratio"]
+    },
+    "ls-ratio-top-positions": {
+      "interval": "1h",
+      "columns": ["long_pct", "short_pct", "ratio"]
+    },
+    "taker-volume": {
+      "interval": "15m",
+      "columns": ["buy_vol_usd", "sell_vol_usd", "ratio"]
+    },
+    "liquidations": {
+      "interval": "",
+      "columns": ["side", "price", "qty", "notional_usd"]
+    },
+    "mark-price": {
+      "interval": "1h",
+      "columns": ["o", "h", "l", "c"]
+    },
+    "orderbook-agg": {
+      "interval": "1m",
+      "columns": ["mid", "spread_bps", "bid_02", "ask_02", "bid_05", "ask_05", "bid_10", "ask_10", "bid_20", "ask_20", "imb_02", "imb_05", "imb_10"]
+    }
+  }
+}
+```
+
+The top-level `candles` object defines the int64 precision multiplier and which intervals are collected. The `feeds` object describes all auxiliary data feeds: each key maps to a subdirectory name containing CSV files, `columns` lists non-timestamp columns, and `interval` is empty for event-based feeds (funding rate, liquidations).
+
+### 3.5 CSV Schemas
+
+All schemas use header rows. Candle data uses int64 with the precision multiplier from `feeds.json` (matching `Int64Bar` pipeline). All other feeds use `double` in natural units (matching `FeedSeries.Columns` runtime format — no conversion on load).
+
+#### Candles (file: `{YYYY-MM}_1m.csv` / `{YYYY-MM}_1d.csv`) — int64
+
+Standard OHLCV, consistent with existing `Int64Bar` / `CsvInt64BarLoader` pipeline. Precision multiplier is defined in `feeds.json` (not hardcoded per column).
 
 ```
-ts,o,h,l,c,vol,q_vol,trades,taker_buy_vol,taker_buy_q_vol
+ts,o,h,l,c,vol
 ```
 
-| Column | Type | Multiplier | Description |
-|--------|------|-----------|-------------|
-| ts | int64 | — | Open time, epoch ms |
-| o | int64 | 1e8 | Open price |
-| h | int64 | 1e8 | High price |
-| l | int64 | 1e8 | Low price |
-| c | int64 | 1e8 | Close price |
-| vol | int64 | 1e8 | Base asset volume |
-| q_vol | int64 | 1e8 | Quote asset volume (USD) |
-| trades | int32 | — | Number of trades |
-| taker_buy_vol | int64 | 1e8 | Taker buy base volume |
-| taker_buy_q_vol | int64 | 1e8 | Taker buy quote volume (USD) |
+| Column | Type | Description |
+|--------|------|-------------|
+| ts | int64 | Open time, epoch ms |
+| o | int64 | Price × multiplier |
+| h | int64 | Price × multiplier |
+| l | int64 | Price × multiplier |
+| c | int64 | Price × multiplier |
+| vol | int64 | Volume × multiplier |
 
-#### Funding Rate (file: `{YYYY-MM}.csv` — no interval suffix)
+#### Candle Extended Data (feed: `candle-ext`, file: `{YYYY-MM}_1m.csv` / `{YYYY-MM}_1d.csv`) — double
+
+Additional per-candle fields from the Binance futures klines endpoint, stored as a separate auxiliary feed. Timestamps are aligned 1:1 with candle data. Supplied to strategy via `IFeedContext` as `FeedSeries`.
+
+```
+ts,q_vol,trades,taker_buy_vol,taker_buy_q_vol
+```
+
+| Column | Type | Description |
+|--------|------|-------------|
+| ts | int64 | Open time, epoch ms (same as candle ts) |
+| q_vol | double | Quote asset volume (USD) |
+| trades | double | Number of trades |
+| taker_buy_vol | double | Taker buy base volume |
+| taker_buy_q_vol | double | Taker buy quote volume (USD) |
+
+#### Funding Rate (file: `{YYYY-MM}.csv` — no interval suffix) — double
 
 ```
 ts,rate,mark_price
 ```
 
-| Column | Type | Multiplier | Description |
-|--------|------|-----------|-------------|
-| ts | int64 | — | Funding timestamp, epoch ms |
-| rate | int64 | 1e10 | Funding rate (e.g., 0.0001 → 1000000) |
-| mark_price | int64 | 1e8 | Mark price at funding time |
+| Column | Type | Description |
+|--------|------|-------------|
+| ts | int64 | Funding timestamp, epoch ms |
+| rate | double | Funding rate in natural units (e.g., 0.0001 = 0.01%) |
+| mark_price | double | Mark price at funding time (USD) |
 
-Note: 1e10 for rate because typical values are 4-6 decimal places (0.000100) and we need to preserve precision for small negative rates.
-
-#### Open Interest (file: `{YYYY-MM}_5m.csv`)
+#### Open Interest (file: `{YYYY-MM}_5m.csv`) — double
 
 ```
 ts,oi,oi_usd
 ```
 
-| Column | Type | Multiplier | Description |
-|--------|------|-----------|-------------|
-| ts | int64 | — | Timestamp, epoch ms |
-| oi | int64 | 1e8 | Open interest in contracts (base asset) |
-| oi_usd | int64 | 1e2 | Open interest value in USD (cents) |
+| Column | Type | Description |
+|--------|------|-------------|
+| ts | int64 | Timestamp, epoch ms |
+| oi | double | Open interest in contracts (base asset) |
+| oi_usd | double | Open interest value (USD) |
 
-#### Long/Short Ratios (file: `{YYYY-MM}_15m.csv` / `{YYYY-MM}_1h.csv` — all three ratio types share same schema)
+#### Long/Short Ratios (file: `{YYYY-MM}_15m.csv` / `{YYYY-MM}_1h.csv` — all three ratio types share same schema) — double
 
 ```
 ts,long_pct,short_pct,ratio
 ```
 
-| Column | Type | Multiplier | Description |
-|--------|------|-----------|-------------|
-| ts | int64 | — | Timestamp, epoch ms |
-| long_pct | int32 | 1e4 | Long percentage (0.5482 → 5482) |
-| short_pct | int32 | 1e4 | Short percentage |
-| ratio | int32 | 1e4 | Long/short ratio |
+| Column | Type | Description |
+|--------|------|-------------|
+| ts | int64 | Timestamp, epoch ms |
+| long_pct | double | Long percentage (e.g., 0.5482 = 54.82%) |
+| short_pct | double | Short percentage |
+| ratio | double | Long/short ratio |
 
-#### Taker Buy/Sell Volume (file: `{YYYY-MM}_15m.csv`)
+#### Taker Buy/Sell Volume (file: `{YYYY-MM}_15m.csv`) — double
 
 ```
 ts,buy_vol_usd,sell_vol_usd,ratio
 ```
 
-| Column | Type | Multiplier | Description |
-|--------|------|-----------|-------------|
-| ts | int64 | — | Timestamp, epoch ms |
-| buy_vol_usd | int64 | 1e2 | Taker buy volume in USD (cents) |
-| sell_vol_usd | int64 | 1e2 | Taker sell volume in USD (cents) |
-| ratio | int32 | 1e4 | Buy/sell ratio |
+| Column | Type | Description |
+|--------|------|-------------|
+| ts | int64 | Timestamp, epoch ms |
+| buy_vol_usd | double | Taker buy volume (USD) |
+| sell_vol_usd | double | Taker sell volume (USD) |
+| ratio | double | Buy/sell ratio |
 
-#### Liquidations (file: `{YYYY-MM}.csv` — no interval suffix, raw events)
+#### Liquidations (file: `{YYYY-MM}.csv` — no interval suffix, raw events) — double
 
 ```
 ts,side,price,qty,notional_usd
 ```
 
-| Column | Type | Multiplier | Description |
-|--------|------|-----------|-------------|
-| ts | int64 | — | Liquidation timestamp, epoch ms |
-| side | int8 | — | 1 = long liquidated (forced sell), -1 = short liquidated (forced buy) |
-| price | int64 | 1e8 | Average fill price |
-| qty | int64 | 1e8 | Quantity in base asset |
-| notional_usd | int64 | 1e2 | USD value (cents) |
+| Column | Type | Description |
+|--------|------|-------------|
+| ts | int64 | Liquidation timestamp, epoch ms |
+| side | double | 1.0 = long liquidated (forced sell), -1.0 = short liquidated (forced buy) |
+| price | double | Average fill price (USD) |
+| qty | double | Quantity in base asset |
+| notional_usd | double | USD notional value |
 
-#### Aggregated Order Book (file: `{YYYY-MM}_1m.csv` — see Section 4)
+#### Aggregated Order Book (file: `{YYYY-MM}_1m.csv` — see Section 4) — double
 
 ```
-ts,bid_depth_02,ask_depth_02,bid_depth_05,ask_depth_05,bid_depth_10,ask_depth_10,bid_depth_20,ask_depth_20,spread,mid_price,imbalance_02,imbalance_05
+ts,mid,spread_bps,bid_02,ask_02,bid_05,ask_05,bid_10,ask_10,bid_20,ask_20,imb_02,imb_05,imb_10
 ```
 
-Schema details in Section 4.3.
+All columns except `ts` are `double`. Schema details in Section 4.3.
 
 ---
 
@@ -338,22 +434,22 @@ Append one row per snapshot to the `orderbook-agg` CSV:
 ts,mid,spread_bps,bid_02,ask_02,bid_05,ask_05,bid_10,ask_10,bid_20,ask_20,imb_02,imb_05,imb_10
 ```
 
-| Column | Type | Multiplier | Description |
-|--------|------|-----------|-------------|
-| ts | int64 | — | Snapshot timestamp, epoch ms |
-| mid | int64 | 1e8 | Mid-price |
-| spread_bps | int32 | 1e2 | Spread in basis points × 100 |
-| bid_02 | int64 | 1e2 | Total bid depth within 0.2% of mid (USD cents) |
-| ask_02 | int64 | 1e2 | Total ask depth within 0.2% of mid (USD cents) |
-| bid_05 | int64 | 1e2 | Bid depth within 0.5% |
-| ask_05 | int64 | 1e2 | Ask depth within 0.5% |
-| bid_10 | int64 | 1e2 | Bid depth within 1.0% |
-| ask_10 | int64 | 1e2 | Ask depth within 1.0% |
-| bid_20 | int64 | 1e2 | Bid depth within 2.0% |
-| ask_20 | int64 | 1e2 | Ask depth within 2.0% |
-| imb_02 | int32 | 1e4 | Book imbalance at 0.2% band |
-| imb_05 | int32 | 1e4 | Book imbalance at 0.5% band |
-| imb_10 | int32 | 1e4 | Book imbalance at 1.0% band |
+| Column | Type | Description |
+|--------|------|-------------|
+| ts | int64 | Snapshot timestamp, epoch ms |
+| mid | double | Mid-price (USD) |
+| spread_bps | double | Spread in basis points |
+| bid_02 | double | Total bid depth within 0.2% of mid (USD) |
+| ask_02 | double | Total ask depth within 0.2% of mid (USD) |
+| bid_05 | double | Bid depth within 0.5% (USD) |
+| ask_05 | double | Ask depth within 0.5% (USD) |
+| bid_10 | double | Bid depth within 1.0% (USD) |
+| ask_10 | double | Ask depth within 1.0% (USD) |
+| bid_20 | double | Bid depth within 2.0% (USD) |
+| ask_20 | double | Ask depth within 2.0% (USD) |
+| imb_02 | double | Book imbalance at 0.2% band (-1.0 to +1.0) |
+| imb_05 | double | Book imbalance at 0.5% band (-1.0 to +1.0) |
+| imb_10 | double | Book imbalance at 1.0% band (-1.0 to +1.0) |
 
 Storage cost: 50 symbols × 1440 rows/day × ~140 bytes/row ≈ **10 MB/day** uncompressed. Trivial.
 
@@ -450,8 +546,9 @@ Note: M1 klines and order book depth dominate the budget. If running tight on ra
 
 | Metric | Backfill Source | Depth | Estimated Time |
 |--------|----------------|-------|---------------|
-| Klines (M1) | `/fapi/v1/klines` | Full (2019+) | ~8 hours for 50 symbols × 5 years |
 | Klines (D1) | `/fapi/v1/klines` | Full (2019+) | ~15 minutes |
+| Klines (H1) | `/fapi/v1/klines` | Full (2019+) | ~6 hours? |
+| Klines (M1) | `/fapi/v1/klines` | Full (2019+) | ~8 hours for 50 symbols × 5 years |
 | Funding Rate | `/fapi/v1/fundingRate` | Full (2019+) | ~10 minutes for 50 symbols |
 | Mark Price | `/fapi/v1/markPriceKlines` | Full (2019+) | ~4 hours at H1 resolution |
 | Open Interest | `/futures/data/openInterestHist` | 30 days only | ~5 minutes (initial seed) |
