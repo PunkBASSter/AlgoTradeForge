@@ -5,6 +5,7 @@ namespace AlgoTradeForge.Domain;
 
 public sealed record EquityAsset : Asset, ICashSettledAsset
 {
+    public override decimal Multiplier { get; init; } = 1m;
     public override SettlementMode Settlement => SettlementMode.CashAndCarry;
     public decimal ShortMarginRate { get; init; } = 1.0m;
 

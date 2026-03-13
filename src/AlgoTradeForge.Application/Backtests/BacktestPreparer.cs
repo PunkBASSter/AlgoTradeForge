@@ -48,7 +48,7 @@ public sealed class BacktestPreparer(
 
         if (strategy.DataSubscriptions.Count == 0)
         {
-            var timeFrame = command.TimeFrame ?? asset.SmallestInterval;
+            var timeFrame = command.TimeFrame ?? TimeSpan.FromMinutes(1);
             strategy.DataSubscriptions.Add(new DataSubscription(asset, timeFrame));
         }
 

@@ -19,6 +19,5 @@ public static class TestAssets
     };
 
     public static CryptoAsset BtcUsdt => CryptoAsset.Create("BTCUSDT", "Binance", decimalDigits: 2,
-        historyStart: new DateOnly(2024, 1, 1),
         minOrderQuantity: 0.00001m, maxOrderQuantity: 9000m, quantityStepSize: 0.00001m);
 }

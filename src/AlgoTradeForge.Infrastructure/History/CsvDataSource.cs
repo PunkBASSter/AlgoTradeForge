@@ -17,23 +17,22 @@ public sealed class CsvDataSource(
         var to = query.EndTime
             ?? throw new ArgumentException("EndTime is required.", nameof(query));
 
-        var smallestInterval = asset.SmallestInterval;
+        var sourceInterval = storageOptions.Value.SourceInterval;
 
-        if (query.TimeFrame < smallestInterval)
+        if (query.TimeFrame < sourceInterval)
             throw new ArgumentException(
-                $"Requested timeframe ({query.TimeFrame}) is smaller than the asset's smallest interval ({smallestInterval}).",
+                $"Requested timeframe ({query.TimeFrame}) is smaller than the source interval ({sourceInterval}).",
                 nameof(query));
 
         var raw = barLoader.Load(
             storageOptions.Value.DataRoot,
             asset.Exchange,
             asset.Name,
-            asset.DecimalDigits,
             DateOnly.FromDateTime(from.UtcDateTime),
             DateOnly.FromDateTime(to.UtcDateTime),
-            smallestInterval);
+            sourceInterval);
 
-        if (query.TimeFrame > smallestInterval)
+        if (query.TimeFrame > sourceInterval)
             return raw.Resample(query.TimeFrame);
 
         return raw;

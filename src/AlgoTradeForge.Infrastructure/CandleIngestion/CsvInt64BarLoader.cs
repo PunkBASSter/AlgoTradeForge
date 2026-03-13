@@ -10,7 +10,6 @@ public sealed class CsvInt64BarLoader(IFileStorage fileStorage) : IInt64BarLoade
         string dataRoot,
         string exchange,
         string symbol,
-        int decimalDigits,
         DateOnly from,
         DateOnly to,
         TimeSpan interval)

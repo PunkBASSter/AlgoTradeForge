@@ -36,7 +36,7 @@ public class CsvDataSourceTests
     {
         _loader.Load(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<int>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
             Arg.Any<TimeSpan>())
             .Returns(series);
     }

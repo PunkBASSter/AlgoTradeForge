@@ -9,4 +9,5 @@ public sealed record CandleStorageOptions
             "Candles");
 
     public string DataRoot { get; init; } = DefaultDataRoot;
+    public TimeSpan SourceInterval { get; init; } = TimeSpan.FromMinutes(1);
 }

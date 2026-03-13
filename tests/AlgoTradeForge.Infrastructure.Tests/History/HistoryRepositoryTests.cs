@@ -40,7 +40,7 @@ public class HistoryRepositoryTests
     {
         var sub = new DataSubscription(BtcUsdt, OneMinute);
         var raw = MakeMinuteSeries(10);
-        _loader.Load("/data", "Binance", "BTCUSDT", 2,
+        _loader.Load("/data", "Binance", "BTCUSDT",
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), OneMinute).Returns(raw);
 
         var result = _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
@@ -53,7 +53,7 @@ public class HistoryRepositoryTests
     {
         var sub = new DataSubscription(BtcUsdt, TimeSpan.FromMinutes(5));
         var raw = MakeMinuteSeries(10);
-        _loader.Load("/data", "Binance", "BTCUSDT", 2,
+        _loader.Load("/data", "Binance", "BTCUSDT",
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), OneMinute).Returns(raw);
 
         var result = _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
@@ -75,7 +75,7 @@ public class HistoryRepositoryTests
     {
         var sub = new DataSubscription(BtcUsdt, OneMinute);
         var raw = new TimeSeries<Int64Bar>();
-        _loader.Load("/data", "Binance", "BTCUSDT", 2,
+        _loader.Load("/data", "Binance", "BTCUSDT",
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), OneMinute).Returns(raw);
 
         var result = _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
@@ -95,7 +95,7 @@ public class HistoryRepositoryTests
         series.Add(new Int64Bar(ms + 2 * step, 108, 120, 85, 112, 1500));
         series.Add(new Int64Bar(ms + 3 * step, 112, 118, 92, 110, 1800));
         series.Add(new Int64Bar(ms + 4 * step, 110, 125, 88, 115, 2200));
-        _loader.Load("/data", "Binance", "BTCUSDT", 2,
+        _loader.Load("/data", "Binance", "BTCUSDT",
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), OneMinute).Returns(series);
 
         var result = _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));

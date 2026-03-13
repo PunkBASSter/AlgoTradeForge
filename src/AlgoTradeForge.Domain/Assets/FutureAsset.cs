@@ -5,6 +5,7 @@ namespace AlgoTradeForge.Domain;
 
 public sealed record FutureAsset : Asset, IMarginAsset
 {
+    public override decimal Multiplier { get; init; }
     public override SettlementMode Settlement => SettlementMode.Margin;
     public decimal? MarginRequirement { get; init; }
 

@@ -7,9 +7,9 @@ public sealed class InMemoryAssetRepository : IAssetRepository
 {
     private static readonly Dictionary<string, Asset> Assets = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["BTCUSDT|Binance"] = CryptoAsset.Create("BTCUSDT", "Binance", decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1),
+        ["BTCUSDT|Binance"] = CryptoAsset.Create("BTCUSDT", "Binance", decimalDigits: 2,
             minOrderQuantity: 0.00001m, maxOrderQuantity: 9000m, quantityStepSize: 0.00001m),
-        ["ETHUSDT|Binance"] = CryptoAsset.Create("ETHUSDT", "Binance", decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1),
+        ["ETHUSDT|Binance"] = CryptoAsset.Create("ETHUSDT", "Binance", decimalDigits: 2,
             minOrderQuantity: 0.0001m, maxOrderQuantity: 9000m, quantityStepSize: 0.0001m),
         ["AAPL|NASDAQ"] = new EquityAsset { Name = "AAPL", Exchange = "NASDAQ" },
         ["MSFT|NASDAQ"] = new EquityAsset { Name = "MSFT", Exchange = "NASDAQ" },

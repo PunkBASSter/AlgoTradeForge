@@ -7,13 +7,8 @@ public abstract record Asset
 {
     public required string Name { get; init; }
     public required string Exchange { get; init; }
-    public decimal Multiplier { get; init; } = 1m;
+    public abstract decimal Multiplier { get; init; }
     public decimal TickSize { get; init; } = 0.01m;
-    public decimal TickValue => TickSize * Multiplier;
-    public string Currency { get; init; } = "USD";
-    public int DecimalDigits { get; init; } = 2;
-    public TimeSpan SmallestInterval { get; init; } = TimeSpan.FromMinutes(1);
-    public DateOnly? HistoryStart { get; init; }
 
     public decimal MinOrderQuantity { get; init; }
     public decimal MaxOrderQuantity { get; init; } = decimal.MaxValue;

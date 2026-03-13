@@ -43,7 +43,7 @@ public class CsvInt64BarLoaderTests : IDisposable
         ]);
 
         var series = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT", 2,
+            _testDataRoot, "Binance", "BTCUSDT",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
             TimeSpan.FromMinutes(1));
 
@@ -68,7 +68,7 @@ public class CsvInt64BarLoaderTests : IDisposable
         ]);
 
         var series = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT", 2,
+            _testDataRoot, "Binance", "BTCUSDT",
             new DateOnly(2024, 12, 1), new DateOnly(2025, 1, 31),
             TimeSpan.FromMinutes(1));
 
@@ -86,7 +86,7 @@ public class CsvInt64BarLoaderTests : IDisposable
         ]);
 
         var series = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT", 2,
+            _testDataRoot, "Binance", "BTCUSDT",
             new DateOnly(2024, 1, 10), new DateOnly(2024, 1, 20),
             TimeSpan.FromMinutes(1));
 
@@ -103,7 +103,7 @@ public class CsvInt64BarLoaderTests : IDisposable
         ]);
 
         var series = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT", 2,
+            _testDataRoot, "Binance", "BTCUSDT",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 2, 28),
             TimeSpan.FromMinutes(1));
 
@@ -114,7 +114,7 @@ public class CsvInt64BarLoaderTests : IDisposable
     public void Load_NoDataInRange_ReturnsEmptySeries()
     {
         var series = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT", 2,
+            _testDataRoot, "Binance", "BTCUSDT",
             new DateOnly(2024, 6, 1), new DateOnly(2024, 6, 30),
             TimeSpan.FromMinutes(1));
 
@@ -130,7 +130,7 @@ public class CsvInt64BarLoaderTests : IDisposable
         ]);
 
         var series = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT", 2,
+            _testDataRoot, "Binance", "BTCUSDT",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
             TimeSpan.FromMinutes(1));
 

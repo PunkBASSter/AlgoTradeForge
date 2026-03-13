@@ -13,7 +13,7 @@ public sealed class HistoryRepository(
     public TimeSeries<Int64Bar> Load(DataSubscription subscription, DateOnly from, DateOnly to)
     {
         var asset = subscription.Asset;
-        var sourceInterval = asset.SmallestInterval;
+        var sourceInterval = storageOptions.Value.SourceInterval;
 
         if (subscription.TimeFrame < sourceInterval)
             throw new ArgumentException(
@@ -24,7 +24,6 @@ public sealed class HistoryRepository(
             storageOptions.Value.DataRoot,
             asset.Exchange,
             asset.Name,
-            asset.DecimalDigits,
             from,
             to,
             sourceInterval);
