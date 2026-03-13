@@ -1,3 +1,5 @@
+using AlgoTradeForge.HistoryLoader.Domain;
+
 namespace AlgoTradeForge.HistoryLoader.Endpoints;
 
 internal sealed record BackfillRequest
@@ -15,4 +17,4 @@ internal sealed record SymbolStatus(string Symbol, string Type, string Exchange,
 
 internal sealed record StatusResponse(List<SymbolStatus> Symbols);
 
-internal sealed record SymbolDetailResponse(string Symbol, string Type, string Exchange, List<State.FeedStatus> Feeds);
+internal sealed record SymbolDetailResponse(string Symbol, string Type, string Exchange, List<FeedStatus> Feeds);

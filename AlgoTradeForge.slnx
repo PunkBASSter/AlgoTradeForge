@@ -8,9 +8,12 @@
   <Project Path="src\AlgoTradeForge.Infrastructure\AlgoTradeForge.Infrastructure.csproj" />
   <Project Path="src\AlgoTradeForge.WebApi\AlgoTradeForge.WebApi.csproj" />
   <Project Path="src\AlgoTradeForge.CandleIngestor\AlgoTradeForge.CandleIngestor.csproj" />
+  <Project Path="src\AlgoTradeForge.HistoryLoader.Domain\AlgoTradeForge.HistoryLoader.Domain.csproj" />
+  <Project Path="src\AlgoTradeForge.HistoryLoader.Application\AlgoTradeForge.HistoryLoader.Application.csproj" />
+  <Project Path="src\AlgoTradeForge.HistoryLoader.Infrastructure\AlgoTradeForge.HistoryLoader.Infrastructure.csproj" />
   <Project Path="src\AlgoTradeForge.HistoryLoader\AlgoTradeForge.HistoryLoader.csproj" />
   <Project Path="tests\AlgoTradeForge.Domain.Tests\AlgoTradeForge.Domain.Tests.csproj" />
   <Project Path="tests\AlgoTradeForge.Application.Tests\AlgoTradeForge.Application.Tests.csproj" />
   <Project Path="tests\AlgoTradeForge.Infrastructure.Tests\AlgoTradeForge.Infrastructure.Tests.csproj" />
-  <Project Path="tests\AlgoTradeForge.HistoryLoader.Tests\AlgoTradeForge.HistoryLoader.Tests.csproj" />
+  <Project Path="src\AlgoTradeForge.HistoryLoader.Tests\AlgoTradeForge.HistoryLoader.Tests.csproj" />
 </Solution>

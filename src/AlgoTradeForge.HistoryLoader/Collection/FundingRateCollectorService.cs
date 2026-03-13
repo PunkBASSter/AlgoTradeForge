@@ -1,3 +1,5 @@
+using AlgoTradeForge.HistoryLoader.Application;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

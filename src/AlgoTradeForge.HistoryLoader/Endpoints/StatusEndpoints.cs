@@ -1,5 +1,7 @@
-using AlgoTradeForge.HistoryLoader.Collection;
-using AlgoTradeForge.HistoryLoader.State;
+using AlgoTradeForge.HistoryLoader.Application;
+using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.Endpoints;
@@ -14,7 +16,9 @@ internal static class StatusEndpoints
         return group;
     }
 
-    private static IResult GetAllStatus(IOptions<HistoryLoaderOptions> options)
+    private static IResult GetAllStatus(
+        IOptions<HistoryLoaderOptions> options,
+        IFeedStatusStore feedStatusStore)
     {
         var config = options.Value;
         var symbols = new List<SymbolStatus>();
@@ -26,7 +30,7 @@ internal static class StatusEndpoints
 
             foreach (var feed in asset.Feeds)
             {
-                var status = FeedStatusManager.Load(assetDir, feed.Name);
+                var status = feedStatusStore.Load(assetDir, feed.Name);
                 var health = status?.Health.ToString() ?? "Unknown";
                 var gapCount = status?.Gaps.Count ?? 0;
 
@@ -49,7 +53,10 @@ internal static class StatusEndpoints
         return Results.Json(new StatusResponse(symbols));
     }
 
-    private static IResult GetSymbolStatus(string symbol, IOptions<HistoryLoaderOptions> options)
+    private static IResult GetSymbolStatus(
+        string symbol,
+        IOptions<HistoryLoaderOptions> options,
+        IFeedStatusStore feedStatusStore)
     {
         var config = options.Value;
 
@@ -69,7 +76,7 @@ internal static class StatusEndpoints
 
         foreach (var feed in asset.Feeds)
         {
-            var status = FeedStatusManager.Load(resolvedAssetDir, feed.Name);
+            var status = feedStatusStore.Load(resolvedAssetDir, feed.Name);
             if (status is not null)
                 feedStatuses.Add(status);
         }

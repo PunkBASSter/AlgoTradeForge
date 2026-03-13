@@ -1,4 +1,5 @@
-using AlgoTradeForge.HistoryLoader.Collection;
+using AlgoTradeForge.HistoryLoader.Application;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.Endpoints;
