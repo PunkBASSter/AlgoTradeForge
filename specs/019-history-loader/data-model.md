@@ -16,10 +16,10 @@ FeedMetadata
 │       ├── RateColumn: string    (e.g., "rate")
 │       └── SignConvention?: string
 └── Candles?: CandleConfig                      (NEW — T015)
-    ├── Multiplier: decimal       (e.g., 100 for 2-decimal assets)
+    ├── ScaleFactor: decimal      (e.g., 100 for 2-decimal assets)
     └── Intervals: string[]       (e.g., ["1m", "1d"])
 ```
-The `CandleConfig` section in `feeds.json` describes the int64 encoding multiplier and which candle intervals are stored. Separate from the `Feeds` dictionary which describes double-valued auxiliary feeds.
+The `CandleConfig` section in `feeds.json` describes the int64 encoding scale factor and which candle intervals are stored. Separate from the `Feeds` dictionary which describes double-valued auxiliary feeds.
 
 ### FeedSeries (`Domain/History/FeedSeries.cs`)
 Column-major `double[][]` with `long[]` timestamps. No changes.
@@ -158,7 +158,7 @@ Implements `IInt64BarLoader`. Reads new format:
 - Path: `{dataRoot}/{exchange}/{assetDir}/candles/{YYYY-MM}_{interval}.csv`
 - Header: `ts,o,h,l,c,vol`
 - Timestamp: `long` epoch ms (parsed with `long.Parse()`)
-- Values: `long` (pre-scaled by multiplier during ingestion)
+- Values: `long` (pre-scaled by scale factor during ingestion)
 
 ### CsvFeedSeriesLoader (`Infrastructure/History/CsvFeedSeriesLoader.cs`)
 

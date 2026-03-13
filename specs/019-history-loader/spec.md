@@ -149,7 +149,7 @@ As a system operator, I want the History Loader to ingest spot OHLCV klines from
 - **FR-009**: System MUST collect mark price klines at 1-hour resolution for all configured symbols.
 - **FR-010**: System MUST store extended kline data (quote volume, trade count, taker buy base/quote volumes) as a separate auxiliary feed alongside OHLCV candles.
 - **FR-011**: System MUST store all data as flat monthly-partitioned CSV files following the directory structure: `{root}/{exchange}/{symbol}[_{type}]/{feed_name}/{YYYY-MM}[_{interval}].csv`.
-- **FR-012**: System MUST use int64-encoded values (with configurable precision multiplier) for OHLCV candle data and double-precision floating point for all auxiliary feeds.
+- **FR-012**: System MUST use int64-encoded values (with configurable precision scale factor) for OHLCV candle data and double-precision floating point for all auxiliary feeds.
 - **FR-013**: System MUST use UTC millisecond epoch timestamps (int64) as the first column in all CSV files.
 - **FR-014**: System MUST generate and maintain a `feeds.json` schema file per asset directory describing all available data feeds, their columns, intervals, and auto-apply configuration.
 - **FR-015**: System MUST support full backfill of Tier 1 data (klines, funding rate, mark price) from contract inception to present.
@@ -168,7 +168,7 @@ As a system operator, I want the History Loader to ingest spot OHLCV klines from
 ### Key Entities
 
 - **Data Feed**: A named series of time-indexed records (e.g., "open-interest", "funding-rate"). Each feed has a fixed set of columns, a collection interval (or event-based), and a storage location.
-- **Feed Schema** (`feeds.json`): Per-asset metadata file describing all available feeds — column names, intervals, precision multiplier for candles, and auto-apply configuration for feeds that affect positions.
+- **Feed Schema** (`feeds.json`): Per-asset metadata file describing all available feeds — column names, intervals, precision scale factor for candles, and auto-apply configuration for feeds that affect positions.
 - **Feed Status**: Per-feed tracking of collection progress — last successful timestamp, list of known data gaps, and collection health.
 - **Asset Configuration**: A configured trading pair with exchange, market type (spot/perpetual), history start date, and list of feeds to collect with their respective intervals and priorities.
 - **Collection Schedule**: Each feed type runs on its own independent timer at its defined interval (5m for OI, 15m for ratios/taker volume, 1h for position ratios/mark price, 4h for liquidations, daily for backfill). All timers coordinate through a shared global rate limiter.

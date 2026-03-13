@@ -20,7 +20,7 @@ public sealed class FeedDefinition
 
 public sealed class CandleConfig
 {
-    public decimal Multiplier { get; init; } = 100m;
+    public decimal ScaleFactor { get; init; } = 100m;
     public string[] Intervals { get; init; } = [];
 }
 

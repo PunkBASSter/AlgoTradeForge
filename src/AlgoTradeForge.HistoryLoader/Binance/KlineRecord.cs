@@ -11,5 +11,3 @@ internal readonly record struct KlineRecord(
     int TradeCount,
     decimal TakerBuyVolume,
     decimal TakerBuyQuoteVolume);
-
-internal readonly record struct FeedRecord(long TimestampMs, double[] Values);

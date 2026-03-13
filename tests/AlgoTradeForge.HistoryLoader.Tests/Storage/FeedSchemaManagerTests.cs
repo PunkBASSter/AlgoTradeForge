@@ -120,7 +120,7 @@ public sealed class FeedSchemaManagerTests : IDisposable
 
         var metadata = ReadFeedsJson(assetDir);
         Assert.NotNull(metadata.Candles);
-        Assert.Equal(100m,    metadata.Candles!.Multiplier);
+        Assert.Equal(100m,    metadata.Candles!.ScaleFactor);
         Assert.Single(metadata.Candles.Intervals);
         Assert.Equal("1h",    metadata.Candles.Intervals[0]);
     }

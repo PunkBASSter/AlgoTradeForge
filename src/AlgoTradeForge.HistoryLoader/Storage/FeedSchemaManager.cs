@@ -53,7 +53,7 @@ internal sealed class FeedSchemaManager
     {
         var existing = Load(assetDir) ?? new FeedMetadata();
 
-        var multiplier = (decimal)Math.Pow(10, decimalDigits);
+        var scaleFactor = (decimal)Math.Pow(10, decimalDigits);
 
         var existingIntervals = existing.Candles?.Intervals ?? [];
         var updatedIntervals  = existingIntervals.Contains(interval)
@@ -65,8 +65,8 @@ internal sealed class FeedSchemaManager
             Feeds   = existing.Feeds,
             Candles = new CandleConfig
             {
-                Multiplier = multiplier,
-                Intervals  = updatedIntervals,
+                ScaleFactor = scaleFactor,
+                Intervals   = updatedIntervals,
             },
         };
 
