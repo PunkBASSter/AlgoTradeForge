@@ -8,6 +8,9 @@ public class CashAndCarrySettlementTests
 {
     private readonly CashAndCarrySettlement _settlement = CashAndCarrySettlement.Instance;
 
+    private static readonly IReadOnlyDictionary<string, long> NoPrices =
+        new Dictionary<string, long>();
+
     #region ComputeCashDelta
 
     [Fact]
@@ -114,7 +117,7 @@ public class CashAndCarrySettlementTests
         var order = CreateOrder(asset, OrderSide.Buy, 10m);
         var portfolio = CreatePortfolio(100_000L);
 
-        var result = _settlement.ValidateSettlement(order, 150L, portfolio, commission: 0L);
+        var result = _settlement.ValidateSettlement(order, 150L, portfolio, commission: 0L, NoPrices);
 
         Assert.Null(result);
     }
@@ -126,7 +129,7 @@ public class CashAndCarrySettlementTests
         var order = CreateOrder(asset, OrderSide.Buy, 1000m);
         var portfolio = CreatePortfolio(100_000L);
 
-        var result = _settlement.ValidateSettlement(order, 150L, portfolio, commission: 0L);
+        var result = _settlement.ValidateSettlement(order, 150L, portfolio, commission: 0L, NoPrices);
 
         Assert.Equal("Insufficient cash", result);
     }
@@ -139,7 +142,7 @@ public class CashAndCarrySettlementTests
         portfolio.Apply(TestFills.BuyAapl(150L, 100m));
         var order = CreateOrder(asset, OrderSide.Sell, 50m);
 
-        var result = _settlement.ValidateSettlement(order, 150L, portfolio, commission: 0L);
+        var result = _settlement.ValidateSettlement(order, 150L, portfolio, commission: 0L, NoPrices);
 
         Assert.Null(result);
     }
@@ -151,7 +154,7 @@ public class CashAndCarrySettlementTests
         var order = CreateOrder(asset, OrderSide.Sell, 1000m);
         var portfolio = CreatePortfolio(100_000L);
 
-        var result = _settlement.ValidateSettlement(order, 150L, portfolio, commission: 0L);
+        var result = _settlement.ValidateSettlement(order, 150L, portfolio, commission: 0L, NoPrices);
 
         Assert.Equal("Insufficient margin for short", result);
     }

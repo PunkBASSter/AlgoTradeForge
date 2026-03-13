@@ -18,5 +18,6 @@ public interface ISettlementCalculator
     /// <summary>
     /// Validates whether a fill can be settled. Returns null if valid, or an error message.
     /// </summary>
-    string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, long commission);
+    string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, long commission,
+        IReadOnlyDictionary<string, long> lastPrices);
 }

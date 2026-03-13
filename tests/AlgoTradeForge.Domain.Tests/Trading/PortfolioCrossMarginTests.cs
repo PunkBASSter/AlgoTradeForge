@@ -114,7 +114,7 @@ public class PortfolioCrossMarginTests
         var portfolio = new Portfolio { InitialCash = 1_000_000L };
         portfolio.Initialize();
 
-        Assert.Equal(1_000_000L, portfolio.AvailableMargin(50_000L));
+        Assert.Equal(1_000_000L, portfolio.AvailableMargin(new Dictionary<string, long>()));
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class PortfolioCrossMarginTests
         // Equity = 999_900 + 1000 = 1_000_900
         // UsedMargin = 1 × 50000 × 1 × 0.1 = 5000
         // AvailableMargin = 1_000_900 - 5000 = 995_900
-        Assert.Equal(995_900L, portfolio.AvailableMargin(51_000L));
+        Assert.Equal(995_900L, portfolio.AvailableMargin(new Dictionary<string, long> { ["BTCUSDT_PERP"] = 51_000L }));
     }
 
     #endregion
@@ -174,7 +174,7 @@ public class PortfolioCrossMarginTests
         // Cash unchanged (margin settlement). At price 48000:
         // UnrealizedPnL = (48000 - 50000) × 2 × 1 = -4000
         // Equity = 1_000_000 + (-4000) = 996_000
-        Assert.Equal(996_000L, portfolio.Equity(48_000L));
+        Assert.Equal(996_000L, portfolio.Equity(new Dictionary<string, long> { ["BTCUSDT_PERP"] = 48_000L }));
     }
 
     #endregion

@@ -246,7 +246,7 @@ public class CryptoFuturesIntegrationTests
     [Fact]
     public void StockFuture_DelegatesToFuture()
     {
-        var asset = FutureAsset.CreateStock("ES", "CME", multiplier: 50m, tickSize: 0.25m, margin: 0.05m);
+        var asset = FutureAsset.Create("ES", "CME", multiplier: 50m, tickSize: 0.25m, margin: 0.05m);
 
         Assert.IsType<FutureAsset>(asset);
         Assert.Equal(SettlementMode.Margin, asset.Settlement);

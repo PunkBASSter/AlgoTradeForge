@@ -31,6 +31,20 @@ public class FeedSeriesTests
     }
 
     [Fact]
+    public void Constructor_MismatchedLengthAtSecondColumn_Throws()
+    {
+        var timestamps = new long[] { 100, 200, 300 };
+        var columns = new[]
+        {
+            new double[] { 1.0, 2.0, 3.0 },  // correct length
+            new double[] { 4.0, 5.0 },         // wrong length
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => new FeedSeries(timestamps, columns));
+        Assert.Contains("Column 1", ex.Message);
+    }
+
+    [Fact]
     public void Constructor_EmptyColumns_AllowedWithEmptyTimestamps()
     {
         var series = new FeedSeries([], []);

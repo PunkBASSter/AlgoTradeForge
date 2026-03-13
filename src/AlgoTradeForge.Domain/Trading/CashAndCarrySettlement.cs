@@ -16,7 +16,8 @@ public sealed class CashAndCarrySettlement : ISettlementCalculator
     public long ComputePositionValue(Position position, long currentPrice) =>
         MoneyConvert.ToLong(position.Quantity * currentPrice * position.Asset.Multiplier);
 
-    public string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, long commission)
+    public string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, long commission,
+        IReadOnlyDictionary<string, long> lastPrices)
     {
         if (order.Side == OrderSide.Buy)
         {
@@ -34,7 +35,7 @@ public sealed class CashAndCarrySettlement : ISettlementCalculator
                 var shortRate = (order.Asset as ICashSettledAsset)?.ShortMarginRate ?? 1.0m;
                 var marginRequired = MoneyConvert.ToLong(
                     shortQuantity * fillPrice * order.Asset.Multiplier * shortRate) + commission;
-                if (marginRequired > portfolio.Cash)
+                if (marginRequired > portfolio.AvailableMargin(lastPrices))
                     return "Insufficient margin for short";
             }
         }

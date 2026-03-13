@@ -16,8 +16,10 @@ public sealed class OrderValidator : IOrderValidator
         return null;
     }
 
-    public string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, BacktestOptions options)
+    public string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, BacktestOptions options,
+        IReadOnlyDictionary<string, long> lastPrices)
     {
-        return order.Asset.GetSettlementCalculator().ValidateSettlement(order, fillPrice, portfolio, options.CommissionPerTrade);
+        return order.Asset.GetSettlementCalculator().ValidateSettlement(order, fillPrice, portfolio,
+            options.CommissionPerTrade, lastPrices);
     }
 }

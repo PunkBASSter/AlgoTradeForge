@@ -14,12 +14,13 @@ public sealed class MarginSettlement : ISettlementCalculator
     public long ComputePositionValue(Position position, long currentPrice) =>
         position.UnrealizedPnl(currentPrice);
 
-    public string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, long commission)
+    public string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, long commission,
+        IReadOnlyDictionary<string, long> lastPrices)
     {
         var marginRate = (order.Asset as IMarginAsset)?.MarginRequirement ?? 1.0m;
         var marginRequired = MoneyConvert.ToLong(
             fillPrice * order.Quantity * order.Asset.Multiplier * marginRate) + commission;
-        if (marginRequired > portfolio.Cash)
+        if (marginRequired > portfolio.AvailableMargin(lastPrices))
             return "Insufficient margin";
 
         return null;

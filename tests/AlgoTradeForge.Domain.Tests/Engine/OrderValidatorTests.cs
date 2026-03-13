@@ -25,6 +25,9 @@ public class OrderValidatorTests
             Quantity = quantity
         };
 
+    private static readonly IReadOnlyDictionary<string, long> NoPrices =
+        new Dictionary<string, long>();
+
     private static BacktestOptions CreateOptions(long initialCash = 100_000L, long commission = 0L) =>
         new()
         {
@@ -95,7 +98,7 @@ public class OrderValidatorTests
         var portfolio = new Portfolio { InitialCash = 100_000L };
         portfolio.Initialize();
 
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Null(result);
     }
@@ -108,7 +111,7 @@ public class OrderValidatorTests
         var portfolio = new Portfolio { InitialCash = 10_000L };
         portfolio.Initialize();
 
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Equal("Insufficient cash", result);
     }
@@ -123,7 +126,7 @@ public class OrderValidatorTests
         portfolio.Initialize();
         var options = CreateOptions(commission: 1L);
 
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, options);
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, options, NoPrices);
 
         Assert.Equal("Insufficient cash", result);
     }
@@ -142,7 +145,7 @@ public class OrderValidatorTests
         // Simulate a long position of 10 shares
         portfolio.Apply(new Fill(1, asset, DateTimeOffset.UtcNow, 10_000L, 10m, OrderSide.Buy, 0L));
 
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Null(result);
     }
@@ -160,7 +163,7 @@ public class OrderValidatorTests
         portfolio.Initialize();
 
         // No existing position — full 5 shares are short, margin = 5 * 10_000 * 1 * 1.0 = 50_000 <= 100_000
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Null(result);
     }
@@ -174,7 +177,7 @@ public class OrderValidatorTests
         portfolio.Initialize();
 
         // No existing position — full 15 shares short, margin = 15 * 10_000 * 1 * 1.0 = 150_000 > 100_000
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Equal("Insufficient margin for short", result);
     }
@@ -194,7 +197,7 @@ public class OrderValidatorTests
         portfolio.Apply(new Fill(1, asset, DateTimeOffset.UtcNow, 10_000L, 5m, OrderSide.Buy, 0L));
 
         // margin = 3 * 10_000 * 1 * 1.0 = 30_000; cash after buy = 100_000 - 50_000 = 50_000
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Null(result);
     }
@@ -210,7 +213,7 @@ public class OrderValidatorTests
         portfolio.Apply(new Fill(1, asset, DateTimeOffset.UtcNow, 10_000L, 5m, OrderSide.Buy, 0L));
 
         // cash after buy = 15_000 - 50_000 = -35_000; margin = 3 * 10_000 = 30_000 > -35_000? No, margin > cash
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Equal("Insufficient margin for short", result);
     }

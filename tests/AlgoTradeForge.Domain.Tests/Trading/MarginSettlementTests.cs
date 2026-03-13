@@ -8,6 +8,9 @@ public class MarginSettlementTests
 {
     private readonly MarginSettlement _settlement = MarginSettlement.Instance;
 
+    private static readonly IReadOnlyDictionary<string, long> NoPrices =
+        new Dictionary<string, long>();
+
     private static FutureAsset TestPerp => new() { Name = "BTCUSDT_PERP", Exchange = "Binance",
         Multiplier = 1m, TickSize = 0.01m, MarginRequirement = 0.10m };
 
@@ -117,7 +120,7 @@ public class MarginSettlementTests
         var portfolio = CreatePortfolio(10_000L);
 
         // margin = 50000 * 1 * 1 * 0.10 = 5000 <= 10000
-        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 0L);
+        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 0L, NoPrices);
 
         Assert.Null(result);
     }
@@ -129,7 +132,7 @@ public class MarginSettlementTests
         var portfolio = CreatePortfolio(3_000L);
 
         // margin = 50000 * 1 * 1 * 0.10 = 5000 > 3000
-        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 0L);
+        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 0L, NoPrices);
 
         Assert.Equal("Insufficient margin", result);
     }
@@ -141,7 +144,7 @@ public class MarginSettlementTests
         var order = CreateOrder(TestPerp, OrderSide.Sell, 1m);
         var portfolio = CreatePortfolio(10_000L);
 
-        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 0L);
+        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 0L, NoPrices);
 
         Assert.Null(result);
     }
@@ -153,7 +156,7 @@ public class MarginSettlementTests
         // margin = 5000, commission = 100, total = 5100 > 5050
         var portfolio = CreatePortfolio(5_050L);
 
-        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 100L);
+        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 100L, NoPrices);
 
         Assert.Equal("Insufficient margin", result);
     }
@@ -167,7 +170,26 @@ public class MarginSettlementTests
         var portfolio = CreatePortfolio(100_000L);
 
         // margin = 20000 * 1 * 20 * 1.0 = 400000 > 100000
-        var result = _settlement.ValidateSettlement(order, 20_000L, portfolio, commission: 0L);
+        var result = _settlement.ValidateSettlement(order, 20_000L, portfolio, commission: 0L, NoPrices);
+
+        Assert.Equal("Insufficient margin", result);
+    }
+
+    [Fact]
+    public void ValidateSettlement_ExistingLosingPosition_ReducesAvailableMargin()
+    {
+        // Open a long position at 50000
+        var portfolio = CreatePortfolio(10_000L);
+        portfolio.Apply(TestFills.Buy(TestPerp, 50_000L, 1m));
+
+        // Now try to open another position. Cash is still 10000 (margin settlement),
+        // but price dropped to 40000 → unrealized PnL = -10000
+        // Equity = 10000 + (-10000) = 0, UsedMargin = 1 * 50000 * 0.10 = 5000
+        // AvailableMargin = 0 - 5000 = -5000 → should reject
+        var order = CreateOrder(TestPerp, OrderSide.Buy, 1m);
+        var prices = new Dictionary<string, long> { ["BTCUSDT_PERP"] = 40_000L };
+
+        var result = _settlement.ValidateSettlement(order, 40_000L, portfolio, commission: 0L, prices);
 
         Assert.Equal("Insufficient margin", result);
     }
@@ -212,9 +234,9 @@ public class MarginSettlementTests
         portfolio.Apply(TestFills.Buy(TestPerp, 50_000L, 1m));
 
         // Equity = Cash + UnrealizedPnl = 100000 + (51000-50000)*1*1 = 101000
-        Assert.Equal(101_000L, portfolio.Equity(51_000L));
+        Assert.Equal(101_000L, portfolio.Equity(new Dictionary<string, long> { ["BTCUSDT_PERP"] = 51_000L }));
         // Equity at loss: 100000 + (49000-50000)*1*1 = 99000
-        Assert.Equal(99_000L, portfolio.Equity(49_000L));
+        Assert.Equal(99_000L, portfolio.Equity(new Dictionary<string, long> { ["BTCUSDT_PERP"] = 49_000L }));
     }
 
     [Fact]
@@ -228,7 +250,7 @@ public class MarginSettlementTests
 
         // Price drops = profit for short
         // Equity = 100000 + (49000-50000)*(-1)*1 = 100000 + 1000 = 101000
-        Assert.Equal(101_000L, portfolio.Equity(49_000L));
+        Assert.Equal(101_000L, portfolio.Equity(new Dictionary<string, long> { ["BTCUSDT_PERP"] = 49_000L }));
     }
 
     #endregion

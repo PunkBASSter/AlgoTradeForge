@@ -70,7 +70,7 @@ public class PortfolioTests
         var portfolio = new Portfolio { InitialCash = 100_000L };
         portfolio.Initialize();
 
-        Assert.Equal(100_000L, portfolio.Equity(150L));
+        Assert.Equal(100_000L, portfolio.Equity(new Dictionary<string, long>()));
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class PortfolioTests
         // Cash: 100000 - 150*100*1 = 85000
         // Position value: 100 * 160 * 1 = 16000
         // Total: 101000
-        Assert.Equal(101_000L, portfolio.Equity(160L));
+        Assert.Equal(101_000L, portfolio.Equity(new Dictionary<string, long> { ["AAPL"] = 160L }));
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public class PortfolioTests
         // Margin settlement: Cash stays 100000 (only commission=0 deducted)
         // Position value: unrealizedPnl = (5010-5000)*2*50 = 1000
         // Total: 101000
-        Assert.Equal(101_000L, portfolio.Equity(5010L));
+        Assert.Equal(101_000L, portfolio.Equity(new Dictionary<string, long> { ["ES"] = 5010L }));
     }
 
     [Fact]

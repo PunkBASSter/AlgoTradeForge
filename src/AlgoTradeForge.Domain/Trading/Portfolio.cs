@@ -21,16 +21,6 @@ public sealed class Portfolio
         return position;
     }
 
-    public long Equity(long currentPrice)
-    {
-        var positionValue = 0L;
-        foreach (var position in _positions.Values)
-        {
-            positionValue += position.Asset.GetSettlementCalculator().ComputePositionValue(position, currentPrice);
-        }
-        return Cash + positionValue;
-    }
-
     public long Equity(IReadOnlyDictionary<string, long> prices)
     {
         var positionValue = 0L;
@@ -62,9 +52,6 @@ public sealed class Portfolio
         }
         return margin;
     }
-
-    public long AvailableMargin(long currentPrice) =>
-        Equity(currentPrice) - ComputeUsedMargin();
 
     public long AvailableMargin(IReadOnlyDictionary<string, long> prices) =>
         Equity(prices) - ComputeUsedMargin();

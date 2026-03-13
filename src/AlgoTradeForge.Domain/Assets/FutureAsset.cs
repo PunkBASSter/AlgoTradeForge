@@ -21,22 +21,7 @@ public sealed record FutureAsset : Asset, IMarginAsset
         };
     }
 
-    public static FutureAsset CreateStock(string name, string exchange, decimal multiplier, decimal tickSize,
-        decimal? margin = null,
-        decimal minOrderQuantity = 1m, decimal maxOrderQuantity = decimal.MaxValue, decimal quantityStepSize = 1m) =>
-        new()
-        {
-            Name = name,
-            Exchange = exchange,
-            Multiplier = multiplier,
-            TickSize = tickSize,
-            MarginRequirement = margin,
-            MinOrderQuantity = minOrderQuantity,
-            MaxOrderQuantity = maxOrderQuantity,
-            QuantityStepSize = quantityStepSize,
-        };
-
-    public static FutureAsset CreateIndex(string name, string exchange, decimal multiplier, decimal tickSize,
+    public static FutureAsset Create(string name, string exchange, decimal multiplier, decimal tickSize,
         decimal? margin = null,
         decimal minOrderQuantity = 1m, decimal maxOrderQuantity = decimal.MaxValue, decimal quantityStepSize = 1m) =>
         new()

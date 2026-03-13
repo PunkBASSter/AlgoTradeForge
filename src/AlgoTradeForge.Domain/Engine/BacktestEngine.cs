@@ -358,7 +358,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
                 continue;
             }
 
-            var settlementRejection = orderValidator.ValidateSettlement(order, fillPrice.Value, state.Portfolio, state.Options);
+            var settlementRejection = orderValidator.ValidateSettlement(order, fillPrice.Value, state.Portfolio, state.Options, state.LastPrices);
             if (settlementRejection is not null)
             {
                 order.Status = OrderStatus.Rejected;

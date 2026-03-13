@@ -14,8 +14,12 @@ public sealed class FeedSeries
 
     public FeedSeries(long[] timestamps, double[][] columns)
     {
-        if (columns.Length > 0 && columns[0].Length != timestamps.Length)
-            throw new ArgumentException("All columns must have the same length as the timestamp array.");
+        for (var i = 0; i < columns.Length; i++)
+        {
+            if (columns[i].Length != timestamps.Length)
+                throw new ArgumentException(
+                    $"Column {i} has length {columns[i].Length} but timestamp array has length {timestamps.Length}.");
+        }
 
         Timestamps = timestamps;
         Columns = columns;
