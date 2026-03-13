@@ -3,7 +3,7 @@
 ## Requirements & Key points
 
 * Web API hosted to run in the background and be able to execute actions on demand
-* Stick to clean architecture - keep separation by layers (api -> (handlers(logic) -> domain(config models, history models, common services/rules)) <- adapter/connector/file_system), then by vertical slices (binance/spot/futures, etc.)
+* Stick to clean architecture - keep separation by layers (api -> (handlers(logic) -> domain(config models, history models, common services/rules, data converters/aggregators)) <- adapter/connector/file_system), then by vertical slices (binance/spot/futures, etc.)
 * Separate the assemblies inside History Loader similarly to AlgoTradeForge
 * Using DI is a MUST
 * Single-machine Quartz.net (or more modern lightweight alternative) job cron-based trigger to launch periodic actions
