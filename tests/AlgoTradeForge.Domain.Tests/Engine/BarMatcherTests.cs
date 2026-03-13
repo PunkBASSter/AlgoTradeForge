@@ -10,11 +10,10 @@ public class BarMatcherTests
 {
     private readonly BarMatcher _matcher = new();
 
-    private static BacktestOptions CreateOptions(Asset asset, long commission = 0L, long slippageTicks = 0) =>
+    private static BacktestOptions CreateOptions(long commission = 0L, long slippageTicks = 0) =>
         new()
         {
             InitialCash = 100_000L,
-            Asset = asset,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
             CommissionPerTrade = commission,
@@ -26,7 +25,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.MarketBuy(TestAssets.Aapl, 100m);
         var bar = TestBars.Create(15000, 15500, 14800, 15200);
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -38,7 +37,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.MarketSell(TestAssets.Aapl, 100m);
         var bar = TestBars.Create(15000, 15500, 14800, 15200);
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -50,7 +49,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.LimitBuy(TestAssets.Aapl, 100m, limitPrice: 14800L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200);
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -62,7 +61,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.LimitBuy(TestAssets.Aapl, 100m, limitPrice: 14700L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200);
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -74,7 +73,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.LimitSell(TestAssets.Aapl, 100m, limitPrice: 15500L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200);
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -86,7 +85,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.LimitSell(TestAssets.Aapl, 100m, limitPrice: 15600L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200);
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -101,7 +100,7 @@ public class BarMatcherTests
         // Stop Buy triggers when price rises to stop price (breakout entry)
         var order = TestOrders.StopBuy(TestAssets.Aapl, 100m, stopPrice: 15200L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200); // High=15500 >= Stop=15200
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -113,7 +112,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.StopBuy(TestAssets.Aapl, 100m, stopPrice: 16000L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200); // High=15500 < Stop=16000
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -126,7 +125,7 @@ public class BarMatcherTests
         // When bar opens above stop price, fill at open (gap up)
         var order = TestOrders.StopBuy(TestAssets.Aapl, 100m, stopPrice: 15000L);
         var bar = TestBars.Create(15500, 16000, 15400, 15800); // Open=15500 > Stop=15000
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -139,7 +138,7 @@ public class BarMatcherTests
         // Stop Sell triggers when price falls to stop price (breakdown entry)
         var order = TestOrders.StopSell(TestAssets.Aapl, 100m, stopPrice: 14900L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200); // Low=14800 <= Stop=14900
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -151,7 +150,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.StopSell(TestAssets.Aapl, 100m, stopPrice: 14000L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200); // Low=14800 > Stop=14000
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -163,7 +162,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.StopSell(TestAssets.Aapl, 100m, stopPrice: 15500L);
         var bar = TestBars.Create(15000, 15200, 14800, 14900); // Open=15000 < Stop=15500
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -175,7 +174,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.StopBuy(TestAssets.Aapl, 100m, stopPrice: 15200L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200);
-        var options = CreateOptions(TestAssets.Aapl, slippageTicks: 5);
+        var options = CreateOptions(slippageTicks: 5);
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -187,7 +186,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.StopSell(TestAssets.Aapl, 100m, stopPrice: 14900L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200);
-        var options = CreateOptions(TestAssets.Aapl, slippageTicks: 5);
+        var options = CreateOptions(slippageTicks: 5);
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -204,7 +203,7 @@ public class BarMatcherTests
         // StopLimit Buy: stop triggers at 15200, then limit buy at 15300 if price allows
         var order = TestOrders.StopLimitBuy(TestAssets.Aapl, 100m, stopPrice: 15200L, limitPrice: 15300L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200); // High >= Stop, Limit <= High
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -217,7 +216,7 @@ public class BarMatcherTests
         // Stop triggers but limit price not reached — returns null (engine handles Triggered state)
         var order = TestOrders.StopLimitBuy(TestAssets.Aapl, 100m, stopPrice: 15200L, limitPrice: 14700L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200); // High >= Stop, but Low > Limit
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -231,7 +230,7 @@ public class BarMatcherTests
         var order = TestOrders.StopLimitBuy(TestAssets.Aapl, 100m, stopPrice: 15200L, limitPrice: 14900L);
         order.Status = OrderStatus.Triggered;
         var bar = TestBars.Create(15000, 15500, 14800, 15200); // Low=14800 <= Limit=14900
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -243,7 +242,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.StopLimitSell(TestAssets.Aapl, 100m, stopPrice: 14900L, limitPrice: 14800L);
         var bar = TestBars.Create(15000, 15500, 14700, 15200); // Low <= Stop, Limit >= Low
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -255,7 +254,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.StopLimitSell(TestAssets.Aapl, 100m, stopPrice: 14900L, limitPrice: 15600L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200); // Low <= Stop, but High < Limit
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -267,7 +266,7 @@ public class BarMatcherTests
     {
         var order = TestOrders.StopLimitBuy(TestAssets.Aapl, 100m, stopPrice: 16000L, limitPrice: 16100L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200); // High < Stop
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -280,7 +279,7 @@ public class BarMatcherTests
         // StopLimit orders fill at limit price — no slippage
         var order = TestOrders.StopLimitBuy(TestAssets.Aapl, 100m, stopPrice: 15200L, limitPrice: 15300L);
         var bar = TestBars.Create(15000, 15500, 14800, 15200);
-        var options = CreateOptions(TestAssets.Aapl, slippageTicks: 10);
+        var options = CreateOptions(slippageTicks: 10);
 
         var price = _matcher.GetFillPrice(order, bar, options);
 
@@ -321,7 +320,7 @@ public class BarMatcherTests
         var order = BuyOrderWithSlTp(slPrice: 14500L, new TakeProfitLevel(16000L, 1m));
         // Bar drops to SL but doesn't reach TP
         var bar = TestBars.Create(15000, 15200, 14400, 14800); // Low=14400 <= SL=14500, High=15200 < TP=16000
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
@@ -337,7 +336,7 @@ public class BarMatcherTests
         var order = BuyOrderWithSlTp(slPrice: 14500L, new TakeProfitLevel(15800L, 1m));
         // Bar rises to TP but doesn't drop to SL
         var bar = TestBars.Create(15000, 16000, 14600, 15500); // High=16000 >= TP=15800, Low=14600 > SL=14500
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
@@ -354,7 +353,7 @@ public class BarMatcherTests
         var order = BuyOrderWithSlTp(slPrice: 14500L, new TakeProfitLevel(15800L, 1m));
         // Bar covers both SL and TP
         var bar = TestBars.Create(15000, 16000, 14000, 15500); // Low=14000 <= SL, High=16000 >= TP
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
@@ -368,7 +367,7 @@ public class BarMatcherTests
     {
         var order = BuyOrderWithSlTp(slPrice: 14000L, new TakeProfitLevel(16000L, 1m));
         var bar = TestBars.Create(15000, 15200, 14100, 15100); // Low=14100 > SL=14000, High=15200 < TP=16000
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
@@ -381,7 +380,7 @@ public class BarMatcherTests
         var order = SellOrderWithSlTp(slPrice: 15500L, new TakeProfitLevel(14000L, 1m));
         // Short position: SL is above entry, bar rises to SL
         var bar = TestBars.Create(15000, 15600, 14200, 15300); // High=15600 >= SL=15500, Low=14200 > TP=14000
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
@@ -396,7 +395,7 @@ public class BarMatcherTests
         var order = SellOrderWithSlTp(slPrice: 15500L, new TakeProfitLevel(14200L, 1m));
         // Short position: TP is below entry, bar drops to TP
         var bar = TestBars.Create(15000, 15400, 14100, 14500); // Low=14100 <= TP=14200, High=15400 < SL=15500
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
@@ -410,7 +409,7 @@ public class BarMatcherTests
     {
         var order = BuyOrderWithSlTp(slPrice: 14000L, new TakeProfitLevel(16000L, 1m));
         var bar = TestBars.Create(15000, 15000, 15000, 15000); // Zero-range bar
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var result = _matcher.EvaluateSlTp(order, 15000L, 0, bar, options);
 
@@ -427,7 +426,7 @@ public class BarMatcherTests
 
         // First TP hit
         var bar1 = TestBars.Create(15000, 15600, 14100, 15300); // High=15600 >= TP1=15500
-        var options = CreateOptions(TestAssets.Aapl);
+        var options = CreateOptions();
 
         var result1 = _matcher.EvaluateSlTp(order, 15000L, 0, bar1, options);
 

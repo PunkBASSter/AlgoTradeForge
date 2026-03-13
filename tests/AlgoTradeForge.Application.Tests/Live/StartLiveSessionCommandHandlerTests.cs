@@ -15,8 +15,8 @@ namespace AlgoTradeForge.Application.Tests.Live;
 
 public class StartLiveSessionCommandHandlerTests
 {
-    private static readonly Asset BtcUsdt = Asset.Crypto("BTCUSDT", "Binance",
-        decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1),
+    private static readonly CryptoAsset BtcUsdt = CryptoAsset.Create("BTCUSDT", "Binance",
+        decimalDigits: 2,
         minOrderQuantity: 0.00001m, maxOrderQuantity: 9000m, quantityStepSize: 0.00001m);
 
     private static readonly List<DataSubscriptionDto> DefaultSubscriptions =
@@ -359,7 +359,7 @@ public class StartLiveSessionCommandHandlerTests
     {
         var strategy = CreateStrategyWithSubscriptions("1.0");
 
-        var ethUsdt = Asset.Crypto("ETHUSDT", "Binance", decimalDigits: 2);
+        var ethUsdt = CryptoAsset.Create("ETHUSDT", "Binance", decimalDigits: 2);
 
         var strategyFactory = Substitute.For<IStrategyFactory>();
         strategyFactory.Create("MultiAsset", Arg.Any<IIndicatorFactory>(), Arg.Any<IDictionary<string, object>?>())

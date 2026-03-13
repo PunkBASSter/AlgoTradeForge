@@ -70,7 +70,7 @@ public class PortfolioTests
         var portfolio = new Portfolio { InitialCash = 100_000L };
         portfolio.Initialize();
 
-        Assert.Equal(100_000L, portfolio.Equity(150L));
+        Assert.Equal(100_000L, portfolio.Equity(new Dictionary<string, long>()));
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class PortfolioTests
         // Cash: 100000 - 150*100*1 = 85000
         // Position value: 100 * 160 * 1 = 16000
         // Total: 101000
-        Assert.Equal(101_000L, portfolio.Equity(160L));
+        Assert.Equal(101_000L, portfolio.Equity(new Dictionary<string, long> { ["AAPL"] = 160L }));
     }
 
     [Fact]
@@ -95,10 +95,10 @@ public class PortfolioTests
         var fill = TestFills.BuyEs(5000L, 2m);
         portfolio.Apply(fill);
 
-        // Cash: 100000 - 5000*2*50 = -400000 (this demonstrates margin trading)
-        // Position value: 2 * 5010 * 50 = 501000
+        // Margin settlement: Cash stays 100000 (only commission=0 deducted)
+        // Position value: unrealizedPnl = (5010-5000)*2*50 = 1000
         // Total: 101000
-        Assert.Equal(101_000L, portfolio.Equity(5010L));
+        Assert.Equal(101_000L, portfolio.Equity(new Dictionary<string, long> { ["ES"] = 5010L }));
     }
 
     [Fact]
@@ -190,14 +190,14 @@ public class PortfolioTests
     }
 
     [Fact]
-    public void Apply_FuturesBuy_AppliesMultiplierToCash()
+    public void Apply_FuturesBuy_MarginSettlement_DeductsOnlyCommission()
     {
         var portfolio = new Portfolio { InitialCash = 500_000L };
         portfolio.Initialize();
 
         portfolio.Apply(TestFills.BuyEs(5000L, 2m));
 
-        // 500000 - 5000*2*50 = 0
-        Assert.Equal(0L, portfolio.Cash);
+        // Margin settlement: only commission (0) deducted, no notional exchange
+        Assert.Equal(500_000L, portfolio.Cash);
     }
 }

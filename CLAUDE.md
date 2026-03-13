@@ -15,12 +15,60 @@ Auto-generated from all feature plans. Last updated: 2026-02-10
 
 ```text
 src/
+  AlgoTradeForge.Domain/
+    Assets/            # Asset hierarchy: CryptoAsset, CryptoPerpetualAsset, EquityAsset, FutureAsset
+    Collections/       # RingBuffer
+    Engine/            # BacktestEngine, OrderValidator, BacktestFeedContext
+    Events/            # IEventBus, backtest event types (market, order, signal, indicator)
+    History/           # TimeSeries, Int64Bar, FeedSeries, DataFeedSchema, AutoApplyConfig
+      Metadata/
+    Indicators/        # ATR, DeltaZigZag
+    Live/              # ILiveConnector, ILiveAccountManager
+    Optimization/      # CartesianProductGenerator
+      Attributes/      # [Optimizable], ParamUnit, [StrategyKey], [ModuleKey]
+      Space/           # ParameterAxis, ResolvedAxis, ParameterCombination
+    Reporting/         # PerformanceMetrics, MetricsCalculator
+    Strategy/          # IInt64BarStrategy, IFeedContext, DataSubscription
+      Modules/         # Pluggable strategy modules (filters, trade registry)
+    Trading/           # Portfolio, Position, Order, Fill, ISettlementCalculator
+  AlgoTradeForge.Application/
+    Abstractions/      # ICommand, IQuery, IStrategyFactory
+    Backtests/         # RunBacktestCommand, BacktestPreparer, BacktestSetup
+    CandleIngestion/   # IInt64BarLoader, CandleStorageOptions
+    Events/            # EventBus impl, sinks, post-run pipeline
+    IO/                # IFileStorage
+    Optimization/      # Optimization orchestration
+    Progress/          # RunProgressCache, cancellation registry
+    Repositories/      # Repository interfaces
+    Strategies/        # Strategy listing queries
+  AlgoTradeForge.Infrastructure/
+    CandleIngestion/   # CsvInt64BarLoader
+    Events/            # Event infrastructure
+    History/           # CsvDataSource, HistoryRepository
+    Persistence/       # SQLite repositories
+    Plugins/           # PluginLoader
+  AlgoTradeForge.WebApi/
+  AlgoTradeForge.CandleIngestor/
 tests/
+  AlgoTradeForge.Domain.Tests/
+  AlgoTradeForge.Application.Tests/
+  AlgoTradeForge.Infrastructure.Tests/
 ```
 
 ## Commands
 
-# Add commands for C# 14 / .NET 10
+```bash
+# Build
+dotnet build AlgoTradeForge.slnx
+
+# Test
+dotnet test tests/AlgoTradeForge.Domain.Tests/
+dotnet test tests/AlgoTradeForge.Application.Tests/
+
+# Build + test with private strategies
+dotnet build ../AlgoTradeForge.Private/AlgoTradeForge.Full.slnx
+dotnet test ../AlgoTradeForge.Private/tests/AlgoTradeForge.Strategies.Private.Tests/
+```
 
 ## Code Style
 
@@ -41,6 +89,7 @@ All monetary/price values in the Domain layer use `long` (Int64). When convertin
 - **Module sub-param scaling**: `ParameterScaler` recurses into `ModuleSelection` values to scale nested `QuoteAsset` sub-params. Both backtest/live (`ParameterScaler`) and optimization (`OptimizationAxisResolver`) paths handle module sub-param scaling.
 
 ## Recent Changes
+- 018-extra-data-feeds: Asset type hierarchy (CryptoAsset, EquityAsset, FutureAsset, CryptoPerpetualAsset), settlement system (ISettlementCalculator → CashAndCarry/Margin), aux data feeds (FeedSeries, IFeedContext, BacktestFeedContext, auto-apply), order validation (IOrderValidator), event bus (IEventBus/IEventBusReceiver)
 - 009-long-running-ops: Added C# 14 / .NET 10 + ASP.NET Core (minimal APIs), System.Threading (Task.Run, Interlocked, CancellationTokenSource), IDistributedCache for progress tracking
 - 008-trading-frontend: Updated to Next.js 16 / Tailwind CSS 4 (CSS-first `@theme` config, no tailwind.config.ts)
 - 003-backtest-engine: Added C# 14 / .NET 10 + Existing solution dependencies (no new NuGet packages required for this feature)
@@ -60,5 +109,25 @@ Sibling repo at `../AlgoTradeForge.Private/` contains private strategy plugins.
 - Post-build copies plugin DLL to `src/AlgoTradeForge.WebApi/plugins/`
 
 When searching for strategy code, also search `../AlgoTradeForge.Private/` if not found locally.
+
+## Domain Model Quick Reference
+
+### Asset Hierarchy & Settlement
+- `Asset` (abstract record) → `CryptoAsset`, `CryptoPerpetualAsset`, `EquityAsset`, `FutureAsset`
+- Cash-settled (`ICashSettledAsset`): `CryptoAsset`, `EquityAsset` → `CashAndCarrySettlement` (full notional exchange)
+- Margin-settled (`IMarginAsset`): `CryptoPerpetualAsset`, `FutureAsset` → `MarginSettlement` (realized PnL only)
+- Settlement dispatch: `asset.GetSettlementCalculator()` returns singleton based on `SettlementMode`
+- Validation: `MarginSettlement` checks `AvailableMargin(lastPrices)`; `CashAndCarrySettlement` checks `Cash` for buys, `AvailableMargin(lastPrices)` for shorts
+- Auto-apply: `Asset.ComputeAutoApplyDelta()` handles funding rates, dividends, swap rates
+
+### Auxiliary Data Feeds
+- `FeedSeries` — column-major `double[][]` with `long[]` timestamps (zero-allocation reads via `GetRow`)
+- `DataFeedSchema` — declares column names + optional `AutoApplyConfig` (type, rate column)
+- `BacktestFeedContext` — engine-side `IFeedContext` impl; advances cursors per-bar, applies auto-apply cash flows
+- Strategies implement `IFeedContextReceiver` to receive `IFeedContext` at init; query via `TryGetLatest(feedKey, out values)`
+
+### Event Bus
+- `IEventBus` — strategies implement `IEventBusReceiver` to receive at init; emit structured events
+- Event types: `BarEvent`, `FillEvent`, `OrderSubmittedEvent`, `SignalEvent`, `IndicatorUpdateEvent`, etc.
 
 <!-- MANUAL ADDITIONS END -->

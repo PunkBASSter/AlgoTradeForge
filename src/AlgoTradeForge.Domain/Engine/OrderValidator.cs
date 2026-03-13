@@ -16,28 +16,10 @@ public sealed class OrderValidator : IOrderValidator
         return null;
     }
 
-    public string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, BacktestOptions options)
+    public string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, BacktestOptions options,
+        IReadOnlyDictionary<string, long> lastPrices)
     {
-        if (order.Side == OrderSide.Buy)
-        {
-            var cost = MoneyConvert.ToLong(fillPrice * order.Quantity * order.Asset.Multiplier) + options.CommissionPerTrade;
-            if (cost > portfolio.Cash)
-                return "Insufficient cash";
-        }
-        else
-        {
-            var currentPosition = portfolio.GetPosition(order.Asset.Name);
-            var currentQty = currentPosition?.Quantity ?? 0m;
-            var shortQuantity = Math.Max(0m, order.Quantity - Math.Max(0m, currentQty));
-            if (shortQuantity > 0m)
-            {
-                var marginRequired = MoneyConvert.ToLong(shortQuantity * fillPrice * order.Asset.Multiplier * order.Asset.ShortMarginRate)
-                    + options.CommissionPerTrade;
-                if (marginRequired > portfolio.Cash)
-                    return "Insufficient margin for short";
-            }
-        }
-
-        return null;
+        return order.Asset.GetSettlementCalculator().ValidateSettlement(order, fillPrice, portfolio,
+            options.CommissionPerTrade, lastPrices);
     }
 }

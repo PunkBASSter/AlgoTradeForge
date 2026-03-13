@@ -21,28 +21,40 @@ public sealed class Portfolio
         return position;
     }
 
-    public long Equity(long currentPrice)
-    {
-        var positionValue = 0m;
-        foreach (var position in _positions.Values)
-        {
-            positionValue += position.Quantity * currentPrice * position.Asset.Multiplier;
-        }
-        return Cash + MoneyConvert.ToLong(positionValue);
-    }
-
     public long Equity(IReadOnlyDictionary<string, long> prices)
     {
-        var positionValue = 0m;
+        var positionValue = 0L;
         foreach (var (symbol, position) in _positions)
         {
             if (prices.TryGetValue(symbol, out var price))
             {
-                positionValue += position.Quantity * price * position.Asset.Multiplier;
+                positionValue += position.Asset.GetSettlementCalculator().ComputePositionValue(position, price);
             }
         }
-        return Cash + MoneyConvert.ToLong(positionValue);
+        return Cash + positionValue;
     }
+
+    /// <summary>
+    /// Computes the total initial margin used by all margin-settled positions.
+    /// Based on entry price (not current price) — margin requirement is locked at position open.
+    /// </summary>
+    public long ComputeUsedMargin()
+    {
+        var margin = 0L;
+        foreach (var position in _positions.Values)
+        {
+            if (position.Asset is not IMarginAsset marginAsset) continue;
+            if (position.Quantity == 0m) continue;
+            var marginReq = marginAsset.MarginRequirement ?? 1.0m;
+            margin += MoneyConvert.ToLong(
+                Math.Abs(position.Quantity) * (decimal)position.AverageEntryPrice
+                * position.Asset.Multiplier * marginReq);
+        }
+        return margin;
+    }
+
+    public long AvailableMargin(IReadOnlyDictionary<string, long> prices) =>
+        Equity(prices) - ComputeUsedMargin();
 
     internal void Initialize()
     {
@@ -54,13 +66,12 @@ public sealed class Portfolio
         _positions.Clear();
     }
 
+    internal void ApplyCashAdjustment(long delta) => Cash += delta;
+
     internal void Apply(Fill fill)
     {
-        var direction = fill.Side == OrderSide.Buy ? -1 : 1;
-        var cashChange = MoneyConvert.ToLong(fill.Price * fill.Quantity * fill.Asset.Multiplier * direction) - fill.Commission;
-        Cash += cashChange;
-
         var position = GetOrCreatePosition(fill.Asset);
-        position.Apply(fill);
+        var fillRealizedPnl = position.Apply(fill);
+        Cash += fill.Asset.GetSettlementCalculator().ComputeCashDelta(fill, fillRealizedPnl);
     }
 }

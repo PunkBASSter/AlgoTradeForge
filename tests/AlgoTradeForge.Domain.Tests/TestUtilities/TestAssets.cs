@@ -2,14 +2,24 @@ namespace AlgoTradeForge.Domain.Tests.TestUtilities;
 
 public static class TestAssets
 {
-    public static Asset Aapl => Asset.Equity("AAPL", "NASDAQ");
+    public static EquityAsset Aapl => new() { Name = "AAPL", Exchange = "NASDAQ" };
 
-    public static Asset Msft => Asset.Equity("MSFT", "NASDAQ");
+    public static EquityAsset Msft => new() { Name = "MSFT", Exchange = "NASDAQ" };
 
-    public static Asset EsMini => Asset.Future("ES", "CME", multiplier: 50m, tickSize: 0.25m, margin: 15000m);
+    public static FutureAsset EsMini => new()
+    {
+        Name = "ES", Exchange = "CME", Multiplier = 50m, TickSize = 0.25m, MarginRequirement = 15000m,
+    };
 
-    public static Asset MicroEs => Asset.Future("MES", "CME", multiplier: 5m, tickSize: 0.25m, margin: 1500m);
+    public static FutureAsset MicroEs => new()
+    {
+        Name = "MES", Exchange = "CME", Multiplier = 5m, TickSize = 0.25m, MarginRequirement = 1500m,
+    };
 
-    public static Asset BtcUsdt => Asset.Crypto("BTCUSDT", "Binance", decimalDigits: 2, historyStart: new DateOnly(2024, 1, 1),
+    public static CryptoAsset BtcUsdt => CryptoAsset.Create("BTCUSDT", "Binance", decimalDigits: 2,
         minOrderQuantity: 0.00001m, maxOrderQuantity: 9000m, quantityStepSize: 0.00001m);
+
+    public static CryptoPerpetualAsset BtcUsdtPerp => CryptoPerpetualAsset.Create("BTCUSDT_PERP", "Binance",
+        decimalDigits: 2, margin: 0.1m,
+        minOrderQuantity: 0.001m, maxOrderQuantity: 1000m, quantityStepSize: 0.001m);
 }

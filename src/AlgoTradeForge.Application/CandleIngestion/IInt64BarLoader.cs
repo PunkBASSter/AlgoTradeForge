@@ -8,7 +8,6 @@ public interface IInt64BarLoader
         string dataRoot,
         string exchange,
         string symbol,
-        int decimalDigits,
         DateOnly from,
         DateOnly to,
         TimeSpan interval);

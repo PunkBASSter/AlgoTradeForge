@@ -59,6 +59,8 @@ public sealed class LiveOrderContext : IOrderContext
     }
 
     public long Cash => _portfolio.Cash;
+    public long UsedMargin => _portfolio.ComputeUsedMargin();
+    public long AvailableMargin => Cash - UsedMargin;
 
     public void Start(CancellationToken ct)
     {

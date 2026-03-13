@@ -7,7 +7,7 @@ namespace AlgoTradeForge.Domain.Tests.History;
 
 public class MarketDataSnapshotTests
 {
-    private static readonly Asset TestAsset = Asset.Crypto("BTCUSDT", "Binance", 2);
+    private static readonly CryptoAsset TestAsset = CryptoAsset.Create("BTCUSDT", "Binance", 2);
     private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
 

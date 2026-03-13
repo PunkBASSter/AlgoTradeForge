@@ -2,6 +2,14 @@
 
 ## Launch optimized but not overtrained Delta ZigZag Breakout to live on multiple (30+) assets: crypto, stocks, maybe FX, maybe FUT.
 
+## TODO:
+- Claude additions on review - verify OOP compliance (explain what's expected)
+- Missing skills, like OOP-style class design (explain)
+- Documentation hooks (continuous readme/constitution/claude.md updates) 
+
+## Candle Ingestor -> HistoryLoader
+@docs\history-loader-project.md
+
 ## Strategy development
 - Add another strategy to the framework, maybe a simple mean reversion for trading in ranges
 - Add a strategy with a different logic, e.g. price patterns, volume patterns, market profile etc.
@@ -26,14 +34,6 @@
 - Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
 - Test optimization with pluggable modules
 - Test trades isolation module with multiple simultaneous orders allowed?
-
-## Candle Ingestor
-Upd CandleIngestor - prepare for using on server: use DI, host as WebAPI for control with scheduling config; update partitioning - add TF in file names; add ingestors for stock data (alpha vantage, yahoo finance); ingest events metadata and add a scaling factor for splits;
-1. Not that much candle history (I want 30+ of different assets) - INGESTOR -DEEP_RESEARCH IN PROGRESS
-2. Candle Partition files don't have TF info in the name - INGESTOR
-3. Lack of (free) data (Alpha vantage, Yahoo finance) - INGESTOR
-  - Rate limiting by provider/token info
-  - Scaling for splits with stock event data
 
 ## TECH
 

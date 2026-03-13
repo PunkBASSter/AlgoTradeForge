@@ -5,5 +5,6 @@ namespace AlgoTradeForge.Domain.Engine;
 public interface IOrderValidator
 {
     string? ValidateSubmission(Order order);
-    string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, BacktestOptions options);
+    string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, BacktestOptions options,
+        IReadOnlyDictionary<string, long> lastPrices);
 }

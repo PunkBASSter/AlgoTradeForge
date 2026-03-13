@@ -10,4 +10,5 @@ public sealed record BacktestSetup(
     ScaleContext Scale,
     BacktestOptions Options,
     IInt64BarStrategy Strategy,
-    TimeSeries<Int64Bar>[] Series);
+    TimeSeries<Int64Bar>[] Series,
+    BacktestFeedContext? FeedContext = null);

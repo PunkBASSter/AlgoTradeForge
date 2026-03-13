@@ -113,7 +113,8 @@ public sealed class RunBacktestCommandHandler(
                     {
                         if (bars % ProgressUpdateInterval == 0)
                             _ = progressCache.SetProgressAsync(runId, bars, totalBars);
-                    });
+                    },
+                    feedContext: setup.FeedContext);
 
                 runSummary = new RunSummary(
                     result.TotalBarsProcessed,

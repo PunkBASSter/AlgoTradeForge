@@ -34,7 +34,6 @@ public sealed class BacktestPreparer(
         var options = new BacktestOptions
         {
             InitialCash = scale.AmountToTicks(command.InitialCash),
-            Asset = asset,
             StartTime = command.StartTime,
             EndTime = command.EndTime,
             CommissionPerTrade = scale.AmountToTicks(command.CommissionPerTrade),
@@ -49,7 +48,7 @@ public sealed class BacktestPreparer(
 
         if (strategy.DataSubscriptions.Count == 0)
         {
-            var timeFrame = command.TimeFrame ?? asset.SmallestInterval;
+            var timeFrame = command.TimeFrame ?? TimeSpan.FromMinutes(1);
             strategy.DataSubscriptions.Add(new DataSubscription(asset, timeFrame));
         }
 

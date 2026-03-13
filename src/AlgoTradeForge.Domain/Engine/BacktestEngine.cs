@@ -20,10 +20,11 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
         CancellationToken ct = default,
         IDebugProbe? probe = null,
         IEventBus? bus = null,
-        Action<int>? onBarsProcessed = null)
+        Action<int>? onBarsProcessed = null,
+        BacktestFeedContext? feedContext = null)
     {
         var stopwatch = Stopwatch.StartNew();
-        var state = InitializeRun(seriesPerSubscription, strategy, options, probe, bus, orderValidator);
+        var state = InitializeRun(seriesPerSubscription, strategy, options, probe, bus, orderValidator, feedContext);
         state.OnBarsProcessed = onBarsProcessed;
 
         try
@@ -54,7 +55,8 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
         BacktestOptions options,
         IDebugProbe? probe,
         IEventBus? bus,
-        IOrderValidator orderValidator)
+        IOrderValidator orderValidator,
+        BacktestFeedContext? feedContext)
     {
         probe ??= NullDebugProbe.Instance;
         bus ??= NullEventBus.Instance;
@@ -67,6 +69,10 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
         var orderQueue = new OrderQueue();
         var portfolio = new Portfolio { InitialCash = options.InitialCash };
         portfolio.Initialize();
+        var lastPrices = new Dictionary<string, long>();
+
+        // Pre-resolve auto-apply bindings from feed context (column indices resolved once, not per-bar)
+        var autoApplyBindings = BuildAutoApplyBindings(feedContext);
 
         var state = new RunState
         {
@@ -79,14 +85,20 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
             Subscriptions = subscriptions,
             Series = series,
             Portfolio = portfolio,
-            OrderContext = new BacktestOrderContext(orderQueue, fills, portfolio, bus, orderValidator),
+            OrderContext = new BacktestOrderContext(orderQueue, fills, portfolio, bus, orderValidator, lastPrices),
             OrderQueue = orderQueue,
             Fills = fills,
             Cursors = new int[subscriptions.Count],
+            FeedContext = feedContext,
+            AutoApplyBindings = autoApplyBindings,
+            LastPrices = lastPrices,
         };
 
         if (strategy is IEventBusReceiver receiver)
             receiver.SetEventBus(bus);
+
+        if (strategy is IFeedContextReceiver feedReceiver)
+            feedReceiver.SetFeedContext(feedContext ?? (IFeedContext)NullFeedContext.Instance);
 
         strategy.OnInit();
 
@@ -96,7 +108,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
                 DateTimeOffset.UtcNow,
                 Source,
                 strategy.GetType().Name,
-                options.Asset.Name,
+                subscriptions[0].Asset.Name,
                 options.InitialCash,
                 options.StartTime,
                 options.EndTime,
@@ -118,6 +130,11 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
             var (minSubIndex, minTimestampMs) = FindNextTimestamp(state);
             if (minSubIndex == -1)
                 break;
+
+            // Advance aux feed cursors and apply auto-apply cash flows before bar delivery.
+            // This ensures funding/settlement adjustments are reflected in portfolio.Cash
+            // before OnBarStart, matching the live engine's data flow.
+            AdvanceFeeds(state, minTimestampMs);
 
             DeliverBarsAtTimestamp(state, minSubIndex, minTimestampMs);
 
@@ -265,6 +282,53 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
             catch { /* Don't mask the original exception */ }
     }
 
+    private static void AdvanceFeeds(RunState state, long timestampMs)
+    {
+        if (state.FeedContext is null) return;
+
+        state.FeedContext.AdvanceTo(timestampMs);
+        ApplyAutoApplyFeeds(state);
+    }
+
+    private static void ApplyAutoApplyFeeds(RunState state)
+    {
+        var bindings = state.AutoApplyBindings;
+        if (bindings.Length == 0) return;
+
+        var feedContext = state.FeedContext!;
+        var portfolio = state.Portfolio;
+
+        foreach (ref readonly var binding in bindings.AsSpan())
+        {
+            if (!feedContext.HasNewData(binding.FeedKey)) continue;
+            if (!feedContext.TryGetLatest(binding.FeedKey, out var values)) continue;
+
+            var position = portfolio.GetPosition(binding.Asset.Name);
+            if (position is null || position.Quantity == 0m) continue;
+
+            var lastPrice = state.LastPrices.GetValueOrDefault(binding.Asset.Name);
+            if (lastPrice == 0L) continue;
+
+            var rate = values[binding.RateColumnIndex];
+            var delta = binding.Asset.ComputeAutoApplyDelta(binding.Type, rate, position, lastPrice);
+            if (delta != 0L)
+                portfolio.ApplyCashAdjustment(delta);
+        }
+    }
+
+    private static AutoApplyBinding[] BuildAutoApplyBindings(BacktestFeedContext? feedContext)
+    {
+        if (feedContext is null) return [];
+
+        var bindings = new List<AutoApplyBinding>();
+        foreach (var (feedKey, schema, asset) in feedContext.GetAutoApplyConfigs())
+        {
+            var rateColIdx = schema.GetColumnIndex(schema.AutoApply!.RateColumn);
+            bindings.Add(new AutoApplyBinding(feedKey, rateColIdx, schema.AutoApply.Type, asset));
+        }
+        return bindings.ToArray();
+    }
+
     private void ProcessPendingOrders(RunState state, Asset asset, Int64Bar bar, DateTimeOffset timestamp)
     {
         var pending = state.OrderQueue.GetPendingForAsset(asset);
@@ -294,7 +358,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
                 continue;
             }
 
-            var settlementRejection = orderValidator.ValidateSettlement(order, fillPrice.Value, state.Portfolio, state.Options);
+            var settlementRejection = orderValidator.ValidateSettlement(order, fillPrice.Value, state.Portfolio, state.Options, state.LastPrices);
             if (settlementRejection is not null)
             {
                 order.Status = OrderStatus.Rejected;
@@ -487,6 +551,16 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
         }
     }
 
+    /// <summary>
+    /// Pre-resolved binding for a single auto-apply feed. Column index is resolved once at startup
+    /// so the hot loop reads <c>values[RateColumnIndex]</c> directly — no dictionary lookups.
+    /// </summary>
+    private readonly record struct AutoApplyBinding(
+        string FeedKey,
+        int RateColumnIndex,
+        AutoApplyType Type,
+        Asset Asset);
+
     private sealed class RunState
     {
         // Per-run dependencies (set once at init)
@@ -499,13 +573,17 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
         public required IList<DataSubscription> Subscriptions;
         public required TimeSeries<Int64Bar>[] Series;
 
+        // Aux feed state (null when no aux feeds supplied)
+        public BacktestFeedContext? FeedContext;
+        public required AutoApplyBinding[] AutoApplyBindings;
+
         // Mutable simulation state
         public required Portfolio Portfolio;
         public required BacktestOrderContext OrderContext;
         public required OrderQueue OrderQueue;
         public required List<Fill> Fills;
         public readonly List<ActiveSlTpPosition> ActiveSlTpPositions = [];
-        public readonly Dictionary<string, long> LastPrices = [];
+        public required Dictionary<string, long> LastPrices;
         public readonly List<EquitySnapshot> EquityCurve = [];
         public required int[] Cursors;
         public readonly List<long> ToRemoveBuffer = [];

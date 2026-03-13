@@ -17,7 +17,6 @@ public class EngineEventEmissionTests
         new()
         {
             InitialCash = initialCash,
-            Asset = TestAssets.Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };
@@ -502,7 +501,7 @@ public class EngineEventEmissionTests
     [Fact]
     public void QuantityBelowMin_EmitsOrdRejectAndWarning()
     {
-        var asset = Asset.Equity("TEST", "TEST", minOrderQuantity: 10m, maxOrderQuantity: 1000m, quantityStepSize: 1m);
+        var asset = new EquityAsset { Name = "TEST", Exchange = "TEST", MinOrderQuantity = 10m, MaxOrderQuantity = 1000m, QuantityStepSize = 1m };
         var bus = new CapturingEventBus();
         var sub = new DataSubscription(asset, OneMinute);
         var submitted = false;
@@ -527,7 +526,6 @@ public class EngineEventEmissionTests
         var opts = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = asset,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };

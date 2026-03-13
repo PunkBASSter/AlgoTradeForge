@@ -20,7 +20,7 @@ public class PostRunIntegrationTests : IDisposable
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
-    private static readonly Asset Aapl = Asset.Equity("AAPL", "NASDAQ");
+    private static readonly EquityAsset Aapl = new() { Name = "AAPL", Exchange = "NASDAQ" };
 
     private readonly string _testRoot;
     private readonly string _tradeDbPath;
@@ -67,7 +67,6 @@ public class PostRunIntegrationTests : IDisposable
         var btOptions = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };
@@ -194,7 +193,6 @@ public class PostRunIntegrationTests : IDisposable
         var btOptions = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };

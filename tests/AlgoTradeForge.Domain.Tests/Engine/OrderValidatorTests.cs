@@ -8,9 +8,12 @@ public class OrderValidatorTests
 {
     private readonly OrderValidator _validator = new();
 
-    private static Asset TestEquity(decimal shortMarginRate = 1.0m) =>
-        Asset.Equity("TEST", "NYSE", minOrderQuantity: 1m, maxOrderQuantity: 1000m, quantityStepSize: 1m,
-            shortMarginRate: shortMarginRate);
+    private static EquityAsset TestEquity(decimal shortMarginRate = 1.0m) =>
+        new() { Name = "TEST", Exchange = "NYSE", MinOrderQuantity = 1m, MaxOrderQuantity = 1000m, QuantityStepSize = 1m,
+            ShortMarginRate = shortMarginRate };
+
+    private static FutureAsset TestFuture() =>
+        new() { Name = "TEST", Exchange = "CME", Multiplier = 1m, TickSize = 0.01m };
 
     private static Order CreateOrder(Asset asset, OrderSide side, decimal quantity) =>
         new()
@@ -22,11 +25,13 @@ public class OrderValidatorTests
             Quantity = quantity
         };
 
+    private static readonly IReadOnlyDictionary<string, long> NoPrices =
+        new Dictionary<string, long>();
+
     private static BacktestOptions CreateOptions(long initialCash = 100_000L, long commission = 0L) =>
         new()
         {
             InitialCash = initialCash,
-            Asset = TestEquity(),
             StartTime = DateTimeOffset.UtcNow,
             EndTime = DateTimeOffset.UtcNow.AddDays(1),
             CommissionPerTrade = commission
@@ -93,7 +98,7 @@ public class OrderValidatorTests
         var portfolio = new Portfolio { InitialCash = 100_000L };
         portfolio.Initialize();
 
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Null(result);
     }
@@ -106,7 +111,7 @@ public class OrderValidatorTests
         var portfolio = new Portfolio { InitialCash = 10_000L };
         portfolio.Initialize();
 
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Equal("Insufficient cash", result);
     }
@@ -121,7 +126,7 @@ public class OrderValidatorTests
         portfolio.Initialize();
         var options = CreateOptions(commission: 1L);
 
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, options);
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, options, NoPrices);
 
         Assert.Equal("Insufficient cash", result);
     }
@@ -140,7 +145,7 @@ public class OrderValidatorTests
         // Simulate a long position of 10 shares
         portfolio.Apply(new Fill(1, asset, DateTimeOffset.UtcNow, 10_000L, 10m, OrderSide.Buy, 0L));
 
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Null(result);
     }
@@ -158,7 +163,7 @@ public class OrderValidatorTests
         portfolio.Initialize();
 
         // No existing position — full 5 shares are short, margin = 5 * 10_000 * 1 * 1.0 = 50_000 <= 100_000
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Null(result);
     }
@@ -172,7 +177,7 @@ public class OrderValidatorTests
         portfolio.Initialize();
 
         // No existing position — full 15 shares short, margin = 15 * 10_000 * 1 * 1.0 = 150_000 > 100_000
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Equal("Insufficient margin for short", result);
     }
@@ -192,7 +197,7 @@ public class OrderValidatorTests
         portfolio.Apply(new Fill(1, asset, DateTimeOffset.UtcNow, 10_000L, 5m, OrderSide.Buy, 0L));
 
         // margin = 3 * 10_000 * 1 * 1.0 = 30_000; cash after buy = 100_000 - 50_000 = 50_000
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Null(result);
     }
@@ -208,34 +213,83 @@ public class OrderValidatorTests
         portfolio.Apply(new Fill(1, asset, DateTimeOffset.UtcNow, 10_000L, 5m, OrderSide.Buy, 0L));
 
         // cash after buy = 15_000 - 50_000 = -35_000; margin = 3 * 10_000 = 30_000 > -35_000? No, margin > cash
-        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions());
+        var result = _validator.ValidateSettlement(order, 10_000L, portfolio, CreateOptions(), NoPrices);
 
         Assert.Equal("Insufficient margin for short", result);
     }
 
     #endregion
 
-    #region ShortMarginRate defaults
+    #region Asset interface segregation
 
     [Fact]
     public void DefaultShortMarginRate_Equity_IsOne()
     {
-        var asset = Asset.Equity("X", "X");
-        Assert.Equal(1.0m, asset.ShortMarginRate);
-    }
-
-    [Fact]
-    public void DefaultShortMarginRate_Future_IsOne()
-    {
-        var asset = Asset.Future("X", "X", multiplier: 1m, tickSize: 0.01m);
+        var asset = new EquityAsset { Name = "X", Exchange = "X" };
         Assert.Equal(1.0m, asset.ShortMarginRate);
     }
 
     [Fact]
     public void DefaultShortMarginRate_Crypto_IsOne()
     {
-        var asset = Asset.Crypto("X", "X", decimalDigits: 2);
+        var asset = CryptoAsset.Create("X", "X", decimalDigits: 2);
         Assert.Equal(1.0m, asset.ShortMarginRate);
+    }
+
+    [Fact]
+    public void FutureAsset_IsNotCashSettled()
+    {
+        var asset = TestFuture();
+        Assert.IsNotAssignableFrom<ICashSettledAsset>(asset);
+    }
+
+    [Fact]
+    public void FutureAsset_IsMarginAsset()
+    {
+        var asset = TestFuture();
+        Assert.IsAssignableFrom<IMarginAsset>(asset);
+    }
+
+    [Fact]
+    public void EquityAsset_IsCashSettled()
+    {
+        var asset = new EquityAsset { Name = "X", Exchange = "X" };
+        Assert.IsAssignableFrom<ICashSettledAsset>(asset);
+    }
+
+    [Fact]
+    public void EquityAsset_IsNotMarginAsset()
+    {
+        var asset = new EquityAsset { Name = "X", Exchange = "X" };
+        Assert.IsNotAssignableFrom<IMarginAsset>(asset);
+    }
+
+    [Fact]
+    public void CryptoPerpetualAsset_IsMarginAsset()
+    {
+        var asset = CryptoPerpetualAsset.Create("X", "X", decimalDigits: 2);
+        Assert.IsAssignableFrom<IMarginAsset>(asset);
+    }
+
+    [Fact]
+    public void CryptoPerpetualAsset_IsNotCashSettled()
+    {
+        var asset = CryptoPerpetualAsset.Create("X", "X", decimalDigits: 2);
+        Assert.IsNotAssignableFrom<ICashSettledAsset>(asset);
+    }
+
+    [Fact]
+    public void CryptoAsset_IsCashSettled()
+    {
+        var asset = CryptoAsset.Create("X", "X", decimalDigits: 2);
+        Assert.IsAssignableFrom<ICashSettledAsset>(asset);
+    }
+
+    [Fact]
+    public void CryptoAsset_IsNotMarginAsset()
+    {
+        var asset = CryptoAsset.Create("X", "X", decimalDigits: 2);
+        Assert.IsNotAssignableFrom<IMarginAsset>(asset);
     }
 
     #endregion

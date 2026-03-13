@@ -21,7 +21,7 @@ public class BacktestOrderContextGetPositionsTests
         var portfolio = new Portfolio { InitialCash = 100_000L };
         portfolio.Initialize();
 
-        var ctx = new BacktestOrderContext(queue, fills, portfolio, NullEventBus.Instance, new OrderValidator());
+        var ctx = new BacktestOrderContext(queue, fills, portfolio, NullEventBus.Instance, new OrderValidator(), []);
 
         // Before any trades, positions should be empty
         var positions = ctx.GetPositions();
@@ -65,7 +65,6 @@ public class BacktestOrderContextGetPositionsTests
         var options = new BacktestOptions
         {
             InitialCash = 100_000L,
-            Asset = TestAssets.Aapl,
             StartTime = DateTimeOffset.MinValue,
             EndTime = DateTimeOffset.MaxValue,
         };
