@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain;
@@ -6,6 +7,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Strategy;
+using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Application.Backtests;
 
@@ -13,7 +15,9 @@ public sealed class BacktestPreparer(
     IAssetRepository assetRepository,
     IStrategyFactory strategyFactory,
     IHistoryRepository historyRepository,
-    IOptimizationSpaceProvider spaceProvider)
+    IOptimizationSpaceProvider spaceProvider,
+    IOptions<CandleStorageOptions>? storageOptions = null,
+    IFeedContextBuilder? feedContextBuilder = null)
 {
     public Task<BacktestSetup> PrepareAsync(
         IBacktestSetupCommand command,
@@ -61,6 +65,10 @@ public sealed class BacktestPreparer(
             seriesArray[i] = historyRepository.Load(strategy.DataSubscriptions[i], fromDate, toDate);
         }
 
-        return new BacktestSetup(asset, scale, options, strategy, seriesArray);
+        var feedContext = feedContextBuilder?.Build(
+            storageOptions?.Value.DataRoot ?? CandleStorageOptions.DefaultDataRoot,
+            asset, fromDate, toDate);
+
+        return new BacktestSetup(asset, scale, options, strategy, seriesArray, FeedContext: feedContext);
     }
 }

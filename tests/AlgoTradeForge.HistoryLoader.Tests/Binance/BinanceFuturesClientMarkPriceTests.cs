@@ -1,0 +1,241 @@
+using System.Net;
+using System.Text;
+using AlgoTradeForge.HistoryLoader.Binance;
+using AlgoTradeForge.HistoryLoader.RateLimiting;
+using Xunit;
+
+namespace AlgoTradeForge.HistoryLoader.Tests.Binance;
+
+public sealed class BinanceFuturesClientMarkPriceTests
+{
+    // -------------------------------------------------------------------------
+    // Fake HTTP handler
+    // -------------------------------------------------------------------------
+
+    private sealed class FakeHandler : HttpMessageHandler
+    {
+        public Func<HttpRequestMessage, Task<HttpResponseMessage>> Handler { get; set; } = _ =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+            => Handler(request);
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private static BinanceFuturesClient BuildClient(
+        FakeHandler handler,
+        BinanceOptions? options = null)
+    {
+        var httpClient = new HttpClient(handler);
+        var opts = options ?? new BinanceOptions { RequestDelayMs = 0 };
+        var limiter = new SourceRateLimiter(
+            new WeightedRateLimiter(maxWeightPerMinute: 2400, budgetPercent: 100),
+            opts.FuturesBaseUrl);
+        return new BinanceFuturesClient(httpClient, opts, limiter);
+    }
+
+    /// <summary>
+    /// Builds a JSON array-of-arrays representing the Binance markPriceKlines response.
+    /// Each inner array has the same structure as regular klines; volume fields are "0".
+    /// </summary>
+    private static string BuildMarkPriceKlineJson(
+        params (long ts, string o, string h, string l, string c)[] records)
+    {
+        var sb = new StringBuilder();
+        sb.Append('[');
+        for (int i = 0; i < records.Length; i++)
+        {
+            if (i > 0) sb.Append(',');
+            var r = records[i];
+            // openTime, open, high, low, close, volume(0), closeTime, quoteVolume(0),
+            // tradeCount(0), takerBuyBaseVol(0), takerBuyQuoteVol(0), ignore
+            sb.Append($"[{r.ts},\"{r.o}\",\"{r.h}\",\"{r.l}\",\"{r.c}\"," +
+                      $"\"0\",{r.ts + 59999},\"0\",0,\"0\",\"0\",\"0\"]");
+        }
+        sb.Append(']');
+        return sb.ToString();
+    }
+
+    private static HttpResponseMessage JsonResponse(string json) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+
+    // -------------------------------------------------------------------------
+    // 1. FetchMarkPriceKlinesAsync_ParsesResponse_ReturnsKlineRecords
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchMarkPriceKlinesAsync_ParsesResponse_ReturnsKlineRecords()
+    {
+        var json = BuildMarkPriceKlineJson(
+            (1_700_000_000_000L, "50000.50", "51000.75", "49500.25", "50500.00"),
+            (1_700_000_060_000L, "50500.00", "52000.00", "50000.00", "51500.00"));
+
+        var handler = new FakeHandler
+        {
+            Handler = _ => Task.FromResult(JsonResponse(json))
+        };
+
+        var client = BuildClient(handler);
+        var records = await client
+            .FetchMarkPriceKlinesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_120_000L, CancellationToken.None)
+            .ToListAsync();
+
+        Assert.Equal(2, records.Count);
+
+        var first = records[0];
+        Assert.Equal(1_700_000_000_000L, first.TimestampMs);
+        Assert.Equal(50000.50m, first.Open);
+        Assert.Equal(51000.75m, first.High);
+        Assert.Equal(49500.25m, first.Low);
+        Assert.Equal(50500.00m, first.Close);
+        // Volume fields must be zero for mark price klines.
+        Assert.Equal(0m, first.Volume);
+        Assert.Equal(0m, first.QuoteVolume);
+        Assert.Equal(0, first.TradeCount);
+        Assert.Equal(0m, first.TakerBuyVolume);
+        Assert.Equal(0m, first.TakerBuyQuoteVolume);
+
+        var second = records[1];
+        Assert.Equal(1_700_000_060_000L, second.TimestampMs);
+        Assert.Equal(50500.00m, second.Open);
+        Assert.Equal(51500.00m, second.Close);
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. FetchMarkPriceKlinesAsync_Pagination_MakesMultipleRequests
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchMarkPriceKlinesAsync_Pagination_MakesMultipleRequests()
+    {
+        // Build a first batch of exactly 1500 records (triggers pagination).
+        var firstBatchRecords = Enumerable.Range(0, 1500)
+            .Select(i => (
+                ts: 1_700_000_000_000L + i * 60_000L,
+                o: "50000.00", h: "50100.00", l: "49900.00", c: "50050.00"))
+            .ToArray();
+
+        var firstBatchJson = BuildMarkPriceKlineJson(firstBatchRecords);
+
+        // Second batch has 3 records — signals end of data.
+        var secondBatchJson = BuildMarkPriceKlineJson(
+            (1_700_000_000_000L + 1500 * 60_000L, "50050.00", "50200.00", "49950.00", "50100.00"),
+            (1_700_000_000_000L + 1501 * 60_000L, "50100.00", "50300.00", "50000.00", "50150.00"),
+            (1_700_000_000_000L + 1502 * 60_000L, "50150.00", "50400.00", "50050.00", "50200.00"));
+
+        int requestCount = 0;
+        var handler = new FakeHandler
+        {
+            Handler = _ =>
+            {
+                requestCount++;
+                var responseJson = requestCount == 1 ? firstBatchJson : secondBatchJson;
+                return Task.FromResult(JsonResponse(responseJson));
+            }
+        };
+
+        var client = BuildClient(handler);
+        long endMs = 1_700_000_000_000L + 2000 * 60_000L;
+        var records = await client
+            .FetchMarkPriceKlinesAsync("BTCUSDT", "1m", 1_700_000_000_000L, endMs, CancellationToken.None)
+            .ToListAsync();
+
+        Assert.Equal(2, requestCount);
+        Assert.Equal(1503, records.Count);
+
+        Assert.Equal(1_700_000_000_000L, records[0].TimestampMs);
+        Assert.Equal(1_700_000_000_000L + 1500 * 60_000L, records[1500].TimestampMs);
+        Assert.Equal(1_700_000_000_000L + 1502 * 60_000L, records[1502].TimestampMs);
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. FetchMarkPriceKlinesAsync_EmptyResponse_YieldsNothing
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchMarkPriceKlinesAsync_EmptyResponse_YieldsNothing()
+    {
+        var handler = new FakeHandler
+        {
+            Handler = _ => Task.FromResult(JsonResponse("[]"))
+        };
+
+        var client = BuildClient(handler);
+        var records = await client
+            .FetchMarkPriceKlinesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, CancellationToken.None)
+            .ToListAsync();
+
+        Assert.Empty(records);
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. FetchMarkPriceKlinesAsync_UsesCorrectEndpoint
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchMarkPriceKlinesAsync_UsesCorrectEndpoint()
+    {
+        string? capturedUrl = null;
+
+        var handler = new FakeHandler
+        {
+            Handler = req =>
+            {
+                capturedUrl = req.RequestUri?.ToString();
+                return Task.FromResult(JsonResponse("[]"));
+            }
+        };
+
+        var client = BuildClient(handler);
+        await client
+            .FetchMarkPriceKlinesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, CancellationToken.None)
+            .ToListAsync();
+
+        Assert.NotNull(capturedUrl);
+        Assert.Contains("/fapi/v1/markPriceKlines", capturedUrl);
+        Assert.Contains("symbol=BTCUSDT", capturedUrl);
+        Assert.Contains("interval=1m", capturedUrl);
+        Assert.Contains("limit=1500", capturedUrl);
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. FetchMarkPriceKlinesAsync_Http429_RetriesWithBackoff
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchMarkPriceKlinesAsync_Http429_RetriesWithBackoff()
+    {
+        var json = BuildMarkPriceKlineJson(
+            (1_700_000_000_000L, "50000.00", "50100.00", "49900.00", "50050.00"));
+
+        int callCount = 0;
+        var handler = new FakeHandler
+        {
+            Handler = _ =>
+            {
+                callCount++;
+                if (callCount == 1)
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+                return Task.FromResult(JsonResponse(json));
+            }
+        };
+
+        var opts = new BinanceOptions { RequestDelayMs = 0 };
+        var client = BuildClient(handler, opts);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var records = await client
+            .FetchMarkPriceKlinesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, cts.Token)
+            .ToListAsync(cts.Token);
+
+        Assert.Equal(2, callCount);
+        Assert.Single(records);
+        Assert.Equal(1_700_000_000_000L, records[0].TimestampMs);
+    }
+}

@@ -58,7 +58,9 @@ builder.Services.Configure<BinanceLiveOptions>(
 // Register Infrastructure services
 builder.Services.Configure<CandleStorageOptions>(
     builder.Configuration.GetSection("CandleStorage"));
-builder.Services.AddSingleton<IInt64BarLoader, CsvInt64BarLoader>();
+builder.Services.AddSingleton<IInt64BarLoader, NewFormatBarLoader>();
+builder.Services.AddSingleton<CsvFeedSeriesLoader>();
+builder.Services.AddSingleton<IFeedContextBuilder, FeedContextBuilder>();
 builder.Services.AddSingleton<IDataSource, CsvDataSource>();
 builder.Services.AddSingleton<IHistoryRepository, HistoryRepository>();
 
