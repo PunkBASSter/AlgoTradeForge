@@ -13,3 +13,10 @@ After exhausting the 10 configured reconnect attempts with exponential backoff, 
 ### 3. Cancel failures during shutdown are not retried
 
 If a cancel API call fails in `ProcessCancelsAsync` (e.g., due to a transient network error or rate limit), the order remains open on Binance. The current implementation logs the failure but does not retry. A bulk "cancel all open orders" REST call (`DELETE /api/v3/openOrders`) as a final safety net during graceful shutdown could prevent orphaned orders from lingering on the exchange.
+
+### 4. Missing important features
+- Account transactions history
+- Position history
+- PnL chart/current equity
+- About 500 usdt cash is missing from paper account during 5 days without trades (?) but with orders (sell orders on spot maybe eat cash?)
+- References to positions are required in history items

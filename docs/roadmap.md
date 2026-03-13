@@ -5,7 +5,7 @@
 ## TODO:
 - Claude additions on review - verify OOP compliance (explain what's expected)
 - Missing skills, like OOP-style class design (explain)
-- Documentation hooks (continuous readme/constitution/claude.md updates) 
+- Documentation hooks (continuous readme/constitution/claude.md updates)
 
 ## Candle Ingestor -> HistoryLoader
 @docs\history-loader-project.md
@@ -29,6 +29,9 @@
 - Metrics enhancement: display number of opening trades, slippage loss, commissions loss, average profit, average loss, mean/dispersion, etc.
 - Delete backtest results
 - Display run start time on details, sort by descending timestamp
+
+## Live
+@docs/live-connector-binance.md 
 
 ## QA
 - Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
