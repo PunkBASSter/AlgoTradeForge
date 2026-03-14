@@ -1,5 +1,6 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 using AlgoTradeForge.HistoryLoader.Collection;
 using AlgoTradeForge.HistoryLoader.Endpoints;
 using AlgoTradeForge.HistoryLoader.Infrastructure;
@@ -16,6 +17,17 @@ builder.Services.AddHealthChecks();
 
 // Infrastructure services (Binance clients, CSV writers, rate limiting, etc.)
 builder.Services.AddHistoryLoaderInfrastructure();
+
+// Feed collectors
+builder.Services.AddSingleton<IFeedCollector, CandleFeedCollector>();
+builder.Services.AddSingleton<IFeedCollector, FundingRateFeedCollector>();
+builder.Services.AddSingleton<IFeedCollector, MarkPriceFeedCollector>();
+builder.Services.AddSingleton<IFeedCollector, OpenInterestFeedCollector>();
+builder.Services.AddSingleton<IFeedCollector, LsRatioGlobalFeedCollector>();
+builder.Services.AddSingleton<IFeedCollector, LsRatioTopAccountsFeedCollector>();
+builder.Services.AddSingleton<IFeedCollector, TakerVolumeFeedCollector>();
+builder.Services.AddSingleton<IFeedCollector, LsRatioTopPositionsFeedCollector>();
+builder.Services.AddSingleton<IFeedCollector, LiquidationFeedCollector>();
 
 // Collection services
 builder.Services.AddSingleton<SymbolCollector>();
