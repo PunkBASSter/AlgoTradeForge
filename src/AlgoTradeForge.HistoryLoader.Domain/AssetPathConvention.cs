@@ -2,9 +2,10 @@ namespace AlgoTradeForge.HistoryLoader.Domain;
 
 public static class AssetPathConvention
 {
-    public static string DirectoryName(string symbol, string assetType)
+    public static string DirectoryName(string symbol, string assetType) => assetType switch
     {
-        var suffix = assetType is "perpetual" or "future" ? "_fut" : "";
-        return $"{symbol}{suffix}";
-    }
+        "perpetual" or "future" => $"{symbol}_fut",
+        "spot" or "equity"     => symbol,
+        _ => throw new ArgumentException($"Unknown asset type: {assetType}", nameof(assetType))
+    };
 }
