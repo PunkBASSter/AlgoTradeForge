@@ -61,7 +61,7 @@ internal sealed class RatioCollectorService(
 
                     await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct);
                 }
-                catch (HttpRequestException ex) when (ex.Message.Contains("418"))
+                catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)
                 {
                     logger.LogCritical(ex, "IP banned by Binance — stopping all collection");
                     ipBanned = true;

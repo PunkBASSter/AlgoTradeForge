@@ -60,44 +60,69 @@ public sealed class SymbolCollector(
             switch (feedName)
             {
                 case "candles":
-                    await CollectCandlesAsync(assetConfig, assetDir, interval, fromMs, toMs, ct);
+                    await CollectCandlesAsync(assetConfig, assetDir, interval, fromMs, toMs, feedConfig.GapThresholdMultiplier, ct);
                     break;
                 case "funding-rate":
                     await CollectFundingRateAsync(assetConfig, assetDir, fromMs, toMs, ct);
                     break;
                 case "open-interest":
+                {
+                    AdjustFromMs(feedWriter, assetDir, "open-interest", interval, ref fromMs);
                     await CollectGenericFeedAsync(assetDir, "open-interest", interval, OiColumns,
-                        futuresClient.FetchOpenInterestAsync(assetConfig.Symbol, interval, fromMs, toMs, ct), ct);
+                        futuresClient.FetchOpenInterestAsync(assetConfig.Symbol, interval, fromMs, toMs, ct),
+                        feedConfig.GapThresholdMultiplier, ct);
                     break;
+                }
                 case "ls-ratio-global":
+                {
+                    AdjustFromMs(feedWriter, assetDir, "ls-ratio-global", interval, ref fromMs);
                     await CollectGenericFeedAsync(assetDir, "ls-ratio-global", interval, LsRatioColumns,
-                        futuresClient.FetchGlobalLongShortRatioAsync(assetConfig.Symbol, interval, fromMs, toMs, ct), ct);
+                        futuresClient.FetchGlobalLongShortRatioAsync(assetConfig.Symbol, interval, fromMs, toMs, ct),
+                        feedConfig.GapThresholdMultiplier, ct);
                     break;
+                }
                 case "ls-ratio-top-accounts":
+                {
+                    AdjustFromMs(feedWriter, assetDir, "ls-ratio-top-accounts", interval, ref fromMs);
                     await CollectGenericFeedAsync(assetDir, "ls-ratio-top-accounts", interval, LsRatioColumns,
-                        futuresClient.FetchTopAccountRatioAsync(assetConfig.Symbol, interval, fromMs, toMs, ct), ct);
+                        futuresClient.FetchTopAccountRatioAsync(assetConfig.Symbol, interval, fromMs, toMs, ct),
+                        feedConfig.GapThresholdMultiplier, ct);
                     break;
+                }
                 case "taker-volume":
+                {
+                    AdjustFromMs(feedWriter, assetDir, "taker-volume", interval, ref fromMs);
                     await CollectGenericFeedAsync(assetDir, "taker-volume", interval, TakerVolumeColumns,
-                        futuresClient.FetchTakerVolumeAsync(assetConfig.Symbol, interval, fromMs, toMs, ct), ct);
+                        futuresClient.FetchTakerVolumeAsync(assetConfig.Symbol, interval, fromMs, toMs, ct),
+                        feedConfig.GapThresholdMultiplier, ct);
                     break;
+                }
                 case "mark-price":
-                    await CollectMarkPriceAsync(assetConfig, assetDir, interval, fromMs, toMs, ct);
+                    await CollectMarkPriceAsync(assetConfig, assetDir, interval, fromMs, toMs,
+                        feedConfig.GapThresholdMultiplier, ct);
                     break;
                 case "ls-ratio-top-positions":
+                {
+                    AdjustFromMs(feedWriter, assetDir, "ls-ratio-top-positions", interval, ref fromMs);
                     await CollectGenericFeedAsync(assetDir, "ls-ratio-top-positions", interval, PositionRatioColumns,
-                        futuresClient.FetchTopPositionRatioAsync(assetConfig.Symbol, interval, fromMs, toMs, ct), ct);
+                        futuresClient.FetchTopPositionRatioAsync(assetConfig.Symbol, interval, fromMs, toMs, ct),
+                        feedConfig.GapThresholdMultiplier, ct);
                     break;
+                }
                 case "liquidations":
+                {
+                    AdjustFromMs(feedWriter, assetDir, "liquidations", interval, ref fromMs);
                     await CollectGenericFeedAsync(assetDir, "liquidations", interval, LiquidationColumns,
-                        futuresClient.FetchLiquidationsAsync(assetConfig.Symbol, fromMs, toMs, ct), ct);
+                        futuresClient.FetchLiquidationsAsync(assetConfig.Symbol, fromMs, toMs, ct),
+                        feedConfig.GapThresholdMultiplier, ct);
                     break;
+                }
                 default:
                     logger.LogWarning("Unknown feed: {Feed} for {Symbol}", feedName, assetConfig.Symbol);
                     break;
             }
         }
-        catch (HttpRequestException ex) when (ex.Message.Contains("400"))
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
         {
             logger.LogWarning("Symbol may be delisted, skipping: {Symbol}", assetConfig.Symbol);
         }
@@ -109,6 +134,7 @@ public sealed class SymbolCollector(
         string interval,
         long fromMs,
         long toMs,
+        double gapMultiplier,
         CancellationToken ct)
     {
         // Ensure feeds.json has candle config
@@ -181,10 +207,10 @@ public sealed class SymbolCollector(
                 }
             }
 
-            // Gap detection: if timestamp jump exceeds 2x expected interval
+            // Gap detection: if timestamp jump exceeds configured multiplier of expected interval
             if (previousTs > 0 && expectedMs > 0)
             {
-                if (kline.TimestampMs - previousTs > expectedMs * 2)
+                if (kline.TimestampMs - previousTs > expectedMs * gapMultiplier)
                 {
                     gaps.Add(new DataGap { FromMs = previousTs, ToMs = kline.TimestampMs });
                 }
@@ -264,6 +290,7 @@ public sealed class SymbolCollector(
         string interval,
         long fromMs,
         long toMs,
+        double gapMultiplier,
         CancellationToken ct)
     {
         // Ensure feeds.json schema for "mark-price" feed.
@@ -308,10 +335,10 @@ public sealed class SymbolCollector(
                 throw;
             }
 
-            // Gap detection: if timestamp jump exceeds 2x expected interval
+            // Gap detection: if timestamp jump exceeds configured multiplier of expected interval
             if (previousTs > 0 && expectedMs > 0)
             {
-                if (kline.TimestampMs - previousTs > expectedMs * 2)
+                if (kline.TimestampMs - previousTs > expectedMs * gapMultiplier)
                 {
                     gaps.Add(new DataGap { FromMs = previousTs, ToMs = kline.TimestampMs });
                 }
@@ -338,6 +365,7 @@ public sealed class SymbolCollector(
         string interval,
         string[] columns,
         IAsyncEnumerable<FeedRecord> records,
+        double gapMultiplier,
         CancellationToken ct)
     {
         // Ensure feeds.json schema
@@ -374,10 +402,10 @@ public sealed class SymbolCollector(
                 throw;
             }
 
-            // Gap detection: if timestamp jump exceeds 2x expected interval
+            // Gap detection: if timestamp jump exceeds configured multiplier of expected interval
             if (previousTs > 0 && expectedMs > 0)
             {
-                if (record.TimestampMs - previousTs > expectedMs * 2)
+                if (record.TimestampMs - previousTs > expectedMs * gapMultiplier)
                 {
                     gaps.Add(new DataGap { FromMs = previousTs, ToMs = record.TimestampMs });
                 }
@@ -430,5 +458,12 @@ public sealed class SymbolCollector(
         };
 
         feedStatusStore.Save(assetDir, feedName, status);
+    }
+
+    private static void AdjustFromMs(IFeedWriter feedWriter, string assetDir, string feedName, string interval, ref long fromMs)
+    {
+        var resumeTs = feedWriter.ResumeFrom(assetDir, feedName, interval);
+        if (resumeTs.HasValue && resumeTs.Value >= fromMs)
+            fromMs = resumeTs.Value + 1;
     }
 }

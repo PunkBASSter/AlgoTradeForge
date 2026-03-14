@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Domain;
@@ -6,7 +7,7 @@ namespace AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 
 internal sealed class CandleCsvWriter : ICandleWriter
 {
-    private readonly Dictionary<string, long> _lastWrittenTimestamps = new();
+    private readonly ConcurrentDictionary<string, long> _lastWrittenTimestamps = new();
 
     public void Write(string assetDir, string interval, KlineRecord record, int decimalDigits)
     {
@@ -46,7 +47,7 @@ internal sealed class CandleCsvWriter : ICandleWriter
 
         writer.WriteLine($"{record.TimestampMs},{open},{high},{low},{close},{volume}");
 
-        _lastWrittenTimestamps[key] = record.TimestampMs;
+        _lastWrittenTimestamps.AddOrUpdate(key, record.TimestampMs, (_, _) => record.TimestampMs);
     }
 
     public long? ResumeFrom(string assetDir, string interval)
@@ -77,7 +78,7 @@ internal sealed class CandleCsvWriter : ICandleWriter
                 continue;
 
             var key = $"{assetDir}/{interval}";
-            _lastWrittenTimestamps[key] = ts;
+            _lastWrittenTimestamps.AddOrUpdate(key, ts, (_, _) => ts);
             return ts;
         }
 

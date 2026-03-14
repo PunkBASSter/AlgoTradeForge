@@ -1,3 +1,4 @@
+using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -95,9 +96,6 @@ public sealed class BackfillOrchestrator(
         }
     }
 
-    public static string ResolveAssetDir(string dataRoot, AssetCollectionConfig asset)
-    {
-        var suffix = asset.Type is "perpetual" or "future" ? "_fut" : "";
-        return Path.Combine(dataRoot, asset.Exchange, $"{asset.Symbol}{suffix}");
-    }
+    public static string ResolveAssetDir(string dataRoot, AssetCollectionConfig asset) =>
+        Path.Combine(dataRoot, asset.Exchange, AssetPathConvention.DirectoryName(asset.Symbol, asset.Type));
 }

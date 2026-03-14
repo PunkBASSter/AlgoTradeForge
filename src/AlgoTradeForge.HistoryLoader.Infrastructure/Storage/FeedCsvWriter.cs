@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Domain;
@@ -6,7 +7,7 @@ namespace AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 
 internal sealed class FeedCsvWriter : IFeedWriter
 {
-    private readonly Dictionary<string, long> _lastWrittenTimestamps = new();
+    private readonly ConcurrentDictionary<string, long> _lastWrittenTimestamps = new();
 
     public void Write(
         string assetDir,
@@ -42,7 +43,7 @@ internal sealed class FeedCsvWriter : IFeedWriter
         var valuesPart = string.Join(',', record.Values.Select(v => v.ToString(CultureInfo.InvariantCulture)));
         writer.WriteLine($"{record.TimestampMs},{valuesPart}");
 
-        _lastWrittenTimestamps[dedupKey] = record.TimestampMs;
+        _lastWrittenTimestamps.AddOrUpdate(dedupKey, record.TimestampMs, (_, _) => record.TimestampMs);
     }
 
     public long? ResumeFrom(string assetDir, string feedName, string interval)

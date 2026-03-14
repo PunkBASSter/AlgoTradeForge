@@ -55,7 +55,7 @@ internal sealed class LiquidationCollectorService(
 
                 await symbolCollector.CollectFeedAsync(asset, liquidationFeed, assetDir, fromMs, toMs, ct);
             }
-            catch (HttpRequestException ex) when (ex.Message.Contains("418"))
+            catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)
             {
                 logger.LogCritical(ex, "IP banned by Binance — stopping all collection");
                 break;
