@@ -30,7 +30,7 @@ internal static class StatusEndpoints
 
             foreach (var feed in asset.Feeds)
             {
-                var status = feedStatusStore.Load(assetDir, feed.Name);
+                var status = feedStatusStore.Load(assetDir, feed.Name, feed.Interval);
                 var health = status?.Health.ToString() ?? "Unknown";
                 var gapCount = status?.Gaps.Count ?? 0;
 
@@ -76,7 +76,7 @@ internal static class StatusEndpoints
 
         foreach (var feed in asset.Feeds)
         {
-            var status = feedStatusStore.Load(resolvedAssetDir, feed.Name);
+            var status = feedStatusStore.Load(resolvedAssetDir, feed.Name, feed.Interval);
             if (status is not null)
                 feedStatuses.Add(status);
         }

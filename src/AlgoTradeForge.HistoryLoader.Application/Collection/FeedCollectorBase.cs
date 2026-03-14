@@ -58,7 +58,7 @@ public abstract class FeedCollectorBase(
         CollectionHealth health = CollectionHealth.Healthy,
         List<DataGap>? newGaps = null)
     {
-        var existing = FeedStatusStore.Load(assetDir, feedName);
+        var existing = FeedStatusStore.Load(assetDir, feedName, interval);
 
         List<DataGap> mergedGaps = existing?.Gaps ?? [];
         if (newGaps is { Count: > 0 })
@@ -78,6 +78,6 @@ public abstract class FeedCollectorBase(
             Health = health
         };
 
-        FeedStatusStore.Save(assetDir, feedName, status);
+        FeedStatusStore.Save(assetDir, feedName, interval, status);
     }
 }

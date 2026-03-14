@@ -12,9 +12,9 @@ internal sealed class FeedStatusManager : IFeedStatusStore
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public FeedStatus? Load(string assetDir, string feedName)
+    public FeedStatus? Load(string assetDir, string feedName, string interval)
     {
-        var targetPath = GetStatusPath(assetDir, feedName);
+        var targetPath = GetStatusPath(assetDir, feedName, interval);
         if (!File.Exists(targetPath))
             return null;
 
@@ -22,12 +22,12 @@ internal sealed class FeedStatusManager : IFeedStatusStore
         return JsonSerializer.Deserialize<FeedStatus>(json, JsonOptions);
     }
 
-    public void Save(string assetDir, string feedName, FeedStatus status)
+    public void Save(string assetDir, string feedName, string interval, FeedStatus status)
     {
         var feedDir = Path.Combine(assetDir, feedName);
         Directory.CreateDirectory(feedDir);
 
-        var targetPath = GetStatusPath(assetDir, feedName);
+        var targetPath = GetStatusPath(assetDir, feedName, interval);
         var tmpPath = targetPath + ".tmp";
 
         var json = JsonSerializer.Serialize(status, JsonOptions);
@@ -35,6 +35,7 @@ internal sealed class FeedStatusManager : IFeedStatusStore
         File.Move(tmpPath, targetPath, overwrite: true);
     }
 
-    private static string GetStatusPath(string assetDir, string feedName)
-        => Path.Combine(assetDir, feedName, "status.json");
+    private static string GetStatusPath(string assetDir, string feedName, string interval)
+        => Path.Combine(assetDir, feedName,
+            string.IsNullOrEmpty(interval) ? "status.json" : $"status_{interval}.json");
 }
