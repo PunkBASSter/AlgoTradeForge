@@ -3,14 +3,14 @@ using Xunit;
 
 namespace AlgoTradeForge.Infrastructure.Tests.History;
 
-public class NewFormatBarLoaderTests : IDisposable
+public class PartitionedCsvBarLoaderTests : IDisposable
 {
     private readonly string _testDataRoot;
-    private readonly NewFormatBarLoader _loader = new();
+    private readonly PartitionedCsvBarLoader _loader = new();
 
-    public NewFormatBarLoaderTests()
+    public PartitionedCsvBarLoaderTests()
     {
-        _testDataRoot = Path.Combine(Path.GetTempPath(), $"NewBarLoader_{Guid.NewGuid():N}");
+        _testDataRoot = Path.Combine(Path.GetTempPath(), $"PartitionedBarLoader_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testDataRoot);
     }
 
@@ -210,6 +210,6 @@ public class NewFormatBarLoaderTests : IDisposable
     [InlineData(10080, "1w")]
     public void IntervalToString_ReturnsExpected(int minutes, string expected)
     {
-        Assert.Equal(expected, NewFormatBarLoader.IntervalToString(TimeSpan.FromMinutes(minutes)));
+        Assert.Equal(expected, PartitionedCsvBarLoader.IntervalToString(TimeSpan.FromMinutes(minutes)));
     }
 }

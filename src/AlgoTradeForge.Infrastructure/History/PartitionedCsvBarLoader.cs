@@ -4,11 +4,11 @@ using AlgoTradeForge.Domain.History;
 namespace AlgoTradeForge.Infrastructure.History;
 
 /// <summary>
-/// Loads candle bars from the new flat monthly-partitioned CSV format.
+/// Loads candle bars from monthly-partitioned CSV files.
 /// Path pattern: {dataRoot}/{exchange}/{symbol}/candles/{YYYY-MM}_{interval}.csv
 /// Header: ts,o,h,l,c,vol (all longs)
 /// </summary>
-public sealed class NewFormatBarLoader : IInt64BarLoader
+public sealed class PartitionedCsvBarLoader : IInt64BarLoader
 {
     public TimeSeries<Int64Bar> Load(
         string dataRoot,

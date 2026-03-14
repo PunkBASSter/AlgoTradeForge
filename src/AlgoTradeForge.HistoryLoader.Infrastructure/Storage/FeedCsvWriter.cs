@@ -30,12 +30,11 @@ internal sealed class FeedCsvWriter : IFeedWriter
         Directory.CreateDirectory(feedDir);
 
         var path = Path.Combine(feedDir, fileName);
-        var isNew = !File.Exists(path);
 
         using var fs = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read);
         using var writer = new StreamWriter(fs);
 
-        if (isNew)
+        if (fs.Length == 0)
         {
             writer.WriteLine($"ts,{string.Join(',', columns)}");
         }

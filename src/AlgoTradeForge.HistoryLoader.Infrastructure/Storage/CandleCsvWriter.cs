@@ -20,22 +20,10 @@ internal sealed class CandleCsvWriter : ICandleWriter
         var dir = Path.GetDirectoryName(partitionPath)!;
         Directory.CreateDirectory(dir);
 
-        var isNew = !File.Exists(partitionPath);
-
-        if (isNew && _lastWrittenTimestamps.ContainsKey(key) is false)
-        {
-            // no last-ts yet; nothing to resume from for this new file
-        }
-        else if (isNew is false && _lastWrittenTimestamps.ContainsKey(key) is false)
-        {
-            // file exists but we haven't loaded the dedup state yet — skip; caller should
-            // use ResumeFrom to seed the initial timestamp before writing
-        }
-
-        var fs = new FileStream(partitionPath, FileMode.Append, FileAccess.Write, FileShare.Read);
+        using var fs = new FileStream(partitionPath, FileMode.Append, FileAccess.Write, FileShare.Read);
         using var writer = new StreamWriter(fs);
 
-        if (isNew)
+        if (fs.Length == 0)
             writer.WriteLine("ts,o,h,l,c,vol");
 
         var multiplier = (decimal)Math.Pow(10, decimalDigits);
