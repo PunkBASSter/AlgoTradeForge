@@ -7,6 +7,7 @@ namespace AlgoTradeForge.HistoryLoader.Collection;
 
 internal sealed class KlineCollectorService(
     SymbolCollector symbolCollector,
+    ICollectionCircuitBreaker circuitBreaker,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<KlineCollectorService> logger) : BackgroundService
 {
@@ -19,6 +20,9 @@ internal sealed class KlineCollectorService(
         // Run immediately on startup, then daily
         do
         {
+            if (circuitBreaker.IsTripped)
+                return;
+
             try
             {
                 await CollectAsync(stoppingToken);
@@ -37,13 +41,15 @@ internal sealed class KlineCollectorService(
 
         foreach (var asset in config.Assets)
         {
+            if (circuitBreaker.IsTripped)
+                return;
+
             var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
 
             var candleFeeds = asset.Feeds
                 .Where(f => f.Enabled && f.Name == "candles")
                 .ToList();
 
-            bool ipBanned = false;
             foreach (var feed in candleFeeds)
             {
                 try
@@ -57,9 +63,8 @@ internal sealed class KlineCollectorService(
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)
                 {
-                    logger.LogCritical(ex, "IP banned by Binance — stopping all collection");
-                    ipBanned = true;
-                    break;
+                    circuitBreaker.Trip("IP banned by Binance");
+                    return;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -67,9 +72,6 @@ internal sealed class KlineCollectorService(
                         asset.Symbol, feed.Interval);
                 }
             }
-
-            if (ipBanned)
-                break;
         }
     }
 }

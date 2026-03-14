@@ -7,6 +7,7 @@ namespace AlgoTradeForge.HistoryLoader.Collection;
 
 internal sealed class HourlyCollectorService(
     SymbolCollector symbolCollector,
+    ICollectionCircuitBreaker circuitBreaker,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<HourlyCollectorService> logger) : BackgroundService
 {
@@ -22,6 +23,9 @@ internal sealed class HourlyCollectorService(
         // Run immediately on startup, then every hour
         do
         {
+            if (circuitBreaker.IsTripped)
+                return;
+
             try
             {
                 await CollectAsync(stoppingToken);
@@ -38,9 +42,11 @@ internal sealed class HourlyCollectorService(
     {
         var config = options.CurrentValue;
 
-        bool ipBanned = false;
         foreach (var asset in config.Assets)
         {
+            if (circuitBreaker.IsTripped)
+                return;
+
             if (asset.Type is not ("perpetual" or "future"))
                 continue;
 
@@ -64,18 +70,14 @@ internal sealed class HourlyCollectorService(
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)
                 {
-                    logger.LogCritical(ex, "IP banned by Binance — stopping all collection");
-                    ipBanned = true;
-                    break;
+                    circuitBreaker.Trip("IP banned by Binance");
+                    return;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     logger.LogError(ex, "{Feed} collection failed for {Symbol}", feedName, asset.Symbol);
                 }
             }
-
-            if (ipBanned)
-                break;
         }
     }
 }

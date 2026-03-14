@@ -30,6 +30,7 @@ builder.Services.AddSingleton<IFeedCollector, LsRatioTopPositionsFeedCollector>(
 builder.Services.AddSingleton<IFeedCollector, LiquidationFeedCollector>();
 
 // Collection services
+builder.Services.AddSingleton<ICollectionCircuitBreaker, CollectionCircuitBreaker>();
 builder.Services.AddSingleton<SymbolCollector>();
 builder.Services.AddSingleton<BackfillOrchestrator>();
 builder.Services.AddHostedService<KlineCollectorService>();

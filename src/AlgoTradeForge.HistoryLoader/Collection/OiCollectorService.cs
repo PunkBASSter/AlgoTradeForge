@@ -7,6 +7,7 @@ namespace AlgoTradeForge.HistoryLoader.Collection;
 
 internal sealed class OiCollectorService(
     SymbolCollector symbolCollector,
+    ICollectionCircuitBreaker circuitBreaker,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<OiCollectorService> logger) : BackgroundService
 {
@@ -18,6 +19,9 @@ internal sealed class OiCollectorService(
 
         do
         {
+            if (circuitBreaker.IsTripped)
+                return;
+
             try
             {
                 await CollectAsync(stoppingToken);
@@ -36,6 +40,9 @@ internal sealed class OiCollectorService(
 
         foreach (var asset in config.Assets)
         {
+            if (circuitBreaker.IsTripped)
+                return;
+
             if (asset.Type is not ("perpetual" or "future"))
                 continue;
 
@@ -57,8 +64,8 @@ internal sealed class OiCollectorService(
             }
             catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)
             {
-                logger.LogCritical(ex, "IP banned by Binance — stopping all collection");
-                break;
+                circuitBreaker.Trip("IP banned by Binance");
+                return;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

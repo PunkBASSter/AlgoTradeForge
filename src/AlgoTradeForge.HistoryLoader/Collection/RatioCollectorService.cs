@@ -7,11 +7,12 @@ namespace AlgoTradeForge.HistoryLoader.Collection;
 
 internal sealed class RatioCollectorService(
     SymbolCollector symbolCollector,
+    ICollectionCircuitBreaker circuitBreaker,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<RatioCollectorService> logger) : BackgroundService
 {
     private static readonly string[] RatioFeedNames =
-        ["ls-ratio-global", "ls-ratio-top-accounts", "ls-ratio-top-positions", "taker-volume"];
+        ["ls-ratio-global", "ls-ratio-top-accounts", "taker-volume"];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -21,6 +22,9 @@ internal sealed class RatioCollectorService(
 
         do
         {
+            if (circuitBreaker.IsTripped)
+                return;
+
             try
             {
                 await CollectAsync(stoppingToken);
@@ -37,9 +41,11 @@ internal sealed class RatioCollectorService(
     {
         var config = options.CurrentValue;
 
-        bool ipBanned = false;
         foreach (var asset in config.Assets)
         {
+            if (circuitBreaker.IsTripped)
+                return;
+
             if (asset.Type is not ("perpetual" or "future"))
                 continue;
 
@@ -63,18 +69,14 @@ internal sealed class RatioCollectorService(
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)
                 {
-                    logger.LogCritical(ex, "IP banned by Binance — stopping all collection");
-                    ipBanned = true;
-                    break;
+                    circuitBreaker.Trip("IP banned by Binance");
+                    return;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     logger.LogError(ex, "{Feed} collection failed for {Symbol}", feedName, asset.Symbol);
                 }
             }
-
-            if (ipBanned)
-                break;
         }
     }
 }
