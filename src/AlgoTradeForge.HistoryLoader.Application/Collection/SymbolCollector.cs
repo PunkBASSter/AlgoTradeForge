@@ -34,7 +34,7 @@ public sealed class SymbolCollector
         if (assetConfig.Type == "spot" && !collector.SupportsSpot)
         {
             _logger.LogWarning(
-                "Spot assets only support candles feed, skipping {Feed} for {Symbol}",
+                "Spot assets do not support {Feed}, skipping for {Symbol}",
                 feedName, assetConfig.Symbol);
             return;
         }

@@ -26,11 +26,12 @@ public abstract class FeedCollectorBase(
         long toMs,
         CancellationToken ct);
 
-    protected void AdjustFromMs(string assetDir, string feedName, string interval, ref long fromMs)
+    protected long? AdjustFromMs(string assetDir, string feedName, string interval, ref long fromMs)
     {
         var resumeTs = FeedWriter.ResumeFrom(assetDir, feedName, interval);
         if (resumeTs.HasValue && resumeTs.Value >= fromMs)
             fromMs = resumeTs.Value + 1;
+        return resumeTs;
     }
 
     protected static long ComputeExpectedMs(string interval) =>
@@ -38,14 +39,10 @@ public abstract class FeedCollectorBase(
             ? 0
             : (long)IntervalParser.ToTimeSpan(interval).TotalMilliseconds;
 
-    protected static bool DetectGap(long currentTs, long previousTs, long expectedMs, double multiplier, List<DataGap> gaps)
+    protected static void DetectGap(long currentTs, long previousTs, long expectedMs, double multiplier, List<DataGap> gaps)
     {
         if (previousTs > 0 && expectedMs > 0 && currentTs - previousTs > expectedMs * multiplier)
-        {
             gaps.Add(new DataGap { FromMs = previousTs, ToMs = currentTs });
-            return true;
-        }
-        return false;
     }
 
     protected void UpdateFeedStatus(

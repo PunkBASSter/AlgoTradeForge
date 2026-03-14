@@ -40,6 +40,10 @@ public sealed class CandleFeedCollector(
 
         bool isSpot = assetConfig.Type == "spot";
 
+        if (isSpot && spotClient is null)
+            throw new InvalidOperationException(
+                $"Spot data fetcher is not registered but asset {assetConfig.Symbol} is type 'spot'.");
+
         // Ensure candle-ext schema only for non-spot assets.
         if (!isSpot)
         {

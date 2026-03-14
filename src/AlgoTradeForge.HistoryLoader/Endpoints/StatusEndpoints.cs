@@ -17,10 +17,10 @@ internal static class StatusEndpoints
     }
 
     private static IResult GetAllStatus(
-        IOptions<HistoryLoaderOptions> options,
+        IOptionsMonitor<HistoryLoaderOptions> options,
         IFeedStatusStore feedStatusStore)
     {
-        var config = options.Value;
+        var config = options.CurrentValue;
         var symbols = new List<SymbolStatus>();
 
         foreach (var asset in config.Assets)
@@ -55,17 +55,15 @@ internal static class StatusEndpoints
 
     private static IResult GetSymbolStatus(
         string symbol,
-        IOptions<HistoryLoaderOptions> options,
+        IOptionsMonitor<HistoryLoaderOptions> options,
         IFeedStatusStore feedStatusStore)
     {
-        var config = options.Value;
+        var config = options.CurrentValue;
 
         var asset = config.Assets.FirstOrDefault(a =>
         {
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, a);
-            var dirName = Path.GetFileName(assetDir);
-            return string.Equals(dirName, symbol, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(a.Symbol, symbol, StringComparison.OrdinalIgnoreCase);
+            var dirName = AssetPathConvention.DirectoryName(a.Symbol, a.Type);
+            return string.Equals(dirName, symbol, StringComparison.OrdinalIgnoreCase);
         });
 
         if (asset is null)

@@ -47,6 +47,8 @@ internal sealed class WeightedRateLimiter
         if (weight <= 0)
             throw new ArgumentOutOfRangeException(nameof(weight), "Weight must be positive.");
 
+        // Intentionally hold the semaphore across the delay so that only one caller
+        // polls the sliding window at a time, preventing thundering-herd bursts.
         await _semaphore.WaitAsync(ct).ConfigureAwait(false);
         try
         {

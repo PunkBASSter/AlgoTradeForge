@@ -26,9 +26,14 @@ public sealed class FeedContextBuilder(CsvFeedSeriesLoader feedSeriesLoader) : I
             return null;
 
         FeedMetadata? metadata;
-        using (var fs = new FileStream(feedsJsonPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        try
         {
+            using var fs = new FileStream(feedsJsonPath, FileMode.Open, FileAccess.Read, FileShare.Read);
             metadata = JsonSerializer.Deserialize<FeedMetadata>(fs, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
         }
 
         if (metadata is null || metadata.Feeds.Count == 0)

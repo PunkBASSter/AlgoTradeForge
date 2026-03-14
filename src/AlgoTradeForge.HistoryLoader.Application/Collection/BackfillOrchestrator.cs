@@ -93,7 +93,8 @@ public sealed class BackfillOrchestrator(
         }
         finally
         {
-            semaphore.Release();
+            try { semaphore.Release(); }
+            catch (ObjectDisposedException) { /* RunAsync disposed the semaphore before all tasks completed */ }
         }
     }
 

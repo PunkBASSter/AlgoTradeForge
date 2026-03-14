@@ -26,11 +26,8 @@ public abstract class GenericFeedCollectorBase(
     {
         var interval = feedConfig.Interval;
 
-        AdjustFromMs(assetDir, FeedName, interval, ref fromMs);
+        var resumeTs = AdjustFromMs(assetDir, FeedName, interval, ref fromMs);
         SchemaManager.EnsureSchema(assetDir, FeedName, interval, Columns);
-
-        // Resume from last written timestamp — skip records already stored.
-        var resumeTs = FeedWriter.ResumeFrom(assetDir, FeedName, interval);
 
         long recordCount = 0;
         long? firstTs = null;

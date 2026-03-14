@@ -2,7 +2,7 @@ namespace AlgoTradeForge.HistoryLoader.Domain;
 
 public enum CollectionHealth { Healthy, Degraded, Error }
 
-public sealed class DataGap
+public readonly record struct DataGap
 {
     public long FromMs { get; init; }
     public long ToMs { get; init; }

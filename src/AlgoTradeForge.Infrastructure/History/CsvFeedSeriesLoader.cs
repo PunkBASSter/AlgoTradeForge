@@ -85,8 +85,6 @@ public sealed class CsvFeedSeriesLoader
                 if (ts < fromMs || ts > toMs)
                     continue;
 
-                timestamps.Add(ts);
-
                 // Ensure columnLists is initialised (handles files with no data before header)
                 if (columnLists is null)
                 {
@@ -96,14 +94,34 @@ public sealed class CsvFeedSeriesLoader
                         columnLists[i] = [];
                 }
 
+                // Parse all column values, skipping the row if any value is malformed
+                var values = new double[columnLists.Length];
+                bool parseFailed = false;
                 for (var c = 0; c < columnLists.Length; c++)
                 {
                     var valueIdx = c + 1;
-                    var value = valueIdx < parts.Length
-                        ? double.Parse(parts[valueIdx], CultureInfo.InvariantCulture)
-                        : 0d;
-                    columnLists[c].Add(value);
+                    if (valueIdx < parts.Length
+                        && double.TryParse(parts[valueIdx], CultureInfo.InvariantCulture, out var v))
+                    {
+                        values[c] = v;
+                    }
+                    else if (valueIdx >= parts.Length)
+                    {
+                        values[c] = 0d;
+                    }
+                    else
+                    {
+                        parseFailed = true;
+                        break;
+                    }
                 }
+
+                if (parseFailed)
+                    continue;
+
+                timestamps.Add(ts);
+                for (var c = 0; c < columnLists.Length; c++)
+                    columnLists[c].Add(values[c]);
             }
 
             current = current.AddMonths(1);
