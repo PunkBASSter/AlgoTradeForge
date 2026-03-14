@@ -156,4 +156,35 @@ public sealed class FeedSchemaManagerTests : IDisposable
         var tmpPath = Path.Combine(assetDir, "feeds.json.tmp");
         Assert.False(File.Exists(tmpPath), "Temporary .tmp file must not remain after successful write.");
     }
+
+    // -------------------------------------------------------------------------
+    // ConcurrentEnsureSchema_DifferentFeeds_BothPresent
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void ConcurrentEnsureSchema_DifferentFeeds_BothPresent()
+    {
+        var manager  = new FeedSchemaManager();
+        var assetDir = AssetDir("BTCUSDT_Concurrent");
+
+        var barrier = new Barrier(2);
+
+        var t1 = Task.Run(() =>
+        {
+            barrier.SignalAndWait();
+            manager.EnsureSchema(assetDir, "funding", "8h", columns: ["rate"]);
+        });
+        var t2 = Task.Run(() =>
+        {
+            barrier.SignalAndWait();
+            manager.EnsureSchema(assetDir, "open-interest", "5m", columns: ["oi", "sumOi"]);
+        });
+
+        Task.WaitAll(t1, t2);
+
+        var metadata = ReadFeedsJson(assetDir);
+        Assert.Equal(2, metadata.Feeds.Count);
+        Assert.True(metadata.Feeds.ContainsKey("funding"));
+        Assert.True(metadata.Feeds.ContainsKey("open-interest"));
+    }
 }

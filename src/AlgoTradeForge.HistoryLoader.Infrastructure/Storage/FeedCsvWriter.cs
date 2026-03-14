@@ -62,7 +62,9 @@ internal sealed class FeedCsvWriter : IFeedWriter
         var latestFile = files[0];
 
         string? lastLine = null;
-        foreach (var line in File.ReadLines(latestFile))
+        using var fs = new FileStream(latestFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(fs);
+        while (reader.ReadLine() is { } line)
         {
             if (!string.IsNullOrWhiteSpace(line))
                 lastLine = line;

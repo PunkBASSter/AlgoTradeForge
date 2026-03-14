@@ -6,6 +6,8 @@ namespace AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 
 internal sealed class FeedSchemaManager : ISchemaManager
 {
+    private readonly Lock _lock = new();
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -29,59 +31,65 @@ internal sealed class FeedSchemaManager : ISchemaManager
         string[] columns,
         AutoApplySpec? autoApply = null)
     {
-        var existing = Load(assetDir) ?? new FeedMetadata();
-
-        // Map AutoApplySpec → AutoApplyDefinition
-        AutoApplyDefinition? autoApplyDef = autoApply is not null
-            ? new AutoApplyDefinition
-            {
-                Type = autoApply.Type,
-                RateColumn = autoApply.RateColumn,
-                SignConvention = autoApply.SignConvention,
-            }
-            : null;
-
-        var updatedFeeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
+        lock (_lock)
         {
-            [feedName] = new FeedDefinition
+            var existing = Load(assetDir) ?? new FeedMetadata();
+
+            // Map AutoApplySpec → AutoApplyDefinition
+            AutoApplyDefinition? autoApplyDef = autoApply is not null
+                ? new AutoApplyDefinition
+                {
+                    Type = autoApply.Type,
+                    RateColumn = autoApply.RateColumn,
+                    SignConvention = autoApply.SignConvention,
+                }
+                : null;
+
+            var updatedFeeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
             {
-                Interval  = interval,
-                Columns   = columns,
-                AutoApply = autoApplyDef,
-            }
-        };
+                [feedName] = new FeedDefinition
+                {
+                    Interval  = interval,
+                    Columns   = columns,
+                    AutoApply = autoApplyDef,
+                }
+            };
 
-        var updated = new FeedMetadata
-        {
-            Feeds   = updatedFeeds,
-            Candles = existing.Candles,
-        };
+            var updated = new FeedMetadata
+            {
+                Feeds   = updatedFeeds,
+                Candles = existing.Candles,
+            };
 
-        AtomicWrite(assetDir, updated);
+            AtomicWrite(assetDir, updated);
+        }
     }
 
     public void EnsureCandleConfig(string assetDir, int decimalDigits, string interval)
     {
-        var existing = Load(assetDir) ?? new FeedMetadata();
-
-        var scaleFactor = (decimal)Math.Pow(10, decimalDigits);
-
-        var existingIntervals = existing.Candles?.Intervals ?? [];
-        var updatedIntervals  = existingIntervals.Contains(interval)
-            ? existingIntervals
-            : [..existingIntervals, interval];
-
-        var updated = new FeedMetadata
+        lock (_lock)
         {
-            Feeds   = existing.Feeds,
-            Candles = new CandleConfig
-            {
-                ScaleFactor = scaleFactor,
-                Intervals   = updatedIntervals,
-            },
-        };
+            var existing = Load(assetDir) ?? new FeedMetadata();
 
-        AtomicWrite(assetDir, updated);
+            var scaleFactor = (decimal)Math.Pow(10, decimalDigits);
+
+            var existingIntervals = existing.Candles?.Intervals ?? [];
+            var updatedIntervals  = existingIntervals.Contains(interval)
+                ? existingIntervals
+                : [..existingIntervals, interval];
+
+            var updated = new FeedMetadata
+            {
+                Feeds   = existing.Feeds,
+                Candles = new CandleConfig
+                {
+                    ScaleFactor = scaleFactor,
+                    Intervals   = updatedIntervals,
+                },
+            };
+
+            AtomicWrite(assetDir, updated);
+        }
     }
 
     // -------------------------------------------------------------------------
