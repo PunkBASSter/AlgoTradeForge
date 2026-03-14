@@ -1,21 +1,27 @@
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 
 public sealed class LiquidationFeedCollector(
-    IFuturesDataFetcher futuresClient,
+    IServiceProvider serviceProvider,
     IFeedWriter feedWriter,
     ISchemaManager schemaManager,
     IFeedStatusStore feedStatusStore,
     ILogger<LiquidationFeedCollector> logger)
-    : GenericFeedCollectorBase(feedWriter, schemaManager, feedStatusStore, logger)
+    : GenericFeedCollectorBase(serviceProvider, feedWriter, schemaManager, feedStatusStore, logger)
 {
     public override string FeedName => FeedNames.Liquidations;
     protected override string[] Columns => ["side", "price", "qty", "notional_usd"];
 
     protected override IAsyncEnumerable<FeedRecord> FetchAsync(
-        string symbol, string interval, long fromMs, long toMs, CancellationToken ct) =>
-        futuresClient.FetchLiquidationsAsync(symbol, fromMs, toMs, ct);
+        AssetCollectionConfig assetConfig,
+        string symbol, string interval, long fromMs, long toMs, CancellationToken ct)
+    {
+        var key = ExchangeKeys.Resolve(assetConfig);
+        var fetcher = ServiceProvider.GetRequiredKeyedService<ILiquidationFetcher>(key);
+        return fetcher.FetchLiquidationsAsync(symbol, fromMs, toMs, ct);
+    }
 }

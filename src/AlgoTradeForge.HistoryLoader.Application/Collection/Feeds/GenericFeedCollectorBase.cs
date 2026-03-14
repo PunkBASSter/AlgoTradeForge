@@ -5,15 +5,19 @@ using Microsoft.Extensions.Logging;
 namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 
 public abstract class GenericFeedCollectorBase(
+    IServiceProvider serviceProvider,
     IFeedWriter feedWriter,
     ISchemaManager schemaManager,
     IFeedStatusStore feedStatusStore,
     ILogger logger)
     : FeedCollectorBase(feedWriter, schemaManager, feedStatusStore, logger)
 {
+    protected IServiceProvider ServiceProvider { get; } = serviceProvider;
+
     protected abstract string[] Columns { get; }
 
     protected abstract IAsyncEnumerable<FeedRecord> FetchAsync(
+        AssetCollectionConfig assetConfig,
         string symbol, string interval, long fromMs, long toMs, CancellationToken ct);
 
     public override async Task CollectAsync(
@@ -36,7 +40,7 @@ public abstract class GenericFeedCollectorBase(
         var gaps = new List<DataGap>();
         long expectedMs = ComputeExpectedMs(interval);
 
-        await foreach (var record in FetchAsync(assetConfig.Symbol, interval, fromMs, toMs, ct))
+        await foreach (var record in FetchAsync(assetConfig, assetConfig.Symbol, interval, fromMs, toMs, ct))
         {
             if (resumeTs.HasValue && record.TimestampMs <= resumeTs.Value)
                 continue;

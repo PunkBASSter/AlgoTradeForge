@@ -21,7 +21,7 @@ internal sealed partial class BinanceFuturesClient
     /// Volume is always 0 and <see cref="CandleRecord.ExtValues"/> is null
     /// for mark price klines.
     /// </remarks>
-    public async IAsyncEnumerable<CandleRecord> FetchMarkPriceKlinesAsync(
+    public async IAsyncEnumerable<CandleRecord> FetchMarkPriceCandlesAsync(
         string symbol,
         string interval,
         long fromMs,

@@ -28,9 +28,9 @@ public static class DependencyInjection
             return new SourceRateLimiter(global);
         });
 
-        // Binance Futures API client → IFuturesDataFetcher
+        // Concrete client singletons
         services.AddHttpClient<BinanceFuturesClient>();
-        services.AddSingleton<IFuturesDataFetcher>(sp =>
+        services.AddSingleton(sp =>
         {
             var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
             var httpClient = httpFactory.CreateClient(nameof(BinanceFuturesClient));
@@ -39,9 +39,8 @@ public static class DependencyInjection
             return new BinanceFuturesClient(httpClient, opts.Binance, rateLimiter);
         });
 
-        // Binance Spot API client → ISpotDataFetcher
         services.AddHttpClient<BinanceSpotClient>();
-        services.AddSingleton<ISpotDataFetcher>(sp =>
+        services.AddSingleton(sp =>
         {
             var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
             var httpClient = httpFactory.CreateClient(nameof(BinanceSpotClient));
@@ -50,6 +49,26 @@ public static class DependencyInjection
             var spotLimiter = new SourceRateLimiter(global);
             return new BinanceSpotClient(httpClient, opts.Binance, spotLimiter);
         });
+
+        // Keyed DI — futures
+        services.AddKeyedSingleton<ICandleFetcher>("binance-futures",
+            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
+        services.AddKeyedSingleton<IMarkPriceCandleFetcher>("binance-futures",
+            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
+        services.AddKeyedSingleton<IFundingRateFetcher>("binance-futures",
+            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
+        services.AddKeyedSingleton<IOpenInterestFetcher>("binance-futures",
+            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
+        services.AddKeyedSingleton<ILongShortRatioFetcher>("binance-futures",
+            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
+        services.AddKeyedSingleton<ITakerVolumeFetcher>("binance-futures",
+            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
+        services.AddKeyedSingleton<ILiquidationFetcher>("binance-futures",
+            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
+
+        // Keyed DI — spot
+        services.AddKeyedSingleton<ICandleFetcher>("binance-spot",
+            (sp, _) => sp.GetRequiredService<BinanceSpotClient>());
 
         // Storage writers
         services.AddSingleton<ICandleWriter, CandleCsvWriter>();

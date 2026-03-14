@@ -9,7 +9,10 @@ namespace AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 internal sealed partial class BinanceFuturesClient(
     HttpClient httpClient,
     BinanceOptions options,
-    SourceRateLimiter rateLimiter) : IFuturesDataFetcher
+    SourceRateLimiter rateLimiter)
+    : ICandleFetcher, IMarkPriceCandleFetcher, IFundingRateFetcher,
+      IOpenInterestFetcher, ILongShortRatioFetcher, ITakerVolumeFetcher,
+      ILiquidationFetcher
 {
     private const int KlineLimit = 1500;
     private const int KlineWeight = 5;
@@ -26,7 +29,7 @@ internal sealed partial class BinanceFuturesClient(
     /// for the given <paramref name="symbol"/> and <paramref name="interval"/>
     /// over the half-open time range [<paramref name="fromMs"/>, <paramref name="toMs"/>).
     /// </summary>
-    public async IAsyncEnumerable<CandleRecord> FetchKlinesAsync(
+    public async IAsyncEnumerable<CandleRecord> FetchCandlesAsync(
         string symbol,
         string interval,
         long fromMs,

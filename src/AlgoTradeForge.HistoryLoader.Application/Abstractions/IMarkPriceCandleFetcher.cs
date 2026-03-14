@@ -2,10 +2,8 @@ using AlgoTradeForge.HistoryLoader.Domain;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Abstractions;
 
-public interface ISpotDataFetcher
+public interface IMarkPriceCandleFetcher
 {
-    string[]? CandleExtColumns { get; }
-
-    IAsyncEnumerable<CandleRecord> FetchKlinesAsync(
+    IAsyncEnumerable<CandleRecord> FetchMarkPriceCandlesAsync(
         string symbol, string interval, long fromMs, long toMs, CancellationToken ct);
 }

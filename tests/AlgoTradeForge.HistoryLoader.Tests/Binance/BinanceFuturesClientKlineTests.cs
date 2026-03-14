@@ -49,11 +49,11 @@ public sealed class BinanceFuturesClientKlineTests
     }
 
     // -------------------------------------------------------------------------
-    // 1. FetchKlinesAsync_ParsesResponse_ReturnsKlineRecords
+    // 1. FetchCandlesAsync_ParsesResponse_ReturnsKlineRecords
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task FetchKlinesAsync_ParsesResponse_ReturnsKlineRecords()
+    public async Task FetchCandlesAsync_ParsesResponse_ReturnsKlineRecords()
     {
         var json = BuildKlineJson(
             (1_700_000_000_000L, "50000.50", "51000.75", "49500.25", "50500.00",
@@ -68,7 +68,7 @@ public sealed class BinanceFuturesClientKlineTests
 
         var client = BuildClient(handler);
         var records = await client
-            .FetchKlinesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_120_000L, CancellationToken.None)
+            .FetchCandlesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_120_000L, CancellationToken.None)
             .ToListAsync();
 
         Assert.Equal(2, records.Count);
@@ -94,11 +94,11 @@ public sealed class BinanceFuturesClientKlineTests
     }
 
     // -------------------------------------------------------------------------
-    // 2. FetchKlinesAsync_Pagination_MakesMultipleRequests
+    // 2. FetchCandlesAsync_Pagination_MakesMultipleRequests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task FetchKlinesAsync_Pagination_MakesMultipleRequests()
+    public async Task FetchCandlesAsync_Pagination_MakesMultipleRequests()
     {
         // Build a first batch of exactly 1500 records (triggers pagination).
         var firstBatchRecords = Enumerable.Range(0, 1500)
@@ -133,7 +133,7 @@ public sealed class BinanceFuturesClientKlineTests
         var client = BuildClient(handler);
         long endMs = 1_700_000_000_000L + 2000 * 60_000L;
         var records = await client
-            .FetchKlinesAsync("BTCUSDT", "1m", 1_700_000_000_000L, endMs, CancellationToken.None)
+            .FetchCandlesAsync("BTCUSDT", "1m", 1_700_000_000_000L, endMs, CancellationToken.None)
             .ToListAsync();
 
         Assert.Equal(2, requestCount);
@@ -148,11 +148,11 @@ public sealed class BinanceFuturesClientKlineTests
     }
 
     // -------------------------------------------------------------------------
-    // 3. FetchKlinesAsync_EmptyResponse_YieldsNothing
+    // 3. FetchCandlesAsync_EmptyResponse_YieldsNothing
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task FetchKlinesAsync_EmptyResponse_YieldsNothing()
+    public async Task FetchCandlesAsync_EmptyResponse_YieldsNothing()
     {
         var handler = new FakeHttpHandler
         {
@@ -161,18 +161,18 @@ public sealed class BinanceFuturesClientKlineTests
 
         var client = BuildClient(handler);
         var records = await client
-            .FetchKlinesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, CancellationToken.None)
+            .FetchCandlesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, CancellationToken.None)
             .ToListAsync();
 
         Assert.Empty(records);
     }
 
     // -------------------------------------------------------------------------
-    // 4. FetchKlinesAsync_Http429_RetriesWithBackoff
+    // 4. FetchCandlesAsync_Http429_RetriesWithBackoff
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task FetchKlinesAsync_Http429_RetriesWithBackoff()
+    public async Task FetchCandlesAsync_Http429_RetriesWithBackoff()
     {
         var json = BuildKlineJson(
             (1_700_000_000_000L, "100.00", "101.00", "99.00", "100.50",
@@ -200,7 +200,7 @@ public sealed class BinanceFuturesClientKlineTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var records = await client
-            .FetchKlinesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, cts.Token)
+            .FetchCandlesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, cts.Token)
             .ToListAsync(cts.Token);
 
         Assert.Equal(2, callCount);
@@ -209,11 +209,11 @@ public sealed class BinanceFuturesClientKlineTests
     }
 
     // -------------------------------------------------------------------------
-    // 5. FetchKlinesAsync_Http418_ThrowsHttpRequestException
+    // 5. FetchCandlesAsync_Http418_ThrowsHttpRequestException
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task FetchKlinesAsync_Http418_ThrowsHttpRequestException()
+    public async Task FetchCandlesAsync_Http418_ThrowsHttpRequestException()
     {
         var handler = new FakeHttpHandler
         {
@@ -224,7 +224,7 @@ public sealed class BinanceFuturesClientKlineTests
 
         var ex = await Assert.ThrowsAsync<HttpRequestException>(async () =>
         {
-            await foreach (var _ in client.FetchKlinesAsync(
+            await foreach (var _ in client.FetchCandlesAsync(
                 "BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, CancellationToken.None))
             {
                 // consume the enumerable to trigger the HTTP call

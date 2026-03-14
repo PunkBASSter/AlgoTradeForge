@@ -1,12 +1,12 @@
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 
 public sealed class CandleFeedCollector(
-    IFuturesDataFetcher futuresClient,
-    ISpotDataFetcher? spotClient,
+    IServiceProvider serviceProvider,
     ICandleWriter candleWriter,
     IFeedWriter feedWriter,
     ISchemaManager schemaManager,
@@ -35,14 +35,12 @@ public sealed class CandleFeedCollector(
         if (resumeTs.HasValue && resumeTs.Value >= fromMs)
             fromMs = resumeTs.Value + 1;
 
-        bool isSpot = assetConfig.Type == "spot";
-
-        if (isSpot && spotClient is null)
-            throw new InvalidOperationException(
-                $"Spot data fetcher is not registered but asset {assetConfig.Symbol} is type 'spot'.");
+        // Resolve the kline fetcher via keyed DI (handles spot/futures routing).
+        var key = ExchangeKeys.Resolve(assetConfig);
+        var klineFetcher = serviceProvider.GetRequiredKeyedService<ICandleFetcher>(key);
 
         // Determine ext columns from the fetcher — null means no ext feed.
-        var extColumns = isSpot ? spotClient!.CandleExtColumns : futuresClient.CandleExtColumns;
+        var extColumns = klineFetcher.CandleExtColumns;
 
         if (extColumns is not null)
         {
@@ -56,12 +54,8 @@ public sealed class CandleFeedCollector(
         var gaps = new List<DataGap>();
         long expectedMs = ComputeExpectedMs(interval);
 
-        // Route to spot or futures client based on asset type.
-        IAsyncEnumerable<CandleRecord> klineSource = isSpot
-            ? spotClient!.FetchKlinesAsync(assetConfig.Symbol, interval, fromMs, toMs, ct)
-            : futuresClient.FetchKlinesAsync(assetConfig.Symbol, interval, fromMs, toMs, ct);
-
-        await foreach (var candle in klineSource)
+        await foreach (var candle in klineFetcher.FetchCandlesAsync(
+            assetConfig.Symbol, interval, fromMs, toMs, ct))
         {
             try
             {
