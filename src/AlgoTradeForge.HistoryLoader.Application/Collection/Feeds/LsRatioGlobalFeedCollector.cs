@@ -12,7 +12,7 @@ public sealed class LsRatioGlobalFeedCollector(
     ILogger<LsRatioGlobalFeedCollector> logger)
     : GenericFeedCollectorBase(feedWriter, schemaManager, feedStatusStore, logger)
 {
-    public override string FeedName => "ls-ratio-global";
+    public override string FeedName => FeedNames.LsRatioGlobal;
     protected override string[] Columns => ["long_pct", "short_pct", "ratio"];
 
     protected override IAsyncEnumerable<FeedRecord> FetchAsync(

@@ -6,7 +6,7 @@ public sealed record CandleStorageOptions
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "AlgoTradeForge",
-            "Candles");
+            "History");
 
     public string DataRoot { get; init; } = DefaultDataRoot;
     public TimeSpan SourceInterval { get; init; } = TimeSpan.FromMinutes(1);

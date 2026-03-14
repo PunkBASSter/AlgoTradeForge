@@ -212,4 +212,93 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     {
         Assert.Equal(expected, PartitionedCsvBarLoader.IntervalToString(TimeSpan.FromMinutes(minutes)));
     }
+
+    [Fact]
+    public void IntervalToString_UnsupportedInterval_Throws()
+    {
+        Assert.Throws<ArgumentException>(
+            () => PartitionedCsvBarLoader.IntervalToString(TimeSpan.FromMinutes(7)));
+    }
+
+    // -------------------------------------------------------------------------
+    // Malformed row handling (T7)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Load_EmptyLines_SkipsGracefully()
+    {
+        WriteCsv("Binance", "BTCUSDT", 2024, 1, "1m",
+        [
+            "",
+            $"{Ts(2024,1,1)},100,200,50,150,1000",
+            "",
+            $"{Ts(2024,1,1,0,1)},110,210,60,160,1100",
+            ""
+        ]);
+
+        var series = _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
+            TimeSpan.FromMinutes(1));
+
+        Assert.Equal(2, series.Count);
+    }
+
+    [Fact]
+    public void Load_FewerThanSixColumns_SkipsRow()
+    {
+        WriteCsv("Binance", "BTCUSDT", 2024, 1, "1m",
+        [
+            $"{Ts(2024,1,1)},100,200,50,150,1000",
+            $"{Ts(2024,1,1,0,1)},110,210",
+            $"{Ts(2024,1,1,0,2)},120,220,70,170,1200"
+        ]);
+
+        var series = _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
+            TimeSpan.FromMinutes(1));
+
+        Assert.Equal(2, series.Count);
+        Assert.Equal(100L, series[0].Open);
+        Assert.Equal(120L, series[1].Open);
+    }
+
+    [Fact]
+    public void Load_NonNumericValues_SkipsRow()
+    {
+        WriteCsv("Binance", "BTCUSDT", 2024, 1, "1m",
+        [
+            $"{Ts(2024,1,1)},100,200,50,150,1000",
+            $"{Ts(2024,1,1,0,1)},abc,210,60,160,1100",
+            $"{Ts(2024,1,1,0,2)},120,220,70,170,1200"
+        ]);
+
+        var series = _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
+            TimeSpan.FromMinutes(1));
+
+        Assert.Equal(2, series.Count);
+        Assert.Equal(100L, series[0].Open);
+        Assert.Equal(120L, series[1].Open);
+    }
+
+    [Fact]
+    public void Load_NonNumericTimestamp_SkipsRow()
+    {
+        WriteCsv("Binance", "BTCUSDT", 2024, 1, "1m",
+        [
+            $"{Ts(2024,1,1)},100,200,50,150,1000",
+            "not-a-timestamp,110,210,60,160,1100",
+            $"{Ts(2024,1,1,0,2)},120,220,70,170,1200"
+        ]);
+
+        var series = _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
+            TimeSpan.FromMinutes(1));
+
+        Assert.Equal(2, series.Count);
+    }
 }

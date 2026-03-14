@@ -17,7 +17,7 @@ public sealed class CandleFeedCollector(
     private static readonly string[] CandleExtColumns =
         ["quote_vol", "trade_count", "taker_buy_vol", "taker_buy_quote_vol"];
 
-    public override string FeedName => "candles";
+    public override string FeedName => FeedNames.Candles;
     public override bool SupportsSpot => true;
 
     public override async Task CollectAsync(
@@ -47,7 +47,7 @@ public sealed class CandleFeedCollector(
         // Ensure candle-ext schema only for non-spot assets.
         if (!isSpot)
         {
-            SchemaManager.EnsureSchema(assetDir, "candle-ext", interval, CandleExtColumns);
+            SchemaManager.EnsureSchema(assetDir, FeedNames.CandleExt, interval, CandleExtColumns);
         }
 
         long recordCount = 0;
@@ -70,8 +70,8 @@ public sealed class CandleFeedCollector(
             }
             catch (IOException ex)
             {
-                Logger.LogCritical(ex, "Disk I/O error writing {Feed} for {AssetDir}", "candles", assetDir);
-                UpdateFeedStatus(assetDir, "candles", interval, firstTs, lastTs, recordCount,
+                Logger.LogCritical(ex, "Disk I/O error writing {Feed} for {AssetDir}", FeedNames.Candles, assetDir);
+                UpdateFeedStatus(assetDir, FeedNames.Candles, interval, firstTs, lastTs, recordCount,
                     CollectionHealth.Error, gaps);
                 throw;
             }
@@ -88,12 +88,12 @@ public sealed class CandleFeedCollector(
                 ]);
                 try
                 {
-                    FeedWriter.Write(assetDir, "candle-ext", interval, CandleExtColumns, extRecord);
+                    FeedWriter.Write(assetDir, FeedNames.CandleExt, interval, CandleExtColumns, extRecord);
                 }
                 catch (IOException ex)
                 {
-                    Logger.LogCritical(ex, "Disk I/O error writing {Feed} for {AssetDir}", "candle-ext", assetDir);
-                    UpdateFeedStatus(assetDir, "candle-ext", interval, firstTs, lastTs, recordCount,
+                    Logger.LogCritical(ex, "Disk I/O error writing {Feed} for {AssetDir}", FeedNames.CandleExt, assetDir);
+                    UpdateFeedStatus(assetDir, FeedNames.CandleExt, interval, firstTs, lastTs, recordCount,
                         CollectionHealth.Error, gaps);
                     throw;
                 }
@@ -109,10 +109,10 @@ public sealed class CandleFeedCollector(
 
         if (recordCount > 0)
         {
-            UpdateFeedStatus(assetDir, "candles", interval, firstTs, lastTs, recordCount,
+            UpdateFeedStatus(assetDir, FeedNames.Candles, interval, firstTs, lastTs, recordCount,
                 newGaps: gaps);
             if (!isSpot)
-                UpdateFeedStatus(assetDir, "candle-ext", interval, firstTs, lastTs, recordCount,
+                UpdateFeedStatus(assetDir, FeedNames.CandleExt, interval, firstTs, lastTs, recordCount,
                     newGaps: gaps);
         }
 

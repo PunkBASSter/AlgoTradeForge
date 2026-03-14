@@ -1,5 +1,6 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -9,75 +10,11 @@ internal sealed class HourlyCollectorService(
     SymbolCollector symbolCollector,
     ICollectionCircuitBreaker circuitBreaker,
     IOptionsMonitor<HistoryLoaderOptions> options,
-    ILogger<HourlyCollectorService> logger) : BackgroundService
+    ILogger<HourlyCollectorService> logger)
+    : ScheduledCollectorService(symbolCollector, circuitBreaker, options, logger)
 {
-    private static readonly string[] HourlyFeedNames =
-        ["mark-price", "ls-ratio-top-positions"];
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        logger.LogInformation("HourlyCollectorService started");
-
-        using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
-
-        // Run immediately on startup, then every hour
-        do
-        {
-            if (circuitBreaker.IsTripped)
-                return;
-
-            try
-            {
-                await CollectAsync(stoppingToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogError(ex, "HourlyCollectorService cycle failed");
-            }
-        }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
-    }
-
-    private async Task CollectAsync(CancellationToken ct)
-    {
-        var config = options.CurrentValue;
-
-        foreach (var asset in config.Assets)
-        {
-            if (circuitBreaker.IsTripped)
-                return;
-
-            if (asset.Type is not ("perpetual" or "future"))
-                continue;
-
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-
-            foreach (var feedName in HourlyFeedNames)
-            {
-                var feed = asset.Feeds
-                    .FirstOrDefault(f => f.Enabled && f.Name == feedName);
-
-                if (feed is null)
-                    continue;
-
-                try
-                {
-                    var toMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    var fromMs = new DateTimeOffset(asset.HistoryStart.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
-                        .ToUnixTimeMilliseconds();
-
-                    await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct);
-                }
-                catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)
-                {
-                    circuitBreaker.Trip("IP banned by Binance");
-                    return;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    logger.LogError(ex, "{Feed} collection failed for {Symbol}", feedName, asset.Symbol);
-                }
-            }
-        }
-    }
+    protected override TimeSpan Interval => TimeSpan.FromHours(1);
+    protected override string ServiceName => "HourlyCollectorService";
+    protected override string[] CollectedFeedNames =>
+        [FeedNames.MarkPrice, FeedNames.LsRatioTopPositions];
 }

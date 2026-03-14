@@ -24,6 +24,9 @@ internal static class BackfillEndpoints
         var config = options.CurrentValue;
         var symbol = request.Symbol;
 
+        if (string.IsNullOrWhiteSpace(symbol))
+            return Results.BadRequest(new { error = "Symbol is required" });
+
         var asset = config.Assets.FirstOrDefault(a =>
         {
             var dirName = AssetPathConvention.DirectoryName(a.Symbol, a.Type);

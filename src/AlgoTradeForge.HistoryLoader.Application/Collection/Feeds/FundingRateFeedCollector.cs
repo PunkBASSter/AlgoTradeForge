@@ -14,7 +14,7 @@ public sealed class FundingRateFeedCollector(
 {
     private static readonly string[] FundingRateColumns = ["rate", "mark_price"];
 
-    public override string FeedName => "funding-rate";
+    public override string FeedName => FeedNames.FundingRate;
 
     public override async Task CollectAsync(
         AssetCollectionConfig assetConfig,
@@ -25,11 +25,11 @@ public sealed class FundingRateFeedCollector(
         CancellationToken ct)
     {
         // Ensure feeds.json schema with auto-apply config
-        SchemaManager.EnsureSchema(assetDir, "funding-rate", "", FundingRateColumns,
+        SchemaManager.EnsureSchema(assetDir, FeedNames.FundingRate, "", FundingRateColumns,
             new AutoApplySpec("FundingRate", "rate"));
 
         // Resume from last written timestamp
-        var resumeTs = FeedWriter.ResumeFrom(assetDir, "funding-rate", "");
+        var resumeTs = FeedWriter.ResumeFrom(assetDir, FeedNames.FundingRate, "");
         if (resumeTs.HasValue && resumeTs.Value >= fromMs)
             fromMs = resumeTs.Value + 1;
 
@@ -42,12 +42,12 @@ public sealed class FundingRateFeedCollector(
         {
             try
             {
-                FeedWriter.Write(assetDir, "funding-rate", "", FundingRateColumns, record);
+                FeedWriter.Write(assetDir, FeedNames.FundingRate, "", FundingRateColumns, record);
             }
             catch (IOException ex)
             {
-                Logger.LogCritical(ex, "Disk I/O error writing {Feed} for {AssetDir}", "funding-rate", assetDir);
-                UpdateFeedStatus(assetDir, "funding-rate", "", firstTs, lastTs, recordCount,
+                Logger.LogCritical(ex, "Disk I/O error writing {Feed} for {AssetDir}", FeedNames.FundingRate, assetDir);
+                UpdateFeedStatus(assetDir, FeedNames.FundingRate, "", firstTs, lastTs, recordCount,
                     CollectionHealth.Error);
                 throw;
             }
@@ -58,7 +58,7 @@ public sealed class FundingRateFeedCollector(
         }
 
         if (recordCount > 0)
-            UpdateFeedStatus(assetDir, "funding-rate", "", firstTs, lastTs, recordCount);
+            UpdateFeedStatus(assetDir, FeedNames.FundingRate, "", firstTs, lastTs, recordCount);
 
         Logger.LogInformation(
             "Collected {Count} funding rate records for {Symbol}",

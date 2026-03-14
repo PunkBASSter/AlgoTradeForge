@@ -9,7 +9,7 @@ namespace AlgoTradeForge.Infrastructure.Tests.History;
 public class FeedContextBuilderTests : IDisposable
 {
     private readonly string _testDataRoot;
-    private readonly CsvFeedSeriesLoader _feedSeriesLoader = new();
+    private readonly CsvFeedSeriesLoader _feedSeriesLoader = new();  // concrete for integration testing
     private readonly FeedContextBuilder _builder;
 
     public FeedContextBuilderTests()

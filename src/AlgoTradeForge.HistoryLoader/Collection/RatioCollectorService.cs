@@ -1,5 +1,6 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -9,74 +10,11 @@ internal sealed class RatioCollectorService(
     SymbolCollector symbolCollector,
     ICollectionCircuitBreaker circuitBreaker,
     IOptionsMonitor<HistoryLoaderOptions> options,
-    ILogger<RatioCollectorService> logger) : BackgroundService
+    ILogger<RatioCollectorService> logger)
+    : ScheduledCollectorService(symbolCollector, circuitBreaker, options, logger)
 {
-    private static readonly string[] RatioFeedNames =
-        ["ls-ratio-global", "ls-ratio-top-accounts", "taker-volume"];
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        logger.LogInformation("RatioCollectorService started");
-
-        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(15));
-
-        do
-        {
-            if (circuitBreaker.IsTripped)
-                return;
-
-            try
-            {
-                await CollectAsync(stoppingToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogError(ex, "RatioCollectorService cycle failed");
-            }
-        }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
-    }
-
-    private async Task CollectAsync(CancellationToken ct)
-    {
-        var config = options.CurrentValue;
-
-        foreach (var asset in config.Assets)
-        {
-            if (circuitBreaker.IsTripped)
-                return;
-
-            if (asset.Type is not ("perpetual" or "future"))
-                continue;
-
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-
-            foreach (var feedName in RatioFeedNames)
-            {
-                var feed = asset.Feeds
-                    .FirstOrDefault(f => f.Enabled && f.Name == feedName);
-
-                if (feed is null)
-                    continue;
-
-                try
-                {
-                    var toMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    var fromMs = new DateTimeOffset(asset.HistoryStart.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
-                        .ToUnixTimeMilliseconds();
-
-                    await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct);
-                }
-                catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)
-                {
-                    circuitBreaker.Trip("IP banned by Binance");
-                    return;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    logger.LogError(ex, "{Feed} collection failed for {Symbol}", feedName, asset.Symbol);
-                }
-            }
-        }
-    }
+    protected override TimeSpan Interval => TimeSpan.FromMinutes(15);
+    protected override string ServiceName => "RatioCollectorService";
+    protected override string[] CollectedFeedNames =>
+        [FeedNames.LsRatioGlobal, FeedNames.LsRatioTopAccounts, FeedNames.TakerVolume];
 }

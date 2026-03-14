@@ -54,18 +54,18 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
                     if (parts.Length < 6)
                         continue;
 
-                    var ts = long.Parse(parts[0]);
+                    if (!long.TryParse(parts[0], out var ts) ||
+                        !long.TryParse(parts[1], out var open) ||
+                        !long.TryParse(parts[2], out var high) ||
+                        !long.TryParse(parts[3], out var low) ||
+                        !long.TryParse(parts[4], out var close) ||
+                        !long.TryParse(parts[5], out var volume))
+                        continue;
 
                     if (ts < fromMs || ts > toMs)
                         continue;
 
-                    series.Add(new Int64Bar(
-                        ts,
-                        long.Parse(parts[1]),
-                        long.Parse(parts[2]),
-                        long.Parse(parts[3]),
-                        long.Parse(parts[4]),
-                        long.Parse(parts[5])));
+                    series.Add(new Int64Bar(ts, open, high, low, close, volume));
                 }
             }
 
@@ -126,13 +126,18 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
     internal static string IntervalToString(TimeSpan interval) => interval.TotalSeconds switch
     {
         60 => "1m",
+        180 => "3m",
         300 => "5m",
         900 => "15m",
         1800 => "30m",
         3600 => "1h",
+        7200 => "2h",
         14400 => "4h",
+        21600 => "6h",
+        28800 => "8h",
+        43200 => "12h",
         86400 => "1d",
         604800 => "1w",
-        _ => $"{(int)interval.TotalMinutes}m"
+        _ => throw new ArgumentException($"Unsupported interval: {interval}")
     };
 }

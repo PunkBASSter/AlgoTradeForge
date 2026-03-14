@@ -1,8 +1,8 @@
-using System.Net;
 using System.Text;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
+using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Binance;
@@ -10,31 +10,17 @@ namespace AlgoTradeForge.HistoryLoader.Tests.Binance;
 public sealed class BinanceFuturesClientFundingTests
 {
     // -------------------------------------------------------------------------
-    // Fake HTTP handler
-    // -------------------------------------------------------------------------
-
-    private sealed class FakeHandler : HttpMessageHandler
-    {
-        public Func<HttpRequestMessage, Task<HttpResponseMessage>> Handler { get; set; } = _ =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-            => Handler(request);
-    }
-
-    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
     private static BinanceFuturesClient BuildClient(
-        FakeHandler handler,
+        FakeHttpHandler handler,
         BinanceOptions? options = null)
     {
         var httpClient = new HttpClient(handler);
         var opts = options ?? new BinanceOptions { RequestDelayMs = 0 };
         var limiter = new SourceRateLimiter(
-            new WeightedRateLimiter(maxWeightPerMinute: 2400, budgetPercent: 100),
-            opts.FuturesBaseUrl);
+            new WeightedRateLimiter(maxWeightPerMinute: 2400, budgetPercent: 100));
         return new BinanceFuturesClient(httpClient, opts, limiter);
     }
 
@@ -59,12 +45,6 @@ public sealed class BinanceFuturesClientFundingTests
         return sb.ToString();
     }
 
-    private static HttpResponseMessage JsonResponse(string json) =>
-        new(HttpStatusCode.OK)
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json")
-        };
-
     // -------------------------------------------------------------------------
     // 1. FetchFundingRatesAsync_ParsesResponse_ReturnsFeedRecords
     // -------------------------------------------------------------------------
@@ -76,9 +56,9 @@ public sealed class BinanceFuturesClientFundingTests
             (1_700_000_000_000L, "0.0001", "50000.5"),
             (1_700_028_800_000L, "-0.0002", "51000.25"));
 
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
-            Handler = _ => Task.FromResult(JsonResponse(json))
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse(json))
         };
 
         var client = BuildClient(handler);
@@ -128,13 +108,13 @@ public sealed class BinanceFuturesClientFundingTests
             (1_700_000_000_000L + 1002 * 28_800_000L, "0.0004", "53000.0"));
 
         int requestCount = 0;
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
             Handler = _ =>
             {
                 requestCount++;
                 var responseJson = requestCount == 1 ? firstBatchJson : secondBatchJson;
-                return Task.FromResult(JsonResponse(responseJson));
+                return Task.FromResult(FakeHttpHandler.JsonResponse(responseJson));
             }
         };
 
@@ -162,9 +142,9 @@ public sealed class BinanceFuturesClientFundingTests
     [Fact]
     public async Task FetchFundingRatesAsync_EmptyResponse_YieldsNothing()
     {
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
-            Handler = _ => Task.FromResult(JsonResponse("[]"))
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse("[]"))
         };
 
         var client = BuildClient(handler);

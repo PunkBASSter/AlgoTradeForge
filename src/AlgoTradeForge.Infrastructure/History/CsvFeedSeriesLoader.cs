@@ -1,4 +1,5 @@
 using System.Globalization;
+using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain.History;
 
 namespace AlgoTradeForge.Infrastructure.History;
@@ -8,7 +9,7 @@ namespace AlgoTradeForge.Infrastructure.History;
 /// Path pattern: {dataRoot}/{exchange}/{assetDir}/{feedName}/{YYYY-MM}[_{interval}].csv
 /// Header: ts,col1,col2,...  (ts is long unix ms, columns are doubles)
 /// </summary>
-public sealed class CsvFeedSeriesLoader
+public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
 {
     /// <summary>
     /// Loads feed data for the given date range.

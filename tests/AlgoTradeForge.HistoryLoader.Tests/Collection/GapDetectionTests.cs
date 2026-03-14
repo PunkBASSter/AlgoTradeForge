@@ -1,22 +1,23 @@
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Collection;
 
 /// <summary>
-/// Validates the gap detection logic used inside SymbolCollector.
-/// Rather than spinning up the full collector with all I/O dependencies,
-/// these tests exercise the core detection algorithm directly: given a
-/// sequence of timestamps and an expected interval, verify that jumps
-/// exceeding 2x the interval are recorded as DataGaps.
+/// Validates the gap detection logic in <see cref="FeedCollectorBase.DetectGap"/>.
 /// </summary>
 public sealed class GapDetectionTests
 {
-    // -----------------------------------------------------------------------
-    // Helper — mirrors the logic inside CollectGenericFeedAsync / CollectCandlesAsync
-    // -----------------------------------------------------------------------
+    // Use a realistic epoch base (2024-01-15 00:00:00 UTC) so timestamps are never 0.
+    private static readonly long Base = new DateTimeOffset(2024, 1, 15, 0, 0, 0, TimeSpan.Zero)
+        .ToUnixTimeMilliseconds();
 
-    private static List<DataGap> DetectGaps(IEnumerable<long> timestamps, string interval)
+    /// <summary>
+    /// Runs timestamps through the real <see cref="FeedCollectorBase.DetectGap"/> method,
+    /// matching how collectors call it: iterate timestamps, track previousTs, collect gaps.
+    /// </summary>
+    private static List<DataGap> DetectGaps(IEnumerable<long> timestamps, string interval, double multiplier = 2.0)
     {
         var gaps = new List<DataGap>();
 
@@ -28,10 +29,7 @@ public sealed class GapDetectionTests
 
         foreach (var ts in timestamps)
         {
-            if (previousTs > 0 && ts - previousTs > expectedMs * 2)
-            {
-                gaps.Add(new DataGap { FromMs = previousTs, ToMs = ts });
-            }
+            FeedCollectorBase.DetectGap(ts, previousTs, expectedMs, multiplier, gaps);
             previousTs = ts;
         }
 
@@ -41,10 +39,6 @@ public sealed class GapDetectionTests
     // -----------------------------------------------------------------------
     // Tests
     // -----------------------------------------------------------------------
-
-    // Use a realistic epoch base (2024-01-15 00:00:00 UTC) so timestamps are never 0.
-    private static readonly long Base = new DateTimeOffset(2024, 1, 15, 0, 0, 0, TimeSpan.Zero)
-        .ToUnixTimeMilliseconds();
 
     [Fact]
     public void DetectGaps_ConsecutiveTimestamps_NoGaps()
@@ -166,6 +160,22 @@ public sealed class GapDetectionTests
             var detectedGaps = DetectGaps(withGap, interval);
             Assert.Single(detectedGaps);
         }
+    }
+
+    [Fact]
+    public void DetectGaps_CustomMultiplier_RespectsThreshold()
+    {
+        // With a 3x multiplier, a 2.5x jump should NOT trigger a gap
+        long step = 60_000;
+        var timestamps = new long[] { Base, Base + (long)(step * 2.5) };
+
+        var gaps = DetectGaps(timestamps, "1m", multiplier: 3.0);
+        Assert.Empty(gaps);
+
+        // But a 3x + 1ms jump should
+        var timestamps2 = new long[] { Base, Base + step * 3 + 1 };
+        var gaps2 = DetectGaps(timestamps2, "1m", multiplier: 3.0);
+        Assert.Single(gaps2);
     }
 
     [Fact]

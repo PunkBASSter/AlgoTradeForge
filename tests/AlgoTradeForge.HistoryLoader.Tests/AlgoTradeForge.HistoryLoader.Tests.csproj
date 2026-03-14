@@ -20,10 +20,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\AlgoTradeForge.HistoryLoader\AlgoTradeForge.HistoryLoader.csproj" />
-    <ProjectReference Include="..\AlgoTradeForge.HistoryLoader.Domain\AlgoTradeForge.HistoryLoader.Domain.csproj" />
-    <ProjectReference Include="..\AlgoTradeForge.HistoryLoader.Application\AlgoTradeForge.HistoryLoader.Application.csproj" />
-    <ProjectReference Include="..\AlgoTradeForge.HistoryLoader.Infrastructure\AlgoTradeForge.HistoryLoader.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\AlgoTradeForge.HistoryLoader\AlgoTradeForge.HistoryLoader.csproj" />
+    <ProjectReference Include="..\..\src\AlgoTradeForge.HistoryLoader.Domain\AlgoTradeForge.HistoryLoader.Domain.csproj" />
+    <ProjectReference Include="..\..\src\AlgoTradeForge.HistoryLoader.Application\AlgoTradeForge.HistoryLoader.Application.csproj" />
+    <ProjectReference Include="..\..\src\AlgoTradeForge.HistoryLoader.Infrastructure\AlgoTradeForge.HistoryLoader.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

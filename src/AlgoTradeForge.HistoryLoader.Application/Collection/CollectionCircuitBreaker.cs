@@ -16,4 +16,10 @@ public sealed class CollectionCircuitBreaker(ILogger<CollectionCircuitBreaker> l
         _tripped = true;
         logger.LogCritical("Collection circuit breaker tripped: {Reason}", reason);
     }
+
+    public void Reset()
+    {
+        _tripped = false;
+        logger.LogInformation("Collection circuit breaker reset");
+    }
 }

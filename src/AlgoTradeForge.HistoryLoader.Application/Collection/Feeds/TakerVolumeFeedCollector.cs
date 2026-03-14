@@ -12,7 +12,7 @@ public sealed class TakerVolumeFeedCollector(
     ILogger<TakerVolumeFeedCollector> logger)
     : GenericFeedCollectorBase(feedWriter, schemaManager, feedStatusStore, logger)
 {
-    public override string FeedName => "taker-volume";
+    public override string FeedName => FeedNames.TakerVolume;
     protected override string[] Columns => ["buy_vol_usd", "sell_vol_usd", "ratio"];
 
     protected override IAsyncEnumerable<FeedRecord> FetchAsync(

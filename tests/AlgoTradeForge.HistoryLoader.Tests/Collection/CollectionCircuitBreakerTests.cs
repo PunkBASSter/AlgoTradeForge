@@ -31,4 +31,15 @@ public sealed class CollectionCircuitBreakerTests
 
         Assert.True(_breaker.IsTripped);
     }
+
+    [Fact]
+    public void Reset_ClearsTripped()
+    {
+        _breaker.Trip("test ban");
+        Assert.True(_breaker.IsTripped);
+
+        _breaker.Reset();
+
+        Assert.False(_breaker.IsTripped);
+    }
 }

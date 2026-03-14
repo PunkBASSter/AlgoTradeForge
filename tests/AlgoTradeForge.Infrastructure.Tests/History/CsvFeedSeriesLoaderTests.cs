@@ -150,4 +150,112 @@ public class CsvFeedSeriesLoaderTests : IDisposable
         Assert.NotNull(result);
         Assert.Equal(1.23456789, result!.Columns[0][0], precision: 8);
     }
+
+    // -------------------------------------------------------------------------
+    // Malformed data handling (T5)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Load_EmptyLines_SkipsGracefully()
+    {
+        var ts1 = Ts(2024, 1, 1);
+        var ts2 = Ts(2024, 1, 1, 8);
+        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 1, "8h",
+            "ts,rate",
+            [
+                "",
+                $"{ts1},0.0001",
+                "",
+                $"{ts2},0.00015",
+                ""
+            ]);
+
+        var result = _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "8h",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result!.Count);
+    }
+
+    [Fact]
+    public void Load_FewerColumnsThanHeader_FillsZero()
+    {
+        var ts1 = Ts(2024, 1, 1);
+        var ts2 = Ts(2024, 1, 1, 8);
+        WriteCsv("Binance", "BTCUSDT_fut", "oi", 2024, 1, null,
+            "ts,oi_usd,oi_contracts",
+            [
+                $"{ts1},1000000.0,500.0",
+                $"{ts2},2000000.0"
+            ]);
+
+        var result = _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT_fut", "oi", "",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result!.Count);
+        // Second row's missing column should be 0
+        Assert.Equal(0d, result.Columns[1][1]);
+    }
+
+    [Fact]
+    public void Load_NonNumericValue_SkipsRow()
+    {
+        var ts1 = Ts(2024, 1, 1);
+        var ts2 = Ts(2024, 1, 1, 8);
+        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 1, "8h",
+            "ts,rate",
+            [
+                $"{ts1},0.0001",
+                $"{ts2},not-a-number"
+            ]);
+
+        var result = _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "8h",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+
+        Assert.NotNull(result);
+        Assert.Single(result!.Timestamps);
+        Assert.Equal(ts1, result.Timestamps[0]);
+    }
+
+    [Fact]
+    public void Load_NonNumericTimestamp_SkipsRow()
+    {
+        var ts1 = Ts(2024, 1, 1);
+        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 1, "8h",
+            "ts,rate",
+            [
+                $"{ts1},0.0001",
+                "invalid-ts,0.00015"
+            ]);
+
+        var result = _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "8h",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+
+        Assert.NotNull(result);
+        Assert.Single(result!.Timestamps);
+    }
+
+    [Fact]
+    public void Load_SingleColumnRow_SkipsRow()
+    {
+        var ts1 = Ts(2024, 1, 1);
+        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 1, "8h",
+            "ts,rate",
+            [
+                $"{ts1},0.0001",
+                "just-one-field"
+            ]);
+
+        var result = _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "8h",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+
+        Assert.NotNull(result);
+        Assert.Single(result!.Timestamps);
+    }
 }

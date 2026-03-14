@@ -12,7 +12,7 @@ public sealed class LsRatioTopAccountsFeedCollector(
     ILogger<LsRatioTopAccountsFeedCollector> logger)
     : GenericFeedCollectorBase(feedWriter, schemaManager, feedStatusStore, logger)
 {
-    public override string FeedName => "ls-ratio-top-accounts";
+    public override string FeedName => FeedNames.LsRatioTopAccounts;
     protected override string[] Columns => ["long_pct", "short_pct", "ratio"];
 
     protected override IAsyncEnumerable<FeedRecord> FetchAsync(

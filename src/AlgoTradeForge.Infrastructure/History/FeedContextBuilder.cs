@@ -10,7 +10,7 @@ namespace AlgoTradeForge.Infrastructure.History;
 /// Builds a <see cref="BacktestFeedContext"/> by reading the asset's <c>feeds.json</c>
 /// and loading each declared feed from monthly-partitioned CSV files.
 /// </summary>
-public sealed class FeedContextBuilder(CsvFeedSeriesLoader feedSeriesLoader) : IFeedContextBuilder
+public sealed class FeedContextBuilder(IFeedSeriesLoader feedSeriesLoader) : IFeedContextBuilder
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

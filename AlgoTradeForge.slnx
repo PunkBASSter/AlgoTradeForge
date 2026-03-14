@@ -15,5 +15,5 @@
   <Project Path="tests\AlgoTradeForge.Domain.Tests\AlgoTradeForge.Domain.Tests.csproj" />
   <Project Path="tests\AlgoTradeForge.Application.Tests\AlgoTradeForge.Application.Tests.csproj" />
   <Project Path="tests\AlgoTradeForge.Infrastructure.Tests\AlgoTradeForge.Infrastructure.Tests.csproj" />
-  <Project Path="src\AlgoTradeForge.HistoryLoader.Tests\AlgoTradeForge.HistoryLoader.Tests.csproj" />
+  <Project Path="tests\AlgoTradeForge.HistoryLoader.Tests\AlgoTradeForge.HistoryLoader.Tests.csproj" />
 </Solution>

@@ -1,6 +1,4 @@
-using System.Globalization;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Domain;
@@ -68,43 +66,11 @@ internal sealed partial class BinanceFuturesClient(
         var url = BuildKlineUrl(symbol, interval, fromMs, toMs);
         return BinanceRetryHelper.FetchWithRetryAsync(
             httpClient, rateLimiter, options.RequestDelayMs,
-            url, KlineWeight, ParseKlineBatch, ct);
+            url, KlineWeight, BinanceKlineParser.ParseBatch, ct);
     }
 
     private string BuildKlineUrl(string symbol, string interval, long fromMs, long toMs) =>
         $"{options.FuturesBaseUrl}/fapi/v1/klines" +
         $"?symbol={symbol}&interval={interval}" +
         $"&startTime={fromMs}&endTime={toMs}&limit={KlineLimit}";
-
-    private static KlineRecord[] ParseKlineBatch(string json)
-    {
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        var records = new KlineRecord[root.GetArrayLength()];
-        int i = 0;
-
-        foreach (var element in root.EnumerateArray())
-        {
-            var row = element.EnumerateArray().ToArray();
-
-            long timestampMs = row[0].GetInt64();
-            decimal open     = decimal.Parse(row[1].GetString()!, CultureInfo.InvariantCulture);
-            decimal high     = decimal.Parse(row[2].GetString()!, CultureInfo.InvariantCulture);
-            decimal low      = decimal.Parse(row[3].GetString()!, CultureInfo.InvariantCulture);
-            decimal close    = decimal.Parse(row[4].GetString()!, CultureInfo.InvariantCulture);
-            decimal volume   = decimal.Parse(row[5].GetString()!, CultureInfo.InvariantCulture);
-            // row[6] = close time (unused directly)
-            decimal quoteVolume      = decimal.Parse(row[7].GetString()!, CultureInfo.InvariantCulture);
-            int     tradeCount       = row[8].GetInt32();
-            decimal takerBuyVolume   = decimal.Parse(row[9].GetString()!,  CultureInfo.InvariantCulture);
-            decimal takerBuyQuoteVol = decimal.Parse(row[10].GetString()!, CultureInfo.InvariantCulture);
-
-            records[i++] = new KlineRecord(
-                timestampMs, open, high, low, close, volume,
-                quoteVolume, tradeCount, takerBuyVolume, takerBuyQuoteVol);
-        }
-
-        return records;
-    }
 }

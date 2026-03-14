@@ -82,7 +82,11 @@ internal sealed class FeedCsvWriter : IFeedWriter
             return null;
 
         if (long.TryParse(lastLine[..firstComma], NumberStyles.Integer, CultureInfo.InvariantCulture, out var ts))
+        {
+            var dedupKey = $"{assetDir}/{feedName}/{interval}";
+            _lastWrittenTimestamps.AddOrUpdate(dedupKey, ts, (_, _) => ts);
             return ts;
+        }
 
         return null;
     }

@@ -1,8 +1,8 @@
-using System.Net;
 using System.Text;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
+using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Binance;
@@ -10,31 +10,17 @@ namespace AlgoTradeForge.HistoryLoader.Tests.Binance;
 public sealed class BinanceFuturesClientTakerTests
 {
     // -------------------------------------------------------------------------
-    // Fake HTTP handler
-    // -------------------------------------------------------------------------
-
-    private sealed class FakeHandler : HttpMessageHandler
-    {
-        public Func<HttpRequestMessage, Task<HttpResponseMessage>> Handler { get; set; } = _ =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-            => Handler(request);
-    }
-
-    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
     private static BinanceFuturesClient BuildClient(
-        FakeHandler handler,
+        FakeHttpHandler handler,
         BinanceOptions? options = null)
     {
         var httpClient = new HttpClient(handler);
         var opts = options ?? new BinanceOptions { RequestDelayMs = 0 };
         var limiter = new SourceRateLimiter(
-            new WeightedRateLimiter(maxWeightPerMinute: 2400, budgetPercent: 100),
-            opts.FuturesBaseUrl);
+            new WeightedRateLimiter(maxWeightPerMinute: 2400, budgetPercent: 100));
         return new BinanceFuturesClient(httpClient, opts, limiter);
     }
 
@@ -60,12 +46,6 @@ public sealed class BinanceFuturesClientTakerTests
         return sb.ToString();
     }
 
-    private static HttpResponseMessage JsonResponse(string json) =>
-        new(HttpStatusCode.OK)
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json")
-        };
-
     // -------------------------------------------------------------------------
     // 1. FetchTakerVolumeAsync_ParsesResponse_ReturnsFeedRecords
     // -------------------------------------------------------------------------
@@ -77,9 +57,9 @@ public sealed class BinanceFuturesClientTakerTests
             (1_700_000_000_000L, "123456789.00", "98765432.00", "1.2500"),
             (1_700_000_300_000L, "200000000.00", "180000000.00", "1.1111"));
 
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
-            Handler = _ => Task.FromResult(JsonResponse(json))
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse(json))
         };
 
         var client = BuildClient(handler);
@@ -117,12 +97,12 @@ public sealed class BinanceFuturesClientTakerTests
     {
         string? capturedUrl = null;
 
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
             Handler = req =>
             {
                 capturedUrl = req.RequestUri?.ToString();
-                return Task.FromResult(JsonResponse("[]"));
+                return Task.FromResult(FakeHttpHandler.JsonResponse("[]"));
             }
         };
 
@@ -144,9 +124,9 @@ public sealed class BinanceFuturesClientTakerTests
     [Fact]
     public async Task FetchTakerVolumeAsync_EmptyResponse_YieldsNothing()
     {
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
-            Handler = _ => Task.FromResult(JsonResponse("[]"))
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse("[]"))
         };
 
         var client = BuildClient(handler);
@@ -184,13 +164,13 @@ public sealed class BinanceFuturesClientTakerTests
             (1_700_000_000_000L + 501 * 300_000L, "105000000.0", "100000000.0", "1.0500"));
 
         int requestCount = 0;
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
             Handler = _ =>
             {
                 requestCount++;
                 var responseJson = requestCount == 1 ? firstBatchJson : secondBatchJson;
-                return Task.FromResult(JsonResponse(responseJson));
+                return Task.FromResult(FakeHttpHandler.JsonResponse(responseJson));
             }
         };
 

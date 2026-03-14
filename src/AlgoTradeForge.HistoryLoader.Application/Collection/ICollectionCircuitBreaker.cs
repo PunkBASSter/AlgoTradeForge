@@ -4,4 +4,5 @@ public interface ICollectionCircuitBreaker
 {
     bool IsTripped { get; }
     void Trip(string reason);
+    void Reset();
 }

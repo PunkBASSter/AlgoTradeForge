@@ -3,39 +3,26 @@ using System.Text;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
+using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Binance;
 
-public sealed class BinanceSpotClientTests
+public sealed class BinanceFuturesClientKlineTests
 {
-    // -------------------------------------------------------------------------
-    // Fake HTTP handler
-    // -------------------------------------------------------------------------
-
-    private sealed class FakeHandler : HttpMessageHandler
-    {
-        public Func<HttpRequestMessage, Task<HttpResponseMessage>> Handler { get; set; } = _ =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-            => Handler(request);
-    }
-
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static BinanceSpotClient BuildClient(
-        FakeHandler handler,
+    private static BinanceFuturesClient BuildClient(
+        FakeHttpHandler handler,
         BinanceOptions? options = null)
     {
         var httpClient = new HttpClient(handler);
         var opts = options ?? new BinanceOptions { RequestDelayMs = 0 };
         var limiter = new SourceRateLimiter(
-            new WeightedRateLimiter(maxWeightPerMinute: 2400, budgetPercent: 100),
-            opts.SpotBaseUrl);
-        return new BinanceSpotClient(httpClient, opts, limiter);
+            new WeightedRateLimiter(maxWeightPerMinute: 2400, budgetPercent: 100));
+        return new BinanceFuturesClient(httpClient, opts, limiter);
     }
 
     /// <summary>
@@ -61,12 +48,6 @@ public sealed class BinanceSpotClientTests
         return sb.ToString();
     }
 
-    private static HttpResponseMessage JsonResponse(string json) =>
-        new(HttpStatusCode.OK)
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json")
-        };
-
     // -------------------------------------------------------------------------
     // 1. FetchKlinesAsync_ParsesResponse_ReturnsKlineRecords
     // -------------------------------------------------------------------------
@@ -80,9 +61,9 @@ public sealed class BinanceSpotClientTests
             (1_700_000_060_000L, "50500.00", "52000.00", "50000.00", "51500.00",
              "200.00", "10300000.00", 4500, "100.00", "5150000.00"));
 
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
-            Handler = _ => Task.FromResult(JsonResponse(json))
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse(json))
         };
 
         var client = BuildClient(handler);
@@ -111,14 +92,14 @@ public sealed class BinanceSpotClientTests
     }
 
     // -------------------------------------------------------------------------
-    // 2. FetchKlinesAsync_Pagination_StopsAtLimit1000
+    // 2. FetchKlinesAsync_Pagination_MakesMultipleRequests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task FetchKlinesAsync_Pagination_StopsAtLimit1000()
+    public async Task FetchKlinesAsync_Pagination_MakesMultipleRequests()
     {
-        // Build a first batch of exactly 1000 records (the spot limit — triggers pagination).
-        var firstBatchRecords = Enumerable.Range(0, 1000)
+        // Build a first batch of exactly 1500 records (triggers pagination).
+        var firstBatchRecords = Enumerable.Range(0, 1500)
             .Select(i => (
                 ts: 1_700_000_000_000L + i * 60_000L,
                 o: "100.00", h: "101.00", l: "99.00", c: "100.50",
@@ -129,21 +110,21 @@ public sealed class BinanceSpotClientTests
 
         // Second batch has 3 records — signals end of data.
         var secondBatchJson = BuildKlineJson(
-            (1_700_000_000_000L + 1000 * 60_000L, "100.50", "102.00", "99.50", "101.00",
+            (1_700_000_000_000L + 1500 * 60_000L, "100.50", "102.00", "99.50", "101.00",
              "8.00", "808.00", 80, "4.00", "404.00"),
-            (1_700_000_000_000L + 1001 * 60_000L, "101.00", "103.00", "100.00", "102.00",
+            (1_700_000_000_000L + 1501 * 60_000L, "101.00", "103.00", "100.00", "102.00",
              "6.00", "612.00", 60, "3.00", "306.00"),
-            (1_700_000_000_000L + 1002 * 60_000L, "102.00", "104.00", "101.00", "103.00",
+            (1_700_000_000_000L + 1502 * 60_000L, "102.00", "104.00", "101.00", "103.00",
              "5.00", "515.00", 50, "2.50", "257.50"));
 
         int requestCount = 0;
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
             Handler = _ =>
             {
                 requestCount++;
                 var responseJson = requestCount == 1 ? firstBatchJson : secondBatchJson;
-                return Task.FromResult(JsonResponse(responseJson));
+                return Task.FromResult(FakeHttpHandler.JsonResponse(responseJson));
             }
         };
 
@@ -154,14 +135,14 @@ public sealed class BinanceSpotClientTests
             .ToListAsync();
 
         Assert.Equal(2, requestCount);
-        Assert.Equal(1003, records.Count);
+        Assert.Equal(1503, records.Count);
 
         // Verify first record of first batch
         Assert.Equal(1_700_000_000_000L, records[0].TimestampMs);
         // Verify first record of second batch
-        Assert.Equal(1_700_000_000_000L + 1000 * 60_000L, records[1000].TimestampMs);
+        Assert.Equal(1_700_000_000_000L + 1500 * 60_000L, records[1500].TimestampMs);
         // Verify last record of second batch
-        Assert.Equal(1_700_000_000_000L + 1002 * 60_000L, records[1002].TimestampMs);
+        Assert.Equal(1_700_000_000_000L + 1502 * 60_000L, records[1502].TimestampMs);
     }
 
     // -------------------------------------------------------------------------
@@ -171,9 +152,9 @@ public sealed class BinanceSpotClientTests
     [Fact]
     public async Task FetchKlinesAsync_EmptyResponse_YieldsNothing()
     {
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
-            Handler = _ => Task.FromResult(JsonResponse("[]"))
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse("[]"))
         };
 
         var client = BuildClient(handler);
@@ -185,41 +166,69 @@ public sealed class BinanceSpotClientTests
     }
 
     // -------------------------------------------------------------------------
-    // 4. FetchKlinesAsync_UsesSpotBaseUrl
+    // 4. FetchKlinesAsync_Http429_RetriesWithBackoff
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task FetchKlinesAsync_UsesSpotBaseUrl()
+    public async Task FetchKlinesAsync_Http429_RetriesWithBackoff()
     {
-        string? capturedUrl = null;
         var json = BuildKlineJson(
             (1_700_000_000_000L, "100.00", "101.00", "99.00", "100.50",
              "10.00", "1005.00", 100, "5.00", "502.50"));
 
-        var handler = new FakeHandler
+        int callCount = 0;
+        var handler = new FakeHttpHandler
         {
-            Handler = req =>
+            Handler = _ =>
             {
-                capturedUrl = req.RequestUri?.ToString();
-                return Task.FromResult(JsonResponse(json));
+                callCount++;
+                if (callCount == 1)
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+                return Task.FromResult(FakeHttpHandler.JsonResponse(json));
             }
         };
 
-        var opts = new BinanceOptions
-        {
-            SpotBaseUrl = "https://api.binance.com",
-            RequestDelayMs = 0
-        };
+        // Use very short delays so the test does not take long.
+        var opts = new BinanceOptions { RequestDelayMs = 0 };
+        var httpClient = new HttpClient(handler);
+        // Override the backoff by patching isn't possible here — the test must
+        // tolerate a short real delay (2^1 = 2 s) unless we restructure.
+        // For test speed we use a CancellationToken with generous timeout.
         var client = BuildClient(handler, opts);
 
-        await client
-            .FetchKlinesAsync("ETHUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, CancellationToken.None)
-            .ToListAsync();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var records = await client
+            .FetchKlinesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, cts.Token)
+            .ToListAsync(cts.Token);
 
-        Assert.NotNull(capturedUrl);
-        Assert.Contains("/api/v3/klines", capturedUrl);
-        Assert.Contains("https://api.binance.com", capturedUrl);
-        Assert.Contains("ETHUSDT", capturedUrl);
-        Assert.Contains("limit=1000", capturedUrl);
+        Assert.Equal(2, callCount);
+        Assert.Single(records);
+        Assert.Equal(1_700_000_000_000L, records[0].TimestampMs);
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. FetchKlinesAsync_Http418_ThrowsHttpRequestException
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchKlinesAsync_Http418_ThrowsHttpRequestException()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(new HttpResponseMessage((HttpStatusCode)418))
+        };
+
+        var client = BuildClient(handler);
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(async () =>
+        {
+            await foreach (var _ in client.FetchKlinesAsync(
+                "BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, CancellationToken.None))
+            {
+                // consume the enumerable to trigger the HTTP call
+            }
+        });
+
+        Assert.Contains("418", ex.Message);
     }
 }

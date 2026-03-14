@@ -12,7 +12,7 @@ public sealed class LiquidationFeedCollector(
     ILogger<LiquidationFeedCollector> logger)
     : GenericFeedCollectorBase(feedWriter, schemaManager, feedStatusStore, logger)
 {
-    public override string FeedName => "liquidations";
+    public override string FeedName => FeedNames.Liquidations;
     protected override string[] Columns => ["side", "price", "qty", "notional_usd"];
 
     protected override IAsyncEnumerable<FeedRecord> FetchAsync(

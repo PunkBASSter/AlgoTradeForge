@@ -1,8 +1,8 @@
-using System.Net;
 using System.Text;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
+using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Binance;
@@ -10,31 +10,17 @@ namespace AlgoTradeForge.HistoryLoader.Tests.Binance;
 public sealed class BinanceFuturesClientLiquidationTests
 {
     // -------------------------------------------------------------------------
-    // Fake HTTP handler
-    // -------------------------------------------------------------------------
-
-    private sealed class FakeHandler : HttpMessageHandler
-    {
-        public Func<HttpRequestMessage, Task<HttpResponseMessage>> Handler { get; set; } = _ =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-            => Handler(request);
-    }
-
-    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
     private static BinanceFuturesClient BuildClient(
-        FakeHandler handler,
+        FakeHttpHandler handler,
         BinanceOptions? options = null)
     {
         var httpClient = new HttpClient(handler);
         var opts = options ?? new BinanceOptions { RequestDelayMs = 0 };
         var limiter = new SourceRateLimiter(
-            new WeightedRateLimiter(maxWeightPerMinute: 2400, budgetPercent: 100),
-            opts.FuturesBaseUrl);
+            new WeightedRateLimiter(maxWeightPerMinute: 2400, budgetPercent: 100));
         return new BinanceFuturesClient(httpClient, opts, limiter);
     }
 
@@ -65,12 +51,6 @@ public sealed class BinanceFuturesClientLiquidationTests
         return sb.ToString();
     }
 
-    private static HttpResponseMessage JsonResponse(string json) =>
-        new(HttpStatusCode.OK)
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json")
-        };
-
     // -------------------------------------------------------------------------
     // 1. FetchLiquidationsAsync_ParsesLongLiquidation_ReturnsSellSidePositive1
     // -------------------------------------------------------------------------
@@ -82,9 +62,9 @@ public sealed class BinanceFuturesClientLiquidationTests
         var json = BuildLiquidationJson(
             (1_700_000_000_000L, "SELL", "30000.00", "1.000", "1.000", "29950.00"));
 
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
-            Handler = _ => Task.FromResult(JsonResponse(json))
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse(json))
         };
 
         var client = BuildClient(handler);
@@ -113,9 +93,9 @@ public sealed class BinanceFuturesClientLiquidationTests
         var json = BuildLiquidationJson(
             (1_700_000_300_000L, "BUY", "31000.00", "2.000", "2.000", "31050.00"));
 
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
-            Handler = _ => Task.FromResult(JsonResponse(json))
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse(json))
         };
 
         var client = BuildClient(handler);
@@ -144,9 +124,9 @@ public sealed class BinanceFuturesClientLiquidationTests
             (1_700_000_000_000L, "SELL", "30000.00", "1.500", "1.500", "29900.00"),
             (1_700_000_300_000L, "BUY",  "31000.00", "0.500", "0.500", "31100.00"));
 
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
-            Handler = _ => Task.FromResult(JsonResponse(json))
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse(json))
         };
 
         var client = BuildClient(handler);
@@ -180,12 +160,12 @@ public sealed class BinanceFuturesClientLiquidationTests
     {
         string? capturedUrl = null;
 
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
             Handler = req =>
             {
                 capturedUrl = req.RequestUri?.ToString();
-                return Task.FromResult(JsonResponse("[]"));
+                return Task.FromResult(FakeHttpHandler.JsonResponse("[]"));
             }
         };
 
@@ -209,9 +189,9 @@ public sealed class BinanceFuturesClientLiquidationTests
     [Fact]
     public async Task FetchLiquidationsAsync_EmptyResponse_YieldsNothing()
     {
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
-            Handler = _ => Task.FromResult(JsonResponse("[]"))
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse("[]"))
         };
 
         var client = BuildClient(handler);
@@ -249,7 +229,7 @@ public sealed class BinanceFuturesClientLiquidationTests
         int requestCount = 0;
         var capturedStartTimes = new List<string>();
 
-        var handler = new FakeHandler
+        var handler = new FakeHttpHandler
         {
             Handler = req =>
             {
@@ -261,7 +241,7 @@ public sealed class BinanceFuturesClientLiquidationTests
                     capturedStartTimes.Add(startParam);
 
                 var responseJson = requestCount == 1 ? firstBatchJson : secondBatchJson;
-                return Task.FromResult(JsonResponse(responseJson));
+                return Task.FromResult(FakeHttpHandler.JsonResponse(responseJson));
             }
         };
 

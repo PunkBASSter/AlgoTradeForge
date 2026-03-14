@@ -25,7 +25,7 @@ public sealed class BackfillOrchestrator(
         CancellationToken ct = default)
     {
         var config = options.Value;
-        using var semaphore = new SemaphoreSlim(config.MaxBackfillConcurrency);
+        var semaphore = new SemaphoreSlim(config.MaxBackfillConcurrency);
 
         var tasks = assets.Select(asset => BackfillSymbolAsync(
             asset, semaphore, config.DataRoot, feedFilter, fromDate, ct));
@@ -93,8 +93,7 @@ public sealed class BackfillOrchestrator(
         }
         finally
         {
-            try { semaphore.Release(); }
-            catch (ObjectDisposedException) { /* RunAsync disposed the semaphore before all tasks completed */ }
+            semaphore.Release();
         }
     }
 

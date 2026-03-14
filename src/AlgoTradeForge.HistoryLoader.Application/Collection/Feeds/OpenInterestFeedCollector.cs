@@ -12,7 +12,7 @@ public sealed class OpenInterestFeedCollector(
     ILogger<OpenInterestFeedCollector> logger)
     : GenericFeedCollectorBase(feedWriter, schemaManager, feedStatusStore, logger)
 {
-    public override string FeedName => "open-interest";
+    public override string FeedName => FeedNames.OpenInterest;
     protected override string[] Columns => ["oi", "oi_usd"];
 
     protected override IAsyncEnumerable<FeedRecord> FetchAsync(

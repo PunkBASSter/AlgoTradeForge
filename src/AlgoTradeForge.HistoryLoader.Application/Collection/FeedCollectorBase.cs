@@ -39,7 +39,7 @@ public abstract class FeedCollectorBase(
             ? 0
             : (long)IntervalParser.ToTimeSpan(interval).TotalMilliseconds;
 
-    protected static void DetectGap(long currentTs, long previousTs, long expectedMs, double multiplier, List<DataGap> gaps)
+    internal static void DetectGap(long currentTs, long previousTs, long expectedMs, double multiplier, List<DataGap> gaps)
     {
         if (previousTs > 0 && expectedMs > 0 && currentTs - previousTs > expectedMs * multiplier)
             gaps.Add(new DataGap { FromMs = previousTs, ToMs = currentTs });
@@ -57,7 +57,7 @@ public abstract class FeedCollectorBase(
     {
         var existing = FeedStatusStore.Load(assetDir, feedName, interval);
 
-        List<DataGap> mergedGaps = existing?.Gaps ?? [];
+        IReadOnlyList<DataGap> mergedGaps = existing?.Gaps ?? [];
         if (newGaps is { Count: > 0 })
         {
             mergedGaps = [.. mergedGaps, .. newGaps];

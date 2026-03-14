@@ -16,6 +16,6 @@ public sealed class FeedStatus
     public long? LastTimestamp { get; init; }
     public DateTimeOffset? LastRunUtc { get; init; }
     public long RecordCount { get; init; }
-    public List<DataGap> Gaps { get; init; } = [];
+    public IReadOnlyList<DataGap> Gaps { get; init; } = [];
     public CollectionHealth Health { get; init; } = CollectionHealth.Healthy;
 }

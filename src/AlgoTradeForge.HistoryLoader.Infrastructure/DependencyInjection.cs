@@ -24,9 +24,8 @@ public static class DependencyInjection
         var futuresLimiterKey = "futures-rate-limiter";
         services.AddKeyedSingleton(futuresLimiterKey, (sp, _) =>
         {
-            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
             var global = sp.GetRequiredService<WeightedRateLimiter>();
-            return new SourceRateLimiter(global, opts.Binance.FuturesBaseUrl);
+            return new SourceRateLimiter(global);
         });
 
         // Binance Futures API client → IFuturesDataFetcher
@@ -48,7 +47,7 @@ public static class DependencyInjection
             var httpClient = httpFactory.CreateClient(nameof(BinanceSpotClient));
             var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
             var global = sp.GetRequiredService<WeightedRateLimiter>();
-            var spotLimiter = new SourceRateLimiter(global, opts.Binance.SpotBaseUrl);
+            var spotLimiter = new SourceRateLimiter(global);
             return new BinanceSpotClient(httpClient, opts.Binance, spotLimiter);
         });
 

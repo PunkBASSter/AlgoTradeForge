@@ -13,6 +13,7 @@ internal static class StatusEndpoints
         var group = app.MapGroup("/api/v1/status");
         group.MapGet("/", GetAllStatus);
         group.MapGet("/{symbol}", GetSymbolStatus);
+        group.MapPost("/circuit-breaker/reset", ResetCircuitBreaker);
         return group;
     }
 
@@ -70,19 +71,35 @@ internal static class StatusEndpoints
             return Results.NotFound(new { error = "Symbol not found", symbol });
 
         var resolvedAssetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-        var feedStatuses = new List<FeedStatus>();
+        var feedDetails = new List<FeedStatusDetail>();
 
         foreach (var feed in asset.Feeds)
         {
             var status = feedStatusStore.Load(resolvedAssetDir, feed.Name, feed.Interval);
             if (status is not null)
-                feedStatuses.Add(status);
+            {
+                feedDetails.Add(new FeedStatusDetail(
+                    FeedName: status.FeedName,
+                    Interval: status.Interval,
+                    FirstTimestamp: status.FirstTimestamp,
+                    LastTimestamp: status.LastTimestamp,
+                    LastRunUtc: status.LastRunUtc,
+                    RecordCount: status.RecordCount,
+                    GapCount: status.Gaps.Count,
+                    Health: status.Health.ToString()));
+            }
         }
 
         return Results.Json(new SymbolDetailResponse(
             Symbol: asset.Symbol,
             Type: asset.Type,
             Exchange: asset.Exchange,
-            Feeds: feedStatuses));
+            Feeds: feedDetails));
+    }
+
+    private static IResult ResetCircuitBreaker(ICollectionCircuitBreaker circuitBreaker)
+    {
+        circuitBreaker.Reset();
+        return Results.Ok(new { message = "Circuit breaker reset" });
     }
 }
