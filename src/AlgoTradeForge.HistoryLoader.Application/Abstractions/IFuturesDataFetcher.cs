@@ -4,10 +4,12 @@ namespace AlgoTradeForge.HistoryLoader.Application.Abstractions;
 
 public interface IFuturesDataFetcher
 {
-    IAsyncEnumerable<KlineRecord> FetchKlinesAsync(
+    string[]? CandleExtColumns { get; }
+
+    IAsyncEnumerable<CandleRecord> FetchKlinesAsync(
         string symbol, string interval, long fromMs, long toMs, CancellationToken ct);
 
-    IAsyncEnumerable<KlineRecord> FetchMarkPriceKlinesAsync(
+    IAsyncEnumerable<CandleRecord> FetchMarkPriceKlinesAsync(
         string symbol, string interval, long fromMs, long toMs, CancellationToken ct);
 
     IAsyncEnumerable<FeedRecord> FetchFundingRatesAsync(

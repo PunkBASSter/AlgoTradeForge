@@ -12,6 +12,8 @@ internal sealed class BinanceSpotClient(HttpClient httpClient, BinanceOptions op
     private const int KlineLimit = 1000;
     private const int KlineWeight = 2;
 
+    public string[]? CandleExtColumns => null;
+
     // -------------------------------------------------------------------------
     // Klines
     // -------------------------------------------------------------------------
@@ -21,7 +23,7 @@ internal sealed class BinanceSpotClient(HttpClient httpClient, BinanceOptions op
     /// for the given <paramref name="symbol"/> and <paramref name="interval"/>
     /// over the half-open time range [<paramref name="fromMs"/>, <paramref name="toMs"/>).
     /// </summary>
-    public async IAsyncEnumerable<KlineRecord> FetchKlinesAsync(
+    public async IAsyncEnumerable<CandleRecord> FetchKlinesAsync(
         string symbol,
         string interval,
         long fromMs,
@@ -54,7 +56,7 @@ internal sealed class BinanceSpotClient(HttpClient httpClient, BinanceOptions op
     // Private helpers
     // -------------------------------------------------------------------------
 
-    private Task<KlineRecord[]> FetchKlineBatchWithRetryAsync(
+    private Task<CandleRecord[]> FetchKlineBatchWithRetryAsync(
         string symbol,
         string interval,
         long fromMs,

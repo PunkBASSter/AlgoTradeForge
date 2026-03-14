@@ -4,6 +4,8 @@ namespace AlgoTradeForge.HistoryLoader.Application.Abstractions;
 
 public interface ISpotDataFetcher
 {
-    IAsyncEnumerable<KlineRecord> FetchKlinesAsync(
+    string[]? CandleExtColumns { get; }
+
+    IAsyncEnumerable<CandleRecord> FetchKlinesAsync(
         string symbol, string interval, long fromMs, long toMs, CancellationToken ct);
 }

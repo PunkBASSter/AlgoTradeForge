@@ -80,10 +80,12 @@ public sealed class BinanceFuturesClientKlineTests
         Assert.Equal(49500.25m, first.Low);
         Assert.Equal(50500.00m, first.Close);
         Assert.Equal(123.45m, first.Volume);
-        Assert.Equal(6172500.00m, first.QuoteVolume);
-        Assert.Equal(3000, first.TradeCount);
-        Assert.Equal(60.00m, first.TakerBuyVolume);
-        Assert.Equal(3000000.00m, first.TakerBuyQuoteVolume);
+        Assert.NotNull(first.ExtValues);
+        Assert.Equal(4, first.ExtValues.Length);
+        Assert.Equal(6172500.00, first.ExtValues[0]); // quoteVolume
+        Assert.Equal(3000, first.ExtValues[1]);        // tradeCount
+        Assert.Equal(60.00, first.ExtValues[2]);       // takerBuyVolume
+        Assert.Equal(3000000.00, first.ExtValues[3]);  // takerBuyQuoteVolume
 
         var second = records[1];
         Assert.Equal(1_700_000_060_000L, second.TimestampMs);

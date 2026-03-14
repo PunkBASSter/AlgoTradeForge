@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "AlgoTradeForge.HistoryLoader": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:64097;http://localhost:64098"
+    }
+  }
+}

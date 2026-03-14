@@ -76,12 +76,9 @@ public sealed class BinanceFuturesClientMarkPriceTests
         Assert.Equal(51000.75m, first.High);
         Assert.Equal(49500.25m, first.Low);
         Assert.Equal(50500.00m, first.Close);
-        // Volume fields must be zero for mark price klines.
+        // Volume must be zero and ExtValues null for mark price klines.
         Assert.Equal(0m, first.Volume);
-        Assert.Equal(0m, first.QuoteVolume);
-        Assert.Equal(0, first.TradeCount);
-        Assert.Equal(0m, first.TakerBuyVolume);
-        Assert.Equal(0m, first.TakerBuyQuoteVolume);
+        Assert.Null(first.ExtValues);
 
         var second = records[1];
         Assert.Equal(1_700_000_060_000L, second.TimestampMs);

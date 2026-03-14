@@ -14,9 +14,6 @@ public sealed class CandleFeedCollector(
     ILogger<CandleFeedCollector> logger)
     : FeedCollectorBase(feedWriter, schemaManager, feedStatusStore, logger)
 {
-    private static readonly string[] CandleExtColumns =
-        ["quote_vol", "trade_count", "taker_buy_vol", "taker_buy_quote_vol"];
-
     public override string FeedName => FeedNames.Candles;
     public override bool SupportsSpot => true;
 
@@ -44,10 +41,12 @@ public sealed class CandleFeedCollector(
             throw new InvalidOperationException(
                 $"Spot data fetcher is not registered but asset {assetConfig.Symbol} is type 'spot'.");
 
-        // Ensure candle-ext schema only for non-spot assets.
-        if (!isSpot)
+        // Determine ext columns from the fetcher — null means no ext feed.
+        var extColumns = isSpot ? spotClient!.CandleExtColumns : futuresClient.CandleExtColumns;
+
+        if (extColumns is not null)
         {
-            SchemaManager.EnsureSchema(assetDir, FeedNames.CandleExt, interval, CandleExtColumns);
+            SchemaManager.EnsureSchema(assetDir, FeedNames.CandleExt, interval, extColumns);
         }
 
         long recordCount = 0;
@@ -58,15 +57,15 @@ public sealed class CandleFeedCollector(
         long expectedMs = ComputeExpectedMs(interval);
 
         // Route to spot or futures client based on asset type.
-        IAsyncEnumerable<KlineRecord> klineSource = isSpot
+        IAsyncEnumerable<CandleRecord> klineSource = isSpot
             ? spotClient!.FetchKlinesAsync(assetConfig.Symbol, interval, fromMs, toMs, ct)
             : futuresClient.FetchKlinesAsync(assetConfig.Symbol, interval, fromMs, toMs, ct);
 
-        await foreach (var kline in klineSource)
+        await foreach (var candle in klineSource)
         {
             try
             {
-                candleWriter.Write(assetDir, interval, kline, assetConfig.DecimalDigits);
+                candleWriter.Write(assetDir, interval, candle, assetConfig.DecimalDigits);
             }
             catch (IOException ex)
             {
@@ -76,19 +75,13 @@ public sealed class CandleFeedCollector(
                 throw;
             }
 
-            // Write extended fields as double feed (futures only).
-            if (!isSpot)
+            // Write extended fields as double feed when ext columns are available.
+            if (extColumns is not null && candle.ExtValues is not null)
             {
-                var extRecord = new FeedRecord(kline.TimestampMs,
-                [
-                    (double)kline.QuoteVolume,
-                    kline.TradeCount,
-                    (double)kline.TakerBuyVolume,
-                    (double)kline.TakerBuyQuoteVolume
-                ]);
+                var extRecord = new FeedRecord(candle.TimestampMs, candle.ExtValues);
                 try
                 {
-                    FeedWriter.Write(assetDir, FeedNames.CandleExt, interval, CandleExtColumns, extRecord);
+                    FeedWriter.Write(assetDir, FeedNames.CandleExt, interval, extColumns, extRecord);
                 }
                 catch (IOException ex)
                 {
@@ -99,11 +92,11 @@ public sealed class CandleFeedCollector(
                 }
             }
 
-            DetectGap(kline.TimestampMs, previousTs, expectedMs, feedConfig.GapThresholdMultiplier, gaps);
-            previousTs = kline.TimestampMs;
+            DetectGap(candle.TimestampMs, previousTs, expectedMs, feedConfig.GapThresholdMultiplier, gaps);
+            previousTs = candle.TimestampMs;
 
-            firstTs ??= kline.TimestampMs;
-            lastTs = kline.TimestampMs;
+            firstTs ??= candle.TimestampMs;
+            lastTs = candle.TimestampMs;
             recordCount++;
         }
 
@@ -111,7 +104,7 @@ public sealed class CandleFeedCollector(
         {
             UpdateFeedStatus(assetDir, FeedNames.Candles, interval, firstTs, lastTs, recordCount,
                 newGaps: gaps);
-            if (!isSpot)
+            if (extColumns is not null)
                 UpdateFeedStatus(assetDir, FeedNames.CandleExt, interval, firstTs, lastTs, recordCount,
                     newGaps: gaps);
         }

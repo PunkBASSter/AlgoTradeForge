@@ -14,6 +14,9 @@ internal sealed partial class BinanceFuturesClient(
     private const int KlineLimit = 1500;
     private const int KlineWeight = 5;
 
+    public string[]? CandleExtColumns =>
+        ["quote_vol", "trade_count", "taker_buy_vol", "taker_buy_quote_vol"];
+
     // -------------------------------------------------------------------------
     // Klines
     // -------------------------------------------------------------------------
@@ -23,7 +26,7 @@ internal sealed partial class BinanceFuturesClient(
     /// for the given <paramref name="symbol"/> and <paramref name="interval"/>
     /// over the half-open time range [<paramref name="fromMs"/>, <paramref name="toMs"/>).
     /// </summary>
-    public async IAsyncEnumerable<KlineRecord> FetchKlinesAsync(
+    public async IAsyncEnumerable<CandleRecord> FetchKlinesAsync(
         string symbol,
         string interval,
         long fromMs,
@@ -56,7 +59,7 @@ internal sealed partial class BinanceFuturesClient(
     // Private helpers
     // -------------------------------------------------------------------------
 
-    private Task<KlineRecord[]> FetchKlineBatchWithRetryAsync(
+    private Task<CandleRecord[]> FetchKlineBatchWithRetryAsync(
         string symbol,
         string interval,
         long fromMs,

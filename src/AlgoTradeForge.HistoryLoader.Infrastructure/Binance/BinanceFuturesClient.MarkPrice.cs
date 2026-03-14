@@ -17,11 +17,11 @@ internal sealed partial class BinanceFuturesClient
     /// over the half-open time range [<paramref name="fromMs"/>, <paramref name="toMs"/>).
     /// </summary>
     /// <remarks>
-    /// Each <see cref="KlineRecord"/> contains mark price OHLC values.
-    /// Volume fields (Volume, QuoteVolume, TakerBuyVolume, TakerBuyQuoteVolume)
-    /// are always 0 for mark price klines.
+    /// Each <see cref="CandleRecord"/> contains mark price OHLC values.
+    /// Volume is always 0 and <see cref="CandleRecord.ExtValues"/> is null
+    /// for mark price klines.
     /// </remarks>
-    public async IAsyncEnumerable<KlineRecord> FetchMarkPriceKlinesAsync(
+    public async IAsyncEnumerable<CandleRecord> FetchMarkPriceKlinesAsync(
         string symbol,
         string interval,
         long fromMs,
@@ -54,7 +54,7 @@ internal sealed partial class BinanceFuturesClient
     // Private helpers — mark price klines
     // -------------------------------------------------------------------------
 
-    private Task<KlineRecord[]> FetchMarkPriceKlineBatchWithRetryAsync(
+    private Task<CandleRecord[]> FetchMarkPriceKlineBatchWithRetryAsync(
         string symbol,
         string interval,
         long fromMs,
@@ -72,12 +72,12 @@ internal sealed partial class BinanceFuturesClient
         $"?symbol={symbol}&interval={interval}" +
         $"&startTime={fromMs}&endTime={toMs}&limit={KlineLimit}";
 
-    private static KlineRecord[] ParseMarkPriceKlineBatch(string json)
+    private static CandleRecord[] ParseMarkPriceKlineBatch(string json)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        var records = new KlineRecord[root.GetArrayLength()];
+        var records = new CandleRecord[root.GetArrayLength()];
         int i = 0;
 
         foreach (var element in root.EnumerateArray())
@@ -91,10 +91,8 @@ internal sealed partial class BinanceFuturesClient
             decimal close       = decimal.Parse(row[4].GetString()!, CultureInfo.InvariantCulture);
             // Volume fields are always "0" for mark price klines.
 
-            records[i++] = new KlineRecord(
-                timestampMs, open, high, low, close,
-                Volume: 0m, QuoteVolume: 0m, TradeCount: 0,
-                TakerBuyVolume: 0m, TakerBuyQuoteVolume: 0m);
+            records[i++] = new CandleRecord(
+                timestampMs, open, high, low, close, Volume: 0m);
         }
 
         return records;

@@ -18,11 +18,9 @@ public sealed class CandleCsvWriterTests : IDisposable
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static KlineRecord MakeRecord(long timestampMs, decimal open = 1m, decimal high = 2m,
+    private static CandleRecord MakeRecord(long timestampMs, decimal open = 1m, decimal high = 2m,
         decimal low = 0.5m, decimal close = 1.5m, decimal volume = 100m) =>
-        new(timestampMs, open, high, low, close, volume,
-            QuoteVolume: 0m, TradeCount: 0,
-            TakerBuyVolume: 0m, TakerBuyQuoteVolume: 0m);
+        new(timestampMs, open, high, low, close, volume);
 
     private static string PartitionFile(string assetDir, string interval, long timestampMs)
     {

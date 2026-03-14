@@ -9,7 +9,7 @@ internal sealed class CandleCsvWriter : ICandleWriter
 {
     private readonly ConcurrentDictionary<string, long> _lastWrittenTimestamps = new();
 
-    public void Write(string assetDir, string interval, KlineRecord record, int decimalDigits)
+    public void Write(string assetDir, string interval, CandleRecord record, int decimalDigits)
     {
         var key = $"{assetDir}/{interval}";
 
