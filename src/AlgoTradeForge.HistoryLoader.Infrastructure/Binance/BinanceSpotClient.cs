@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Application;
@@ -14,7 +13,6 @@ internal sealed class BinanceSpotClient(HttpClient httpClient, BinanceOptions op
 {
     private const int KlineLimit = 1000;
     private const int KlineWeight = 2;
-    private const int MaxRetries = 3;
 
     // -------------------------------------------------------------------------
     // Klines
@@ -58,53 +56,17 @@ internal sealed class BinanceSpotClient(HttpClient httpClient, BinanceOptions op
     // Private helpers
     // -------------------------------------------------------------------------
 
-    private async Task<KlineRecord[]> FetchKlineBatchWithRetryAsync(
+    private Task<KlineRecord[]> FetchKlineBatchWithRetryAsync(
         string symbol,
         string interval,
         long fromMs,
         long toMs,
         CancellationToken ct)
     {
-        for (int attempt = 0; attempt <= MaxRetries; attempt++)
-        {
-            await rateLimiter.AcquireAsync(KlineWeight, ct).ConfigureAwait(false);
-            await Task.Delay(options.RequestDelayMs, ct).ConfigureAwait(false);
-
-            var url = BuildKlineUrl(symbol, interval, fromMs, toMs);
-            using var response = await httpClient.GetAsync(url, ct).ConfigureAwait(false);
-
-            if (response.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                if (attempt == MaxRetries)
-                    throw new HttpRequestException($"Binance rate limit exceeded after {MaxRetries} retries (HTTP 429).");
-
-                var backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
-                await Task.Delay(backoff, ct).ConfigureAwait(false);
-                continue;
-            }
-
-            if (response.StatusCode == (HttpStatusCode)418)
-                throw new HttpRequestException("IP banned by Binance (HTTP 418).");
-
-            if ((int)response.StatusCode >= 500 && (int)response.StatusCode <= 599)
-            {
-                if (attempt == MaxRetries)
-                    throw new HttpRequestException(
-                        $"Binance server error after {MaxRetries} retries (HTTP {(int)response.StatusCode}).");
-
-                var backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
-                await Task.Delay(backoff, ct).ConfigureAwait(false);
-                continue;
-            }
-
-            response.EnsureSuccessStatusCode();
-
-            var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            return ParseKlineBatch(json);
-        }
-
-        // Unreachable — loop always returns or throws within MaxRetries iterations.
-        throw new InvalidOperationException("Unexpected state in FetchKlineBatchWithRetryAsync.");
+        var url = BuildKlineUrl(symbol, interval, fromMs, toMs);
+        return BinanceRetryHelper.FetchWithRetryAsync(
+            httpClient, rateLimiter, options.RequestDelayMs,
+            url, KlineWeight, ParseKlineBatch, ct);
     }
 
     private string BuildKlineUrl(string symbol, string interval, long fromMs, long toMs) =>

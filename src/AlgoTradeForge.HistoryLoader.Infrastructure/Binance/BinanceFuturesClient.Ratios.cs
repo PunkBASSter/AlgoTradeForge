@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Domain;
@@ -93,49 +92,13 @@ internal sealed partial class BinanceFuturesClient
     // Private helpers — ratio feeds
     // -------------------------------------------------------------------------
 
-    private async Task<FeedRecord[]> FetchRatioBatchWithRetryAsync(
+    private Task<FeedRecord[]> FetchRatioBatchWithRetryAsync(
         string url,
         CancellationToken ct)
     {
-        for (int attempt = 0; attempt <= MaxRetries; attempt++)
-        {
-            await rateLimiter.AcquireAsync(RatioWeight, ct).ConfigureAwait(false);
-            await Task.Delay(options.RequestDelayMs, ct).ConfigureAwait(false);
-
-            using var response = await httpClient.GetAsync(url, ct).ConfigureAwait(false);
-
-            if (response.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                if (attempt == MaxRetries)
-                    throw new HttpRequestException($"Binance rate limit exceeded after {MaxRetries} retries (HTTP 429).");
-
-                var backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
-                await Task.Delay(backoff, ct).ConfigureAwait(false);
-                continue;
-            }
-
-            if (response.StatusCode == (HttpStatusCode)418)
-                throw new HttpRequestException("IP banned by Binance (HTTP 418).");
-
-            if ((int)response.StatusCode >= 500 && (int)response.StatusCode <= 599)
-            {
-                if (attempt == MaxRetries)
-                    throw new HttpRequestException(
-                        $"Binance server error after {MaxRetries} retries (HTTP {(int)response.StatusCode}).");
-
-                var backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
-                await Task.Delay(backoff, ct).ConfigureAwait(false);
-                continue;
-            }
-
-            response.EnsureSuccessStatusCode();
-
-            var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            return ParseRatioBatch(json);
-        }
-
-        // Unreachable — loop always returns or throws within MaxRetries iterations.
-        throw new InvalidOperationException("Unexpected state in FetchRatioBatchWithRetryAsync.");
+        return BinanceRetryHelper.FetchWithRetryAsync(
+            httpClient, rateLimiter, options.RequestDelayMs,
+            url, RatioWeight, ParseRatioBatch, ct);
     }
 
     private string BuildGlobalLsRatioUrl(string symbol, string interval, long fromMs, long toMs) =>
