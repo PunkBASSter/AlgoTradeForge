@@ -33,19 +33,17 @@ public sealed class BackfillOrchestrator(
         await Task.WhenAll(tasks);
     }
 
-    public async Task RunSingleAsync(
+    public async Task<bool> TryRunSingleAsync(
         AssetCollectionConfig asset,
         string assetDir,
         IReadOnlyList<string>? feedFilter = null,
         DateOnly? fromDate = null,
         CancellationToken ct = default)
     {
-        var config = options.Value;
-
         lock (_lock)
         {
             if (!_runningSymbols.Add(assetDir))
-                throw new InvalidOperationException($"Backfill already running for {assetDir}");
+                return false;
         }
 
         try
@@ -64,6 +62,8 @@ public sealed class BackfillOrchestrator(
             {
                 await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct);
             }
+
+            return true;
         }
         finally
         {
@@ -84,7 +84,8 @@ public sealed class BackfillOrchestrator(
         try
         {
             var assetDir = ResolveAssetDir(dataRoot, asset);
-            await RunSingleAsync(asset, assetDir, feedFilter, fromDate, ct);
+            if (!await TryRunSingleAsync(asset, assetDir, feedFilter, fromDate, ct))
+                logger.LogWarning("Backfill already running for {Symbol}, skipping", asset.Symbol);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

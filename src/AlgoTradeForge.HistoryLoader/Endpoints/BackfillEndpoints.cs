@@ -1,5 +1,6 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.Endpoints;
@@ -15,32 +16,41 @@ internal static class BackfillEndpoints
 
     private static IResult TriggerBackfill(
         BackfillRequest request,
-        IOptions<HistoryLoaderOptions> options,
-        BackfillOrchestrator orchestrator)
+        IOptionsMonitor<HistoryLoaderOptions> options,
+        BackfillOrchestrator orchestrator,
+        IHostApplicationLifetime lifetime,
+        ILoggerFactory loggerFactory)
     {
-        var config = options.Value;
+        var config = options.CurrentValue;
         var symbol = request.Symbol;
 
         var asset = config.Assets.FirstOrDefault(a =>
         {
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, a);
-            var dirName = Path.GetFileName(assetDir);
-            return string.Equals(dirName, symbol, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(a.Symbol, symbol, StringComparison.OrdinalIgnoreCase);
+            var dirName = AssetPathConvention.DirectoryName(a.Symbol, a.Type);
+            return string.Equals(dirName, symbol, StringComparison.OrdinalIgnoreCase);
         });
 
         if (asset is null)
             return Results.BadRequest(new { error = "Symbol not configured", symbol });
 
         var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-
-        if (orchestrator.IsRunning(assetDir))
-            return Results.Conflict(new { error = "Backfill already running for this symbol", symbol });
-
         var feedFilter = request.Feeds is { Length: > 0 } ? (IReadOnlyList<string>)request.Feeds : null;
         var fromDate = request.FromDate;
+        var ct = lifetime.ApplicationStopping;
+        var logger = loggerFactory.CreateLogger("BackfillEndpoints");
 
-        _ = Task.Run(() => orchestrator.RunSingleAsync(asset, assetDir, feedFilter, fromDate));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (!await orchestrator.TryRunSingleAsync(asset, assetDir, feedFilter, fromDate, ct))
+                    logger.LogWarning("Backfill already running for {Symbol}", asset.Symbol);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Backfill failed for {Symbol}", asset.Symbol);
+            }
+        }, ct);
 
         var feedsQueued = feedFilter?.ToArray()
             ?? asset.Feeds.Where(f => f.Enabled).Select(f => f.Name).ToArray();
