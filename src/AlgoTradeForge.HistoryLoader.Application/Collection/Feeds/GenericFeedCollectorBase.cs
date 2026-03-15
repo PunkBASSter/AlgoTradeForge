@@ -30,7 +30,8 @@ public abstract class GenericFeedCollectorBase(
     {
         var interval = feedConfig.Interval;
 
-        var resumeTs = AdjustFromMs(assetDir, FeedName, interval, ref fromMs);
+        var (resumeTs, adjustedFromMs) = ResolveFromMs(assetDir, FeedName, interval, fromMs);
+        fromMs = adjustedFromMs;
         SchemaManager.EnsureSchema(assetDir, FeedName, interval, Columns);
 
         long recordCount = 0;

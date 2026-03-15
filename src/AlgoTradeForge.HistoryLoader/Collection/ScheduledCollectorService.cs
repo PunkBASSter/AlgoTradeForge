@@ -26,7 +26,14 @@ internal abstract class ScheduledCollectorService(
         do
         {
             if (circuitBreaker.IsTripped)
-                return;
+            {
+                var cooldown = options.CurrentValue.CircuitBreakerCooldownMinutes;
+                logger.LogWarning(
+                    "{ServiceName} paused — circuit breaker tripped, retrying in {Cooldown} min",
+                    ServiceName, cooldown);
+                await Task.Delay(TimeSpan.FromMinutes(cooldown), stoppingToken);
+                continue;
+            }
 
             try
             {

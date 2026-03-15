@@ -31,7 +31,7 @@ public sealed class FeedCsvWriterTests : IDisposable
     [Fact]
     public void Write_NewFile_CreatesWithCorrectHeader()
     {
-        var writer = new FeedCsvWriter();
+        var writer = new FeedCsvWriter(new WriteLockManager());
         var columns = new[] { "fundingRate", "markPrice" };
         var record = new FeedRecord(Ts20240115, [0.0001, 50000.0]);
 
@@ -51,7 +51,7 @@ public sealed class FeedCsvWriterTests : IDisposable
     [Fact]
     public void Write_DoubleValues_FormattedWithInvariantCulture()
     {
-        var writer = new FeedCsvWriter();
+        var writer = new FeedCsvWriter(new WriteLockManager());
         var columns = new[] { "openInterest" };
         // Use a value that varies between cultures (decimal separator)
         var record = new FeedRecord(Ts20240115, [1234567.89]);
@@ -75,7 +75,7 @@ public sealed class FeedCsvWriterTests : IDisposable
     [Fact]
     public void Write_NoInterval_OmitsIntervalFromFilename()
     {
-        var writer = new FeedCsvWriter();
+        var writer = new FeedCsvWriter(new WriteLockManager());
         var record = new FeedRecord(Ts20240115, [0.0001]);
 
         writer.Write(_tempDir, "funding-rate", "", ["rate"], record);
@@ -94,7 +94,7 @@ public sealed class FeedCsvWriterTests : IDisposable
     [Fact]
     public void Write_WithInterval_IncludesIntervalInFilename()
     {
-        var writer = new FeedCsvWriter();
+        var writer = new FeedCsvWriter(new WriteLockManager());
         var record = new FeedRecord(Ts20240115, [999999.0]);
 
         writer.Write(_tempDir, "open-interest", "5m", ["oi"], record);
@@ -110,7 +110,7 @@ public sealed class FeedCsvWriterTests : IDisposable
     [Fact]
     public void Write_Dedup_SkipsDuplicateTimestamp()
     {
-        var writer = new FeedCsvWriter();
+        var writer = new FeedCsvWriter(new WriteLockManager());
         var columns = new[] { "rate" };
         var record = new FeedRecord(Ts20240115, [0.0001]);
 
@@ -131,7 +131,7 @@ public sealed class FeedCsvWriterTests : IDisposable
     [Fact]
     public void ResumeFrom_ExistingFile_ReturnsLastTimestamp()
     {
-        var writer = new FeedCsvWriter();
+        var writer = new FeedCsvWriter(new WriteLockManager());
         var columns = new[] { "rate" };
 
         var ts1 = Ts20240115;
@@ -143,5 +143,28 @@ public sealed class FeedCsvWriterTests : IDisposable
         var result = writer.ResumeFrom(_tempDir, "funding-rate", "");
 
         Assert.Equal(ts2, result);
+    }
+
+    // ---------------------------------------------------------------------------
+    // 7. Write_ConcurrentSameTimestamp_OnlyOneLineWritten
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void Write_ConcurrentSameTimestamp_OnlyOneLineWritten()
+    {
+        var lockMgr = new WriteLockManager();
+        var writer = new FeedCsvWriter(lockMgr);
+        var columns = new[] { "rate" };
+
+        var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(() =>
+            writer.Write(_tempDir, "concurrent-feed", "", columns,
+                new FeedRecord(Ts20240115, [0.0001]))));
+
+        Task.WhenAll(tasks).Wait();
+
+        var filePath = Path.Combine(_tempDir, "concurrent-feed", "2024-01.csv");
+        var lines = File.ReadAllLines(filePath);
+        // header + exactly 1 data line despite 10 concurrent writes
+        Assert.Equal(2, lines.Length);
     }
 }

@@ -70,7 +70,8 @@ public static class DependencyInjection
         services.AddKeyedSingleton<ICandleFetcher>("binance-spot",
             (sp, _) => sp.GetRequiredService<BinanceSpotClient>());
 
-        // Storage writers
+        // Storage writers (share a WriteLockManager so scheduled + backfill don't collide)
+        services.AddSingleton<WriteLockManager>();
         services.AddSingleton<ICandleWriter, CandleCsvWriter>();
         services.AddSingleton<IFeedWriter, FeedCsvWriter>();
         services.AddSingleton<ISchemaManager, FeedSchemaManager>();

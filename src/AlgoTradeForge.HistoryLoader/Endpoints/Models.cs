@@ -19,4 +19,4 @@ internal sealed record FeedStatusDetail(
     string FeedName, string Interval, long? FirstTimestamp, long? LastTimestamp,
     DateTimeOffset? LastRunUtc, long RecordCount, int GapCount, string Health);
 
-internal sealed record SymbolDetailResponse(string Symbol, string Type, string Exchange, IReadOnlyList<FeedStatusDetail> Feeds);
+internal sealed record SymbolDetailResponse(string Symbol, string Type, string Exchange, bool BackfillRunning, IReadOnlyList<FeedStatusDetail> Feeds);

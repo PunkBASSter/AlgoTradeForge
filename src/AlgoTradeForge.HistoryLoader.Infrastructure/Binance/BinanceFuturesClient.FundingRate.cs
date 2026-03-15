@@ -13,7 +13,7 @@ internal sealed partial class BinanceFuturesClient
     /// <summary>
     /// Fetches funding rates from the Binance USDT-M Futures API for the given
     /// <paramref name="symbol"/> over the time range
-    /// [<paramref name="fromMs"/>, <paramref name="toMs"/>].
+    /// [<paramref name="fromMs"/>, <paramref name="toMs"/>).
     /// </summary>
     /// <remarks>
     /// Each <see cref="FeedRecord"/> contains two values: fundingRate (index 0)
@@ -27,7 +27,7 @@ internal sealed partial class BinanceFuturesClient
     {
         long cursor = fromMs;
 
-        while (cursor <= toMs)
+        while (cursor < toMs)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -79,10 +79,10 @@ internal sealed partial class BinanceFuturesClient
         {
             long fundingTime  = element.GetProperty("fundingTime").GetInt64();
             double fundingRate = double.Parse(
-                element.GetProperty("fundingRate").GetString()!,
+                BinanceJsonHelper.ParseRequiredString(element, "fundingRate"),
                 CultureInfo.InvariantCulture);
             double markPrice   = double.Parse(
-                element.GetProperty("markPrice").GetString()!,
+                BinanceJsonHelper.ParseRequiredString(element, "markPrice"),
                 CultureInfo.InvariantCulture);
 
             records[i++] = new FeedRecord(fundingTime, [fundingRate, markPrice]);

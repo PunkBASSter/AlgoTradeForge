@@ -18,13 +18,13 @@ internal static class BinanceRatioParser
         {
             long timestamp = element.GetProperty("timestamp").GetInt64();
             double longAccount = double.Parse(
-                element.GetProperty("longAccount").GetString()!,
+                BinanceJsonHelper.ParseRequiredString(element, "longAccount"),
                 CultureInfo.InvariantCulture);
             double shortAccount = double.Parse(
-                element.GetProperty("shortAccount").GetString()!,
+                BinanceJsonHelper.ParseRequiredString(element, "shortAccount"),
                 CultureInfo.InvariantCulture);
             double longShortRatio = double.Parse(
-                element.GetProperty("longShortRatio").GetString()!,
+                BinanceJsonHelper.ParseRequiredString(element, "longShortRatio"),
                 CultureInfo.InvariantCulture);
 
             records[i++] = new FeedRecord(timestamp, [longAccount, shortAccount, longShortRatio]);

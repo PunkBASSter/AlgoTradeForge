@@ -189,4 +189,49 @@ public class FeedContextBuilderTests : IDisposable
         var schema = result!.GetSchema("volume");
         Assert.Equal("vol", schema.ColumnNames[0]);
     }
+
+    [Fact]
+    public void Build_MalformedFeedsJson_ReturnsNull()
+    {
+        var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
+        var assetDir = AssetDirectoryName.From(asset);
+
+        // Write invalid JSON to feeds.json
+        var dir = Path.Combine(_testDataRoot, "Binance", assetDir);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "feeds.json"), "{ invalid json !!!");
+
+        var result = _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Build_InvalidAutoApplyType_RegistersFeedWithNullAutoApply()
+    {
+        var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
+        var assetDir = AssetDirectoryName.From(asset);
+
+        WriteFeedsJson("Binance", assetDir, new
+        {
+            Feeds = new Dictionary<string, object>
+            {
+                ["funding_rate"] = new
+                {
+                    Interval = "8h",
+                    Columns = new[] { "rate" },
+                    AutoApply = new { Type = "InvalidType", RateColumn = "rate", SignConvention = (string?)null }
+                }
+            }
+        });
+
+        WriteFeedCsv("Binance", assetDir, "funding_rate", 2024, 1, "8h",
+            "ts,rate", [$"{Ts(2024,1,1)},0.0001"]);
+
+        var result = _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+
+        Assert.NotNull(result);
+        var schema = result!.GetSchema("funding_rate");
+        Assert.Equal("funding_rate", schema.FeedKey);
+        Assert.Null(schema.AutoApply);
+    }
 }

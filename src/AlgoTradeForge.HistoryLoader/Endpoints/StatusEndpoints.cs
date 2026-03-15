@@ -57,7 +57,8 @@ internal static class StatusEndpoints
     private static IResult GetSymbolStatus(
         string symbol,
         IOptionsMonitor<HistoryLoaderOptions> options,
-        IFeedStatusStore feedStatusStore)
+        IFeedStatusStore feedStatusStore,
+        BackfillOrchestrator orchestrator)
     {
         var config = options.CurrentValue;
 
@@ -94,6 +95,7 @@ internal static class StatusEndpoints
             Symbol: asset.Symbol,
             Type: asset.Type,
             Exchange: asset.Exchange,
+            BackfillRunning: orchestrator.IsRunning(resolvedAssetDir),
             Feeds: feedDetails));
     }
 

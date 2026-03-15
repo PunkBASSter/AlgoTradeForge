@@ -4,22 +4,19 @@ namespace AlgoTradeForge.HistoryLoader.Application.Collection;
 
 public sealed class CollectionCircuitBreaker(ILogger<CollectionCircuitBreaker> logger) : ICollectionCircuitBreaker
 {
-    private volatile bool _tripped;
+    private int _tripped;
 
-    public bool IsTripped => _tripped;
+    public bool IsTripped => Volatile.Read(ref _tripped) == 1;
 
     public void Trip(string reason)
     {
-        if (_tripped)
-            return;
-
-        _tripped = true;
-        logger.LogCritical("Collection circuit breaker tripped: {Reason}", reason);
+        if (Interlocked.CompareExchange(ref _tripped, 1, 0) == 0)
+            logger.LogCritical("Collection circuit breaker tripped: {Reason}", reason);
     }
 
     public void Reset()
     {
-        _tripped = false;
+        Interlocked.Exchange(ref _tripped, 0);
         logger.LogInformation("Collection circuit breaker reset");
     }
 }

@@ -13,7 +13,7 @@ internal sealed partial class BinanceFuturesClient
     /// <summary>
     /// Fetches taker buy/sell volume history from the Binance USDT-M Futures data API
     /// for the given <paramref name="symbol"/> and <paramref name="interval"/>
-    /// over the time range [<paramref name="fromMs"/>, <paramref name="toMs"/>].
+    /// over the time range [<paramref name="fromMs"/>, <paramref name="toMs"/>).
     /// </summary>
     /// <remarks>
     /// Each <see cref="FeedRecord"/> contains three values:
@@ -29,7 +29,7 @@ internal sealed partial class BinanceFuturesClient
     {
         long cursor = fromMs;
 
-        while (cursor <= toMs)
+        while (cursor < toMs)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -83,13 +83,13 @@ internal sealed partial class BinanceFuturesClient
         {
             long timestamp = element.GetProperty("timestamp").GetInt64();
             double buyVol = double.Parse(
-                element.GetProperty("buyVol").GetString()!,
+                BinanceJsonHelper.ParseRequiredString(element, "buyVol"),
                 CultureInfo.InvariantCulture);
             double sellVol = double.Parse(
-                element.GetProperty("sellVol").GetString()!,
+                BinanceJsonHelper.ParseRequiredString(element, "sellVol"),
                 CultureInfo.InvariantCulture);
             double buySellRatio = double.Parse(
-                element.GetProperty("buySellRatio").GetString()!,
+                BinanceJsonHelper.ParseRequiredString(element, "buySellRatio"),
                 CultureInfo.InvariantCulture);
 
             records[i++] = new FeedRecord(timestamp, [buyVol, sellVol, buySellRatio]);

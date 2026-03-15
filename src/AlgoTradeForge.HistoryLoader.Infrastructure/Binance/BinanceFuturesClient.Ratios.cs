@@ -11,7 +11,7 @@ internal sealed partial class BinanceFuturesClient
     /// <summary>
     /// Fetches global long/short account ratio history from the Binance USDT-M Futures
     /// data API for the given <paramref name="symbol"/> and <paramref name="interval"/>
-    /// over the time range [<paramref name="fromMs"/>, <paramref name="toMs"/>].
+    /// over the time range [<paramref name="fromMs"/>, <paramref name="toMs"/>).
     /// </summary>
     /// <remarks>
     /// Each <see cref="FeedRecord"/> contains three values:
@@ -27,7 +27,7 @@ internal sealed partial class BinanceFuturesClient
     {
         long cursor = fromMs;
 
-        while (cursor <= toMs)
+        while (cursor < toMs)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -50,7 +50,7 @@ internal sealed partial class BinanceFuturesClient
     /// <summary>
     /// Fetches top trader long/short account ratio history from the Binance USDT-M Futures
     /// data API for the given <paramref name="symbol"/> and <paramref name="interval"/>
-    /// over the time range [<paramref name="fromMs"/>, <paramref name="toMs"/>].
+    /// over the time range [<paramref name="fromMs"/>, <paramref name="toMs"/>).
     /// </summary>
     /// <remarks>
     /// Each <see cref="FeedRecord"/> contains three values:
@@ -66,7 +66,7 @@ internal sealed partial class BinanceFuturesClient
     {
         long cursor = fromMs;
 
-        while (cursor <= toMs)
+        while (cursor < toMs)
         {
             ct.ThrowIfCancellationRequested();
 

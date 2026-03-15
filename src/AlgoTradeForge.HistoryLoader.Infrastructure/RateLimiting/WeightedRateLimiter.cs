@@ -47,16 +47,14 @@ internal sealed class WeightedRateLimiter
         if (weight <= 0)
             throw new ArgumentOutOfRangeException(nameof(weight), "Weight must be positive.");
 
-        // Intentionally hold the semaphore across the delay so that only one caller
-        // polls the sliding window at a time, preventing thundering-herd bursts.
-        await _semaphore.WaitAsync(ct).ConfigureAwait(false);
-        try
+        while (true)
         {
-            while (true)
-            {
-                ct.ThrowIfCancellationRequested();
+            ct.ThrowIfCancellationRequested();
 
-                TimeSpan waitTime;
+            TimeSpan waitTime;
+            await _semaphore.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
                 lock (_window)
                 {
                     PurgeExpired();
@@ -68,17 +66,17 @@ internal sealed class WeightedRateLimiter
                         return;
                     }
 
-                    // Calculate how long we must wait for enough weight to expire so
-                    // that (remaining + weight) fits within budget.
                     waitTime = ComputeWaitTime(weight, current);
                 }
-
-                await Task.Delay(waitTime, ct).ConfigureAwait(false);
             }
-        }
-        finally
-        {
-            _semaphore.Release();
+            finally
+            {
+                _semaphore.Release();
+            }
+
+            // Sleep outside the semaphore so other callers that fit the
+            // budget can proceed concurrently instead of being serialized.
+            await Task.Delay(waitTime, ct).ConfigureAwait(false);
         }
     }
 

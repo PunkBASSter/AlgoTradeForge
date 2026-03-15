@@ -13,7 +13,7 @@ internal sealed partial class BinanceFuturesClient
     /// <summary>
     /// Fetches forced liquidation order history from the Binance USDT-M Futures API
     /// for the given <paramref name="symbol"/> over the time range
-    /// [<paramref name="fromMs"/>, <paramref name="toMs"/>].
+    /// [<paramref name="fromMs"/>, <paramref name="toMs"/>).
     /// </summary>
     /// <remarks>
     /// Each <see cref="FeedRecord"/> contains four values:
@@ -29,7 +29,7 @@ internal sealed partial class BinanceFuturesClient
     {
         long cursor = fromMs;
 
-        while (cursor <= toMs)
+        while (cursor < toMs)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -84,12 +84,12 @@ internal sealed partial class BinanceFuturesClient
             var order = element.GetProperty("o");
 
             long time = order.GetProperty("time").GetInt64();
-            string side = order.GetProperty("side").GetString()!;
+            string side = BinanceJsonHelper.ParseRequiredString(order, "side");
             double averagePrice = double.Parse(
-                order.GetProperty("averagePrice").GetString()!,
+                BinanceJsonHelper.ParseRequiredString(order, "averagePrice"),
                 CultureInfo.InvariantCulture);
             double executedQty = double.Parse(
-                order.GetProperty("executedQty").GetString()!,
+                BinanceJsonHelper.ParseRequiredString(order, "executedQty"),
                 CultureInfo.InvariantCulture);
 
             // SELL order = long position liquidated → 1.0

@@ -40,6 +40,9 @@ public sealed class FundingRateFeedCollector(
         long recordCount = 0;
         long? firstTs = null;
         long lastTs = 0;
+        long previousTs = 0;
+        var gaps = new List<DataGap>();
+        const long fundingIntervalMs = 8 * 60 * 60 * 1000L; // 8 hours
 
         await foreach (var record in fetcher.FetchFundingRatesAsync(
             assetConfig.Symbol, fromMs, toMs, ct))
@@ -52,9 +55,12 @@ public sealed class FundingRateFeedCollector(
             {
                 Logger.LogCritical(ex, "Disk I/O error writing {Feed} for {AssetDir}", FeedNames.FundingRate, assetDir);
                 UpdateFeedStatus(assetDir, FeedNames.FundingRate, "", firstTs, lastTs, recordCount,
-                    CollectionHealth.Error);
+                    CollectionHealth.Error, gaps);
                 throw;
             }
+
+            DetectGap(record.TimestampMs, previousTs, fundingIntervalMs, feedConfig.GapThresholdMultiplier, gaps);
+            previousTs = record.TimestampMs;
 
             firstTs ??= record.TimestampMs;
             lastTs = record.TimestampMs;
@@ -62,7 +68,8 @@ public sealed class FundingRateFeedCollector(
         }
 
         if (recordCount > 0)
-            UpdateFeedStatus(assetDir, FeedNames.FundingRate, "", firstTs, lastTs, recordCount);
+            UpdateFeedStatus(assetDir, FeedNames.FundingRate, "", firstTs, lastTs, recordCount,
+                newGaps: gaps);
 
         Logger.LogInformation(
             "Collected {Count} funding rate records for {Symbol}",

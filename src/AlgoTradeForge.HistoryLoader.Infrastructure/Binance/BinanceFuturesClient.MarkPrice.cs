@@ -85,10 +85,10 @@ internal sealed partial class BinanceFuturesClient
             var row = element.EnumerateArray().ToArray();
 
             long    timestampMs = row[0].GetInt64();
-            decimal open        = decimal.Parse(row[1].GetString()!, CultureInfo.InvariantCulture);
-            decimal high        = decimal.Parse(row[2].GetString()!, CultureInfo.InvariantCulture);
-            decimal low         = decimal.Parse(row[3].GetString()!, CultureInfo.InvariantCulture);
-            decimal close       = decimal.Parse(row[4].GetString()!, CultureInfo.InvariantCulture);
+            decimal open        = decimal.Parse(BinanceJsonHelper.ParseRequiredString(row[1], 1), CultureInfo.InvariantCulture);
+            decimal high        = decimal.Parse(BinanceJsonHelper.ParseRequiredString(row[2], 2), CultureInfo.InvariantCulture);
+            decimal low         = decimal.Parse(BinanceJsonHelper.ParseRequiredString(row[3], 3), CultureInfo.InvariantCulture);
+            decimal close       = decimal.Parse(BinanceJsonHelper.ParseRequiredString(row[4], 4), CultureInfo.InvariantCulture);
             // Volume fields are always "0" for mark price klines.
 
             records[i++] = new CandleRecord(

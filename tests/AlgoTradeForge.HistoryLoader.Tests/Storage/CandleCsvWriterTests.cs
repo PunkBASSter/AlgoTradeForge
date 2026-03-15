@@ -36,7 +36,7 @@ public sealed class CandleCsvWriterTests : IDisposable
     [Fact]
     public void Write_NewFile_CreatesWithHeader()
     {
-        var writer = new CandleCsvWriter();
+        var writer = new CandleCsvWriter(new WriteLockManager());
         var assetDir = Path.Combine(_tempDir, "BTCUSDT");
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var record = MakeRecord(ts);
@@ -57,7 +57,7 @@ public sealed class CandleCsvWriterTests : IDisposable
     [Fact]
     public void Write_Int64Encoding_CorrectValues()
     {
-        var writer = new CandleCsvWriter();
+        var writer = new CandleCsvWriter(new WriteLockManager());
         var assetDir = Path.Combine(_tempDir, "BTCUSDT");
 
         // January 2024 timestamp
@@ -85,7 +85,7 @@ public sealed class CandleCsvWriterTests : IDisposable
     [Fact]
     public void Write_MonthBoundary_CreatesSeparatePartitions()
     {
-        var writer = new CandleCsvWriter();
+        var writer = new CandleCsvWriter(new WriteLockManager());
         var assetDir = Path.Combine(_tempDir, "ETHUSDT");
 
         var tsJan = new DateTimeOffset(2024, 1, 31, 23, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
@@ -113,7 +113,7 @@ public sealed class CandleCsvWriterTests : IDisposable
     [Fact]
     public void Write_Dedup_SkipsDuplicateTimestamp()
     {
-        var writer = new CandleCsvWriter();
+        var writer = new CandleCsvWriter(new WriteLockManager());
         var assetDir = Path.Combine(_tempDir, "SOLUSDT");
 
         var ts = new DateTimeOffset(2024, 3, 10, 8, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
@@ -137,7 +137,7 @@ public sealed class CandleCsvWriterTests : IDisposable
     [Fact]
     public void ResumeFrom_ExistingFile_ReturnsLastTimestamp()
     {
-        var writerA = new CandleCsvWriter();
+        var writerA = new CandleCsvWriter(new WriteLockManager());
         var assetDir = Path.Combine(_tempDir, "BNBUSDT");
 
         var ts1 = new DateTimeOffset(2024, 5, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
@@ -149,7 +149,7 @@ public sealed class CandleCsvWriterTests : IDisposable
         writerA.Write(assetDir, "1h", MakeRecord(ts3), decimalDigits: 2);
 
         // New writer instance — simulates restart; it has no in-memory dedup state
-        var writerB = new CandleCsvWriter();
+        var writerB = new CandleCsvWriter(new WriteLockManager());
         var resumed = writerB.ResumeFrom(assetDir, "1h");
 
         Assert.Equal(ts3, resumed);
@@ -162,11 +162,35 @@ public sealed class CandleCsvWriterTests : IDisposable
     [Fact]
     public void ResumeFrom_NoFiles_ReturnsNull()
     {
-        var writer = new CandleCsvWriter();
+        var writer = new CandleCsvWriter(new WriteLockManager());
         var assetDir = Path.Combine(_tempDir, "XRPUSDT");
 
         var result = writer.ResumeFrom(assetDir, "1h");
 
         Assert.Null(result);
+    }
+
+    // -------------------------------------------------------------------------
+    // Write_ConcurrentSameTimestamp_OnlyOneLineWritten
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Write_ConcurrentSameTimestamp_OnlyOneLineWritten()
+    {
+        var lockMgr = new WriteLockManager();
+        var writer = new CandleCsvWriter(lockMgr);
+        var assetDir = Path.Combine(_tempDir, "CONCURRENT");
+
+        var ts = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+        var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(() =>
+            writer.Write(assetDir, "1h", MakeRecord(ts), decimalDigits: 2)));
+
+        Task.WhenAll(tasks).Wait();
+
+        var file = PartitionFile(assetDir, "1h", ts);
+        var lines = File.ReadAllLines(file);
+        // header + exactly 1 data line despite 10 concurrent writes
+        Assert.Equal(2, lines.Length);
     }
 }

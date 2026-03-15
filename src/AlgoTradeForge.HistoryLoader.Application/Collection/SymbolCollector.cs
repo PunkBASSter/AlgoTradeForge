@@ -43,14 +43,20 @@ public sealed class SymbolCollector
             "Collecting {Feed}/{Interval} for {Symbol} from {From} to {To}",
             feedName, feedConfig.Interval, assetConfig.Symbol, fromMs, toMs);
 
-        // Guard: HTTP 400 means the symbol may be delisted — skip gracefully.
+        // Guard: HTTP 400/403/404/451 means the symbol may be delisted or restricted — skip gracefully.
         try
         {
             await collector.CollectAsync(assetConfig, feedConfig, assetDir, fromMs, toMs, ct);
         }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        catch (HttpRequestException ex) when (
+            ex.StatusCode is System.Net.HttpStatusCode.BadRequest
+                          or System.Net.HttpStatusCode.Forbidden
+                          or System.Net.HttpStatusCode.NotFound
+                          or (System.Net.HttpStatusCode)451)
         {
-            _logger.LogWarning("Symbol may be delisted, skipping: {Symbol}", assetConfig.Symbol);
+            _logger.LogWarning(
+                "HTTP {StatusCode} for {Symbol}, skipping (may be delisted or restricted)",
+                (int?)ex.StatusCode, assetConfig.Symbol);
         }
     }
 }

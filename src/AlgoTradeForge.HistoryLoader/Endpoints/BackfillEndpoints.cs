@@ -37,6 +37,10 @@ internal static class BackfillEndpoints
             return Results.BadRequest(new { error = "Symbol not configured", symbol });
 
         var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+
+        if (orchestrator.IsRunning(assetDir))
+            return Results.Conflict(new { error = "Backfill already running", symbol = asset.Symbol });
+
         var feedFilter = request.Feeds is { Length: > 0 } ? (IReadOnlyList<string>)request.Feeds : null;
         var fromDate = request.FromDate;
         var ct = lifetime.ApplicationStopping;

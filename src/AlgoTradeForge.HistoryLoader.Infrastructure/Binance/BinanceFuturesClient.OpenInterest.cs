@@ -13,7 +13,7 @@ internal sealed partial class BinanceFuturesClient
     /// <summary>
     /// Fetches open interest history from the Binance USDT-M Futures data API
     /// for the given <paramref name="symbol"/> and <paramref name="interval"/>
-    /// over the time range [<paramref name="fromMs"/>, <paramref name="toMs"/>].
+    /// over the time range [<paramref name="fromMs"/>, <paramref name="toMs"/>).
     /// </summary>
     /// <remarks>
     /// Each <see cref="FeedRecord"/> contains two values:
@@ -29,7 +29,7 @@ internal sealed partial class BinanceFuturesClient
     {
         long cursor = fromMs;
 
-        while (cursor <= toMs)
+        while (cursor < toMs)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -83,10 +83,10 @@ internal sealed partial class BinanceFuturesClient
         {
             long timestamp = element.GetProperty("timestamp").GetInt64();
             double sumOi = double.Parse(
-                element.GetProperty("sumOpenInterest").GetString()!,
+                BinanceJsonHelper.ParseRequiredString(element, "sumOpenInterest"),
                 CultureInfo.InvariantCulture);
             double sumOiValue = double.Parse(
-                element.GetProperty("sumOpenInterestValue").GetString()!,
+                BinanceJsonHelper.ParseRequiredString(element, "sumOpenInterestValue"),
                 CultureInfo.InvariantCulture);
 
             records[i++] = new FeedRecord(timestamp, [sumOi, sumOiValue]);

@@ -26,12 +26,12 @@ public abstract class FeedCollectorBase(
         long toMs,
         CancellationToken ct);
 
-    protected long? AdjustFromMs(string assetDir, string feedName, string interval, ref long fromMs)
+    protected (long? ResumeTs, long AdjustedFromMs) ResolveFromMs(string assetDir, string feedName, string interval, long fromMs)
     {
         var resumeTs = FeedWriter.ResumeFrom(assetDir, feedName, interval);
         if (resumeTs.HasValue && resumeTs.Value >= fromMs)
             fromMs = resumeTs.Value + 1;
-        return resumeTs;
+        return (resumeTs, fromMs);
     }
 
     protected static long ComputeExpectedMs(string interval) =>

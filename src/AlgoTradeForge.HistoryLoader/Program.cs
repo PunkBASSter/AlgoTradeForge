@@ -4,6 +4,7 @@ using AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 using AlgoTradeForge.HistoryLoader.Collection;
 using AlgoTradeForge.HistoryLoader.Endpoints;
 using AlgoTradeForge.HistoryLoader.Infrastructure;
+using Microsoft.Extensions.Options;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,6 +13,7 @@ builder.Services.AddSerilog(cfg => cfg.ReadFrom.Configuration(builder.Configurat
 
 builder.Services.Configure<HistoryLoaderOptions>(
     builder.Configuration.GetSection("HistoryLoader"));
+builder.Services.AddSingleton<IValidateOptions<HistoryLoaderOptions>, HistoryLoaderOptionsValidator>();
 
 builder.Services.AddHealthChecks();
 

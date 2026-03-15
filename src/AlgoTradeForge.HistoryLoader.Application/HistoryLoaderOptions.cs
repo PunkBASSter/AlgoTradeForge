@@ -10,6 +10,7 @@ public sealed class HistoryLoaderOptions
 
     public string DataRoot { get; init; } = DefaultDataRoot;
     public int MaxBackfillConcurrency { get; init; } = 3;
+    public int CircuitBreakerCooldownMinutes { get; init; } = 15;
     public BinanceOptions Binance { get; init; } = new();
     public List<AssetCollectionConfig> Assets { get; init; } = [];
 }
