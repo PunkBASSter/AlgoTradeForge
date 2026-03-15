@@ -34,8 +34,8 @@ public sealed class FundingRateFeedCollector(
         if (resumeTs.HasValue && resumeTs.Value >= fromMs)
             fromMs = resumeTs.Value + 1;
 
-        var key = ExchangeKeys.Futures(assetConfig.Exchange);
-        var fetcher = serviceProvider.GetRequiredKeyedService<IFundingRateFetcher>(key);
+        var key = $"{ExchangeKeys.Futures(assetConfig.Exchange)}:{FeedNames.FundingRate}";
+        var fetcher = serviceProvider.GetRequiredKeyedService<IFeedFetcher>(key);
 
         long recordCount = 0;
         long? firstTs = null;
@@ -44,8 +44,8 @@ public sealed class FundingRateFeedCollector(
         var gaps = new List<DataGap>();
         const long fundingIntervalMs = 8 * 60 * 60 * 1000L; // 8 hours
 
-        await foreach (var record in fetcher.FetchFundingRatesAsync(
-            assetConfig.Symbol, fromMs, toMs, ct))
+        await foreach (var record in fetcher.FetchAsync(
+            assetConfig.Symbol, null, fromMs, toMs, ct))
         {
             try
             {

@@ -1,5 +1,6 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
 using AlgoTradeForge.HistoryLoader.Infrastructure.State;
@@ -50,21 +51,51 @@ public static class DependencyInjection
             return new BinanceSpotClient(httpClient, opts.Binance, spotLimiter);
         });
 
-        // Keyed DI — futures
-        services.AddKeyedSingleton<ICandleFetcher>("binance-futures",
+        // Keyed DI — futures candles
+        var futuresKey = "binance-futures";
+        services.AddKeyedSingleton<ICandleFetcher>(futuresKey,
             (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
-        services.AddKeyedSingleton<IMarkPriceCandleFetcher>("binance-futures",
-            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
-        services.AddKeyedSingleton<IFundingRateFetcher>("binance-futures",
-            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
-        services.AddKeyedSingleton<IOpenInterestFetcher>("binance-futures",
-            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
-        services.AddKeyedSingleton<ILongShortRatioFetcher>("binance-futures",
-            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
-        services.AddKeyedSingleton<ITakerVolumeFetcher>("binance-futures",
-            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
-        services.AddKeyedSingleton<ILiquidationFetcher>("binance-futures",
-            (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
+
+        // Keyed DI — futures feed fetchers (compound key: "{exchange}:{feedName}")
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.FundingRate}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, _, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchFundingRatesAsync(symbol, fromMs, toMs, ct)));
+
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.MarkPrice}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, interval, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchMarkPriceFeedAsync(symbol, interval!, fromMs, toMs, ct)));
+
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.OpenInterest}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, interval, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchOpenInterestAsync(symbol, interval!, fromMs, toMs, ct)));
+
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.LsRatioGlobal}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, interval, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchGlobalLongShortRatioAsync(symbol, interval!, fromMs, toMs, ct)));
+
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.LsRatioTopAccounts}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, interval, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchTopAccountRatioAsync(symbol, interval!, fromMs, toMs, ct)));
+
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.LsRatioTopPositions}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, interval, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchTopPositionRatioAsync(symbol, interval!, fromMs, toMs, ct)));
+
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.TakerVolume}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, interval, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchTakerVolumeAsync(symbol, interval!, fromMs, toMs, ct)));
+
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.Liquidations}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, _, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchLiquidationsAsync(symbol, fromMs, toMs, ct)));
 
         // Keyed DI — spot
         services.AddKeyedSingleton<ICandleFetcher>("binance-spot",

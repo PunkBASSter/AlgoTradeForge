@@ -15,13 +15,9 @@ internal sealed partial class BinanceFuturesClient
     /// Fetches mark price klines from the Binance USDT-M Futures API
     /// for the given <paramref name="symbol"/> and <paramref name="interval"/>
     /// over the half-open time range [<paramref name="fromMs"/>, <paramref name="toMs"/>).
+    /// Returns <see cref="FeedRecord"/> with OHLC as doubles (no volume).
     /// </summary>
-    /// <remarks>
-    /// Each <see cref="CandleRecord"/> contains mark price OHLC values.
-    /// Volume is always 0 and <see cref="CandleRecord.ExtValues"/> is null
-    /// for mark price klines.
-    /// </remarks>
-    public async IAsyncEnumerable<CandleRecord> FetchMarkPriceCandlesAsync(
+    public async IAsyncEnumerable<FeedRecord> FetchMarkPriceFeedAsync(
         string symbol,
         string interval,
         long fromMs,
@@ -54,7 +50,7 @@ internal sealed partial class BinanceFuturesClient
     // Private helpers — mark price klines
     // -------------------------------------------------------------------------
 
-    private Task<CandleRecord[]> FetchMarkPriceKlineBatchWithRetryAsync(
+    private Task<FeedRecord[]> FetchMarkPriceKlineBatchWithRetryAsync(
         string symbol,
         string interval,
         long fromMs,
@@ -72,27 +68,25 @@ internal sealed partial class BinanceFuturesClient
         $"?symbol={symbol}&interval={interval}" +
         $"&startTime={fromMs}&endTime={toMs}&limit={KlineLimit}";
 
-    private static CandleRecord[] ParseMarkPriceKlineBatch(string json)
+    private static FeedRecord[] ParseMarkPriceKlineBatch(string json)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        var records = new CandleRecord[root.GetArrayLength()];
+        var records = new FeedRecord[root.GetArrayLength()];
         int i = 0;
 
         foreach (var element in root.EnumerateArray())
         {
             var row = element.EnumerateArray().ToArray();
 
-            long    timestampMs = row[0].GetInt64();
-            decimal open        = decimal.Parse(BinanceJsonHelper.ParseRequiredString(row[1], 1), CultureInfo.InvariantCulture);
-            decimal high        = decimal.Parse(BinanceJsonHelper.ParseRequiredString(row[2], 2), CultureInfo.InvariantCulture);
-            decimal low         = decimal.Parse(BinanceJsonHelper.ParseRequiredString(row[3], 3), CultureInfo.InvariantCulture);
-            decimal close       = decimal.Parse(BinanceJsonHelper.ParseRequiredString(row[4], 4), CultureInfo.InvariantCulture);
-            // Volume fields are always "0" for mark price klines.
+            long   timestampMs = row[0].GetInt64();
+            double open  = double.Parse(BinanceJsonHelper.ParseRequiredString(row[1], 1), CultureInfo.InvariantCulture);
+            double high  = double.Parse(BinanceJsonHelper.ParseRequiredString(row[2], 2), CultureInfo.InvariantCulture);
+            double low   = double.Parse(BinanceJsonHelper.ParseRequiredString(row[3], 3), CultureInfo.InvariantCulture);
+            double close = double.Parse(BinanceJsonHelper.ParseRequiredString(row[4], 4), CultureInfo.InvariantCulture);
 
-            records[i++] = new CandleRecord(
-                timestampMs, open, high, low, close, Volume: 0m);
+            records[i++] = new FeedRecord(timestampMs, [open, high, low, close]);
         }
 
         return records;

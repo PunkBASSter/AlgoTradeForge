@@ -10,9 +10,7 @@ internal sealed partial class BinanceFuturesClient(
     HttpClient httpClient,
     BinanceOptions options,
     SourceRateLimiter rateLimiter)
-    : ICandleFetcher, IMarkPriceCandleFetcher, IFundingRateFetcher,
-      IOpenInterestFetcher, ILongShortRatioFetcher, ITakerVolumeFetcher,
-      ILiquidationFetcher
+    : ICandleFetcher
 {
     private const int KlineLimit = 1500;
     private const int KlineWeight = 5;

@@ -1,5 +1,7 @@
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
@@ -16,9 +18,14 @@ public abstract class GenericFeedCollectorBase(
 
     protected abstract string[] Columns { get; }
 
-    protected abstract IAsyncEnumerable<FeedRecord> FetchAsync(
+    protected IAsyncEnumerable<FeedRecord> FetchAsync(
         AssetCollectionConfig assetConfig,
-        string symbol, string interval, long fromMs, long toMs, CancellationToken ct);
+        string symbol, string? interval, long fromMs, long toMs, CancellationToken ct)
+    {
+        var key = $"{ExchangeKeys.Resolve(assetConfig)}:{FeedName}";
+        var fetcher = ServiceProvider.GetRequiredKeyedService<IFeedFetcher>(key);
+        return fetcher.FetchAsync(symbol, interval, fromMs, toMs, ct);
+    }
 
     public override async Task CollectAsync(
         AssetCollectionConfig assetConfig,
