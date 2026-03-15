@@ -101,8 +101,13 @@ public sealed class CandleFeedCollector(
                     newGaps: gaps);
         }
 
-        Logger.LogInformation(
-            "Collected {Count} candle records for {Symbol}/{Interval}",
-            recordCount, assetConfig.Symbol, interval);
+        if (recordCount > 0)
+            Logger.LogInformation(
+                "Collected {Count} candle records for {Symbol}/{Interval}",
+                recordCount, assetConfig.Symbol, interval);
+        else
+            Logger.LogDebug(
+                "Collected 0 candle records for {Symbol}/{Interval}",
+                assetConfig.Symbol, interval);
     }
 }

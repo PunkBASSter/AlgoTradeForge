@@ -90,8 +90,13 @@ public abstract class GenericFeedCollectorBase(
             UpdateFeedStatus(assetDir, FeedName, interval, firstTs, lastTs, recordCount,
                 newGaps: gaps);
 
-        Logger.LogInformation(
-            "Collected {Count} {Feed} records for {AssetDir}/{Interval}",
-            recordCount, FeedName, assetDir, interval);
+        if (recordCount > 0)
+            Logger.LogInformation(
+                "Collected {Count} {Feed} records for {AssetDir}/{Interval}",
+                recordCount, FeedName, assetDir, interval);
+        else
+            Logger.LogDebug(
+                "Collected 0 {Feed} records for {AssetDir}/{Interval}",
+                FeedName, assetDir, interval);
     }
 }

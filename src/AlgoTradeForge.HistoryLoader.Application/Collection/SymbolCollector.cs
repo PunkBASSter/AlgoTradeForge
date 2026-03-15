@@ -69,8 +69,8 @@ public sealed class SymbolCollector
                           or (System.Net.HttpStatusCode)451)
         {
             _logger.LogWarning(
-                "HTTP {StatusCode} for {Symbol}, skipping (may be delisted or restricted)",
-                (int?)ex.StatusCode, assetConfig.Symbol);
+                "HTTP {StatusCode} for {Symbol}/{Feed}, skipping (may be delisted or endpoint removed)",
+                (int?)ex.StatusCode, assetConfig.Symbol, feedConfig.Name);
         }
         catch (HttpRequestException ex) when (
             ex.StatusCode is System.Net.HttpStatusCode.InternalServerError
