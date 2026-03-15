@@ -1,29 +1,25 @@
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 
 public abstract class GenericFeedCollectorBase(
-    IServiceProvider serviceProvider,
+    IFeedFetcherFactory feedFetcherFactory,
     IFeedWriter feedWriter,
     ISchemaManager schemaManager,
     IFeedStatusStore feedStatusStore,
     ILogger logger)
     : FeedCollectorBase(feedWriter, schemaManager, feedStatusStore, logger)
 {
-    protected IServiceProvider ServiceProvider { get; } = serviceProvider;
-
     protected abstract string[] Columns { get; }
 
     protected IAsyncEnumerable<FeedRecord> FetchAsync(
         AssetCollectionConfig assetConfig,
         string symbol, string? interval, long fromMs, long toMs, CancellationToken ct)
     {
-        var key = $"{ExchangeKeys.Resolve(assetConfig)}:{FeedName}";
-        var fetcher = ServiceProvider.GetRequiredKeyedService<IFeedFetcher>(key);
+        var fetcher = feedFetcherFactory.Create(ExchangeKeys.Resolve(assetConfig), FeedName);
         return fetcher.FetchAsync(symbol, interval, fromMs, toMs, ct);
     }
 

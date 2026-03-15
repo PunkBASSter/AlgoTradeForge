@@ -5,12 +5,12 @@ using Microsoft.Extensions.Logging;
 namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 
 public sealed class LiquidationFeedCollector(
-    IServiceProvider serviceProvider,
+    IFeedFetcherFactory feedFetcherFactory,
     IFeedWriter feedWriter,
     ISchemaManager schemaManager,
     IFeedStatusStore feedStatusStore,
     ILogger<LiquidationFeedCollector> logger)
-    : GenericFeedCollectorBase(serviceProvider, feedWriter, schemaManager, feedStatusStore, logger)
+    : GenericFeedCollectorBase(feedFetcherFactory, feedWriter, schemaManager, feedStatusStore, logger)
 {
     public override string FeedName => FeedNames.Liquidations;
     protected override string[] Columns => ["side", "price", "qty", "notional_usd"];

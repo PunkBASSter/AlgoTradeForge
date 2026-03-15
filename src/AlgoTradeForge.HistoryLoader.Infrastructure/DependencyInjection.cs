@@ -101,6 +101,10 @@ public static class DependencyInjection
         services.AddKeyedSingleton<ICandleFetcher>("binance-spot",
             (sp, _) => sp.GetRequiredService<BinanceSpotClient>());
 
+        // Factory abstractions (replace direct IServiceProvider usage in Application layer)
+        services.AddSingleton<IFeedFetcherFactory, FeedFetcherFactory>();
+        services.AddSingleton<ICandleFetcherFactory, CandleFetcherFactory>();
+
         // Storage writers (share a WriteLockManager so scheduled + backfill don't collide)
         services.AddSingleton<WriteLockManager>();
         services.AddSingleton<ICandleWriter, CandleCsvWriter>();

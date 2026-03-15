@@ -1,12 +1,11 @@
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Domain;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 
 public sealed class CandleFeedCollector(
-    IServiceProvider serviceProvider,
+    ICandleFetcherFactory candleFetcherFactory,
     ICandleWriter candleWriter,
     IFeedWriter feedWriter,
     ISchemaManager schemaManager,
@@ -35,9 +34,8 @@ public sealed class CandleFeedCollector(
         if (resumeTs.HasValue && resumeTs.Value >= fromMs)
             fromMs = resumeTs.Value + 1;
 
-        // Resolve the kline fetcher via keyed DI (handles spot/futures routing).
-        var key = ExchangeKeys.Resolve(assetConfig);
-        var klineFetcher = serviceProvider.GetRequiredKeyedService<ICandleFetcher>(key);
+        // Resolve the kline fetcher via factory (handles spot/futures routing).
+        var klineFetcher = candleFetcherFactory.Create(ExchangeKeys.Resolve(assetConfig));
 
         // Determine ext columns from the fetcher — null means no ext feed.
         var extColumns = klineFetcher.CandleExtColumns;

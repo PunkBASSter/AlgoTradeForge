@@ -1,12 +1,11 @@
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Domain;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 
 public sealed class FundingRateFeedCollector(
-    IServiceProvider serviceProvider,
+    IFeedFetcherFactory feedFetcherFactory,
     IFeedWriter feedWriter,
     ISchemaManager schemaManager,
     IFeedStatusStore feedStatusStore,
@@ -34,8 +33,7 @@ public sealed class FundingRateFeedCollector(
         if (resumeTs.HasValue && resumeTs.Value >= fromMs)
             fromMs = resumeTs.Value + 1;
 
-        var key = $"{ExchangeKeys.Futures(assetConfig.Exchange)}:{FeedNames.FundingRate}";
-        var fetcher = serviceProvider.GetRequiredKeyedService<IFeedFetcher>(key);
+        var fetcher = feedFetcherFactory.Create(ExchangeKeys.Futures(assetConfig.Exchange), FeedNames.FundingRate);
 
         long recordCount = 0;
         long? firstTs = null;
