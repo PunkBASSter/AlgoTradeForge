@@ -79,7 +79,7 @@ public sealed class SymbolCollector
             }
             catch (DataSourceApiException ex) when (
                 ex.StatusCode is System.Net.HttpStatusCode.BadRequest
-                && !ex.IsParameterValidationError)
+                && ex.IsDateRangeError)
             {
                 advances++;
                 if (advances > MaxDateAdvances)
@@ -98,10 +98,10 @@ public sealed class SymbolCollector
             }
             catch (DataSourceApiException ex) when (
                 ex.StatusCode is System.Net.HttpStatusCode.BadRequest
-                && ex.IsParameterValidationError)
+                && !ex.IsDateRangeError)
             {
                 _logger.LogWarning(
-                    "Parameter validation error for {Symbol}/{Feed}: {Code} {Msg}, skipping",
+                    "API error for {Symbol}/{Feed}: {Code} {Msg}, skipping",
                     assetConfig.Symbol, feedName, ex.ApiErrorCode, ex.ApiErrorMessage);
                 return;
             }

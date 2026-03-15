@@ -75,7 +75,8 @@ internal static class BinanceRetryHelper
                 && codeProp.TryGetInt32(out var code))
             {
                 var msg = msgProp.GetString() ?? "";
-                return new DataSourceApiException(code, msg, statusCode);
+                return new DataSourceApiException(code, msg, statusCode,
+                    isDateRangeError: IsBinanceDateRangeError(msg));
             }
         }
         catch (JsonException) { }
@@ -83,4 +84,13 @@ internal static class BinanceRetryHelper
         return new HttpRequestException(
             $"HTTP {(int)statusCode}: {body}", inner: null, statusCode);
     }
+
+    /// <summary>
+    /// Binance-specific: determines whether an error message indicates a time-range
+    /// issue (startTime too old, invalid period) vs a parameter/endpoint error.
+    /// </summary>
+    private static bool IsBinanceDateRangeError(string msg) =>
+        msg.Contains("startTime", StringComparison.OrdinalIgnoreCase)
+        || msg.Contains("endTime", StringComparison.OrdinalIgnoreCase)
+        || msg.Contains("Invalid period", StringComparison.OrdinalIgnoreCase);
 }

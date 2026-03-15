@@ -3,8 +3,9 @@ using System.Net;
 namespace AlgoTradeForge.HistoryLoader.Application;
 
 /// <summary>
-/// Represents an API error from a data source (e.g. Binance) where the response body
-/// contains a structured error code and message.
+/// Represents a structured API error from a data source where the response body
+/// contains an error code and message. Exchange-agnostic — classification logic
+/// (e.g. whether this is a date-range error) belongs in the exchange-specific adapter.
 /// </summary>
 public sealed class DataSourceApiException : HttpRequestException
 {
@@ -12,15 +13,19 @@ public sealed class DataSourceApiException : HttpRequestException
     public string ApiErrorMessage { get; }
 
     /// <summary>
-    /// Binance error codes -1100 through -1130 indicate parameter validation failures
-    /// (ILLEGAL_CHARS, BAD_SYMBOL, BAD_INTERVAL, etc.) that should not be retried.
+    /// Whether this error indicates the requested time range is invalid and advancing
+    /// the start date might resolve it. Set by the exchange-specific adapter that
+    /// understands the error format.
     /// </summary>
-    public bool IsParameterValidationError => ApiErrorCode is >= -1130 and <= -1100;
+    public bool IsDateRangeError { get; }
 
-    public DataSourceApiException(int apiErrorCode, string apiErrorMessage, HttpStatusCode statusCode)
+    public DataSourceApiException(
+        int apiErrorCode, string apiErrorMessage, HttpStatusCode statusCode,
+        bool isDateRangeError = false)
         : base($"Data source error {apiErrorCode}: {apiErrorMessage}", inner: null, statusCode)
     {
         ApiErrorCode = apiErrorCode;
         ApiErrorMessage = apiErrorMessage;
+        IsDateRangeError = isDateRangeError;
     }
 }

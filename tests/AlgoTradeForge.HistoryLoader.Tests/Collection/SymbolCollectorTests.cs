@@ -62,7 +62,7 @@ public sealed class SymbolCollectorTests
             {
                 callCount++;
                 if (callCount <= 2)
-                    throw new DataSourceApiException(-1, "Invalid period.", HttpStatusCode.BadRequest);
+                    throw new DataSourceApiException(-1, "Invalid period.", HttpStatusCode.BadRequest, isDateRangeError: true);
                 return Task.CompletedTask;
             });
 
@@ -78,16 +78,64 @@ public sealed class SymbolCollectorTests
     }
 
     // -------------------------------------------------------------------------
-    // 2. Parameter validation 400 → does not retry
+    // 1b. startTime invalid (-1130) → also a date-range error, advances
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task CollectFeedAsync_ParameterValidation400_DoesNotRetry()
+    public async Task CollectFeedAsync_StartTimeInvalid_AdvancesAndPersists()
+    {
+        int callCount = 0;
+        _collector.CollectAsync(
+                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                callCount++;
+                if (callCount <= 1)
+                    throw new DataSourceApiException(-1130, "parameter 'startTime' is invalid.", HttpStatusCode.BadRequest, isDateRangeError: true);
+                return Task.CompletedTask;
+            });
+
+        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
+
+        Assert.Equal(2, callCount);
+        _settingsWriter.Received(1).UpdateFeedHistoryStart(
+            "BTCUSDT", "perpetual", "open-interest", "5m",
+            new DateOnly(2020, 2, 1));
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Non-date-range API error → does not retry
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CollectFeedAsync_InvalidSymbol_DoesNotRetry()
     {
         _collector.CollectAsync(
                 Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Throws(new DataSourceApiException(-1121, "Invalid symbol.", HttpStatusCode.BadRequest));
+
+        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
+
+        await _collector.Received(1).CollectAsync(
+            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+            Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+        _settingsWriter.DidNotReceiveWithAnyArgs()
+            .UpdateFeedHistoryStart(default!, default!, default!, default!, default);
+    }
+
+    // -------------------------------------------------------------------------
+    // 2b. Endpoint maintenance error → does not retry (not a date-range issue)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CollectFeedAsync_EndpointMaintenance_DoesNotRetry()
+    {
+        _collector.CollectAsync(
+                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Throws(new DataSourceApiException(-1, "The endpoint has been out of maintenance", HttpStatusCode.BadRequest));
 
         await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
 
@@ -129,7 +177,7 @@ public sealed class SymbolCollectorTests
         _collector.CollectAsync(
                 Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
-            .Throws(new DataSourceApiException(-1, "Invalid period.", HttpStatusCode.BadRequest));
+            .Throws(new DataSourceApiException(-1, "Invalid period.", HttpStatusCode.BadRequest, isDateRangeError: true));
 
         await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
 

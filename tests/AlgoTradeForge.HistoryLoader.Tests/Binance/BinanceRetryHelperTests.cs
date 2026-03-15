@@ -208,15 +208,44 @@ public sealed class BinanceRetryHelperTests
         Assert.Equal(1, callCount);
         Assert.Equal(-1, ex.ApiErrorCode);
         Assert.Equal("Invalid period.", ex.ApiErrorMessage);
-        Assert.False(ex.IsParameterValidationError);
+        Assert.True(ex.IsDateRangeError);
     }
 
     // -------------------------------------------------------------------------
-    // 7b. HTTP 400 with parameter validation code → IsParameterValidationError
+    // 7b. HTTP 400 with startTime message → IsDateRangeError
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task FetchWithRetryAsync_Http400_ParameterValidation_IsParameterValidationError()
+    public async Task FetchWithRetryAsync_Http400_StartTimeInvalid_IsDateRangeError()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"code":-1130,"msg":"parameter 'startTime' is invalid."}""",
+                    Encoding.UTF8, "application/json")
+            })
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<DataSourceApiException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.Equal(-1130, ex.ApiErrorCode);
+        Assert.True(ex.IsDateRangeError);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7c. HTTP 400 with non-date message → not IsDateRangeError
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http400_InvalidSymbol_NotDateRangeError()
     {
         var handler = new FakeHttpHandler
         {
@@ -237,7 +266,36 @@ public sealed class BinanceRetryHelperTests
                 ParseInts, CancellationToken.None));
 
         Assert.Equal(-1121, ex.ApiErrorCode);
-        Assert.True(ex.IsParameterValidationError);
+        Assert.False(ex.IsDateRangeError);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7d. HTTP 400 with endpoint maintenance message → not IsDateRangeError
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http400_EndpointMaintenance_NotDateRangeError()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"code":-1,"msg":"The endpoint has been out of maintenance"}""",
+                    Encoding.UTF8, "application/json")
+            })
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<DataSourceApiException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.Equal(-1, ex.ApiErrorCode);
+        Assert.False(ex.IsDateRangeError);
     }
 
     // -------------------------------------------------------------------------
