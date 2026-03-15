@@ -23,7 +23,7 @@ public sealed class HistoryRepository(
         var raw = barLoader.Load(
             storageOptions.Value.DataRoot,
             asset.Exchange,
-            asset.Name,
+            AssetDirectoryName.From(subscription.Asset),
             from,
             to,
             sourceInterval);

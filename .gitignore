@@ -59,9 +59,6 @@ nunit-*.xml
 # Plugin assemblies
 **/AlgoTradeForge.WebApi/plugins/
 
-# Candle data (ingested)
-Data/
-
 # User secrets
 *.user
 .env*

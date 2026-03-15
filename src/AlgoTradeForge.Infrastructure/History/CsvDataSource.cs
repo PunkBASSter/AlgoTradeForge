@@ -27,7 +27,7 @@ public sealed class CsvDataSource(
         var raw = barLoader.Load(
             storageOptions.Value.DataRoot,
             asset.Exchange,
-            asset.Name,
+            AssetDirectoryName.From(asset),
             DateOnly.FromDateTime(from.UtcDateTime),
             DateOnly.FromDateTime(to.UtcDateTime),
             sourceInterval);

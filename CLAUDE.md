@@ -8,6 +8,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-10
 - TypeScript 5.x (strict mode, no `any`) / Node.js 20+ / Next.js 16 / Tailwind CSS 4 (CSS-first config) (008-trading-frontend)
 - C# 14 / .NET 10 + ASP.NET Core (minimal APIs), System.Threading (Task.Run, Interlocked, CancellationTokenSource), Microsoft.Extensions.Caching.Distributed (IDistributedCache), existing Domain/Application/Infrastructure layers (009-long-running-ops)
 - SQLite (existing, via SqliteRunRepository) for completed results; IDistributedCache (AddDistributedMemoryCache(), swappable to Redis) for in-progress state (009-long-running-ops)
+- C# 14 / .NET 10 + ASP.NET Core (minimal APIs), `Microsoft.Extensions.Hosting` (BackgroundService), `System.Text.Json`, `Serilog`, `HttpClient` (019-history-loader)
+- Flat monthly-partitioned CSV files + `feeds.json` schema files per asset directory (019-history-loader)
 
 - C# 14 / .NET 10 + `Microsoft.Extensions.Hosting` (BackgroundService), `System.Text.Json` (Binance API parsing), `Serilog` (structured logging) (002-candle-ingestor)
 
@@ -89,10 +91,9 @@ All monetary/price values in the Domain layer use `long` (Int64). When convertin
 - **Module sub-param scaling**: `ParameterScaler` recurses into `ModuleSelection` values to scale nested `QuoteAsset` sub-params. Both backtest/live (`ParameterScaler`) and optimization (`OptimizationAxisResolver`) paths handle module sub-param scaling.
 
 ## Recent Changes
+- 019-history-loader: Added C# 14 / .NET 10 + ASP.NET Core (minimal APIs), `Microsoft.Extensions.Hosting` (BackgroundService), `System.Text.Json`, `Serilog`, `HttpClient`
 - 018-extra-data-feeds: Asset type hierarchy (CryptoAsset, EquityAsset, FutureAsset, CryptoPerpetualAsset), settlement system (ISettlementCalculator → CashAndCarry/Margin), aux data feeds (FeedSeries, IFeedContext, BacktestFeedContext, auto-apply), order validation (IOrderValidator), event bus (IEventBus/IEventBusReceiver)
 - 009-long-running-ops: Added C# 14 / .NET 10 + ASP.NET Core (minimal APIs), System.Threading (Task.Run, Interlocked, CancellationTokenSource), IDistributedCache for progress tracking
-- 008-trading-frontend: Updated to Next.js 16 / Tailwind CSS 4 (CSS-first `@theme` config, no tailwind.config.ts)
-- 003-backtest-engine: Added C# 14 / .NET 10 + Existing solution dependencies (no new NuGet packages required for this feature)
 
 
 <!-- MANUAL ADDITIONS START -->

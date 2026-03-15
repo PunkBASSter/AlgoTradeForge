@@ -8,18 +8,25 @@ namespace AlgoTradeForge.Domain.History;
 public sealed class FeedMetadata
 {
     public Dictionary<string, FeedDefinition> Feeds { get; init; } = [];
+    public CandleConfig? Candles { get; init; }
 }
 
 public sealed class FeedDefinition
 {
-    public string Interval { get; init; } = "";
+    public required string Interval { get; init; }
     public string[] Columns { get; init; } = [];
     public AutoApplyDefinition? AutoApply { get; init; }
 }
 
+public sealed class CandleConfig
+{
+    public decimal ScaleFactor { get; init; } = 100m;
+    public string[] Intervals { get; init; } = [];
+}
+
 public sealed class AutoApplyDefinition
 {
-    public string Type { get; init; } = "";
-    public string RateColumn { get; init; } = "";
+    public required string Type { get; init; }
+    public required string RateColumn { get; init; }
     public string? SignConvention { get; init; }
 }

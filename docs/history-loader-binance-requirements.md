@@ -211,7 +211,7 @@ Example for `BTCUSDT_fut/feeds.json`:
 ```json
 {
   "candles": {
-    "multiplier": 1e8,
+    "scaleFactor": 1e8,
     "intervals": ["1m", "1d"]
   },
   "feeds": {

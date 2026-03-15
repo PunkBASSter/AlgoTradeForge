@@ -1,0 +1,86 @@
+using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.HistoryLoader.Domain;
+using Microsoft.Extensions.Logging;
+
+namespace AlgoTradeForge.HistoryLoader.Application.Collection;
+
+public abstract class FeedCollectorBase(
+    IFeedWriter feedWriter,
+    ISchemaManager schemaManager,
+    IFeedStatusStore feedStatusStore,
+    ILogger logger) : IFeedCollector
+{
+    protected IFeedWriter FeedWriter { get; } = feedWriter;
+    protected ISchemaManager SchemaManager { get; } = schemaManager;
+    protected IFeedStatusStore FeedStatusStore { get; } = feedStatusStore;
+    protected ILogger Logger { get; } = logger;
+
+    public abstract string FeedName { get; }
+    public virtual bool SupportsSpot => false;
+
+    public abstract Task CollectAsync(
+        AssetCollectionConfig assetConfig,
+        FeedCollectionConfig feedConfig,
+        string assetDir,
+        long fromMs,
+        long toMs,
+        CancellationToken ct);
+
+    protected (long? ResumeTs, long AdjustedFromMs) ResolveFromMs(string assetDir, string feedName, string interval, long fromMs)
+    {
+        var resumeTs = FeedWriter.ResumeFrom(assetDir, feedName, interval);
+        if (resumeTs.HasValue && resumeTs.Value >= fromMs)
+            fromMs = resumeTs.Value + 1;
+        return (resumeTs, fromMs);
+    }
+
+    protected static long ComputeExpectedMs(string interval) =>
+        string.IsNullOrEmpty(interval)
+            ? 0
+            : (long)IntervalParser.ToTimeSpan(interval).TotalMilliseconds;
+
+    internal static void DetectGap(long currentTs, long previousTs, long expectedMs, double multiplier, List<DataGap> gaps)
+    {
+        if (previousTs > 0 && expectedMs > 0 && currentTs - previousTs > expectedMs * multiplier)
+            gaps.Add(new DataGap { FromMs = previousTs, ToMs = currentTs });
+    }
+
+    protected void UpdateFeedStatus(
+        string assetDir,
+        string feedName,
+        string interval,
+        long? firstTs,
+        long lastTs,
+        long recordCount,
+        CollectionHealth health = CollectionHealth.Healthy,
+        List<DataGap>? newGaps = null)
+    {
+        var existing = FeedStatusStore.Load(assetDir, feedName, interval);
+
+        IReadOnlyList<DataGap> mergedGaps = existing?.Gaps ?? [];
+        if (newGaps is { Count: > 0 })
+        {
+            mergedGaps = [.. mergedGaps, .. newGaps];
+        }
+
+        //TODO: ?? reconsider this for stocks where gaps are expected
+        // Promote to Degraded if gaps exist and caller didn't report Error.
+        var resolvedHealth = health == CollectionHealth.Healthy && mergedGaps.Count > 0
+            ? CollectionHealth.Degraded
+            : health;
+
+        var status = new FeedStatus
+        {
+            FeedName = feedName,
+            Interval = interval,
+            FirstTimestamp = existing?.FirstTimestamp ?? firstTs,
+            LastTimestamp = lastTs,
+            LastRunUtc = DateTimeOffset.UtcNow,
+            RecordCount = (existing?.RecordCount ?? 0) + recordCount,
+            Gaps = mergedGaps,
+            Health = resolvedHealth
+        };
+
+        FeedStatusStore.Save(assetDir, feedName, interval, status);
+    }
+}
