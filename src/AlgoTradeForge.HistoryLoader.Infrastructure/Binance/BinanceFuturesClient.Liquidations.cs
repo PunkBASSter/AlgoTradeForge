@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Domain;
@@ -85,12 +84,11 @@ internal sealed partial class BinanceFuturesClient
 
             long time = order.GetProperty("time").GetInt64();
             string side = BinanceJsonHelper.ParseRequiredString(order, "side");
-            double averagePrice = double.Parse(
-                BinanceJsonHelper.ParseRequiredString(order, "averagePrice"),
-                CultureInfo.InvariantCulture);
-            double executedQty = double.Parse(
-                BinanceJsonHelper.ParseRequiredString(order, "executedQty"),
-                CultureInfo.InvariantCulture);
+
+            if (!BinanceJsonHelper.TryParseDouble(order, "averagePrice", out var averagePrice))
+                continue;
+            if (!BinanceJsonHelper.TryParseDouble(order, "executedQty", out var executedQty))
+                continue;
 
             // SELL order = long position liquidated → 1.0
             // BUY order  = short position liquidated → -1.0
@@ -100,6 +98,6 @@ internal sealed partial class BinanceFuturesClient
             records[i++] = new FeedRecord(time, [sideValue, averagePrice, executedQty, notionalUsd]);
         }
 
-        return records;
+        return records.AsSpan(0, i).ToArray();
     }
 }

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Domain;
@@ -82,16 +81,15 @@ internal sealed partial class BinanceFuturesClient
         foreach (var element in root.EnumerateArray())
         {
             long timestamp = element.GetProperty("timestamp").GetInt64();
-            double sumOi = double.Parse(
-                BinanceJsonHelper.ParseRequiredString(element, "sumOpenInterest"),
-                CultureInfo.InvariantCulture);
-            double sumOiValue = double.Parse(
-                BinanceJsonHelper.ParseRequiredString(element, "sumOpenInterestValue"),
-                CultureInfo.InvariantCulture);
+
+            if (!BinanceJsonHelper.TryParseDouble(element, "sumOpenInterest", out var sumOi))
+                continue;
+            if (!BinanceJsonHelper.TryParseDouble(element, "sumOpenInterestValue", out var sumOiValue))
+                continue;
 
             records[i++] = new FeedRecord(timestamp, [sumOi, sumOiValue]);
         }
 
-        return records;
+        return records.AsSpan(0, i).ToArray();
     }
 }

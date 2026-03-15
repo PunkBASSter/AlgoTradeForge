@@ -158,4 +158,85 @@ public sealed class BinanceFuturesClientFundingTests
 
         Assert.Empty(records);
     }
+
+    // -------------------------------------------------------------------------
+    // 4. Empty string fields are skipped gracefully
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchFundingRatesAsync_EmptyFundingRate_SkipsRecord()
+    {
+        // Second record has empty fundingRate — should be skipped
+        var json = """
+            [
+              {"fundingTime":1700000000000,"fundingRate":"0.0001","markPrice":"50000.5"},
+              {"fundingTime":1700028800000,"fundingRate":"","markPrice":"51000.25"},
+              {"fundingTime":1700057600000,"fundingRate":"0.0003","markPrice":"52000.0"}
+            ]
+            """;
+
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse(json))
+        };
+
+        var client = BuildClient(handler);
+        var records = await client
+            .FetchFundingRatesAsync("BTCUSDT", 1_700_000_000_000L, 1_700_100_000_000L, CancellationToken.None)
+            .ToListAsync();
+
+        Assert.Equal(2, records.Count);
+        Assert.Equal(1_700_000_000_000L, records[0].TimestampMs);
+        Assert.Equal(1_700_057_600_000L, records[1].TimestampMs);
+    }
+
+    [Fact]
+    public async Task FetchFundingRatesAsync_EmptyMarkPrice_SkipsRecord()
+    {
+        // First record has empty markPrice — should be skipped
+        var json = """
+            [
+              {"fundingTime":1700000000000,"fundingRate":"0.0001","markPrice":""},
+              {"fundingTime":1700028800000,"fundingRate":"-0.0002","markPrice":"51000.25"}
+            ]
+            """;
+
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse(json))
+        };
+
+        var client = BuildClient(handler);
+        var records = await client
+            .FetchFundingRatesAsync("BTCUSDT", 1_700_000_000_000L, 1_700_100_000_000L, CancellationToken.None)
+            .ToListAsync();
+
+        Assert.Single(records);
+        Assert.Equal(1_700_028_800_000L, records[0].TimestampMs);
+        Assert.Equal(-0.0002, records[0].Values[0], precision: 10);
+        Assert.Equal(51000.25, records[0].Values[1], precision: 10);
+    }
+
+    [Fact]
+    public async Task FetchFundingRatesAsync_AllEmptyFields_YieldsNothing()
+    {
+        var json = """
+            [
+              {"fundingTime":1700000000000,"fundingRate":"","markPrice":""},
+              {"fundingTime":1700028800000,"fundingRate":"","markPrice":"51000.0"}
+            ]
+            """;
+
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse(json))
+        };
+
+        var client = BuildClient(handler);
+        var records = await client
+            .FetchFundingRatesAsync("BTCUSDT", 1_700_000_000_000L, 1_700_100_000_000L, CancellationToken.None)
+            .ToListAsync();
+
+        Assert.Empty(records);
+    }
 }

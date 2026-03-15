@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Domain;
 
@@ -17,19 +16,17 @@ internal static class BinanceRatioParser
         foreach (var element in root.EnumerateArray())
         {
             long timestamp = element.GetProperty("timestamp").GetInt64();
-            double longAccount = double.Parse(
-                BinanceJsonHelper.ParseRequiredString(element, "longAccount"),
-                CultureInfo.InvariantCulture);
-            double shortAccount = double.Parse(
-                BinanceJsonHelper.ParseRequiredString(element, "shortAccount"),
-                CultureInfo.InvariantCulture);
-            double longShortRatio = double.Parse(
-                BinanceJsonHelper.ParseRequiredString(element, "longShortRatio"),
-                CultureInfo.InvariantCulture);
+
+            if (!BinanceJsonHelper.TryParseDouble(element, "longAccount", out var longAccount))
+                continue;
+            if (!BinanceJsonHelper.TryParseDouble(element, "shortAccount", out var shortAccount))
+                continue;
+            if (!BinanceJsonHelper.TryParseDouble(element, "longShortRatio", out var longShortRatio))
+                continue;
 
             records[i++] = new FeedRecord(timestamp, [longAccount, shortAccount, longShortRatio]);
         }
 
-        return records;
+        return records.AsSpan(0, i).ToArray();
     }
 }

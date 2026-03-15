@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 
 namespace AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
@@ -16,12 +17,54 @@ internal static class BinanceJsonHelper
     }
 
     /// <summary>
-    /// Reads a required string from a JSON array element at the given index,
-    /// throwing a descriptive <see cref="JsonException"/> if null.
+    /// Attempts to read a named JSON property as a <see langword="double"/>.
+    /// Returns <see langword="false"/> when the value is null, empty, or not a valid number
+    /// — allowing callers to skip malformed records instead of crashing.
     /// </summary>
-    public static string ParseRequiredString(JsonElement element, int index)
+    public static bool TryParseDouble(JsonElement element, string propertyName, out double result)
     {
-        return element.GetString()
-            ?? throw new JsonException($"Required string value at index {index} was null.");
+        var str = element.GetProperty(propertyName).GetString();
+        if (string.IsNullOrEmpty(str))
+        {
+            result = 0;
+            return false;
+        }
+
+        return double.TryParse(str, NumberStyles.Float | NumberStyles.AllowLeadingSign,
+            CultureInfo.InvariantCulture, out result);
+    }
+
+    /// <summary>
+    /// Attempts to parse a JSON string element as a <see langword="double"/>.
+    /// Returns <see langword="false"/> when the value is null, empty, or not a valid number.
+    /// </summary>
+    public static bool TryParseDouble(JsonElement element, out double result)
+    {
+        var str = element.GetString();
+        if (string.IsNullOrEmpty(str))
+        {
+            result = 0;
+            return false;
+        }
+
+        return double.TryParse(str, NumberStyles.Float | NumberStyles.AllowLeadingSign,
+            CultureInfo.InvariantCulture, out result);
+    }
+
+    /// <summary>
+    /// Attempts to parse a JSON string element as a <see langword="decimal"/>.
+    /// Returns <see langword="false"/> when the value is null, empty, or not a valid number.
+    /// </summary>
+    public static bool TryParseDecimal(JsonElement element, out decimal result)
+    {
+        var str = element.GetString();
+        if (string.IsNullOrEmpty(str))
+        {
+            result = 0;
+            return false;
+        }
+
+        return decimal.TryParse(str, NumberStyles.Float | NumberStyles.AllowLeadingSign,
+            CultureInfo.InvariantCulture, out result);
     }
 }

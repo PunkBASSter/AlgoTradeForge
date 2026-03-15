@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Domain;
@@ -77,17 +76,16 @@ internal sealed partial class BinanceFuturesClient
 
         foreach (var element in root.EnumerateArray())
         {
-            long fundingTime  = element.GetProperty("fundingTime").GetInt64();
-            double fundingRate = double.Parse(
-                BinanceJsonHelper.ParseRequiredString(element, "fundingRate"),
-                CultureInfo.InvariantCulture);
-            double markPrice   = double.Parse(
-                BinanceJsonHelper.ParseRequiredString(element, "markPrice"),
-                CultureInfo.InvariantCulture);
+            long fundingTime = element.GetProperty("fundingTime").GetInt64();
+
+            if (!BinanceJsonHelper.TryParseDouble(element, "fundingRate", out var fundingRate))
+                continue;
+            if (!BinanceJsonHelper.TryParseDouble(element, "markPrice", out var markPrice))
+                continue;
 
             records[i++] = new FeedRecord(fundingTime, [fundingRate, markPrice]);
         }
 
-        return records;
+        return records.AsSpan(0, i).ToArray();
     }
 }
