@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "AlgoTradeForge.HistoryLoader": {
+    "AlgoTradeForge.HistoryLoader.WebApi": {
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {

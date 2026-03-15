@@ -4,16 +4,17 @@ using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AlgoTradeForge.HistoryLoader.Collection;
+namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 
-internal sealed class LiquidationCollectorService(
+internal sealed class HourlyCollectorService(
     SymbolCollector symbolCollector,
     ICollectionCircuitBreaker circuitBreaker,
     IOptionsMonitor<HistoryLoaderOptions> options,
-    ILogger<LiquidationCollectorService> logger)
+    ILogger<HourlyCollectorService> logger)
     : ScheduledCollectorService(symbolCollector, circuitBreaker, options, logger)
 {
-    protected override TimeSpan Interval => TimeSpan.FromHours(4);
-    protected override string ServiceName => "LiquidationCollectorService";
-    protected override string[] CollectedFeedNames => [FeedNames.Liquidations];
+    protected override TimeSpan Interval => TimeSpan.FromHours(1);
+    protected override string ServiceName => "HourlyCollectorService";
+    protected override string[] CollectedFeedNames =>
+        [FeedNames.MarkPrice, FeedNames.LsRatioTopPositions];
 }

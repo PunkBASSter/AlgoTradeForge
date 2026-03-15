@@ -1,4 +1,4 @@
-namespace AlgoTradeForge.HistoryLoader.Endpoints;
+namespace AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 
 internal sealed record BackfillRequest
 {

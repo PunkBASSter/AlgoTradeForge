@@ -1,8 +1,8 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
-using AlgoTradeForge.HistoryLoader.Collection;
-using AlgoTradeForge.HistoryLoader.Endpoints;
+using AlgoTradeForge.HistoryLoader.WebApi.Collection;
+using AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 using AlgoTradeForge.HistoryLoader.Infrastructure;
 using Microsoft.Extensions.Options;
 using Serilog;

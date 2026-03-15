@@ -4,7 +4,7 @@ using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AlgoTradeForge.HistoryLoader.Collection;
+namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 
 internal sealed class RatioCollectorService(
     SymbolCollector symbolCollector,

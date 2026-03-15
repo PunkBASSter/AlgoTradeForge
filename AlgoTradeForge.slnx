@@ -11,7 +11,7 @@
   <Project Path="src\AlgoTradeForge.HistoryLoader.Domain\AlgoTradeForge.HistoryLoader.Domain.csproj" />
   <Project Path="src\AlgoTradeForge.HistoryLoader.Application\AlgoTradeForge.HistoryLoader.Application.csproj" />
   <Project Path="src\AlgoTradeForge.HistoryLoader.Infrastructure\AlgoTradeForge.HistoryLoader.Infrastructure.csproj" />
-  <Project Path="src\AlgoTradeForge.HistoryLoader\AlgoTradeForge.HistoryLoader.csproj" />
+  <Project Path="src\AlgoTradeForge.HistoryLoader.WebApi\AlgoTradeForge.HistoryLoader.WebApi.csproj" />
   <Project Path="tests\AlgoTradeForge.Domain.Tests\AlgoTradeForge.Domain.Tests.csproj" />
   <Project Path="tests\AlgoTradeForge.Application.Tests\AlgoTradeForge.Application.Tests.csproj" />
   <Project Path="tests\AlgoTradeForge.Infrastructure.Tests\AlgoTradeForge.Infrastructure.Tests.csproj" />

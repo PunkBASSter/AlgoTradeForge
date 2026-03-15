@@ -3,7 +3,7 @@ using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Options;
 
-namespace AlgoTradeForge.HistoryLoader.Endpoints;
+namespace AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 
 internal static class BackfillEndpoints
 {
