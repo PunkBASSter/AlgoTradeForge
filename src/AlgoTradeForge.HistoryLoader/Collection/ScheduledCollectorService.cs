@@ -56,7 +56,7 @@ internal abstract class ScheduledCollectorService(
             if (circuitBreaker.IsTripped)
                 return;
 
-            if (FuturesOnly && asset.Type is not ("perpetual" or "future"))
+            if (FuturesOnly && !AssetTypes.IsFutures(asset.Type))
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);

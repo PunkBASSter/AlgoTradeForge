@@ -1,9 +1,11 @@
+using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.Application;
 
 public sealed class HistoryLoaderOptionsValidator : IValidateOptions<HistoryLoaderOptions>
 {
+
     public ValidateOptionsResult Validate(string? name, HistoryLoaderOptions options)
     {
         var failures = new List<string>();
@@ -14,11 +16,17 @@ public sealed class HistoryLoaderOptionsValidator : IValidateOptions<HistoryLoad
         if (options.Binance.WeightBudgetPercent is < 1 or > 100)
             failures.Add("Binance.WeightBudgetPercent must be between 1 and 100.");
 
+        if (options.Binance.MaxWeightPerMinute <= 0)
+            failures.Add("Binance.MaxWeightPerMinute must be greater than 0.");
+
         if (options.CircuitBreakerCooldownMinutes <= 0)
             failures.Add("CircuitBreakerCooldownMinutes must be greater than 0.");
 
         foreach (var asset in options.Assets)
         {
+            if (!AssetTypes.All.Contains(asset.Type, StringComparer.OrdinalIgnoreCase))
+                failures.Add($"Asset {asset.Symbol}: Type '{asset.Type}' is not valid. Must be one of: {string.Join(", ", AssetTypes.All)}.");
+
             if (asset.DecimalDigits is < 0 or > 18)
                 failures.Add($"Asset {asset.Symbol}: DecimalDigits must be between 0 and 18.");
 

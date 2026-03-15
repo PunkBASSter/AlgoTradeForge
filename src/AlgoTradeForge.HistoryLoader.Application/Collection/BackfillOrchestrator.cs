@@ -40,14 +40,16 @@ public sealed class BackfillOrchestrator(
         DateOnly? fromDate = null,
         CancellationToken ct = default)
     {
-        lock (_lock)
-        {
-            if (!_runningSymbols.Add(assetDir))
-                return false;
-        }
-
+        bool added = false;
         try
         {
+            lock (_lock)
+            {
+                if (!_runningSymbols.Add(assetDir))
+                    return false;
+                added = true;
+            }
+
             var from = fromDate ?? asset.HistoryStart;
             var fromMs = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
                 .ToUnixTimeMilliseconds();
@@ -67,8 +69,11 @@ public sealed class BackfillOrchestrator(
         }
         finally
         {
-            lock (_lock)
-                _runningSymbols.Remove(assetDir);
+            if (added)
+            {
+                lock (_lock)
+                    _runningSymbols.Remove(assetDir);
+            }
         }
     }
 

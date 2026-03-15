@@ -63,6 +63,12 @@ public abstract class FeedCollectorBase(
             mergedGaps = [.. mergedGaps, .. newGaps];
         }
 
+        //TODO: ?? reconsider this for stocks where gaps are expected
+        // Promote to Degraded if gaps exist and caller didn't report Error.
+        var resolvedHealth = health == CollectionHealth.Healthy && mergedGaps.Count > 0
+            ? CollectionHealth.Degraded
+            : health;
+
         var status = new FeedStatus
         {
             FeedName = feedName,
@@ -72,7 +78,7 @@ public abstract class FeedCollectorBase(
             LastRunUtc = DateTimeOffset.UtcNow,
             RecordCount = (existing?.RecordCount ?? 0) + recordCount,
             Gaps = mergedGaps,
-            Health = health
+            Health = resolvedHealth
         };
 
         FeedStatusStore.Save(assetDir, feedName, interval, status);

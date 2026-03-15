@@ -2,6 +2,7 @@ using System.Text.Json;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Infrastructure.History;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace AlgoTradeForge.Infrastructure.Tests.History;
@@ -16,7 +17,7 @@ public class FeedContextBuilderTests : IDisposable
     {
         _testDataRoot = Path.Combine(Path.GetTempPath(), $"FeedCtxBuilder_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testDataRoot);
-        _builder = new FeedContextBuilder(_feedSeriesLoader);
+        _builder = new FeedContextBuilder(_feedSeriesLoader, NullLogger<FeedContextBuilder>.Instance);
     }
 
     public void Dispose()

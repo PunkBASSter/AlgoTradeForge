@@ -15,11 +15,28 @@ public abstract class GenericFeedCollectorBase(
 {
     protected abstract string[] Columns { get; }
 
+    /// <summary>
+    /// Override to attach auto-apply metadata (e.g. funding rate) to the feed schema.
+    /// </summary>
+    protected virtual AutoApplySpec? GetAutoApplySpec() => null;
+
+    /// <summary>
+    /// Override to supply a fixed expected interval for gap detection
+    /// when the feed does not use a standard interval string.
+    /// </summary>
+    protected virtual long GetExpectedIntervalMs(string interval) => ComputeExpectedMs(interval);
+
+    /// <summary>
+    /// Override to force a specific exchange key (e.g. always-futures for funding rates).
+    /// </summary>
+    protected virtual string ResolveExchangeKey(AssetCollectionConfig assetConfig) =>
+        ExchangeKeys.Resolve(assetConfig);
+
     protected IAsyncEnumerable<FeedRecord> FetchAsync(
         AssetCollectionConfig assetConfig,
         string symbol, string? interval, long fromMs, long toMs, CancellationToken ct)
     {
-        var fetcher = feedFetcherFactory.Create(ExchangeKeys.Resolve(assetConfig), FeedName);
+        var fetcher = feedFetcherFactory.Create(ResolveExchangeKey(assetConfig), FeedName);
         return fetcher.FetchAsync(symbol, interval, fromMs, toMs, ct);
     }
 
@@ -35,14 +52,14 @@ public abstract class GenericFeedCollectorBase(
 
         var (resumeTs, adjustedFromMs) = ResolveFromMs(assetDir, FeedName, interval, fromMs);
         fromMs = adjustedFromMs;
-        SchemaManager.EnsureSchema(assetDir, FeedName, interval, Columns);
+        SchemaManager.EnsureSchema(assetDir, FeedName, interval, Columns, GetAutoApplySpec());
 
         long recordCount = 0;
         long? firstTs = null;
         long lastTs = 0;
         long previousTs = 0;
         var gaps = new List<DataGap>();
-        long expectedMs = ComputeExpectedMs(interval);
+        long expectedMs = GetExpectedIntervalMs(interval);
 
         await foreach (var record in FetchAsync(assetConfig, assetConfig.Symbol, interval, fromMs, toMs, ct))
         {

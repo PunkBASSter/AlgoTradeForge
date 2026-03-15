@@ -1,6 +1,8 @@
 using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain.History;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AlgoTradeForge.Infrastructure.History;
 
@@ -11,6 +13,13 @@ namespace AlgoTradeForge.Infrastructure.History;
 /// </summary>
 public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
 {
+    private readonly ILogger<CsvFeedSeriesLoader> _logger;
+
+    public CsvFeedSeriesLoader(ILogger<CsvFeedSeriesLoader>? logger = null)
+    {
+        _logger = logger ?? NullLogger<CsvFeedSeriesLoader>.Instance;
+    }
+
     /// <summary>
     /// Loads feed data for the given date range.
     /// </summary>
@@ -33,6 +42,7 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
     {
         var timestamps = new List<long>();
         List<double>[]? columnLists = null;
+        int missingColumnRows = 0;
 
         var current = new DateOnly(from.Year, from.Month, 1);
         var endMonth = new DateOnly(to.Year, to.Month, 1);
@@ -109,6 +119,7 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
                     else if (valueIdx >= parts.Length)
                     {
                         values[c] = 0d;
+                        missingColumnRows++;
                     }
                     else
                     {
@@ -126,6 +137,13 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
             }
 
             current = current.AddMonths(1);
+        }
+
+        if (missingColumnRows > 0)
+        {
+            _logger.LogWarning(
+                "{Count} rows had fewer columns than header in {Feed}/{AssetDir} — filled with 0",
+                missingColumnRows, feedName, assetDir);
         }
 
         if (timestamps.Count == 0 || columnLists is null)

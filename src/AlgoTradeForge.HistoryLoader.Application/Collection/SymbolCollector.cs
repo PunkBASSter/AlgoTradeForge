@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Collection;
@@ -31,7 +32,7 @@ public sealed class SymbolCollector
         }
 
         // Spot assets only support feeds that declare SupportsSpot.
-        if (assetConfig.Type == "spot" && !collector.SupportsSpot)
+        if (AssetTypes.IsSpot(assetConfig.Type) && !collector.SupportsSpot)
         {
             _logger.LogWarning(
                 "Spot assets do not support {Feed}, skipping for {Symbol}",
@@ -43,7 +44,8 @@ public sealed class SymbolCollector
             "Collecting {Feed}/{Interval} for {Symbol} from {From} to {To}",
             feedName, feedConfig.Interval, assetConfig.Symbol, fromMs, toMs);
 
-        // Guard: HTTP 400/403/404/451 means the symbol may be delisted or restricted — skip gracefully.
+        // Guard: HTTP 4xx means the symbol may be delisted or restricted — skip gracefully.
+        // HTTP 5xx means a transient server error — skip and let the next cycle retry.
         try
         {
             await collector.CollectAsync(assetConfig, feedConfig, assetDir, fromMs, toMs, ct);
@@ -57,6 +59,16 @@ public sealed class SymbolCollector
             _logger.LogWarning(
                 "HTTP {StatusCode} for {Symbol}, skipping (may be delisted or restricted)",
                 (int?)ex.StatusCode, assetConfig.Symbol);
+        }
+        catch (HttpRequestException ex) when (
+            ex.StatusCode is System.Net.HttpStatusCode.InternalServerError
+                          or System.Net.HttpStatusCode.BadGateway
+                          or System.Net.HttpStatusCode.ServiceUnavailable
+                          or System.Net.HttpStatusCode.GatewayTimeout)
+        {
+            _logger.LogWarning(
+                "HTTP {StatusCode} for {Symbol}/{Feed}, transient server error — skipping",
+                (int?)ex.StatusCode, assetConfig.Symbol, feedName);
         }
     }
 }

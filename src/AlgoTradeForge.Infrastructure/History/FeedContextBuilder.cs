@@ -3,6 +3,7 @@ using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
+using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.Infrastructure.History;
 
@@ -10,7 +11,9 @@ namespace AlgoTradeForge.Infrastructure.History;
 /// Builds a <see cref="BacktestFeedContext"/> by reading the asset's <c>feeds.json</c>
 /// and loading each declared feed from monthly-partitioned CSV files.
 /// </summary>
-public sealed class FeedContextBuilder(IFeedSeriesLoader feedSeriesLoader) : IFeedContextBuilder
+public sealed class FeedContextBuilder(
+    IFeedSeriesLoader feedSeriesLoader,
+    ILogger<FeedContextBuilder> logger) : IFeedContextBuilder
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -23,7 +26,10 @@ public sealed class FeedContextBuilder(IFeedSeriesLoader feedSeriesLoader) : IFe
         var feedsJsonPath = Path.Combine(dataRoot, asset.Exchange, assetDir, "feeds.json");
 
         if (!File.Exists(feedsJsonPath))
+        {
+            logger.LogDebug("No feeds.json found at {Path} for {Asset}", feedsJsonPath, asset.Name);
             return null;
+        }
 
         FeedMetadata? metadata;
         try
@@ -56,6 +62,12 @@ public sealed class FeedContextBuilder(IFeedSeriesLoader feedSeriesLoader) : IFe
                 if (Enum.TryParse<AutoApplyType>(def.AutoApply.Type, ignoreCase: true, out var applyType))
                 {
                     autoApply = new AutoApplyConfig(applyType, def.AutoApply.RateColumn, def.AutoApply.SignConvention);
+                }
+                else
+                {
+                    logger.LogWarning(
+                        "Invalid AutoApplyType '{Type}' for feed '{Feed}' in {Asset} — auto-apply will be disabled for this feed",
+                        def.AutoApply.Type, feedName, asset.Name);
                 }
             }
 

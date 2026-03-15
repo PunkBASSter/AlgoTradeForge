@@ -1,3 +1,5 @@
+using AlgoTradeForge.HistoryLoader.Domain;
+
 namespace AlgoTradeForge.HistoryLoader.Application.Collection;
 
 /// <summary>
@@ -7,7 +9,9 @@ namespace AlgoTradeForge.HistoryLoader.Application.Collection;
 public static class ExchangeKeys
 {
     public static string Resolve(AssetCollectionConfig asset) =>
-        asset.Type == "spot" ? Spot(asset.Exchange) : Futures(asset.Exchange);
+        AssetTypes.IsSpot(asset.Type)
+            ? Spot(asset.Exchange)
+            : Futures(asset.Exchange);
 
     public static string Futures(string exchange) => $"{exchange}-futures";
     public static string Spot(string exchange) => $"{exchange}-spot";

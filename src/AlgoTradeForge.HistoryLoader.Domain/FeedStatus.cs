@@ -1,5 +1,9 @@
 namespace AlgoTradeForge.HistoryLoader.Domain;
 
+/// <summary>
+/// Healthy: collection is current. Degraded: gaps detected or partial data.
+/// Error: unrecoverable I/O or API failure.
+/// </summary>
 public enum CollectionHealth { Healthy, Degraded, Error }
 
 public readonly record struct DataGap
