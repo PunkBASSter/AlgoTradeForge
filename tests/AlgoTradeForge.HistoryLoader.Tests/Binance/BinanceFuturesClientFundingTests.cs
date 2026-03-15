@@ -191,9 +191,10 @@ public sealed class BinanceFuturesClientFundingTests
     }
 
     [Fact]
-    public async Task FetchFundingRatesAsync_EmptyMarkPrice_SkipsRecord()
+    public async Task FetchFundingRatesAsync_EmptyMarkPrice_IncludedWithNaN()
     {
-        // First record has empty markPrice — should be skipped
+        // First record has empty markPrice — should be included with NaN
+        // (Binance omits markPrice for historical records before Oct 2023)
         var json = """
             [
               {"fundingTime":1700000000000,"fundingRate":"0.0001","markPrice":""},
@@ -211,10 +212,15 @@ public sealed class BinanceFuturesClientFundingTests
             .FetchFundingRatesAsync("BTCUSDT", 1_700_000_000_000L, 1_700_100_000_000L, CancellationToken.None)
             .ToListAsync();
 
-        Assert.Single(records);
-        Assert.Equal(1_700_028_800_000L, records[0].TimestampMs);
-        Assert.Equal(-0.0002, records[0].Values[0], precision: 10);
-        Assert.Equal(51000.25, records[0].Values[1], precision: 10);
+        Assert.Equal(2, records.Count);
+
+        Assert.Equal(1_700_000_000_000L, records[0].TimestampMs);
+        Assert.Equal(0.0001, records[0].Values[0], precision: 10);
+        Assert.True(double.IsNaN(records[0].Values[1]));  // markPrice is NaN
+
+        Assert.Equal(1_700_028_800_000L, records[1].TimestampMs);
+        Assert.Equal(-0.0002, records[1].Values[0], precision: 10);
+        Assert.Equal(51000.25, records[1].Values[1], precision: 10);
     }
 
     [Fact]

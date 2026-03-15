@@ -80,8 +80,11 @@ internal sealed partial class BinanceFuturesClient
 
             if (!BinanceJsonHelper.TryParseDouble(element, "fundingRate", out var fundingRate))
                 continue;
+
+            // markPrice is empty ("") for historical records before Oct 2023.
+            // Treat it as NaN rather than skipping the record — fundingRate is the essential value.
             if (!BinanceJsonHelper.TryParseDouble(element, "markPrice", out var markPrice))
-                continue;
+                markPrice = double.NaN;
 
             records[i++] = new FeedRecord(fundingTime, [fundingRate, markPrice]);
         }
