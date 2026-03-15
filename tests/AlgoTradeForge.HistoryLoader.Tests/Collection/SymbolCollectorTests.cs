@@ -2,7 +2,6 @@ using System.Net;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -33,7 +32,11 @@ public sealed class SymbolCollectorTests
     private static readonly long FromMs = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero)
         .ToUnixTimeMilliseconds();
 
-    private static readonly long ToMs = new DateTimeOffset(2020, 6, 1, 0, 0, 0, TimeSpan.Zero)
+    private static readonly long ToMs = new DateTimeOffset(2020, 12, 1, 0, 0, 0, TimeSpan.Zero)
+        .ToUnixTimeMilliseconds();
+
+    // The threshold: data is available starting 2020-08-01
+    private static readonly long ValidStartMs = new DateTimeOffset(2020, 8, 1, 0, 0, 0, TimeSpan.Zero)
         .ToUnixTimeMilliseconds();
 
     public SymbolCollectorTests()
@@ -47,12 +50,50 @@ public sealed class SymbolCollectorTests
             NullLogger<SymbolCollector>.Instance);
     }
 
+    /// <summary>
+    /// Sets up the mock to succeed when fromMs >= validStart, fail with date-range
+    /// error otherwise. This simulates a Binance endpoint that only has data from
+    /// a certain date onward.
+    /// </summary>
+    private void SetupDateThreshold(long validStart)
+    {
+        _collector.CollectAsync(
+                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var from = ci.ArgAt<long>(3);
+                if (from < validStart)
+                    throw new DataSourceApiException(
+                        -1130, "parameter 'startTime' is invalid.",
+                        HttpStatusCode.BadRequest, isDateRangeError: true);
+                return Task.CompletedTask;
+            });
+    }
+
     // -------------------------------------------------------------------------
-    // 1. Date-range 400 → advances until success, persists discovered date
+    // 1. Date-range 400 → binary search finds valid start, persists
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task CollectFeedAsync_DateRange400_AdvancesAndPersists()
+    public async Task CollectFeedAsync_DateRange400_BinarySearchFindsAndPersists()
+    {
+        SetupDateThreshold(ValidStartMs);
+
+        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
+
+        // Should persist August 2020 as the discovered start.
+        _settingsWriter.Received(1).UpdateFeedHistoryStart(
+            "BTCUSDT", "perpetual", "open-interest", "5m",
+            new DateOnly(2020, 8, 1));
+    }
+
+    // -------------------------------------------------------------------------
+    // 1b. Binary search uses O(log n) probes, not O(n)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CollectFeedAsync_BinarySearch_UsesLogarithmicProbes()
     {
         int callCount = 0;
         _collector.CollectAsync(
@@ -61,51 +102,25 @@ public sealed class SymbolCollectorTests
             .Returns(ci =>
             {
                 callCount++;
-                if (callCount <= 2)
-                    throw new DataSourceApiException(-1, "Invalid period.", HttpStatusCode.BadRequest, isDateRangeError: true);
+                var from = ci.ArgAt<long>(3);
+                if (from < ValidStartMs)
+                    throw new DataSourceApiException(
+                        -1130, "parameter 'startTime' is invalid.",
+                        HttpStatusCode.BadRequest, isDateRangeError: true);
                 return Task.CompletedTask;
             });
 
         await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
 
-        // Should have been called 3 times (2 failures + 1 success).
-        Assert.Equal(3, callCount);
-
-        // Should persist the discovered date (March 1, 2020 — two months advanced from Jan 1).
-        _settingsWriter.Received(1).UpdateFeedHistoryStart(
-            "BTCUSDT", "perpetual", "open-interest", "5m",
-            new DateOnly(2020, 3, 1));
+        // Jan–Dec 2020 = 12 months. Binary search ≤ log2(12) + 1 ≈ 5 probes.
+        // Plus 1 initial attempt + 1 final full collection = ~7 total.
+        // Linear would be 8+ (7 advances + 1 success + 1 full).
+        Assert.True(callCount <= 8,
+            $"Expected ≤8 API calls for binary search over 12 months, got {callCount}");
     }
 
     // -------------------------------------------------------------------------
-    // 1b. startTime invalid (-1130) → also a date-range error, advances
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public async Task CollectFeedAsync_StartTimeInvalid_AdvancesAndPersists()
-    {
-        int callCount = 0;
-        _collector.CollectAsync(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
-                Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
-            .Returns(ci =>
-            {
-                callCount++;
-                if (callCount <= 1)
-                    throw new DataSourceApiException(-1130, "parameter 'startTime' is invalid.", HttpStatusCode.BadRequest, isDateRangeError: true);
-                return Task.CompletedTask;
-            });
-
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
-
-        Assert.Equal(2, callCount);
-        _settingsWriter.Received(1).UpdateFeedHistoryStart(
-            "BTCUSDT", "perpetual", "open-interest", "5m",
-            new DateOnly(2020, 2, 1));
-    }
-
-    // -------------------------------------------------------------------------
-    // 2. Non-date-range API error → does not retry
+    // 2. Non-date-range API error → skips without binary search
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -126,7 +141,7 @@ public sealed class SymbolCollectorTests
     }
 
     // -------------------------------------------------------------------------
-    // 2b. Endpoint maintenance error → does not retry (not a date-range issue)
+    // 2b. Endpoint maintenance → does not retry
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -135,7 +150,8 @@ public sealed class SymbolCollectorTests
         _collector.CollectAsync(
                 Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
-            .Throws(new DataSourceApiException(-1, "The endpoint has been out of maintenance", HttpStatusCode.BadRequest));
+            .Throws(new DataSourceApiException(
+                -1, "The endpoint has been out of maintenance", HttpStatusCode.BadRequest));
 
         await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
 
@@ -168,29 +184,26 @@ public sealed class SymbolCollectorTests
     }
 
     // -------------------------------------------------------------------------
-    // 4. Exhausts max advances → gives up
+    // 4. All months fail → gives up, does not persist
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task CollectFeedAsync_ExhaustsMaxAdvances_GivesUp()
+    public async Task CollectFeedAsync_AllMonthsFail_GivesUp()
     {
         _collector.CollectAsync(
                 Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
-            .Throws(new DataSourceApiException(-1, "Invalid period.", HttpStatusCode.BadRequest, isDateRangeError: true));
+            .Throws(new DataSourceApiException(
+                -1, "Invalid period.", HttpStatusCode.BadRequest, isDateRangeError: true));
 
         await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
 
-        // 1 initial + 24 advances = 25 total calls.
-        await _collector.Received(SymbolCollector.MaxDateAdvances + 1).CollectAsync(
-            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
-            Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
         _settingsWriter.DidNotReceiveWithAnyArgs()
             .UpdateFeedHistoryStart(default!, default!, default!, default!, default);
     }
 
     // -------------------------------------------------------------------------
-    // 5. Success on first try → does not persist
+    // 5. Success on first try → no probing, does not persist
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -211,17 +224,34 @@ public sealed class SymbolCollectorTests
     }
 
     // -------------------------------------------------------------------------
-    // 6. AdvanceOneMonth snaps to 1st of next month
+    // 6. Final full collection uses discovered start, not toMs
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void AdvanceOneMonth_SnapsToFirstOfNextMonth()
+    public async Task CollectFeedAsync_FinalCollection_UsesDiscoveredStart()
     {
-        // 2020-01-15 12:30:00 UTC
-        var ms = new DateTimeOffset(2020, 1, 15, 12, 30, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
-        var advanced = SymbolCollector.AdvanceOneMonth(ms);
-        var dt = DateTimeOffset.FromUnixTimeMilliseconds(advanced).UtcDateTime;
+        SetupDateThreshold(ValidStartMs);
 
-        Assert.Equal(new DateTime(2020, 2, 1, 0, 0, 0, DateTimeKind.Utc), dt);
+        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
+
+        // The last call should be the full collection from discovered start to toMs.
+        await _collector.Received().CollectAsync(
+            Asset, Feed, "/data", ValidStartMs, ToMs, Arg.Any<CancellationToken>());
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. Month index helpers
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(2020, 1)]
+    [InlineData(2020, 8)]
+    [InlineData(2025, 12)]
+    public void MonthIndex_RoundTrips(int year, int month)
+    {
+        var ms = new DateTimeOffset(year, month, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var idx = SymbolCollector.ToMonthIndex(ms);
+        var roundTripped = SymbolCollector.FromMonthIndex(idx);
+        Assert.Equal(ms, roundTripped);
     }
 }
