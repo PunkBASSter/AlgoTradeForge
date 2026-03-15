@@ -63,30 +63,30 @@ internal abstract class ScheduledCollectorService(
 
             foreach (var feedName in CollectedFeedNames)
             {
-                var feed = asset.Feeds
-                    .FirstOrDefault(f => f.Enabled && f.Name == feedName);
+                var feeds = asset.Feeds
+                    .Where(f => f.Enabled && f.Name == feedName);
 
-                if (feed is null)
-                    continue;
+                foreach (var feed in feeds)
+                {
+                    try
+                    {
+                        var toMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        var from = feed.HistoryStart ?? asset.HistoryStart;
+                        var fromMs = new DateTimeOffset(
+                            from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
+                            .ToUnixTimeMilliseconds();
 
-                try
-                {
-                    var toMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    var from = feed.HistoryStart ?? asset.HistoryStart;
-                    var fromMs = new DateTimeOffset(
-                        from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
-                        .ToUnixTimeMilliseconds();
-
-                    await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct);
-                }
-                catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)
-                {
-                    circuitBreaker.Trip("IP banned by Binance");
-                    return;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    logger.LogError(ex, "{Feed} collection failed for {Symbol}", feedName, asset.Symbol);
+                        await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct);
+                    }
+                    catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)
+                    {
+                        circuitBreaker.Trip("IP banned by Binance");
+                        return;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        logger.LogError(ex, "{Feed} collection failed for {Symbol}", feedName, asset.Symbol);
+                    }
                 }
             }
         }
