@@ -72,8 +72,9 @@ internal abstract class ScheduledCollectorService(
                 try
                 {
                     var toMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    var from = feed.HistoryStart ?? asset.HistoryStart;
                     var fromMs = new DateTimeOffset(
-                        asset.HistoryStart.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
+                        from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
                         .ToUnixTimeMilliseconds();
 
                     await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct);

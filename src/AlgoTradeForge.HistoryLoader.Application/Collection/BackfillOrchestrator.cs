@@ -6,7 +6,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Collection;
 
 public sealed class BackfillOrchestrator(
     SymbolCollector symbolCollector,
-    IOptions<HistoryLoaderOptions> options,
+    IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<BackfillOrchestrator> logger)
 {
     private readonly HashSet<string> _runningSymbols = [];
@@ -24,7 +24,7 @@ public sealed class BackfillOrchestrator(
         DateOnly? fromDate = null,
         CancellationToken ct = default)
     {
-        var config = options.Value;
+        var config = options.CurrentValue;
         var semaphore = new SemaphoreSlim(config.MaxBackfillConcurrency);
 
         var tasks = assets.Select(asset => BackfillSymbolAsync(
@@ -50,9 +50,6 @@ public sealed class BackfillOrchestrator(
                 added = true;
             }
 
-            var from = fromDate ?? asset.HistoryStart;
-            var fromMs = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
-                .ToUnixTimeMilliseconds();
             var toMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             var feeds = asset.Feeds
@@ -62,6 +59,10 @@ public sealed class BackfillOrchestrator(
 
             foreach (var feed in feeds)
             {
+                var from = fromDate ?? feed.HistoryStart ?? asset.HistoryStart;
+                var fromMs = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
+                    .ToUnixTimeMilliseconds();
+
                 await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct);
             }
 

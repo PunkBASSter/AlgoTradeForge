@@ -34,6 +34,9 @@ public sealed class HistoryLoaderOptionsValidator : IValidateOptions<HistoryLoad
             {
                 if (feed.GapThresholdMultiplier <= 1.0)
                     failures.Add($"Asset {asset.Symbol}, feed {feed.Name}: GapThresholdMultiplier must be greater than 1.0.");
+
+                if (feed.HistoryStart is { } feedStart && feedStart > DateOnly.FromDateTime(DateTime.UtcNow))
+                    failures.Add($"Asset {asset.Symbol}, feed {feed.Name}: HistoryStart must not be in the future.");
             }
         }
 

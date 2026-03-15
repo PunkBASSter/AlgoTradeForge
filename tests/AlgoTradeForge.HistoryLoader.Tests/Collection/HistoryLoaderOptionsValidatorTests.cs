@@ -57,4 +57,31 @@ public sealed class HistoryLoaderOptionsValidatorTests
         Assert.True(result.Failed);
         Assert.Contains("GapThresholdMultiplier", result.FailureMessage);
     }
+
+    [Fact]
+    public void Validate_FeedHistoryStartInFuture_Fails()
+    {
+        var options = new HistoryLoaderOptions
+        {
+            Assets =
+            [
+                new AssetCollectionConfig
+                {
+                    Symbol = "BTCUSDT",
+                    Type = "perpetual",
+                    Feeds =
+                    [
+                        new FeedCollectionConfig
+                        {
+                            Name = "open-interest",
+                            HistoryStart = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30)
+                        }
+                    ]
+                }
+            ]
+        };
+        var result = _validator.Validate(null, options);
+        Assert.True(result.Failed);
+        Assert.Contains("HistoryStart", result.FailureMessage);
+    }
 }

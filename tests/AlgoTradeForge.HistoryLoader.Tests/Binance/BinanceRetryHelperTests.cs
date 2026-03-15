@@ -1,4 +1,6 @@
 using System.Net;
+using System.Text;
+using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
 using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
@@ -174,11 +176,11 @@ public sealed class BinanceRetryHelperTests
     }
 
     // -------------------------------------------------------------------------
-    // 7. HTTP 400 → throws on first attempt (no retry for client errors)
+    // 7. HTTP 400 with JSON body → throws DataSourceApiException
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task FetchWithRetryAsync_Http400_ThrowsWithoutRetry()
+    public async Task FetchWithRetryAsync_Http400_WithJsonBody_ThrowsDataSourceApiException()
     {
         int callCount = 0;
         var handler = new FakeHttpHandler
@@ -186,19 +188,83 @@ public sealed class BinanceRetryHelperTests
             Handler = _ =>
             {
                 callCount++;
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest));
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(
+                        """{"code":-1,"msg":"Invalid period."}""",
+                        Encoding.UTF8, "application/json")
+                });
             }
         };
 
         using var httpClient = new HttpClient(handler);
         var limiter = BuildLimiter();
 
-        await Assert.ThrowsAsync<HttpRequestException>(() =>
+        var ex = await Assert.ThrowsAsync<DataSourceApiException>(() =>
             BinanceRetryHelper.FetchWithRetryAsync(
                 httpClient, limiter, 0, "https://api.example.com/test", 1,
                 ParseInts, CancellationToken.None));
 
         Assert.Equal(1, callCount);
+        Assert.Equal(-1, ex.ApiErrorCode);
+        Assert.Equal("Invalid period.", ex.ApiErrorMessage);
+        Assert.False(ex.IsParameterValidationError);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7b. HTTP 400 with parameter validation code → IsParameterValidationError
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http400_ParameterValidation_IsParameterValidationError()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"code":-1121,"msg":"Invalid symbol."}""",
+                    Encoding.UTF8, "application/json")
+            })
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<DataSourceApiException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.Equal(-1121, ex.ApiErrorCode);
+        Assert.True(ex.IsParameterValidationError);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7c. HTTP 400 with non-JSON body → plain HttpRequestException
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http400_NonJsonBody_ThrowsHttpRequestException()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("Bad Request", Encoding.UTF8, "text/plain")
+            })
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.IsNotType<DataSourceApiException>(ex);
+        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
     }
 
     // -------------------------------------------------------------------------

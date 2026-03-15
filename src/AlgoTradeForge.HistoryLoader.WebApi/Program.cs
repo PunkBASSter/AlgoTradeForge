@@ -1,6 +1,8 @@
 using AlgoTradeForge.HistoryLoader.Application;
+using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
+using AlgoTradeForge.HistoryLoader.WebApi;
 using AlgoTradeForge.HistoryLoader.WebApi.Collection;
 using AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 using AlgoTradeForge.HistoryLoader.Infrastructure;
@@ -30,6 +32,11 @@ builder.Services.AddSingleton<IFeedCollector, LsRatioTopAccountsFeedCollector>()
 builder.Services.AddSingleton<IFeedCollector, TakerVolumeFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LsRatioTopPositionsFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LiquidationFeedCollector>();
+
+// Settings writer (persists discovered feed dates back to appsettings.json)
+var appSettingsPath = Path.Combine(builder.Environment.ContentRootPath, "appsettings.json");
+builder.Services.AddSingleton<ISettingsWriter>(sp =>
+    new AppSettingsWriter(appSettingsPath, sp.GetRequiredService<ILogger<AppSettingsWriter>>()));
 
 // Collection services
 builder.Services.AddSingleton<ICollectionCircuitBreaker, CollectionCircuitBreaker>();

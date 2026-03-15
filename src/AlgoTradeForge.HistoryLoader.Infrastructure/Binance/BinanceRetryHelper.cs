@@ -1,4 +1,6 @@
 using System.Net;
+using System.Text.Json;
+using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
 
 namespace AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
@@ -48,12 +50,37 @@ internal static class BinanceRetryHelper
                 continue;
             }
 
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                throw ParseApiException(body, response.StatusCode);
+            }
 
             var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             return parser(json);
         }
 
         throw new InvalidOperationException("Unexpected state in FetchWithRetryAsync.");
+    }
+
+    private static HttpRequestException ParseApiException(string body, HttpStatusCode statusCode)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("code", out var codeProp)
+                && root.TryGetProperty("msg", out var msgProp)
+                && codeProp.TryGetInt32(out var code))
+            {
+                var msg = msgProp.GetString() ?? "";
+                return new DataSourceApiException(code, msg, statusCode);
+            }
+        }
+        catch (JsonException) { }
+
+        return new HttpRequestException(
+            $"HTTP {(int)statusCode}: {body}", inner: null, statusCode);
     }
 }

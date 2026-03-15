@@ -39,5 +39,6 @@ public sealed class FeedCollectionConfig
     public required string Name { get; init; }
     public string Interval { get; init; } = "";
     public bool Enabled { get; init; } = true;
+    public DateOnly? HistoryStart { get; init; }
     public double GapThresholdMultiplier { get; init; } = 2.0;
 }
