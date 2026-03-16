@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Domain;
@@ -10,7 +11,8 @@ internal sealed partial class BinanceFuturesClient
     private const int TakerVolumeWeight = 1;
 
     /// <summary>
-    /// Fetches taker buy/sell volume history from the Binance USDT-M Futures data API
+    /// Fetches taker long/short ratio history from the Binance USDT-M Futures data API
+    /// (<c>/futures/data/takerlongshortRatio</c>)
     /// for the given <paramref name="symbol"/> and <paramref name="interval"/>
     /// over the time range [<paramref name="fromMs"/>, <paramref name="toMs"/>).
     /// </summary>
@@ -66,7 +68,7 @@ internal sealed partial class BinanceFuturesClient
     }
 
     private string BuildTakerVolumeUrl(string symbol, string interval, long fromMs, long toMs) =>
-        $"{options.FuturesBaseUrl}/futures/data/takeBuySellVol" +
+        $"{options.FuturesBaseUrl}/futures/data/takerlongshortRatio" +
         $"?symbol={symbol}&period={interval}" +
         $"&startTime={fromMs}&endTime={toMs}&limit={TakerVolumeLimit}";
 
@@ -80,7 +82,10 @@ internal sealed partial class BinanceFuturesClient
 
         foreach (var element in root.EnumerateArray())
         {
-            long timestamp = element.GetProperty("timestamp").GetInt64();
+            var tsProp = element.GetProperty("timestamp");
+            long timestamp = tsProp.ValueKind == JsonValueKind.Number
+                ? tsProp.GetInt64()
+                : long.Parse(tsProp.GetString()!, CultureInfo.InvariantCulture);
 
             if (!BinanceJsonHelper.TryParseDouble(element, "buyVol", out var buyVol))
                 continue;

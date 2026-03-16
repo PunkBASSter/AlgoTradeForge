@@ -47,7 +47,7 @@ builder.Services.AddHostedService<FundingRateCollectorService>();
 builder.Services.AddHostedService<OiCollectorService>();
 builder.Services.AddHostedService<RatioCollectorService>();
 builder.Services.AddHostedService<HourlyCollectorService>();
-builder.Services.AddHostedService<LiquidationCollectorService>();
+builder.Services.AddHostedService<LiquidationStreamService>();
 
 var app = builder.Build();
 

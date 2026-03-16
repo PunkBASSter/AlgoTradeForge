@@ -25,8 +25,8 @@ public sealed class BinanceFuturesClientTakerTests
     }
 
     /// <summary>
-    /// Builds a JSON array of taker buy/sell volume objects as returned by
-    /// <c>GET /futures/data/takeBuySellVol</c>.
+    /// Builds a JSON array of taker long/short ratio objects as returned by
+    /// <c>GET /futures/data/takerlongshortRatio</c>.
     /// </summary>
     private static string BuildTakerVolumeJson(
         params (long timestamp, string buyVol, string sellVol, string buySellRatio)[] records)
@@ -38,6 +38,24 @@ public sealed class BinanceFuturesClientTakerTests
             if (i > 0) sb.Append(',');
             var r = records[i];
             sb.Append($"{{\"timestamp\":{r.timestamp}," +
+                      $"\"buyVol\":\"{r.buyVol}\"," +
+                      $"\"sellVol\":\"{r.sellVol}\"," +
+                      $"\"buySellRatio\":\"{r.buySellRatio}\"}}");
+        }
+        sb.Append(']');
+        return sb.ToString();
+    }
+
+    private static string BuildTakerVolumeJsonWithStringTimestamps(
+        params (long timestamp, string buyVol, string sellVol, string buySellRatio)[] records)
+    {
+        var sb = new StringBuilder();
+        sb.Append('[');
+        for (int i = 0; i < records.Length; i++)
+        {
+            if (i > 0) sb.Append(',');
+            var r = records[i];
+            sb.Append($"{{\"timestamp\":\"{r.timestamp}\"," +
                       $"\"buyVol\":\"{r.buyVol}\"," +
                       $"\"sellVol\":\"{r.sellVol}\"," +
                       $"\"buySellRatio\":\"{r.buySellRatio}\"}}");
@@ -112,7 +130,7 @@ public sealed class BinanceFuturesClientTakerTests
             .ToListAsync();
 
         Assert.NotNull(capturedUrl);
-        Assert.Contains("/futures/data/takeBuySellVol", capturedUrl);
+        Assert.Contains("/futures/data/takerlongshortRatio", capturedUrl);
         Assert.Contains("period=5m", capturedUrl);
         Assert.DoesNotContain("interval=", capturedUrl);
     }
@@ -184,5 +202,37 @@ public sealed class BinanceFuturesClientTakerTests
         Assert.Equal(502, records.Count);
         Assert.Equal(1_700_000_000_000L, records[0].TimestampMs);
         Assert.Equal(1_700_000_000_000L + 501 * 300_000L, records[501].TimestampMs);
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. FetchTakerVolumeAsync_StringTimestamps_ParsesCorrectly
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchTakerVolumeAsync_StringTimestamps_ParsesCorrectly()
+    {
+        var json = BuildTakerVolumeJsonWithStringTimestamps(
+            (1_700_000_000_000L, "123456789.00", "98765432.00", "1.2500"),
+            (1_700_000_300_000L, "200000000.00", "180000000.00", "1.1111"));
+
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse(json))
+        };
+
+        var client = BuildClient(handler);
+        var records = await client
+            .FetchTakerVolumeAsync(
+                "BTCUSDT",
+                "5m",
+                1_700_000_000_000L,
+                1_700_000_600_000L,
+                CancellationToken.None)
+            .ToListAsync();
+
+        Assert.Equal(2, records.Count);
+        Assert.Equal(1_700_000_000_000L, records[0].TimestampMs);
+        Assert.Equal(1_700_000_300_000L, records[1].TimestampMs);
+        Assert.Equal(123456789.0, records[0].Values[0], precision: 5);
     }
 }

@@ -19,6 +19,7 @@ public sealed class BinanceOptions
 {
     public string SpotBaseUrl { get; init; } = "https://api.binance.com";
     public string FuturesBaseUrl { get; init; } = "https://fapi.binance.com";
+    public string FuturesWsBaseUrl { get; init; } = "wss://fstream.binance.com";
     public int MaxWeightPerMinute { get; init; } = 2400;
     public int WeightBudgetPercent { get; init; } = 40;
     public int RequestDelayMs { get; init; } = 50;
