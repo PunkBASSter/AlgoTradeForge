@@ -20,14 +20,16 @@ On startup, the HistoryLoader launches **6 background services** that continuous
 
 | Service | Interval | Feeds Collected |
 |---------|----------|-----------------|
-| `KlineCollectorService` | Daily | `candles` (spot + futures) |
-| `FundingRateCollectorService` | 8 hours | `funding-rate` |
+| `KlineCollectorService` | Daily | `candles`, `candle-ext` (spot + futures) |
+| `FundingRateCollectorService` | Cron (00:01, 08:01, 16:01 UTC) | `funding-rate` |
 | `OiCollectorService` | 5 minutes | `open-interest` |
 | `RatioCollectorService` | 15 minutes | `ls-ratio-global`, `ls-ratio-top-accounts`, `taker-volume` |
 | `HourlyCollectorService` | 1 hour | `mark-price`, `ls-ratio-top-positions` |
-| `LiquidationCollectorService` | 4 hours | `liquidations` |
+| `LiquidationStreamService` | WebSocket stream | `liquidations` |
 
-Each service iterates over all configured assets, checks which feeds are enabled, and collects data from the last known timestamp to now.
+The first 5 services extend `ScheduledCollectorService` (periodic timer or cron). Each iterates over all configured assets, checks which feeds are enabled, and collects data from the last known timestamp to now.
+
+`LiquidationStreamService` is a persistent WebSocket consumer that connects to Binance's `!forceOrder@arr` stream, filtering and writing events for configured symbols in real-time. It reconnects with exponential backoff (up to 10 attempts).
 
 ## Data Storage
 
@@ -41,6 +43,8 @@ History/
       candles/
         2024-01_1m.csv         # Monthly partitions with interval suffix
         2024-01_1d.csv
+      candle-ext/
+        2024-01_1m.csv         # Extended candle data (futures only)
       funding-rate/
         2024-01.csv            # No interval suffix (fixed 8h schedule)
       open-interest/
@@ -103,9 +107,16 @@ All configuration is in `appsettings.json` under the `HistoryLoader` section. Th
     "Binance": {
       "SpotBaseUrl": "https://api.binance.com",
       "FuturesBaseUrl": "https://fapi.binance.com",
+      "FuturesWsBaseUrl": "wss://fstream.binance.com",
       "MaxWeightPerMinute": 2400,
       "WeightBudgetPercent": 40,
       "RequestDelayMs": 50
+    },
+    "Schedules": {
+      "binance-funding-rate": {
+        "Cron": "1 0,8,16 * * *",
+        "TimeZone": "UTC"
+      }
     }
   }
 }
@@ -118,6 +129,8 @@ All configuration is in `appsettings.json` under the `HistoryLoader` section. Th
 | `CircuitBreakerCooldownMinutes` | 15 | Pause duration after HTTP 418 (IP ban) |
 | `WeightBudgetPercent` | 40 | Percentage of Binance rate limit to use (2400 weight/min) |
 | `RequestDelayMs` | 50 | Minimum delay between API requests |
+| `FuturesWsBaseUrl` | `wss://fstream.binance.com` | WebSocket base URL for liquidation stream |
+| `Schedules` | `{}` | Cron schedules for services (see Cron Schedules below) |
 
 ### Asset Configuration
 
@@ -155,6 +168,7 @@ Each asset entry defines a symbol, its market type, and which feeds to collect:
 | `Feeds[].Name` | Feed type (see Available Feeds below) |
 | `Feeds[].Interval` | Collection resolution. Empty string for event-based feeds |
 | `Feeds[].Enabled` | `true`/`false` (default: `true`). Disable without removing |
+| `Feeds[].HistoryStart` | Per-feed override for history start (auto-discovered if omitted) |
 | `Feeds[].GapThresholdMultiplier` | Gap detection sensitivity (default: `2.0`) |
 
 ## Adding a New Asset
@@ -231,6 +245,7 @@ The `Symbol` value in the backfill request uses the directory name convention: `
 | Feed Name | Interval | API Endpoint | Description |
 |-----------|----------|-------------|-------------|
 | `candles` | `1m`, `1d` | `/fapi/v1/klines` or `/api/v3/klines` | OHLCV price data |
+| `candle-ext` | `1m`, `1d` | (co-written with `candles`) | Extended candle data: quote vol, trade count, taker buy vol/quote (futures only) |
 | `mark-price` | `1h` | `/fapi/v1/markPriceKlines` | Mark price OHLC (futures only) |
 | `funding-rate` | `""` (8h events) | `/fapi/v1/fundingRate` | Funding rate + mark price at settlement |
 
@@ -246,11 +261,11 @@ These feeds have only 30 days of API history. The loader builds deep history by 
 | `ls-ratio-top-positions` | `1h` | `/futures/data/topLongShortPositionRatio` | Top trader position-weighted ratio |
 | `taker-volume` | `15m` | `/futures/data/takeBuySellVol` | Aggressive buy/sell volume (USD) |
 
-### Tier 3 — Very Limited History
+### Tier 3 — Streaming + Limited Backfill
 
-| Feed Name | Interval | API Endpoint | Description |
-|-----------|----------|-------------|-------------|
-| `liquidations` | `""` (events) | `/fapi/v1/allForceOrders` | Forced liquidation events (7-day API window) |
+| Feed Name | Interval | Source | Description |
+|-----------|----------|--------|-------------|
+| `liquidations` | `""` (events) | WebSocket `!forceOrder@arr` (live) / `/fapi/v1/allForceOrders` (backfill, 7-day window) | Forced liquidation events. Columns: `side` (1.0=long liq, -1.0=short liq), `price`, `qty`, `notional_usd` |
 
 ## Extending with a New Exchange
 
@@ -289,9 +304,13 @@ AlgoTradeForge.HistoryLoader.WebApi        # ASP.NET Core host + endpoints + bac
 
 - **Circuit breaker**: Automatically pauses all collection on HTTP 418 (Binance IP ban). Reset via API or wait for cooldown.
 - **Rate limiting**: `WeightedRateLimiter` tracks API weight budget. `WeightBudgetPercent` controls how much of Binance's 2400 weight/min limit to use.
+- **Write locking**: `WriteLockManager` prevents scheduled and backfill collections from writing to the same file simultaneously.
 - **Gap detection**: Monitors timestamp monotonicity. Non-monotonic jumps > `GapThresholdMultiplier × interval` are recorded in feed status.
 - **Feed status**: Per-feed state files track first/last timestamps, record counts, gaps, and health. Persisted alongside CSV data.
 - **Hot reload**: `IOptionsMonitor<HistoryLoaderOptions>` enables adding/removing assets without restarting the service.
+- **Date discovery**: When a feed's `HistoryStart` is too early (API returns HTTP 400 date-range error), `SymbolCollector` performs a binary search across months to find the earliest valid start date, then persists it back to `appsettings.json` via `ISettingsWriter`.
+- **Cron schedules**: Services can opt into cron-based scheduling (via `Cronos`) by overriding `ScheduleName`. Currently used by `FundingRateCollectorService` to align collection with Binance's 8-hour funding rate publication times.
+- **Retry**: `BinanceRetryHelper` retries on network errors, HTTP 429, and 5xx with exponential backoff (2s, 4s, 8s; max 3 retries). HTTP 418 trips the circuit breaker. HTTP 400 date-range errors trigger date discovery. Other 4xx errors skip the symbol.
 
 ## Monitoring
 
