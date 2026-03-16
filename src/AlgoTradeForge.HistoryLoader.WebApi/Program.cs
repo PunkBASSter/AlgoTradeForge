@@ -11,7 +11,14 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSerilog(cfg => cfg.ReadFrom.Configuration(builder.Configuration));
+builder.Host.UseWindowsService();
+builder.Host.UseSystemd();
+
+var logDir = Path.Combine(builder.Environment.ContentRootPath, "logs");
+builder.Services.AddSerilog(cfg => cfg
+    .ReadFrom.Configuration(builder.Configuration)
+    .WriteTo.File(Path.Combine(logDir, "history-loader-.log"),
+        rollingInterval: Serilog.RollingInterval.Day, shared: true));
 
 builder.Services.Configure<HistoryLoaderOptions>(
     builder.Configuration.GetSection("HistoryLoader"));
