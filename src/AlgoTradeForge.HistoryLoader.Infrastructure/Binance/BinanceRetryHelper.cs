@@ -23,41 +23,57 @@ internal static class BinanceRetryHelper
             await rateLimiter.AcquireAsync(weight, ct).ConfigureAwait(false);
             await Task.Delay(requestDelayMs, ct).ConfigureAwait(false);
 
-            using var response = await httpClient.GetAsync(url, ct).ConfigureAwait(false);
-
-            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            HttpResponseMessage response;
+            try
+            {
+                response = await httpClient.GetAsync(url, ct).ConfigureAwait(false);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode is null)
             {
                 if (attempt == MaxRetries)
-                    throw new HttpRequestException(
-                        $"Binance rate limit exceeded after {MaxRetries} retries (HTTP 429).");
+                    throw;
 
                 var backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
                 await Task.Delay(backoff, ct).ConfigureAwait(false);
                 continue;
             }
 
-            if (response.StatusCode == (HttpStatusCode)418)
-                throw new HttpRequestException("IP banned by Binance (HTTP 418).");
-
-            if ((int)response.StatusCode >= 500 && (int)response.StatusCode <= 599)
+            using (response)
             {
-                if (attempt == MaxRetries)
-                    throw new HttpRequestException(
-                        $"Binance server error after {MaxRetries} retries (HTTP {(int)response.StatusCode}).");
+                if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                {
+                    if (attempt == MaxRetries)
+                        throw new HttpRequestException(
+                            $"Binance rate limit exceeded after {MaxRetries} retries (HTTP 429).");
 
-                var backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
-                await Task.Delay(backoff, ct).ConfigureAwait(false);
-                continue;
+                    var backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
+                    await Task.Delay(backoff, ct).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (response.StatusCode == (HttpStatusCode)418)
+                    throw new HttpRequestException("IP banned by Binance (HTTP 418).");
+
+                if ((int)response.StatusCode >= 500 && (int)response.StatusCode <= 599)
+                {
+                    if (attempt == MaxRetries)
+                        throw new HttpRequestException(
+                            $"Binance server error after {MaxRetries} retries (HTTP {(int)response.StatusCode}).");
+
+                    var backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
+                    await Task.Delay(backoff, ct).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    throw ParseApiException(body, response.StatusCode);
+                }
+
+                var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                return parser(json);
             }
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                throw ParseApiException(body, response.StatusCode);
-            }
-
-            var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            return parser(json);
         }
 
         throw new InvalidOperationException("Unexpected state in FetchWithRetryAsync.");

@@ -326,7 +326,95 @@ public sealed class BinanceRetryHelperTests
     }
 
     // -------------------------------------------------------------------------
-    // 8. Cancellation is respected
+    // 8. Network-level error (StatusCode is null) → retries then succeeds
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_NetworkError_RetriesThenSucceeds()
+    {
+        int callCount = 0;
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ =>
+            {
+                callCount++;
+                if (callCount <= 2)
+                    throw new HttpRequestException("No such host is known.");
+                return Task.FromResult(FakeHttpHandler.JsonResponse("[7]"));
+            }
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var result = await BinanceRetryHelper.FetchWithRetryAsync(
+            httpClient, limiter, 0, "https://api.example.com/test", 1,
+            ParseInts, CancellationToken.None);
+
+        Assert.Equal([7], result);
+        Assert.Equal(3, callCount);
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. Network-level error exhausts retries → throws
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_NetworkError_ExhaustsRetries_Throws()
+    {
+        int callCount = 0;
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ =>
+            {
+                callCount++;
+                throw new HttpRequestException("DNS resolution failed.");
+            }
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.Null(ex.StatusCode);
+        Assert.Equal(4, callCount); // initial + 3 retries
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. HttpRequestException WITH StatusCode → not caught by network retry
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_HttpExceptionWithStatusCode_NotCaughtByNetworkRetry()
+    {
+        int callCount = 0;
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ =>
+            {
+                callCount++;
+                throw new HttpRequestException("Forbidden", inner: null, HttpStatusCode.Forbidden);
+            }
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.Equal(1, callCount); // no retry — exception has StatusCode
+        Assert.Equal(HttpStatusCode.Forbidden, ex.StatusCode);
+    }
+
+    // -------------------------------------------------------------------------
+    // 11. Cancellation is respected
     // -------------------------------------------------------------------------
 
     [Fact]
