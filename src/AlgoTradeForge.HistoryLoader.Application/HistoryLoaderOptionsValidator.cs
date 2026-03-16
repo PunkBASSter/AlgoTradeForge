@@ -1,4 +1,5 @@
 using AlgoTradeForge.HistoryLoader.Domain;
+using Cronos;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.Application;
@@ -37,6 +38,21 @@ public sealed class HistoryLoaderOptionsValidator : IValidateOptions<HistoryLoad
 
                 if (feed.HistoryStart is { } feedStart && feedStart > DateOnly.FromDateTime(DateTime.UtcNow))
                     failures.Add($"Asset {asset.Symbol}, feed {feed.Name}: HistoryStart must not be in the future.");
+            }
+        }
+
+        foreach (var (key, schedule) in options.Schedules)
+        {
+            try { CronExpression.Parse(schedule.Cron); }
+            catch (CronFormatException)
+            {
+                failures.Add($"Schedule '{key}': '{schedule.Cron}' is not a valid cron expression.");
+            }
+
+            try { TimeZoneInfo.FindSystemTimeZoneById(schedule.TimeZone); }
+            catch (TimeZoneNotFoundException)
+            {
+                failures.Add($"Schedule '{key}': TimeZone '{schedule.TimeZone}' is not valid.");
             }
         }
 

@@ -13,6 +13,7 @@ public sealed class HistoryLoaderOptions
     public int CircuitBreakerCooldownMinutes { get; init; } = 15;
     public BinanceOptions Binance { get; init; } = new();
     public List<AssetCollectionConfig> Assets { get; init; } = [];
+    public Dictionary<string, CollectionSchedule> Schedules { get; init; } = [];
 }
 
 public sealed class BinanceOptions
@@ -33,6 +34,15 @@ public sealed class AssetCollectionConfig
     public int DecimalDigits { get; init; } = 2;
     public DateOnly HistoryStart { get; init; } = new(2020, 1, 1);
     public List<FeedCollectionConfig> Feeds { get; init; } = [];
+}
+
+public sealed class CollectionSchedule
+{
+    /// <summary>Standard 5-field cron expression (e.g., "30 16 * * 1-5").</summary>
+    public required string Cron { get; init; }
+
+    /// <summary>IANA or Windows timezone ID. Defaults to UTC.</summary>
+    public string TimeZone { get; init; } = "UTC";
 }
 
 public sealed class FeedCollectionConfig

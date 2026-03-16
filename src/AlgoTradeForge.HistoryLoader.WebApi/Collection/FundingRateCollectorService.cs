@@ -16,4 +16,5 @@ internal sealed class FundingRateCollectorService(
     protected override TimeSpan Interval => TimeSpan.FromHours(8);
     protected override string ServiceName => "FundingRateCollectorService";
     protected override string[] CollectedFeedNames => [FeedNames.FundingRate];
+    protected override string? ScheduleName => "binance-funding-rate";
 }

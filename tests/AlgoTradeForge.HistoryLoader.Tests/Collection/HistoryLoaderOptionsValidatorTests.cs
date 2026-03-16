@@ -59,6 +59,47 @@ public sealed class HistoryLoaderOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_ValidSchedule_Succeeds()
+    {
+        var options = new HistoryLoaderOptions
+        {
+            Schedules = new() { ["daily"] = new() { Cron = "30 16 * * 1-5", TimeZone = "UTC" } }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public void Validate_InvalidCron_Fails()
+    {
+        var options = new HistoryLoaderOptions
+        {
+            Schedules = new() { ["bad"] = new() { Cron = "not a cron", TimeZone = "UTC" } }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains("cron", result.FailureMessage);
+    }
+
+    [Fact]
+    public void Validate_InvalidTimeZone_Fails()
+    {
+        var options = new HistoryLoaderOptions
+        {
+            Schedules = new() { ["tz"] = new() { Cron = "0 0 * * *", TimeZone = "Mars/Olympus" } }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains("TimeZone", result.FailureMessage);
+    }
+
+    [Fact]
     public void Validate_FeedHistoryStartInFuture_Fails()
     {
         var options = new HistoryLoaderOptions

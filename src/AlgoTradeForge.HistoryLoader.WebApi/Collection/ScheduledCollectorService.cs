@@ -1,6 +1,7 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
+using Cronos;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -17,10 +18,34 @@ internal abstract class ScheduledCollectorService(
     protected abstract string[] CollectedFeedNames { get; }
     protected virtual bool FuturesOnly => true;
 
+    /// <summary>
+    /// Optional schedule name from HistoryLoaderOptions.Schedules.
+    /// Null (default) = 24/7 PeriodicTimer mode.
+    /// </summary>
+    protected virtual string? ScheduleName => null;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("{ServiceName} started", ServiceName);
 
+        if (ScheduleName is { } name
+            && options.CurrentValue.Schedules.TryGetValue(name, out var schedule))
+        {
+            await ExecuteCronAsync(schedule, stoppingToken);
+        }
+        else
+        {
+            if (ScheduleName is not null)
+                logger.LogWarning(
+                    "{ServiceName}: schedule '{Schedule}' not found, falling back to periodic",
+                    ServiceName, ScheduleName);
+
+            await ExecutePeriodicAsync(stoppingToken);
+        }
+    }
+
+    private async Task ExecutePeriodicAsync(CancellationToken stoppingToken)
+    {
         using var timer = new PeriodicTimer(Interval);
 
         do
@@ -45,6 +70,46 @@ internal abstract class ScheduledCollectorService(
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    private async Task ExecuteCronAsync(CollectionSchedule schedule, CancellationToken ct)
+    {
+        var cron = CronExpression.Parse(schedule.Cron);
+        var tz = TimeZoneInfo.FindSystemTimeZoneById(schedule.TimeZone);
+
+        while (!ct.IsCancellationRequested)
+        {
+            var utcNow = DateTime.UtcNow;
+            var next = cron.GetNextOccurrence(utcNow, tz);
+
+            if (next is null)
+            {
+                logger.LogWarning("{ServiceName}: no future cron occurrence, stopping", ServiceName);
+                return;
+            }
+
+            var delay = next.Value - utcNow;
+            logger.LogInformation(
+                "{ServiceName}: next run at {NextUtc:u} (in {Delay})",
+                ServiceName, next.Value, delay);
+
+            await Task.Delay(delay, ct);
+
+            if (circuitBreaker.IsTripped)
+            {
+                logger.LogWarning("{ServiceName}: circuit breaker tripped, skipping this run", ServiceName);
+                continue;
+            }
+
+            try
+            {
+                await CollectCycleAsync(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "{ServiceName} cycle failed", ServiceName);
+            }
+        }
     }
 
     private async Task CollectCycleAsync(CancellationToken ct)
