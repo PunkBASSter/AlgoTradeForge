@@ -1,0 +1,438 @@
+using System.Net;
+using System.Text;
+using AlgoTradeForge.HistoryLoader.Application;
+using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
+using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
+using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
+using Xunit;
+
+namespace AlgoTradeForge.HistoryLoader.Tests.Binance;
+
+public sealed class BinanceRetryHelperTests
+{
+    private static SourceRateLimiter BuildLimiter() =>
+        new(new WeightedRateLimiter(maxWeightPerMinute: 2400, budgetPercent: 100));
+
+    private static int[] ParseInts(string json) =>
+        System.Text.Json.JsonSerializer.Deserialize<int[]>(json)!;
+
+    // -------------------------------------------------------------------------
+    // 1. Success on first attempt
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Success_ReturnsData()
+    {
+        int callCount = 0;
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ =>
+            {
+                callCount++;
+                return Task.FromResult(FakeHttpHandler.JsonResponse("[1,2,3]"));
+            }
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var result = await BinanceRetryHelper.FetchWithRetryAsync(
+            httpClient, limiter, 0, "https://api.example.com/test", 1,
+            ParseInts, CancellationToken.None);
+
+        Assert.Equal([1, 2, 3], result);
+        Assert.Equal(1, callCount);
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. HTTP 429 → retries then succeeds
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http429_RetriesThenSucceeds()
+    {
+        int callCount = 0;
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ =>
+            {
+                callCount++;
+                if (callCount <= 2)
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+                return Task.FromResult(FakeHttpHandler.JsonResponse("[42]"));
+            }
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var result = await BinanceRetryHelper.FetchWithRetryAsync(
+            httpClient, limiter, 0, "https://api.example.com/test", 1,
+            ParseInts, CancellationToken.None);
+
+        Assert.Equal([42], result);
+        Assert.Equal(3, callCount);
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. HTTP 429 exhausts retries → throws
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http429_ExhaustsRetries_Throws()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests))
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. HTTP 418 → throws immediately without retry
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http418_ThrowsImmediately()
+    {
+        int callCount = 0;
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ =>
+            {
+                callCount++;
+                return Task.FromResult(new HttpResponseMessage((HttpStatusCode)418));
+            }
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.Equal(1, callCount);
+        Assert.Contains("418", ex.Message);
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. HTTP 5xx → retries then succeeds
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http500_RetriesThenSucceeds()
+    {
+        int callCount = 0;
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ =>
+            {
+                callCount++;
+                if (callCount == 1)
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError));
+                return Task.FromResult(FakeHttpHandler.JsonResponse("[99]"));
+            }
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var result = await BinanceRetryHelper.FetchWithRetryAsync(
+            httpClient, limiter, 0, "https://api.example.com/test", 1,
+            ParseInts, CancellationToken.None);
+
+        Assert.Equal([99], result);
+        Assert.Equal(2, callCount);
+    }
+
+    // -------------------------------------------------------------------------
+    // 6. HTTP 5xx exhausts retries → throws
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http500_ExhaustsRetries_Throws()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError))
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. HTTP 400 with JSON body → throws DataSourceApiException
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http400_WithJsonBody_ThrowsDataSourceApiException()
+    {
+        int callCount = 0;
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ =>
+            {
+                callCount++;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(
+                        """{"code":-1,"msg":"Invalid period."}""",
+                        Encoding.UTF8, "application/json")
+                });
+            }
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<DataSourceApiException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.Equal(1, callCount);
+        Assert.Equal(-1, ex.ApiErrorCode);
+        Assert.Equal("Invalid period.", ex.ApiErrorMessage);
+        Assert.True(ex.IsDateRangeError);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7b. HTTP 400 with startTime message → IsDateRangeError
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http400_StartTimeInvalid_IsDateRangeError()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"code":-1130,"msg":"parameter 'startTime' is invalid."}""",
+                    Encoding.UTF8, "application/json")
+            })
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<DataSourceApiException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.Equal(-1130, ex.ApiErrorCode);
+        Assert.True(ex.IsDateRangeError);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7c. HTTP 400 with non-date message → not IsDateRangeError
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http400_InvalidSymbol_NotDateRangeError()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"code":-1121,"msg":"Invalid symbol."}""",
+                    Encoding.UTF8, "application/json")
+            })
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<DataSourceApiException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.Equal(-1121, ex.ApiErrorCode);
+        Assert.False(ex.IsDateRangeError);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7d. HTTP 400 with endpoint maintenance message → not IsDateRangeError
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http400_EndpointMaintenance_NotDateRangeError()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"code":-1,"msg":"The endpoint has been out of maintenance"}""",
+                    Encoding.UTF8, "application/json")
+            })
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<DataSourceApiException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.Equal(-1, ex.ApiErrorCode);
+        Assert.False(ex.IsDateRangeError);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7c. HTTP 400 with non-JSON body → plain HttpRequestException
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Http400_NonJsonBody_ThrowsHttpRequestException()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("Bad Request", Encoding.UTF8, "text/plain")
+            })
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.IsNotType<DataSourceApiException>(ex);
+        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. Network-level error (StatusCode is null) → retries then succeeds
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_NetworkError_RetriesThenSucceeds()
+    {
+        int callCount = 0;
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ =>
+            {
+                callCount++;
+                if (callCount <= 2)
+                    throw new HttpRequestException("No such host is known.");
+                return Task.FromResult(FakeHttpHandler.JsonResponse("[7]"));
+            }
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var result = await BinanceRetryHelper.FetchWithRetryAsync(
+            httpClient, limiter, 0, "https://api.example.com/test", 1,
+            ParseInts, CancellationToken.None);
+
+        Assert.Equal([7], result);
+        Assert.Equal(3, callCount);
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. Network-level error exhausts retries → throws
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_NetworkError_ExhaustsRetries_Throws()
+    {
+        int callCount = 0;
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ =>
+            {
+                callCount++;
+                throw new HttpRequestException("DNS resolution failed.");
+            }
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.Null(ex.StatusCode);
+        Assert.Equal(4, callCount); // initial + 3 retries
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. HttpRequestException WITH StatusCode → not caught by network retry
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_HttpExceptionWithStatusCode_NotCaughtByNetworkRetry()
+    {
+        int callCount = 0;
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ =>
+            {
+                callCount++;
+                throw new HttpRequestException("Forbidden", inner: null, HttpStatusCode.Forbidden);
+            }
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, CancellationToken.None));
+
+        Assert.Equal(1, callCount); // no retry — exception has StatusCode
+        Assert.Equal(HttpStatusCode.Forbidden, ex.StatusCode);
+    }
+
+    // -------------------------------------------------------------------------
+    // 11. Cancellation is respected
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FetchWithRetryAsync_Cancellation_Throws()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Handler = _ => Task.FromResult(FakeHttpHandler.JsonResponse("[1]"))
+        };
+
+        using var httpClient = new HttpClient(handler);
+        var limiter = BuildLimiter();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            BinanceRetryHelper.FetchWithRetryAsync(
+                httpClient, limiter, 0, "https://api.example.com/test", 1,
+                ParseInts, cts.Token));
+    }
+}

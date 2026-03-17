@@ -8,7 +8,8 @@
 - Documentation hooks (continuous readme/constitution/claude.md updates)
 
 ## Candle Ingestor -> HistoryLoader
-@docs\history-loader-project.md
+history-loader-project.md - DONE
+### Stocks+futures IB support for history loader and live connector
 
 ## Strategy development
 - Add another strategy to the framework, maybe a simple mean reversion for trading in ranges

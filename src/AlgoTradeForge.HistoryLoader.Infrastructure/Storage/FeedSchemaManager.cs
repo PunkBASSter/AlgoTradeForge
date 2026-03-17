@@ -1,0 +1,111 @@
+using System.Text.Json;
+using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+
+namespace AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+
+internal sealed class FeedSchemaManager : ISchemaManager
+{
+    private readonly Lock _lock = new();
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    public FeedMetadata? Load(string assetDir)
+    {
+        var path = FeedsJsonPath(assetDir);
+        if (!File.Exists(path))
+            return null;
+
+        var json = File.ReadAllText(path);
+        return JsonSerializer.Deserialize<FeedMetadata>(json, JsonOptions);
+    }
+
+    public void EnsureSchema(
+        string assetDir,
+        string feedName,
+        string interval,
+        string[] columns,
+        AutoApplySpec? autoApply = null)
+    {
+        lock (_lock)
+        {
+            var existing = Load(assetDir) ?? new FeedMetadata();
+
+            // Map AutoApplySpec → AutoApplyDefinition
+            AutoApplyDefinition? autoApplyDef = autoApply is not null
+                ? new AutoApplyDefinition
+                {
+                    Type = autoApply.Type,
+                    RateColumn = autoApply.RateColumn,
+                    SignConvention = autoApply.SignConvention,
+                }
+                : null;
+
+            var updatedFeeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
+            {
+                [feedName] = new FeedDefinition
+                {
+                    Interval  = interval,
+                    Columns   = columns,
+                    AutoApply = autoApplyDef,
+                }
+            };
+
+            var updated = new FeedMetadata
+            {
+                Feeds   = updatedFeeds,
+                Candles = existing.Candles,
+            };
+
+            AtomicWrite(assetDir, updated);
+        }
+    }
+
+    public void EnsureCandleConfig(string assetDir, int decimalDigits, string interval)
+    {
+        lock (_lock)
+        {
+            var existing = Load(assetDir) ?? new FeedMetadata();
+
+            var scaleFactor = (decimal)Math.Pow(10, decimalDigits);
+
+            var existingIntervals = existing.Candles?.Intervals ?? [];
+            var updatedIntervals  = existingIntervals.Contains(interval)
+                ? existingIntervals
+                : [..existingIntervals, interval];
+
+            var updated = new FeedMetadata
+            {
+                Feeds   = existing.Feeds,
+                Candles = new CandleConfig
+                {
+                    ScaleFactor = scaleFactor,
+                    Intervals   = updatedIntervals,
+                },
+            };
+
+            AtomicWrite(assetDir, updated);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+
+    private static string FeedsJsonPath(string assetDir) =>
+        Path.Combine(assetDir, "feeds.json");
+
+    private static void AtomicWrite(string assetDir, FeedMetadata metadata)
+    {
+        Directory.CreateDirectory(assetDir);
+
+        var targetPath = FeedsJsonPath(assetDir);
+        var tmpPath    = targetPath + ".tmp";
+
+        var json = JsonSerializer.Serialize(metadata, JsonOptions);
+        File.WriteAllText(tmpPath, json);
+        File.Move(tmpPath, targetPath, overwrite: true);
+    }
+}

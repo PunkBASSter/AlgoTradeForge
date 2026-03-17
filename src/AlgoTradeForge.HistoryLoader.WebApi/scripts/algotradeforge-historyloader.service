@@ -1,0 +1,32 @@
+# systemd unit file for AlgoTradeForge HistoryLoader
+#
+# Install:
+#   1. dotnet publish -c Release -o /opt/algotradeforge/historyloader
+#   2. sudo cp algotradeforge-historyloader.service /etc/systemd/system/
+#   3. sudo useradd -r -s /usr/sbin/nologin algotradeforge  (if not exists)
+#   4. sudo chown -R algotradeforge:algotradeforge /opt/algotradeforge
+#   5. sudo systemctl daemon-reload
+#   6. sudo systemctl enable --now algotradeforge-historyloader
+
+[Unit]
+Description=AlgoTradeForge History Loader
+Documentation=https://github.com/your-org/AlgoTradeForge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+WorkingDirectory=/opt/algotradeforge/historyloader
+ExecStart=/opt/algotradeforge/historyloader/AlgoTradeForge.HistoryLoader.WebApi
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_ROOT=/usr/share/dotnet
+User=algotradeforge
+Group=algotradeforge
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGINT
+TimeoutStopSec=30
+SyslogIdentifier=algotradeforge-historyloader
+
+[Install]
+WantedBy=multi-user.target
