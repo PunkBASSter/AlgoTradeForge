@@ -42,17 +42,17 @@ public class GatingDebugProbeTests
             TaskCreationOptions.LongRunning);
 
         // Step through each bar
-        var snap1 = await probe.SendCommandAsync(new DebugCommand.NextBar());
+        var snap1 = await probe.SendCommandAsync(new DebugCommand.NextBar(), TestContext.Current.CancellationToken);
         Assert.Equal(1, snap1.SequenceNumber);
 
-        var snap2 = await probe.SendCommandAsync(new DebugCommand.NextBar());
+        var snap2 = await probe.SendCommandAsync(new DebugCommand.NextBar(), TestContext.Current.CancellationToken);
         Assert.Equal(2, snap2.SequenceNumber);
 
-        var snap3 = await probe.SendCommandAsync(new DebugCommand.NextBar());
+        var snap3 = await probe.SendCommandAsync(new DebugCommand.NextBar(), TestContext.Current.CancellationToken);
         Assert.Equal(3, snap3.SequenceNumber);
 
         // Continue to finish
-        await probe.SendCommandAsync(new DebugCommand.Continue());
+        await probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
         var result = await engineTask;
 
         Assert.Equal(5, result.TotalBarsProcessed);
@@ -73,7 +73,7 @@ public class GatingDebugProbeTests
             TaskCreationOptions.LongRunning);
 
         // Send continue — engine runs to completion
-        await probe.SendCommandAsync(new DebugCommand.Continue());
+        await probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
         var result = await engineTask;
 
         Assert.Equal(10, result.TotalBarsProcessed);
@@ -97,11 +97,11 @@ public class GatingDebugProbeTests
             TaskCreationOptions.LongRunning);
 
         // Next should skip non-exportable (sub 0) and land on exportable (sub 1)
-        var snap = await probe.SendCommandAsync(new DebugCommand.Next());
+        var snap = await probe.SendCommandAsync(new DebugCommand.Next(), TestContext.Current.CancellationToken);
         Assert.True(snap.IsExportableSubscription);
         Assert.Equal(1, snap.SubscriptionIndex);
 
-        await probe.SendCommandAsync(new DebugCommand.Continue());
+        await probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
         await engineTask;
     }
 
@@ -121,11 +121,11 @@ public class GatingDebugProbeTests
             TaskCreationOptions.LongRunning);
 
         // NextTrade should skip bars without fills and land on bar 2 (where the fill happens)
-        var snap = await probe.SendCommandAsync(new DebugCommand.NextTrade());
+        var snap = await probe.SendCommandAsync(new DebugCommand.NextTrade(), TestContext.Current.CancellationToken);
         Assert.True(snap.FillsThisBar > 0);
         Assert.Equal(2, snap.SequenceNumber); // bar index 1 (0-based) = sequence 2
 
-        await probe.SendCommandAsync(new DebugCommand.Continue());
+        await probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
         await engineTask;
     }
 
@@ -143,12 +143,12 @@ public class GatingDebugProbeTests
             () => CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe),
             TaskCreationOptions.LongRunning);
 
-        var snap = await probe.SendCommandAsync(new DebugCommand.RunToSequence(5));
+        var snap = await probe.SendCommandAsync(new DebugCommand.RunToSequence(5), TestContext.Current.CancellationToken);
         Assert.Equal(5, snap.SequenceNumber);
 
         Assert.True(probe.IsRunning);
 
-        await probe.SendCommandAsync(new DebugCommand.Continue());
+        await probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
         await engineTask;
     }
 
@@ -167,10 +167,10 @@ public class GatingDebugProbeTests
             TaskCreationOptions.LongRunning);
 
         var targetMs = Start.AddMinutes(4).ToUnixTimeMilliseconds();
-        var snap = await probe.SendCommandAsync(new DebugCommand.RunToTimestamp(targetMs));
+        var snap = await probe.SendCommandAsync(new DebugCommand.RunToTimestamp(targetMs), TestContext.Current.CancellationToken);
         Assert.Equal(targetMs, snap.TimestampMs);
 
-        await probe.SendCommandAsync(new DebugCommand.Continue());
+        await probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
         await engineTask;
     }
 
@@ -202,13 +202,13 @@ public class GatingDebugProbeTests
             TaskCreationOptions.LongRunning);
 
         // Start running
-        _ = probe.SendCommandAsync(new DebugCommand.Continue());
+        _ = probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
 
         // Wait until engine is mid-run (at bar 5)
-        midRunSignal.Wait();
+        midRunSignal.Wait(TestContext.Current.CancellationToken);
 
         // Send Pause while engine is blocked at bar 5's OnBarComplete
-        var pauseTask = probe.SendCommandAsync(new DebugCommand.Pause());
+        var pauseTask = probe.SendCommandAsync(new DebugCommand.Pause(), TestContext.Current.CancellationToken);
 
         // Release the engine — it will process bar 5's probe call and should pause
         pauseGate.Set();
@@ -218,7 +218,7 @@ public class GatingDebugProbeTests
         Assert.True(snap.SequenceNumber <= 20);
         Assert.True(probe.IsRunning);
 
-        await probe.SendCommandAsync(new DebugCommand.Continue());
+        await probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
         var result = await engineTask;
 
         Assert.Equal(20, result.TotalBarsProcessed);
@@ -260,13 +260,13 @@ public class GatingDebugProbeTests
             () => CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe),
             TaskCreationOptions.LongRunning);
 
-        await probe.SendCommandAsync(new DebugCommand.Continue());
+        await probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
         await engineTask;
 
         Assert.False(probe.IsRunning);
 
         // Sending another command after completion should not block
-        var snap = await probe.SendCommandAsync(new DebugCommand.NextBar());
+        var snap = await probe.SendCommandAsync(new DebugCommand.NextBar(), TestContext.Current.CancellationToken);
         Assert.Equal(3, snap.SequenceNumber);
         Assert.Equal(Start.AddMinutes(2).ToUnixTimeMilliseconds(), snap.TimestampMs);
     }
@@ -299,14 +299,14 @@ public class GatingDebugProbeTests
 
         // Send NextTrade — engine processes bars looking for a fill (none will happen)
         // so the command stays pending while the engine runs
-        var firstCmd = probe.SendCommandAsync(new DebugCommand.NextTrade());
+        var firstCmd = probe.SendCommandAsync(new DebugCommand.NextTrade(), TestContext.Current.CancellationToken);
 
         // Wait until the engine is running and blocked at bar 3
         await reachedGate.Task;
 
         // Second concurrent command should throw
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => probe.SendCommandAsync(new DebugCommand.NextBar()));
+            () => probe.SendCommandAsync(new DebugCommand.NextBar(), TestContext.Current.CancellationToken));
 
         // Cleanup: release gate, then continue
         gate.Set();
@@ -343,7 +343,7 @@ public class GatingDebugProbeTests
             TaskCreationOptions.LongRunning);
 
         // Step to bar 1 first
-        var snap1 = await probe.SendCommandAsync(new DebugCommand.NextBar());
+        var snap1 = await probe.SendCommandAsync(new DebugCommand.NextBar(), TestContext.Current.CancellationToken);
         Assert.Equal(1, snap1.SequenceNumber);
 
         // Now send NextTrade with a cancellation token
@@ -379,15 +379,15 @@ public class GatingDebugProbeTests
             TaskCreationOptions.LongRunning);
 
         // Step to bar 5
-        var snap = await probe.SendCommandAsync(new DebugCommand.RunToSequence(5));
+        var snap = await probe.SendCommandAsync(new DebugCommand.RunToSequence(5), TestContext.Current.CancellationToken);
         Assert.Equal(5, snap.SequenceNumber);
 
         // Now run to sequence 3 — already past, should break on very next bar (6)
-        var snap2 = await probe.SendCommandAsync(new DebugCommand.RunToSequence(3));
+        var snap2 = await probe.SendCommandAsync(new DebugCommand.RunToSequence(3), TestContext.Current.CancellationToken);
         Assert.Equal(6, snap2.SequenceNumber);
         Assert.True(snap2.SequenceNumber >= 3); // condition satisfied immediately
 
-        await probe.SendCommandAsync(new DebugCommand.Continue());
+        await probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
         await engineTask;
     }
 
@@ -431,11 +431,11 @@ public class GatingDebugProbeTests
             TaskCreationOptions.LongRunning);
 
         // next_type("ord.fill") — should pause when the ord.fill event is emitted
-        _ = await probe.SendCommandAsync(new DebugCommand.NextType("ord.fill"));
+        _ = await probe.SendCommandAsync(new DebugCommand.NextType("ord.fill"), TestContext.Current.CancellationToken);
         // The engine paused at event emission, before OnBarProcessed for that bar
         Assert.True(probe.IsRunning);
 
-        await probe.SendCommandAsync(new DebugCommand.Continue());
+        await probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
         var result = await engineTask;
         Assert.Equal(5, result.TotalBarsProcessed);
     }
@@ -457,10 +457,10 @@ public class GatingDebugProbeTests
             TaskCreationOptions.LongRunning);
 
         // next_signal — should pause when the sig event is emitted
-        _ = await probe.SendCommandAsync(new DebugCommand.NextSignal());
+        _ = await probe.SendCommandAsync(new DebugCommand.NextSignal(), TestContext.Current.CancellationToken);
         Assert.True(probe.IsRunning);
 
-        await probe.SendCommandAsync(new DebugCommand.Continue());
+        await probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
         var result = await engineTask;
         Assert.Equal(5, result.TotalBarsProcessed);
     }
@@ -482,13 +482,13 @@ public class GatingDebugProbeTests
             TaskCreationOptions.LongRunning);
 
         // Bar-level NextBar still works
-        var snap1 = await probe.SendCommandAsync(new DebugCommand.NextBar());
+        var snap1 = await probe.SendCommandAsync(new DebugCommand.NextBar(), TestContext.Current.CancellationToken);
         Assert.Equal(1, snap1.SequenceNumber);
 
-        var snap2 = await probe.SendCommandAsync(new DebugCommand.NextBar());
+        var snap2 = await probe.SendCommandAsync(new DebugCommand.NextBar(), TestContext.Current.CancellationToken);
         Assert.Equal(2, snap2.SequenceNumber);
 
-        await probe.SendCommandAsync(new DebugCommand.Continue());
+        await probe.SendCommandAsync(new DebugCommand.Continue(), TestContext.Current.CancellationToken);
         var result = await engineTask;
         Assert.Equal(5, result.TotalBarsProcessed);
     }

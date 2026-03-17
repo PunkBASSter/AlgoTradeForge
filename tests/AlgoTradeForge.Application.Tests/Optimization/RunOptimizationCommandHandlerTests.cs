@@ -110,11 +110,11 @@ public class RunOptimizationCommandHandlerTests
 
         var existingId = Guid.NewGuid();
         var runKey = RunKeyBuilder.Build(command);
-        await _progressCache.SetRunKeyAsync(runKey, existingId);
-        await _progressCache.SetProgressAsync(existingId, 1, 3);
+        await _progressCache.SetRunKeyAsync(runKey, existingId, TestContext.Current.CancellationToken);
+        await _progressCache.SetProgressAsync(existingId, 1, 3, TestContext.Current.CancellationToken);
 
         // Act
-        var result = await handler.HandleAsync(command);
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(existingId, result.Id);
@@ -129,7 +129,7 @@ public class RunOptimizationCommandHandlerTests
         var command = CreateCommand();
 
         // Act
-        var result = await handler.HandleAsync(command);
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(3, result.TotalCombinations);
@@ -145,15 +145,15 @@ public class RunOptimizationCommandHandlerTests
         var command = CreateCommand();
 
         // Act
-        var result = await handler.HandleAsync(command);
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
-        var progress = await _progressCache.GetProgressAsync(result.Id);
+        var progress = await _progressCache.GetProgressAsync(result.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(progress);
         Assert.Equal(3, progress.Value.Total);
 
         var runKey = RunKeyBuilder.Build(command);
-        var mappedId = await _progressCache.TryGetRunIdByKeyAsync(runKey);
+        var mappedId = await _progressCache.TryGetRunIdByKeyAsync(runKey, TestContext.Current.CancellationToken);
         Assert.Equal(result.Id, mappedId);
     }
 
@@ -166,7 +166,7 @@ public class RunOptimizationCommandHandlerTests
         var command = CreateCommand();
 
         // Act & Assert
-        await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command));
+        await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public class RunOptimizationCommandHandlerTests
         var command = CreateCommand() with { DataSubscriptions = [] };
 
         // Act & Assert
-        await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command));
+        await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -190,7 +190,7 @@ public class RunOptimizationCommandHandlerTests
         var command = CreateCommand() with { MaxCombinations = 100_000 };
 
         // Act & Assert
-        await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command));
+        await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -203,11 +203,11 @@ public class RunOptimizationCommandHandlerTests
 
         var staleId = Guid.NewGuid();
         var runKey = RunKeyBuilder.Build(command);
-        await _progressCache.SetRunKeyAsync(runKey, staleId);
+        await _progressCache.SetRunKeyAsync(runKey, staleId, TestContext.Current.CancellationToken);
         // No progress entry for staleId — stale mapping
 
         // Act
-        var result = await handler.HandleAsync(command);
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotEqual(staleId, result.Id);

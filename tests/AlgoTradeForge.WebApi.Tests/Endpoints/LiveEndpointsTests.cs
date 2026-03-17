@@ -19,10 +19,10 @@ public class LiveEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task ListSessions_Empty_ReturnsOk()
     {
-        var response = await _client.GetAsync("/api/live/sessions");
+        var response = await _client.GetAsync("/api/live/sessions", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         var result = JsonSerializer.Deserialize<LiveSessionListResponse>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         Assert.NotNull(result);
         Assert.Empty(result.Sessions);
@@ -31,7 +31,7 @@ public class LiveEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task GetSession_NonExistent_Returns404()
     {
-        var response = await _client.GetAsync($"/api/live/sessions/{Guid.NewGuid()}");
+        var response = await _client.GetAsync($"/api/live/sessions/{Guid.NewGuid()}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -39,7 +39,7 @@ public class LiveEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task StopSession_NonExistent_Returns404()
     {
-        var response = await _client.DeleteAsync($"/api/live/sessions/{Guid.NewGuid()}");
+        var response = await _client.DeleteAsync($"/api/live/sessions/{Guid.NewGuid()}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -54,7 +54,7 @@ public class LiveEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
             AccountName = "paper",
         };
 
-        var response = await _client.PostAsJsonAsync("/api/live/sessions", request);
+        var response = await _client.PostAsJsonAsync("/api/live/sessions", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -70,7 +70,7 @@ public class LiveEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
             AccountName = "paper",
         };
 
-        var response = await _client.PostAsJsonAsync("/api/live/sessions", request);
+        var response = await _client.PostAsJsonAsync("/api/live/sessions", request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

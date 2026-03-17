@@ -69,8 +69,8 @@ public sealed class BinanceFuturesClientLiquidationTests
 
         var client = BuildClient(handler);
         var records = await client
-            .FetchLiquidationsAsync("BTCUSDT", 1_700_000_000_000L, 1_700_000_600_000L, CancellationToken.None)
-            .ToListAsync();
+            .FetchLiquidationsAsync("BTCUSDT", 1_700_000_000_000L, 1_700_000_600_000L, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Single(records);
         var record = records[0];
@@ -100,8 +100,8 @@ public sealed class BinanceFuturesClientLiquidationTests
 
         var client = BuildClient(handler);
         var records = await client
-            .FetchLiquidationsAsync("BTCUSDT", 1_700_000_000_000L, 1_700_000_600_000L, CancellationToken.None)
-            .ToListAsync();
+            .FetchLiquidationsAsync("BTCUSDT", 1_700_000_000_000L, 1_700_000_600_000L, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Single(records);
         var record = records[0];
@@ -131,8 +131,8 @@ public sealed class BinanceFuturesClientLiquidationTests
 
         var client = BuildClient(handler);
         var records = await client
-            .FetchLiquidationsAsync("BTCUSDT", 1_700_000_000_000L, 1_700_000_600_000L, CancellationToken.None)
-            .ToListAsync();
+            .FetchLiquidationsAsync("BTCUSDT", 1_700_000_000_000L, 1_700_000_600_000L, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, records.Count);
 
@@ -171,8 +171,8 @@ public sealed class BinanceFuturesClientLiquidationTests
 
         var client = BuildClient(handler);
         await client
-            .FetchLiquidationsAsync("BTCUSDT", 1_700_000_000_000L, 1_700_000_600_000L, CancellationToken.None)
-            .ToListAsync();
+            .FetchLiquidationsAsync("BTCUSDT", 1_700_000_000_000L, 1_700_000_600_000L, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.NotNull(capturedUrl);
         Assert.Contains("/fapi/v1/allForceOrders", capturedUrl);
@@ -196,8 +196,8 @@ public sealed class BinanceFuturesClientLiquidationTests
 
         var client = BuildClient(handler);
         var records = await client
-            .FetchLiquidationsAsync("BTCUSDT", 1_700_000_000_000L, 1_700_000_600_000L, CancellationToken.None)
-            .ToListAsync();
+            .FetchLiquidationsAsync("BTCUSDT", 1_700_000_000_000L, 1_700_000_600_000L, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(records);
     }
@@ -248,8 +248,8 @@ public sealed class BinanceFuturesClientLiquidationTests
         var client = BuildClient(handler);
         long endMs = 1_700_000_000_000L + 2000 * 1000L;
         var records = await client
-            .FetchLiquidationsAsync("BTCUSDT", 1_700_000_000_000L, endMs, CancellationToken.None)
-            .ToListAsync();
+            .FetchLiquidationsAsync("BTCUSDT", 1_700_000_000_000L, endMs, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, requestCount);
         Assert.Equal(1002, records.Count);

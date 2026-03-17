@@ -48,10 +48,10 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
         var (_, submission) = await SubmitBacktestAsync(request);
         await PollBacktestUntilDoneAsync(submission.Id, TimeSpan.FromSeconds(60));
 
-        var response = await Client.GetAsync($"/api/backtests/{submission.Id}");
+        var response = await Client.GetAsync($"/api/backtests/{submission.Id}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var body = await response.Content.ReadFromJsonAsync<BacktestRunResponse>(Json);
+        var body = await response.Content.ReadFromJsonAsync<BacktestRunResponse>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(body);
         Assert.Equal(submission.Id, body.Id);
         Assert.Equal("Backtest", body.RunMode);
@@ -61,7 +61,7 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     public async Task GetEquity_AfterCompletion_ReturnsNonEmptyCurve()
     {
         // Delay to avoid event log folder timestamp collision with concurrent background runs
-        await Task.Delay(1100);
+        await Task.Delay(1100, TestContext.Current.CancellationToken);
 
         var request = MakeBacktestRequest(
             startTime: new DateTimeOffset(2025, 1, 5, 0, 0, 0, TimeSpan.Zero),
@@ -71,10 +71,10 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
 
         Assert.True(status.TotalBars > 0, $"Expected TotalBars > 0 but backtest may have failed");
 
-        var response = await Client.GetAsync($"/api/backtests/{submission.Id}/equity");
+        var response = await Client.GetAsync($"/api/backtests/{submission.Id}/equity", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var raw = await response.Content.ReadAsStringAsync();
+        var raw = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         using var doc = JsonDocument.Parse(raw);
         Assert.True(doc.RootElement.GetArrayLength() > 0, "Expected non-empty equity curve");
     }
@@ -86,10 +86,10 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
         var (_, submission) = await SubmitBacktestAsync(request);
         await PollBacktestUntilDoneAsync(submission.Id, TimeSpan.FromSeconds(60));
 
-        var response = await Client.GetAsync("/api/backtests");
+        var response = await Client.GetAsync("/api/backtests", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var paged = await response.Content.ReadFromJsonAsync<PagedResponse<BacktestRunResponse>>(Json);
+        var paged = await response.Content.ReadFromJsonAsync<PagedResponse<BacktestRunResponse>>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(paged);
         Assert.True(paged.Items.Count > 0);
         Assert.Contains(paged.Items, i => i.Id == submission.Id);
@@ -106,10 +106,10 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
         var (_, submission) = await SubmitBacktestAsync(request);
         await PollBacktestUntilDoneAsync(submission.Id, TimeSpan.FromSeconds(60));
 
-        var response = await Client.GetAsync($"/api/backtests?{queryString}");
+        var response = await Client.GetAsync($"/api/backtests?{queryString}", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var paged = await response.Content.ReadFromJsonAsync<PagedResponse<BacktestRunResponse>>(Json);
+        var paged = await response.Content.ReadFromJsonAsync<PagedResponse<BacktestRunResponse>>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(paged);
         if (expectResults)
             Assert.True(paged.Items.Count > 0);
@@ -126,7 +126,7 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     {
         var request = MakeBacktestRequest(timeFrame: badTimeFrame);
 
-        var response = await Client.PostAsJsonAsync("/api/backtests", request, Json);
+        var response = await Client.PostAsJsonAsync("/api/backtests", request, Json, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -136,7 +136,7 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     {
         var request = MakeBacktestRequest(strategyName: "NonExistentStrategy");
 
-        var response = await Client.PostAsJsonAsync("/api/backtests", request, Json);
+        var response = await Client.PostAsJsonAsync("/api/backtests", request, Json, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -155,7 +155,7 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
             TimeFrame = "01:00:00",
         };
 
-        var response = await Client.PostAsJsonAsync("/api/backtests", request, Json);
+        var response = await Client.PostAsJsonAsync("/api/backtests", request, Json, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -163,28 +163,28 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     [Fact]
     public async Task GetById_RandomGuid_Returns404()
     {
-        var response = await Client.GetAsync($"/api/backtests/{Guid.NewGuid()}");
+        var response = await Client.GetAsync($"/api/backtests/{Guid.NewGuid()}", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task GetEquity_RandomGuid_Returns404()
     {
-        var response = await Client.GetAsync($"/api/backtests/{Guid.NewGuid()}/equity");
+        var response = await Client.GetAsync($"/api/backtests/{Guid.NewGuid()}/equity", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task GetStatus_RandomGuid_Returns404()
     {
-        var response = await Client.GetAsync($"/api/backtests/{Guid.NewGuid()}/status");
+        var response = await Client.GetAsync($"/api/backtests/{Guid.NewGuid()}/status", TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task Cancel_RandomGuid_Returns404()
     {
-        var response = await Client.PostAsync($"/api/backtests/{Guid.NewGuid()}/cancel", null);
+        var response = await Client.PostAsync($"/api/backtests/{Guid.NewGuid()}/cancel", null, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -201,7 +201,7 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
         var (_, submission) = await SubmitBacktestAsync(request);
 
         // Immediately cancel — may already be done on fast machines
-        var cancelResponse = await Client.PostAsync($"/api/backtests/{submission.Id}/cancel", null);
+        var cancelResponse = await Client.PostAsync($"/api/backtests/{submission.Id}/cancel", null, TestContext.Current.CancellationToken);
         Assert.True(
             cancelResponse.StatusCode is HttpStatusCode.OK or HttpStatusCode.NotFound,
             $"Expected 200 or 404, got {(int)cancelResponse.StatusCode}");

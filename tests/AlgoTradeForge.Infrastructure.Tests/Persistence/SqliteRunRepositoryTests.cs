@@ -93,8 +93,8 @@ public class SqliteRunRepositoryTests : IDisposable
     {
         var original = MakeBacktestRecord();
 
-        await _repo.SaveAsync(original);
-        var loaded = await _repo.GetByIdAsync(original.Id);
+        await _repo.SaveAsync(original, TestContext.Current.CancellationToken);
+        var loaded = await _repo.GetByIdAsync(original.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal(original.Id, loaded.Id);
@@ -138,7 +138,7 @@ public class SqliteRunRepositoryTests : IDisposable
     [Fact]
     public async Task GetById_ReturnsNull_WhenNotFound()
     {
-        var result = await _repo.GetByIdAsync(Guid.NewGuid());
+        var result = await _repo.GetByIdAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
         Assert.Null(result);
     }
 
@@ -147,10 +147,10 @@ public class SqliteRunRepositoryTests : IDisposable
     [Fact]
     public async Task Query_FiltersByStrategyName()
     {
-        await _repo.SaveAsync(MakeBacktestRecord(strategyName: "BuyAndHold"));
-        await _repo.SaveAsync(MakeBacktestRecord(strategyName: "MomentumStrategy"));
+        await _repo.SaveAsync(MakeBacktestRecord(strategyName: "BuyAndHold"), TestContext.Current.CancellationToken);
+        await _repo.SaveAsync(MakeBacktestRecord(strategyName: "MomentumStrategy"), TestContext.Current.CancellationToken);
 
-        var results = await _repo.QueryAsync(new BacktestRunQuery { StrategyName = "BuyAndHold" });
+        var results = await _repo.QueryAsync(new BacktestRunQuery { StrategyName = "BuyAndHold" }, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, results.TotalCount);
         Assert.Single(results.Items);
@@ -177,10 +177,10 @@ public class SqliteRunRepositoryTests : IDisposable
             TimeFrame = "4h",
         };
 
-        await _repo.SaveAsync(r1);
-        await _repo.SaveAsync(r2);
+        await _repo.SaveAsync(r1, TestContext.Current.CancellationToken);
+        await _repo.SaveAsync(r2, TestContext.Current.CancellationToken);
 
-        var results = await _repo.QueryAsync(new BacktestRunQuery { AssetName = "BTCUSDT" });
+        var results = await _repo.QueryAsync(new BacktestRunQuery { AssetName = "BTCUSDT" }, TestContext.Current.CancellationToken);
         Assert.Single(results.Items);
         Assert.Equal("BTCUSDT", results.Items[0].AssetName);
     }
@@ -205,10 +205,10 @@ public class SqliteRunRepositoryTests : IDisposable
             TimeFrame = "4h",
         };
 
-        await _repo.SaveAsync(r1);
-        await _repo.SaveAsync(r2);
+        await _repo.SaveAsync(r1, TestContext.Current.CancellationToken);
+        await _repo.SaveAsync(r2, TestContext.Current.CancellationToken);
 
-        var results = await _repo.QueryAsync(new BacktestRunQuery { TimeFrame = "4h" });
+        var results = await _repo.QueryAsync(new BacktestRunQuery { TimeFrame = "4h" }, TestContext.Current.CancellationToken);
         Assert.Single(results.Items);
         Assert.Equal("4h", results.Items[0].TimeFrame);
     }
@@ -229,13 +229,13 @@ public class SqliteRunRepositoryTests : IDisposable
             CompletedAt = new DateTimeOffset(2025, 6, 1, 0, 0, 0, TimeSpan.Zero),
         };
 
-        await _repo.SaveAsync(early);
-        await _repo.SaveAsync(late);
+        await _repo.SaveAsync(early, TestContext.Current.CancellationToken);
+        await _repo.SaveAsync(late, TestContext.Current.CancellationToken);
 
         var results = await _repo.QueryAsync(new BacktestRunQuery
         {
             From = new DateTimeOffset(2025, 3, 1, 0, 0, 0, TimeSpan.Zero),
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Single(results.Items);
         Assert.Equal(late.Id, results.Items[0].Id);
@@ -253,11 +253,11 @@ public class SqliteRunRepositoryTests : IDisposable
                 Id = Guid.NewGuid(),
                 CompletedAt = new DateTimeOffset(2025, 1, 1 + i, 0, 0, 0, TimeSpan.Zero),
             };
-            await _repo.SaveAsync(r);
+            await _repo.SaveAsync(r, TestContext.Current.CancellationToken);
         }
 
-        var page1 = await _repo.QueryAsync(new BacktestRunQuery { Limit = 2, Offset = 0 });
-        var page2 = await _repo.QueryAsync(new BacktestRunQuery { Limit = 2, Offset = 2 });
+        var page1 = await _repo.QueryAsync(new BacktestRunQuery { Limit = 2, Offset = 0 }, TestContext.Current.CancellationToken);
+        var page2 = await _repo.QueryAsync(new BacktestRunQuery { Limit = 2, Offset = 2 }, TestContext.Current.CancellationToken);
 
         Assert.Equal(5, page1.TotalCount);
         Assert.Equal(2, page1.Items.Count);
@@ -282,10 +282,10 @@ public class SqliteRunRepositoryTests : IDisposable
             CompletedAt = new DateTimeOffset(2025, 6, 1, 0, 0, 0, TimeSpan.Zero),
         };
 
-        await _repo.SaveAsync(r1);
-        await _repo.SaveAsync(r2);
+        await _repo.SaveAsync(r1, TestContext.Current.CancellationToken);
+        await _repo.SaveAsync(r2, TestContext.Current.CancellationToken);
 
-        var results = await _repo.QueryAsync(new BacktestRunQuery());
+        var results = await _repo.QueryAsync(new BacktestRunQuery(), TestContext.Current.CancellationToken);
 
         Assert.Equal(2, results.Items.Count);
         Assert.Equal(r2.Id, results.Items[0].Id); // Later first
@@ -330,9 +330,9 @@ public class SqliteRunRepositoryTests : IDisposable
             Trials = [trial1, trial2],
         };
 
-        await _repo.SaveOptimizationAsync(optRecord);
+        await _repo.SaveOptimizationAsync(optRecord, TestContext.Current.CancellationToken);
 
-        var loaded = await _repo.GetOptimizationByIdAsync(optId);
+        var loaded = await _repo.GetOptimizationByIdAsync(optId, TestContext.Current.CancellationToken);
 
         Assert.NotNull(loaded);
         Assert.Equal(optId, loaded.Id);
@@ -355,7 +355,7 @@ public class SqliteRunRepositoryTests : IDisposable
     [Fact]
     public async Task GetOptimizationById_ReturnsNull_WhenNotFound()
     {
-        var result = await _repo.GetOptimizationByIdAsync(Guid.NewGuid());
+        var result = await _repo.GetOptimizationByIdAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
         Assert.Null(result);
     }
 
@@ -365,7 +365,7 @@ public class SqliteRunRepositoryTests : IDisposable
     public async Task GetDistinctStrategyNames_ReturnsUniqueNamesAcrossBothTables()
     {
         // Save a backtest with strategy "Alpha"
-        await _repo.SaveAsync(MakeBacktestRecord(strategyName: "Alpha"));
+        await _repo.SaveAsync(MakeBacktestRecord(strategyName: "Alpha"), TestContext.Current.CancellationToken);
 
         // Save an optimization with strategy "Beta"
         var optId = Guid.NewGuid();
@@ -391,12 +391,12 @@ public class SqliteRunRepositoryTests : IDisposable
             TimeFrame = "1h",
             Trials = [trial],
         };
-        await _repo.SaveOptimizationAsync(opt);
+        await _repo.SaveOptimizationAsync(opt, TestContext.Current.CancellationToken);
 
         // Save another backtest with "Alpha" (duplicate)
-        await _repo.SaveAsync(MakeBacktestRecord(id: Guid.NewGuid(), strategyName: "Alpha"));
+        await _repo.SaveAsync(MakeBacktestRecord(id: Guid.NewGuid(), strategyName: "Alpha"), TestContext.Current.CancellationToken);
 
-        var names = await _repo.GetDistinctStrategyNamesAsync();
+        var names = await _repo.GetDistinctStrategyNamesAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, names.Count);
         Assert.Contains("Alpha", names);
@@ -412,7 +412,7 @@ public class SqliteRunRepositoryTests : IDisposable
 
         // Standalone backtest
         var standalone = MakeBacktestRecord();
-        await _repo.SaveAsync(standalone);
+        await _repo.SaveAsync(standalone, TestContext.Current.CancellationToken);
 
         // Optimization with one trial
         var trial = MakeBacktestRecord(optimizationRunId: optId, runFolderPath: null) with
@@ -440,14 +440,14 @@ public class SqliteRunRepositoryTests : IDisposable
             TimeFrame = "1h",
             Trials = [trial],
         };
-        await _repo.SaveOptimizationAsync(opt);
+        await _repo.SaveOptimizationAsync(opt, TestContext.Current.CancellationToken);
 
         // Without filter: both rows visible
-        var all = await _repo.QueryAsync(new BacktestRunQuery());
+        var all = await _repo.QueryAsync(new BacktestRunQuery(), TestContext.Current.CancellationToken);
         Assert.Equal(2, all.Items.Count);
 
         // With StandaloneOnly: only the standalone run
-        var standaloneOnly = await _repo.QueryAsync(new BacktestRunQuery { StandaloneOnly = true });
+        var standaloneOnly = await _repo.QueryAsync(new BacktestRunQuery { StandaloneOnly = true }, TestContext.Current.CancellationToken);
         Assert.Single(standaloneOnly.Items);
         Assert.Equal(standalone.Id, standaloneOnly.Items[0].Id);
         Assert.Null(standaloneOnly.Items[0].OptimizationRunId);
@@ -498,15 +498,15 @@ public class SqliteRunRepositoryTests : IDisposable
     public async Task Query_ReturnsEmptyEquityCurve_ForListResults()
     {
         var original = MakeBacktestRecord();
-        await _repo.SaveAsync(original);
+        await _repo.SaveAsync(original, TestContext.Current.CancellationToken);
 
-        var results = await _repo.QueryAsync(new BacktestRunQuery());
+        var results = await _repo.QueryAsync(new BacktestRunQuery(), TestContext.Current.CancellationToken);
 
         Assert.Single(results.Items);
         Assert.Empty(results.Items[0].EquityCurve);
 
         // GetById still returns full equity curve
-        var detail = await _repo.GetByIdAsync(original.Id);
+        var detail = await _repo.GetByIdAsync(original.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(detail);
         Assert.Equal(original.EquityCurve.Count, detail.EquityCurve.Count);
     }
@@ -523,16 +523,16 @@ public class SqliteRunRepositoryTests : IDisposable
                 Id = Guid.NewGuid(),
                 StrategyName = "Target",
                 CompletedAt = new DateTimeOffset(2025, 1, 1 + i, 0, 0, 0, TimeSpan.Zero),
-            });
+            }, TestContext.Current.CancellationToken);
         }
-        await _repo.SaveAsync(MakeBacktestRecord(strategyName: "Other"));
+        await _repo.SaveAsync(MakeBacktestRecord(strategyName: "Other"), TestContext.Current.CancellationToken);
 
         var page = await _repo.QueryAsync(new BacktestRunQuery
         {
             StrategyName = "Target",
             Limit = 2,
             Offset = 1,
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(5, page.TotalCount);
         Assert.Equal(2, page.Items.Count);
@@ -567,10 +567,10 @@ public class SqliteRunRepositoryTests : IDisposable
                 Exchange = "Binance",
                 TimeFrame = "1h",
                 Trials = [trial],
-            });
+            }, TestContext.Current.CancellationToken);
         }
 
-        var page = await _repo.QueryOptimizationsAsync(new OptimizationRunQuery { Limit = 2, Offset = 0 });
+        var page = await _repo.QueryOptimizationsAsync(new OptimizationRunQuery { Limit = 2, Offset = 0 }, TestContext.Current.CancellationToken);
 
         Assert.Equal(3, page.TotalCount);
         Assert.Equal(2, page.Items.Count);

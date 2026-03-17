@@ -20,7 +20,7 @@ public class LiveSessionDataEndpointTests : IClassFixture<WebApplicationFactory<
     [Fact]
     public async Task GetSessionData_NonExistent_Returns404()
     {
-        var response = await _client.GetAsync($"/api/live/sessions/{Guid.NewGuid()}/data");
+        var response = await _client.GetAsync($"/api/live/sessions/{Guid.NewGuid()}/data", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -32,10 +32,10 @@ public class LiveSessionDataEndpointTests : IClassFixture<WebApplicationFactory<
         // In integration test context (no real exchange), starting will fail.
         // Instead, verify the 404 response shape for non-existent session.
         var id = Guid.NewGuid();
-        var response = await _client.GetAsync($"/api/live/sessions/{id}/data");
+        var response = await _client.GetAsync($"/api/live/sessions/{id}/data", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         var error = JsonSerializer.Deserialize<JsonElement>(body, JsonOptions);
         Assert.True(error.TryGetProperty("error", out _));
     }

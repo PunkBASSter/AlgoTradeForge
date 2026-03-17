@@ -34,7 +34,7 @@ public class EngineEventEmissionTests
         var strategy = new ActionStrategy(sub);
         var empty = new TimeSeries<Int64Bar>();
 
-        CreateEngine().Run([empty], strategy, CreateOptions(), bus: bus);
+        CreateEngine().Run([empty], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, bus: bus);
 
         Assert.Equal(2, bus.Events.Count);
         Assert.IsType<RunStartEvent>(bus.Events[0]);
@@ -49,7 +49,7 @@ public class EngineEventEmissionTests
         var strategy = new ActionStrategy(sub);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3);
 
-        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, bus: bus);
 
         Assert.IsType<RunStartEvent>(bus.Events[0]);
         Assert.IsType<RunEndEvent>(bus.Events[^1]);
@@ -85,7 +85,7 @@ public class EngineEventEmissionTests
         };
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 1000);
-        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, bus: bus);
 
         var place = Assert.Single(bus.Events.OfType<OrderPlaceEvent>());
         Assert.Equal("AAPL", place.AssetName);
@@ -121,7 +121,7 @@ public class EngineEventEmissionTests
         };
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 1000);
-        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, bus: bus);
 
         var fill = Assert.Single(bus.Events.OfType<OrderFillEvent>());
         Assert.Equal("AAPL", fill.AssetName);
@@ -162,7 +162,7 @@ public class EngineEventEmissionTests
         };
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 15000);
-        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, bus: bus);
 
         var reject = Assert.Single(bus.Events.OfType<OrderRejectEvent>());
         Assert.Equal("Insufficient cash", reject.Reason);
@@ -208,7 +208,7 @@ public class EngineEventEmissionTests
         };
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 10000);
-        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, bus: bus);
 
         var cancel = Assert.Single(bus.Events.OfType<OrderCancelEvent>());
         Assert.Equal("AAPL", cancel.AssetName);
@@ -246,7 +246,7 @@ public class EngineEventEmissionTests
         var bars = TestBars.CreateSeries(Start, OneMinute,
             TestBars.Create(10000, 11000, 8500, 9000));
 
-        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, bus: bus);
 
         var fills = bus.Events.OfType<OrderFillEvent>().ToList();
         Assert.Equal(2, fills.Count);
@@ -301,7 +301,7 @@ public class EngineEventEmissionTests
         };
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 1000);
-        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, bus: bus);
 
         var positions = bus.Events.OfType<PositionEvent>().ToList();
         Assert.Equal(3, positions.Count);
@@ -346,7 +346,7 @@ public class EngineEventEmissionTests
 
         // 2 bars: order placed on bar 0, filled on bar 0 (same bar via OnBarStart)
         var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 1000);
-        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, bus: bus);
 
         var types = bus.Events.Select(e => e.GetType().Name).ToList();
 
@@ -381,7 +381,7 @@ public class EngineEventEmissionTests
         var bars = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 1000);
 
         Assert.Throws<InvalidOperationException>(
-            () => CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus));
+            () => CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, bus: bus));
 
         var err = Assert.Single(bus.Events.OfType<ErrorEvent>());
         Assert.Equal("Strategy broke", err.Message);
@@ -414,7 +414,7 @@ public class EngineEventEmissionTests
         var bars = TestBars.CreateSeries(Start, OneMinute, 3);
 
         // No bus param → NullEventBus, should run without error
-        var result = CreateEngine().Run([bars], strategy, CreateOptions());
+        var result = CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, result.TotalBarsProcessed);
     }
@@ -430,7 +430,7 @@ public class EngineEventEmissionTests
         var empty = new TimeSeries<Int64Bar>();
         var opts = CreateOptions(initialCash: 50_000L);
 
-        CreateEngine().Run([empty], strategy, opts, bus: bus);
+        CreateEngine().Run([empty], strategy, opts, ct: TestContext.Current.CancellationToken, bus: bus);
 
         var evt = Assert.Single(bus.Events.OfType<RunStartEvent>());
         Assert.Equal(nameof(ActionStrategy), evt.StrategyName);
@@ -466,7 +466,7 @@ public class EngineEventEmissionTests
         };
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 1000);
-        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, bus: bus);
 
         var evt = Assert.Single(bus.Events.OfType<RunEndEvent>());
         Assert.Equal(3, evt.TotalBarsProcessed);
@@ -484,7 +484,7 @@ public class EngineEventEmissionTests
         var strategy = new SignalEmittingTestStrategy(new SignalTestParams { DataSubscriptions = [sub] });
         var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 1000);
 
-        CreateEngine().Run([bars], strategy, CreateOptions(), bus: bus);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, bus: bus);
 
         var signals = bus.Events.OfType<SignalEvent>().ToList();
         Assert.Equal(2, signals.Count); // one per bar
@@ -531,7 +531,7 @@ public class EngineEventEmissionTests
         };
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 100);
-        CreateEngine().Run([bars], strategy, opts, bus: bus);
+        CreateEngine().Run([bars], strategy, opts, ct: TestContext.Current.CancellationToken, bus: bus);
 
         var reject = Assert.Single(bus.Events.OfType<OrderRejectEvent>());
         Assert.Contains("below minimum", reject.Reason);

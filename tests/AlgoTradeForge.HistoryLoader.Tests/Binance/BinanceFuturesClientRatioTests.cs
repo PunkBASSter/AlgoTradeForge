@@ -69,8 +69,8 @@ public sealed class BinanceFuturesClientRatioTests
                 "5m",
                 1_700_000_000_000L,
                 1_700_000_600_000L,
-                CancellationToken.None)
-            .ToListAsync();
+                TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, records.Count);
 
@@ -108,8 +108,8 @@ public sealed class BinanceFuturesClientRatioTests
 
         var client = BuildClient(handler);
         await client
-            .FetchGlobalLongShortRatioAsync("BTCUSDT", "5m", 1_700_000_000_000L, 1_700_000_600_000L, CancellationToken.None)
-            .ToListAsync();
+            .FetchGlobalLongShortRatioAsync("BTCUSDT", "5m", 1_700_000_000_000L, 1_700_000_600_000L, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.NotNull(capturedUrl);
         Assert.Contains("/futures/data/globalLongShortAccountRatio", capturedUrl);
@@ -139,8 +139,8 @@ public sealed class BinanceFuturesClientRatioTests
                 "5m",
                 1_700_000_000_000L,
                 1_700_000_600_000L,
-                CancellationToken.None)
-            .ToListAsync();
+                TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, records.Count);
 
@@ -172,8 +172,8 @@ public sealed class BinanceFuturesClientRatioTests
 
         var client = BuildClient(handler);
         await client
-            .FetchTopAccountRatioAsync("BTCUSDT", "5m", 1_700_000_000_000L, 1_700_000_600_000L, CancellationToken.None)
-            .ToListAsync();
+            .FetchTopAccountRatioAsync("BTCUSDT", "5m", 1_700_000_000_000L, 1_700_000_600_000L, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.NotNull(capturedUrl);
         Assert.Contains("/futures/data/topLongShortAccountRatio", capturedUrl);
@@ -215,8 +215,8 @@ public sealed class BinanceFuturesClientRatioTests
         var client = BuildClient(handler);
         long endMs = 1_700_000_000_000L + 1000 * 300_000L;
         var records = await client
-            .FetchGlobalLongShortRatioAsync("BTCUSDT", "5m", 1_700_000_000_000L, endMs, CancellationToken.None)
-            .ToListAsync();
+            .FetchGlobalLongShortRatioAsync("BTCUSDT", "5m", 1_700_000_000_000L, endMs, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, requestCount);
         Assert.Equal(502, records.Count);
@@ -243,8 +243,8 @@ public sealed class BinanceFuturesClientRatioTests
                 "5m",
                 1_700_000_000_000L,
                 1_700_000_600_000L,
-                CancellationToken.None)
-            .ToListAsync();
+                TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(records);
     }

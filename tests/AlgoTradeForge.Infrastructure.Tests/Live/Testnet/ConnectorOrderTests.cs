@@ -25,7 +25,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
             Assert.Skip(BinanceTestnetCredentials.SkipReason);
 
         Strategy.ResetBarTcs();
-        var bar = await Strategy.NextBarTcs.Task.WaitAsync(TimeSpan.FromSeconds(90));
+        var bar = await Strategy.NextBarTcs.Task.WaitAsync(TimeSpan.FromSeconds(90), TestContext.Current.CancellationToken);
 
         Assert.True(bar.Open > 0);
         Assert.True(bar.High >= bar.Low);
@@ -56,7 +56,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
             });
         };
 
-        var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout);
+        var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
 
         Assert.Equal(OrderSide.Buy, fill.Side);
         Assert.True(fill.Price > 0);
@@ -86,7 +86,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
                 Quantity = MinQty,
             });
         };
-        await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout);
+        await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
 
         // Sell
         Strategy.ResetFillTcs();
@@ -102,7 +102,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
             });
         };
 
-        var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout);
+        var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
         Assert.Equal(OrderSide.Sell, fill.Side);
     }
 
@@ -132,7 +132,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
             });
         };
 
-        var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout);
+        var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
 
         Assert.Equal(OrderSide.Buy, fill.Side);
         Assert.True(fill.Price <= limitPrice);
@@ -161,7 +161,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
                 Quantity = MinQty,
             });
         };
-        await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout);
+        await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
 
         var limitPrice = ReferencePrice - (long)(100m / fixture.Asset!.TickSize); // far below market
 
@@ -179,7 +179,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
             });
         };
 
-        var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout);
+        var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
 
         Assert.Equal(OrderSide.Sell, fill.Side);
         Assert.True(fill.Price >= limitPrice);
@@ -213,7 +213,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
                 });
             };
 
-            var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout);
+            var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
             Assert.Equal(OrderSide.Buy, fill.Side);
         }
         catch (HttpRequestException)
@@ -245,7 +245,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
                 Quantity = MinQty,
             });
         };
-        await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout);
+        await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
 
         var stopPrice = ReferencePrice + (long)(500m / fixture.Asset!.TickSize); // well above market
 
@@ -265,7 +265,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
                 });
             };
 
-            var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout);
+            var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
             Assert.Equal(OrderSide.Sell, fill.Side);
         }
         catch (HttpRequestException)
@@ -304,7 +304,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
                 });
             };
 
-            var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout);
+            var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
             Assert.Equal(OrderSide.Buy, fill.Side);
         }
         catch (HttpRequestException)
@@ -336,7 +336,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
                 Quantity = MinQty,
             });
         };
-        await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout);
+        await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
 
         var stopPrice = ReferencePrice + (long)(500m / fixture.Asset!.TickSize);
         var limitPrice = ReferencePrice - (long)(100m / fixture.Asset!.TickSize);
@@ -358,7 +358,7 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
                 });
             };
 
-            var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout);
+            var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
             Assert.Equal(OrderSide.Sell, fill.Side);
         }
         catch (HttpRequestException)

@@ -98,11 +98,11 @@ public class RunBacktestCommandHandlerTests
 
         var existingId = Guid.NewGuid();
         var runKey = RunKeyBuilder.Build(command);
-        await _progressCache.SetRunKeyAsync(runKey, existingId);
-        await _progressCache.SetProgressAsync(existingId, 5, 10);
+        await _progressCache.SetRunKeyAsync(runKey, existingId, TestContext.Current.CancellationToken);
+        await _progressCache.SetProgressAsync(existingId, 5, 10, TestContext.Current.CancellationToken);
 
         // Act
-        var result = await handler.HandleAsync(command);
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(existingId, result.Id);
@@ -117,7 +117,7 @@ public class RunBacktestCommandHandlerTests
         var command = CreateCommand();
 
         // Act
-        var result = await handler.HandleAsync(command);
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(10, result.TotalBars);
@@ -133,10 +133,10 @@ public class RunBacktestCommandHandlerTests
         var command = CreateCommand();
 
         // Act
-        var result = await handler.HandleAsync(command);
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
-        var progress = await _progressCache.GetProgressAsync(result.Id);
+        var progress = await _progressCache.GetProgressAsync(result.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(progress);
         Assert.Equal(10, progress.Value.Total);
     }
@@ -150,11 +150,11 @@ public class RunBacktestCommandHandlerTests
         var command = CreateCommand();
 
         // Act
-        var result = await handler.HandleAsync(command);
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert
         var runKey = RunKeyBuilder.Build(command);
-        var mappedId = await _progressCache.TryGetRunIdByKeyAsync(runKey);
+        var mappedId = await _progressCache.TryGetRunIdByKeyAsync(runKey, TestContext.Current.CancellationToken);
         Assert.Equal(result.Id, mappedId);
     }
 
@@ -169,10 +169,10 @@ public class RunBacktestCommandHandlerTests
         // Set up a stale RunKey mapping (no matching progress entry)
         var staleId = Guid.NewGuid();
         var runKey = RunKeyBuilder.Build(command);
-        await _progressCache.SetRunKeyAsync(runKey, staleId);
+        await _progressCache.SetRunKeyAsync(runKey, staleId, TestContext.Current.CancellationToken);
 
         // Act
-        var result = await handler.HandleAsync(command);
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         // Assert — new run created, not the stale ID
         Assert.NotEqual(staleId, result.Id);
@@ -186,7 +186,7 @@ public class RunBacktestCommandHandlerTests
         var command = CreateCommand();
 
         // Act & Assert
-        await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command));
+        await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command, TestContext.Current.CancellationToken));
     }
 
     // --- Background execution path tests ---
@@ -214,14 +214,14 @@ public class RunBacktestCommandHandlerTests
             .Returns(new PostRunResult(true, true, null, null));
     }
 
-    private async Task WaitForBackgroundCompletion(Guid runId, int timeoutMs = 5000)
+    private async Task WaitForBackgroundCompletion(Guid runId, int timeoutMs = 5000, CancellationToken ct = default)
     {
         var deadline = Environment.TickCount64 + timeoutMs;
         while (Environment.TickCount64 < deadline)
         {
-            var progress = await _progressCache.GetProgressAsync(runId);
+            var progress = await _progressCache.GetProgressAsync(runId, ct);
             if (progress is null) return;
-            await Task.Delay(25);
+            await Task.Delay(25, ct);
         }
 
         throw new TimeoutException($"Background task for run {runId} did not complete within {timeoutMs}ms.");
@@ -242,8 +242,8 @@ public class RunBacktestCommandHandlerTests
             .AndDoes(ci => savedRecord = ci.Arg<BacktestRunRecord>());
 
         // Act
-        var submission = await handler.HandleAsync(command);
-        await WaitForBackgroundCompletion(submission.Id);
+        var submission = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+        await WaitForBackgroundCompletion(submission.Id, ct: TestContext.Current.CancellationToken);
 
         // Assert — record was saved with correct data
         Assert.NotNull(savedRecord);
@@ -253,10 +253,10 @@ public class RunBacktestCommandHandlerTests
         Assert.Equal(10, savedRecord.TotalBars);
 
         // Assert — progress and run key were cleaned up
-        var progress = await _progressCache.GetProgressAsync(submission.Id);
+        var progress = await _progressCache.GetProgressAsync(submission.Id, TestContext.Current.CancellationToken);
         Assert.Null(progress);
         var runKey = RunKeyBuilder.Build(command);
-        var mappedId = await _progressCache.TryGetRunIdByKeyAsync(runKey);
+        var mappedId = await _progressCache.TryGetRunIdByKeyAsync(runKey, TestContext.Current.CancellationToken);
         Assert.Null(mappedId);
     }
 
@@ -280,8 +280,8 @@ public class RunBacktestCommandHandlerTests
             .AndDoes(ci => savedRecord = ci.Arg<BacktestRunRecord>());
 
         // Act
-        var submission = await handler.HandleAsync(command);
-        await WaitForBackgroundCompletion(submission.Id);
+        var submission = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+        await WaitForBackgroundCompletion(submission.Id, ct: TestContext.Current.CancellationToken);
 
         // Assert — error record was saved
         Assert.NotNull(savedRecord);
@@ -290,7 +290,7 @@ public class RunBacktestCommandHandlerTests
         Assert.Equal("Simulated engine failure", savedRecord.ErrorMessage);
 
         // Assert — cleanup still happened
-        var progress = await _progressCache.GetProgressAsync(submission.Id);
+        var progress = await _progressCache.GetProgressAsync(submission.Id, TestContext.Current.CancellationToken);
         Assert.Null(progress);
     }
 
@@ -338,10 +338,10 @@ public class RunBacktestCommandHandlerTests
             .AndDoes(ci => savedRecord = ci.Arg<BacktestRunRecord>());
 
         // Act — submit, wait for engine to start processing, then cancel
-        var submission = await handler.HandleAsync(command);
-        enteredBar.Wait(TimeSpan.FromSeconds(5));
+        var submission = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+        enteredBar.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         _cancellationRegistry.TryCancel(submission.Id);
-        await WaitForBackgroundCompletion(submission.Id);
+        await WaitForBackgroundCompletion(submission.Id, ct: TestContext.Current.CancellationToken);
 
         // Assert — cancelled record was saved
         Assert.NotNull(savedRecord);

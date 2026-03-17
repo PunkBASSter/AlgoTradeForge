@@ -67,8 +67,8 @@ public sealed class BinanceFuturesClientFundingTests
                 "BTCUSDT",
                 1_700_000_000_000L,
                 1_700_100_000_000L,
-                CancellationToken.None)
-            .ToListAsync();
+                TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, records.Count);
 
@@ -121,8 +121,8 @@ public sealed class BinanceFuturesClientFundingTests
         var client = BuildClient(handler);
         long endMs = 1_700_000_000_000L + 2000 * 28_800_000L;
         var records = await client
-            .FetchFundingRatesAsync("BTCUSDT", 1_700_000_000_000L, endMs, CancellationToken.None)
-            .ToListAsync();
+            .FetchFundingRatesAsync("BTCUSDT", 1_700_000_000_000L, endMs, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, requestCount);
         Assert.Equal(1003, records.Count);
@@ -153,8 +153,8 @@ public sealed class BinanceFuturesClientFundingTests
                 "BTCUSDT",
                 1_700_000_000_000L,
                 1_700_100_000_000L,
-                CancellationToken.None)
-            .ToListAsync();
+                TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(records);
     }
@@ -182,8 +182,8 @@ public sealed class BinanceFuturesClientFundingTests
 
         var client = BuildClient(handler);
         var records = await client
-            .FetchFundingRatesAsync("BTCUSDT", 1_700_000_000_000L, 1_700_100_000_000L, CancellationToken.None)
-            .ToListAsync();
+            .FetchFundingRatesAsync("BTCUSDT", 1_700_000_000_000L, 1_700_100_000_000L, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, records.Count);
         Assert.Equal(1_700_000_000_000L, records[0].TimestampMs);
@@ -209,8 +209,8 @@ public sealed class BinanceFuturesClientFundingTests
 
         var client = BuildClient(handler);
         var records = await client
-            .FetchFundingRatesAsync("BTCUSDT", 1_700_000_000_000L, 1_700_100_000_000L, CancellationToken.None)
-            .ToListAsync();
+            .FetchFundingRatesAsync("BTCUSDT", 1_700_000_000_000L, 1_700_100_000_000L, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, records.Count);
 
@@ -240,8 +240,8 @@ public sealed class BinanceFuturesClientFundingTests
 
         var client = BuildClient(handler);
         var records = await client
-            .FetchFundingRatesAsync("BTCUSDT", 1_700_000_000_000L, 1_700_100_000_000L, CancellationToken.None)
-            .ToListAsync();
+            .FetchFundingRatesAsync("BTCUSDT", 1_700_000_000_000L, 1_700_100_000_000L, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(records);
     }

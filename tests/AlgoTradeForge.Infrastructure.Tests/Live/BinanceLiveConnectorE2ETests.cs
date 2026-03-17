@@ -162,7 +162,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
             });
         };
 
-        var fillA = await _strategyA.NextFillTcs.Task.WaitAsync(FillTimeout);
+        var fillA = await _strategyA.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
         Assert.Equal(OrderSide.Buy, fillA.Side);
 
         // Strategy B: market buy
@@ -179,7 +179,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
             });
         };
 
-        var fillB = await _strategyB.NextFillTcs.Task.WaitAsync(FillTimeout);
+        var fillB = await _strategyB.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
         Assert.Equal(OrderSide.Buy, fillB.Side);
 
         // Each strategy only received its own fill
@@ -213,7 +213,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         };
 
         // Wait for entry fill
-        await _strategyA.NextFillTcs.Task.WaitAsync(FillTimeout);
+        await _strategyA.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
 
         // Strategy B: open group via TradeRegistry (market entry)
         var tpPriceB = _lastPrice + (long)(600m / _asset!.TickSize);
@@ -228,10 +228,10 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
                 tpLevels: [new TpLevel { Price = tpPriceB, ClosurePercentage = 1.0m }]);
         };
 
-        await _strategyB.NextFillTcs.Task.WaitAsync(FillTimeout);
+        await _strategyB.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
 
         // Allow protective orders to be placed on exchange
-        await Task.Delay(3000);
+        await Task.Delay(3000, TestContext.Current.CancellationToken);
 
         // Each TradeRegistry should have expected orders (1 SL + 1 TP)
         var expectedA = _strategyA.TradeRegistry.GetExpectedOrders();
@@ -276,11 +276,11 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
             });
         };
 
-        await _strategyA.NextBarTcs.Task.WaitAsync(FillTimeout);
-        await Task.Delay(2000); // Let order reach exchange
+        await _strategyA.NextBarTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+        await Task.Delay(2000, TestContext.Current.CancellationToken); // Let order reach exchange
 
         // Stop connector — should trigger safety-net cancel-all
-        await _connector!.StopAsync();
+        await _connector!.StopAsync(TestContext.Current.CancellationToken);
 
         // Create a fresh API client to verify no open orders remain
         var accountConfig = BinanceTestnetCredentials.CreateAccountConfig();
@@ -290,8 +290,8 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
 
         try
         {
-            await apiClient.SyncTimeAsync();
-            var openOrders = await apiClient.GetOpenOrdersAsync("BTCUSDT");
+            await apiClient.SyncTimeAsync(TestContext.Current.CancellationToken);
+            var openOrders = await apiClient.GetOpenOrdersAsync("BTCUSDT", TestContext.Current.CancellationToken);
             Assert.Empty(openOrders);
         }
         finally

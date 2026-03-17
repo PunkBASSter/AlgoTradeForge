@@ -198,8 +198,8 @@ public class SqliteTradeDbWriterTests : IDisposable
         var summary2 = new RunSummary(1, 102_000L, 1, TimeSpan.FromSeconds(1));
 
         // Run both inserts in parallel
-        var t1 = Task.Run(() => CreateWriter().WriteFromJsonl(_runFolder, identity1, summary1));
-        var t2 = Task.Run(() => CreateWriter().WriteFromJsonl(runFolder2, identity2, summary2));
+        var t1 = Task.Run(() => CreateWriter().WriteFromJsonl(_runFolder, identity1, summary1), TestContext.Current.CancellationToken);
+        var t2 = Task.Run(() => CreateWriter().WriteFromJsonl(runFolder2, identity2, summary2), TestContext.Current.CancellationToken);
         await Task.WhenAll(t1, t2);
 
         // Verify both runs exist

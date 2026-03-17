@@ -69,7 +69,7 @@ public class BacktestOrderContextGetPositionsTests
             EndTime = DateTimeOffset.MaxValue,
         };
 
-        engine.Run([bars], strategy, options);
+        engine.Run([bars], strategy, options, ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(receivedContext);
         Assert.True(receivedContext.Cash > 0);

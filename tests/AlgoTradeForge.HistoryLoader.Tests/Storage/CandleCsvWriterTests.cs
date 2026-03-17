@@ -175,7 +175,7 @@ public sealed class CandleCsvWriterTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Write_ConcurrentSameTimestamp_OnlyOneLineWritten()
+    public async Task Write_ConcurrentSameTimestamp_OnlyOneLineWritten()
     {
         var lockMgr = new WriteLockManager();
         var writer = new CandleCsvWriter(lockMgr);
@@ -186,7 +186,7 @@ public sealed class CandleCsvWriterTests : IDisposable
         var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(() =>
             writer.Write(assetDir, "1h", MakeRecord(ts), decimalDigits: 2)));
 
-        Task.WhenAll(tasks).Wait();
+        await Task.WhenAll(tasks);
 
         var file = PartitionFile(assetDir, "1h", ts);
         var lines = File.ReadAllLines(file);

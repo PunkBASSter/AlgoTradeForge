@@ -473,7 +473,7 @@ public class TradeRegistryModuleTests
 
         // 1 SL + 2 TPs = 3 expected orders
         Assert.Equal(3, expected.Count);
-        Assert.Single(expected.Where(e => e.Type == ExpectedOrderType.StopLoss));
+        Assert.Single(expected, e => e.Type == ExpectedOrderType.StopLoss);
         Assert.Equal(2, expected.Count(e => e.Type == ExpectedOrderType.TakeProfit));
 
         var sl = expected.First(e => e.Type == ExpectedOrderType.StopLoss);

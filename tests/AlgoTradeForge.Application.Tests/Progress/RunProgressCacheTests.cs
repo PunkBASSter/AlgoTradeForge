@@ -21,8 +21,8 @@ public sealed class RunProgressCacheTests
     {
         var id = Guid.NewGuid();
 
-        await _cache.SetProgressAsync(id, 42, 1000);
-        var result = await _cache.GetProgressAsync(id);
+        await _cache.SetProgressAsync(id, 42, 1000, TestContext.Current.CancellationToken);
+        var result = await _cache.GetProgressAsync(id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Equal(42, result.Value.Processed);
@@ -32,7 +32,7 @@ public sealed class RunProgressCacheTests
     [Fact]
     public async Task GetProgress_Returns_Null_For_Missing_Key()
     {
-        var result = await _cache.GetProgressAsync(Guid.NewGuid());
+        var result = await _cache.GetProgressAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }
@@ -42,9 +42,9 @@ public sealed class RunProgressCacheTests
     {
         var id = Guid.NewGuid();
 
-        await _cache.SetProgressAsync(id, 10, 100);
-        await _cache.RemoveProgressAsync(id);
-        var result = await _cache.GetProgressAsync(id);
+        await _cache.SetProgressAsync(id, 10, 100, TestContext.Current.CancellationToken);
+        await _cache.RemoveProgressAsync(id, TestContext.Current.CancellationToken);
+        var result = await _cache.GetProgressAsync(id, TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }
@@ -55,8 +55,8 @@ public sealed class RunProgressCacheTests
         var id = Guid.NewGuid();
         var runKey = "test-key-123";
 
-        await _cache.SetRunKeyAsync(runKey, id);
-        var result = await _cache.TryGetRunIdByKeyAsync(runKey);
+        await _cache.SetRunKeyAsync(runKey, id, TestContext.Current.CancellationToken);
+        var result = await _cache.TryGetRunIdByKeyAsync(runKey, TestContext.Current.CancellationToken);
 
         Assert.Equal(id, result);
     }
@@ -64,7 +64,7 @@ public sealed class RunProgressCacheTests
     [Fact]
     public async Task TryGetRunId_Returns_Null_For_Missing_Key()
     {
-        var result = await _cache.TryGetRunIdByKeyAsync("nonexistent");
+        var result = await _cache.TryGetRunIdByKeyAsync("nonexistent", TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }
@@ -73,10 +73,10 @@ public sealed class RunProgressCacheTests
     public async Task RemoveRunKey_Removes_Mapping()
     {
         var runKey = "test-key-456";
-        await _cache.SetRunKeyAsync(runKey, Guid.NewGuid());
+        await _cache.SetRunKeyAsync(runKey, Guid.NewGuid(), TestContext.Current.CancellationToken);
 
-        await _cache.RemoveRunKeyAsync(runKey);
-        var result = await _cache.TryGetRunIdByKeyAsync(runKey);
+        await _cache.RemoveRunKeyAsync(runKey, TestContext.Current.CancellationToken);
+        var result = await _cache.TryGetRunIdByKeyAsync(runKey, TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }

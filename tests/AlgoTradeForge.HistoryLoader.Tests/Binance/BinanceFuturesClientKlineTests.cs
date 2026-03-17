@@ -68,8 +68,8 @@ public sealed class BinanceFuturesClientKlineTests
 
         var client = BuildClient(handler);
         var records = await client
-            .FetchCandlesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_120_000L, CancellationToken.None)
-            .ToListAsync();
+            .FetchCandlesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_120_000L, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, records.Count);
 
@@ -133,8 +133,8 @@ public sealed class BinanceFuturesClientKlineTests
         var client = BuildClient(handler);
         long endMs = 1_700_000_000_000L + 2000 * 60_000L;
         var records = await client
-            .FetchCandlesAsync("BTCUSDT", "1m", 1_700_000_000_000L, endMs, CancellationToken.None)
-            .ToListAsync();
+            .FetchCandlesAsync("BTCUSDT", "1m", 1_700_000_000_000L, endMs, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, requestCount);
         Assert.Equal(1503, records.Count);
@@ -161,8 +161,8 @@ public sealed class BinanceFuturesClientKlineTests
 
         var client = BuildClient(handler);
         var records = await client
-            .FetchCandlesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, CancellationToken.None)
-            .ToListAsync();
+            .FetchCandlesAsync("BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, TestContext.Current.CancellationToken)
+            .ToListAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(records);
     }
@@ -225,7 +225,7 @@ public sealed class BinanceFuturesClientKlineTests
         var ex = await Assert.ThrowsAsync<HttpRequestException>(async () =>
         {
             await foreach (var _ in client.FetchCandlesAsync(
-                "BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, CancellationToken.None))
+                "BTCUSDT", "1m", 1_700_000_000_000L, 1_700_000_060_000L, TestContext.Current.CancellationToken))
             {
                 // consume the enumerable to trigger the HTTP call
             }

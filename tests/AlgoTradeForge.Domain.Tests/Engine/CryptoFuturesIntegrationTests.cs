@@ -45,7 +45,7 @@ public class CryptoFuturesIntegrationTests
         var strategy = new SimpleEntryExitStrategy(asset, buyOnBar: 0, sellOnBar: 2);
 
         // Act
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         // Assert
         // Margin settlement: open deducts no notional, close realizes PnL
@@ -71,7 +71,7 @@ public class CryptoFuturesIntegrationTests
 
         var strategy = new SimpleEntryExitStrategy(asset, sellOnBar: 0, buyOnBar: 2);
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         // Short sell at 50000, buy to close at 49000
         // PnL = (50000 - 49000) × 1 × 1 = 1000
@@ -106,7 +106,7 @@ public class CryptoFuturesIntegrationTests
         // Strategy opens long on bar 0 (order fills at bar open = 50000)
         var strategy = new SimpleEntryExitStrategy(asset, buyOnBar: 0);
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), feedContext: feedContext);
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken, feedContext: feedContext);
 
         // Cash adjustments:
         // Bar 1: delta = -(1 × 50000 × 0.0001 × 1) = -5 → cash = 999_995
@@ -140,7 +140,7 @@ public class CryptoFuturesIntegrationTests
 
         var result = CreateEngine().Run(
             [spotBars, perpBars], strategy,
-            DefaultOptions(initialCash: 10_000_000L));
+            DefaultOptions(initialCash: 10_000_000L), ct: TestContext.Current.CancellationToken);
 
         // Spot buy at 5_000_000 → cash -= 5_000_000 = 5_000_000
         // Perp buy at 50_000 → cash unchanged (margin)
@@ -168,7 +168,7 @@ public class CryptoFuturesIntegrationTests
 
         var strategy = new SimpleEntryExitStrategy(asset, buyOnBar: 0);
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions(initialCash: 4_000L));
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(initialCash: 4_000L), ct: TestContext.Current.CancellationToken);
 
         // Order should be rejected: margin 5000 > cash 4000
         Assert.Empty(result.Fills);
@@ -216,7 +216,7 @@ public class CryptoFuturesIntegrationTests
             }
         });
 
-        CreateEngine().Run([bars], strategy, DefaultOptions(), feedContext: feedContext);
+        CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken, feedContext: feedContext);
 
         // All 3 feeds accessible at bar 1
         Assert.Equal(3, captures.Count);

@@ -45,7 +45,7 @@ public class BinanceLiveAccountManagerTests
             options, Substitute.For<IOrderValidator>(), NullLoggerFactory.Instance);
 
         await Assert.ThrowsAsync<ArgumentException>(
-            () => manager.GetOrCreateAsync("nonexistent"));
+            () => manager.GetOrCreateAsync("nonexistent", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public class BinanceLiveAccountManagerTests
         // First call creates errored connector
         erroredConnector.ConnectAsync(Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
-        var first = await manager.GetOrCreateAsync("paper");
+        var first = await manager.GetOrCreateAsync("paper", TestContext.Current.CancellationToken);
         Assert.Same(erroredConnector, first);
 
         // Simulate status changing to Error after connect
@@ -92,7 +92,7 @@ public class BinanceLiveAccountManagerTests
             .Returns(Task.CompletedTask);
 
         // Second call should dispose the errored connector and create a new one
-        var second = await manager.GetOrCreateAsync("paper");
+        var second = await manager.GetOrCreateAsync("paper", TestContext.Current.CancellationToken);
         Assert.Same(newConnector, second);
         await erroredConnector.Received(1).DisposeAsync();
     }

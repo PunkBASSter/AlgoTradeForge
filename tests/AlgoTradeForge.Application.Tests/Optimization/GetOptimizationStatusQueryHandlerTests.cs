@@ -27,9 +27,9 @@ public class GetOptimizationStatusQueryHandlerTests
     public async Task HandleAsync_ActiveRun_ReturnsProgressWithNoResult()
     {
         var id = Guid.NewGuid();
-        await _progressCache.SetProgressAsync(id, 25, 100);
+        await _progressCache.SetProgressAsync(id, 25, 100, TestContext.Current.CancellationToken);
 
-        var dto = await _handler.HandleAsync(new GetOptimizationStatusQuery(id));
+        var dto = await _handler.HandleAsync(new GetOptimizationStatusQuery(id), TestContext.Current.CancellationToken);
 
         Assert.NotNull(dto);
         Assert.Equal(id, dto.Id);
@@ -54,7 +54,7 @@ public class GetOptimizationStatusQueryHandlerTests
         };
         _repository.GetOptimizationByIdAsync(id, Arg.Any<CancellationToken>()).Returns(record);
 
-        var dto = await _handler.HandleAsync(new GetOptimizationStatusQuery(id));
+        var dto = await _handler.HandleAsync(new GetOptimizationStatusQuery(id), TestContext.Current.CancellationToken);
 
         Assert.NotNull(dto);
         Assert.Equal(id, dto.Id);
@@ -70,7 +70,7 @@ public class GetOptimizationStatusQueryHandlerTests
         _repository.GetOptimizationByIdAsync(id, Arg.Any<CancellationToken>())
             .Returns((OptimizationRunRecord?)null);
 
-        var dto = await _handler.HandleAsync(new GetOptimizationStatusQuery(id));
+        var dto = await _handler.HandleAsync(new GetOptimizationStatusQuery(id), TestContext.Current.CancellationToken);
 
         Assert.Null(dto);
     }

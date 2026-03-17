@@ -15,7 +15,7 @@ public class WeightedRateLimiterTests
         // budget = 1000 * 80 / 100 = 800
         var limiter = new WeightedRateLimiter(maxWeightPerMinute: 1000, budgetPercent: 80);
 
-        await limiter.AcquireAsync(weight: 500);
+        await limiter.AcquireAsync(weight: 500, TestContext.Current.CancellationToken);
 
         Assert.Equal(500, limiter.CurrentWeight);
     }
@@ -30,7 +30,7 @@ public class WeightedRateLimiterTests
         // budget = 100 * 100 / 100 = 100
         var limiter = new WeightedRateLimiter(maxWeightPerMinute: 100, budgetPercent: 100);
 
-        await limiter.AcquireAsync(weight: 100);
+        await limiter.AcquireAsync(weight: 100, TestContext.Current.CancellationToken);
 
         Assert.Equal(100, limiter.CurrentWeight);
     }
@@ -47,15 +47,16 @@ public class WeightedRateLimiterTests
         var limiter = new WeightedRateLimiter(maxWeightPerMinute: 100, budgetPercent: 100);
 
         // Fill the entire budget.
-        await limiter.AcquireAsync(weight: 100);
+        await limiter.AcquireAsync(weight: 100, TestContext.Current.CancellationToken);
 
-        using var cts = new CancellationTokenSource();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
 
         // Start a second acquire that needs 1 more unit than the budget allows.
         Task secondAcquire = limiter.AcquireAsync(weight: 1, cts.Token);
 
         // The second acquire must NOT finish within 200 ms (the window is 60 s).
-        Task delayTask = Task.Delay(TimeSpan.FromMilliseconds(200));
+        Task delayTask = Task.Delay(TimeSpan.FromMilliseconds(200), TestContext.Current.CancellationToken);
         Task winner = await Task.WhenAny(secondAcquire, delayTask);
 
         // Cancel so the background task can exit cleanly.
@@ -82,17 +83,18 @@ public class WeightedRateLimiterTests
         var limiter = new WeightedRateLimiter(maxWeightPerMinute: 200, budgetPercent: 100);
 
         // First acquire: 100 weight consumed.
-        await limiter.AcquireAsync(weight: 100);
+        await limiter.AcquireAsync(weight: 100, TestContext.Current.CancellationToken);
         Assert.Equal(100, limiter.CurrentWeight);
 
         // Second acquire: another 100 — still within budget.
-        await limiter.AcquireAsync(weight: 100);
+        await limiter.AcquireAsync(weight: 100, TestContext.Current.CancellationToken);
         Assert.Equal(200, limiter.CurrentWeight);
 
         // Third acquire would exceed budget and should block; verify it does.
-        using var cts = new CancellationTokenSource();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
         Task thirdAcquire = limiter.AcquireAsync(weight: 1, cts.Token);
-        Task delay = Task.Delay(TimeSpan.FromMilliseconds(150));
+        Task delay = Task.Delay(TimeSpan.FromMilliseconds(150), TestContext.Current.CancellationToken);
         Task winner = await Task.WhenAny(thirdAcquire, delay);
         await cts.CancelAsync();
 
@@ -110,14 +112,15 @@ public class WeightedRateLimiterTests
         var limiter = new WeightedRateLimiter(maxWeightPerMinute: 50, budgetPercent: 100);
 
         // Saturate the budget so any further acquire will block.
-        await limiter.AcquireAsync(weight: 50);
+        await limiter.AcquireAsync(weight: 50, TestContext.Current.CancellationToken);
 
-        using var cts = new CancellationTokenSource();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
 
         Task blockedAcquire = limiter.AcquireAsync(weight: 1, cts.Token);
 
         // Cancel after a short delay to ensure the task is genuinely waiting.
-        await Task.Delay(TimeSpan.FromMilliseconds(50));
+        await Task.Delay(TimeSpan.FromMilliseconds(50), TestContext.Current.CancellationToken);
         await cts.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => blockedAcquire);

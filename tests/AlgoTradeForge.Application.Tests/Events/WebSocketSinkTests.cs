@@ -72,7 +72,7 @@ public sealed class WebSocketSinkTests
         // Poll briefly to let the send loop process and encounter the disconnect
         var deadline = DateTime.UtcNow.AddSeconds(2);
         while (sink.IsConnected && DateTime.UtcNow < deadline)
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
     }
 
     [Fact]

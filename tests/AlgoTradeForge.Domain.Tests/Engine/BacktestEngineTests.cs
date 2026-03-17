@@ -50,7 +50,7 @@ public class BacktestEngineTests
         strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci => delivered.Add((ci.ArgAt<Int64Bar>(0), ci.ArgAt<DataSubscription>(1))));
 
-        var result = _engine.Run([bars], strategy, CreateOptions());
+        var result = _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(5, result.TotalBarsProcessed);
         Assert.Equal(5, delivered.Count);
@@ -77,7 +77,7 @@ public class BacktestEngineTests
                 delivered.Add((bar.Timestamp, ci.ArgAt<DataSubscription>(1)));
             });
 
-        var result = _engine.Run([btcBars, ethBars], strategy, CreateOptions());
+        var result = _engine.Run([btcBars, ethBars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(6, result.TotalBarsProcessed);
 
@@ -118,7 +118,7 @@ public class BacktestEngineTests
         strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci => deliveryOrder.Add(ci.ArgAt<DataSubscription>(1)));
 
-        _engine.Run([btcBars, ethBars], strategy, CreateOptions());
+        _engine.Run([btcBars, ethBars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(6, deliveryOrder.Count);
         // First bar: BTC at T+0 (same timestamp as ETH) -> BTC first (declaration order), then ETH
@@ -145,7 +145,7 @@ public class BacktestEngineTests
         strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci => deliveryOrder.Add(ci.ArgAt<DataSubscription>(1)));
 
-        var result = _engine.Run([btcBars, ethBars], strategy, CreateOptions());
+        var result = _engine.Run([btcBars, ethBars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(4, result.TotalBarsProcessed);
         // T+0: BTC only, T+1: BTC only, T+2: BTC then ETH
@@ -162,7 +162,7 @@ public class BacktestEngineTests
         var emptyBars = new TimeSeries<Int64Bar>();
         var strategy = MockStrategy(sub);
 
-        var result = _engine.Run([emptyBars], strategy, CreateOptions());
+        var result = _engine.Run([emptyBars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(0, result.TotalBarsProcessed);
         Assert.Empty(result.Fills);
@@ -189,7 +189,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(); // empty subscriptions
 
         Assert.Throws<ArgumentException>(
-            () => _engine.Run([bars], strategy, CreateOptions()));
+            () => _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -202,7 +202,7 @@ public class BacktestEngineTests
         strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
             .Do(ci => receivedBars.Add(ci.ArgAt<Int64Bar>(0)));
 
-        _engine.Run([bars], strategy, CreateOptions());
+        _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, receivedBars.Count);
         // Each bar should have a different open price
@@ -244,7 +244,7 @@ public class BacktestEngineTests
                 }
             });
 
-        var result = engine.Run([bars], strategy, CreateOptions());
+        var result = engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Single(result.Fills);
         Assert.Equal(OrderSide.Buy, result.Fills[0].Side);
@@ -282,7 +282,7 @@ public class BacktestEngineTests
                 }
             });
 
-        var result = engine.Run([bars], strategy, CreateOptions() with { InitialCash = 200_000L });
+        var result = engine.Run([bars], strategy, CreateOptions() with { InitialCash = 200_000L }, ct: TestContext.Current.CancellationToken);
 
         // Bars have High = open + 200, so bar at 15200 has High=15400 >= 15350
         Assert.Single(result.Fills);
@@ -318,7 +318,7 @@ public class BacktestEngineTests
                 }
             });
 
-        var result = engine.Run([bars], strategy, CreateOptions());
+        var result = engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         // Bar at open=15200 has High=15400 >= StopPrice=15350
         Assert.Single(result.Fills);
@@ -355,7 +355,7 @@ public class BacktestEngineTests
                 }
             });
 
-        var result = engine.Run([bars], strategy, CreateOptions());
+        var result = engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Single(result.Fills);
         Assert.Equal(15400L, result.Fills[0].Price);
@@ -396,7 +396,7 @@ public class BacktestEngineTests
                 }
             });
 
-        var result = engine.Run([bars], strategy, CreateOptions());
+        var result = engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(observedFills);
         Assert.Single(observedFills);
@@ -441,7 +441,7 @@ public class BacktestEngineTests
             EndTime = DateTimeOffset.MaxValue,
         };
 
-        var result = engine.Run([bars], strategy, opts);
+        var result = engine.Run([bars], strategy, opts, ct: TestContext.Current.CancellationToken);
 
         // Order should be rejected due to insufficient cash -- no fills
         Assert.Empty(result.Fills);
@@ -487,7 +487,7 @@ public class BacktestEngineTests
             EndTime = DateTimeOffset.MaxValue,
         };
 
-        var result = engine.Run([bars], strategy, opts);
+        var result = engine.Run([bars], strategy, opts, ct: TestContext.Current.CancellationToken);
 
         // Verify no duplicate fill OrderIds
         var fillOrderIds = result.Fills.Select(f => f.OrderId).ToList();
@@ -538,7 +538,7 @@ public class BacktestEngineTests
                 }
             });
 
-        var result = engine.Run([bars], strategy, CreateOptions());
+        var result = engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Fills.Count);
         Assert.Equal(9800L, result.Fills[1].Price);
@@ -579,7 +579,7 @@ public class BacktestEngineTests
                 }
             });
 
-        var result = engine.Run([bars], strategy, CreateOptions());
+        var result = engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Fills.Count);
         Assert.Equal(10500L, result.Fills[1].Price); // TP hit
@@ -625,7 +625,7 @@ public class BacktestEngineTests
                 }
             });
 
-        var result = engine.Run([bars], strategy, CreateOptions());
+        var result = engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, result.Fills.Count);
         // Fill 0: entry
@@ -655,7 +655,7 @@ public class BacktestEngineTests
         // No-op strategy -- pure engine throughput measurement
         var strategy = MockStrategy(sub);
 
-        var result = engine.Run([bars], strategy, CreateOptions());
+        var result = engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(barCount, result.TotalBarsProcessed);
         // Must complete within 60 seconds (500K bars/min baseline)
@@ -685,7 +685,7 @@ public class BacktestEngineTests
 
         var result = engine.Run(
             [btcBars, ethBars, solBars],
-            strategy, CreateOptions());
+            strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         var totalBars = barsPerSub * 3;
         Assert.Equal(totalBars, result.TotalBarsProcessed);
@@ -734,7 +734,7 @@ public class BacktestEngineTests
             EndTime = DateTimeOffset.MaxValue,
         };
 
-        var result = engine.Run([bars], strategy, opts);
+        var result = engine.Run([bars], strategy, opts, ct: TestContext.Current.CancellationToken);
 
         Assert.Empty(result.Fills);
     }
@@ -775,7 +775,7 @@ public class BacktestEngineTests
             EndTime = DateTimeOffset.MaxValue,
         };
 
-        var result = engine.Run([bars], strategy, opts);
+        var result = engine.Run([bars], strategy, opts, ct: TestContext.Current.CancellationToken);
 
         Assert.Empty(result.Fills);
     }
@@ -816,7 +816,7 @@ public class BacktestEngineTests
             EndTime = DateTimeOffset.MaxValue,
         };
 
-        var result = engine.Run([bars], strategy, opts);
+        var result = engine.Run([bars], strategy, opts, ct: TestContext.Current.CancellationToken);
 
         Assert.Empty(result.Fills);
     }
@@ -857,7 +857,7 @@ public class BacktestEngineTests
             EndTime = DateTimeOffset.MaxValue,
         };
 
-        var result = engine.Run([bars], strategy, opts);
+        var result = engine.Run([bars], strategy, opts, ct: TestContext.Current.CancellationToken);
 
         Assert.Single(result.Fills);
         Assert.Equal(10m, result.Fills[0].Quantity);

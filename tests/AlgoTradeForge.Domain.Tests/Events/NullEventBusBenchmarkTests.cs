@@ -35,7 +35,7 @@ public class NullEventBusBenchmarkTests
 
         // Act
         var sw = Stopwatch.StartNew();
-        var result = engine.Run([series], strategy, options);
+        var result = engine.Run([series], strategy, options, ct: TestContext.Current.CancellationToken);
         sw.Stop();
 
         // Assert

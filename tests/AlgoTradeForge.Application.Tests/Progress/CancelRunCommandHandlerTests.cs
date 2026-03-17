@@ -14,7 +14,7 @@ public class CancelRunCommandHandlerTests
         var cts = new CancellationTokenSource();
         registry.Register(id, cts);
 
-        var result = await handler.HandleAsync(new CancelRunCommand(id));
+        var result = await handler.HandleAsync(new CancelRunCommand(id), TestContext.Current.CancellationToken);
 
         Assert.True(result);
         Assert.True(cts.IsCancellationRequested);
@@ -26,7 +26,7 @@ public class CancelRunCommandHandlerTests
         var registry = new InMemoryRunCancellationRegistry();
         var handler = new CancelRunCommandHandler(registry);
 
-        var result = await handler.HandleAsync(new CancelRunCommand(Guid.NewGuid()));
+        var result = await handler.HandleAsync(new CancelRunCommand(Guid.NewGuid()), TestContext.Current.CancellationToken);
 
         Assert.False(result);
     }
