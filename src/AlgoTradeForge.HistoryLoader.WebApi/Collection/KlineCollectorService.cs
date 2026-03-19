@@ -9,9 +9,10 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 internal sealed class KlineCollectorService(
     SymbolCollector symbolCollector,
     ICollectionCircuitBreaker circuitBreaker,
+    IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<KlineCollectorService> logger)
-    : ScheduledCollectorService(symbolCollector, circuitBreaker, options, logger)
+    : ScheduledCollectorService(symbolCollector, circuitBreaker, httpClientFactory, options, logger)
 {
     protected override TimeSpan Interval => TimeSpan.FromDays(1);
     protected override string ServiceName => "KlineCollectorService";

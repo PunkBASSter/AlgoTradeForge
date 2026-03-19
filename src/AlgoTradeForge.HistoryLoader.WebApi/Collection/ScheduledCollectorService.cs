@@ -10,6 +10,7 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 internal abstract class ScheduledCollectorService(
     SymbolCollector symbolCollector,
     ICollectionCircuitBreaker circuitBreaker,
+    IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger logger) : BackgroundService
 {
@@ -52,11 +53,7 @@ internal abstract class ScheduledCollectorService(
         {
             if (circuitBreaker.IsTripped)
             {
-                var cooldown = options.CurrentValue.CircuitBreakerCooldownMinutes;
-                logger.LogWarning(
-                    "{ServiceName} paused — circuit breaker tripped, retrying in {Cooldown} min",
-                    ServiceName, cooldown);
-                await Task.Delay(TimeSpan.FromMinutes(cooldown), stoppingToken);
+                await HandleTrippedBreakerAsync(stoppingToken);
                 continue;
             }
 
@@ -97,7 +94,7 @@ internal abstract class ScheduledCollectorService(
 
             if (circuitBreaker.IsTripped)
             {
-                logger.LogWarning("{ServiceName}: circuit breaker tripped, skipping this run", ServiceName);
+                await HandleTrippedBreakerAsync(ct);
                 continue;
             }
 
@@ -112,9 +109,59 @@ internal abstract class ScheduledCollectorService(
         }
     }
 
+    private async Task HandleTrippedBreakerAsync(CancellationToken ct)
+    {
+        if (circuitBreaker.IsAutoResettable)
+        {
+            var probeInterval = options.CurrentValue.NetworkProbeIntervalSeconds;
+            logger.LogWarning(
+                "{ServiceName} paused — network unreachable, probing every {Interval}s",
+                ServiceName, probeInterval);
+
+            while (circuitBreaker.IsTripped && circuitBreaker.IsAutoResettable && !ct.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(probeInterval), ct);
+
+                if (await ProbeConnectivityAsync(ct))
+                {
+                    circuitBreaker.Reset();
+                    logger.LogInformation("{ServiceName} — connectivity restored, resuming collection", ServiceName);
+                    return;
+                }
+            }
+        }
+        else
+        {
+            var cooldown = options.CurrentValue.CircuitBreakerCooldownMinutes;
+            logger.LogWarning(
+                "{ServiceName} paused — circuit breaker tripped, retrying in {Cooldown} min",
+                ServiceName, cooldown);
+            await Task.Delay(TimeSpan.FromMinutes(cooldown), ct);
+        }
+    }
+
+    private async Task<bool> ProbeConnectivityAsync(CancellationToken ct)
+    {
+        try
+        {
+            var baseUrl = options.CurrentValue.Binance.FuturesBaseUrl;
+            using var client = httpClientFactory.CreateClient("connectivity-probe");
+            client.Timeout = TimeSpan.FromSeconds(5);
+
+            using var response = await client.GetAsync($"{baseUrl}/fapi/v1/ping", ct);
+            // Any HTTP response means the network is reachable
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
     private async Task CollectCycleAsync(CancellationToken ct)
     {
         var config = options.CurrentValue;
+        var consecutiveNetworkFailures = 0;
 
         foreach (var asset in config.Assets)
         {
@@ -142,14 +189,34 @@ internal abstract class ScheduledCollectorService(
                             .ToUnixTimeMilliseconds();
 
                         await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct);
+                        consecutiveNetworkFailures = 0;
                     }
                     catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)
                     {
                         circuitBreaker.Trip("IP banned by Binance");
                         return;
                     }
+                    catch (Exception ex) when (
+                        ex is not OperationCanceledException && NetworkErrorHelper.IsNetworkError(ex))
+                    {
+                        consecutiveNetworkFailures++;
+
+                        if (consecutiveNetworkFailures >= config.NetworkFailureThreshold)
+                        {
+                            logger.LogError(
+                                "Network unreachable after {Count} consecutive failures, tripping circuit breaker",
+                                consecutiveNetworkFailures);
+                            circuitBreaker.Trip("Network unreachable", TripReason.Network);
+                            return;
+                        }
+
+                        logger.LogWarning(ex,
+                            "Network error for {Feed}/{Symbol} ({Count}/{Threshold})",
+                            feedName, asset.Symbol, consecutiveNetworkFailures, config.NetworkFailureThreshold);
+                    }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
+                        consecutiveNetworkFailures = 0;
                         logger.LogError(ex, "{Feed} collection failed for {Symbol}", feedName, asset.Symbol);
                     }
                 }

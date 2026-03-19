@@ -9,9 +9,10 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 internal sealed class RatioCollectorService(
     SymbolCollector symbolCollector,
     ICollectionCircuitBreaker circuitBreaker,
+    IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<RatioCollectorService> logger)
-    : ScheduledCollectorService(symbolCollector, circuitBreaker, options, logger)
+    : ScheduledCollectorService(symbolCollector, circuitBreaker, httpClientFactory, options, logger)
 {
     protected override TimeSpan Interval => TimeSpan.FromMinutes(15);
     protected override string ServiceName => "RatioCollectorService";

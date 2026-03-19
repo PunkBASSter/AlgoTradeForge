@@ -5,17 +5,30 @@ namespace AlgoTradeForge.HistoryLoader.Application.Collection;
 public sealed class CollectionCircuitBreaker(ILogger<CollectionCircuitBreaker> logger) : ICollectionCircuitBreaker
 {
     private int _tripped;
+    private TripReason? _reason;
 
     public bool IsTripped => Volatile.Read(ref _tripped) == 1;
 
-    public void Trip(string reason)
+    public TripReason? Reason => IsTripped ? _reason : null;
+
+    public void Trip(string reason, TripReason kind = TripReason.Ban)
     {
         if (Interlocked.CompareExchange(ref _tripped, 1, 0) == 0)
-            logger.LogCritical("Collection circuit breaker tripped: {Reason}", reason);
+        {
+            _reason = kind;
+            logger.LogCritical("Collection circuit breaker tripped ({Kind}): {Reason}", kind, reason);
+        }
+        else if (kind == TripReason.Ban && _reason == TripReason.Network)
+        {
+            // Upgrade from Network to Ban — ban takes precedence
+            _reason = TripReason.Ban;
+            logger.LogCritical("Circuit breaker upgraded to Ban: {Reason}", reason);
+        }
     }
 
     public void Reset()
     {
+        _reason = null;
         Interlocked.Exchange(ref _tripped, 0);
         logger.LogInformation("Collection circuit breaker reset");
     }

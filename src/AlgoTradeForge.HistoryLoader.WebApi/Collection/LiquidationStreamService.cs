@@ -14,6 +14,7 @@ internal sealed class LiquidationStreamService(
     ISchemaManager schemaManager,
     IFeedStatusStore feedStatusStore,
     ICollectionCircuitBreaker circuitBreaker,
+    IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<LiquidationStreamService> logger) : BackgroundService
 {
@@ -36,11 +37,34 @@ internal sealed class LiquidationStreamService(
         {
             if (circuitBreaker.IsTripped)
             {
-                var cooldown = options.CurrentValue.CircuitBreakerCooldownMinutes;
-                logger.LogWarning(
-                    "LiquidationStreamService paused — circuit breaker tripped, retrying in {Cooldown} min",
-                    cooldown);
-                await Task.Delay(TimeSpan.FromMinutes(cooldown), stoppingToken);
+                if (circuitBreaker.IsAutoResettable)
+                {
+                    var probeInterval = options.CurrentValue.NetworkProbeIntervalSeconds;
+                    logger.LogWarning(
+                        "LiquidationStreamService paused — network unreachable, probing every {Interval}s",
+                        probeInterval);
+
+                    while (circuitBreaker.IsTripped && circuitBreaker.IsAutoResettable
+                           && !stoppingToken.IsCancellationRequested)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(probeInterval), stoppingToken);
+                        if (await ProbeConnectivityAsync(stoppingToken))
+                        {
+                            circuitBreaker.Reset();
+                            logger.LogInformation("LiquidationStreamService — connectivity restored");
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    var cooldown = options.CurrentValue.CircuitBreakerCooldownMinutes;
+                    logger.LogWarning(
+                        "LiquidationStreamService paused — circuit breaker tripped, retrying in {Cooldown} min",
+                        cooldown);
+                    await Task.Delay(TimeSpan.FromMinutes(cooldown), stoppingToken);
+                }
+
                 continue;
             }
 
@@ -57,6 +81,18 @@ internal sealed class LiquidationStreamService(
             catch (Exception ex)
             {
                 attempts++;
+
+                if (NetworkErrorHelper.IsNetworkError(ex)
+                    && attempts >= options.CurrentValue.NetworkFailureThreshold)
+                {
+                    logger.LogError(
+                        "LiquidationStreamService — network unreachable after {Count} attempts, tripping circuit breaker",
+                        attempts);
+                    circuitBreaker.Trip("Network unreachable (WebSocket)", TripReason.Network);
+                    attempts = 0;
+                    continue;
+                }
+
                 if (attempts > MaxReconnectAttempts)
                 {
                     logger.LogCritical(ex,
@@ -74,6 +110,23 @@ internal sealed class LiquidationStreamService(
         }
 
         logger.LogInformation("LiquidationStreamService stopped");
+    }
+
+    private async Task<bool> ProbeConnectivityAsync(CancellationToken ct)
+    {
+        try
+        {
+            var baseUrl = options.CurrentValue.Binance.FuturesBaseUrl;
+            using var client = httpClientFactory.CreateClient("connectivity-probe");
+            client.Timeout = TimeSpan.FromSeconds(5);
+
+            using var response = await client.GetAsync($"{baseUrl}/fapi/v1/ping", ct);
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
     }
 
     private async Task ConnectAndStreamAsync(CancellationToken ct)

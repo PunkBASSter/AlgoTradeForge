@@ -9,9 +9,10 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 internal sealed class FundingRateCollectorService(
     SymbolCollector symbolCollector,
     ICollectionCircuitBreaker circuitBreaker,
+    IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<FundingRateCollectorService> logger)
-    : ScheduledCollectorService(symbolCollector, circuitBreaker, options, logger)
+    : ScheduledCollectorService(symbolCollector, circuitBreaker, httpClientFactory, options, logger)
 {
     protected override TimeSpan Interval => TimeSpan.FromHours(8);
     protected override string ServiceName => "FundingRateCollectorService";
