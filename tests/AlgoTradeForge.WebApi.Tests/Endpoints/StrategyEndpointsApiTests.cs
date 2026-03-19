@@ -11,10 +11,10 @@ public sealed class StrategyEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     [Fact]
     public async Task GetStrategies_Returns200()
     {
-        var response = await Client.GetAsync("/api/strategies");
+        var response = await Client.GetAsync("/api/strategies", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var names = await response.Content.ReadFromJsonAsync<List<string>>(Json);
+        var names = await response.Content.ReadFromJsonAsync<List<string>>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(names);
     }
 
@@ -26,10 +26,10 @@ public sealed class StrategyEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
         var (_, submission) = await SubmitBacktestAsync(request);
         await PollBacktestUntilDoneAsync(submission.Id, TimeSpan.FromSeconds(60));
 
-        var response = await Client.GetAsync("/api/strategies");
+        var response = await Client.GetAsync("/api/strategies", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var names = await response.Content.ReadFromJsonAsync<List<string>>(Json);
+        var names = await response.Content.ReadFromJsonAsync<List<string>>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(names);
         Assert.Contains("BuyAndHold", names);
     }
@@ -37,20 +37,20 @@ public sealed class StrategyEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     [Fact]
     public async Task GetAvailableStrategies_Returns200()
     {
-        var response = await Client.GetAsync("/api/strategies/available");
+        var response = await Client.GetAsync("/api/strategies/available", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var strategies = await response.Content.ReadFromJsonAsync<List<StrategyDescriptorResponse>>(Json);
+        var strategies = await response.Content.ReadFromJsonAsync<List<StrategyDescriptorResponse>>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(strategies);
     }
 
     [Fact]
     public async Task GetAvailableStrategies_ContainsBuyAndHold()
     {
-        var response = await Client.GetAsync("/api/strategies/available");
+        var response = await Client.GetAsync("/api/strategies/available", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var strategies = await response.Content.ReadFromJsonAsync<List<StrategyDescriptorResponse>>(Json);
+        var strategies = await response.Content.ReadFromJsonAsync<List<StrategyDescriptorResponse>>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(strategies);
         Assert.Contains(strategies, s => s.Name == "BuyAndHold");
     }
@@ -58,10 +58,10 @@ public sealed class StrategyEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     [Fact]
     public async Task GetAvailableStrategies_ReturnsDefaultsAndAxes()
     {
-        var response = await Client.GetAsync("/api/strategies/available");
+        var response = await Client.GetAsync("/api/strategies/available", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var strategies = await response.Content.ReadFromJsonAsync<List<StrategyDescriptorResponse>>(Json);
+        var strategies = await response.Content.ReadFromJsonAsync<List<StrategyDescriptorResponse>>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(strategies);
 
         var buyAndHold = strategies.Single(s => s.Name == "BuyAndHold");

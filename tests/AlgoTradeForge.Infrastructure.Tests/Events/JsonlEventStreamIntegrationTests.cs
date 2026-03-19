@@ -69,7 +69,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         };
 
         // Act
-        engine.Run([bars], strategy, btOptions, bus: bus);
+        engine.Run([bars], strategy, btOptions, ct: TestContext.Current.CancellationToken, bus: bus);
         sink.Dispose();
 
         // Assert — read the events.jsonl file
@@ -157,7 +157,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         };
 
         // Act
-        engine.Run([bars], strategy, btOptions, bus: bus);
+        engine.Run([bars], strategy, btOptions, ct: TestContext.Current.CancellationToken, bus: bus);
         sink.Dispose();
 
         // Assert
@@ -211,7 +211,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         };
 
         // Act
-        engine.Run([bars], strategy, btOptions, bus: bus);
+        engine.Run([bars], strategy, btOptions, ct: TestContext.Current.CancellationToken, bus: bus);
         sink.Dispose();
 
         // Assert
@@ -266,7 +266,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         };
 
         // Act — no indicatorFactory passed (passthrough default)
-        engine.Run([bars], strategy, btOptions, bus: bus);
+        engine.Run([bars], strategy, btOptions, ct: TestContext.Current.CancellationToken, bus: bus);
         sink.Dispose();
 
         // Assert

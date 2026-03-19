@@ -225,7 +225,7 @@ public class IndicatorFactoryTests
         };
 
         // Act
-        engine.Run([m1Series, h1Series], strategy, options, bus: bus);
+        engine.Run([m1Series, h1Series], strategy, options, ct: TestContext.Current.CancellationToken, bus: bus);
 
         // Assert — 3 ind events from M1 indicator + 1 from H1 indicator = 4 total
         var indEvents = bus.Events.OfType<IndicatorEvent>().ToList();

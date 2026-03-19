@@ -76,7 +76,7 @@ public class DebugSessionHandlerTests
             InitialCash = 100_000m,
             StartTime = Start,
             EndTime = Start.AddDays(1),
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.NotEqual(Guid.Empty, dto.SessionId);
         Assert.Equal("AAPL", dto.AssetName);
@@ -112,14 +112,14 @@ public class DebugSessionHandlerTests
             InitialCash = 100_000m,
             StartTime = Start,
             EndTime = Start.AddDays(1),
-        });
+        }, TestContext.Current.CancellationToken);
 
         // Step to first bar
         var step1 = await sendHandler.HandleAsync(new SendDebugCommandRequest
         {
             SessionId = sessionDto.SessionId,
             Command = new DebugCommand.NextBar()
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.True(step1.SessionActive);
         Assert.Equal(1, step1.SequenceNumber);
@@ -129,7 +129,7 @@ public class DebugSessionHandlerTests
         {
             SessionId = sessionDto.SessionId,
             Command = new DebugCommand.NextBar()
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, step2.SequenceNumber);
 
@@ -138,7 +138,7 @@ public class DebugSessionHandlerTests
         {
             SessionId = sessionDto.SessionId,
             Command = new DebugCommand.Continue()
-        });
+        }, TestContext.Current.CancellationToken);
 
         // Wait for engine to complete
         var session = _sessionStore.Get(sessionDto.SessionId)!;
@@ -165,7 +165,7 @@ public class DebugSessionHandlerTests
             {
                 SessionId = Guid.NewGuid(),
                 Command = new DebugCommand.NextBar()
-            }));
+            }, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -184,14 +184,14 @@ public class DebugSessionHandlerTests
             InitialCash = 100_000m,
             StartTime = Start,
             EndTime = Start.AddDays(1),
-        });
+        }, TestContext.Current.CancellationToken);
 
         // Continue to completion
         await sendHandler.HandleAsync(new SendDebugCommandRequest
         {
             SessionId = sessionDto.SessionId,
             Command = new DebugCommand.Continue()
-        });
+        }, TestContext.Current.CancellationToken);
 
         var session = _sessionStore.Get(sessionDto.SessionId)!;
         try
@@ -203,7 +203,7 @@ public class DebugSessionHandlerTests
             {
                 SessionId = sessionDto.SessionId,
                 Command = new DebugCommand.NextBar()
-            });
+            }, TestContext.Current.CancellationToken);
 
             Assert.False(result.SessionActive);
         }

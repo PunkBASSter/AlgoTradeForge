@@ -22,10 +22,10 @@ public class BacktestEndpointsTests
     {
         // Arrange
         var runId = Guid.NewGuid();
-        await _progressCache.SetProgressAsync(runId, 50, 100);
+        await _progressCache.SetProgressAsync(runId, 50, 100, TestContext.Current.CancellationToken);
 
         // Act
-        var progress = await _progressCache.GetProgressAsync(runId);
+        var progress = await _progressCache.GetProgressAsync(runId, TestContext.Current.CancellationToken);
 
         // Assert — cache presence means running
         Assert.NotNull(progress);
@@ -37,7 +37,7 @@ public class BacktestEndpointsTests
     public async Task GetStatus_CompletedRun_CacheMiss()
     {
         // Act — no cache entry for this ID
-        var progress = await _progressCache.GetProgressAsync(Guid.NewGuid());
+        var progress = await _progressCache.GetProgressAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
 
         // Assert — cache miss, would check SQLite next
         Assert.Null(progress);
@@ -47,7 +47,7 @@ public class BacktestEndpointsTests
     public async Task GetStatus_UnknownRun_ReturnsNull()
     {
         // Act
-        var progress = await _progressCache.GetProgressAsync(Guid.NewGuid());
+        var progress = await _progressCache.GetProgressAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Null(progress);
@@ -90,17 +90,17 @@ public class BacktestEndpointsTests
         var runId = Guid.NewGuid();
         var runKey = "test-run-key-12345";
 
-        await _progressCache.SetRunKeyAsync(runKey, runId);
-        await _progressCache.SetProgressAsync(runId, 0, 50);
+        await _progressCache.SetRunKeyAsync(runKey, runId, TestContext.Current.CancellationToken);
+        await _progressCache.SetProgressAsync(runId, 0, 50, TestContext.Current.CancellationToken);
 
         // Act
-        var existingId = await _progressCache.TryGetRunIdByKeyAsync(runKey);
+        var existingId = await _progressCache.TryGetRunIdByKeyAsync(runKey, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(runId, existingId);
 
         // Verify the run is active
-        var progress = await _progressCache.GetProgressAsync(existingId!.Value);
+        var progress = await _progressCache.GetProgressAsync(existingId!.Value, TestContext.Current.CancellationToken);
         Assert.NotNull(progress);
     }
 
@@ -111,11 +111,11 @@ public class BacktestEndpointsTests
         var runId = Guid.NewGuid();
 
         // Act — simulate progress updates
-        await _progressCache.SetProgressAsync(runId, 0, 100);
-        await _progressCache.SetProgressAsync(runId, 50, 100);
-        await _progressCache.SetProgressAsync(runId, 100, 100);
+        await _progressCache.SetProgressAsync(runId, 0, 100, TestContext.Current.CancellationToken);
+        await _progressCache.SetProgressAsync(runId, 50, 100, TestContext.Current.CancellationToken);
+        await _progressCache.SetProgressAsync(runId, 100, 100, TestContext.Current.CancellationToken);
 
-        var progress = await _progressCache.GetProgressAsync(runId);
+        var progress = await _progressCache.GetProgressAsync(runId, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(progress);

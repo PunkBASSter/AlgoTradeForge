@@ -72,7 +72,7 @@ public class PostRunIntegrationTests : IDisposable
         };
 
         // Act — run engine
-        var result = engine.Run([bars], strategy, btOptions, bus: bus);
+        var result = engine.Run([bars], strategy, btOptions, ct: TestContext.Current.CancellationToken, bus: bus);
 
         var summary = new RunSummary(
             result.TotalBarsProcessed,
@@ -197,7 +197,7 @@ public class PostRunIntegrationTests : IDisposable
             EndTime = DateTimeOffset.MaxValue,
         };
 
-        var result = engine.Run([bars], strategy, btOptions, bus: bus);
+        var result = engine.Run([bars], strategy, btOptions, ct: TestContext.Current.CancellationToken, bus: bus);
         var summary = new RunSummary(
             result.TotalBarsProcessed,
             result.EquityCurve.Count > 0 ? result.EquityCurve[^1].Value : 100_000L,

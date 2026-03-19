@@ -27,9 +27,9 @@ public class GetBacktestStatusQueryHandlerTests
     public async Task HandleAsync_ActiveRun_ReturnsRunningWithNoResult()
     {
         var id = Guid.NewGuid();
-        await _progressCache.SetProgressAsync(id, 50, 100);
+        await _progressCache.SetProgressAsync(id, 50, 100, TestContext.Current.CancellationToken);
 
-        var dto = await _handler.HandleAsync(new GetBacktestStatusQuery(id));
+        var dto = await _handler.HandleAsync(new GetBacktestStatusQuery(id), TestContext.Current.CancellationToken);
 
         Assert.NotNull(dto);
         Assert.Equal(id, dto.Id);
@@ -62,7 +62,7 @@ public class GetBacktestStatusQueryHandlerTests
         };
         _repository.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(record);
 
-        var dto = await _handler.HandleAsync(new GetBacktestStatusQuery(id));
+        var dto = await _handler.HandleAsync(new GetBacktestStatusQuery(id), TestContext.Current.CancellationToken);
 
         Assert.NotNull(dto);
         Assert.Equal(id, dto.Id);
@@ -76,7 +76,7 @@ public class GetBacktestStatusQueryHandlerTests
         var id = Guid.NewGuid();
         _repository.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns((BacktestRunRecord?)null);
 
-        var dto = await _handler.HandleAsync(new GetBacktestStatusQuery(id));
+        var dto = await _handler.HandleAsync(new GetBacktestStatusQuery(id), TestContext.Current.CancellationToken);
 
         Assert.Null(dto);
     }

@@ -58,7 +58,7 @@ public class GetLiveSessionDataQueryHandlerTests
     {
         var handler = CreateHandler();
 
-        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(Guid.NewGuid()));
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(Guid.NewGuid()), TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }
@@ -71,7 +71,7 @@ public class GetLiveSessionDataQueryHandlerTests
         _store.TryAdd(sessionId, MakeDetails());
         _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns((LiveSessionSnapshot?)null);
 
-        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId), TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }
@@ -87,7 +87,7 @@ public class GetLiveSessionDataQueryHandlerTests
         var bar = new Int64Bar(1_741_292_400_000, 6_500_000, 6_600_000, 6_400_000, 6_550_000, 100);
         _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(bars: [bar]));
 
-        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId), TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Single(result.Candles);
@@ -118,7 +118,7 @@ public class GetLiveSessionDataQueryHandlerTests
                 Arg.Any<decimal>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns([klineBar]);
 
-        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId), TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         // Should have 2 candles: REST kline wins for ts1, session bar for ts2
@@ -141,7 +141,7 @@ public class GetLiveSessionDataQueryHandlerTests
 
         _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(fills: [fill]));
 
-        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId), TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Single(result.Fills);
@@ -173,7 +173,7 @@ public class GetLiveSessionDataQueryHandlerTests
 
         _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(pendingOrders: [order]));
 
-        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId), TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Single(result.PendingOrders);
@@ -198,7 +198,7 @@ public class GetLiveSessionDataQueryHandlerTests
 
         _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(positions: positions));
 
-        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId), TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Single(result.Account.Positions);
@@ -215,7 +215,7 @@ public class GetLiveSessionDataQueryHandlerTests
         _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(
             MakeSnapshot(cash: 9_500_000, initialCash: 10_000_000));
 
-        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId), TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Equal(100_000.00m, result.Account.InitialCash); // 10_000_000 * 0.01
@@ -237,7 +237,7 @@ public class GetLiveSessionDataQueryHandlerTests
 
         _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(lastBars: lastBars));
 
-        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId), TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Single(result.LastBars);
@@ -265,7 +265,7 @@ public class GetLiveSessionDataQueryHandlerTests
 
         _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(MakeSnapshot(exchangeTrades: trades));
 
-        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId), TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Single(result.ExchangeTrades);
@@ -288,7 +288,7 @@ public class GetLiveSessionDataQueryHandlerTests
                 Arg.Any<decimal>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns<IReadOnlyList<Int64Bar>>(_ => throw new HttpRequestException("API down"));
 
-        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId), TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Single(result.Candles);
@@ -307,7 +307,7 @@ public class GetLiveSessionDataQueryHandlerTests
             10_000_000, 10_000_000, 100_000m, TestAsset, [], [], []);
         _dataProvider.GetSnapshotAsync(sessionId, Arg.Any<CancellationToken>()).Returns(snapshot);
 
-        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId));
+        var result = await handler.HandleAsync(new GetLiveSessionDataQuery(sessionId), TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
         Assert.Equal("00:01:00", result.TimeFrame);

@@ -30,13 +30,13 @@ public sealed class DebugE2eTests(PlaywrightFixture fixture) : PlaywrightTestBas
         await debug.WaitForToolbarAsync(30_000);
 
         await debug.Toolbar.ClickNextAsync();
-        await Task.Delay(500);
+        await Task.Delay(500, TestContext.Current.CancellationToken);
         await debug.Toolbar.ClickToNextBarAsync();
-        await Task.Delay(500);
+        await Task.Delay(500, TestContext.Current.CancellationToken);
         await debug.Toolbar.ClickPlayAsync();
-        await Task.Delay(2_000);
+        await Task.Delay(2_000, TestContext.Current.CancellationToken);
         await debug.Toolbar.ClickPauseAsync();
-        await Task.Delay(500);
+        await Task.Delay(500, TestContext.Current.CancellationToken);
 
         await debug.WaitForMetricsVisibleAsync();
         await debug.AssertHasMetricText("Sequence");

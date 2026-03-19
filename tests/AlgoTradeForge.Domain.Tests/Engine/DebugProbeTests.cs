@@ -33,7 +33,7 @@ public class DebugProbeTests
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 3);
 
-        var result = CreateEngine().Run([bars], strategy, CreateOptions());
+        var result = CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, result.TotalBarsProcessed);
     }
@@ -56,7 +56,7 @@ public class DebugProbeTests
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 5);
 
-        CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, probe: probe);
 
         probe.DidNotReceive().OnRunStart();
         probe.DidNotReceive().OnBarProcessed(Arg.Any<DebugSnapshot>());
@@ -75,7 +75,7 @@ public class DebugProbeTests
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 3);
 
-        CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, probe: probe);
 
         Assert.Equal("OnRunStart", calls[0]);
         Assert.Equal("OnBarProcessed:1", calls[1]);
@@ -97,7 +97,7 @@ public class DebugProbeTests
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 5);
 
-        CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, probe: probe);
 
         Assert.Equal(5, snapshots.Count);
         for (var i = 0; i < snapshots.Count; i++)
@@ -116,7 +116,7 @@ public class DebugProbeTests
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 2);
 
-        CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, probe: probe);
 
         Assert.Equal(Start.ToUnixTimeMilliseconds(), snapshots[0].TimestampMs);
         Assert.Equal(Start.AddMinutes(1).ToUnixTimeMilliseconds(), snapshots[1].TimestampMs);
@@ -134,7 +134,7 @@ public class DebugProbeTests
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 1);
 
-        CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, probe: probe);
 
         Assert.Single(snapshots);
         Assert.True(snapshots[0].IsExportableSubscription);
@@ -166,7 +166,7 @@ public class DebugProbeTests
         // Bar 0: submit order in OnBarComplete → fills on bar 1
         var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 1000);
 
-        CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, probe: probe);
 
         Assert.Equal(2, snapshots.Count);
         Assert.Equal(0, snapshots[0].FillsThisBar); // bar 0: order submitted, not yet filled
@@ -187,7 +187,7 @@ public class DebugProbeTests
         var bars0 = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 1000);
         var bars1 = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 5000);
 
-        CreateEngine().Run([bars0, bars1], strategy, CreateOptions(), probe: probe);
+        CreateEngine().Run([bars0, bars1], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, probe: probe);
 
         // Both bars have the same timestamp, delivered in subscription order
         Assert.Equal(2, snapshots.Count);
@@ -210,7 +210,7 @@ public class DebugProbeTests
         var bars = TestBars.CreateSeries(Start, OneMinute, 1);
 
         Assert.Throws<InvalidOperationException>(() =>
-            CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe));
+            CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, probe: probe));
 
         Assert.Contains("OnRunEnd", calls);
     }
@@ -248,7 +248,7 @@ public class DebugProbeTests
 
         var bars = new TimeSeries<Int64Bar>();
 
-        CreateEngine().Run([bars], strategy, CreateOptions(), probe: probe);
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, probe: probe);
 
         Assert.Equal(["OnRunStart", "OnRunEnd"], calls);
     }

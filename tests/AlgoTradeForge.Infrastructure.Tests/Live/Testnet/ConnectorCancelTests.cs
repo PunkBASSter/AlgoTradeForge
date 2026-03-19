@@ -43,10 +43,10 @@ public sealed class ConnectorCancelTests(TestnetConnectorFixture fixture)
         };
 
         // Wait for next bar so the order gets submitted
-        await Strategy.NextBarTcs.Task.WaitAsync(TimeSpan.FromSeconds(90));
+        await Strategy.NextBarTcs.Task.WaitAsync(TimeSpan.FromSeconds(90), TestContext.Current.CancellationToken);
 
         // Small delay to let the order reach Binance
-        await Task.Delay(2000);
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
 
         // Cancel the order
         Strategy.ResetBarTcs();
@@ -56,10 +56,10 @@ public sealed class ConnectorCancelTests(TestnetConnectorFixture fixture)
             cancelled = orders.Cancel(orderId);
         };
 
-        await Strategy.NextBarTcs.Task.WaitAsync(TimeSpan.FromSeconds(90));
+        await Strategy.NextBarTcs.Task.WaitAsync(TimeSpan.FromSeconds(90), TestContext.Current.CancellationToken);
 
         // Verify no fill was received — if the task completes within the timeout, the cancel failed
         await Assert.ThrowsAsync<TimeoutException>(
-            () => Strategy.NextFillTcs.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+            () => Strategy.NextFillTcs.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
     }
 }

@@ -150,7 +150,7 @@ public sealed class FeedCsvWriterTests : IDisposable
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public void Write_ConcurrentSameTimestamp_OnlyOneLineWritten()
+    public async Task Write_ConcurrentSameTimestamp_OnlyOneLineWritten()
     {
         var lockMgr = new WriteLockManager();
         var writer = new FeedCsvWriter(lockMgr);
@@ -160,7 +160,7 @@ public sealed class FeedCsvWriterTests : IDisposable
             writer.Write(_tempDir, "concurrent-feed", "", columns,
                 new FeedRecord(Ts20240115, [0.0001]))));
 
-        Task.WhenAll(tasks).Wait();
+        await Task.WhenAll(tasks);
 
         var filePath = Path.Combine(_tempDir, "concurrent-feed", "2024-01.csv");
         var lines = File.ReadAllLines(filePath);

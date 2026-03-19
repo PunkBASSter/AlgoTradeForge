@@ -50,7 +50,7 @@ public class BacktestEngineFeedTests
             new DataFeedSchema("funding", ["fundingRate"]),
             new FeedSeries([StartMs], [[0.0001]]));
 
-        _engine.Run([bars], strategy, CreateOptions(), feedContext: feedContext);
+        _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, feedContext: feedContext);
 
         Assert.NotNull(strategy.Feeds);
         Assert.IsType<BacktestFeedContext>(strategy.Feeds);
@@ -63,7 +63,7 @@ public class BacktestEngineFeedTests
         var strategy = new FeedAwareTestStrategy();
         strategy.DataSubscriptions.Add(new DataSubscription(PerpAsset, OneMinute));
 
-        _engine.Run([bars], strategy, CreateOptions());
+        _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(strategy.Feeds);
         Assert.IsType<NullFeedContext>(strategy.Feeds);
@@ -97,7 +97,7 @@ public class BacktestEngineFeedTests
             }
         };
 
-        _engine.Run([bars], strategy, CreateOptions(), feedContext: feedContext);
+        _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, feedContext: feedContext);
 
         Assert.NotNull(capturedFundingRate);
         Assert.Equal(0.0001, capturedFundingRate.Value);
@@ -123,7 +123,7 @@ public class BacktestEngineFeedTests
                 feedAvailableInOnBarStart = true;
         };
 
-        _engine.Run([bars], strategy, CreateOptions(), feedContext: feedContext);
+        _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, feedContext: feedContext);
 
         Assert.True(feedAvailableInOnBarStart);
     }
@@ -147,7 +147,7 @@ public class BacktestEngineFeedTests
             hasNewPerBar.Add(strategy.Feeds!.HasNewData("funding"));
         };
 
-        _engine.Run([bars], strategy, CreateOptions(), feedContext: feedContext);
+        _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, feedContext: feedContext);
 
         Assert.Equal(3, hasNewPerBar.Count);
         Assert.True(hasNewPerBar[0]);   // bar 0: funding consumed
@@ -190,7 +190,7 @@ public class BacktestEngineFeedTests
             }
         };
 
-        var result = _engine.Run([bars], strategy, CreateOptions(), feedContext: feedContext);
+        var result = _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, feedContext: feedContext);
 
         // Initial cash: 1,000,000
         // After margin open: cash -= commission (0) only → 1,000,000
@@ -226,7 +226,7 @@ public class BacktestEngineFeedTests
             }
         };
 
-        var result = _engine.Run([bars], strategy, CreateOptions(), feedContext: feedContext);
+        var result = _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, feedContext: feedContext);
 
         // Short position with positive funding rate → receives funding
         // delta = -(-1 × 50000 × 0.0001 × 1) = +5
@@ -248,7 +248,7 @@ public class BacktestEngineFeedTests
         var strategy = new FeedAwareTestStrategy();
         strategy.DataSubscriptions.Add(new DataSubscription(PerpAsset, OneMinute));
 
-        var result = _engine.Run([bars], strategy, CreateOptions(), feedContext: feedContext);
+        var result = _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, feedContext: feedContext);
 
         Assert.Equal(1_000_000L, result.FinalPortfolio.Cash);
     }
@@ -283,7 +283,7 @@ public class BacktestEngineFeedTests
             }
         };
 
-        var result = _engine.Run([bars], strategy, CreateOptions(), feedContext: feedContext);
+        var result = _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, feedContext: feedContext);
 
         // Bar 0: open long. Cash = 1,000,000 (margin, no commission)
         // Bar 1: funding +0.0001 → delta = -(1 × 50000 × 0.0001) = -5 → cash = 999,995
@@ -303,7 +303,7 @@ public class BacktestEngineFeedTests
         var strategy = Substitute.For<IInt64BarStrategy>();
         strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
 
-        var result = _engine.Run([bars], strategy, CreateOptions());
+        var result = _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, result.TotalBarsProcessed);
         Assert.Equal(1_000_000L, result.FinalPortfolio.Cash);

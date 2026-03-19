@@ -37,7 +37,7 @@ public class BacktestEventOrderingTests
         var bars = TestBars.CreateSeries(Start, OneMinute,
             TestBars.Create(10000, 11000, 9000, 10500, volume: 5000));
 
-        CreateEngine().Run([bars], strategy, CreateOptions());
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(received);
         var b = received.Value;
@@ -73,7 +73,7 @@ public class BacktestEventOrderingTests
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 1000);
 
-        CreateEngine().Run([bars], strategy, CreateOptions());
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(
         [
@@ -112,7 +112,7 @@ public class BacktestEventOrderingTests
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 1000);
 
-        var result = CreateEngine().Run([bars], strategy, CreateOptions());
+        var result = CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Single(result.Fills);
         Assert.NotNull(fillsSeenInComplete);
@@ -148,7 +148,7 @@ public class BacktestEventOrderingTests
         var bars = TestBars.CreateSeries(Start, OneMinute,
             TestBars.Create(10000, 11000, 8500, 9000));
 
-        var result = CreateEngine().Run([bars], strategy, CreateOptions());
+        var result = CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Fills.Count);
         Assert.Equal(
@@ -196,7 +196,7 @@ public class BacktestEventOrderingTests
         // Bar 1: O=1100 — both fill
         var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 1000);
 
-        var result = CreateEngine().Run([bars], strategy, CreateOptions());
+        var result = CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, result.Fills.Count);
 
@@ -241,7 +241,7 @@ public class BacktestEventOrderingTests
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 1000);
 
-        CreateEngine().Run([bars], strategy, CreateOptions());
+        CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(fillsOnBar0);
         Assert.Empty(fillsOnBar0);
@@ -284,7 +284,7 @@ public class BacktestEventOrderingTests
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 10000);
 
-        var result = CreateEngine().Run([bars], strategy, CreateOptions());
+        var result = CreateEngine().Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.Single(result.Fills);
         Assert.Equal(7m, result.Fills[0].Quantity);

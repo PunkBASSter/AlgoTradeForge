@@ -21,7 +21,7 @@ public class StopLiveSessionCommandHandlerTests
 
         var handler = new StopLiveSessionCommandHandler(store, accountManager);
 
-        var result = await handler.HandleAsync(new StopLiveSessionCommand(sessionId));
+        var result = await handler.HandleAsync(new StopLiveSessionCommand(sessionId), TestContext.Current.CancellationToken);
 
         Assert.True(result);
         await connector.Received(1).RemoveSessionAsync(sessionId, Arg.Any<CancellationToken>());
@@ -35,7 +35,7 @@ public class StopLiveSessionCommandHandlerTests
         var accountManager = Substitute.For<ILiveAccountManager>();
         var handler = new StopLiveSessionCommandHandler(store, accountManager);
 
-        var result = await handler.HandleAsync(new StopLiveSessionCommand(Guid.NewGuid()));
+        var result = await handler.HandleAsync(new StopLiveSessionCommand(Guid.NewGuid()), TestContext.Current.CancellationToken);
 
         Assert.False(result);
     }
@@ -52,7 +52,7 @@ public class StopLiveSessionCommandHandlerTests
 
         var handler = new StopLiveSessionCommandHandler(store, accountManager);
 
-        await handler.HandleAsync(new StopLiveSessionCommand(sessionId));
+        await handler.HandleAsync(new StopLiveSessionCommand(sessionId), TestContext.Current.CancellationToken);
 
         await accountManager.Received(1).TryRemoveAsync("paper", Arg.Any<CancellationToken>());
     }
@@ -69,7 +69,7 @@ public class StopLiveSessionCommandHandlerTests
 
         var handler = new StopLiveSessionCommandHandler(store, accountManager);
 
-        await handler.HandleAsync(new StopLiveSessionCommand(sessionId));
+        await handler.HandleAsync(new StopLiveSessionCommand(sessionId), TestContext.Current.CancellationToken);
 
         await accountManager.DidNotReceive().TryRemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }

@@ -71,7 +71,7 @@ public class StartLiveSessionCommandHandlerTests
             DataSubscriptions = DefaultSubscriptions,
         };
 
-        var result = await handler.HandleAsync(command);
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.NotEqual(Guid.Empty, result.SessionId);
         await accountManager.Received(1).GetOrCreateAsync("paper", Arg.Any<CancellationToken>());
@@ -117,7 +117,7 @@ public class StartLiveSessionCommandHandlerTests
             DataSubscriptions = DefaultSubscriptions,
         };
 
-        await handler.HandleAsync(command);
+        await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Single(strategy.DataSubscriptions);
         Assert.Equal(BtcUsdt, strategy.DataSubscriptions[0].Asset);
@@ -139,7 +139,7 @@ public class StartLiveSessionCommandHandlerTests
             StrategyName = "BuyAndHold", InitialCash = 10000m,
         };
 
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command));
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command, TestContext.Current.CancellationToken));
         Assert.Contains("At least one data subscription", ex.Message);
     }
 
@@ -188,7 +188,7 @@ public class StartLiveSessionCommandHandlerTests
             },
         };
 
-        await handler.HandleAsync(command);
+        await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         Assert.NotNull(capturedParams);
         // $100 / 0.01 tickSize = 10000L (tick units)
@@ -231,8 +231,8 @@ public class StartLiveSessionCommandHandlerTests
             StrategyParameters = new Dictionary<string, object> { ["lookback"] = 20 },
         };
 
-        var r1 = await handler.HandleAsync(cmd1);
-        var r2 = await handler.HandleAsync(cmd2);
+        var r1 = await handler.HandleAsync(cmd1, TestContext.Current.CancellationToken);
+        var r2 = await handler.HandleAsync(cmd2, TestContext.Current.CancellationToken);
 
         Assert.NotEqual(r1.SessionId, r2.SessionId);
         Assert.Same(connector, sessionStore.Get(r1.SessionId)!.Connector);
@@ -264,9 +264,9 @@ public class StartLiveSessionCommandHandlerTests
             DataSubscriptions = DefaultSubscriptions,
         };
 
-        await handler.HandleAsync(command);
+        await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(command));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(command, TestContext.Current.CancellationToken));
         Assert.Contains("already running", ex.Message);
     }
 
@@ -304,9 +304,9 @@ public class StartLiveSessionCommandHandlerTests
             DataSubscriptions = DefaultSubscriptions,
         };
 
-        await handler.HandleAsync(cmd1);
+        await handler.HandleAsync(cmd1, TestContext.Current.CancellationToken);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(cmd2));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(cmd2, TestContext.Current.CancellationToken));
         Assert.Contains("already running", ex.Message);
     }
 
@@ -347,8 +347,8 @@ public class StartLiveSessionCommandHandlerTests
             DataSubscriptions = DefaultSubscriptions,
         };
 
-        var r1 = await handler.HandleAsync(cmd1);
-        var r2 = await handler.HandleAsync(cmd2);
+        var r1 = await handler.HandleAsync(cmd1, TestContext.Current.CancellationToken);
+        var r2 = await handler.HandleAsync(cmd2, TestContext.Current.CancellationToken);
 
         Assert.Same(paperConnector, sessionStore.Get(r1.SessionId)!.Connector);
         Assert.Same(liveConnector, sessionStore.Get(r2.SessionId)!.Connector);
@@ -391,7 +391,7 @@ public class StartLiveSessionCommandHandlerTests
             ],
         };
 
-        await handler.HandleAsync(command);
+        await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         await connector.Received(1).AddSessionAsync(
             Arg.Is<LiveSessionConfig>(c => c.PrimaryAsset == ethUsdt),

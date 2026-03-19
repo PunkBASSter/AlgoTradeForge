@@ -22,10 +22,10 @@ public class OptimizationEndpointsTests
     {
         // Arrange
         var runId = Guid.NewGuid();
-        await _progressCache.SetProgressAsync(runId, 15, 50);
+        await _progressCache.SetProgressAsync(runId, 15, 50, TestContext.Current.CancellationToken);
 
         // Act
-        var progress = await _progressCache.GetProgressAsync(runId);
+        var progress = await _progressCache.GetProgressAsync(runId, TestContext.Current.CancellationToken);
 
         // Assert — cache presence means running
         Assert.NotNull(progress);
@@ -37,7 +37,7 @@ public class OptimizationEndpointsTests
     public async Task GetStatus_CompletedOptimization_CacheMiss()
     {
         // Act — no cache entry
-        var progress = await _progressCache.GetProgressAsync(Guid.NewGuid());
+        var progress = await _progressCache.GetProgressAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
 
         // Assert — would check SQLite next
         Assert.Null(progress);
@@ -80,11 +80,11 @@ public class OptimizationEndpointsTests
         var runId = Guid.NewGuid();
 
         // Act — simulate incremental progress updates
-        await _progressCache.SetProgressAsync(runId, 0, 100);
-        await _progressCache.SetProgressAsync(runId, 100, 100);
-        await _progressCache.SetProgressAsync(runId, 200, 100);
+        await _progressCache.SetProgressAsync(runId, 0, 100, TestContext.Current.CancellationToken);
+        await _progressCache.SetProgressAsync(runId, 100, 100, TestContext.Current.CancellationToken);
+        await _progressCache.SetProgressAsync(runId, 200, 100, TestContext.Current.CancellationToken);
 
-        var progress = await _progressCache.GetProgressAsync(runId);
+        var progress = await _progressCache.GetProgressAsync(runId, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(progress);
@@ -99,16 +99,16 @@ public class OptimizationEndpointsTests
         var runId = Guid.NewGuid();
         var runKey = "opt-run-key-789";
 
-        await _progressCache.SetProgressAsync(runId, 50, 100);
-        await _progressCache.SetRunKeyAsync(runKey, runId);
+        await _progressCache.SetProgressAsync(runId, 50, 100, TestContext.Current.CancellationToken);
+        await _progressCache.SetRunKeyAsync(runKey, runId, TestContext.Current.CancellationToken);
 
         // Act — simulate cleanup (what finally block does)
-        await _progressCache.RemoveProgressAsync(runId);
-        await _progressCache.RemoveRunKeyAsync(runKey);
+        await _progressCache.RemoveProgressAsync(runId, TestContext.Current.CancellationToken);
+        await _progressCache.RemoveRunKeyAsync(runKey, TestContext.Current.CancellationToken);
 
         // Assert
-        var progress = await _progressCache.GetProgressAsync(runId);
-        var mappedId = await _progressCache.TryGetRunIdByKeyAsync(runKey);
+        var progress = await _progressCache.GetProgressAsync(runId, TestContext.Current.CancellationToken);
+        var mappedId = await _progressCache.TryGetRunIdByKeyAsync(runKey, TestContext.Current.CancellationToken);
         Assert.Null(progress);
         Assert.Null(mappedId);
     }

@@ -162,25 +162,26 @@ public sealed class FeedSchemaManagerTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void ConcurrentEnsureSchema_DifferentFeeds_BothPresent()
+    public async Task ConcurrentEnsureSchema_DifferentFeeds_BothPresent()
     {
         var manager  = new FeedSchemaManager();
         var assetDir = AssetDir("BTCUSDT_Concurrent");
 
         var barrier = new Barrier(2);
 
+        var ct = TestContext.Current.CancellationToken;
         var t1 = Task.Run(() =>
         {
-            barrier.SignalAndWait();
+            barrier.SignalAndWait(ct);
             manager.EnsureSchema(assetDir, "funding", "8h", columns: ["rate"]);
-        });
+        }, ct);
         var t2 = Task.Run(() =>
         {
-            barrier.SignalAndWait();
+            barrier.SignalAndWait(ct);
             manager.EnsureSchema(assetDir, "open-interest", "5m", columns: ["oi", "sumOi"]);
-        });
+        }, ct);
 
-        Task.WaitAll(t1, t2);
+        await Task.WhenAll(t1, t2);
 
         var metadata = ReadFeedsJson(assetDir);
         Assert.Equal(2, metadata.Feeds.Count);

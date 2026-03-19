@@ -7,10 +7,6 @@
 - Missing skills, like OOP-style class design (explain)
 - Documentation hooks (continuous readme/constitution/claude.md updates)
 
-## Candle Ingestor -> HistoryLoader
-history-loader-project.md - DONE
-### Stocks+futures IB support for history loader and live connector
-
 ## Strategy development
 - Add another strategy to the framework, maybe a simple mean reversion for trading in ranges
 - Add a strategy with a different logic, e.g. price patterns, volume patterns, market profile etc.
@@ -38,6 +34,10 @@ history-loader-project.md - DONE
 - Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
 - Test optimization with pluggable modules
 - Test trades isolation module with multiple simultaneous orders allowed?
+
+## Candle Ingestor -> HistoryLoader
+history-loader-project.md - DONE
+### Stocks+futures IB support for history loader and live connector
 
 ## TECH
 

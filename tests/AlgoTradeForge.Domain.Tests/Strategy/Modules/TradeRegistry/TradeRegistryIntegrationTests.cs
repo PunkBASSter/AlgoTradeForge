@@ -96,7 +96,7 @@ public class TradeRegistryIntegrationTests
             TestBars.Create(15000, 15100, 14700, 14800),  // bar 1: entry fills at open, SL hit (low 14700 <= 14800)
             TestBars.Create(14800, 14900, 14700, 14800)); // bar 2: padding
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(group);
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
@@ -137,7 +137,7 @@ public class TradeRegistryIntegrationTests
             TestBars.Create(15000, 15100, 14900, 15000),  // bar 1: entry fills, protectives placed
             TestBars.Create(15200, 15600, 14500, 15400)); // bar 2: TP hits (high 15600 >= 15500)
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(group);
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
@@ -175,7 +175,7 @@ public class TradeRegistryIntegrationTests
             TestBars.Create(15000, 15100, 14900, 15000),  // bar 1: entry fills, protectives placed
             TestBars.Create(15000, 16100, 13900, 15000)); // bar 2: both SL+TP reachable
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(group);
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
@@ -213,7 +213,7 @@ public class TradeRegistryIntegrationTests
             TestBars.Create(15200, 15600, 15100, 15400),  // bar 2: TP1 hits (high 15600 >= 15500), close 50%
             TestBars.Create(15400, 16100, 15300, 15900)); // bar 3: TP2 hits (high 16100 >= 16000), close remaining
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(group);
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
@@ -257,7 +257,7 @@ public class TradeRegistryIntegrationTests
             TestBars.Create(15200, 15600, 15100, 15400),  // bar 2: group2 TP hits (high=15600 >= 15500), group1 TP not hit
             TestBars.Create(15400, 16100, 15300, 15900)); // bar 3: group1 TP hits (high=16100 >= 16000)
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(group1);
         Assert.NotNull(group2);
@@ -305,7 +305,7 @@ public class TradeRegistryIntegrationTests
             TestBars.Create(15400, 15800, 15300, 15700),  // bar 3: trail SL to 15200 (15700-500)
             TestBars.Create(15500, 15600, 15100, 15200)); // bar 4: SL hits (low=15100 <= 15200)
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(group);
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
@@ -343,7 +343,7 @@ public class TradeRegistryIntegrationTests
             TestBars.Create(15000, 15100, 14900, 15000),  // bar 1: entry fills
             TestBars.Create(15200, 15600, 15100, 15400)); // bar 2: TP fills
 
-        CreateEngine().Run([bars], strategy, DefaultOptions(), bus: bus);
+        CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken, bus: bus);
 
         // Expected transitions: EntrySubmitted, EntryFilled, SlPlaced, TpPlaced, TpFilled, ProtectiveCancelled (SL)
         var transitions = events.Select(e => e.Transition).ToList();
@@ -389,7 +389,7 @@ public class TradeRegistryIntegrationTests
             TestBars.Create(15000, 15100, 14900, 15000),  // bar 1: entry fills, all protectives placed
             TestBars.Create(15000, 15100, 14700, 14800)); // bar 2: SL hits
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(group);
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
@@ -433,7 +433,7 @@ public class TradeRegistryIntegrationTests
             TestBars.Create(15000, 15100, 14700, 14800),  // bar 1: A fills, B stays pending
             TestBars.Create(14800, 14900, 14600, 14800)); // bar 2: padding (B still pending, low 14600 > limit 14500)
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(groupA);
         Assert.NotNull(groupB);
@@ -479,7 +479,7 @@ public class TradeRegistryIntegrationTests
             TestBars.Create(15000, 15100, 14900, 15000),  // bar 1: both entries fill
             TestBars.Create(15000, 15600, 14400, 15000)); // bar 2: A's SL + B's TP
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(groupA);
         Assert.NotNull(groupB);
@@ -529,7 +529,7 @@ public class TradeRegistryIntegrationTests
             TestBars.Create(15100, 15300, 15000, 15200),  // bar 2: liquidation submitted
             TestBars.Create(15300, 15400, 15200, 15350)); // bar 3: liquidation fills at open=15300
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(group);
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
@@ -580,7 +580,7 @@ public class TradeRegistryIntegrationTests
             TestBars.Create(15100, 15300, 15000, 15200),  // bar 2: strategy liquidates A
             TestBars.Create(15200, 15600, 15100, 15400)); // bar 3: A liq fills, B TP fills
 
-        var result = CreateEngine().Run([bars], strategy, DefaultOptions());
+        var result = CreateEngine().Run([bars], strategy, DefaultOptions(), ct: TestContext.Current.CancellationToken);
 
         Assert.NotNull(groupA);
         Assert.NotNull(groupB);
