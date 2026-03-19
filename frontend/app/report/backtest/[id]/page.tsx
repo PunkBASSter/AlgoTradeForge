@@ -30,10 +30,10 @@ const BacktestPnlChart = dynamic(
   { ssr: false, loading: () => <ChartSkeleton /> }
 );
 
-const CandlestickChart = dynamic(
+const ChartStack = dynamic(
   () =>
-    import("@/components/features/charts/candlestick-chart").then(
-      (m) => m.CandlestickChart
+    import("@/components/features/charts/chart-stack").then(
+      (m) => m.ChartStack
     ),
   { ssr: false, loading: () => <ChartSkeleton height={500} /> }
 );
@@ -167,7 +167,7 @@ export default function BacktestReportPage({
           {eventsLoading ? (
             <ChartSkeleton height={500} />
           ) : events ? (
-            <CandlestickChart
+            <ChartStack
               bulkCandles={events.candles}
               bulkIndicators={events.indicators}
               bulkTrades={events.trades}

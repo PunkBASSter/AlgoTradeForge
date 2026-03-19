@@ -35,6 +35,7 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
 
         var source = EventSources.Indicator(inner.Name);
         var values = ExtractLatestValues();
+        var chartIds = ExtractChartIds();
 
         if (values.Count > 0)
         {
@@ -48,7 +49,8 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
                     inner.Name,
                     inner.Measure,
                     values,
-                    subscription.IsExportable));
+                    subscription.IsExportable,
+                    chartIds));
             }
             else
             {
@@ -58,11 +60,12 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
                     inner.Name,
                     inner.Measure,
                     values,
-                    subscription.IsExportable));
+                    subscription.IsExportable,
+                    chartIds));
             }
         }
 
-        EmitRetroactiveMutations(series, source);
+        EmitRetroactiveMutations(series, source, chartIds);
     }
 
     private void EnsureHooked()
@@ -78,7 +81,7 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
         }
     }
 
-    private void EmitRetroactiveMutations(IReadOnlyList<TInp> series, string source)
+    private void EmitRetroactiveMutations(IReadOnlyList<TInp> series, string source, IReadOnlyDictionary<string, int>? chartIds)
     {
         if (_pendingMutations is null || _pendingMutations.Count == 0)
             return;
@@ -102,8 +105,23 @@ public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
                 inner.Name,
                 inner.Measure,
                 mutValues,
-                subscription.IsExportable));
+                subscription.IsExportable,
+                chartIds));
         }
+    }
+
+    private IReadOnlyDictionary<string, int>? ExtractChartIds()
+    {
+        Dictionary<string, int>? ids = null;
+        foreach (var (key, buffer) in inner.Buffers)
+        {
+            if (buffer.ExportChartId is { } chartId)
+            {
+                ids ??= new();
+                ids[key] = chartId;
+            }
+        }
+        return ids;
     }
 
     private Dictionary<string, object?> ExtractLatestValues()

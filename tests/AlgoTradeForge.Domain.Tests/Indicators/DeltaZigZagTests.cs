@@ -241,4 +241,12 @@ public class DeltaZigZagTests
         Assert.Single(values);
         Assert.Equal(1100L, values[0]); // Initial direction is up, so high becomes pivot
     }
+
+    [Fact]
+    public void ExportChartId_ValueBuffer_ReturnsNull()
+    {
+        var dzz = CreateIndicator();
+
+        Assert.Null(dzz.Buffers["Value"].ExportChartId);
+    }
 }

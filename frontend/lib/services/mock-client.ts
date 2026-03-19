@@ -268,9 +268,10 @@ export const mockClient: typeof import("./api-client").apiClient & {
       })),
       fills: [],
       pendingOrders: [],
-      account: { initialCash: 100000, cash: 100000, positions: [] },
+      account: { initialCash: 100000, cash: 100000, exchangeBalance: 100000, positions: [] },
       timeFrame: "00:01:00",
       lastBars: [{ symbol: "BTCUSDT", timeFrame: "00:01:00", time: now, open: 65290, high: 65390, low: 65190, close: 65340, volume: 129 }],
+      exchangeTrades: [],
     };
   },
 

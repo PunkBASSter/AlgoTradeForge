@@ -134,6 +134,7 @@ export interface CandleData {
 
 export interface IndicatorSeries {
   measure: "price" | "percent" | "minusOnePlusOne" | "volume";
+  chartId?: number | null;
   points: IndicatorPoint[];
 }
 

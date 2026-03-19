@@ -33,6 +33,7 @@ export interface IndicatorEventData {
   indicatorName: string;
   measure: "price" | "percent" | "minusOnePlusOne" | "volume";
   values: Record<string, number | null>;
+  chartIds?: Record<string, number>;
 }
 
 // sig
