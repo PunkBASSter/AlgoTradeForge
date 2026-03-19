@@ -6,7 +6,8 @@
 .DESCRIPTION
     - Publishes via the Windows-LocalAppData publish profile
     - Stops/removes any existing service with the same name
-    - Creates the service with auto-start, running as .\Andrew
+    - Pins DataRoot to the installing user's %LOCALAPPDATA% (avoids LocalSystem path mismatch)
+    - Creates the service with auto-start
     - Sets ASPNETCORE_ENVIRONMENT=Production via registry
     - Starts the service
 
@@ -34,7 +35,19 @@ dotnet publish $ProjectDir `
     --nologo
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
 
-# 2. Stop/remove existing service
+# 2. Pin DataRoot to the installing user's LocalAppData
+#    Without this, a LocalSystem service resolves %LOCALAPPDATA% to the system profile directory.
+$prodSettings = Join-Path $PublishDir 'appsettings.Production.json'
+$json = Get-Content $prodSettings -Raw | ConvertFrom-Json
+if (-not $json.HistoryLoader) {
+    $json | Add-Member -NotePropertyName 'HistoryLoader' -NotePropertyValue ([PSCustomObject]@{})
+}
+$dataRoot = Join-Path $env:LOCALAPPDATA 'AlgoTradeForge\History'
+$json.HistoryLoader | Add-Member -NotePropertyName 'DataRoot' -NotePropertyValue $dataRoot -Force
+$json | ConvertTo-Json -Depth 10 | Set-Content $prodSettings -Encoding UTF8
+Write-Host "Pinned DataRoot to $dataRoot" -ForegroundColor Green
+
+# 3. Stop/remove existing service (if reinstalling)
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($existing) {
     Write-Host "Stopping existing service ..." -ForegroundColor Yellow
@@ -44,7 +57,7 @@ if ($existing) {
     Write-Host "Removed existing service." -ForegroundColor Yellow
 }
 
-# 3. Create service (auto-start, run as current user)
+# 4. Create service
 Write-Host "Creating service ..." -ForegroundColor Cyan
 sc.exe create $ServiceName `
     binPath= "`"$ExePath`"" `
@@ -52,19 +65,19 @@ sc.exe create $ServiceName `
     DisplayName= "`"$DisplayName`""
 if ($LASTEXITCODE -ne 0) { throw "sc.exe create failed with exit code $LASTEXITCODE" }
 
-# 4. Set environment variable via registry
+# 5. Set environment variable via registry
 $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
 Set-ItemProperty -Path $regPath -Name 'Environment' -Value @('ASPNETCORE_ENVIRONMENT=Production') -Type MultiString
 Write-Host "Set ASPNETCORE_ENVIRONMENT=Production" -ForegroundColor Green
 
-# 5. Set description
+# 6. Set description
 sc.exe description $ServiceName "Collects historical market data from Binance (klines, funding rates, OI, liquidations, etc.)" | Out-Null
 
-# 6. Start the service
+# 7. Start the service
 Write-Host "Starting service ..." -ForegroundColor Cyan
 Start-Service -Name $ServiceName
 
-# 7. Print status
+# 8. Print status
 Write-Host ""
 Write-Host "Service installed and started!" -ForegroundColor Green
 Get-Service -Name $ServiceName | Format-Table Name, Status, StartType -AutoSize

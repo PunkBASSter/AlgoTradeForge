@@ -13,6 +13,7 @@ internal static class StatusEndpoints
         var group = app.MapGroup("/api/v1/status");
         group.MapGet("/", GetAllStatus);
         group.MapGet("/{symbol}", GetSymbolStatus);
+        group.MapGet("/circuit-breaker", GetCircuitBreakerStatus);
         group.MapPost("/circuit-breaker/reset", ResetCircuitBreaker);
         return group;
     }
@@ -98,6 +99,14 @@ internal static class StatusEndpoints
             BackfillRunning: orchestrator.IsRunning(resolvedAssetDir),
             Feeds: feedDetails));
     }
+
+    private static IResult GetCircuitBreakerStatus(ICollectionCircuitBreaker circuitBreaker) =>
+        Results.Json(new
+        {
+            isTripped = circuitBreaker.IsTripped,
+            reason = circuitBreaker.Reason?.ToString(),
+            isAutoResettable = circuitBreaker.IsAutoResettable
+        });
 
     private static IResult ResetCircuitBreaker(ICollectionCircuitBreaker circuitBreaker)
     {
