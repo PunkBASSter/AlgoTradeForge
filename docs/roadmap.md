@@ -7,6 +7,9 @@
 - Missing skills, like OOP-style class design (explain)
 - Documentation hooks (continuous readme/constitution/claude.md updates)
 
+## Usability
+- Endpoint to generate default params via reflection
+
 ## Strategy development
 - Add another strategy to the framework, maybe a simple mean reversion for trading in ranges
 - Add a strategy with a different logic, e.g. price patterns, volume patterns, market profile etc.
@@ -58,3 +61,6 @@ Split strategy API (local, actively developed) from platform API (remote - stabl
 ## Warning system
 - instead of blocking errors/exceptions warn about corrupt/insufficient data
 - add validators layer (where?) for input data and for runtime (if input data is impossible)
+
+## Live
+- display the same indicator data as in debug mode 

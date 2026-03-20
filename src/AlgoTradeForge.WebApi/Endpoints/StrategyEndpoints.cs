@@ -49,6 +49,10 @@ public static class StrategyEndpoints
         Name = dto.Name,
         ParameterDefaults = new Dictionary<string, object>(dto.ParameterDefaults),
         OptimizationAxes = dto.Axes.Select(MapAxis).ToList(),
+        BacktestTemplate = new Dictionary<string, object>(dto.BacktestTemplate),
+        OptimizationTemplate = new Dictionary<string, object>(dto.OptimizationTemplate),
+        LiveSessionTemplate = new Dictionary<string, object>(dto.LiveSessionTemplate),
+        DebugSessionTemplate = new Dictionary<string, object>(dto.DebugSessionTemplate),
     };
 
     private static ParameterAxisResponse MapAxis(ParameterAxis axis) => axis switch

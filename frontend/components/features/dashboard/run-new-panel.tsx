@@ -19,128 +19,7 @@ import type {
   RunBacktestRequest,
   RunOptimizationRequest,
   StartLiveSessionRequest,
-  StrategyDescriptor,
-  ParameterAxisDescriptor,
-  OptimizationAxisOverride,
 } from "@/types/api";
-
-const BACKTEST_TEMPLATE: RunBacktestRequest = {
-  assetName: "BTCUSDT",
-  exchange: "Binance",
-  strategyName: "",
-  initialCash: 10000,
-  startTime: "2025-01-01T00:00:00Z",
-  endTime: "2025-12-31T23:59:59Z",
-  commissionPerTrade: 0.001,
-  slippageTicks: 2,
-  timeFrame: "01:00:00",
-};
-
-const OPTIMIZATION_TEMPLATE: RunOptimizationRequest = {
-  strategyName: "",
-  dataSubscriptions: [
-    { asset: "BTCUSDT", exchange: "Binance", timeFrame: "01:00:00" },
-  ],
-  initialCash: 10000,
-  startTime: "2025-01-01T00:00:00Z",
-  endTime: "2025-12-31T23:59:59Z",
-  commissionPerTrade: 0.001,
-  slippageTicks: 2,
-  sortBy: "sortinoRatio",
-  maxTrialsToKeep: 10000,
-  minProfitFactor: 0.5,
-  maxDrawdownPct: 95.0,
-  minSharpeRatio: -5.0,
-  minSortinoRatio: -5.0,
-  minAnnualizedReturnPct: -100.0,
-};
-
-const LIVE_SESSION_TEMPLATE: StartLiveSessionRequest = {
-  strategyName: "",
-  initialCash: 10000,
-  accountName: "paper",
-  dataSubscriptions: [
-    { asset: "BTCUSDT", exchange: "Binance", timeFrame: "00:01:00" },
-  ],
-};
-
-function toHumanReadable(rawDefault: unknown, axis: ParameterAxisDescriptor): unknown {
-  if (
-    axis.unit !== "quoteAsset" ||
-    axis.max == null ||
-    typeof rawDefault !== "number"
-  )
-    return rawDefault;
-
-  // Raw long default may be in tick units; convert to human-readable
-  // by finding the power-of-10 scale where value falls within [min, max]
-  if (rawDefault <= axis.max) return rawDefault;
-  for (let scale = 10; scale <= 1_000_000; scale *= 10) {
-    const human = rawDefault / scale;
-    if (human >= (axis.min ?? 0) && human <= axis.max) return human;
-  }
-  return rawDefault;
-}
-
-function buildLiveSessionTemplate(descriptor: StrategyDescriptor): StartLiveSessionRequest {
-  const params = { ...descriptor.parameterDefaults };
-
-  // Convert QuoteAsset params from internal tick units to human-readable
-  for (const axis of descriptor.optimizationAxes) {
-    if (axis.name in params) {
-      params[axis.name] = toHumanReadable(params[axis.name], axis);
-    }
-  }
-
-  return {
-    ...LIVE_SESSION_TEMPLATE,
-    strategyName: descriptor.name,
-    strategyParameters: params,
-  };
-}
-
-function buildAxisOverride(axis: ParameterAxisDescriptor): OptimizationAxisOverride {
-  if (axis.type === "module" && axis.variants) {
-    const variants: Record<string, Record<string, OptimizationAxisOverride> | null> = {};
-    for (const v of axis.variants) {
-      if (v.axes.length === 0) {
-        variants[v.typeKey] = null;
-      } else {
-        const subAxes: Record<string, OptimizationAxisOverride> = {};
-        for (const sub of v.axes) {
-          subAxes[sub.name] = buildAxisOverride(sub);
-        }
-        variants[v.typeKey] = subAxes;
-      }
-    }
-    return { variants };
-  }
-  return { min: axis.min ?? 0, max: axis.max ?? 1, step: axis.step ?? 1 };
-}
-
-function buildBacktestTemplate(descriptor: StrategyDescriptor): RunBacktestRequest {
-  return {
-    ...BACKTEST_TEMPLATE,
-    strategyName: descriptor.name,
-    strategyParameters: { ...descriptor.parameterDefaults },
-  };
-}
-
-function buildOptimizationTemplate(descriptor: StrategyDescriptor): RunOptimizationRequest {
-  const axes: Record<string, OptimizationAxisOverride> = {};
-  for (const axis of descriptor.optimizationAxes) {
-    axes[axis.name] = buildAxisOverride(axis);
-  }
-
-  return {
-    ...OPTIMIZATION_TEMPLATE,
-    strategyName: descriptor.name,
-    optimizationAxes: Object.keys(axes).length > 0 ? axes : undefined,
-    dataSubscriptions: [
-      { asset: "BTCUSDT", exchange: "Binance", timeFrame: "00:15:00" },
-    ],
-  };
-}
 
 const EDITOR_EXTENSIONS = [
   basicSetup,
@@ -183,13 +62,10 @@ export function RunNewPanel({
   );
 
   const template = useMemo(() => {
-    if (mode === "backtest") {
-      return descriptor ? buildBacktestTemplate(descriptor) : BACKTEST_TEMPLATE;
-    }
-    if (mode === "live") {
-      return descriptor ? buildLiveSessionTemplate(descriptor) : LIVE_SESSION_TEMPLATE;
-    }
-    return descriptor ? buildOptimizationTemplate(descriptor) : OPTIMIZATION_TEMPLATE;
+    if (!descriptor) return null;
+    if (mode === "backtest") return descriptor.backtestTemplate;
+    if (mode === "live") return descriptor.liveSessionTemplate;
+    return descriptor.optimizationTemplate;
   }, [mode, descriptor]);
 
   // Create editor once when the slide-over opens

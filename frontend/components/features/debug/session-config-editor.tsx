@@ -11,27 +11,7 @@ import { linter } from "@codemirror/lint";
 import { basicSetup } from "codemirror";
 import { Button } from "@/components/ui/button";
 import { useAvailableStrategies } from "@/hooks/use-available-strategies";
-import type { StartDebugSessionRequest, StrategyDescriptor } from "@/types/api";
-
-const DEFAULT_CONFIG: StartDebugSessionRequest = {
-  assetName: "BTCUSDT",
-  exchange: "Binance",
-  strategyName: "",
-  initialCash: 10000,
-  startTime: "2025-01-01T00:00:00Z",
-  endTime: "2025-12-31T23:59:59Z",
-  commissionPerTrade: 0.001,
-  slippageTicks: 2,
-  timeFrame: "01:00:00",
-};
-
-function buildDebugTemplate(descriptor: StrategyDescriptor): StartDebugSessionRequest {
-  return {
-    ...DEFAULT_CONFIG,
-    strategyName: descriptor.name,
-    strategyParameters: { ...descriptor.parameterDefaults },
-  };
-}
+import type { StartDebugSessionRequest } from "@/types/api";
 
 interface SessionConfigEditorProps {
   onStart: (config: StartDebugSessionRequest) => void;
@@ -55,7 +35,7 @@ export function SessionConfigEditor({
   );
 
   const template = useMemo(
-    () => (descriptor ? buildDebugTemplate(descriptor) : DEFAULT_CONFIG),
+    () => descriptor?.debugSessionTemplate ?? null,
     [descriptor],
   );
 

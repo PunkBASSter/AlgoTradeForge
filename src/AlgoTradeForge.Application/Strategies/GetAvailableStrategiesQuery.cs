@@ -13,10 +13,18 @@ public sealed class GetAvailableStrategiesQueryHandler(
         var all = provider.GetAll();
         var result = all.Values
             .OrderBy(d => d.StrategyName)
-            .Select(d => new StrategyDescriptorDto(
-                d.StrategyName,
-                provider.GetParameterDefaults(d),
-                d.Axes))
+            .Select(d =>
+            {
+                var defaults = provider.GetParameterDefaults(d);
+                return new StrategyDescriptorDto(
+                    d.StrategyName,
+                    defaults,
+                    d.Axes,
+                    StrategyTemplateBuilder.BuildBacktestTemplate(d.StrategyName, defaults, d.Axes),
+                    StrategyTemplateBuilder.BuildOptimizationTemplate(d.StrategyName, d.Axes),
+                    StrategyTemplateBuilder.BuildLiveSessionTemplate(d.StrategyName, defaults, d.Axes),
+                    StrategyTemplateBuilder.BuildDebugSessionTemplate(d.StrategyName, defaults, d.Axes));
+            })
             .ToList();
         return Task.FromResult<IReadOnlyList<StrategyDescriptorDto>>(result);
     }

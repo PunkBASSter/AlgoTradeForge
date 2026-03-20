@@ -14,6 +14,10 @@ export interface StrategyDescriptor {
   name: string;
   parameterDefaults: Record<string, unknown>;
   optimizationAxes: ParameterAxisDescriptor[];
+  backtestTemplate: Record<string, unknown>;
+  optimizationTemplate: Record<string, unknown>;
+  liveSessionTemplate: Record<string, unknown>;
+  debugSessionTemplate: Record<string, unknown>;
 }
 
 export interface ParameterAxisDescriptor {

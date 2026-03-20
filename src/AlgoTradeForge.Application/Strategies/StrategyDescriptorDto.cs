@@ -5,4 +5,8 @@ namespace AlgoTradeForge.Application.Strategies;
 public sealed record StrategyDescriptorDto(
     string Name,
     IReadOnlyDictionary<string, object> ParameterDefaults,
-    IReadOnlyList<ParameterAxis> Axes);
+    IReadOnlyList<ParameterAxis> Axes,
+    IReadOnlyDictionary<string, object> BacktestTemplate,
+    IReadOnlyDictionary<string, object> OptimizationTemplate,
+    IReadOnlyDictionary<string, object> LiveSessionTemplate,
+    IReadOnlyDictionary<string, object> DebugSessionTemplate);
