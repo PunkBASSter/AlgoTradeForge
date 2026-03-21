@@ -1,3 +1,4 @@
+using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Optimization.Space;
 
@@ -5,13 +6,17 @@ namespace AlgoTradeForge.Application.Strategies;
 
 public static class StrategyTemplateBuilder
 {
+    private const string DefaultAsset = "BTCUSDT";
+    private const string DefaultExchange = "Binance";
+
     public static Dictionary<string, object> BuildBacktestTemplate(
         string strategyName,
         IReadOnlyDictionary<string, object> paramDefaults,
-        IReadOnlyList<ParameterAxis> axes) => new()
+        IReadOnlyList<ParameterAxis> axes,
+        IReadOnlyList<AvailableAssetInfo> availableAssets) => new()
     {
-        ["assetName"] = "BTCUSDT",
-        ["exchange"] = "Binance",
+        ["assetName"] = FirstAssetOrDefault(availableAssets),
+        ["exchange"] = FirstExchangeOrDefault(availableAssets),
         ["strategyName"] = strategyName,
         ["initialCash"] = 10000,
         ["startTime"] = "2025-01-01T00:00:00Z",
@@ -23,7 +28,9 @@ public static class StrategyTemplateBuilder
     };
 
     public static Dictionary<string, object> BuildOptimizationTemplate(
-        string strategyName, IReadOnlyList<ParameterAxis> axes)
+        string strategyName,
+        IReadOnlyList<ParameterAxis> axes,
+        IReadOnlyList<AvailableAssetInfo> availableAssets)
     {
         var axisOverrides = new Dictionary<string, object>();
         foreach (var axis in axes)
@@ -32,15 +39,7 @@ public static class StrategyTemplateBuilder
         return new Dictionary<string, object>
         {
             ["strategyName"] = strategyName,
-            ["dataSubscriptions"] = new List<Dictionary<string, object>>
-            {
-                new()
-                {
-                    ["asset"] = "BTCUSDT",
-                    ["exchange"] = "Binance",
-                    ["timeFrame"] = "00:15:00",
-                },
-            },
+            ["dataSubscriptions"] = BuildSubscriptions(availableAssets, "01:00:00"),
             ["initialCash"] = 10000,
             ["startTime"] = "2025-01-01T00:00:00Z",
             ["endTime"] = "2025-12-31T23:59:59Z",
@@ -60,30 +59,24 @@ public static class StrategyTemplateBuilder
     public static Dictionary<string, object> BuildLiveSessionTemplate(
         string strategyName,
         IReadOnlyDictionary<string, object> paramDefaults,
-        IReadOnlyList<ParameterAxis> axes) => new()
+        IReadOnlyList<ParameterAxis> axes,
+        IReadOnlyList<AvailableAssetInfo> availableAssets) => new()
     {
         ["strategyName"] = strategyName,
         ["initialCash"] = 10000,
         ["accountName"] = "paper",
-        ["dataSubscriptions"] = new List<Dictionary<string, object>>
-        {
-            new()
-            {
-                ["asset"] = "BTCUSDT",
-                ["exchange"] = "Binance",
-                ["timeFrame"] = "00:01:00",
-            },
-        },
+        ["dataSubscriptions"] = BuildSubscriptions(availableAssets, "00:01:00"),
         ["strategyParameters"] = ConvertToHumanReadable(paramDefaults, axes),
     };
 
     public static Dictionary<string, object> BuildDebugSessionTemplate(
         string strategyName,
         IReadOnlyDictionary<string, object> paramDefaults,
-        IReadOnlyList<ParameterAxis> axes) => new()
+        IReadOnlyList<ParameterAxis> axes,
+        IReadOnlyList<AvailableAssetInfo> availableAssets) => new()
     {
-        ["assetName"] = "BTCUSDT",
-        ["exchange"] = "Binance",
+        ["assetName"] = FirstAssetOrDefault(availableAssets),
+        ["exchange"] = FirstExchangeOrDefault(availableAssets),
         ["strategyName"] = strategyName,
         ["initialCash"] = 10000,
         ["startTime"] = "2025-01-01T00:00:00Z",
@@ -93,6 +86,28 @@ public static class StrategyTemplateBuilder
         ["timeFrame"] = "01:00:00",
         ["strategyParameters"] = ConvertToHumanReadable(paramDefaults, axes),
     };
+
+    private static string FirstAssetOrDefault(IReadOnlyList<AvailableAssetInfo> assets) =>
+        assets.Count > 0 ? assets[0].LookupName : DefaultAsset;
+
+    private static string FirstExchangeOrDefault(IReadOnlyList<AvailableAssetInfo> assets) =>
+        assets.Count > 0 ? assets[0].Exchange : DefaultExchange;
+
+    private static List<Dictionary<string, object>> BuildSubscriptions(
+        IReadOnlyList<AvailableAssetInfo> assets, string timeFrame)
+    {
+        if (assets.Count == 0)
+            return [new() { ["asset"] = DefaultAsset, ["exchange"] = DefaultExchange, ["timeFrame"] = timeFrame }];
+
+        return assets
+            .Select(a => new Dictionary<string, object>
+            {
+                ["asset"] = a.LookupName,
+                ["exchange"] = a.Exchange,
+                ["timeFrame"] = timeFrame,
+            })
+            .ToList();
+    }
 
     private static Dictionary<string, object> ConvertToHumanReadable(
         IReadOnlyDictionary<string, object> paramDefaults,

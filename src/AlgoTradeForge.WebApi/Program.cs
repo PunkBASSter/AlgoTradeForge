@@ -14,7 +14,6 @@ using AlgoTradeForge.Infrastructure.CandleIngestion;
 using AlgoTradeForge.Infrastructure.History;
 using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Plugins;
-using AlgoTradeForge.Infrastructure.Repositories;
 using AlgoTradeForge.WebApi.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -61,6 +60,7 @@ builder.Services.Configure<CandleStorageOptions>(
 builder.Services.AddSingleton<IInt64BarLoader, PartitionedCsvBarLoader>();
 builder.Services.AddSingleton<IFeedSeriesLoader, CsvFeedSeriesLoader>();
 builder.Services.AddSingleton<IFeedContextBuilder, FeedContextBuilder>();
+builder.Services.AddSingleton<IAvailableAssetsProvider, FileSystemAvailableAssetsProvider>();
 builder.Services.AddSingleton<IDataSource, CsvDataSource>();
 builder.Services.AddSingleton<IHistoryRepository, HistoryRepository>();
 
@@ -84,7 +84,7 @@ foreach (var asm in pluginAssemblies)
 Assembly[] strategyAssemblies = [typeof(AlgoTradeForge.Domain.Strategy.StrategyBase<>).Assembly, .. pluginAssemblies];
 builder.Services.AddInfrastructure(strategyAssemblies);
 
-builder.Services.AddSingleton<IAssetRepository, InMemoryAssetRepository>();
+builder.Services.AddSingleton<IAssetRepository, FileSystemAssetRepository>();
 
 // CORS for frontend dev server
 builder.Services.AddCors(options =>
