@@ -39,7 +39,8 @@ public static class StrategyTemplateBuilder
         return new Dictionary<string, object>
         {
             ["strategyName"] = strategyName,
-            ["dataSubscriptions"] = BuildSubscriptions(availableAssets, "01:00:00"),
+            ["dataSubscriptions"] = new List<Dictionary<string, object>>(),
+            ["subscriptionAxis"] = BuildSubscriptions(availableAssets, "01:00:00"),
             ["initialCash"] = 10000,
             ["startTime"] = "2025-01-01T00:00:00Z",
             ["endTime"] = "2025-12-31T23:59:59Z",

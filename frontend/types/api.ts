@@ -236,6 +236,7 @@ export interface RunOptimizationRequest {
   strategyName: string;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
   dataSubscriptions?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[];
   initialCash: number;
   startTime: string;
   endTime: string;

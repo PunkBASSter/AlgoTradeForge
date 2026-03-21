@@ -42,7 +42,7 @@ public class MetricsCalculator : IMetricsCalculator
 
         var profitFactor = tradeStats.GrossLoss > 0
             ? tradeStats.GrossProfit / tradeStats.GrossLoss
-            : tradeStats.GrossProfit > 0 ? double.PositiveInfinity : 0;
+            : tradeStats.GrossProfit > 0 ? 9999.99 : 0;
 
         return new PerformanceMetrics
         {
@@ -211,7 +211,7 @@ public class MetricsCalculator : IMetricsCalculator
         }
         else if (mean > riskFreeRatePerPeriod)
         {
-            sortino = double.PositiveInfinity;
+            sortino = 9999.99;
         }
 
         return (sharpe, sortino);

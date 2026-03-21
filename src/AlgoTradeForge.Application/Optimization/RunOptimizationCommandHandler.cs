@@ -61,39 +61,60 @@ public sealed class RunOptimizationCommandHandler(
             ?? throw new ArgumentException($"Strategy '{command.StrategyName}' not found.");
 
         var dataSubs = command.DataSubscriptions;
-        if (dataSubs is null or { Count: 0 })
-            throw new ArgumentException("At least one DataSubscription must be provided.");
+        var axisSubs = command.SubscriptionAxis;
+        var hasDataSubs = dataSubs is { Count: > 0 };
+        var hasAxisSubs = axisSubs is { Count: > 0 };
+
+        if (!hasDataSubs && !hasAxisSubs)
+            throw new ArgumentException("At least one DataSubscription or SubscriptionAxis entry must be provided.");
 
         var fromDate = DateOnly.FromDateTime(command.StartTime.UtcDateTime);
         var toDate = DateOnly.FromDateTime(command.EndTime.UtcDateTime);
 
-        var resolvedSubscriptions = new List<DataSubscription>();
-        var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
-        foreach (var sub in dataSubs)
+        // Resolve fixed vs axis subscriptions based on which fields are populated
+        List<DataSubscriptionDto> fixedDtos;
+        List<DataSubscriptionDto> axisDtos;
+
+        if (hasAxisSubs)
         {
-            var asset = await assetRepository.GetByNameAsync(sub.Asset, sub.Exchange, ct)
-                ?? throw new ArgumentException($"Asset '{sub.Asset}' on exchange '{sub.Exchange}' not found.");
-
-            if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out var timeFrame))
-                throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.Asset}'.");
-
-            var subscription = new DataSubscription(asset, timeFrame);
-            resolvedSubscriptions.Add(subscription);
-
-            var series = historyRepository.Load(subscription, fromDate, toDate);
-            var key = $"{sub.Asset}|{sub.TimeFrame}";
-            dataCache[key] = (asset, series);
+            // Explicit axis: dataSubscriptions are fixed, subscriptionAxis are discrete candidates
+            fixedDtos = dataSubs ?? [];
+            axisDtos = axisSubs!;
+        }
+        else if (dataSubs!.Count > 1)
+        {
+            // Backward compat: multiple dataSubscriptions with no axis → treat as discrete axis
+            fixedDtos = [];
+            axisDtos = dataSubs;
+        }
+        else
+        {
+            // Single fixed subscription, no axis
+            fixedDtos = dataSubs;
+            axisDtos = [];
         }
 
-        var primaryAsset = resolvedSubscriptions[0].Asset;
+        // Resolve all subscriptions and pre-load data
+        var fixedSubscriptions = new List<DataSubscription>();
+        var axisSubscriptions = new List<DataSubscription>();
+        var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
+
+        foreach (var sub in fixedDtos)
+            await ResolveAndCacheAsync(sub, fixedSubscriptions, dataCache, fromDate, toDate, ct);
+        foreach (var sub in axisDtos)
+            await ResolveAndCacheAsync(sub, axisSubscriptions, dataCache, fromDate, toDate, ct);
+
+        var primaryAsset = fixedSubscriptions.Count > 0
+            ? fixedSubscriptions[0].Asset
+            : axisSubscriptions[0].Asset;
         var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes, new ScaleContext(primaryAsset));
 
-        if (resolvedSubscriptions.Count > 1)
+        if (axisSubscriptions.Count > 0)
         {
             var allAxes = new List<ResolvedAxis>(resolvedAxes)
             {
                 new ResolvedDiscreteAxis("DataSubscriptions",
-                    resolvedSubscriptions.Cast<object>().ToList())
+                    axisSubscriptions.Cast<object>().ToList())
             };
             resolvedAxes = allAxes;
         }
@@ -122,7 +143,7 @@ public sealed class RunOptimizationCommandHandler(
         // 4. Start background task on a dedicated thread (coordinates long-running parallel work)
         _ = Task.Factory.StartNew(
             () => RunOptimizationAsync(
-                command, resolvedSubscriptions, dataCache, activeAxes,
+                command, fixedSubscriptions, dataCache, activeAxes,
                 estimatedCount, optimizationRunId, runKey, startedAt,
                 strategyFactory),
             CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
@@ -137,7 +158,7 @@ public sealed class RunOptimizationCommandHandler(
 
     private async Task RunOptimizationAsync(
         RunOptimizationCommand command,
-        List<DataSubscription> resolvedSubscriptions,
+        List<DataSubscription> fixedSubscriptions,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
         List<ResolvedAxis> activeAxes,
         long estimatedCount,
@@ -201,7 +222,7 @@ public sealed class RunOptimizationCommandHandler(
                                 try
                                 {
                                     var record = ExecuteTrial(
-                                        command, combination, factory, resolvedSubscriptions, dataCache,
+                                        command, combination, factory, fixedSubscriptions, dataCache,
                                         optimizationRunId, startedAt, ref strategyVersion, trialCts.Token);
                                     if (filter.Passes(record.Metrics))
                                         topTrials.TryAdd(record);
@@ -254,7 +275,7 @@ public sealed class RunOptimizationCommandHandler(
 
             var trials = topTrials.DrainSorted();
             var failedTrialDetails = failedTrials.Drain(optimizationRunId);
-            var optPrimarySub = command.DataSubscriptions![0];
+            var optPrimarySub = GetPrimarySubscriptionDto(command);
 
             var optimizationRecord = new OptimizationRunRecord
             {
@@ -313,7 +334,7 @@ public sealed class RunOptimizationCommandHandler(
         RunOptimizationCommand command,
         ParameterCombination combination,
         IOptimizationStrategyFactory factory,
-        List<DataSubscription> resolvedSubscriptions,
+        List<DataSubscription> fixedSubscriptions,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
         Guid optimizationRunId,
         DateTimeOffset startedAt,
@@ -324,17 +345,18 @@ public sealed class RunOptimizationCommandHandler(
         var strategy = factory.Create(command.StrategyName, combination);
         Interlocked.CompareExchange(ref strategyVersion, strategy.Version, null);
 
+        strategy.DataSubscriptions.Clear();
+        foreach (var fixedSub in fixedSubscriptions)
+            strategy.DataSubscriptions.Add(fixedSub);
+
         if (combination.Values.TryGetValue("DataSubscriptions", out var subObj) &&
             subObj is DataSubscription dataSub)
         {
-            strategy.DataSubscriptions.Clear();
             strategy.DataSubscriptions.Add(dataSub);
         }
-        else
-        {
-            strategy.DataSubscriptions.Clear();
-            strategy.DataSubscriptions.Add(resolvedSubscriptions[0]);
-        }
+
+        if (strategy.DataSubscriptions.Count == 0)
+            throw new InvalidOperationException("Trial has no data subscriptions — this indicates a bug in subscription resolution.");
 
         var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
         for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
@@ -404,7 +426,7 @@ public sealed class RunOptimizationCommandHandler(
     {
         try
         {
-            var optPrimarySub = command.DataSubscriptions![0];
+            var optPrimarySub = GetPrimarySubscriptionDto(command);
             var maxParallelism = command.MaxDegreeOfParallelism > 0
                 ? command.MaxDegreeOfParallelism
                 : Environment.ProcessorCount;
@@ -441,6 +463,37 @@ public sealed class RunOptimizationCommandHandler(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to save error record for optimization {RunId}", optimizationRunId);
+        }
+    }
+
+    private static DataSubscriptionDto GetPrimarySubscriptionDto(RunOptimizationCommand command)
+    {
+        if (command.DataSubscriptions is { Count: > 0 })
+            return command.DataSubscriptions[0];
+        return command.SubscriptionAxis![0];
+    }
+
+    private async Task ResolveAndCacheAsync(
+        DataSubscriptionDto sub,
+        List<DataSubscription> target,
+        Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
+        DateOnly fromDate, DateOnly toDate,
+        CancellationToken ct)
+    {
+        var asset = await assetRepository.GetByNameAsync(sub.Asset, sub.Exchange, ct)
+            ?? throw new ArgumentException($"Asset '{sub.Asset}' on exchange '{sub.Exchange}' not found.");
+
+        if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out var timeFrame))
+            throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.Asset}'.");
+
+        var subscription = new DataSubscription(asset, timeFrame);
+        target.Add(subscription);
+
+        var key = $"{sub.Asset}|{sub.TimeFrame}";
+        if (!dataCache.ContainsKey(key))
+        {
+            var series = historyRepository.Load(subscription, fromDate, toDate);
+            dataCache[key] = (asset, series);
         }
     }
 

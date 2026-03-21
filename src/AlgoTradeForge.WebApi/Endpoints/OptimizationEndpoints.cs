@@ -68,6 +68,7 @@ public static class OptimizationEndpoints
             StrategyName = request.StrategyName,
             Axes = request.OptimizationAxes,
             DataSubscriptions = request.DataSubscriptions,
+            SubscriptionAxis = request.SubscriptionAxis,
             InitialCash = request.InitialCash,
             StartTime = request.StartTime,
             EndTime = request.EndTime,

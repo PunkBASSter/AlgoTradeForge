@@ -61,8 +61,9 @@ public class RunOptimizationCommandHandlerTests
         EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
         DataSubscriptions =
         [
-            new DataSubscriptionDto { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }
+            new DataSubscriptionDto { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }
         ],
+        SubscriptionAxis = null,
         Axes = new Dictionary<string, OptimizationAxisOverride>
         {
             ["Period"] = new RangeOverride(10, 20, 5)
@@ -175,7 +176,7 @@ public class RunOptimizationCommandHandlerTests
         // Arrange
         SetupStandardMocks();
         var handler = CreateHandler();
-        var command = CreateCommand() with { DataSubscriptions = [] };
+        var command = CreateCommand() with { DataSubscriptions = [], SubscriptionAxis = [] };
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command, TestContext.Current.CancellationToken));
@@ -211,5 +212,130 @@ public class RunOptimizationCommandHandlerTests
 
         // Assert
         Assert.NotEqual(staleId, result.Id);
+    }
+
+    // ── Subscription resolution path tests ──────────────────────────
+
+    private void SetupAssetMock(string name, string exchange, Asset asset)
+    {
+        _assetRepository.GetByNameAsync(name, exchange, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Asset?>(asset));
+    }
+
+    private void SetupStandardMocksWithEth(long estimatedCount = 3)
+    {
+        SetupStandardMocks(estimatedCount);
+        SetupAssetMock("ETHUSDT", "Binance", TestAssets.EthUsdt);
+    }
+
+    private static DataSubscriptionDto BtcSub => new() { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" };
+    private static DataSubscriptionDto EthSub => new() { Asset = "ETHUSDT", Exchange = "Binance", TimeFrame = "01:00:00" };
+
+    [Fact]
+    public async Task HandleAsync_SingleDataSubscription_NoAxis_FixedSingleFeed()
+    {
+        // Arrange — single fixed sub, no axis → no discrete axis injected
+        SetupStandardMocks(estimatedCount: 3);
+        var handler = CreateHandler();
+        var command = CreateCommand() with
+        {
+            DataSubscriptions = [BtcSub],
+            SubscriptionAxis = null,
+        };
+
+        // Act
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+
+        // Assert — EstimateCount called with parameter axes only (no DataSubscriptions axis)
+        Assert.Equal(3, result.TotalCombinations);
+        _cartesianGenerator.Received().EstimateCount(
+            Arg.Is<IReadOnlyList<ResolvedAxis>>(axes =>
+                !axes.OfType<ResolvedDiscreteAxis>().Any(d => d.Name == "DataSubscriptions")));
+    }
+
+    [Fact]
+    public async Task HandleAsync_MultipleDataSubscriptions_NoAxis_BackwardCompatDiscreteAxis()
+    {
+        // Arrange — two subs, no axis → backward-compat discrete axis with 2 values
+        SetupStandardMocksWithEth(estimatedCount: 6);
+        var handler = CreateHandler();
+        var command = CreateCommand() with
+        {
+            DataSubscriptions = [BtcSub, EthSub],
+            SubscriptionAxis = null,
+        };
+
+        // Act
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+
+        // Assert — axes list includes a ResolvedDiscreteAxis("DataSubscriptions") with 2 values
+        Assert.Equal(6, result.TotalCombinations);
+        _cartesianGenerator.Received().EstimateCount(
+            Arg.Is<IReadOnlyList<ResolvedAxis>>(axes =>
+                axes.OfType<ResolvedDiscreteAxis>()
+                    .Any(d => d.Name == "DataSubscriptions" && d.Values.Count == 2)));
+    }
+
+    [Fact]
+    public async Task HandleAsync_SubscriptionAxisOnly_DiscreteAxisOverSubscriptions()
+    {
+        // Arrange — no fixed subs, axis only → discrete axis with 2 values
+        SetupStandardMocksWithEth(estimatedCount: 6);
+        var handler = CreateHandler();
+        var command = CreateCommand() with
+        {
+            DataSubscriptions = null,
+            SubscriptionAxis = [BtcSub, EthSub],
+        };
+
+        // Act
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(6, result.TotalCombinations);
+        _cartesianGenerator.Received().EstimateCount(
+            Arg.Is<IReadOnlyList<ResolvedAxis>>(axes =>
+                axes.OfType<ResolvedDiscreteAxis>()
+                    .Any(d => d.Name == "DataSubscriptions" && d.Values.Count == 2)));
+    }
+
+    [Fact]
+    public async Task HandleAsync_FixedPlusAxis_BothPresent()
+    {
+        // Arrange — BTC fixed + ETH as axis → discrete axis with 1 value (ETH only)
+        SetupStandardMocksWithEth(estimatedCount: 3);
+        var handler = CreateHandler();
+        var command = CreateCommand() with
+        {
+            DataSubscriptions = [BtcSub],
+            SubscriptionAxis = [EthSub],
+        };
+
+        // Act
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+
+        // Assert — axis has 1 value (only the axis entry, not the fixed one)
+        Assert.Equal(3, result.TotalCombinations);
+        _cartesianGenerator.Received().EstimateCount(
+            Arg.Is<IReadOnlyList<ResolvedAxis>>(axes =>
+                axes.OfType<ResolvedDiscreteAxis>()
+                    .Any(d => d.Name == "DataSubscriptions" && d.Values.Count == 1)));
+    }
+
+    [Fact]
+    public async Task HandleAsync_BothEmpty_ThrowsArgumentException()
+    {
+        // Arrange — both explicitly empty → should throw
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = CreateCommand() with
+        {
+            DataSubscriptions = [],
+            SubscriptionAxis = [],
+        };
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
     }
 }
