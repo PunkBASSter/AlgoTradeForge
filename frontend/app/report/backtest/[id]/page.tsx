@@ -16,7 +16,7 @@ import { ParamsPanel } from "@/components/features/report/params-panel";
 import { Button } from "@/components/ui/button";
 import { ChartSkeleton } from "@/components/features/charts/chart-skeleton";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { RunBacktestRequest } from "@/types/api";
+import type { RunBacktestRequest, StartDebugSessionRequest } from "@/types/api";
 
 const INTERNAL_PARAM_KEYS = new Set(["DataSubscriptions"]);
 
@@ -137,6 +137,27 @@ export default function BacktestReportPage({
     router.push(`/${backtest.strategyName}/backtest`);
   };
 
+  const handleDebug = () => {
+    const config: StartDebugSessionRequest = {
+      assetName: backtest.assetName,
+      exchange: backtest.exchange,
+      strategyName: backtest.strategyName,
+      initialCash: backtest.initialCash,
+      startTime: backtest.dataStart,
+      endTime: backtest.dataEnd,
+      commissionPerTrade: backtest.commission,
+      slippageTicks: backtest.slippageTicks,
+      timeFrame: toTimeSpan(backtest.timeFrame),
+      strategyParameters: Object.fromEntries(
+        Object.entries(backtest.parameters).filter(
+          ([k]) => !INTERNAL_PARAM_KEYS.has(k),
+        ),
+      ),
+    };
+    sessionStorage.setItem("debug-session-config", JSON.stringify(config));
+    router.push("/debug");
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Title */}
@@ -155,9 +176,14 @@ export default function BacktestReportPage({
             {new Date(backtest.dataEnd).toLocaleDateString()}
           </p>
         </div>
-        <Button variant="secondary" onClick={handleRerun}>
-          Re-run
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={handleDebug}>
+            Debug
+          </Button>
+          <Button variant="secondary" onClick={handleRerun}>
+            Re-run
+          </Button>
+        </div>
       </div>
 
       {/* Error display */}
