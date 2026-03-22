@@ -104,10 +104,7 @@ public sealed class RunOptimizationCommandHandler(
         foreach (var sub in axisDtos)
             await ResolveAndCacheAsync(sub, axisSubscriptions, dataCache, fromDate, toDate, ct);
 
-        var primaryAsset = fixedSubscriptions.Count > 0
-            ? fixedSubscriptions[0].Asset
-            : axisSubscriptions[0].Asset;
-        var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes, new ScaleContext(primaryAsset));
+        var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes);
 
         if (axisSubscriptions.Count > 0)
         {
@@ -342,21 +339,34 @@ public sealed class RunOptimizationCommandHandler(
         CancellationToken token)
     {
         var trialWatch = Stopwatch.StartNew();
-        var strategy = factory.Create(command.StrategyName, combination);
-        Interlocked.CompareExchange(ref strategyVersion, strategy.Version, null);
 
-        strategy.DataSubscriptions.Clear();
-        foreach (var fixedSub in fixedSubscriptions)
-            strategy.DataSubscriptions.Add(fixedSub);
-
+        // 1. Determine trial subscriptions first to find the correct asset
+        var trialSubscriptions = new List<DataSubscription>(fixedSubscriptions);
         if (combination.Values.TryGetValue("DataSubscriptions", out var subObj) &&
             subObj is DataSubscription dataSub)
         {
-            strategy.DataSubscriptions.Add(dataSub);
+            trialSubscriptions.Add(dataSub);
         }
 
-        if (strategy.DataSubscriptions.Count == 0)
+        if (trialSubscriptions.Count == 0)
             throw new InvalidOperationException("Trial has no data subscriptions — this indicates a bug in subscription resolution.");
+
+        // 2. Scale QuoteAsset params using this trial's actual asset
+        var trialAsset = trialSubscriptions[0].Asset;
+        var scale = new ScaleContext(trialAsset);
+        var mutableParams = new Dictionary<string, object>(combination.Values);
+        var scaledParams = ParameterScaler.ScaleQuoteAssetParams(
+            spaceProvider, command.StrategyName, mutableParams, scale);
+        var scaledCombination = new ParameterCombination(
+            scaledParams as IReadOnlyDictionary<string, object> ?? new Dictionary<string, object>(scaledParams!));
+
+        // 3. Create strategy with scaled parameters
+        var strategy = factory.Create(command.StrategyName, scaledCombination);
+        Interlocked.CompareExchange(ref strategyVersion, strategy.Version, null);
+
+        strategy.DataSubscriptions.Clear();
+        foreach (var sub in trialSubscriptions)
+            strategy.DataSubscriptions.Add(sub);
 
         var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
         for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
@@ -368,9 +378,6 @@ public sealed class RunOptimizationCommandHandler(
             else
                 throw new InvalidOperationException($"No pre-loaded data for subscription {key}.");
         }
-
-        var trialAsset = strategy.DataSubscriptions[0].Asset;
-        var scale = new ScaleContext(trialAsset);
 
         var backOptions = new BacktestOptions
         {
@@ -396,7 +403,7 @@ public sealed class RunOptimizationCommandHandler(
             Id = Guid.NewGuid(),
             StrategyName = command.StrategyName,
             StrategyVersion = strategy.Version,
-            Parameters = combination.Values,
+            Parameters = combination.Values, // Store original unscaled values
             AssetName = trialPrimarySub.Asset.Name,
             Exchange = trialPrimarySub.Asset.Exchange,
             TimeFrame = TimeFrameFormatter.Format(trialPrimarySub.TimeFrame),
@@ -468,9 +475,21 @@ public sealed class RunOptimizationCommandHandler(
 
     private static DataSubscriptionDto GetPrimarySubscriptionDto(RunOptimizationCommand command)
     {
-        if (command.DataSubscriptions is { Count: > 0 })
-            return command.DataSubscriptions[0];
-        return command.SubscriptionAxis![0];
+        var fixedSubs = command.DataSubscriptions;
+        var axisSubs = command.SubscriptionAxis;
+
+        if (fixedSubs is { Count: > 0 })
+        {
+            var primary = fixedSubs[0];
+            if (axisSubs is { Count: > 0 })
+                return primary with { Asset = $"{primary.Asset} (+{axisSubs.Count} more)" };
+            return primary;
+        }
+
+        var first = axisSubs![0];
+        if (axisSubs.Count > 1)
+            return first with { Asset = $"{first.Asset} (+{axisSubs.Count - 1} more)" };
+        return first;
     }
 
     private async Task ResolveAndCacheAsync(
