@@ -1,6 +1,6 @@
 "use client";
 
-// PnL baseline chart for backtest reports — green above zero, red below
+// Accumulated (cumulative) realized PnL chart — baseline series (green above zero, red below)
 
 import { useRef, useEffect } from "react";
 import type { IChartApi, ISeriesApi, Time } from "lightweight-charts";
@@ -9,12 +9,12 @@ import {
   addBaselineSeries,
   cleanupChart,
 } from "@/lib/utils/chart-utils";
-import type { EquityPoint } from "@/types/api";
+import type { TradePoint } from "@/types/api";
 
 type BaselineSeriesApi = ISeriesApi<"Baseline">;
 
 interface BacktestPnlChartProps {
-  data: EquityPoint[];
+  data: TradePoint[];
   height?: number;
 }
 
@@ -28,7 +28,7 @@ export function BacktestPnlChart({ data, height = 300 }: BacktestPnlChartProps) 
 
     const chart = createDarkChart(containerRef.current, { height });
     chartRef.current = chart;
-    seriesRef.current = addBaselineSeries(chart, { baseValue: 0, title: "PnL" });
+    seriesRef.current = addBaselineSeries(chart, { title: "Accumulated PnL" });
 
     return () => {
       cleanupChart(chart);
@@ -40,11 +40,21 @@ export function BacktestPnlChart({ data, height = 300 }: BacktestPnlChartProps) 
   useEffect(() => {
     if (!chartRef.current || !seriesRef.current || data.length === 0) return;
 
-    const baseEquity = data[0].value;
-    const chartData = data.map((pt) => ({
-      time: Math.floor(pt.timestampMs / 1000) as Time,
-      value: pt.value - baseEquity,
-    }));
+    // Aggregate PnL by timestamp (multiple trades may close on the same bar)
+    const aggregated = new Map<number, number>();
+    for (const pt of data) {
+      const ts = Math.floor(pt.timestampMs / 1000);
+      aggregated.set(ts, (aggregated.get(ts) ?? 0) + pt.pnl);
+    }
+
+    // Compute running sum for cumulative PnL
+    let cumulative = 0;
+    const chartData = Array.from(aggregated.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([ts, pnl]) => {
+        cumulative += pnl;
+        return { time: ts as Time, value: cumulative };
+      });
 
     seriesRef.current.setData(chartData);
     chartRef.current.timeScale().fitContent();

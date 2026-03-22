@@ -11,27 +11,7 @@ import { linter } from "@codemirror/lint";
 import { basicSetup } from "codemirror";
 import { Button } from "@/components/ui/button";
 import { useAvailableStrategies } from "@/hooks/use-available-strategies";
-import type { StartDebugSessionRequest, StrategyDescriptor } from "@/types/api";
-
-const DEFAULT_CONFIG: StartDebugSessionRequest = {
-  assetName: "BTCUSDT",
-  exchange: "Binance",
-  strategyName: "",
-  initialCash: 10000,
-  startTime: "2025-01-01T00:00:00Z",
-  endTime: "2025-12-31T23:59:59Z",
-  commissionPerTrade: 0.001,
-  slippageTicks: 2,
-  timeFrame: "01:00:00",
-};
-
-function buildDebugTemplate(descriptor: StrategyDescriptor): StartDebugSessionRequest {
-  return {
-    ...DEFAULT_CONFIG,
-    strategyName: descriptor.name,
-    strategyParameters: { ...descriptor.parameterDefaults },
-  };
-}
+import type { StartDebugSessionRequest } from "@/types/api";
 
 interface SessionConfigEditorProps {
   onStart: (config: StartDebugSessionRequest) => void;
@@ -49,21 +29,44 @@ export function SessionConfigEditor({
 
   const { data: strategies } = useAvailableStrategies();
 
+  // Check for pre-filled config from backtest/optimization "Debug" button
+  const prefillRef = useRef<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    const stored = sessionStorage.getItem("debug-session-config");
+    if (!stored) return;
+    sessionStorage.removeItem("debug-session-config");
+    try {
+      const parsed = JSON.parse(stored) as Record<string, unknown>;
+      prefillRef.current = parsed;
+      if (parsed.strategyName && typeof parsed.strategyName === "string") {
+        setSelectedStrategy(parsed.strategyName);
+      }
+    } catch {
+      // ignore invalid JSON
+    }
+  }, []);
+
   const descriptor = useMemo(
     () => strategies?.find((s) => s.name === selectedStrategy) ?? null,
     [strategies, selectedStrategy],
   );
 
   const template = useMemo(
-    () => (descriptor ? buildDebugTemplate(descriptor) : DEFAULT_CONFIG),
+    () => descriptor?.debugSessionTemplate ?? null,
     [descriptor],
   );
+
+  // Merge prefill config on top of the template when both are available
+  const initialDoc = useMemo(() => {
+    if (prefillRef.current) return prefillRef.current;
+    return template;
+  }, [template]);
 
   useEffect(() => {
     if (!editorContainerRef.current) return;
 
     const state = EditorState.create({
-      doc: JSON.stringify(template, null, 2),
+      doc: JSON.stringify(initialDoc, null, 2),
       extensions: [
         basicSetup,
         json(),
@@ -96,7 +99,10 @@ export function SessionConfigEditor({
     if (!editorViewRef.current || selectedStrategy === prevStrategyRef.current) return;
     prevStrategyRef.current = selectedStrategy;
 
-    const newDoc = JSON.stringify(template, null, 2);
+    // If a prefill config is pending, use it instead of the template (one-shot)
+    const prefill = prefillRef.current;
+    prefillRef.current = null;
+    const newDoc = JSON.stringify(prefill ?? template, null, 2);
     const view = editorViewRef.current;
 
     view.dispatch({

@@ -23,7 +23,7 @@ public class AssetDirectoryNameTests
 
         var result = AssetDirectoryName.From(asset);
 
-        Assert.Equal("BTCUSDT_fut", result);
+        Assert.Equal("BTCUSDT_perp", result);
     }
 
     [Fact]
@@ -37,12 +37,12 @@ public class AssetDirectoryNameTests
     }
 
     [Fact]
-    public void From_FutureAsset_ReturnsNameWithFutSuffix()
+    public void From_FutureAsset_ReturnsNameWithPerpSuffix()
     {
         var asset = FutureAsset.Create("ESZ4", "cme", 100m, tickSize: 0.25m, minOrderQuantity: 1m, quantityStepSize: 1m);
 
         var result = AssetDirectoryName.From(asset);
 
-        Assert.Equal("ESZ4_fut", result);
+        Assert.Equal("ESZ4_perp", result);
     }
 }

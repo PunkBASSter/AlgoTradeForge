@@ -7,7 +7,7 @@ public class MetricsCalculator : IMetricsCalculator
     private const double RiskFreeRate = 0.02;
     private const int TradingDaysPerYear = 252;
 
-    public PerformanceMetrics Calculate(
+    public (PerformanceMetrics Metrics, IReadOnlyList<ClosedTrade> Trades) Calculate(
         IReadOnlyList<Fill> fills,
         IReadOnlyList<long> equityCurve,
         long initialCash,
@@ -19,7 +19,7 @@ public class MetricsCalculator : IMetricsCalculator
         var tradingDays = (int)Math.Ceiling(totalDays);
 
         if (fills.Count == 0 || equityCurve.Count == 0)
-            return CreateEmptyMetrics(initialCash, finalEquity, tradingDays);
+            return (CreateEmptyMetrics(initialCash, finalEquity, tradingDays), []);
 
         var tradeStats = ComputeTradeStatistics(fills);
         var curve = BuildDoubleCurve(equityCurve);
@@ -42,9 +42,9 @@ public class MetricsCalculator : IMetricsCalculator
 
         var profitFactor = tradeStats.GrossLoss > 0
             ? tradeStats.GrossProfit / tradeStats.GrossLoss
-            : tradeStats.GrossProfit > 0 ? double.PositiveInfinity : 0;
+            : tradeStats.GrossProfit > 0 ? 9999.99 : 0;
 
-        return new PerformanceMetrics
+        var metrics = new PerformanceMetrics
         {
             TotalTrades = fills.Count,
             WinningTrades = tradeStats.WinningTrades,
@@ -66,6 +66,8 @@ public class MetricsCalculator : IMetricsCalculator
             FinalEquity = finalEquity,
             TradingDays = tradingDays
         };
+
+        return (metrics, tradeStats.Trades);
     }
 
     private static TradeStatistics ComputeTradeStatistics(IReadOnlyList<Fill> fills)
@@ -89,8 +91,8 @@ public class MetricsCalculator : IMetricsCalculator
             if (pos.Quantity != 0 && Math.Sign(newQuantity) != Math.Sign(pos.Quantity))
             {
                 // Full reversal — close existing position
-                var pnl = (double)(pos.Quantity * (fill.Price - pos.AvgEntry) * multiplier);
-                RecordPnl(stats, pnl);
+                var pnl = MoneyConvert.ToLong(pos.Quantity * (fill.Price - pos.AvgEntry) * multiplier);
+                RecordPnl(stats, pnl, fill.Timestamp.ToUnixTimeMilliseconds());
                 pos = (newQuantity, fill.Price, fill.Asset);
             }
             else if (pos.Quantity == 0)
@@ -101,8 +103,8 @@ public class MetricsCalculator : IMetricsCalculator
             {
                 // Partial close
                 var closedQuantity = Math.Abs(pos.Quantity) - Math.Abs(newQuantity);
-                var pnl = (double)(closedQuantity * (fill.Price - pos.AvgEntry) * Math.Sign(pos.Quantity) * multiplier);
-                RecordPnl(stats, pnl);
+                var pnl = MoneyConvert.ToLong(closedQuantity * (fill.Price - pos.AvgEntry) * Math.Sign(pos.Quantity) * multiplier);
+                RecordPnl(stats, pnl, fill.Timestamp.ToUnixTimeMilliseconds());
                 pos = (newQuantity, pos.AvgEntry, fill.Asset);
             }
             else
@@ -118,19 +120,20 @@ public class MetricsCalculator : IMetricsCalculator
         return stats;
     }
 
-    private static void RecordPnl(TradeStatistics stats, double pnl)
+    private static void RecordPnl(TradeStatistics stats, long pnl, long exitTimestampMs)
     {
         if (pnl > 0)
         {
             stats.WinningTrades++;
-            stats.GrossProfit += pnl;
+            stats.GrossProfit += (double)pnl;
         }
         else if (pnl < 0)
         {
             stats.LosingTrades++;
-            stats.GrossLoss += Math.Abs(pnl);
+            stats.GrossLoss += (double)Math.Abs(pnl);
         }
         stats.RoundTrips++;
+        stats.Trades.Add(new ClosedTrade(exitTimestampMs, pnl));
     }
 
     private static List<double> BuildDoubleCurve(IReadOnlyList<long> equityCurve)
@@ -211,7 +214,7 @@ public class MetricsCalculator : IMetricsCalculator
         }
         else if (mean > riskFreeRatePerPeriod)
         {
-            sortino = double.PositiveInfinity;
+            sortino = 9999.99;
         }
 
         return (sharpe, sortino);
@@ -238,5 +241,6 @@ public class MetricsCalculator : IMetricsCalculator
         public double GrossProfit { get; set; }
         public double GrossLoss { get; set; }
         public double TotalCommissions { get; set; }
+        public List<ClosedTrade> Trades { get; } = [];
     }
 }

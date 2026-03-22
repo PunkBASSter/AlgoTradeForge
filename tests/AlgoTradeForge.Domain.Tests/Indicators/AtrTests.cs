@@ -203,4 +203,22 @@ public sealed class AtrTests
 
         Assert.Equal(IndicatorMeasure.Price, atr.Measure);
     }
+
+    [Fact]
+    public void ExportChartId_ValueBuffer_ReturnsOne()
+    {
+        var atr = CreateIndicator();
+
+        Assert.Equal(1, atr.Buffers["Value"].ExportChartId);
+    }
+
+    [Fact]
+    public void ExportChartId_IsSettable()
+    {
+        var atr = CreateIndicator();
+
+        atr.Buffers["Value"].ExportChartId = 5;
+
+        Assert.Equal(5, atr.Buffers["Value"].ExportChartId);
+    }
 }

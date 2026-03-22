@@ -68,31 +68,56 @@ describe("debug-store", () => {
     expect(state.candles).toEqual([]);
   });
 
-  it("adds indicators grouped by name", () => {
+  it("splits indicator values into per-buffer entries", () => {
     const ind = { indicatorName: "SMA", measure: "price" as const, values: { sma20: 100 } };
     useDebugStore.getState().addIndicator(ind, 1000);
     useDebugStore.getState().addIndicator(ind, 2000);
 
-    const indicators = useDebugStore.getState().indicators;
-    expect(indicators.get("SMA")).toHaveLength(2);
-    expect(indicators.get("SMA")![0].time).toBe(1000);
-    expect(indicators.get("SMA")![1].time).toBe(2000);
+    const buffers = useDebugStore.getState().indicatorBuffers;
+    expect(buffers.get("SMA/sma20")).toHaveLength(2);
+    expect(buffers.get("SMA/sma20")![0].time).toBe(1000);
+    expect(buffers.get("SMA/sma20")![1].time).toBe(2000);
   });
 
-  it("removes indicator point when all values are null", () => {
+  it("stores buffer meta with chartId from chartIds", () => {
+    const ind = {
+      indicatorName: "ATR",
+      measure: "price" as const,
+      values: { Value: 345.2 },
+      chartIds: { Value: 1 },
+    };
+    useDebugStore.getState().addIndicator(ind, 1000);
+
+    const meta = useDebugStore.getState().indicatorBufferMeta.get("ATR/Value");
+    expect(meta).toBeDefined();
+    expect(meta!.chartId).toBe(1);
+    expect(meta!.indicatorName).toBe("ATR");
+    expect(meta!.bufferName).toBe("Value");
+  });
+
+  it("stores null chartId when chartIds is absent", () => {
+    const ind = { indicatorName: "SMA", measure: "price" as const, values: { Value: 100 } };
+    useDebugStore.getState().addIndicator(ind, 1000);
+
+    const meta = useDebugStore.getState().indicatorBufferMeta.get("SMA/Value");
+    expect(meta).toBeDefined();
+    expect(meta!.chartId).toBeNull();
+  });
+
+  it("removes buffer point when value is null", () => {
     const store = useDebugStore.getState();
     store.addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: 1100 } }, 1000);
     store.addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: 1200 } }, 2000);
 
-    // Retroactive removal: all-null values at time=1000
+    // Retroactive removal: null value at time=1000
     useDebugStore.getState().addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: null } }, 1000);
 
-    const points = useDebugStore.getState().indicators.get("DZZ")!;
+    const points = useDebugStore.getState().indicatorBuffers.get("DZZ/Value")!;
     expect(points).toHaveLength(1);
     expect(points[0].time).toBe(2000);
   });
 
-  it("updates past-timestamp indicator point", () => {
+  it("updates past-timestamp buffer point", () => {
     const store = useDebugStore.getState();
     store.addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: 1100 } }, 1000);
     store.addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: 1200 } }, 2000);
@@ -101,8 +126,8 @@ describe("debug-store", () => {
     // Update past point at time=1000 (not the latest)
     useDebugStore.getState().addIndicator({ indicatorName: "DZZ", measure: "price", values: { Value: 999 } }, 1000);
 
-    const points = useDebugStore.getState().indicators.get("DZZ")!;
+    const points = useDebugStore.getState().indicatorBuffers.get("DZZ/Value")!;
     expect(points).toHaveLength(3);
-    expect(points[0].values.Value).toBe(999);
+    expect(points[0].value).toBe(999);
   });
 });

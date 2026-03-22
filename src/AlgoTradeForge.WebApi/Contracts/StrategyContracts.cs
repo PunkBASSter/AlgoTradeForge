@@ -5,6 +5,10 @@ public sealed record StrategyDescriptorResponse
     public required string Name { get; init; }
     public required Dictionary<string, object> ParameterDefaults { get; init; }
     public required List<ParameterAxisResponse> OptimizationAxes { get; init; }
+    public required Dictionary<string, object> BacktestTemplate { get; init; }
+    public required Dictionary<string, object> OptimizationTemplate { get; init; }
+    public required Dictionary<string, object> LiveSessionTemplate { get; init; }
+    public required Dictionary<string, object> DebugSessionTemplate { get; init; }
 }
 
 public sealed record ParameterAxisResponse

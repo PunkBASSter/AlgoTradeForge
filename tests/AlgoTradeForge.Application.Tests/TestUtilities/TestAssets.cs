@@ -20,4 +20,10 @@ public static class TestAssets
 
     public static CryptoAsset BtcUsdt => CryptoAsset.Create("BTCUSDT", "Binance", decimalDigits: 2,
         minOrderQuantity: 0.00001m, maxOrderQuantity: 9000m, quantityStepSize: 0.00001m);
+
+    public static CryptoAsset EthUsdt => CryptoAsset.Create("ETHUSDT", "Binance", decimalDigits: 2,
+        minOrderQuantity: 0.001m, maxOrderQuantity: 10000m, quantityStepSize: 0.001m);
+
+    public static CryptoAsset SolUsdt => CryptoAsset.Create("SOLUSDT", "Binance", decimalDigits: 4,
+        minOrderQuantity: 0.01m, maxOrderQuantity: 100000m, quantityStepSize: 0.01m);
 }

@@ -80,6 +80,11 @@ public class SqliteRunRepositoryTests : IDisposable
                 new EquityPoint(1704070800000, 10100m),
                 new EquityPoint(1704074400000, 10050m),
             ],
+            TradePnl =
+            [
+                new TradePoint(1704070800000, 150.50m),
+                new TradePoint(1704074400000, -49.50m),
+            ],
             RunFolderPath = runFolderPath,
             RunMode = "Backtest",
             OptimizationRunId = optimizationRunId,
@@ -490,6 +495,46 @@ public class SqliteRunRepositoryTests : IDisposable
     {
         var query = new OptimizationRunQuery { Offset = -10 };
         Assert.Equal(0, query.Offset);
+    }
+
+    // ── Trade PnL round-trip ──────────────────────────────────────────
+
+    [Fact]
+    public async Task SaveAndGetById_RoundTripsTradePnl()
+    {
+        var original = MakeBacktestRecord();
+
+        await _repo.SaveAsync(original, TestContext.Current.CancellationToken);
+        var loaded = await _repo.GetByIdAsync(original.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(original.TradePnl.Count, loaded.TradePnl.Count);
+        for (var i = 0; i < original.TradePnl.Count; i++)
+        {
+            Assert.Equal(original.TradePnl[i].TimestampMs, loaded.TradePnl[i].TimestampMs);
+            Assert.Equal(original.TradePnl[i].Pnl, loaded.TradePnl[i].Pnl);
+        }
+    }
+
+    [Fact]
+    public async Task GetTradePnlAsync_ReturnsTradeData()
+    {
+        var original = MakeBacktestRecord();
+        await _repo.SaveAsync(original, TestContext.Current.CancellationToken);
+
+        var trades = await _repo.GetTradePnlAsync(original.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(trades);
+        Assert.Equal(2, trades.Count);
+        Assert.Equal(150.50m, trades[0].Pnl);
+        Assert.Equal(-49.50m, trades[1].Pnl);
+    }
+
+    [Fact]
+    public async Task GetTradePnlAsync_ReturnsNull_WhenNotFound()
+    {
+        var trades = await _repo.GetTradePnlAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
+        Assert.Null(trades);
     }
 
     // ── Query list excludes equity curve ──────────────────────────────

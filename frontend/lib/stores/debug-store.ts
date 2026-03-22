@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import type { DebugSnapshot, CandleData } from "@/types/api";
-import type { IndicatorEventData, OrderPlaceEventData, OrderFillEventData, OrderCancelEventData, OrderRejectEventData, PositionEventData } from "@/lib/events/types";
+import type { IndicatorEventData } from "@/lib/events/types";
 import type { DebugTrade } from "@/components/features/charts/candlestick-chart";
 
 export type DebugSessionState =
@@ -19,11 +19,16 @@ export type AutoStepMode =
   | { kind: "run_to_timestamp"; targetMs: number }
   | { kind: "run_to_sequence"; targetSq: number };
 
-export interface DebugIndicatorPoint {
+export interface DebugBufferPoint {
   time: number;
+  value: number;
+}
+
+export interface DebugBufferMeta {
   indicatorName: string;
+  bufferName: string;
   measure: string;
-  values: Record<string, number | null>;
+  chartId: number | null;
 }
 
 export interface EquityPoint {
@@ -35,7 +40,8 @@ interface DebugStoreState {
   sessionState: DebugSessionState;
   sessionId: string | null;
   candles: CandleData[];
-  indicators: Map<string, DebugIndicatorPoint[]>;
+  indicatorBuffers: Map<string, DebugBufferPoint[]>;
+  indicatorBufferMeta: Map<string, DebugBufferMeta>;
   trades: DebugTrade[];
   equityHistory: EquityPoint[];
   latestSnapshot: DebugSnapshot | null;
@@ -59,7 +65,8 @@ const initialState = {
   sessionState: "idle" as DebugSessionState,
   sessionId: null as string | null,
   candles: [] as CandleData[],
-  indicators: new Map<string, DebugIndicatorPoint[]>(),
+  indicatorBuffers: new Map<string, DebugBufferPoint[]>(),
+  indicatorBufferMeta: new Map<string, DebugBufferMeta>(),
   trades: [] as DebugTrade[],
   equityHistory: [] as EquityPoint[],
   latestSnapshot: null as DebugSnapshot | null,
@@ -99,41 +106,50 @@ export const useDebugStore = create<DebugStoreState>((set) => ({
 
   addIndicator: (data, time) =>
     set((state) => {
-      const newMap = new Map(state.indicators);
-      const points = [...(newMap.get(data.indicatorName) ?? [])];
-      const allNull = Object.values(data.values).every((v) => v === null);
+      const newBuffers = new Map(state.indicatorBuffers);
+      const newMeta = new Map(state.indicatorBufferMeta);
 
-      if (allNull) {
-        // Retroactive removal: delete the point at this timestamp
-        const idx = points.findIndex((p) => p.time === time);
-        if (idx >= 0) {
-          points.splice(idx, 1);
+      for (const [bufferName, value] of Object.entries(data.values)) {
+        const key = `${data.indicatorName}/${bufferName}`;
+        const points = [...(newBuffers.get(key) ?? [])];
+
+        // Ensure meta is set
+        if (!newMeta.has(key)) {
+          newMeta.set(key, {
+            indicatorName: data.indicatorName,
+            bufferName,
+            measure: data.measure,
+            chartId: data.chartIds?.[bufferName] ?? null,
+          });
         }
-        newMap.set(data.indicatorName, points);
-        return { indicators: newMap };
-      }
 
-      const newPoint: DebugIndicatorPoint = {
-        time,
-        indicatorName: data.indicatorName,
-        measure: data.measure,
-        values: data.values,
-      };
+        if (value === null) {
+          // Retroactive removal: delete the point at this timestamp
+          const idx = points.findIndex((p) => p.time === time);
+          if (idx >= 0) {
+            points.splice(idx, 1);
+          }
+          newBuffers.set(key, points);
+          continue;
+        }
 
-      // Check latest point first (hot path)
-      if (points.length > 0 && points[points.length - 1].time === time) {
-        points[points.length - 1] = newPoint;
-      } else {
-        // Past-timestamp update: find and replace existing point
-        const idx = points.findIndex((p) => p.time === time);
-        if (idx >= 0) {
-          points[idx] = newPoint;
+        const newPoint: DebugBufferPoint = { time, value };
+
+        // Check latest point first (hot path)
+        if (points.length > 0 && points[points.length - 1].time === time) {
+          points[points.length - 1] = newPoint;
         } else {
-          points.push(newPoint);
+          const idx = points.findIndex((p) => p.time === time);
+          if (idx >= 0) {
+            points[idx] = newPoint;
+          } else {
+            points.push(newPoint);
+          }
         }
+        newBuffers.set(key, points);
       }
-      newMap.set(data.indicatorName, points);
-      return { indicators: newMap };
+
+      return { indicatorBuffers: newBuffers, indicatorBufferMeta: newMeta };
     }),
 
   addTrade: (trade) =>
@@ -153,5 +169,11 @@ export const useDebugStore = create<DebugStoreState>((set) => ({
 
   setAutoStep: (autoStep) => set({ autoStep }),
 
-  reset: () => set({ ...initialState, indicators: new Map(), equityHistory: [], autoStep: null }),
+  reset: () => set({
+    ...initialState,
+    indicatorBuffers: new Map(),
+    indicatorBufferMeta: new Map(),
+    equityHistory: [],
+    autoStep: null,
+  }),
 }));

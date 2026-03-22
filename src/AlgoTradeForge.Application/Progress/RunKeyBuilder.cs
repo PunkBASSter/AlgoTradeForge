@@ -54,6 +54,17 @@ public static class RunKeyBuilder
                 sb.Append(sub.Asset).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
         }
 
+        if (cmd.SubscriptionAxis is { Count: > 0 })
+        {
+            sb.Append("|axis:");
+            var sortedAxis = cmd.SubscriptionAxis
+                .OrderBy(d => d.Asset)
+                .ThenBy(d => d.Exchange)
+                .ThenBy(d => d.TimeFrame);
+            foreach (var sub in sortedAxis)
+                sb.Append(sub.Asset).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
+        }
+
         if (cmd.Axes is { Count: > 0 })
         {
             sb.Append('|');

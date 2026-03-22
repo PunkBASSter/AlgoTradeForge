@@ -1,7 +1,7 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.7.0 → 1.7.1
+Version change: 1.7.1 → 1.7.2
 Modified principles: None
 Added sections: None
 Removed sections: None
@@ -220,6 +220,12 @@ frontend/
     nested `QuoteAsset` sub-params. `OptimizationAxisResolver` handles the
     same recursion independently in the optimization path via
     `ConvertAxisValue`.
+  - **User-facing output**: Any code that exposes `ParamUnit.QuoteAsset` parameter
+    defaults to users (JSON templates, API responses, UI form defaults) MUST
+    convert tick-denominated `long` values to human-readable form before
+    serialization. Use `StrategyTemplateBuilder.ConvertToHumanReadable()` or
+    equivalent axis-aware conversion. Exposing raw tick values causes
+    double-scaling when users submit them back through `ParameterScaler`.
 - MUST prefer non-nesting `using` declarations (`using var x = ...;`) over
   block-scoped `using (var x = ...) { }` unless early disposal within a
   larger scope is required (e.g., releasing a file handle before a
@@ -460,4 +466,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.7.1 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-03-13
+**Version**: 1.7.2 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-03-20

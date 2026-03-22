@@ -36,9 +36,8 @@ public sealed class OptimizationAxisResolver
     private static ResolvedAxis ResolveNumeric(
         NumericRangeAxis axis, OptimizationAxisOverride? axisOverride, ScaleContext? scale)
     {
-        if (axis.Unit == ParamUnit.QuoteAsset && scale is null && axisOverride is not null)
-            throw new InvalidOperationException(
-                $"Axis '{axis.Name}' has Unit=QuoteAsset but no scale was provided.");
+        // When scale is null, QuoteAsset axes are resolved without scaling.
+        // Per-trial scaling is applied later via ParameterScaler.
 
         switch (axisOverride)
         {
@@ -192,10 +191,8 @@ public sealed class OptimizationAxisResolver
     private static object ConvertAxisValue(
         decimal rawValue, ParamUnit unit, Type clrType, ScaleContext? scale)
     {
-        if (unit == ParamUnit.QuoteAsset)
+        if (unit == ParamUnit.QuoteAsset && scale is { } sc)
         {
-            var sc = scale ?? throw new InvalidOperationException(
-                "ScaleContext is required for QuoteAsset conversion.");
             if (clrType == typeof(long)) return sc.AmountToTicks(rawValue);
             if (clrType == typeof(decimal)) return rawValue / sc.TickSize;
             if (clrType == typeof(double)) return (double)(rawValue / sc.TickSize);
@@ -203,6 +200,7 @@ public sealed class OptimizationAxisResolver
         }
         else
         {
+            // Raw conversion (also used for QuoteAsset when scale is null — deferred scaling)
             if (clrType == typeof(decimal)) return rawValue;
             if (clrType == typeof(double)) return (double)rawValue;
             if (clrType == typeof(int)) return (int)rawValue;

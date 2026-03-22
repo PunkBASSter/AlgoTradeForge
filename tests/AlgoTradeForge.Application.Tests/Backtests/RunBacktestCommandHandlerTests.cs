@@ -200,7 +200,7 @@ public class RunBacktestCommandHandlerTests
         _metricsCalculator.Calculate(
                 Arg.Any<IReadOnlyList<Fill>>(), Arg.Any<IReadOnlyList<long>>(),
                 Arg.Any<long>(), Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>())
-            .Returns(new PerformanceMetrics
+            .Returns((new PerformanceMetrics
             {
                 TotalTrades = 0, WinningTrades = 0, LosingTrades = 0,
                 NetProfit = 0, GrossProfit = 0, GrossLoss = 0, TotalCommissions = 0,
@@ -208,7 +208,7 @@ public class RunBacktestCommandHandlerTests
                 SharpeRatio = 0, SortinoRatio = 0, MaxDrawdownPct = 0,
                 WinRatePct = 0, ProfitFactor = 0, AverageWin = 0, AverageLoss = 0,
                 InitialCapital = 10_000m, FinalEquity = 10_000m, TradingDays = 0,
-            });
+            }, (IReadOnlyList<ClosedTrade>)Array.Empty<ClosedTrade>()));
 
         _postRunPipeline.Execute(Arg.Any<string>(), Arg.Any<RunIdentity>(), Arg.Any<RunSummary>())
             .Returns(new PostRunResult(true, true, null, null));

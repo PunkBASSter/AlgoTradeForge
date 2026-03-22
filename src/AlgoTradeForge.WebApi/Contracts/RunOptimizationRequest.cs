@@ -13,6 +13,7 @@ public sealed record RunOptimizationRequest
     public Dictionary<string, OptimizationAxisOverride>? OptimizationAxes { get; init; }
 
     public List<DataSubscriptionDto>? DataSubscriptions { get; init; }
+    public List<DataSubscriptionDto>? SubscriptionAxis { get; init; }
     public required decimal InitialCash { get; init; }
     public required DateTimeOffset StartTime { get; init; }
     public required DateTimeOffset EndTime { get; init; }

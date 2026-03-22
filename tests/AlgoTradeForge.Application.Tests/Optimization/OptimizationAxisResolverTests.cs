@@ -89,7 +89,7 @@ public class OptimizationAxisResolverTests
     }
 
     [Fact]
-    public void QuoteAssetUnit_WithoutScale_Throws()
+    public void QuoteAssetUnit_WithoutScale_ReturnsUnscaledValues()
     {
         var axis = new NumericRangeAxis("MinThreshold", 50, 500, 50, typeof(long), ParamUnit.QuoteAsset);
         var descriptor = MakeDescriptor(axis);
@@ -98,8 +98,14 @@ public class OptimizationAxisResolverTests
             ["MinThreshold"] = new RangeOverride(50, 150, 50)
         };
 
-        Assert.Throws<InvalidOperationException>(
-            () => _resolver.Resolve(descriptor, overrides, scale: null));
+        var result = _resolver.Resolve(descriptor, overrides, scale: null);
+
+        var numeric = Assert.IsType<ResolvedNumericAxis>(Assert.Single(result));
+        Assert.Equal(3, numeric.Values.Count);
+        // Without scale, values are converted via MoneyConvert.ToLong (raw, no tick scaling)
+        Assert.Equal(50L, numeric.Values[0]);
+        Assert.Equal(100L, numeric.Values[1]);
+        Assert.Equal(150L, numeric.Values[2]);
     }
 
     [Fact]

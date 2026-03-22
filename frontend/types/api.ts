@@ -14,6 +14,10 @@ export interface StrategyDescriptor {
   name: string;
   parameterDefaults: Record<string, unknown>;
   optimizationAxes: ParameterAxisDescriptor[];
+  backtestTemplate: Record<string, unknown>;
+  optimizationTemplate: Record<string, unknown>;
+  liveSessionTemplate: Record<string, unknown>;
+  debugSessionTemplate: Record<string, unknown>;
 }
 
 export interface ParameterAxisDescriptor {
@@ -114,6 +118,15 @@ export interface EquityPoint {
 }
 
 // ---------------------------------------------------------------------------
+// Trade point (per-trade PnL)
+// ---------------------------------------------------------------------------
+
+export interface TradePoint {
+  timestampMs: number;
+  pnl: number;
+}
+
+// ---------------------------------------------------------------------------
 // Events data (from GET /api/backtests/{id}/events)
 // ---------------------------------------------------------------------------
 
@@ -134,6 +147,7 @@ export interface CandleData {
 
 export interface IndicatorSeries {
   measure: "price" | "percent" | "minusOnePlusOne" | "volume";
+  chartId?: number | null;
   points: IndicatorPoint[];
 }
 
@@ -231,6 +245,7 @@ export interface RunOptimizationRequest {
   strategyName: string;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
   dataSubscriptions?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[];
   initialCash: number;
   startTime: string;
   endTime: string;

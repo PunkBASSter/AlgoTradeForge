@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getClient } from "@/lib/services";
@@ -38,7 +38,22 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
   const [filters, setFilters] = useState<FilterValues>(emptyFilters);
   const [offset, setOffset] = useState(0);
   const [runNewOpen, setRunNewOpen] = useState(false);
+  const [rerunConfig, setRerunConfig] = useState<Record<string, unknown> | null>(null);
   const router = useRouter();
+
+  // Check for rerun config from backtest report page
+  useEffect(() => {
+    if (mode !== "backtest") return;
+    const stored = sessionStorage.getItem("rerun-backtest-config");
+    if (!stored) return;
+    sessionStorage.removeItem("rerun-backtest-config");
+    try {
+      setRerunConfig(JSON.parse(stored) as Record<string, unknown>);
+      setRunNewOpen(true);
+    } catch {
+      // ignore invalid JSON
+    }
+  }, [mode]);
 
   const client = getClient();
   const queryClient = useQueryClient();
@@ -124,10 +139,14 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
 
       <RunNewPanel
         open={runNewOpen}
-        onClose={() => setRunNewOpen(false)}
+        onClose={() => {
+          setRunNewOpen(false);
+          setRerunConfig(null);
+        }}
         mode={mode}
         selectedStrategy={selectedStrategy}
         onSuccess={handleRunNewSuccess}
+        initialContent={rerunConfig}
       />
     </>
   );

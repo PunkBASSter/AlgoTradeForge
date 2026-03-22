@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 5;
+    private const int CurrentVersion = 6;
 
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -51,6 +51,7 @@ internal static class SqliteDbInitializer
             total_bars          INTEGER NOT NULL,
             metrics_json        TEXT    NOT NULL,
             equity_curve_json   TEXT    NOT NULL,
+            trade_pnl_json      TEXT    NOT NULL DEFAULT '[]',
             run_folder_path     TEXT    NULL,
             run_mode            TEXT    NOT NULL DEFAULT 'Backtest',
             optimization_run_id TEXT    NULL REFERENCES optimization_runs(id),
@@ -87,6 +88,10 @@ internal static class SqliteDbInitializer
     private const string MigrationV4 = """
         ALTER TABLE optimization_runs ADD COLUMN filtered_trials INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE optimization_runs ADD COLUMN failed_trials INTEGER NOT NULL DEFAULT 0;
+        """;
+
+    private const string MigrationV6 = """
+        ALTER TABLE backtest_runs ADD COLUMN trade_pnl_json TEXT NOT NULL DEFAULT '[]';
         """;
 
     private const string MigrationV5 = """
@@ -144,6 +149,14 @@ internal static class SqliteDbInitializer
             migrateCmd.CommandText = MigrationV5;
             await migrateCmd.ExecuteNonQueryAsync();
             await SetVersionAsync(connection, 5);
+        }
+
+        if (currentVersion < 6)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV6;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 6);
         }
     }
 

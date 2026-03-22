@@ -8,7 +8,8 @@ public sealed record IndicatorEvent(
     string IndicatorName,
     IndicatorMeasure Measure,
     IReadOnlyDictionary<string, object?> Values,
-    bool IsExportable) : ISubscriptionBoundEvent
+    bool IsExportable,
+    IReadOnlyDictionary<string, int>? ChartIds = null) : ISubscriptionBoundEvent
 {
     public static string TypeId => "ind";
     public static ExportMode DefaultExportMode => ExportMode.Backtest;
@@ -20,7 +21,8 @@ public sealed record IndicatorMutationEvent(
     string IndicatorName,
     IndicatorMeasure Measure,
     IReadOnlyDictionary<string, object?> Values,
-    bool IsExportable) : ISubscriptionBoundEvent
+    bool IsExportable,
+    IReadOnlyDictionary<string, int>? ChartIds = null) : ISubscriptionBoundEvent
 {
     public static string TypeId => "ind.mut";
     public static ExportMode DefaultExportMode => ExportMode.Backtest;

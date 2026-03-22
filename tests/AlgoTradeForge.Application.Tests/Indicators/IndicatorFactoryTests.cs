@@ -201,6 +201,73 @@ public class IndicatorFactoryTests
     }
 
     [Fact]
+    public void DecoratedIndicator_ChartIds_MatchesBufferChartIds()
+    {
+        var bus = new CapturingEventBus();
+        var inner = new Atr(14);
+        var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
+
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050) };
+        decorated.Compute(bars);
+
+        var evt = Assert.Single(bus.Events);
+        var indEvent = Assert.IsType<IndicatorEvent>(evt);
+        Assert.NotNull(indEvent.ChartIds);
+        Assert.True(indEvent.ChartIds.ContainsKey("Value"));
+        Assert.Equal(1, indEvent.ChartIds["Value"]);
+    }
+
+    [Fact]
+    public void DecoratedIndicator_ChartIds_NullForOverlayIndicator()
+    {
+        var bus = new CapturingEventBus();
+        var inner = new DeltaZigZag(0.5m, 100L);
+        var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
+
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050) };
+        decorated.Compute(bars);
+
+        var evt = Assert.Single(bus.Events);
+        var indEvent = Assert.IsType<IndicatorEvent>(evt);
+        Assert.Null(indEvent.ChartIds);
+    }
+
+    [Fact]
+    public void RetroactiveMutation_CarriesChartIds()
+    {
+        var bus = new CapturingEventBus();
+        var inner = new Atr(1);
+        var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
+
+        // ATR(1) warms up immediately → set ExportChartId to verify it propagates
+        var t1 = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        var t2 = new DateTimeOffset(2025, 6, 15, 12, 1, 0, TimeSpan.Zero);
+
+        var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050, timestampMs: t1.ToUnixTimeMilliseconds()) };
+        decorated.Compute(bars);
+        bus.Events.Clear();
+
+        // Use DeltaZigZag instead — it produces retroactive mutations via Revise
+        var bus2 = new CapturingEventBus();
+        var dzz = new DeltaZigZag(0.5m, 100L);
+        // Override chart ID to verify propagation through retroactive mutations
+        dzz.Buffers["Value"].ExportChartId = 3;
+        var dec2 = new EmittingIndicatorDecorator<Int64Bar, long>(dzz, bus2, ExportableSub);
+
+        var bars2 = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050, timestampMs: t1.ToUnixTimeMilliseconds()) };
+        dec2.Compute(bars2);
+
+        bars2.Add(TestBars.Create(1050, 1200, 1000, 1150, timestampMs: t2.ToUnixTimeMilliseconds()));
+        dec2.Compute(bars2);
+
+        // 3 events: IndicatorEvent(bar1), IndicatorEvent(bar2), IndicatorMutationEvent(retroactive)
+        Assert.Equal(3, bus2.Events.Count);
+        var mutEvt = Assert.IsType<IndicatorMutationEvent>(bus2.Events[2]);
+        Assert.NotNull(mutEvt.ChartIds);
+        Assert.Equal(3, mutEvt.ChartIds["Value"]);
+    }
+
+    [Fact]
     public void MultiTimeframe_EachSubscription_EmitsIndependently()
     {
         // Arrange — M1 + H1 subscriptions, each with its own decorated DeltaZigZag

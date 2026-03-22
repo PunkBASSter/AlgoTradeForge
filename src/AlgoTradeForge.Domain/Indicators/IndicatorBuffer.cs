@@ -2,12 +2,13 @@ using System.Collections;
 
 namespace AlgoTradeForge.Domain.Indicators;
 
-public sealed class IndicatorBuffer<T>(string name, bool skipDefaultValues = false) : IReadOnlyList<T>
+public sealed class IndicatorBuffer<T>(string name, bool skipDefaultValues = false, int? exportChartId = null) : IReadOnlyList<T>
 {
     private readonly List<T> _data = [];
 
     public string Name { get; } = name;
     public bool SkipDefaultValues { get; } = skipDefaultValues;
+    public int? ExportChartId { get; set; } = exportChartId;
     public Action<string, int, T>? OnRevised { get; set; }
 
     public int Count => _data.Count;

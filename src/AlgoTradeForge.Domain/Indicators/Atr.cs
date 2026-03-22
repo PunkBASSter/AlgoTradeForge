@@ -7,7 +7,7 @@ namespace AlgoTradeForge.Domain.Indicators;
 public sealed class Atr : Int64IndicatorBase
 {
     private readonly int _period;
-    private readonly IndicatorBuffer<long> _buffer = new("Value");
+    private readonly IndicatorBuffer<long> _buffer = new("Value", exportChartId: 1);
     private readonly Dictionary<string, IndicatorBuffer<long>> _buffers;
 
     private long _previousClose;

@@ -29,4 +29,14 @@ internal static class MetricsScaler
             result[i] = new EquityPoint(curve[i].TimestampMs, scale.TicksToAmount(curve[i].Value));
         return result;
     }
+
+    public static TradePoint[] ScaleTradePnl(IReadOnlyList<ClosedTrade> trades, ScaleContext scale)
+    {
+        var result = new TradePoint[trades.Count];
+        for (var i = 0; i < trades.Count; i++)
+            result[i] = new TradePoint(
+                trades[i].ExitTimestampMs,
+                scale.TicksToAmount(trades[i].RealizedPnl));
+        return result;
+    }
 }

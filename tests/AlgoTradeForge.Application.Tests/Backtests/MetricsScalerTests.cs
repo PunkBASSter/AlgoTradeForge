@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Backtests;
+using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Reporting;
@@ -130,6 +131,34 @@ public class MetricsScalerTests
         var curve = new List<EquitySnapshot>();
 
         var result = MetricsScaler.ScaleEquityCurve(curve, _scale);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ScaleTradePnl_ConvertsAllPoints()
+    {
+        var trades = new List<ClosedTrade>
+        {
+            new(1000L, 5000L),   // win: 5000 ticks * 0.01 = 50.00
+            new(2000L, -3000L),  // loss: -3000 ticks * 0.01 = -30.00
+        };
+
+        var result = MetricsScaler.ScaleTradePnl(trades, _scale);
+
+        Assert.Equal(2, result.Length);
+        Assert.Equal(1000L, result[0].TimestampMs);
+        Assert.Equal(50.00m, result[0].Pnl);
+        Assert.Equal(2000L, result[1].TimestampMs);
+        Assert.Equal(-30.00m, result[1].Pnl);
+    }
+
+    [Fact]
+    public void ScaleTradePnl_EmptyList_ReturnsEmpty()
+    {
+        var trades = new List<ClosedTrade>();
+
+        var result = MetricsScaler.ScaleTradePnl(trades, _scale);
 
         Assert.Empty(result);
     }

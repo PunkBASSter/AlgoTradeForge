@@ -8,6 +8,7 @@ public sealed record RunOptimizationCommand : ICommand<OptimizationSubmissionDto
     public required string StrategyName { get; init; }
     public Dictionary<string, OptimizationAxisOverride>? Axes { get; init; }
     public List<DataSubscriptionDto>? DataSubscriptions { get; init; }
+    public List<DataSubscriptionDto>? SubscriptionAxis { get; init; }
     public required decimal InitialCash { get; init; }
     public required DateTimeOffset StartTime { get; init; }
     public required DateTimeOffset EndTime { get; init; }

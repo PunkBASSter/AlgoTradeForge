@@ -14,10 +14,10 @@ import { useToast } from "@/components/ui/toast";
 import { getClient } from "@/lib/services";
 import type { StartDebugSessionRequest, DebugCommand } from "@/types/api";
 
-const CandlestickChart = dynamic(
+const ChartStack = dynamic(
   () =>
-    import("@/components/features/charts/candlestick-chart").then(
-      (m) => m.CandlestickChart
+    import("@/components/features/charts/chart-stack").then(
+      (m) => m.ChartStack
     ),
   { ssr: false, loading: () => <ChartSkeleton /> }
 );
@@ -147,9 +147,10 @@ export default function DebugPage() {
 
           <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4">
             <div className="space-y-2">
-              <CandlestickChart
+              <ChartStack
                 candles={store.candles}
-                debugIndicators={store.indicators}
+                indicatorBuffers={store.indicatorBuffers}
+                indicatorBufferMeta={store.indicatorBufferMeta}
                 debugTrades={store.trades}
               />
               {store.equityHistory.length > 0 && (
