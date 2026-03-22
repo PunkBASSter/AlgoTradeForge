@@ -2,6 +2,10 @@
 
 ## Launch optimized but not overtrained Delta ZigZag Breakout to live on multiple (30+) assets: crypto, stocks, maybe FX, maybe FUT.
 
+## QA
+- Debug on futures, investigate rejections
+- Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
+
 ## Overfitting control
 - Walk Forward OPTI
 - Permutations test
@@ -29,7 +33,6 @@
 4. Introduce Result<> pattern?
 
 ## QA
-- Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
 - Test optimization with pluggable modules
 - Test trades isolation module with multiple simultaneous orders allowed?
 
