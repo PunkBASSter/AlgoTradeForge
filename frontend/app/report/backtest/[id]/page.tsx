@@ -179,10 +179,10 @@ export default function BacktestReportPage({
         <ParamsPanel parameters={backtest.parameters} />
       </div>
 
-      {/* Per-trade PnL chart */}
+      {/* Accumulated PnL chart */}
       <div className="space-y-2">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
-          Per-Trade PnL
+          Accumulated PnL
         </h2>
         {tradesLoading ? (
           <ChartSkeleton />
