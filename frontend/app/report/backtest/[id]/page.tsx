@@ -4,6 +4,7 @@
 
 import React from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import {
   useBacktestDetail,
   useBacktestEquity,
@@ -12,8 +13,26 @@ import {
 } from "@/hooks/use-backtests";
 import { MetricsPanel } from "@/components/features/report/metrics-panel";
 import { ParamsPanel } from "@/components/features/report/params-panel";
+import { Button } from "@/components/ui/button";
 import { ChartSkeleton } from "@/components/features/charts/chart-skeleton";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { RunBacktestRequest } from "@/types/api";
+
+const INTERNAL_PARAM_KEYS = new Set(["DataSubscriptions"]);
+
+/** Convert shorthand timeframe (e.g. "1h", "15m", "1d") to .NET TimeSpan format ("01:00:00"). */
+function toTimeSpan(tf: string): string {
+  const match = tf.match(/^(\d+)([smhd])$/);
+  if (!match) return tf; // already in TimeSpan format or unknown — pass through
+  const n = parseInt(match[1], 10);
+  switch (match[2]) {
+    case "s": return `00:00:${String(n).padStart(2, "0")}`;
+    case "m": return `00:${String(n).padStart(2, "0")}:00`;
+    case "h": return `${String(n).padStart(2, "0")}:00:00`;
+    case "d": return `${n}.00:00:00`;
+    default: return tf;
+  }
+}
 
 const EquityChart = dynamic(
   () =>
@@ -45,6 +64,8 @@ export default function BacktestReportPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = React.use(params);
+
+  const router = useRouter();
 
   const {
     data: backtest,
@@ -95,22 +116,48 @@ export default function BacktestReportPage({
     );
   }
 
+  const handleRerun = () => {
+    const config: RunBacktestRequest = {
+      assetName: backtest.assetName,
+      exchange: backtest.exchange,
+      strategyName: backtest.strategyName,
+      initialCash: backtest.initialCash,
+      startTime: backtest.dataStart,
+      endTime: backtest.dataEnd,
+      commissionPerTrade: backtest.commission,
+      slippageTicks: backtest.slippageTicks,
+      timeFrame: toTimeSpan(backtest.timeFrame),
+      strategyParameters: Object.fromEntries(
+        Object.entries(backtest.parameters).filter(
+          ([k]) => !INTERNAL_PARAM_KEYS.has(k),
+        ),
+      ),
+    };
+    sessionStorage.setItem("rerun-backtest-config", JSON.stringify(config));
+    router.push(`/${backtest.strategyName}/backtest`);
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Title */}
-      <div>
-        <h1 className="text-xl font-bold text-text-primary">
-          {backtest.strategyName}
-          <span className="ml-2 text-sm font-normal text-text-muted">
-            v{backtest.strategyVersion}
-          </span>
-        </h1>
-        <p className="text-sm text-text-secondary mt-1">
-          {backtest.assetName} / {backtest.exchange} / {backtest.timeFrame}
-          {" -- "}
-          {new Date(backtest.dataStart).toLocaleDateString()} to{" "}
-          {new Date(backtest.dataEnd).toLocaleDateString()}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-text-primary">
+            {backtest.strategyName}
+            <span className="ml-2 text-sm font-normal text-text-muted">
+              v{backtest.strategyVersion}
+            </span>
+          </h1>
+          <p className="text-sm text-text-secondary mt-1">
+            {backtest.assetName} / {backtest.exchange} / {backtest.timeFrame}
+            {" -- "}
+            {new Date(backtest.dataStart).toLocaleDateString()} to{" "}
+            {new Date(backtest.dataEnd).toLocaleDateString()}
+          </p>
+        </div>
+        <Button variant="secondary" onClick={handleRerun}>
+          Re-run
+        </Button>
       </div>
 
       {/* Error display */}

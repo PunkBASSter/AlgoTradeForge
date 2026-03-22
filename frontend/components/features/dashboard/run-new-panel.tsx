@@ -38,6 +38,7 @@ interface RunNewPanelProps {
   mode: "backtest" | "optimization" | "live";
   selectedStrategy: string | null;
   onSuccess: () => void;
+  initialContent?: Record<string, unknown> | null;
 }
 
 export function RunNewPanel({
@@ -46,6 +47,7 @@ export function RunNewPanel({
   mode,
   selectedStrategy,
   onSuccess,
+  initialContent,
 }: RunNewPanelProps) {
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
@@ -75,8 +77,9 @@ export function RunNewPanel({
     // Reuse existing editor if it's already attached to this container
     if (editorViewRef.current) return;
 
+    const initialDoc = initialContent ?? template;
     const state = EditorState.create({
-      doc: JSON.stringify(template, null, 2),
+      doc: JSON.stringify(initialDoc, null, 2),
       extensions: EDITOR_EXTENSIONS,
     });
 
@@ -94,20 +97,20 @@ export function RunNewPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mode/strategy changes handled by separate effect below
   }, [open]);
 
-  // Update editor content when mode or selectedStrategy changes
-  const prevKeyRef = useRef(`${mode}:${selectedStrategy}`);
+  // Update editor content when mode, selectedStrategy, or initialContent changes
+  const prevKeyRef = useRef(`${mode}:${selectedStrategy}:${initialContent ? "ic" : ""}`);
   useEffect(() => {
-    const key = `${mode}:${selectedStrategy}`;
+    const key = `${mode}:${selectedStrategy}:${initialContent ? "ic" : ""}`;
     if (!open || !editorViewRef.current || key === prevKeyRef.current) return;
     prevKeyRef.current = key;
 
-    const newDoc = JSON.stringify(template, null, 2);
+    const newDoc = JSON.stringify(initialContent ?? template, null, 2);
     const view = editorViewRef.current;
 
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: newDoc },
     });
-  }, [open, mode, selectedStrategy, template]);
+  }, [open, mode, selectedStrategy, template, initialContent]);
 
   const handleSubmit = async () => {
     if (!editorViewRef.current) return;
