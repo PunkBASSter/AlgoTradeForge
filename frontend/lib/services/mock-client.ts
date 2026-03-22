@@ -6,6 +6,7 @@ import type {
   BacktestStatus,
   PagedResponse,
   EquityPoint,
+  TradePoint,
   EventsData,
   RunBacktestRequest,
   RunOptimizationRequest,
@@ -125,6 +126,11 @@ export const mockClient: typeof import("./api-client").apiClient & {
   async getBacktestEquity(_id: string): Promise<EquityPoint[]> {
     await delay();
     return equity;
+  },
+
+  async getBacktestTrades(_id: string): Promise<TradePoint[]> {
+    await delay();
+    return [];
   },
 
   async getBacktestEvents(_id: string): Promise<EventsData> {

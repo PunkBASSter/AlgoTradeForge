@@ -390,11 +390,12 @@ public sealed class RunOptimizationCommandHandler(
 
         var result = engine.Run(seriesArray, strategy, backOptions, token);
 
-        var metrics = metricsCalculator.Calculate(
+        var (metrics, trades) = metricsCalculator.Calculate(
             result.Fills, new EquityValueProjection(result.EquityCurve), backOptions.InitialCash,
             command.StartTime, command.EndTime);
 
         var scaledMetrics = MetricsScaler.ScaleDown(metrics, scale);
+        var tradePnl = MetricsScaler.ScaleTradePnl(trades, scale);
         trialWatch.Stop();
 
         var trialPrimarySub = strategy.DataSubscriptions[0];
@@ -418,6 +419,7 @@ public sealed class RunOptimizationCommandHandler(
             TotalBars = result.TotalBarsProcessed,
             Metrics = scaledMetrics,
             EquityCurve = [],
+            TradePnl = tradePnl,
             RunFolderPath = null,
             RunMode = RunModes.Backtest,
             OptimizationRunId = optimizationRunId,

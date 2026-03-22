@@ -82,7 +82,7 @@ public sealed class StartDebugSessionCommandHandler(
                 postRunPipeline.Execute(runSink.RunFolderPath, capturedIdentity!, runSummary);
 
                 var equityValues = result.EquityCurve.Select(e => e.Value).ToList();
-                var metrics = metricsCalculator.Calculate(
+                var (metrics, _) = metricsCalculator.Calculate(
                     result.Fills, equityValues, setup.Options.InitialCash,
                     command.StartTime, command.EndTime);
 

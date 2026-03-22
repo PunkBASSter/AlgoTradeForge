@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import {
   useBacktestDetail,
   useBacktestEquity,
+  useBacktestTrades,
   useBacktestEvents,
 } from "@/hooks/use-backtests";
 import { MetricsPanel } from "@/components/features/report/metrics-panel";
@@ -55,6 +56,11 @@ export default function BacktestReportPage({
     data: equity,
     isLoading: equityLoading,
   } = useBacktestEquity(id);
+
+  const {
+    data: trades,
+    isLoading: tradesLoading,
+  } = useBacktestTrades(id);
 
   const {
     data: events,
@@ -126,18 +132,18 @@ export default function BacktestReportPage({
         <ParamsPanel parameters={backtest.parameters} />
       </div>
 
-      {/* PnL chart */}
+      {/* Per-trade PnL chart */}
       <div className="space-y-2">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
-          Profit &amp; Loss
+          Per-Trade PnL
         </h2>
-        {equityLoading ? (
+        {tradesLoading ? (
           <ChartSkeleton />
-        ) : equity && equity.length > 0 ? (
-          <BacktestPnlChart data={equity} />
+        ) : trades && trades.length > 0 ? (
+          <BacktestPnlChart data={trades} />
         ) : (
           <div className="rounded-lg border border-border-default bg-bg-panel p-8 text-center text-text-muted">
-            No equity data available
+            No trade data available
           </div>
         )}
       </div>

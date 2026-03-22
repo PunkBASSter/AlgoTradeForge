@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Domain.Reporting;
 
 public interface IMetricsCalculator
 {
-    PerformanceMetrics Calculate(
+    (PerformanceMetrics Metrics, IReadOnlyList<ClosedTrade> Trades) Calculate(
         IReadOnlyList<Fill> fills,
         IReadOnlyList<long> equityCurve,
         long initialCash,

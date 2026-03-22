@@ -6,6 +6,7 @@ import {
   CandlestickSeries,
   LineSeries,
   BaselineSeries,
+  HistogramSeries,
   type IChartApi,
   type DeepPartial,
   type ChartOptions,
@@ -107,6 +108,16 @@ export function addBaselineSeries(
     bottomFillColor1: "rgba(239, 68, 68, 0.05)",
     bottomFillColor2: "rgba(239, 68, 68, 0.28)",
     title: options?.title,
+  });
+}
+
+export function addHistogramSeries(
+  chart: IChartApi,
+  options?: { title?: string },
+) {
+  return chart.addSeries(HistogramSeries, {
+    title: options?.title,
+    priceFormat: { type: "price", precision: 2, minMove: 0.01 },
   });
 }
 

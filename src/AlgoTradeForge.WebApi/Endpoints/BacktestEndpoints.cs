@@ -45,6 +45,13 @@ public static class BacktestEndpoints
             .Produces<IReadOnlyList<EquityPointResponse>>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{id:guid}/trades", GetTradePnl)
+            .WithName("GetBacktestTrades")
+            .WithSummary("Get per-trade PnL for a backtest run")
+            .WithOpenApi()
+            .Produces<IReadOnlyList<TradePointResponse>>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapGet("/{id:guid}/status", GetBacktestStatus)
             .WithName("GetBacktestStatus")
             .WithSummary("Poll for backtest progress and results")
@@ -194,6 +201,18 @@ public static class BacktestEndpoints
             .ToList();
 
         return Results.Ok(points);
+    }
+
+    private static async Task<IResult> GetTradePnl(
+        Guid id,
+        IRunRepository repository,
+        CancellationToken ct)
+    {
+        var trades = await repository.GetTradePnlAsync(id, ct);
+        if (trades is null)
+            return Results.NotFound(new { error = $"Backtest '{id}' not found." });
+
+        return Results.Ok(trades.Select(t => new TradePointResponse(t.TimestampMs, t.Pnl)).ToList());
     }
 
     internal static BacktestRunResponse MapToResponse(BacktestRunRecord r) => new()

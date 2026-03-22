@@ -94,6 +94,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 initial_cash, commission, slippage_ticks,
                 started_at, completed_at, data_start, data_end,
                 duration_ms, total_bars, metrics_json, equity_curve_json,
+                trade_pnl_json,
                 run_folder_path, run_mode, optimization_run_id,
                 asset_name, exchange, timeframe,
                 error_message, error_stack_trace
@@ -102,6 +103,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 $cash, $commission, $slippage,
                 $startedAt, $completedAt, $dataStart, $dataEnd,
                 $durationMs, $totalBars, $metricsJson, $equityJson,
+                $tradePnlJson,
                 $runFolder, $runMode, $optId,
                 $asset, $exchange, $tf,
                 $errorMsg, $errorStack
@@ -123,6 +125,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         cmd.Parameters.AddWithValue("$totalBars", r.TotalBars);
         cmd.Parameters.AddWithValue("$metricsJson", JsonSerializer.Serialize(r.Metrics, JsonOptions));
         cmd.Parameters.AddWithValue("$equityJson", SerializeEquityCurve(r.EquityCurve));
+        cmd.Parameters.AddWithValue("$tradePnlJson", SerializeTradePnl(r.TradePnl));
         cmd.Parameters.AddWithValue("$runFolder", (object?)r.RunFolderPath ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$runMode", r.RunMode);
         cmd.Parameters.AddWithValue("$optId", r.OptimizationRunId.HasValue ? r.OptimizationRunId.Value.ToString() : DBNull.Value);
@@ -556,6 +559,9 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             EquityCurve = includeEquityCurve
                 ? DeserializeEquityCurve(reader.GetString(reader.GetOrdinal("equity_curve_json")))
                 : [],
+            TradePnl = includeEquityCurve
+                ? DeserializeTradePnl(reader.GetString(reader.GetOrdinal("trade_pnl_json")))
+                : [],
             RunFolderPath = reader.IsDBNull(reader.GetOrdinal("run_folder_path"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("run_folder_path")),
@@ -623,6 +629,43 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             points.Add(new EquityPoint(t, v));
         }
         return points;
+    }
+
+    private static string SerializeTradePnl(IReadOnlyList<TradePoint> trades)
+    {
+        var points = trades.Select(t => new { t = t.TimestampMs, p = t.Pnl });
+        return JsonSerializer.Serialize(points);
+    }
+
+    private static IReadOnlyList<TradePoint> DeserializeTradePnl(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var trades = new List<TradePoint>();
+        foreach (var element in doc.RootElement.EnumerateArray())
+        {
+            var t = element.GetProperty("t").GetInt64();
+            var p = element.GetProperty("p").GetDecimal();
+            trades.Add(new TradePoint(t, p));
+        }
+        return trades;
+    }
+
+    // ── Get trade PnL by ID ──────────────────────────────────────────
+
+    public async Task<IReadOnlyList<TradePoint>?> GetTradePnlAsync(Guid id, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT trade_pnl_json FROM backtest_runs WHERE id = $id";
+        cmd.Parameters.AddWithValue("$id", id.ToString());
+
+        var result = await cmd.ExecuteScalarAsync(ct);
+        if (result is null or DBNull)
+            return null;
+
+        return DeserializeTradePnl((string)result);
     }
 
     private static IReadOnlyDictionary<string, object> DeserializeParameters(string json)

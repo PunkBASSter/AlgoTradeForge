@@ -475,7 +475,7 @@ public class RunOptimizationCommandHandlerTests
         _metricsCalculator.Calculate(
             Arg.Any<IReadOnlyList<Fill>>(), Arg.Any<IReadOnlyList<long>>(),
             Arg.Any<long>(), Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>())
-            .Returns(emptyMetrics);
+            .Returns((emptyMetrics, (IReadOnlyList<ClosedTrade>)Array.Empty<ClosedTrade>()));
 
         var handler = CreateHandler();
         var command = CreateCommand() with

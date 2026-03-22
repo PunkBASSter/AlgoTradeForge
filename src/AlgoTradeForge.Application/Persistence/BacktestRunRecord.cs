@@ -22,6 +22,7 @@ public sealed record BacktestRunRecord
     public required int TotalBars { get; init; }
     public required PerformanceMetrics Metrics { get; init; }
     public required IReadOnlyList<EquityPoint> EquityCurve { get; init; }
+    public IReadOnlyList<TradePoint> TradePnl { get; init; } = [];
     public string? RunFolderPath { get; init; }
     public required string RunMode { get; init; }
     public Guid? OptimizationRunId { get; init; }
@@ -30,6 +31,8 @@ public sealed record BacktestRunRecord
 }
 
 public sealed record EquityPoint(long TimestampMs, decimal Value);
+
+public sealed record TradePoint(long TimestampMs, decimal Pnl);
 
 public static class RunModes
 {

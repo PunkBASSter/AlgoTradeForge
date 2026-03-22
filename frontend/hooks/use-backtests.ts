@@ -21,6 +21,15 @@ export function useBacktestEquity(id: string) {
   });
 }
 
+export function useBacktestTrades(id: string) {
+  const client = getClient();
+  return useQuery({
+    queryKey: ["backtest", id, "trades"],
+    queryFn: () => client.getBacktestTrades(id),
+    enabled: !!id,
+  });
+}
+
 export function useBacktestEvents(id: string, enabled = true) {
   const client = getClient();
   return useQuery({

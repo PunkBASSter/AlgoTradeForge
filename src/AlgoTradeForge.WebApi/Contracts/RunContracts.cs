@@ -32,6 +32,8 @@ public sealed record BacktestRunResponse
 
 public sealed record EquityPointResponse(long TimestampMs, decimal Value);
 
+public sealed record TradePointResponse(long TimestampMs, decimal Pnl);
+
 public static class MetricsMapping
 {
     public static Dictionary<string, object> ToDict(PerformanceMetrics m) => new()

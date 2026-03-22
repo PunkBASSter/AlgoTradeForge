@@ -130,7 +130,7 @@ public sealed class RunBacktestCommandHandler(
 
             // Calculate metrics
             var equityValues = result.EquityCurve.Select(e => e.Value).ToList();
-            var metrics = metricsCalculator.Calculate(
+            var (metrics, trades) = metricsCalculator.Calculate(
                 result.Fills, equityValues, setup.Options.InitialCash,
                 command.StartTime, command.EndTime);
 
@@ -140,6 +140,7 @@ public sealed class RunBacktestCommandHandler(
             var primarySub = setup.Strategy.DataSubscriptions[0];
 
             var equityCurve = MetricsScaler.ScaleEquityCurve(result.EquityCurve, setup.Scale);
+            var tradePnl = MetricsScaler.ScaleTradePnl(trades, setup.Scale);
 
             var record = new BacktestRunRecord
             {
@@ -162,6 +163,7 @@ public sealed class RunBacktestCommandHandler(
                 TotalBars = result.TotalBarsProcessed,
                 Metrics = scaledMetrics,
                 EquityCurve = equityCurve,
+                TradePnl = tradePnl,
                 RunFolderPath = runFolderPath,
                 RunMode = RunModes.Backtest,
             };

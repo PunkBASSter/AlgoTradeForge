@@ -20,7 +20,7 @@ public class MetricsCalculatorTests
         var equityCurve = Enumerable.Repeat(10_000L, curveCount).ToList();
         var fills = new List<Fill>();
 
-        var metrics = _sut.Calculate(fills, equityCurve, 10_000L, Start, TwoYearsLater);
+        var (metrics, _) = _sut.Calculate(fills, equityCurve, 10_000L, Start, TwoYearsLater);
 
         // ~731 days (2024 is leap year: 366 + 365 = 731), not 1,000,000
         Assert.InRange(metrics.TradingDays, 730, 732);
@@ -38,7 +38,7 @@ public class MetricsCalculatorTests
             TestFills.SellAapl(121L, 10m)
         };
 
-        var metrics = _sut.Calculate(fills, equityCurve, 10_000L, Start, TwoYearsLater);
+        var (metrics, _) = _sut.Calculate(fills, equityCurve, 10_000L, Start, TwoYearsLater);
 
         Assert.InRange(metrics.AnnualizedReturnPct, 9.5, 10.5);
     }
@@ -60,7 +60,7 @@ public class MetricsCalculatorTests
             TestFills.SellAapl(125L, 100m)
         };
 
-        var metrics = _sut.Calculate(fills, equityCurve, 10_000L, start, end);
+        var (metrics, _) = _sut.Calculate(fills, equityCurve, 10_000L, start, end);
 
         Assert.True(metrics.SharpeRatio > 0, $"Expected positive Sharpe, got {metrics.SharpeRatio}");
     }
@@ -89,8 +89,8 @@ public class MetricsCalculatorTests
             TestFills.SellAapl(120L, 100m)
         };
 
-        var dailyMetrics = _sut.Calculate(fills, dailyCurve, 10_000L, start, end);
-        var minuteMetrics = _sut.Calculate(fills, minuteCurve, 10_000L, start, end);
+        var (dailyMetrics, _) = _sut.Calculate(fills, dailyCurve, 10_000L, start, end);
+        var (minuteMetrics, _) = _sut.Calculate(fills, minuteCurve, 10_000L, start, end);
 
         // Both must be positive — the old bug (hardcoded 252) made minute Sharpe deeply negative
         Assert.True(dailyMetrics.SharpeRatio > 0,
@@ -112,7 +112,7 @@ public class MetricsCalculatorTests
         };
         var equityCurve = new List<long> { 10_000L, 10_200L };
 
-        var metrics = _sut.Calculate(fills, equityCurve, 10_000L, Start, TwoYearsLater);
+        var (metrics, _) = _sut.Calculate(fills, equityCurve, 10_000L, Start, TwoYearsLater);
 
         Assert.Equal(200m, metrics.NetProfit);
         Assert.Equal(10m, metrics.TotalCommissions);
@@ -121,13 +121,14 @@ public class MetricsCalculatorTests
     [Fact]
     public void EmptyEquityCurve_ReturnsZeroMetrics()
     {
-        var metrics = _sut.Calculate(
+        var (metrics, trades) = _sut.Calculate(
             new List<Fill>(), new List<long>(), 10_000L, Start, TwoYearsLater);
 
         Assert.Equal(0, metrics.TotalTrades);
         Assert.Equal(0.0, metrics.SharpeRatio);
         Assert.Equal(0.0, metrics.AnnualizedReturnPct);
         Assert.Equal(10_000m, metrics.InitialCapital);
+        Assert.Empty(trades);
     }
 
     [Fact]
@@ -141,7 +142,7 @@ public class MetricsCalculatorTests
             TestFills.SellAapl(110L, 10m)
         };
 
-        var metrics = _sut.Calculate(fills, equityCurve, 10_000L, sameTime, sameTime);
+        var (metrics, _) = _sut.Calculate(fills, equityCurve, 10_000L, sameTime, sameTime);
 
         Assert.Equal(0.0, metrics.AnnualizedReturnPct);
     }

@@ -6,6 +6,7 @@ import type {
   BacktestStatus,
   PagedResponse,
   EquityPoint,
+  TradePoint,
   EventsData,
   RunBacktestRequest,
   RunOptimizationRequest,
@@ -171,6 +172,12 @@ export const apiClient = {
   getBacktestEquity(id: string): Promise<EquityPoint[]> {
     return request<EquityPoint[]>(
       `/api/backtests/${encodeURIComponent(id)}/equity`,
+    );
+  },
+
+  getBacktestTrades(id: string): Promise<TradePoint[]> {
+    return request<TradePoint[]>(
+      `/api/backtests/${encodeURIComponent(id)}/trades`,
     );
   },
 
