@@ -28,8 +28,8 @@ public sealed class FileSystemAvailableAssetsProvider(
                     continue;
 
                 var dirName = Path.GetFileName(symbolDir);
-                var isFutures = dirName.EndsWith("_fut", StringComparison.OrdinalIgnoreCase);
-                var symbol = isFutures ? dirName[..^4] : dirName;
+                var isFutures = dirName.EndsWith("_perp", StringComparison.OrdinalIgnoreCase);
+                var symbol = isFutures ? dirName[..^5] : dirName;
 
                 result.Add(new AvailableAssetInfo(exchange, symbol, isFutures));
             }

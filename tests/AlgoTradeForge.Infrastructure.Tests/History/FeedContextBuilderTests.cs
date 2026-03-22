@@ -62,7 +62,7 @@ public class FeedContextBuilderTests : IDisposable
     public void Build_FeedsJsonWithNoData_ReturnsNull()
     {
         var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
-        var assetDir = AssetDirectoryName.From(asset); // BTCUSDT_fut
+        var assetDir = AssetDirectoryName.From(asset); // BTCUSDT_perp
 
         WriteFeedsJson("Binance", assetDir, new
         {
@@ -81,7 +81,7 @@ public class FeedContextBuilderTests : IDisposable
     public void Build_WithFeedData_RegistersFeed()
     {
         var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
-        var assetDir = AssetDirectoryName.From(asset); // BTCUSDT_fut
+        var assetDir = AssetDirectoryName.From(asset); // BTCUSDT_perp
 
         WriteFeedsJson("Binance", assetDir, new
         {
@@ -171,7 +171,7 @@ public class FeedContextBuilderTests : IDisposable
     public void Build_CryptoAsset_UsesAssetNameDirectly()
     {
         var asset = CryptoAsset.Create("ETHUSDT", "Binance", 2);
-        var assetDir = AssetDirectoryName.From(asset); // ETHUSDT (no _fut suffix)
+        var assetDir = AssetDirectoryName.From(asset); // ETHUSDT (no _perp suffix)
         Assert.Equal("ETHUSDT", assetDir);
 
         WriteFeedsJson("Binance", assetDir, new

@@ -41,7 +41,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     {
         var ts1 = Ts(2024, 1, 1, 0);
         var ts2 = Ts(2024, 1, 1, 8);
-        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 1, "8h",
+        WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
             "ts,rate",
             [
                 $"{ts1},0.0001",
@@ -49,7 +49,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
             ]);
 
         var result = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "8h",
+            _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
 
         Assert.NotNull(result);
@@ -84,15 +84,15 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     [Fact]
     public void Load_MultiMonth_CombinesData()
     {
-        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 1, "8h",
+        WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
             "ts,rate",
             [$"{Ts(2024,1,15)},0.0001"]);
-        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 2, "8h",
+        WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 2, "8h",
             "ts,rate",
             [$"{Ts(2024,2,15)},0.0002"]);
 
         var result = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "8h",
+            _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 2, 28));
 
         Assert.NotNull(result);
@@ -103,7 +103,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     public void Load_NoFiles_ReturnsNull()
     {
         var result = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "8h",
+            _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
 
         Assert.Null(result);
@@ -115,7 +115,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
         var tsEarly = Ts(2024, 1, 1);
         var tsMid = Ts(2024, 1, 15);
         var tsLate = Ts(2024, 1, 31);
-        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 1, "8h",
+        WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
             "ts,rate",
             [
                 $"{tsEarly},0.0001",
@@ -124,7 +124,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
             ]);
 
         var result = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "8h",
+            _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
             new DateOnly(2024, 1, 10), new DateOnly(2024, 1, 20));
 
         Assert.NotNull(result);
@@ -137,14 +137,14 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     public void Load_InvariantCulture_ParsesDecimalCorrectly()
     {
         var ts1 = Ts(2024, 1, 1);
-        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 1, null,
+        WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, null,
             "ts,rate",
             [
                 $"{ts1},1.23456789"
             ]);
 
         var result = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "",
+            _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
 
         Assert.NotNull(result);
@@ -160,7 +160,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     {
         var ts1 = Ts(2024, 1, 1);
         var ts2 = Ts(2024, 1, 1, 8);
-        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 1, "8h",
+        WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
             "ts,rate",
             [
                 "",
@@ -171,7 +171,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
             ]);
 
         var result = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "8h",
+            _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
 
         Assert.NotNull(result);
@@ -183,7 +183,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     {
         var ts1 = Ts(2024, 1, 1);
         var ts2 = Ts(2024, 1, 1, 8);
-        WriteCsv("Binance", "BTCUSDT_fut", "oi", 2024, 1, null,
+        WriteCsv("Binance", "BTCUSDT_perp", "oi", 2024, 1, null,
             "ts,oi_usd,oi_contracts",
             [
                 $"{ts1},1000000.0,500.0",
@@ -191,7 +191,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
             ]);
 
         var result = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT_fut", "oi", "",
+            _testDataRoot, "Binance", "BTCUSDT_perp", "oi", "",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
 
         Assert.NotNull(result);
@@ -205,7 +205,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     {
         var ts1 = Ts(2024, 1, 1);
         var ts2 = Ts(2024, 1, 1, 8);
-        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 1, "8h",
+        WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
             "ts,rate",
             [
                 $"{ts1},0.0001",
@@ -213,7 +213,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
             ]);
 
         var result = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "8h",
+            _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
 
         Assert.NotNull(result);
@@ -225,7 +225,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     public void Load_NonNumericTimestamp_SkipsRow()
     {
         var ts1 = Ts(2024, 1, 1);
-        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 1, "8h",
+        WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
             "ts,rate",
             [
                 $"{ts1},0.0001",
@@ -233,7 +233,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
             ]);
 
         var result = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "8h",
+            _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
 
         Assert.NotNull(result);
@@ -244,7 +244,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     public void Load_SingleColumnRow_SkipsRow()
     {
         var ts1 = Ts(2024, 1, 1);
-        WriteCsv("Binance", "BTCUSDT_fut", "funding_rate", 2024, 1, "8h",
+        WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
             "ts,rate",
             [
                 $"{ts1},0.0001",
@@ -252,7 +252,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
             ]);
 
         var result = _loader.Load(
-            _testDataRoot, "Binance", "BTCUSDT_fut", "funding_rate", "8h",
+            _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
 
         Assert.NotNull(result);

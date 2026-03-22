@@ -84,7 +84,7 @@ public sealed class FileSystemAssetRepository(
 
     private static int ReadDecimalDigitsFromFeedsJson(string dataRoot, AvailableAssetInfo info, ILogger logger)
     {
-        var dirName = info.IsFutures ? $"{info.Symbol}_fut" : info.Symbol;
+        var dirName = info.IsFutures ? $"{info.Symbol}_perp" : info.Symbol;
         var feedsJsonPath = Path.Combine(dataRoot, info.Exchange, dirName, "feeds.json");
 
         if (!File.Exists(feedsJsonPath))

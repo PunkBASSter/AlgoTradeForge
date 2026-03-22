@@ -25,7 +25,7 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
     /// </summary>
     /// <param name="dataRoot">Root data directory.</param>
     /// <param name="exchange">Exchange name.</param>
-    /// <param name="assetDir">Asset directory name (e.g. BTCUSDT or BTCUSDT_fut).</param>
+    /// <param name="assetDir">Asset directory name (e.g. BTCUSDT or BTCUSDT_perp).</param>
     /// <param name="feedName">Feed subdirectory name (e.g. "funding_rate").</param>
     /// <param name="interval">Optional interval suffix for the filename (e.g. "1h"). Empty string means no suffix.</param>
     /// <param name="from">Start date (inclusive).</param>

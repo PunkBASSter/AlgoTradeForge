@@ -372,7 +372,7 @@ public sealed class RunOptimizationCommandHandler(
         for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
         {
             var sub = strategy.DataSubscriptions[i];
-            var key = $"{sub.Asset.Name}|{sub.TimeFrame}";
+            var key = CacheKey(sub.Asset, sub.TimeFrame);
             if (dataCache.TryGetValue(key, out var cached))
                 seriesArray[i] = cached.Series;
             else
@@ -510,13 +510,16 @@ public sealed class RunOptimizationCommandHandler(
         var subscription = new DataSubscription(asset, timeFrame);
         target.Add(subscription);
 
-        var key = $"{sub.Asset}|{sub.TimeFrame}";
+        var key = CacheKey(asset, timeFrame);
         if (!dataCache.ContainsKey(key))
         {
             var series = historyRepository.Load(subscription, fromDate, toDate);
             dataCache[key] = (asset, series);
         }
     }
+
+    private static string CacheKey(Asset asset, TimeSpan timeFrame) =>
+        $"{asset.Name}|{asset.Settlement}|{timeFrame}";
 
     /// <summary>Zero-allocation projection: exposes <c>EquitySnapshot.Value</c> as <c>IReadOnlyList&lt;long&gt;</c>.</summary>
     private sealed class EquityValueProjection(IReadOnlyList<EquitySnapshot> source) : IReadOnlyList<long>
