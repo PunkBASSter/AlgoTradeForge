@@ -90,9 +90,10 @@ public static class DebugEndpoints
         Guid id,
         DebugCommandRequest request,
         ICommandHandler<SendDebugCommandRequest, DebugStepResultDto> handler,
+        JsonSerializerOptions jsonOptions,
         CancellationToken ct)
     {
-        var (command, error) = ParseCommand(request);
+        var (command, error) = ParseCommand(request, jsonOptions);
         if (command is null)
             return Results.BadRequest(new { error });
 
@@ -141,18 +142,14 @@ public static class DebugEndpoints
         return Results.NoContent();
     }
 
-    private static readonly JsonSerializerOptions CommandJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     /// <summary>
     /// Converts the REST DTO to the wire JSON format expected by <see cref="DebugCommandParser"/>,
     /// so all command parsing lives in one place.
     /// </summary>
-    private static (DebugCommand? Command, string? Error) ParseCommand(DebugCommandRequest request)
+    private static (DebugCommand? Command, string? Error) ParseCommand(
+        DebugCommandRequest request, JsonSerializerOptions options)
     {
-        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(request, CommandJsonOptions);
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(request, options);
         return DebugCommandParser.Parse(jsonBytes);
     }
 }

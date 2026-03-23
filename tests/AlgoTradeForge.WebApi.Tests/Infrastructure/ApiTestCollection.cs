@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using AlgoTradeForge.Application;
 using AlgoTradeForge.WebApi.Contracts;
 
 namespace AlgoTradeForge.WebApi.Tests.Infrastructure;
@@ -9,11 +10,7 @@ public sealed class ApiTestCollection : ICollectionFixture<AlgoTradeForgeApiFact
 
 public abstract class ApiTestBase : IDisposable
 {
-    protected static readonly JsonSerializerOptions Json = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true,
-    };
+    protected static readonly JsonSerializerOptions Json = JsonDefaults.Api;
 
     protected HttpClient Client { get; }
 
