@@ -19,6 +19,7 @@ public sealed class StartDebugSessionCommandHandler(
     public async Task<DebugSessionDto> HandleAsync(StartDebugSessionCommand command, CancellationToken ct = default)
     {
         var session = sessionStore.Create(command.DataSubscription.AssetName, command.StrategyName);
+        string? resolvedAssetName = null;
 
         IRunSink? sink = null;
         RunIdentity? capturedIdentity = null;
@@ -57,6 +58,10 @@ public sealed class StartDebugSessionCommandHandler(
 
         var runSink = sink ?? throw new InvalidOperationException("Indicator factory callback was not invoked.");
 
+        // Normalize asset name from the resolved asset (consistent with optimization path)
+        resolvedAssetName = AssetLookupName.From(setup.Strategy.DataSubscriptions[0].Asset);
+        capturedIdentity = capturedIdentity! with { AssetName = resolvedAssetName };
+
         // Debug sessions must export bar/indicator events for the visual debugger.
         // The default IsExportable=false is correct for normal backtests and optimization,
         // but debug sessions need all subscriptions exportable so events reach the WS sink.
@@ -91,7 +96,7 @@ public sealed class StartDebugSessionCommandHandler(
                 return new BacktestResultDto
                 {
                     Id = session.Id,
-                    AssetName = command.DataSubscription.AssetName,
+                    AssetName = resolvedAssetName!,
                     StrategyName = command.StrategyName,
                     InitialCapital = scaledMetrics.InitialCapital,
                     FinalEquity = scaledMetrics.FinalEquity,
@@ -114,6 +119,6 @@ public sealed class StartDebugSessionCommandHandler(
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default);
 
-        return new DebugSessionDto(session.Id, command.DataSubscription.AssetName, command.StrategyName, session.CreatedAt);
+        return new DebugSessionDto(session.Id, resolvedAssetName!, command.StrategyName, session.CreatedAt);
     }
 }

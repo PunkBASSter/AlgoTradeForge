@@ -16,7 +16,7 @@ public static class RunKeyBuilder
         sb.Append(cmd.StrategyName).Append('|');
         sb.Append(sub.AssetName).Append('|');
         sb.Append(sub.Exchange).Append('|');
-        sb.Append(sub.TimeFrame).Append('|');
+        sb.Append(!string.IsNullOrEmpty(sub.TimeFrame) ? sub.TimeFrame : "default").Append('|');
         sb.Append(settings.StartTime.ToUniversalTime().ToString("O")).Append('|');
         sb.Append(settings.EndTime.ToUniversalTime().ToString("O")).Append('|');
         sb.Append(settings.InitialCash).Append('|');

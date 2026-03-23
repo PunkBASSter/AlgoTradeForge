@@ -149,9 +149,11 @@ public sealed class RunBacktestCommandHandler(
                 StrategyVersion = setup.Strategy.Version,
                 Parameters = command.StrategyParameters?.AsReadOnly()
                     ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-                DataSubscription = command.DataSubscription with
+                DataSubscription = new DataSubscriptionDto
                 {
-                    TimeFrame = TimeFrameFormatter.Format(primarySub.TimeFrame)
+                    AssetName = AssetLookupName.From(primarySub.Asset),
+                    Exchange = primarySub.Asset.Exchange,
+                    TimeFrame = TimeFrameFormatter.Format(primarySub.TimeFrame),
                 },
                 BacktestSettings = command.BacktestSettings,
                 StartedAt = startedAt,
@@ -202,9 +204,11 @@ public sealed class RunBacktestCommandHandler(
                 StrategyVersion = setup.Strategy.Version,
                 Parameters = command.StrategyParameters?.AsReadOnly()
                     ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-                DataSubscription = command.DataSubscription with
+                DataSubscription = new DataSubscriptionDto
                 {
-                    TimeFrame = TimeFrameFormatter.Format(primarySub.TimeFrame)
+                    AssetName = AssetLookupName.From(primarySub.Asset),
+                    Exchange = primarySub.Asset.Exchange,
+                    TimeFrame = TimeFrameFormatter.Format(primarySub.TimeFrame),
                 },
                 BacktestSettings = command.BacktestSettings,
                 StartedAt = startedAt,

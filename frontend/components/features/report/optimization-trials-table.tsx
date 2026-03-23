@@ -48,9 +48,9 @@ export function OptimizationTrialsTable({
       },
       { key: "strategyVersion", header: "Version" },
       { key: "id", header: "Run ID", render: (v) => String(v).substring(0, 8) },
-      { key: "assetName", header: "Asset", render: (_v, row) => row.dataSubscription.assetName },
-      { key: "exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
-      { key: "timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
+      { key: "dataSubscription.assetName", header: "Asset", render: (_v, row) => row.dataSubscription.assetName },
+      { key: "dataSubscription.exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
+      { key: "dataSubscription.timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
       {
         key: "sortino",
         header: "Sortino",

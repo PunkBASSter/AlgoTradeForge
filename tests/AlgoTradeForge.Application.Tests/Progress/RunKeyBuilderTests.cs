@@ -43,6 +43,21 @@ public sealed class RunKeyBuilderTests
     }
 
     [Fact]
+    public void Build_Backtest_Empty_TimeFrame_Equals_Default_TimeFrame_Key()
+    {
+        var cmdEmpty = MakeBacktestCommand() with
+        {
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "" }
+        };
+        var cmdDefault = MakeBacktestCommand() with
+        {
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "default" }
+        };
+
+        Assert.Equal(RunKeyBuilder.Build(cmdEmpty), RunKeyBuilder.Build(cmdDefault));
+    }
+
+    [Fact]
     public void Build_Backtest_Returns_SHA256_Hex_Format()
     {
         var key = RunKeyBuilder.Build(MakeBacktestCommand());
