@@ -19,7 +19,9 @@ public sealed class OrderValidator : IOrderValidator
     public string? ValidateSettlement(Order order, long fillPrice, Portfolio portfolio, BacktestOptions options,
         IReadOnlyDictionary<string, long> lastPrices)
     {
+        var commission = MoneyConvert.ToLong(
+            fillPrice * order.Quantity * order.Asset.Multiplier * options.CommissionPerTrade);
         return order.Asset.GetSettlementCalculator().ValidateSettlement(order, fillPrice, portfolio,
-            options.CommissionPerTrade, lastPrices);
+            commission, lastPrices);
     }
 }

@@ -329,6 +329,9 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
         return bindings.ToArray();
     }
 
+    private static long ComputeCommission(long price, decimal quantity, decimal multiplier, decimal rate)
+        => MoneyConvert.ToLong(price * quantity * multiplier * rate);
+
     private void ProcessPendingOrders(RunState state, Asset asset, Int64Bar bar, DateTimeOffset timestamp)
     {
         var pending = state.OrderQueue.GetPendingForAsset(asset);
@@ -374,7 +377,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
                 fillPrice.Value,
                 order.Quantity,
                 order.Side,
-                state.Options.CommissionPerTrade);
+                ComputeCommission(fillPrice.Value, order.Quantity, order.Asset.Multiplier, state.Options.CommissionPerTrade));
 
             order.Status = OrderStatus.Filled;
             state.Fills.Add(fill);
@@ -431,7 +434,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
                 match.Price,
                 quantity,
                 closeSide,
-                state.Options.CommissionPerTrade);
+                ComputeCommission(match.Price, quantity, pos.OriginalOrder.Asset.Multiplier, state.Options.CommissionPerTrade));
 
             state.Fills.Add(fill);
             state.Portfolio.Apply(fill);

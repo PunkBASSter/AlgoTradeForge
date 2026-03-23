@@ -384,7 +384,7 @@ public sealed class RunOptimizationCommandHandler(
             InitialCash = scale.AmountToTicks(command.InitialCash),
             StartTime = command.StartTime,
             EndTime = command.EndTime,
-            CommissionPerTrade = scale.AmountToTicks(command.CommissionPerTrade),
+            CommissionPerTrade = command.CommissionPerTrade,
             SlippageTicks = command.SlippageTicks
         };
 

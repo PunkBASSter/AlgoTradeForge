@@ -10,7 +10,7 @@ public class BarMatcherTests
 {
     private readonly BarMatcher _matcher = new();
 
-    private static BacktestOptions CreateOptions(long commission = 0L, long slippageTicks = 0) =>
+    private static BacktestOptions CreateOptions(decimal commission = 0m, long slippageTicks = 0) =>
         new()
         {
             InitialCash = 100_000L,
