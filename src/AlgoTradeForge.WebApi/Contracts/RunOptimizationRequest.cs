@@ -5,22 +5,8 @@ using AlgoTradeForge.Domain.Reporting;
 
 namespace AlgoTradeForge.WebApi.Contracts;
 
-public sealed record RunOptimizationRequest
+public sealed record OptimizationSettingsInput
 {
-    public required string StrategyName { get; init; }
-
-    [JsonConverter(typeof(OptimizationAxesConverter))]
-    public Dictionary<string, OptimizationAxisOverride>? OptimizationAxes { get; init; }
-
-    public List<DataSubscriptionDto>? DataSubscriptions { get; init; }
-    public List<DataSubscriptionDto>? SubscriptionAxis { get; init; }
-    public required decimal InitialCash { get; init; }
-    public required DateTimeOffset StartTime { get; init; }
-    public required DateTimeOffset EndTime { get; init; }
-    public decimal CommissionPerTrade { get; init; }
-    public long SlippageTicks { get; init; }
-    public int MaxDegreeOfParallelism { get; init; } = -1;
-    public long MaxCombinations { get; init; } = 100_000;
     public string SortBy { get; init; } = MetricNames.Default;
     public int MaxTrialsToKeep { get; init; } = 10_000;
     public double? MinProfitFactor { get; init; }
@@ -28,6 +14,21 @@ public sealed record RunOptimizationRequest
     public double? MinSharpeRatio { get; init; }
     public double? MinSortinoRatio { get; init; }
     public double? MinAnnualizedReturnPct { get; init; }
+    public int MaxDegreeOfParallelism { get; init; } = -1;
+    public long MaxCombinations { get; init; } = 100_000;
+}
+
+public sealed record RunOptimizationRequest
+{
+    public required string StrategyName { get; init; }
+    public required BacktestSettingsInput BacktestSettings { get; init; }
+    public OptimizationSettingsInput OptimizationSettings { get; init; } = new();
+
+    [JsonConverter(typeof(OptimizationAxesConverter))]
+    public Dictionary<string, OptimizationAxisOverride>? OptimizationAxes { get; init; }
+
+    public List<DataSubscriptionDto>? DataSubscriptions { get; init; }
+    public List<DataSubscriptionDto>? SubscriptionAxis { get; init; }
 }
 
 public sealed class OptimizationAxesConverter : JsonConverter<Dictionary<string, OptimizationAxisOverride>>

@@ -249,18 +249,7 @@ export interface RunBacktestRequest {
   strategyParameters?: Record<string, unknown>;
 }
 
-export interface RunOptimizationRequest {
-  strategyName: string;
-  optimizationAxes?: Record<string, OptimizationAxisOverride>;
-  dataSubscriptions?: DataSubscription[];
-  subscriptionAxis?: DataSubscription[];
-  initialCash: number;
-  startTime: string;
-  endTime: string;
-  commissionPerTrade?: number;
-  slippageTicks?: number;
-  maxDegreeOfParallelism?: number;
-  maxCombinations?: number;
+export interface OptimizationSettingsInput {
   sortBy?: string;
   maxTrialsToKeep?: number;
   minProfitFactor?: number | null;
@@ -268,6 +257,17 @@ export interface RunOptimizationRequest {
   minSharpeRatio?: number | null;
   minSortinoRatio?: number | null;
   minAnnualizedReturnPct?: number | null;
+  maxDegreeOfParallelism?: number;
+  maxCombinations?: number;
+}
+
+export interface RunOptimizationRequest {
+  strategyName: string;
+  backtestSettings: BacktestSettingsInput;
+  optimizationSettings?: OptimizationSettingsInput;
+  optimizationAxes?: Record<string, OptimizationAxisOverride>;
+  dataSubscriptions?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[];
 }
 
 export type OptimizationAxisOverride =

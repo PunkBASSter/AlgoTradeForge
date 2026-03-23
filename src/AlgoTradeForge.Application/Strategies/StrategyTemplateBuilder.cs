@@ -27,7 +27,7 @@ public static class StrategyTemplateBuilder
             ["startTime"] = "2025-01-01T00:00:00Z",
             ["endTime"] = "2025-12-31T23:59:59Z",
             ["commissionPerTrade"] = 0.001,
-            ["slippageTicks"] = 2,
+            ["slippageTicks"] = 0,
         },
         ["strategyName"] = strategyName,
         ["strategyParameters"] = ConvertToHumanReadable(paramDefaults, axes),
@@ -45,20 +45,25 @@ public static class StrategyTemplateBuilder
         return new Dictionary<string, object>
         {
             ["strategyName"] = strategyName,
-            ["dataSubscriptions"] = new List<Dictionary<string, object>>(),
+            ["backtestSettings"] = new Dictionary<string, object>
+            {
+                ["initialCash"] = 10000,
+                ["startTime"] = "2025-01-01T00:00:00Z",
+                ["endTime"] = "2025-12-31T23:59:59Z",
+                ["commissionPerTrade"] = 0.001,
+                ["slippageTicks"] = 0,
+            },
+            ["optimizationSettings"] = new Dictionary<string, object>
+            {
+                ["sortBy"] = "sortinoRatio",
+                ["maxTrialsToKeep"] = 10000,
+                ["minProfitFactor"] = 0.5,
+                ["maxDrawdownPct"] = 95.0,
+                ["minSharpeRatio"] = -5.0,
+                ["minSortinoRatio"] = -5.0,
+                ["minAnnualizedReturnPct"] = -100.0,
+            },
             ["subscriptionAxis"] = BuildSubscriptions(availableAssets, "01:00:00"),
-            ["initialCash"] = 10000,
-            ["startTime"] = "2025-01-01T00:00:00Z",
-            ["endTime"] = "2025-12-31T23:59:59Z",
-            ["commissionPerTrade"] = 0.001,
-            ["slippageTicks"] = 2,
-            ["sortBy"] = "sortinoRatio",
-            ["maxTrialsToKeep"] = 10000,
-            ["minProfitFactor"] = 0.5,
-            ["maxDrawdownPct"] = 95.0,
-            ["minSharpeRatio"] = -5.0,
-            ["minSortinoRatio"] = -5.0,
-            ["minAnnualizedReturnPct"] = -100.0,
             ["optimizationAxes"] = axisOverrides.Count > 0 ? axisOverrides : null!,
         };
     }
@@ -94,7 +99,7 @@ public static class StrategyTemplateBuilder
             ["startTime"] = "2025-01-01T00:00:00Z",
             ["endTime"] = "2025-12-31T23:59:59Z",
             ["commissionPerTrade"] = 0.001,
-            ["slippageTicks"] = 2,
+            ["slippageTicks"] = 0,
         },
         ["strategyName"] = strategyName,
         ["strategyParameters"] = ConvertToHumanReadable(paramDefaults, axes),

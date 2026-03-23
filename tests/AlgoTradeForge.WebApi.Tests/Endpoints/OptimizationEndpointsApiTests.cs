@@ -13,6 +13,16 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
     private static RunOptimizationRequest MakeOptimizationRequest() => new()
     {
         StrategyName = "BuyAndHold",
+        BacktestSettings = new()
+        {
+            InitialCash = 10_000m,
+            StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
+        },
+        OptimizationSettings = new()
+        {
+            MaxDegreeOfParallelism = 1,
+        },
         DataSubscriptions =
         [
             new DataSubscriptionDto
@@ -26,10 +36,6 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         {
             ["Quantity"] = new RangeOverride(1m, 3m, 2m), // 2 values: 1, 3
         },
-        InitialCash = 10_000m,
-        StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
-        MaxDegreeOfParallelism = 1,
     };
 
     // ── Happy paths ──────────────────────────────────────────────────
@@ -98,6 +104,12 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         var request = new RunOptimizationRequest
         {
             StrategyName = "NonExistentStrategy",
+            BacktestSettings = new()
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
+            },
             DataSubscriptions =
             [
                 new DataSubscriptionDto
@@ -107,9 +119,6 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
                     TimeFrame = "01:00:00",
                 }
             ],
-            InitialCash = 10_000m,
-            StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
         };
 
         var response = await Client.PostAsJsonAsync("/api/optimizations", request, Json, TestContext.Current.CancellationToken);
@@ -123,6 +132,12 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         var request = new RunOptimizationRequest
         {
             StrategyName = "BuyAndHold",
+            BacktestSettings = new()
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
+            },
             DataSubscriptions =
             [
                 new DataSubscriptionDto
@@ -132,9 +147,6 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
                     TimeFrame = "01:00:00",
                 }
             ],
-            InitialCash = 10_000m,
-            StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
         };
 
         var response = await Client.PostAsJsonAsync("/api/optimizations", request, Json, TestContext.Current.CancellationToken);
@@ -172,6 +184,16 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         var request = new RunOptimizationRequest
         {
             StrategyName = "BuyAndHold",
+            BacktestSettings = new()
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 4, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+            OptimizationSettings = new()
+            {
+                MaxDegreeOfParallelism = 1,
+            },
             DataSubscriptions =
             [
                 new DataSubscriptionDto
@@ -185,10 +207,6 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
             {
                 ["Quantity"] = new RangeOverride(0.1m, 10m, 0.1m),
             },
-            InitialCash = 10_000m,
-            StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            EndTime = new DateTimeOffset(2025, 4, 1, 0, 0, 0, TimeSpan.Zero),
-            MaxDegreeOfParallelism = 1,
         };
 
         var (_, submission) = await SubmitOptimizationAsync(request);

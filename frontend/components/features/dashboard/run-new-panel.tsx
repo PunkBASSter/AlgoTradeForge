@@ -148,8 +148,12 @@ export function RunNewPanel({
         return;
       }
     } else {
-      const missing = ["strategyName", "initialCash", "startTime", "endTime"]
-        .filter((k) => obj[k] === undefined || obj[k] === null);
+      const bs = obj.backtestSettings as Record<string, unknown> | undefined;
+      const missing: string[] = [];
+      if (!obj.strategyName) missing.push("strategyName");
+      if (!bs?.initialCash) missing.push("backtestSettings.initialCash");
+      if (!bs?.startTime) missing.push("backtestSettings.startTime");
+      if (!bs?.endTime) missing.push("backtestSettings.endTime");
       if (missing.length > 0) {
         toast(`Missing required fields: ${missing.join(", ")}`, "error");
         return;
