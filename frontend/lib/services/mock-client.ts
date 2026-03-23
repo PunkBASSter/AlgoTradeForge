@@ -293,7 +293,7 @@ export const mockClient: typeof import("./api-client").apiClient & {
     await delay();
     return {
       sessionId: "mock-debug-session-001",
-      assetName: req.assetName,
+      assetName: req.dataSubscription.assetName,
       strategyName: req.strategyName,
       createdAt: new Date().toISOString(),
     };

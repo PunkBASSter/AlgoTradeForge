@@ -118,15 +118,19 @@ export default function BacktestReportPage({
 
   const handleRerun = () => {
     const config: RunBacktestRequest = {
-      assetName: backtest.assetName,
-      exchange: backtest.exchange,
+      dataSubscription: {
+        assetName: backtest.assetName,
+        exchange: backtest.exchange,
+        timeFrame: toTimeSpan(backtest.timeFrame),
+      },
+      backtestSettings: {
+        initialCash: backtest.initialCash,
+        startTime: backtest.dataStart,
+        endTime: backtest.dataEnd,
+        commissionPerTrade: backtest.commission,
+        slippageTicks: backtest.slippageTicks,
+      },
       strategyName: backtest.strategyName,
-      initialCash: backtest.initialCash,
-      startTime: backtest.dataStart,
-      endTime: backtest.dataEnd,
-      commissionPerTrade: backtest.commission,
-      slippageTicks: backtest.slippageTicks,
-      timeFrame: toTimeSpan(backtest.timeFrame),
       strategyParameters: Object.fromEntries(
         Object.entries(backtest.parameters).filter(
           ([k]) => !INTERNAL_PARAM_KEYS.has(k),
@@ -139,15 +143,19 @@ export default function BacktestReportPage({
 
   const handleDebug = () => {
     const config: StartDebugSessionRequest = {
-      assetName: backtest.assetName,
-      exchange: backtest.exchange,
+      dataSubscription: {
+        assetName: backtest.assetName,
+        exchange: backtest.exchange,
+        timeFrame: toTimeSpan(backtest.timeFrame),
+      },
+      backtestSettings: {
+        initialCash: backtest.initialCash,
+        startTime: backtest.dataStart,
+        endTime: backtest.dataEnd,
+        commissionPerTrade: backtest.commission,
+        slippageTicks: backtest.slippageTicks,
+      },
       strategyName: backtest.strategyName,
-      initialCash: backtest.initialCash,
-      startTime: backtest.dataStart,
-      endTime: backtest.dataEnd,
-      commissionPerTrade: backtest.commission,
-      slippageTicks: backtest.slippageTicks,
-      timeFrame: toTimeSpan(backtest.timeFrame),
       strategyParameters: Object.fromEntries(
         Object.entries(backtest.parameters).filter(
           ([k]) => !INTERNAL_PARAM_KEYS.has(k),

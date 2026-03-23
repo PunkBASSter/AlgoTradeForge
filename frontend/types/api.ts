@@ -228,16 +228,24 @@ export function deriveOptimizationStatus(data: OptimizationStatus): RunStatusTyp
 // Request types
 // ---------------------------------------------------------------------------
 
-export interface RunBacktestRequest {
+export interface DataSubscriptionInput {
   assetName: string;
   exchange: string;
-  strategyName: string;
+  timeFrame?: string;
+}
+
+export interface BacktestSettingsInput {
   initialCash: number;
   startTime: string;
   endTime: string;
   commissionPerTrade?: number;
   slippageTicks?: number;
-  timeFrame?: string;
+}
+
+export interface RunBacktestRequest {
+  dataSubscription: DataSubscriptionInput;
+  backtestSettings: BacktestSettingsInput;
+  strategyName: string;
   strategyParameters?: Record<string, unknown>;
 }
 
@@ -372,15 +380,9 @@ export interface LiveLastBar {
 // ---------------------------------------------------------------------------
 
 export interface StartDebugSessionRequest {
-  assetName: string;
-  exchange: string;
+  dataSubscription: DataSubscriptionInput;
+  backtestSettings: BacktestSettingsInput;
   strategyName: string;
-  initialCash: number;
-  startTime: string;
-  endTime: string;
-  commissionPerTrade?: number;
-  slippageTicks?: number;
-  timeFrame?: string;
   strategyParameters?: Record<string, unknown>;
 }
 

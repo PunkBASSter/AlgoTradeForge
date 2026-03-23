@@ -56,23 +56,23 @@ public static class DebugEndpoints
         CancellationToken ct)
     {
         TimeSpan? timeFrame = null;
-        if (request.TimeFrame is not null)
+        if (request.DataSubscription.TimeFrame is not null)
         {
-            if (!TimeSpan.TryParse(request.TimeFrame, CultureInfo.InvariantCulture, out var parsed))
-                return Results.BadRequest(new { error = $"Invalid TimeFrame '{request.TimeFrame}'." });
+            if (!TimeSpan.TryParse(request.DataSubscription.TimeFrame, CultureInfo.InvariantCulture, out var parsed))
+                return Results.BadRequest(new { error = $"Invalid TimeFrame '{request.DataSubscription.TimeFrame}'." });
             timeFrame = parsed;
         }
 
         var command = new StartDebugSessionCommand
         {
-            AssetName = request.AssetName,
-            Exchange = request.Exchange,
+            AssetName = request.DataSubscription.AssetName,
+            Exchange = request.DataSubscription.Exchange,
             StrategyName = request.StrategyName,
-            InitialCash = request.InitialCash,
-            StartTime = request.StartTime,
-            EndTime = request.EndTime,
-            CommissionPerTrade = request.CommissionPerTrade,
-            SlippageTicks = request.SlippageTicks,
+            InitialCash = request.BacktestSettings.InitialCash,
+            StartTime = request.BacktestSettings.StartTime,
+            EndTime = request.BacktestSettings.EndTime,
+            CommissionPerTrade = request.BacktestSettings.CommissionPerTrade,
+            SlippageTicks = request.BacktestSettings.SlippageTicks,
             TimeFrame = timeFrame,
             StrategyParameters = request.StrategyParameters
         };

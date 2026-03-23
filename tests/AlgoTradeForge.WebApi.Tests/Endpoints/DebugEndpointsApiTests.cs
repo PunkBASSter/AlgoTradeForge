@@ -99,13 +99,19 @@ public sealed class DebugEndpointsApiTests : ApiTestBase
     {
         var request = new StartDebugSessionRequest
         {
-            AssetName = "BTCUSDT",
-            Exchange = "Binance",
+            DataSubscription = new()
+            {
+                AssetName = "BTCUSDT",
+                Exchange = "Binance",
+                TimeFrame = "01:00:00",
+            },
+            BacktestSettings = new()
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 1, 5, 0, 0, 0, TimeSpan.Zero),
+            },
             StrategyName = "NonExistentStrategy",
-            InitialCash = 10_000m,
-            StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            EndTime = new DateTimeOffset(2025, 1, 5, 0, 0, 0, TimeSpan.Zero),
-            TimeFrame = "01:00:00",
         };
 
         var response = await Client.PostAsJsonAsync("/api/debug-sessions", request, Json, TestContext.Current.CancellationToken);

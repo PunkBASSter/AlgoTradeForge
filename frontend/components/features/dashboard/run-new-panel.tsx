@@ -127,8 +127,15 @@ export function RunNewPanel({
     // Basic runtime validation of required fields
     const obj = parsed as Record<string, unknown>;
     if (mode === "backtest") {
-      const missing = ["assetName", "exchange", "strategyName", "initialCash", "startTime", "endTime"]
-        .filter((k) => obj[k] === undefined || obj[k] === null);
+      const ds = obj.dataSubscription as Record<string, unknown> | undefined;
+      const bs = obj.backtestSettings as Record<string, unknown> | undefined;
+      const missing: string[] = [];
+      if (!ds?.assetName) missing.push("dataSubscription.assetName");
+      if (!ds?.exchange) missing.push("dataSubscription.exchange");
+      if (!bs?.initialCash) missing.push("backtestSettings.initialCash");
+      if (!bs?.startTime) missing.push("backtestSettings.startTime");
+      if (!bs?.endTime) missing.push("backtestSettings.endTime");
+      if (!obj.strategyName) missing.push("strategyName");
       if (missing.length > 0) {
         toast(`Missing required fields: ${missing.join(", ")}`, "error");
         return;

@@ -90,24 +90,36 @@ public abstract class ApiTestBase : IDisposable
         DateTimeOffset? startTime = null,
         DateTimeOffset? endTime = null) => new()
     {
-        AssetName = "BTCUSDT",
-        Exchange = "Binance",
+        DataSubscription = new()
+        {
+            AssetName = "BTCUSDT",
+            Exchange = "Binance",
+            TimeFrame = timeFrame ?? "01:00:00",
+        },
+        BacktestSettings = new()
+        {
+            InitialCash = 10_000m,
+            StartTime = startTime ?? new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            EndTime = endTime ?? new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
+        },
         StrategyName = strategyName ?? "BuyAndHold",
-        InitialCash = 10_000m,
-        StartTime = startTime ?? new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        EndTime = endTime ?? new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
-        TimeFrame = timeFrame ?? "01:00:00",
     };
 
     protected static StartDebugSessionRequest MakeDebugSessionRequest() => new()
     {
-        AssetName = "BTCUSDT",
-        Exchange = "Binance",
+        DataSubscription = new()
+        {
+            AssetName = "BTCUSDT",
+            Exchange = "Binance",
+            TimeFrame = "01:00:00",
+        },
+        BacktestSettings = new()
+        {
+            InitialCash = 10_000m,
+            StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            EndTime = new DateTimeOffset(2025, 1, 5, 0, 0, 0, TimeSpan.Zero),
+        },
         StrategyName = "BuyAndHold",
-        InitialCash = 10_000m,
-        StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        EndTime = new DateTimeOffset(2025, 1, 5, 0, 0, 0, TimeSpan.Zero),
-        TimeFrame = "01:00:00",
     };
 
     public void Dispose() => Client.Dispose();

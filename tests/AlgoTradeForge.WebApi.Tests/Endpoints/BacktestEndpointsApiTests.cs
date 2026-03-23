@@ -146,13 +146,19 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     {
         var request = new RunBacktestRequest
         {
-            AssetName = "FAKEUSDT",
-            Exchange = "FakeExchange",
+            DataSubscription = new()
+            {
+                AssetName = "FAKEUSDT",
+                Exchange = "FakeExchange",
+                TimeFrame = "01:00:00",
+            },
+            BacktestSettings = new()
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
+            },
             StrategyName = "BuyAndHold",
-            InitialCash = 10_000m,
-            StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
-            TimeFrame = "01:00:00",
         };
 
         var response = await Client.PostAsJsonAsync("/api/backtests", request, Json, TestContext.Current.CancellationToken);

@@ -15,15 +15,21 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<ParameterAxis> axes,
         IReadOnlyList<AvailableAssetInfo> availableAssets) => new()
     {
-        ["assetName"] = FirstAssetOrDefault(availableAssets),
-        ["exchange"] = FirstExchangeOrDefault(availableAssets),
+        ["dataSubscription"] = new Dictionary<string, object>
+        {
+            ["assetName"] = FirstAssetOrDefault(availableAssets),
+            ["exchange"] = FirstExchangeOrDefault(availableAssets),
+            ["timeFrame"] = "01:00:00",
+        },
+        ["backtestSettings"] = new Dictionary<string, object>
+        {
+            ["initialCash"] = 10000,
+            ["startTime"] = "2025-01-01T00:00:00Z",
+            ["endTime"] = "2025-12-31T23:59:59Z",
+            ["commissionPerTrade"] = 0.001,
+            ["slippageTicks"] = 2,
+        },
         ["strategyName"] = strategyName,
-        ["initialCash"] = 10000,
-        ["startTime"] = "2025-01-01T00:00:00Z",
-        ["endTime"] = "2025-12-31T23:59:59Z",
-        ["commissionPerTrade"] = 0.001,
-        ["slippageTicks"] = 2,
-        ["timeFrame"] = "01:00:00",
         ["strategyParameters"] = ConvertToHumanReadable(paramDefaults, axes),
     };
 
@@ -76,15 +82,21 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<ParameterAxis> axes,
         IReadOnlyList<AvailableAssetInfo> availableAssets) => new()
     {
-        ["assetName"] = FirstAssetOrDefault(availableAssets),
-        ["exchange"] = FirstExchangeOrDefault(availableAssets),
+        ["dataSubscription"] = new Dictionary<string, object>
+        {
+            ["assetName"] = FirstAssetOrDefault(availableAssets),
+            ["exchange"] = FirstExchangeOrDefault(availableAssets),
+            ["timeFrame"] = "01:00:00",
+        },
+        ["backtestSettings"] = new Dictionary<string, object>
+        {
+            ["initialCash"] = 10000,
+            ["startTime"] = "2025-01-01T00:00:00Z",
+            ["endTime"] = "2025-12-31T23:59:59Z",
+            ["commissionPerTrade"] = 0.001,
+            ["slippageTicks"] = 2,
+        },
         ["strategyName"] = strategyName,
-        ["initialCash"] = 10000,
-        ["startTime"] = "2025-01-01T00:00:00Z",
-        ["endTime"] = "2025-12-31T23:59:59Z",
-        ["commissionPerTrade"] = 0.001,
-        ["slippageTicks"] = 2,
-        ["timeFrame"] = "01:00:00",
         ["strategyParameters"] = ConvertToHumanReadable(paramDefaults, axes),
     };
 
