@@ -10,15 +10,9 @@ public sealed record OptimizationRunRecord
     public required long DurationMs { get; init; }
     public required long TotalCombinations { get; init; }
     public required string SortBy { get; init; }
-    public required DateTimeOffset DataStart { get; init; }
-    public required DateTimeOffset DataEnd { get; init; }
-    public required decimal InitialCash { get; init; }
-    public required decimal Commission { get; init; }
-    public required int SlippageTicks { get; init; }
+    public required DataSubscriptionDto DataSubscription { get; init; }
+    public required BacktestSettingsDto BacktestSettings { get; init; }
     public required int MaxParallelism { get; init; }
-    public required string AssetName { get; init; }
-    public required string Exchange { get; init; }
-    public required string TimeFrame { get; init; }
     public long FilteredTrials { get; init; }
     public long FailedTrials { get; init; }
     public required IReadOnlyList<BacktestRunRecord> Trials { get; init; }

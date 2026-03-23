@@ -9,11 +9,7 @@ public sealed record RunOptimizationCommand : ICommand<OptimizationSubmissionDto
     public Dictionary<string, OptimizationAxisOverride>? Axes { get; init; }
     public List<DataSubscriptionDto>? DataSubscriptions { get; init; }
     public List<DataSubscriptionDto>? SubscriptionAxis { get; init; }
-    public required decimal InitialCash { get; init; }
-    public required DateTimeOffset StartTime { get; init; }
-    public required DateTimeOffset EndTime { get; init; }
-    public decimal CommissionPerTrade { get; init; }
-    public long SlippageTicks { get; init; }
+    public required BacktestSettingsDto BacktestSettings { get; init; }
     public int MaxDegreeOfParallelism { get; init; } = -1;
     public long MaxCombinations { get; init; } = 100_000;
     public string SortBy { get; init; } = MetricNames.Default;
@@ -23,13 +19,6 @@ public sealed record RunOptimizationCommand : ICommand<OptimizationSubmissionDto
     public double? MinSharpeRatio { get; init; }
     public double? MinSortinoRatio { get; init; }
     public double? MinAnnualizedReturnPct { get; init; }
-}
-
-public sealed record DataSubscriptionDto
-{
-    public required string Asset { get; init; }
-    public required string Exchange { get; init; }
-    public required string TimeFrame { get; init; }
 }
 
 public abstract record OptimizationAxisOverride;

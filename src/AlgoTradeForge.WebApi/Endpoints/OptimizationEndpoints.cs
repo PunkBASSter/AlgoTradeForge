@@ -1,3 +1,4 @@
+using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
@@ -69,11 +70,14 @@ public static class OptimizationEndpoints
             Axes = request.OptimizationAxes,
             DataSubscriptions = request.DataSubscriptions,
             SubscriptionAxis = request.SubscriptionAxis,
-            InitialCash = request.BacktestSettings.InitialCash,
-            StartTime = request.BacktestSettings.StartTime,
-            EndTime = request.BacktestSettings.EndTime,
-            CommissionPerTrade = request.BacktestSettings.CommissionPerTrade,
-            SlippageTicks = request.BacktestSettings.SlippageTicks,
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = request.BacktestSettings.InitialCash,
+                StartTime = request.BacktestSettings.StartTime,
+                EndTime = request.BacktestSettings.EndTime,
+                CommissionPerTrade = request.BacktestSettings.CommissionPerTrade,
+                SlippageTicks = request.BacktestSettings.SlippageTicks,
+            },
             MaxDegreeOfParallelism = request.OptimizationSettings.MaxDegreeOfParallelism,
             MaxCombinations = request.OptimizationSettings.MaxCombinations,
             SortBy = request.OptimizationSettings.SortBy,
@@ -202,15 +206,9 @@ public static class OptimizationEndpoints
         FilteredTrials = r.FilteredTrials,
         FailedTrials = r.FailedTrials,
         SortBy = r.SortBy,
-        DataStart = r.DataStart,
-        DataEnd = r.DataEnd,
-        InitialCash = r.InitialCash,
-        Commission = r.Commission,
-        SlippageTicks = r.SlippageTicks,
+        DataSubscription = r.DataSubscription,
+        BacktestSettings = r.BacktestSettings,
         MaxParallelism = r.MaxParallelism,
-        AssetName = r.AssetName,
-        Exchange = r.Exchange,
-        TimeFrame = r.TimeFrame,
         Trials = r.Trials.Select(MapTrialToResponse).ToList(),
         FailedTrialDetails = r.FailedTrialDetails.Select(f => new FailedTrialResponse
         {
@@ -228,16 +226,10 @@ public static class OptimizationEndpoints
         StrategyName = r.StrategyName,
         StrategyVersion = r.StrategyVersion,
         Parameters = new Dictionary<string, object>(r.Parameters),
-        AssetName = r.AssetName,
-        Exchange = r.Exchange,
-        TimeFrame = r.TimeFrame,
-        InitialCash = r.InitialCash,
-        Commission = r.Commission,
-        SlippageTicks = r.SlippageTicks,
+        DataSubscription = r.DataSubscription,
+        BacktestSettings = r.BacktestSettings,
         StartedAt = r.StartedAt,
         CompletedAt = r.CompletedAt,
-        DataStart = r.DataStart,
-        DataEnd = r.DataEnd,
         DurationMs = r.DurationMs,
         TotalBars = r.TotalBars,
         Metrics = MetricsMapping.ToDict(r.Metrics),

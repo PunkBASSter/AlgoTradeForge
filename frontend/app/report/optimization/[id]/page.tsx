@@ -125,11 +125,11 @@ export default function OptimizationReportPage({
             </span>
           </h1>
           <p className="text-sm text-text-secondary mt-1">
-            {optimization.assetName} / {optimization.exchange} /{" "}
-            {optimization.timeFrame}
+            {optimization.dataSubscription.assetName} / {optimization.dataSubscription.exchange} /{" "}
+            {optimization.dataSubscription.timeFrame}
             {" -- "}
-            {new Date(optimization.dataStart).toLocaleDateString()} to{" "}
-            {new Date(optimization.dataEnd).toLocaleDateString()}
+            {new Date(optimization.backtestSettings.startTime).toLocaleDateString()} to{" "}
+            {new Date(optimization.backtestSettings.endTime).toLocaleDateString()}
           </p>
         </div>
         <button
@@ -179,15 +179,15 @@ export default function OptimizationReportPage({
           />
           <StatItem
             label="Initial Cash"
-            value={formatCurrency(optimization.initialCash)}
+            value={formatCurrency(optimization.backtestSettings.initialCash)}
           />
           <StatItem
             label="Commission"
-            value={formatCurrency(optimization.commission)}
+            value={formatCurrency(optimization.backtestSettings.commissionPerTrade)}
           />
           <StatItem
             label="Slippage Ticks"
-            value={formatNumber(optimization.slippageTicks, 0)}
+            value={formatNumber(optimization.backtestSettings.slippageTicks, 0)}
           />
           <StatItem
             label="Max Parallelism"

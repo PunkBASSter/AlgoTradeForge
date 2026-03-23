@@ -47,21 +47,29 @@ export interface PagedResponse<T> {
 // Backtest run
 // ---------------------------------------------------------------------------
 
+export interface DataSubscriptionResponse {
+  assetName: string;
+  exchange: string;
+  timeFrame: string;
+}
+
+export interface BacktestSettingsResponse {
+  initialCash: number;
+  commissionPerTrade: number;
+  slippageTicks: number;
+  startTime: string;
+  endTime: string;
+}
+
 export interface BacktestRun {
   id: string;
   strategyName: string;
   strategyVersion: string;
   parameters: Record<string, unknown>;
-  assetName: string;
-  exchange: string;
-  timeFrame: string;
-  initialCash: number;
-  commission: number;
-  slippageTicks: number;
+  dataSubscription: DataSubscriptionResponse;
+  backtestSettings: BacktestSettingsResponse;
   startedAt: string;
   completedAt: string;
-  dataStart: string;
-  dataEnd: string;
   durationMs: number;
   totalBars: number;
   metrics: Record<string, number>;
@@ -87,15 +95,9 @@ export interface OptimizationRun {
   filteredTrials: number;
   failedTrials: number;
   sortBy: string;
-  dataStart: string;
-  dataEnd: string;
-  initialCash: number;
-  commission: number;
-  slippageTicks: number;
+  dataSubscription: DataSubscriptionResponse;
+  backtestSettings: BacktestSettingsResponse;
   maxParallelism: number;
-  assetName: string;
-  exchange: string;
-  timeFrame: string;
   trials: BacktestRun[];
   failedTrialDetails: FailedTrialDetail[];
 }
@@ -277,7 +279,7 @@ export type OptimizationAxisOverride =
   | { variants: Record<string, Record<string, OptimizationAxisOverride> | null> };
 
 export interface DataSubscription {
-  asset: string;
+  assetName: string;
   exchange: string;
   timeFrame: string;
 }

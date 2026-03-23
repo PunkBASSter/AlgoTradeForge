@@ -1,5 +1,4 @@
 using AlgoTradeForge.Application.Abstractions;
-using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Domain.Live;
 
 namespace AlgoTradeForge.Application.Live;

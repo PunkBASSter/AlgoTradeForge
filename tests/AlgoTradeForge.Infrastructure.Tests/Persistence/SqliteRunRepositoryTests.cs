@@ -1,3 +1,4 @@
+using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Infrastructure.Persistence;
@@ -61,16 +62,17 @@ public class SqliteRunRepositoryTests : IDisposable
             StrategyName = strategyName,
             StrategyVersion = "1.0.0",
             Parameters = new Dictionary<string, object> { ["Quantity"] = 1.5m },
-            AssetName = "BTCUSDT",
-            Exchange = "Binance",
-            TimeFrame = "1h",
-            InitialCash = 10000m,
-            Commission = 0.1m,
-            SlippageTicks = 2,
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10000m,
+                CommissionPerTrade = 0.1m,
+                SlippageTicks = 2,
+                StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
+            },
             StartedAt = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
             CompletedAt = new DateTimeOffset(2025, 1, 1, 0, 0, 5, TimeSpan.Zero),
-            DataStart = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            DataEnd = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
             DurationMs = 5000,
             TotalBars = 8760,
             Metrics = MakeMetrics(),
@@ -105,9 +107,9 @@ public class SqliteRunRepositoryTests : IDisposable
         Assert.Equal(original.Id, loaded.Id);
         Assert.Equal(original.StrategyName, loaded.StrategyName);
         Assert.Equal(original.StrategyVersion, loaded.StrategyVersion);
-        Assert.Equal(original.InitialCash, loaded.InitialCash);
-        Assert.Equal(original.Commission, loaded.Commission);
-        Assert.Equal(original.SlippageTicks, loaded.SlippageTicks);
+        Assert.Equal(original.BacktestSettings.InitialCash, loaded.BacktestSettings.InitialCash);
+        Assert.Equal(original.BacktestSettings.CommissionPerTrade, loaded.BacktestSettings.CommissionPerTrade);
+        Assert.Equal(original.BacktestSettings.SlippageTicks, loaded.BacktestSettings.SlippageTicks);
         Assert.Equal(original.DurationMs, loaded.DurationMs);
         Assert.Equal(original.TotalBars, loaded.TotalBars);
         Assert.Equal(original.RunFolderPath, loaded.RunFolderPath);
@@ -133,9 +135,9 @@ public class SqliteRunRepositoryTests : IDisposable
         Assert.Equal(1.5m, loaded.Parameters["Quantity"]);
 
         // Data subscription fields
-        Assert.Equal("BTCUSDT", loaded.AssetName);
-        Assert.Equal("Binance", loaded.Exchange);
-        Assert.Equal("1h", loaded.TimeFrame);
+        Assert.Equal("BTCUSDT", loaded.DataSubscription.AssetName);
+        Assert.Equal("Binance", loaded.DataSubscription.Exchange);
+        Assert.Equal("1h", loaded.DataSubscription.TimeFrame);
     }
 
     // ── GetById returns null for non-existent ──────────────────────────
@@ -170,16 +172,12 @@ public class SqliteRunRepositoryTests : IDisposable
         var r1 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            AssetName = "BTCUSDT",
-            Exchange = "Binance",
-            TimeFrame = "1h",
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
         };
         var r2 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            AssetName = "ETHUSDT",
-            Exchange = "Binance",
-            TimeFrame = "4h",
+            DataSubscription = new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "4h" },
         };
 
         await _repo.SaveAsync(r1, TestContext.Current.CancellationToken);
@@ -187,7 +185,7 @@ public class SqliteRunRepositoryTests : IDisposable
 
         var results = await _repo.QueryAsync(new BacktestRunQuery { AssetName = "BTCUSDT" }, TestContext.Current.CancellationToken);
         Assert.Single(results.Items);
-        Assert.Equal("BTCUSDT", results.Items[0].AssetName);
+        Assert.Equal("BTCUSDT", results.Items[0].DataSubscription.AssetName);
     }
 
     // ── Query by timeframe ─────────────────────────────────────────────
@@ -198,16 +196,12 @@ public class SqliteRunRepositoryTests : IDisposable
         var r1 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            AssetName = "BTCUSDT",
-            Exchange = "Binance",
-            TimeFrame = "1h",
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
         };
         var r2 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            AssetName = "BTCUSDT",
-            Exchange = "Binance",
-            TimeFrame = "4h",
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "4h" },
         };
 
         await _repo.SaveAsync(r1, TestContext.Current.CancellationToken);
@@ -215,7 +209,7 @@ public class SqliteRunRepositoryTests : IDisposable
 
         var results = await _repo.QueryAsync(new BacktestRunQuery { TimeFrame = "4h" }, TestContext.Current.CancellationToken);
         Assert.Single(results.Items);
-        Assert.Equal("4h", results.Items[0].TimeFrame);
+        Assert.Equal("4h", results.Items[0].DataSubscription.TimeFrame);
     }
 
     // ── Query by date range ────────────────────────────────────────────
@@ -323,15 +317,16 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 60000,
             TotalCombinations = 2,
             SortBy = "SharpeRatio",
-            DataStart = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            DataEnd = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
-            InitialCash = 10000m,
-            Commission = 0.1m,
-            SlippageTicks = 2,
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10000m,
+                CommissionPerTrade = 0.1m,
+                SlippageTicks = 2,
+                StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
+            },
             MaxParallelism = 4,
-            AssetName = "BTCUSDT",
-            Exchange = "Binance",
-            TimeFrame = "1h",
             Trials = [trial1, trial2],
         };
 
@@ -345,14 +340,14 @@ public class SqliteRunRepositoryTests : IDisposable
         Assert.Equal("1.0.0", loaded.StrategyVersion);
         Assert.Equal(2, loaded.TotalCombinations);
         Assert.Equal("SharpeRatio", loaded.SortBy);
-        Assert.Equal(10000m, loaded.InitialCash);
+        Assert.Equal(10000m, loaded.BacktestSettings.InitialCash);
         Assert.Equal(4, loaded.MaxParallelism);
         Assert.Equal(2, loaded.Trials.Count);
 
         // Verify optimization data subscription fields
-        Assert.Equal("BTCUSDT", loaded.AssetName);
-        Assert.Equal("Binance", loaded.Exchange);
-        Assert.Equal("1h", loaded.TimeFrame);
+        Assert.Equal("BTCUSDT", loaded.DataSubscription.AssetName);
+        Assert.Equal("Binance", loaded.DataSubscription.Exchange);
+        Assert.Equal("1h", loaded.DataSubscription.TimeFrame);
     }
 
     // ── Get optimization by ID with all trials ─────────────────────────
@@ -385,15 +380,16 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 100,
             TotalCombinations = 1,
             SortBy = "SharpeRatio",
-            DataStart = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            DataEnd = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
-            InitialCash = 10000m,
-            Commission = 0m,
-            SlippageTicks = 0,
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10000m,
+                CommissionPerTrade = 0m,
+                SlippageTicks = 0,
+                StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
+            },
             MaxParallelism = 1,
-            AssetName = "BTCUSDT",
-            Exchange = "Binance",
-            TimeFrame = "1h",
             Trials = [trial],
         };
         await _repo.SaveOptimizationAsync(opt, TestContext.Current.CancellationToken);
@@ -434,15 +430,16 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 100,
             TotalCombinations = 1,
             SortBy = "SharpeRatio",
-            DataStart = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            DataEnd = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
-            InitialCash = 10000m,
-            Commission = 0m,
-            SlippageTicks = 0,
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10000m,
+                CommissionPerTrade = 0m,
+                SlippageTicks = 0,
+                StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
+            },
             MaxParallelism = 1,
-            AssetName = "BTCUSDT",
-            Exchange = "Binance",
-            TimeFrame = "1h",
             Trials = [trial],
         };
         await _repo.SaveOptimizationAsync(opt, TestContext.Current.CancellationToken);
@@ -602,15 +599,16 @@ public class SqliteRunRepositoryTests : IDisposable
                 DurationMs = 1000,
                 TotalCombinations = 1,
                 SortBy = "SharpeRatio",
-                DataStart = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-                DataEnd = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
-                InitialCash = 10000m,
-                Commission = 0m,
-                SlippageTicks = 0,
+                DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+                BacktestSettings = new BacktestSettingsDto
+                {
+                    InitialCash = 10000m,
+                    CommissionPerTrade = 0m,
+                    SlippageTicks = 0,
+                    StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                    EndTime = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
+                },
                 MaxParallelism = 1,
-                AssetName = "BTCUSDT",
-                Exchange = "Binance",
-                TimeFrame = "1h",
                 Trials = [trial],
             }, TestContext.Current.CancellationToken);
         }

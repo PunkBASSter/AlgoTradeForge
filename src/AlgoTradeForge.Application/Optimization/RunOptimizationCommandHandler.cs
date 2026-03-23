@@ -60,6 +60,7 @@ public sealed class RunOptimizationCommandHandler(
         var descriptor = spaceProvider.GetDescriptor(command.StrategyName)
             ?? throw new ArgumentException($"Strategy '{command.StrategyName}' not found.");
 
+        var settings = command.BacktestSettings;
         var dataSubs = command.DataSubscriptions;
         var axisSubs = command.SubscriptionAxis;
         var hasDataSubs = dataSubs is { Count: > 0 };
@@ -68,8 +69,8 @@ public sealed class RunOptimizationCommandHandler(
         if (!hasDataSubs && !hasAxisSubs)
             throw new ArgumentException("At least one DataSubscription or SubscriptionAxis entry must be provided.");
 
-        var fromDate = DateOnly.FromDateTime(command.StartTime.UtcDateTime);
-        var toDate = DateOnly.FromDateTime(command.EndTime.UtcDateTime);
+        var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
+        var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
 
         // Resolve fixed vs axis subscriptions based on which fields are populated
         List<DataSubscriptionDto> fixedDtos;
@@ -284,15 +285,9 @@ public sealed class RunOptimizationCommandHandler(
                 DurationMs = (long)stopwatch.Elapsed.TotalMilliseconds,
                 TotalCombinations = estimatedCount,
                 SortBy = command.SortBy,
-                DataStart = command.StartTime,
-                DataEnd = command.EndTime,
-                InitialCash = command.InitialCash,
-                Commission = command.CommissionPerTrade,
-                SlippageTicks = checked((int)command.SlippageTicks),
+                DataSubscription = optPrimarySub,
+                BacktestSettings = command.BacktestSettings,
                 MaxParallelism = maxParallelism,
-                AssetName = optPrimarySub.Asset,
-                Exchange = optPrimarySub.Exchange,
-                TimeFrame = optPrimarySub.TimeFrame,
                 Trials = trials,
                 FailedTrialDetails = failedTrialDetails,
                 FilteredTrials = Interlocked.Read(ref filteredOutCount),
@@ -339,6 +334,7 @@ public sealed class RunOptimizationCommandHandler(
         CancellationToken token)
     {
         var trialWatch = Stopwatch.StartNew();
+        var settings = command.BacktestSettings;
 
         // 1. Determine trial subscriptions first to find the correct asset
         var trialSubscriptions = new List<DataSubscription>(fixedSubscriptions);
@@ -381,18 +377,18 @@ public sealed class RunOptimizationCommandHandler(
 
         var backOptions = new BacktestOptions
         {
-            InitialCash = scale.AmountToTicks(command.InitialCash),
-            StartTime = command.StartTime,
-            EndTime = command.EndTime,
-            CommissionPerTrade = command.CommissionPerTrade,
-            SlippageTicks = command.SlippageTicks
+            InitialCash = scale.AmountToTicks(settings.InitialCash),
+            StartTime = settings.StartTime,
+            EndTime = settings.EndTime,
+            CommissionPerTrade = settings.CommissionPerTrade,
+            SlippageTicks = settings.SlippageTicks
         };
 
         var result = engine.Run(seriesArray, strategy, backOptions, token);
 
         var (metrics, trades) = metricsCalculator.Calculate(
             result.Fills, new EquityValueProjection(result.EquityCurve), backOptions.InitialCash,
-            command.StartTime, command.EndTime);
+            settings.StartTime, settings.EndTime);
 
         var scaledMetrics = MetricsScaler.ScaleDown(metrics, scale);
         var tradePnl = MetricsScaler.ScaleTradePnl(trades, scale);
@@ -405,16 +401,15 @@ public sealed class RunOptimizationCommandHandler(
             StrategyName = command.StrategyName,
             StrategyVersion = strategy.Version,
             Parameters = combination.Values, // Store original unscaled values
-            AssetName = trialPrimarySub.Asset.Name,
-            Exchange = trialPrimarySub.Asset.Exchange,
-            TimeFrame = TimeFrameFormatter.Format(trialPrimarySub.TimeFrame),
-            InitialCash = command.InitialCash,
-            Commission = command.CommissionPerTrade,
-            SlippageTicks = checked((int)command.SlippageTicks),
+            DataSubscription = new DataSubscriptionDto
+            {
+                AssetName = AssetLookupName.From(trialPrimarySub.Asset),
+                Exchange = trialPrimarySub.Asset.Exchange,
+                TimeFrame = TimeFrameFormatter.Format(trialPrimarySub.TimeFrame),
+            },
+            BacktestSettings = settings,
             StartedAt = startedAt,
             CompletedAt = DateTimeOffset.UtcNow,
-            DataStart = command.StartTime,
-            DataEnd = command.EndTime,
             DurationMs = (long)trialWatch.Elapsed.TotalMilliseconds,
             TotalBars = result.TotalBarsProcessed,
             Metrics = scaledMetrics,
@@ -451,15 +446,9 @@ public sealed class RunOptimizationCommandHandler(
                 DurationMs = (long)(completedAt - startedAt).TotalMilliseconds,
                 TotalCombinations = estimatedCount,
                 SortBy = command.SortBy,
-                DataStart = command.StartTime,
-                DataEnd = command.EndTime,
-                InitialCash = command.InitialCash,
-                Commission = command.CommissionPerTrade,
-                SlippageTicks = checked((int)command.SlippageTicks),
+                DataSubscription = optPrimarySub,
+                BacktestSettings = command.BacktestSettings,
                 MaxParallelism = maxParallelism,
-                AssetName = optPrimarySub.Asset,
-                Exchange = optPrimarySub.Exchange,
-                TimeFrame = optPrimarySub.TimeFrame,
                 Trials = topTrials.DrainSorted(),
                 FailedTrialDetails = failedTrials.Drain(optimizationRunId),
                 FilteredTrials = filteredOutCount,
@@ -484,13 +473,13 @@ public sealed class RunOptimizationCommandHandler(
         {
             var primary = fixedSubs[0];
             if (axisSubs is { Count: > 0 })
-                return primary with { Asset = $"{primary.Asset} (+{axisSubs.Count} more)" };
+                return primary with { AssetName = $"{primary.AssetName} (+{axisSubs.Count} more)" };
             return primary;
         }
 
         var first = axisSubs![0];
         if (axisSubs.Count > 1)
-            return first with { Asset = $"{first.Asset} (+{axisSubs.Count - 1} more)" };
+            return first with { AssetName = $"{first.AssetName} (+{axisSubs.Count - 1} more)" };
         return first;
     }
 
@@ -501,11 +490,11 @@ public sealed class RunOptimizationCommandHandler(
         DateOnly fromDate, DateOnly toDate,
         CancellationToken ct)
     {
-        var asset = await assetRepository.GetByNameAsync(sub.Asset, sub.Exchange, ct)
-            ?? throw new ArgumentException($"Asset '{sub.Asset}' on exchange '{sub.Exchange}' not found.");
+        var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
+            ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
         if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out var timeFrame))
-            throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.Asset}'.");
+            throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.AssetName}'.");
 
         var subscription = new DataSubscription(asset, timeFrame);
         target.Add(subscription);

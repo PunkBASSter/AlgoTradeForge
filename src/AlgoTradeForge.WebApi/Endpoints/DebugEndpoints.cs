@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.Text.Json;
+using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Debug;
 using AlgoTradeForge.WebApi.Contracts;
@@ -55,25 +55,23 @@ public static class DebugEndpoints
         ICommandHandler<StartDebugSessionCommand, DebugSessionDto> handler,
         CancellationToken ct)
     {
-        TimeSpan? timeFrame = null;
-        if (request.DataSubscription.TimeFrame is not null)
-        {
-            if (!TimeSpan.TryParse(request.DataSubscription.TimeFrame, CultureInfo.InvariantCulture, out var parsed))
-                return Results.BadRequest(new { error = $"Invalid TimeFrame '{request.DataSubscription.TimeFrame}'." });
-            timeFrame = parsed;
-        }
-
         var command = new StartDebugSessionCommand
         {
-            AssetName = request.DataSubscription.AssetName,
-            Exchange = request.DataSubscription.Exchange,
+            DataSubscription = new DataSubscriptionDto
+            {
+                AssetName = request.DataSubscription.AssetName,
+                Exchange = request.DataSubscription.Exchange,
+                TimeFrame = request.DataSubscription.TimeFrame ?? "",
+            },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = request.BacktestSettings.InitialCash,
+                StartTime = request.BacktestSettings.StartTime,
+                EndTime = request.BacktestSettings.EndTime,
+                CommissionPerTrade = request.BacktestSettings.CommissionPerTrade,
+                SlippageTicks = request.BacktestSettings.SlippageTicks,
+            },
             StrategyName = request.StrategyName,
-            InitialCash = request.BacktestSettings.InitialCash,
-            StartTime = request.BacktestSettings.StartTime,
-            EndTime = request.BacktestSettings.EndTime,
-            CommissionPerTrade = request.BacktestSettings.CommissionPerTrade,
-            SlippageTicks = request.BacktestSettings.SlippageTicks,
-            TimeFrame = timeFrame,
             StrategyParameters = request.StrategyParameters
         };
 

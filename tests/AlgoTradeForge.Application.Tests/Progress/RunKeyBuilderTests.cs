@@ -22,7 +22,7 @@ public sealed class RunKeyBuilderTests
     public void Build_Backtest_Different_Params_Produces_Different_Key()
     {
         var cmd1 = MakeBacktestCommand();
-        var cmd2 = MakeBacktestCommand() with { InitialCash = 99999m };
+        var cmd2 = MakeBacktestCommand() with { BacktestSettings = MakeBacktestCommand().BacktestSettings with { InitialCash = 99999m } };
 
         Assert.NotEqual(RunKeyBuilder.Build(cmd1), RunKeyBuilder.Build(cmd2));
     }
@@ -111,11 +111,11 @@ public sealed class RunKeyBuilderTests
     {
         var cmd1 = MakeLiveCommand() with
         {
-            DataSubscriptions = [new DataSubscriptionDto { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }]
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }]
         };
         var cmd2 = MakeLiveCommand() with
         {
-            DataSubscriptions = [new DataSubscriptionDto { Asset = "ETHUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }]
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }]
         };
 
         Assert.NotEqual(RunKeyBuilder.Build(cmd1), RunKeyBuilder.Build(cmd2));
@@ -147,15 +147,16 @@ public sealed class RunKeyBuilderTests
 
     private static RunBacktestCommand MakeBacktestCommand() => new()
     {
-        AssetName = "BTCUSDT",
-        Exchange = "Binance",
+        DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" },
+        BacktestSettings = new BacktestSettingsDto
+        {
+            InitialCash = 10000m,
+            StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            EndTime = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero),
+            CommissionPerTrade = 0.001m,
+            SlippageTicks = 0,
+        },
         StrategyName = "SmaCrossover",
-        InitialCash = 10000m,
-        StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        EndTime = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero),
-        CommissionPerTrade = 0.001m,
-        SlippageTicks = 0,
-        TimeFrame = TimeSpan.FromHours(1),
         StrategyParameters = new Dictionary<string, object> { ["fastPeriod"] = 10, ["slowPeriod"] = 30 }
     };
 
@@ -165,18 +166,21 @@ public sealed class RunKeyBuilderTests
         StrategyName = "Strat",
         InitialCash = 10000m,
         StrategyParameters = parameters,
-        DataSubscriptions = [new DataSubscriptionDto { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }],
+        DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }],
     };
 
     private static RunOptimizationCommand MakeOptimizationCommand() => new()
     {
         StrategyName = "SmaCrossover",
-        InitialCash = 10000m,
-        StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        EndTime = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero),
+        BacktestSettings = new BacktestSettingsDto
+        {
+            InitialCash = 10000m,
+            StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            EndTime = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero),
+        },
         DataSubscriptions =
         [
-            new DataSubscriptionDto { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "1:00:00" }
+            new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1:00:00" }
         ]
     };
 }

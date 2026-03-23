@@ -47,10 +47,13 @@ public class GetOptimizationStatusQueryHandlerTests
             Id = id, StrategyName = "S", StrategyVersion = "1",
             StartedAt = DateTimeOffset.UtcNow, CompletedAt = DateTimeOffset.UtcNow,
             DurationMs = 500, TotalCombinations = 50, SortBy = "SharpeRatio",
-            DataStart = DateTimeOffset.UtcNow, DataEnd = DateTimeOffset.UtcNow,
-            InitialCash = 10_000m, Commission = 0m, SlippageTicks = 0,
-            MaxParallelism = 4, AssetName = "BTC", Exchange = "Binance",
-            TimeFrame = "00:01:00", Trials = [],
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTC", Exchange = "Binance", TimeFrame = "00:01:00" },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10_000m, CommissionPerTrade = 0m, SlippageTicks = 0,
+                StartTime = DateTimeOffset.UtcNow, EndTime = DateTimeOffset.UtcNow,
+            },
+            MaxParallelism = 4, Trials = [],
         };
         _repository.GetOptimizationByIdAsync(id, Arg.Any<CancellationToken>()).Returns(record);
 

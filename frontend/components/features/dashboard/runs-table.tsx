@@ -16,9 +16,9 @@ interface RunsTableProps {
 const backtestColumns: Column<BacktestRun>[] = [
   { key: "strategyVersion", header: "Version" },
   { key: "id", header: "Run ID", render: (v) => String(v).substring(0, 8) },
-  { key: "assetName", header: "Asset" },
-  { key: "exchange", header: "Exchange" },
-  { key: "timeFrame", header: "TF" },
+  { key: "assetName", header: "Asset", render: (_v, row) => row.dataSubscription.assetName },
+  { key: "exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
+  { key: "timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
   {
     key: "sortino",
     header: "Sortino",
@@ -54,9 +54,9 @@ const backtestColumns: Column<BacktestRun>[] = [
 const optimizationColumns: Column<OptimizationRun>[] = [
   { key: "strategyVersion", header: "Version" },
   { key: "id", header: "Run ID", render: (v) => String(v).substring(0, 8) },
-  { key: "assetName", header: "Asset" },
-  { key: "exchange", header: "Exchange" },
-  { key: "timeFrame", header: "TF" },
+  { key: "assetName", header: "Asset", render: (_v, row) => row.dataSubscription.assetName },
+  { key: "exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
+  { key: "timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
   { key: "totalCombinations", header: "Combinations" },
   { key: "sortBy", header: "Sort By" },
   {

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Domain.Reporting;
 

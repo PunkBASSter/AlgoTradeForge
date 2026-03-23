@@ -1,3 +1,4 @@
+using AlgoTradeForge.Application;
 using AlgoTradeForge.Domain.Reporting;
 
 namespace AlgoTradeForge.WebApi.Contracts;
@@ -10,16 +11,10 @@ public sealed record BacktestRunResponse
     public required string StrategyName { get; init; }
     public required string StrategyVersion { get; init; }
     public required Dictionary<string, object> Parameters { get; init; }
-    public required string AssetName { get; init; }
-    public required string Exchange { get; init; }
-    public required string TimeFrame { get; init; }
-    public required decimal InitialCash { get; init; }
-    public required decimal Commission { get; init; }
-    public required int SlippageTicks { get; init; }
+    public required DataSubscriptionDto DataSubscription { get; init; }
+    public required BacktestSettingsDto BacktestSettings { get; init; }
     public required DateTimeOffset StartedAt { get; init; }
     public required DateTimeOffset CompletedAt { get; init; }
-    public required DateTimeOffset DataStart { get; init; }
-    public required DateTimeOffset DataEnd { get; init; }
     public required long DurationMs { get; init; }
     public required int TotalBars { get; init; }
     public required Dictionary<string, object> Metrics { get; init; }
@@ -81,15 +76,9 @@ public sealed record OptimizationRunResponse
     public long FilteredTrials { get; init; }
     public long FailedTrials { get; init; }
     public required string SortBy { get; init; }
-    public required DateTimeOffset DataStart { get; init; }
-    public required DateTimeOffset DataEnd { get; init; }
-    public required decimal InitialCash { get; init; }
-    public required decimal Commission { get; init; }
-    public required int SlippageTicks { get; init; }
+    public required DataSubscriptionDto DataSubscription { get; init; }
+    public required BacktestSettingsDto BacktestSettings { get; init; }
     public required int MaxParallelism { get; init; }
-    public required string AssetName { get; init; }
-    public required string Exchange { get; init; }
-    public required string TimeFrame { get; init; }
     public required List<BacktestRunResponse> Trials { get; init; }
     public List<FailedTrialResponse> FailedTrialDetails { get; init; } = [];
 }

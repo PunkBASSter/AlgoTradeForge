@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.WebApi.Contracts;
 using AlgoTradeForge.WebApi.Tests.Infrastructure;
@@ -27,7 +28,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         [
             new DataSubscriptionDto
             {
-                Asset = "BTCUSDT",
+                AssetName = "BTCUSDT",
                 Exchange = "Binance",
                 TimeFrame = "01:00:00",
             }
@@ -114,7 +115,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
             [
                 new DataSubscriptionDto
                 {
-                    Asset = "BTCUSDT",
+                    AssetName = "BTCUSDT",
                     Exchange = "Binance",
                     TimeFrame = "01:00:00",
                 }
@@ -142,7 +143,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
             [
                 new DataSubscriptionDto
                 {
-                    Asset = "FAKEUSDT",
+                    AssetName = "FAKEUSDT",
                     Exchange = "FakeExchange",
                     TimeFrame = "01:00:00",
                 }
@@ -198,7 +199,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
             [
                 new DataSubscriptionDto
                 {
-                    Asset = "BTCUSDT",
+                    AssetName = "BTCUSDT",
                     Exchange = "Binance",
                     TimeFrame = "01:00:00",
                 }

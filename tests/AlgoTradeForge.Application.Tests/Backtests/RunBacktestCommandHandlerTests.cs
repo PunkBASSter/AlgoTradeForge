@@ -59,12 +59,14 @@ public class RunBacktestCommandHandlerTests
 
     private static RunBacktestCommand CreateCommand() => new()
     {
-        AssetName = "BTCUSDT",
-        Exchange = "Binance",
+        DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
+        BacktestSettings = new BacktestSettingsDto
+        {
+            InitialCash = 10_000m,
+            StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
+        },
         StrategyName = "TestStrategy",
-        InitialCash = 10_000m,
-        StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero)
     };
 
     private void SetupPreparerMocks()

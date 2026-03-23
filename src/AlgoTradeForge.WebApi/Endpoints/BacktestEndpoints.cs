@@ -1,4 +1,4 @@
-using System.Globalization;
+using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Persistence;
@@ -72,25 +72,23 @@ public static class BacktestEndpoints
         ICommandHandler<RunBacktestCommand, BacktestSubmissionDto> handler,
         CancellationToken ct)
     {
-        TimeSpan? timeFrame = null;
-        if (request.DataSubscription.TimeFrame is not null)
-        {
-            if (!TimeSpan.TryParse(request.DataSubscription.TimeFrame, CultureInfo.InvariantCulture, out var parsed))
-                return Results.BadRequest(new { error = $"Invalid TimeFrame '{request.DataSubscription.TimeFrame}'." });
-            timeFrame = parsed;
-        }
-
         var command = new RunBacktestCommand
         {
-            AssetName = request.DataSubscription.AssetName,
-            Exchange = request.DataSubscription.Exchange,
+            DataSubscription = new DataSubscriptionDto
+            {
+                AssetName = request.DataSubscription.AssetName,
+                Exchange = request.DataSubscription.Exchange,
+                TimeFrame = request.DataSubscription.TimeFrame ?? "",
+            },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = request.BacktestSettings.InitialCash,
+                StartTime = request.BacktestSettings.StartTime,
+                EndTime = request.BacktestSettings.EndTime,
+                CommissionPerTrade = request.BacktestSettings.CommissionPerTrade,
+                SlippageTicks = request.BacktestSettings.SlippageTicks,
+            },
             StrategyName = request.StrategyName,
-            InitialCash = request.BacktestSettings.InitialCash,
-            StartTime = request.BacktestSettings.StartTime,
-            EndTime = request.BacktestSettings.EndTime,
-            CommissionPerTrade = request.BacktestSettings.CommissionPerTrade,
-            SlippageTicks = request.BacktestSettings.SlippageTicks,
-            TimeFrame = timeFrame,
             StrategyParameters = request.StrategyParameters
         };
 
@@ -221,16 +219,10 @@ public static class BacktestEndpoints
         StrategyName = r.StrategyName,
         StrategyVersion = r.StrategyVersion,
         Parameters = new Dictionary<string, object>(r.Parameters),
-        AssetName = r.AssetName,
-        Exchange = r.Exchange,
-        TimeFrame = r.TimeFrame,
-        InitialCash = r.InitialCash,
-        Commission = r.Commission,
-        SlippageTicks = r.SlippageTicks,
+        DataSubscription = r.DataSubscription,
+        BacktestSettings = r.BacktestSettings,
         StartedAt = r.StartedAt,
         CompletedAt = r.CompletedAt,
-        DataStart = r.DataStart,
-        DataEnd = r.DataEnd,
         DurationMs = r.DurationMs,
         TotalBars = r.TotalBars,
         Metrics = MetricsMapping.ToDict(r.Metrics),

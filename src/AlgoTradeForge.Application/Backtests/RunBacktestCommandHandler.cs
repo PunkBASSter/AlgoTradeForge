@@ -91,9 +91,9 @@ public sealed class RunBacktestCommandHandler(
             {
                 StrategyName = command.StrategyName,
                 StrategyVersion = setup.Strategy.Version,
-                AssetName = command.AssetName,
-                StartTime = command.StartTime,
-                EndTime = command.EndTime,
+                AssetName = command.DataSubscription.AssetName,
+                StartTime = command.BacktestSettings.StartTime,
+                EndTime = command.BacktestSettings.EndTime,
                 InitialCash = setup.Options.InitialCash,
                 RunMode = ExportMode.Backtest,
                 RunTimestamp = startedAt,
@@ -132,7 +132,7 @@ public sealed class RunBacktestCommandHandler(
             var equityValues = result.EquityCurve.Select(e => e.Value).ToList();
             var (metrics, trades) = metricsCalculator.Calculate(
                 result.Fills, equityValues, setup.Options.InitialCash,
-                command.StartTime, command.EndTime);
+                command.BacktestSettings.StartTime, command.BacktestSettings.EndTime);
 
             var scaledMetrics = MetricsScaler.ScaleDown(metrics, setup.Scale);
 
@@ -149,16 +149,13 @@ public sealed class RunBacktestCommandHandler(
                 StrategyVersion = setup.Strategy.Version,
                 Parameters = command.StrategyParameters?.AsReadOnly()
                     ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-                AssetName = primarySub.Asset.Name,
-                Exchange = primarySub.Asset.Exchange,
-                TimeFrame = TimeFrameFormatter.Format(primarySub.TimeFrame),
-                InitialCash = command.InitialCash,
-                Commission = command.CommissionPerTrade,
-                SlippageTicks = checked((int)command.SlippageTicks),
+                DataSubscription = command.DataSubscription with
+                {
+                    TimeFrame = TimeFrameFormatter.Format(primarySub.TimeFrame)
+                },
+                BacktestSettings = command.BacktestSettings,
                 StartedAt = startedAt,
                 CompletedAt = completedAt,
-                DataStart = command.StartTime,
-                DataEnd = command.EndTime,
                 DurationMs = (long)result.Duration.TotalMilliseconds,
                 TotalBars = result.TotalBarsProcessed,
                 Metrics = scaledMetrics,
@@ -205,16 +202,13 @@ public sealed class RunBacktestCommandHandler(
                 StrategyVersion = setup.Strategy.Version,
                 Parameters = command.StrategyParameters?.AsReadOnly()
                     ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-                AssetName = primarySub.Asset.Name,
-                Exchange = primarySub.Asset.Exchange,
-                TimeFrame = TimeFrameFormatter.Format(primarySub.TimeFrame),
-                InitialCash = command.InitialCash,
-                Commission = command.CommissionPerTrade,
-                SlippageTicks = checked((int)command.SlippageTicks),
+                DataSubscription = command.DataSubscription with
+                {
+                    TimeFrame = TimeFrameFormatter.Format(primarySub.TimeFrame)
+                },
+                BacktestSettings = command.BacktestSettings,
                 StartedAt = startedAt,
                 CompletedAt = completedAt,
-                DataStart = command.StartTime,
-                DataEnd = command.EndTime,
                 DurationMs = (long)(completedAt - startedAt).TotalMilliseconds,
                 TotalBars = 0,
                 Metrics = new PerformanceMetrics
@@ -224,7 +218,7 @@ public sealed class RunBacktestCommandHandler(
                     TotalReturnPct = 0, AnnualizedReturnPct = 0,
                     SharpeRatio = 0, SortinoRatio = 0, MaxDrawdownPct = 0,
                     WinRatePct = 0, ProfitFactor = 0, AverageWin = 0, AverageLoss = 0,
-                    InitialCapital = command.InitialCash, FinalEquity = command.InitialCash,
+                    InitialCapital = command.BacktestSettings.InitialCash, FinalEquity = command.BacktestSettings.InitialCash,
                     TradingDays = 0,
                 },
                 EquityCurve = [],

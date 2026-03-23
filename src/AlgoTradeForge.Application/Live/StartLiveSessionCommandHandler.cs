@@ -26,11 +26,11 @@ public sealed class StartLiveSessionCommandHandler(
         var resolvedSubscriptions = new List<DataSubscription>();
         foreach (var sub in command.DataSubscriptions)
         {
-            var asset = await assetRepository.GetByNameAsync(sub.Asset, sub.Exchange, ct)
-                ?? throw new ArgumentException($"Asset '{sub.Asset}' on exchange '{sub.Exchange}' not found.");
+            var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
+                ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
             if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out var timeFrame))
-                throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.Asset}'.");
+                throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.AssetName}'.");
 
             resolvedSubscriptions.Add(new DataSubscription(asset, timeFrame));
         }
