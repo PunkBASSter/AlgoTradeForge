@@ -115,12 +115,12 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<AvailableAssetInfo> assets, string timeFrame)
     {
         if (assets.Count == 0)
-            return [new() { ["asset"] = DefaultAsset, ["exchange"] = DefaultExchange, ["timeFrame"] = timeFrame }];
+            return [new() { ["assetName"] = DefaultAsset, ["exchange"] = DefaultExchange, ["timeFrame"] = timeFrame }];
 
         return assets
             .Select(a => new Dictionary<string, object>
             {
-                ["asset"] = a.LookupName,
+                ["assetName"] = a.LookupName,
                 ["exchange"] = a.Exchange,
                 ["timeFrame"] = timeFrame,
             })

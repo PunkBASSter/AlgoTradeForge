@@ -176,6 +176,44 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Post_WithSubscriptionAxis_Returns202WithSubmission()
+    {
+        var request = new RunOptimizationRequest
+        {
+            StrategyName = "BuyAndHold",
+            BacktestSettings = new()
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
+            },
+            OptimizationSettings = new()
+            {
+                MaxDegreeOfParallelism = 1,
+            },
+            SubscriptionAxis =
+            [
+                new DataSubscriptionDto
+                {
+                    AssetName = "BTCUSDT",
+                    Exchange = "Binance",
+                    TimeFrame = "01:00:00",
+                }
+            ],
+            OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
+            {
+                ["Quantity"] = new RangeOverride(1m, 3m, 2m),
+            },
+        };
+
+        var (response, body) = await SubmitOptimizationAsync(request);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.NotEqual(Guid.Empty, body.Id);
+        Assert.True(body.TotalCombinations > 0);
+    }
+
     // ── Cancel test ──────────────────────────────────────────────────
 
     [Fact]
