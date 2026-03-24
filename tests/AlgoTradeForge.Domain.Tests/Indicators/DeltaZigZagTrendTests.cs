@@ -7,7 +7,7 @@ namespace AlgoTradeForge.Domain.Tests.Indicators;
 
 public class DeltaZigZagTrendTests
 {
-    private static DeltaZigZagTrend Create(decimal reversalPct = 5m, int numberOfLevels = 2)
+    private static DeltaZigZagTrend Create(double reversalPct = 5.0, int numberOfLevels = 2)
         => new(reversalPct, numberOfLevels);
 
     // --- Basic zigzag pivots ---
@@ -35,7 +35,7 @@ public class DeltaZigZagTrendTests
     public void ReversalDetection_DropExceedingThreshold()
     {
         // reversalPct=5%, extremum=1300 → threshold=65. Need low < 1300-65=1235.
-        var ind = Create(reversalPct: 5m, numberOfLevels: 1);
+        var ind = Create(reversalPct: 5.0, numberOfLevels: 1);
         var bars = new List<Int64Bar>
         {
             TestBars.Create(1000, 1100, 950, 1050),
@@ -57,7 +57,7 @@ public class DeltaZigZagTrendTests
     {
         // Key difference from DeltaZigZag: threshold is % of the extremum price,
         // not the close price. With high=2000, 5% → threshold=100.
-        var ind = Create(reversalPct: 5m, numberOfLevels: 1);
+        var ind = Create(reversalPct: 5.0, numberOfLevels: 1);
         var bars = new List<Int64Bar>
         {
             TestBars.Create(1800, 2000, 1750, 1900),  // High=2000 → threshold=100
@@ -78,7 +78,7 @@ public class DeltaZigZagTrendTests
     public void TrendIsZero_UntilBothLevelArraysPopulated()
     {
         // numberOfLevels=2 → need 2 swing highs AND 2 swing lows
-        var ind = Create(reversalPct: 5m, numberOfLevels: 2);
+        var ind = Create(reversalPct: 5.0, numberOfLevels: 2);
         var bars = BuildTrendTestBars();
 
         ind.Compute(bars);
@@ -91,7 +91,7 @@ public class DeltaZigZagTrendTests
     [Fact]
     public void TrendBecomesNonZero_AfterWarmup()
     {
-        var ind = Create(reversalPct: 5m, numberOfLevels: 1);
+        var ind = Create(reversalPct: 5.0, numberOfLevels: 1);
 
         // With numberOfLevels=1: need 1 swing high + 1 swing low.
         // After first up→down reversal we have 1 maxLevel.
@@ -119,7 +119,7 @@ public class DeltaZigZagTrendTests
     [Fact]
     public void UptrendDetection_HighExceedsMaxLevels()
     {
-        var ind = Create(reversalPct: 5m, numberOfLevels: 1);
+        var ind = Create(reversalPct: 5.0, numberOfLevels: 1);
         var bars = BuildUptrendDetectionBars();
 
         ind.Compute(bars);
@@ -135,7 +135,7 @@ public class DeltaZigZagTrendTests
     [Fact]
     public void DowntrendDetection_LowBreaksMinLevels()
     {
-        var ind = Create(reversalPct: 5m, numberOfLevels: 1);
+        var ind = Create(reversalPct: 5.0, numberOfLevels: 1);
         var bars = BuildDowntrendDetectionBars();
 
         ind.Compute(bars);
@@ -150,7 +150,7 @@ public class DeltaZigZagTrendTests
     [Fact]
     public void TrendPersists_WhenSwingsDontBreakLevels()
     {
-        var ind = Create(reversalPct: 5m, numberOfLevels: 1);
+        var ind = Create(reversalPct: 5.0, numberOfLevels: 1);
         var bars = BuildUptrendDetectionBars();
 
         // Add bars that don't break the min level
@@ -171,7 +171,7 @@ public class DeltaZigZagTrendTests
     {
         // Trend evaluated every bar based on in-progress highValue/lowValue,
         // not just at reversals.
-        var ind = Create(reversalPct: 5m, numberOfLevels: 1);
+        var ind = Create(reversalPct: 5.0, numberOfLevels: 1);
 
         var bars = new List<Int64Bar>
         {
@@ -197,7 +197,7 @@ public class DeltaZigZagTrendTests
     [Fact]
     public void BreakoutBuffers_ZeroDuringWarmup()
     {
-        var ind = Create(reversalPct: 5m, numberOfLevels: 2);
+        var ind = Create(reversalPct: 5.0, numberOfLevels: 2);
         var bars = new List<Int64Bar>
         {
             TestBars.Create(1000, 1100, 950, 1050),
@@ -213,7 +213,7 @@ public class DeltaZigZagTrendTests
     [Fact]
     public void BreakoutBuffers_ShowCorrectMaxMinAfterReversals()
     {
-        var ind = Create(reversalPct: 5m, numberOfLevels: 1);
+        var ind = Create(reversalPct: 5.0, numberOfLevels: 1);
 
         var bars = new List<Int64Bar>
         {
@@ -238,11 +238,11 @@ public class DeltaZigZagTrendTests
         // With levels=2, need to exceed the max of 2 prior swing highs.
         var bars = BuildMultiSwingBars();
 
-        var ind1 = Create(reversalPct: 5m, numberOfLevels: 1);
+        var ind1 = Create(reversalPct: 5.0, numberOfLevels: 1);
         ind1.Compute(bars);
         var trend1 = ind1.Buffers["Trend"].ToList();
 
-        var ind2 = Create(reversalPct: 5m, numberOfLevels: 2);
+        var ind2 = Create(reversalPct: 5.0, numberOfLevels: 2);
         ind2.Compute(bars);
         var trend2 = ind2.Buffers["Trend"].ToList();
 
@@ -260,13 +260,13 @@ public class DeltaZigZagTrendTests
         var bars = BuildMultiSwingBars();
 
         // Batch
-        var batch = Create(reversalPct: 5m, numberOfLevels: 1);
+        var batch = Create(reversalPct: 5.0, numberOfLevels: 1);
         batch.Compute(bars);
         var batchValue = batch.Buffers["Value"].ToList();
         var batchTrend = batch.Buffers["Trend"].ToList();
 
         // Incremental: 5 bars then all
-        var incr = Create(reversalPct: 5m, numberOfLevels: 1);
+        var incr = Create(reversalPct: 5.0, numberOfLevels: 1);
         incr.Compute(bars.Take(5).ToList());
         incr.Compute(bars);
         var incrValue = incr.Buffers["Value"].ToList();
@@ -333,15 +333,15 @@ public class DeltaZigZagTrendTests
     [Fact]
     public void InvalidReversalPct_Throws()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new DeltaZigZagTrend(0m, 1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new DeltaZigZagTrend(-1m, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DeltaZigZagTrend(0.0, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DeltaZigZagTrend(-1.0, 1));
     }
 
     [Fact]
     public void InvalidNumberOfLevels_Throws()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new DeltaZigZagTrend(5m, 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new DeltaZigZagTrend(5m, -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DeltaZigZagTrend(5.0, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new DeltaZigZagTrend(5.0, -1));
     }
 
     // --- Buffer metadata ---

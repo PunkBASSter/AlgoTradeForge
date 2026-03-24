@@ -7,7 +7,7 @@ namespace AlgoTradeForge.Domain.Tests.Indicators;
 
 public class DeltaZigZagTests
 {
-    private static DeltaZigZag CreateIndicator(decimal delta = 0.5m, decimal minThresholdPct = 10m)
+    private static DeltaZigZag CreateIndicator(double delta = 0.5, double minThresholdPct = 10.0)
         => new(delta, minThresholdPct);
 
     [Fact]
@@ -37,7 +37,7 @@ public class DeltaZigZagTests
     [Fact]
     public void DowntrendReversal_TwoPivots()
     {
-        var dzz = CreateIndicator(delta: 0.5m, minThresholdPct: 10m);
+        var dzz = CreateIndicator(delta: 0.5, minThresholdPct: 10.0);
 
         // Ascending bars then a big drop exceeding threshold
         var bars = new List<Int64Bar>
@@ -65,7 +65,7 @@ public class DeltaZigZagTests
     {
         // delta=0.5, minThresholdPct=1. First reversal uses pct floor (~14 at close 1400).
         // Second reversal uses dynamic = swingSize * 0.5, which is much larger.
-        var dzz = CreateIndicator(delta: 0.5m, minThresholdPct: 1m);
+        var dzz = CreateIndicator(delta: 0.5, minThresholdPct: 1.0);
 
         var bars = new List<Int64Bar>
         {
@@ -102,7 +102,7 @@ public class DeltaZigZagTests
     public void MinimumThreshold_UsedWhenNoPriorSwing()
     {
         // With a very large percentage threshold, no reversal should happen
-        var dzz = CreateIndicator(delta: 0.5m, minThresholdPct: 99m);
+        var dzz = CreateIndicator(delta: 0.5, minThresholdPct: 99.0);
 
         var bars = new List<Int64Bar>
         {
@@ -138,12 +138,12 @@ public class DeltaZigZagTests
         };
 
         // Batch: compute all 10 bars at once
-        var batchDzz = CreateIndicator(delta: 0.5m, minThresholdPct: 10m);
+        var batchDzz = CreateIndicator(delta: 0.5, minThresholdPct: 10.0);
         batchDzz.Compute(bars);
         var batchValues = batchDzz.Buffers["Value"].ToList();
 
         // Incremental: compute 5 bars, then 10 bars
-        var incrDzz = CreateIndicator(delta: 0.5m, minThresholdPct: 10m);
+        var incrDzz = CreateIndicator(delta: 0.5, minThresholdPct: 10.0);
         incrDzz.Compute(bars.Take(5).ToList());
         incrDzz.Compute(bars);
         var incrValues = incrDzz.Buffers["Value"].ToList();
@@ -158,7 +158,7 @@ public class DeltaZigZagTests
     [Fact]
     public void PivotRelocation_OldPivotZeroed()
     {
-        var dzz = CreateIndicator(delta: 0.5m, minThresholdPct: 10m);
+        var dzz = CreateIndicator(delta: 0.5, minThresholdPct: 10.0);
 
         var bars = new List<Int64Bar>
         {
@@ -184,7 +184,7 @@ public class DeltaZigZagTests
     [Fact]
     public void Revise_FiresOnRevisedHook()
     {
-        var dzz = CreateIndicator(delta: 0.5m, minThresholdPct: 10m);
+        var dzz = CreateIndicator(delta: 0.5, minThresholdPct: 10.0);
         var revisions = new List<(string Name, int Index, long Value)>();
         dzz.Buffers["Value"].OnRevised = (name, index, value) =>
             revisions.Add((name, index, value));
@@ -208,7 +208,7 @@ public class DeltaZigZagTests
     [Fact]
     public void Set_DoesNotFireHook()
     {
-        var dzz = CreateIndicator(delta: 0.5m, minThresholdPct: 10m);
+        var dzz = CreateIndicator(delta: 0.5, minThresholdPct: 10.0);
         var revisions = new List<(string Name, int Index, long Value)>();
         dzz.Buffers["Value"].OnRevised = (name, index, value) =>
             revisions.Add((name, index, value));
@@ -254,7 +254,7 @@ public class DeltaZigZagTests
     public void ThresholdScalesWithPrice()
     {
         // 5% of close → for close=1000, threshold=50; for close=10000, threshold=500
-        var dzz = CreateIndicator(delta: 0.5m, minThresholdPct: 5m);
+        var dzz = CreateIndicator(delta: 0.5, minThresholdPct: 5.0);
 
         // Low-priced bars: close~1000, threshold=50. Drop of 60 triggers reversal.
         var bars = new List<Int64Bar>
@@ -280,7 +280,7 @@ public class DeltaZigZagTests
     public void HighPriceNeedsLargerAbsoluteMove()
     {
         // 5% of close=10000 → threshold=500. A 300 drop should NOT cause reversal.
-        var dzz = CreateIndicator(delta: 0.5m, minThresholdPct: 5m);
+        var dzz = CreateIndicator(delta: 0.5, minThresholdPct: 5.0);
 
         var bars = new List<Int64Bar>
         {
@@ -305,7 +305,7 @@ public class DeltaZigZagTests
     {
         // After first reversal, dynamic threshold (swingSize * delta) should still
         // be used when it exceeds the percentage floor.
-        var dzz = CreateIndicator(delta: 0.5m, minThresholdPct: 0.5m);
+        var dzz = CreateIndicator(delta: 0.5, minThresholdPct: 0.5);
 
         var bars = new List<Int64Bar>
         {

@@ -9,8 +9,8 @@ namespace AlgoTradeForge.Domain.Indicators;
 /// </summary>
 public sealed class DeltaZigZag : Int64IndicatorBase
 {
-    private readonly decimal _delta;
-    private readonly decimal _minimumThresholdPct;
+    private readonly double _delta;
+    private readonly double _minimumThresholdPct;
 
     private readonly IndicatorBuffer<long> _buffer = new("Value", skipDefaultValues: true);
     private readonly Dictionary<string, IndicatorBuffer<long>> _buffers;
@@ -22,7 +22,7 @@ public sealed class DeltaZigZag : Int64IndicatorBase
     private long _lastClose;
     private int _lastProcessedIndex = -1;
 
-    public DeltaZigZag(decimal delta, decimal minimumThresholdPct)
+    public DeltaZigZag(double delta, double minimumThresholdPct)
     {
         _delta = delta;
         _minimumThresholdPct = minimumThresholdPct;
@@ -95,12 +95,12 @@ public sealed class DeltaZigZag : Int64IndicatorBase
 
     private long GetThreshold()
     {
-        var floor = MoneyConvert.ToLong(_lastClose * _minimumThresholdPct / 100m);
+        var floor = (long)(_lastClose * _minimumThresholdPct / 100.0);
 
         if (_lastSwingSize == 0)
             return floor;
 
-        var dynamic = MoneyConvert.ToLong(_lastSwingSize * _delta);
+        var dynamic = (long)(_lastSwingSize * _delta);
         return Math.Max(dynamic, floor);
     }
 }

@@ -10,7 +10,7 @@ namespace AlgoTradeForge.Domain.Indicators;
 /// </summary>
 public sealed class DeltaZigZagTrend : Int64IndicatorBase
 {
-    private readonly decimal _reversalPct;
+    private readonly double _reversalPct;
     private readonly int _numberOfLevels;
 
     private readonly IndicatorBuffer<long> _value = new("Value", skipDefaultValues: true);
@@ -32,7 +32,7 @@ public sealed class DeltaZigZagTrend : Int64IndicatorBase
     private int _minLevelCount;
     private bool _upTrend;
 
-    public DeltaZigZagTrend(decimal reversalPct, int numberOfLevels)
+    public DeltaZigZagTrend(double reversalPct, int numberOfLevels)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(reversalPct);
         ArgumentOutOfRangeException.ThrowIfLessThan(numberOfLevels, 1);
@@ -133,7 +133,7 @@ public sealed class DeltaZigZagTrend : Int64IndicatorBase
     }
 
     private long GetReversal(long extremumPrice) =>
-        MoneyConvert.ToLong(extremumPrice * _reversalPct / 100m);
+        (long)(extremumPrice * _reversalPct / 100.0);
 
     private void UpdateTrend()
     {
