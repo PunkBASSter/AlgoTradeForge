@@ -20,7 +20,7 @@ public class IndicatorFactoryTests
     [Fact]
     public void PassthroughFactory_ReturnsSameInstance()
     {
-        var inner = new DeltaZigZag(0.5m, 100L);
+        var inner = new DeltaZigZag(0.5m, 10m);
 
         var result = PassthroughIndicatorFactory.Instance.Create(inner, ExportableSub);
 
@@ -32,7 +32,7 @@ public class IndicatorFactoryTests
     {
         var bus = new CapturingEventBus();
         var factory = new EmittingIndicatorFactory(bus);
-        var inner = new DeltaZigZag(0.5m, 100L);
+        var inner = new DeltaZigZag(0.5m, 10m);
 
         var result = factory.Create(inner, ExportableSub);
 
@@ -44,7 +44,7 @@ public class IndicatorFactoryTests
     public void DecoratedIndicator_DelegatesAllProperties()
     {
         var bus = new CapturingEventBus();
-        var inner = new DeltaZigZag(0.5m, 100L);
+        var inner = new DeltaZigZag(0.5m, 10m);
         var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
 
         Assert.Equal(inner.Name, decorated.Name);
@@ -58,7 +58,7 @@ public class IndicatorFactoryTests
     public void DecoratedIndicator_EmitsIndEvent_AfterCompute()
     {
         var bus = new CapturingEventBus();
-        var inner = new DeltaZigZag(0.5m, 100L);
+        var inner = new DeltaZigZag(0.5m, 10m);
         var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
 
         var barTime = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
@@ -80,7 +80,7 @@ public class IndicatorFactoryTests
     public void DecoratedIndicator_EventTimestamp_MatchesBarTimestamp()
     {
         var bus = new CapturingEventBus();
-        var inner = new DeltaZigZag(0.5m, 100L);
+        var inner = new DeltaZigZag(0.5m, 10m);
         var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
 
         var t1 = new DateTimeOffset(2025, 3, 1, 10, 0, 0, TimeSpan.Zero);
@@ -106,7 +106,7 @@ public class IndicatorFactoryTests
     public void DecoratedIndicator_EmitsIndMutEvent_OnMutationCompute()
     {
         var bus = new CapturingEventBus();
-        var inner = new DeltaZigZag(0.5m, 100L);
+        var inner = new DeltaZigZag(0.5m, 10m);
         var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
 
         var barTime = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
@@ -128,7 +128,7 @@ public class IndicatorFactoryTests
     public void DecoratedIndicator_NoEvent_IfComputeNotCalled()
     {
         var bus = new CapturingEventBus();
-        _ = new EmittingIndicatorDecorator<Int64Bar, long>(new DeltaZigZag(0.5m, 100L), bus, ExportableSub);
+        _ = new EmittingIndicatorDecorator<Int64Bar, long>(new DeltaZigZag(0.5m, 10m), bus, ExportableSub);
 
         Assert.Empty(bus.Events);
     }
@@ -137,7 +137,7 @@ public class IndicatorFactoryTests
     public void DecoratedIndicator_UsesSubscriptionExportable()
     {
         var bus = new CapturingEventBus();
-        var inner = new DeltaZigZag(0.5m, 100L);
+        var inner = new DeltaZigZag(0.5m, 10m);
         var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, NonExportableSub);
 
         var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050) };
@@ -152,7 +152,7 @@ public class IndicatorFactoryTests
     public void DecoratedIndicator_SkipsEvent_WhenAllValuesAreDefault()
     {
         var bus = new CapturingEventBus();
-        var inner = new DeltaZigZag(0.5m, 100L);
+        var inner = new DeltaZigZag(0.5m, 10m);
         var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
 
         // Bar 1: H=1200 → initial pivot, buffer[0]=1200 → event emitted
@@ -170,7 +170,7 @@ public class IndicatorFactoryTests
     public void EmitsRetroactiveMutation_OnPivotRelocation()
     {
         var bus = new CapturingEventBus();
-        var inner = new DeltaZigZag(0.5m, 100L);
+        var inner = new DeltaZigZag(0.5m, 10m);
         var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
 
         var t1 = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
@@ -221,7 +221,7 @@ public class IndicatorFactoryTests
     public void DecoratedIndicator_ChartIds_NullForOverlayIndicator()
     {
         var bus = new CapturingEventBus();
-        var inner = new DeltaZigZag(0.5m, 100L);
+        var inner = new DeltaZigZag(0.5m, 10m);
         var decorated = new EmittingIndicatorDecorator<Int64Bar, long>(inner, bus, ExportableSub);
 
         var bars = new List<Int64Bar> { TestBars.Create(1000, 1100, 900, 1050) };
@@ -249,7 +249,7 @@ public class IndicatorFactoryTests
 
         // Use DeltaZigZag instead — it produces retroactive mutations via Revise
         var bus2 = new CapturingEventBus();
-        var dzz = new DeltaZigZag(0.5m, 100L);
+        var dzz = new DeltaZigZag(0.5m, 10m);
         // Override chart ID to verify propagation through retroactive mutations
         dzz.Buffers["Value"].ExportChartId = 3;
         var dec2 = new EmittingIndicatorDecorator<Int64Bar, long>(dzz, bus2, ExportableSub);
@@ -325,8 +325,8 @@ public class IndicatorFactoryTests
 
         public override void OnInit()
         {
-            _m1Dzz = Indicators.Create(new NamedDeltaZigZag("DeltaZigZag_M1", 0.5m, 100L), DataSubscriptions[0]);
-            _h1Dzz = Indicators.Create(new NamedDeltaZigZag("DeltaZigZag_H1", 0.5m, 100L), DataSubscriptions[1]);
+            _m1Dzz = Indicators.Create(new NamedDeltaZigZag("DeltaZigZag_M1", 0.5m, 10m), DataSubscriptions[0]);
+            _h1Dzz = Indicators.Create(new NamedDeltaZigZag("DeltaZigZag_H1", 0.5m, 10m), DataSubscriptions[1]);
         }
 
         public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
@@ -344,9 +344,9 @@ public class IndicatorFactoryTests
         }
     }
 
-    private sealed class NamedDeltaZigZag(string name, decimal delta, long minimumThreshold) : IIndicator<Int64Bar, long>
+    private sealed class NamedDeltaZigZag(string name, decimal delta, decimal minimumThresholdPct) : IIndicator<Int64Bar, long>
     {
-        private readonly DeltaZigZag _inner = new(delta, minimumThreshold);
+        private readonly DeltaZigZag _inner = new(delta, minimumThresholdPct);
 
         public string Name => name;
         public IndicatorMeasure Measure => _inner.Measure;
