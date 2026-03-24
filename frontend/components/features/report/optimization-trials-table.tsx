@@ -77,6 +77,11 @@ export function OptimizationTrialsTable({
         render: (_v, row) => formatPercent(row.metrics?.winRatePct ?? 0),
       },
       {
+        key: "trades",
+        header: "Trades",
+        render: (_v, row) => Math.round((row.metrics?.totalTrades ?? 0) / 2),
+      },
+      {
         key: "netProfit",
         header: "Net Profit",
         render: (_v, row) => formatNumber(row.metrics?.netProfit ?? 0),
