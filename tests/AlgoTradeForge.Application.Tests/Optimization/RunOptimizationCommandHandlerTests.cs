@@ -47,10 +47,13 @@ public class RunOptimizationCommandHandlerTests
         var engine = new BacktestEngine(
             Substitute.For<IBarMatcher>(), new OrderValidator());
 
+        var helper = new OptimizationSetupHelper(
+            engine, _assetRepository, _historyRepository,
+            _metricsCalculator, _spaceProvider, _runRepository);
+
         return new RunOptimizationCommandHandler(
-            engine, _strategyFactory, _assetRepository, _historyRepository,
-            _metricsCalculator, _spaceProvider, new OptimizationAxisResolver(),
-            _cartesianGenerator, _runRepository, _progressCache,
+            _strategyFactory, helper, new OptimizationAxisResolver(),
+            _cartesianGenerator, _progressCache,
             _cancellationRegistry,
             Options.Create(new RunTimeoutOptions()),
             NullLogger<RunOptimizationCommandHandler>.Instance);

@@ -19,7 +19,14 @@ public static class OptimizationEndpoints
 
         group.MapPost("/", RunOptimization)
             .WithName("RunOptimization")
-            .WithSummary("Submit an optimization for background execution")
+            .WithSummary("Submit a brute-force optimization for background execution")
+            .WithOpenApi()
+            .Produces<OptimizationSubmissionResponse>(StatusCodes.Status202Accepted)
+            .Produces(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/genetic", RunGeneticOptimization)
+            .WithName("RunGeneticOptimization")
+            .WithSummary("Submit a genetic algorithm optimization for background execution")
             .WithOpenApi()
             .Produces<OptimizationSubmissionResponse>(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status400BadRequest);
@@ -87,6 +94,68 @@ public static class OptimizationEndpoints
             MinSharpeRatio = request.OptimizationSettings.MinSharpeRatio,
             MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
             MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
+        };
+
+        try
+        {
+            var submission = await handler.HandleAsync(command, ct);
+            var response = new OptimizationSubmissionResponse
+            {
+                Id = submission.Id,
+                TotalCombinations = submission.TotalCombinations,
+            };
+            return Results.Accepted($"/api/optimizations/{submission.Id}/status", response);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> RunGeneticOptimization(
+        RunGeneticOptimizationRequest request,
+        ICommandHandler<RunGeneticOptimizationCommand, OptimizationSubmissionDto> handler,
+        CancellationToken ct)
+    {
+        var fitnessWeights = request.GeneticSettings.FitnessWeights;
+        var command = new RunGeneticOptimizationCommand
+        {
+            StrategyName = request.StrategyName,
+            Axes = request.OptimizationAxes,
+            DataSubscriptions = request.DataSubscriptions,
+            SubscriptionAxis = request.SubscriptionAxis,
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = request.BacktestSettings.InitialCash,
+                StartTime = request.BacktestSettings.StartTime,
+                EndTime = request.BacktestSettings.EndTime,
+                CommissionPerTrade = request.BacktestSettings.CommissionPerTrade,
+                SlippageTicks = request.BacktestSettings.SlippageTicks,
+            },
+            MaxDegreeOfParallelism = request.OptimizationSettings.MaxDegreeOfParallelism,
+            SortBy = request.OptimizationSettings.SortBy,
+            MaxTrialsToKeep = request.OptimizationSettings.MaxTrialsToKeep,
+            MinProfitFactor = request.OptimizationSettings.MinProfitFactor,
+            MaxDrawdownPct = request.OptimizationSettings.MaxDrawdownPct,
+            MinSharpeRatio = request.OptimizationSettings.MinSharpeRatio,
+            MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
+            MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
+            GeneticSettings = new GeneticOptimizationSettings
+            {
+                PopulationSize = request.GeneticSettings.PopulationSize,
+                MaxGenerations = request.GeneticSettings.MaxGenerations,
+                MaxEvaluations = request.GeneticSettings.MaxEvaluations,
+                EliteCount = request.GeneticSettings.EliteCount,
+                CrossoverRate = request.GeneticSettings.CrossoverRate,
+                TournamentSize = request.GeneticSettings.TournamentSize,
+                StagnationLimit = request.GeneticSettings.StagnationLimit,
+                SharpeWeight = fitnessWeights?.SharpeWeight ?? 0.5,
+                SortinoWeight = fitnessWeights?.SortinoWeight ?? 0.2,
+                ProfitFactorWeight = fitnessWeights?.ProfitFactorWeight ?? 0.15,
+                AnnualizedReturnWeight = fitnessWeights?.AnnualizedReturnWeight ?? 0.15,
+                MaxDrawdownThreshold = fitnessWeights?.MaxDrawdownThreshold ?? 30.0,
+                MinTrades = fitnessWeights?.MinTrades ?? 10,
+            },
         };
 
         try
@@ -210,6 +279,8 @@ public static class OptimizationEndpoints
         BacktestSettings = r.BacktestSettings,
         MaxParallelism = r.MaxParallelism,
         Trials = r.Trials.Select(MapTrialToResponse).ToList(),
+        OptimizationMethod = r.OptimizationMethod,
+        GenerationsCompleted = r.GenerationsCompleted,
         FailedTrialDetails = r.FailedTrialDetails.Select(f => new FailedTrialResponse
         {
             ExceptionType = f.ExceptionType,
