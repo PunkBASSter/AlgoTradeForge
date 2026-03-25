@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
 import "./globals.css";
 import { Providers } from "./providers";
+import { NavBar } from "@/components/layout/nav-bar";
+import { RunNewProvider } from "@/contexts/run-new-context";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,10 +20,6 @@ export const metadata: Metadata = {
   description: "Algorithmic trading platform",
 };
 
-const navLinks = [
-  { href: "/all/backtest", label: "Dashboard" },
-];
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -34,27 +31,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex flex-col`}
       >
         <Providers>
-          <header className="flex items-center justify-between px-6 py-3 border-b border-border-default bg-bg-surface">
-            <Link
-              href="/all/backtest"
-              className="text-lg font-bold text-text-primary tracking-tight"
-            >
-              AlgoTradeForge
-            </Link>
-            <nav className="flex items-center gap-6">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="text-sm text-text-secondary hover:text-text-primary transition-colors"
-                >
-                  {link.label}
-                </Link>
-              ))}
-            </nav>
-          </header>
-
-          <main className="flex-1">{children}</main>
+          <RunNewProvider>
+            <NavBar />
+            <main className="flex-1">{children}</main>
+          </RunNewProvider>
 
           <footer className="px-6 py-2 border-t border-border-subtle text-text-muted text-xs">
             AlgoTradeForge v0.1.0

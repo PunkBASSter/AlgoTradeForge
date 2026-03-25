@@ -1,24 +1,15 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { getClient } from "@/lib/services";
 import { RunFilters, type FilterValues } from "@/components/features/dashboard/run-filters";
 import { RunsTable } from "@/components/features/dashboard/runs-table";
-import { RunNewPanel } from "@/components/features/dashboard/run-new-panel";
-import { Tabs } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/pagination";
 import { useLiveSessions } from "@/hooks/use-live-sessions";
+import { useRunNew } from "@/contexts/run-new-context";
 
 const LIMIT = 50;
-
-const modeTabs = [
-  { id: "backtest", label: "Backtest" },
-  { id: "optimization", label: "Optimization" },
-  { id: "live", label: "Live Trading" },
-];
 
 const emptyFilters: FilterValues = {
   assetName: "",
@@ -37,9 +28,7 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
   const selectedStrategy = strategy === "all" ? null : strategy;
   const [filters, setFilters] = useState<FilterValues>(emptyFilters);
   const [offset, setOffset] = useState(0);
-  const [runNewOpen, setRunNewOpen] = useState(false);
-  const [rerunConfig, setRerunConfig] = useState<Record<string, unknown> | null>(null);
-  const router = useRouter();
+  const { openWithContent } = useRunNew();
 
   // Check for rerun config from backtest report page
   useEffect(() => {
@@ -48,15 +37,14 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
     if (!stored) return;
     sessionStorage.removeItem("rerun-backtest-config");
     try {
-      setRerunConfig(JSON.parse(stored) as Record<string, unknown>);
-      setRunNewOpen(true);
+      const config = JSON.parse(stored) as Record<string, unknown>;
+      openWithContent(config);
     } catch {
       // ignore invalid JSON
     }
-  }, [mode]);
+  }, [mode, openWithContent]);
 
   const client = getClient();
-  const queryClient = useQueryClient();
 
   const queryParams = useMemo(
     () => ({
@@ -89,32 +77,13 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
 
   const activeQuery = mode === "live" ? null : mode === "backtest" ? backtestQuery : optimizationQuery;
 
-  const handleTabChange = (tab: string) => {
-    router.push(`/${strategy}/${tab}`);
-  };
-
   const handleFilterChange = (newFilters: FilterValues) => {
     setFilters(newFilters);
     setOffset(0);
   };
 
-  const handleRunNewSuccess = () => {
-    queryClient.invalidateQueries({ queryKey: ["backtests"] });
-    queryClient.invalidateQueries({ queryKey: ["optimizations"] });
-    queryClient.invalidateQueries({ queryKey: ["live-sessions"] });
-  };
-
   return (
     <>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-text-primary">Dashboard</h1>
-        <Button variant="primary" onClick={() => setRunNewOpen(true)}>
-          + Run New
-        </Button>
-      </div>
-
-      <Tabs tabs={modeTabs} activeTab={mode} onTabChange={handleTabChange} />
-
       {mode !== "live" && (
         <RunFilters filters={filters} onChange={handleFilterChange} />
       )}
@@ -136,18 +105,6 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
           onPageChange={setOffset}
         />
       )}
-
-      <RunNewPanel
-        open={runNewOpen}
-        onClose={() => {
-          setRunNewOpen(false);
-          setRerunConfig(null);
-        }}
-        mode={mode}
-        selectedStrategy={selectedStrategy}
-        onSuccess={handleRunNewSuccess}
-        initialContent={rerunConfig}
-      />
     </>
   );
 }

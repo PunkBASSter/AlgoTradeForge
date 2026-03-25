@@ -519,10 +519,14 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
 
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT DISTINCT strategy_name FROM backtest_runs
-            UNION
-            SELECT DISTINCT strategy_name FROM optimization_runs
-            ORDER BY strategy_name
+            SELECT strategy_name
+            FROM (
+                SELECT strategy_name, completed_at FROM backtest_runs
+                UNION ALL
+                SELECT strategy_name, completed_at FROM optimization_runs
+            )
+            GROUP BY strategy_name
+            ORDER BY MAX(completed_at) DESC
             """;
 
         var names = new List<string>();
