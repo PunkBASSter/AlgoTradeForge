@@ -142,24 +142,41 @@ export function RunNewPanel({
       : descriptor.optimizationTemplate;
 
     const view = editorViewRef.current;
-    let merged: Record<string, unknown> = { ...targetTemplate };
+
+    // Canonical key order — invariant regardless of genetic toggle
+    const canonicalOrder = [
+      "strategyName",
+      "backtestSettings",
+      "optimizationSettings",
+      ...(genetic ? ["geneticSettings"] as const : []),
+      "subscriptionAxis",
+      "optimizationAxes",
+    ];
+
+    const source: Record<string, unknown> = { ...targetTemplate };
 
     try {
       const current = JSON.parse(view.state.doc.toString()) as Record<string, unknown>;
       const sharedKeys = [
         "strategyName",
         "backtestSettings",
-        "optimizationAxes",
-        "subscriptionAxis",
         "optimizationSettings",
+        "subscriptionAxis",
+        "optimizationAxes",
       ];
       for (const key of sharedKeys) {
         if (current[key] !== undefined) {
-          merged[key] = current[key];
+          source[key] = current[key];
         }
       }
     } catch {
       // JSON parse failed — fall back to full template swap
+    }
+
+    // Rebuild in canonical order to ensure consistent JSON output
+    const merged: Record<string, unknown> = {};
+    for (const key of canonicalOrder) {
+      if (source[key] !== undefined) merged[key] = source[key];
     }
 
     const newDoc = JSON.stringify(merged, null, 2);
