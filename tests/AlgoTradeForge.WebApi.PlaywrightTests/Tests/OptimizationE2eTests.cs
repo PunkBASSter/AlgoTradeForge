@@ -15,14 +15,18 @@ public sealed class OptimizationE2eTests(PlaywrightFixture fixture) : Playwright
             "Quantity": { "min": 1, "max": 7, "step": 2 }
           },
           "dataSubscriptions": [
-            { "asset": "BTCUSDT", "exchange": "Binance", "timeFrame": "01:00:00" }
+            { "assetName": "BTCUSDT", "exchange": "Binance", "timeFrame": "01:00:00" }
           ],
-          "initialCash": 10000,
-          "startTime": "2025-01-01T00:00:00Z",
-          "endTime": "2025-01-15T00:00:00Z",
-          "commissionPerTrade": 0.001,
-          "slippageTicks": 2,
-          "sortBy": "sortinoRatio"
+          "backtestSettings": {
+            "initialCash": 10000,
+            "startTime": "2025-01-01T00:00:00Z",
+            "endTime": "2025-01-15T00:00:00Z",
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 2
+          },
+          "optimizationSettings": {
+            "sortBy": "sortinoRatio"
+          }
         }
         """;
 
