@@ -8,6 +8,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Optimization.Attributes;
+using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
@@ -74,7 +75,7 @@ public class RunGeneticOptimizationCommandHandlerTests
         {
             ["Period"] = new RangeOverride(10, 20, 5)
         },
-        GeneticSettings = new GeneticOptimizationSettings(),
+        GeneticSettings = new GeneticConfig(),
     };
 
     private void SetupStandardMocks()
@@ -131,5 +132,47 @@ public class RunGeneticOptimizationCommandHandlerTests
 
         Assert.NotEqual(Guid.Empty, result.Id);
         Assert.True(result.TotalCombinations > 0);
+    }
+
+    [Fact]
+    public async Task HandleAsync_PopulationSizeExceedsMax_ThrowsArgumentException()
+    {
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = CreateCommand() with
+        {
+            GeneticSettings = new GeneticConfig { PopulationSize = 3000 }
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task HandleAsync_MaxGenerationsExceedsMax_ThrowsArgumentException()
+    {
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = CreateCommand() with
+        {
+            GeneticSettings = new GeneticConfig { MaxGenerations = 6000 }
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task HandleAsync_MaxEvaluationsExceedsMax_ThrowsArgumentException()
+    {
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = CreateCommand() with
+        {
+            GeneticSettings = new GeneticConfig { MaxEvaluations = 2_000_000 }
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
     }
 }

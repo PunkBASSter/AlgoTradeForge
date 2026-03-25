@@ -130,6 +130,61 @@ public class OperatorTests
         Assert.Contains(g2.VariantIndex, new[] { 0, 1 });
     }
 
+    [Fact]
+    public void ModuleCrossover_SameVariant_CrossesSubGenes()
+    {
+        var subAxes = new List<ResolvedAxis>
+        {
+            new ResolvedNumericAxis("Param", [1m, 2m, 3m, 4m, 5m, 6m, 7m, 8m, 9m, 10m])
+        };
+        var variants = new List<ResolvedModuleVariant>
+        {
+            new("FilterA", subAxes),
+            new("FilterB", [])
+        };
+
+        // Both parents use variant 0 but with different sub-gene values
+        var p1 = new Chromosome(new Dictionary<string, Gene>
+        {
+            ["Mod"] = new ModuleGene(0, variants, new Dictionary<string, Gene>
+            {
+                ["Param"] = new NumericGene(2.0, 1.0, 10.0, 1.0, typeof(int))
+            })
+        });
+        var p2 = new Chromosome(new Dictionary<string, Gene>
+        {
+            ["Mod"] = new ModuleGene(0, variants, new Dictionary<string, Gene>
+            {
+                ["Param"] = new NumericGene(9.0, 1.0, 10.0, 1.0, typeof(int))
+            })
+        });
+
+        var sawDifferentValues = false;
+        for (var i = 0; i < 50; i++)
+        {
+            var (c1, c2) = CrossoverOperator.Crossover(p1, p2, 2.0, new Random(i));
+            var mg1 = (ModuleGene)c1.Genes["Mod"];
+            var mg2 = (ModuleGene)c2.Genes["Mod"];
+
+            // Both children should keep variant 0 (same-variant crossover)
+            Assert.Equal(0, mg1.VariantIndex);
+            Assert.Equal(0, mg2.VariantIndex);
+
+            // Sub-genes should be crossed (SBX on numeric sub-params)
+            Assert.NotNull(mg1.SubGenes);
+            Assert.NotNull(mg2.SubGenes);
+            var v1 = ((NumericGene)mg1.SubGenes["Param"]).Value;
+            var v2 = ((NumericGene)mg2.SubGenes["Param"]).Value;
+            Assert.InRange(v1, 1.0, 10.0);
+            Assert.InRange(v2, 1.0, 10.0);
+
+            if (Math.Abs(v1 - 2.0) > 0.01 || Math.Abs(v2 - 9.0) > 0.01)
+                sawDifferentValues = true;
+        }
+
+        Assert.True(sawDifferentValues, "SBX should produce different sub-gene values");
+    }
+
     // ── Mutation ────────────────────────────────────────
 
     [Fact]
@@ -206,6 +261,32 @@ public class OperatorTests
             }
         }
         return changes;
+    }
+
+    [Fact]
+    public void ModuleVariantMutation_AlwaysChangeVariant()
+    {
+        var variants = new List<ResolvedModuleVariant>
+        {
+            new("A", []),
+            new("B", []),
+            new("C", [])
+        };
+
+        for (var trial = 0; trial < 100; trial++)
+        {
+            var chromosome = new Chromosome(new Dictionary<string, Gene>
+            {
+                ["Mod"] = new ModuleGene(1, variants, null)
+            });
+
+            // Rate 1.0 for both mutation and variant switch to guarantee variant mutation fires
+            MutationOperator.Mutate(chromosome, 1.0, 0, 20.0, 1.0, new Random(trial));
+
+            var gene = (ModuleGene)chromosome.Genes["Mod"];
+            Assert.NotEqual(1, gene.VariantIndex);
+            Assert.InRange(gene.VariantIndex, 0, 2);
+        }
     }
 
     [Fact]

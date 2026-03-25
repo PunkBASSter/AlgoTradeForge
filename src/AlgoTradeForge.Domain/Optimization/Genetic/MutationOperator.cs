@@ -84,7 +84,9 @@ public static class MutationOperator
         // With probability moduleVariantRate, switch to a different variant
         if (gene.Variants.Count > 1 && rng.NextDouble() < moduleVariantRate)
         {
-            var newVariantIndex = rng.Next(gene.Variants.Count);
+            // Exclude current variant so mutation always produces a change
+            var offset = rng.Next(gene.Variants.Count - 1);
+            var newVariantIndex = offset >= gene.VariantIndex ? offset + 1 : offset;
             var newVariant = gene.Variants[newVariantIndex];
 
             // Fresh random sub-genes for the new variant

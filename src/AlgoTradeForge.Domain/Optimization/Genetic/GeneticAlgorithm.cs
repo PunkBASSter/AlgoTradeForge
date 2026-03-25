@@ -39,10 +39,14 @@ public sealed class GeneticAlgorithm
 
         var nextGen = new List<Chromosome>(_config.PopulationSize);
 
-        // Elitism: copy top individuals unchanged
+        // Elitism: copy top individuals with their fitness preserved
         var eliteCount = Math.Min(_config.EliteCount, evaluatedPopulation.Count);
         for (var i = 0; i < eliteCount; i++)
-            nextGen.Add(evaluatedPopulation[i].Clone());
+        {
+            var elite = evaluatedPopulation[i].Clone();
+            elite.Fitness = evaluatedPopulation[i].Fitness;
+            nextGen.Add(elite);
+        }
 
         // Fill remaining via tournament select → crossover → mutation
         while (nextGen.Count < _config.PopulationSize)

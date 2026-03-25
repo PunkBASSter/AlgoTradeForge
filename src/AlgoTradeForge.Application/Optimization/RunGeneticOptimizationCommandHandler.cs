@@ -25,94 +25,25 @@ public sealed class RunGeneticOptimizationCommandHandler(
     public async Task<OptimizationSubmissionDto> HandleAsync(
         RunGeneticOptimizationCommand command, CancellationToken ct = default)
     {
-        // 1. Validation and data loading (same pattern as brute-force)
+        // 1. Validation and data loading
         var descriptor = helper.SpaceProvider.GetDescriptor(command.StrategyName)
             ?? throw new ArgumentException($"Strategy '{command.StrategyName}' not found.");
 
         var settings = command.BacktestSettings;
-        var dataSubs = command.DataSubscriptions;
-        var axisSubs = command.SubscriptionAxis;
-        var hasDataSubs = dataSubs is { Count: > 0 };
-        var hasAxisSubs = axisSubs is { Count: > 0 };
-
-        if (!hasDataSubs && !hasAxisSubs)
-            throw new ArgumentException("At least one DataSubscription or SubscriptionAxis entry must be provided.");
-
         var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
         var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
 
-        List<DataSubscriptionDto> fixedDtos;
-        List<DataSubscriptionDto> axisDtos;
-
-        if (hasAxisSubs)
-        {
-            fixedDtos = dataSubs ?? [];
-            axisDtos = axisSubs!;
-        }
-        else if (dataSubs!.Count > 1)
-        {
-            fixedDtos = [];
-            axisDtos = dataSubs;
-        }
-        else
-        {
-            fixedDtos = dataSubs;
-            axisDtos = [];
-        }
-
-        var fixedSubscriptions = new List<DataSubscription>();
-        var axisSubscriptions = new List<DataSubscription>();
-        var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
-
-        foreach (var sub in fixedDtos)
-            await helper.ResolveAndCacheAsync(sub, fixedSubscriptions, dataCache, fromDate, toDate, ct);
-        foreach (var sub in axisDtos)
-            await helper.ResolveAndCacheAsync(sub, axisSubscriptions, dataCache, fromDate, toDate, ct);
+        var (fixedSubscriptions, axisSubscriptions, dataCache) =
+            await helper.ResolveSubscriptionsAsync(
+                command.DataSubscriptions, command.SubscriptionAxis, fromDate, toDate, ct);
 
         var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes);
+        var activeAxes = OptimizationSetupHelper.AppendSubscriptionAxisAndFilter(
+            resolvedAxes, axisSubscriptions);
 
-        if (axisSubscriptions.Count > 0)
-        {
-            var allAxes = new List<ResolvedAxis>(resolvedAxes)
-            {
-                new ResolvedDiscreteAxis("DataSubscriptions",
-                    axisSubscriptions.Cast<object>().ToList())
-            };
-            resolvedAxes = allAxes;
-        }
-
-        var activeAxes = resolvedAxes
-            .Where(a => a switch
-            {
-                ResolvedNumericAxis n => n.Values.Count > 0,
-                ResolvedDiscreteAxis d => d.Values.Count > 0,
-                ResolvedModuleSlotAxis m => m.Variants.Count > 0,
-                _ => true
-            })
-            .ToList();
-
-        // 2. Build GA config with auto-sizing
-        var gaSettings = command.GeneticSettings;
-        var gaConfig = GeneticConfigResolver.Resolve(new GeneticConfig
-        {
-            PopulationSize = gaSettings.PopulationSize,
-            MaxGenerations = gaSettings.MaxGenerations,
-            MaxEvaluations = gaSettings.MaxEvaluations,
-            EliteCount = gaSettings.EliteCount,
-            CrossoverRate = gaSettings.CrossoverRate,
-            TournamentSize = gaSettings.TournamentSize,
-            StagnationLimit = gaSettings.StagnationLimit,
-            TimeBudget = gaSettings.TimeBudget,
-            MinTrades = gaSettings.MinTrades,
-            MaxDrawdownThreshold = gaSettings.MaxDrawdownThreshold,
-            Weights = new FitnessWeights
-            {
-                SharpeWeight = gaSettings.SharpeWeight,
-                SortinoWeight = gaSettings.SortinoWeight,
-                ProfitFactorWeight = gaSettings.ProfitFactorWeight,
-                AnnualizedReturnWeight = gaSettings.AnnualizedReturnWeight,
-            },
-        }, activeAxes);
+        // 2. Validate and resolve GA config with auto-sizing
+        ValidateGeneticSettings(command.GeneticSettings);
+        var gaConfig = GeneticConfigResolver.Resolve(command.GeneticSettings, activeAxes);
 
         // 3. Store progress
         var startedAt = DateTimeOffset.UtcNow;
@@ -179,7 +110,10 @@ public sealed class RunGeneticOptimizationCommandHandler(
             {
                 ct.ThrowIfCancellationRequested();
 
-                // Evaluate all individuals in parallel
+                // Count elites that will be skipped (already have valid fitness)
+                var elitesSkipped = population.Count(c => c.Fitness != double.MinValue);
+
+                // Evaluate all individuals in parallel (elites are skipped)
                 EvaluatePopulation(
                     population, command.StrategyName, command.BacktestSettings,
                     factory, fixedSubscriptions, dataCache,
@@ -187,7 +121,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
                     runId, startedAt, state,
                     maxParallelism, trialTimeout, ct);
 
-                totalEvals += population.Count;
+                totalEvals += population.Count - elitesSkipped;
                 generationsCompleted = gen + 1;
 
                 // Update progress
@@ -322,7 +256,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
 
         var fitnesses = new double[population.Count];
         for (var i = 0; i < fitnesses.Length; i++)
-            fitnesses[i] = double.MinValue;
+            fitnesses[i] = population[i].Fitness; // Elites carry fitness forward
 
         var actualTasks = Math.Min(maxParallelism, population.Count);
         var partitions = Partitioner.Create(
@@ -345,6 +279,10 @@ public sealed class RunGeneticOptimizationCommandHandler(
                         {
                             var i = partition.Current;
                             ct.ThrowIfCancellationRequested();
+
+                            // Skip elites that already have valid fitness
+                            if (fitnesses[i] != double.MinValue)
+                                continue;
 
                             if (!trialCts.TryReset())
                             {
@@ -400,5 +338,17 @@ public sealed class RunGeneticOptimizationCommandHandler(
         // Assign fitness scores back to chromosomes
         for (var i = 0; i < population.Count; i++)
             population[i].Fitness = fitnesses[i];
+    }
+
+    private static void ValidateGeneticSettings(GeneticConfig settings)
+    {
+        if (settings.PopulationSize > 2000)
+            throw new ArgumentException("PopulationSize cannot exceed 2,000.");
+
+        if (settings.MaxGenerations > 5000)
+            throw new ArgumentException("MaxGenerations cannot exceed 5,000.");
+
+        if (settings.MaxEvaluations > 1_000_000)
+            throw new ArgumentException("MaxEvaluations cannot exceed 1,000,000.");
     }
 }

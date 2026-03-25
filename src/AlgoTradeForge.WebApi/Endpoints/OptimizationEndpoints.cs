@@ -3,6 +3,7 @@ using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
+using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.WebApi.Contracts;
 
 namespace AlgoTradeForge.WebApi.Endpoints;
@@ -117,7 +118,8 @@ public static class OptimizationEndpoints
         ICommandHandler<RunGeneticOptimizationCommand, OptimizationSubmissionDto> handler,
         CancellationToken ct)
     {
-        var fitnessWeights = request.GeneticSettings.FitnessWeights;
+        var gs = request.GeneticSettings;
+        var fw = gs.FitnessWeights;
         var command = new RunGeneticOptimizationCommand
         {
             StrategyName = request.StrategyName,
@@ -140,24 +142,27 @@ public static class OptimizationEndpoints
             MinSharpeRatio = request.OptimizationSettings.MinSharpeRatio,
             MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
             MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
-            GeneticSettings = new GeneticOptimizationSettings
+            GeneticSettings = new GeneticConfig
             {
-                PopulationSize = request.GeneticSettings.PopulationSize,
-                MaxGenerations = request.GeneticSettings.MaxGenerations,
-                MaxEvaluations = request.GeneticSettings.MaxEvaluations,
-                EliteCount = request.GeneticSettings.EliteCount,
-                CrossoverRate = request.GeneticSettings.CrossoverRate,
-                TournamentSize = request.GeneticSettings.TournamentSize,
-                StagnationLimit = request.GeneticSettings.StagnationLimit,
-                TimeBudget = request.GeneticSettings.TimeBudgetMinutes.HasValue
-                    ? TimeSpan.FromMinutes(request.GeneticSettings.TimeBudgetMinutes.Value)
+                PopulationSize = gs.PopulationSize,
+                MaxGenerations = gs.MaxGenerations,
+                MaxEvaluations = gs.MaxEvaluations,
+                EliteCount = gs.EliteCount,
+                CrossoverRate = gs.CrossoverRate,
+                TournamentSize = gs.TournamentSize,
+                StagnationLimit = gs.StagnationLimit,
+                TimeBudget = gs.TimeBudgetMinutes.HasValue
+                    ? TimeSpan.FromMinutes(gs.TimeBudgetMinutes.Value)
                     : null,
-                SharpeWeight = fitnessWeights?.SharpeWeight ?? 0.5,
-                SortinoWeight = fitnessWeights?.SortinoWeight ?? 0.2,
-                ProfitFactorWeight = fitnessWeights?.ProfitFactorWeight ?? 0.15,
-                AnnualizedReturnWeight = fitnessWeights?.AnnualizedReturnWeight ?? 0.15,
-                MaxDrawdownThreshold = fitnessWeights?.MaxDrawdownThreshold ?? 30.0,
-                MinTrades = fitnessWeights?.MinTrades ?? 10,
+                MinTrades = fw?.MinTrades ?? 10,
+                MaxDrawdownThreshold = fw?.MaxDrawdownThreshold ?? 30.0,
+                Weights = new FitnessWeights
+                {
+                    SharpeWeight = fw?.SharpeWeight ?? 0.5,
+                    SortinoWeight = fw?.SortinoWeight ?? 0.2,
+                    ProfitFactorWeight = fw?.ProfitFactorWeight ?? 0.15,
+                    AnnualizedReturnWeight = fw?.AnnualizedReturnWeight ?? 0.15,
+                },
             },
         };
 

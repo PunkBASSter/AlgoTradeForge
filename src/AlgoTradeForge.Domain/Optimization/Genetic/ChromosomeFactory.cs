@@ -178,6 +178,11 @@ public static class ChromosomeFactory
     /// Extracts numeric bounds from a <see cref="ResolvedNumericAxis"/> by inspecting its values.
     /// The axis stores pre-expanded values; we reconstruct min/max/step/type from them.
     /// </summary>
+    /// <remarks>
+    /// Assumes uniformly-spaced axis values (step = Values[1] - Values[0]).
+    /// All axes from <see cref="OptimizationAxisResolver"/> are uniform, but non-uniform
+    /// axes (e.g. logarithmic) would produce incorrect step values here.
+    /// </remarks>
     internal static (double Min, double Max, double Step, Type ClrType) ExtractNumericBounds(ResolvedNumericAxis axis)
     {
         if (axis.Values.Count == 0)

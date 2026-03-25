@@ -77,12 +77,76 @@ public class GeneticAlgorithmTests
 
         var nextGen = ga.Evolve(population, SimpleAxes, 0, 0, rng);
 
-        // Elites should be cloned (same gene values, but different instances)
-        var eliteFitnesses = nextGen.Take(2).Select(c => c.Fitness).OrderDescending().ToList();
-        // Elites have default fitness (double.MinValue) since they're clones
-        // But their genes should match the top 2 from the original
-        // (Fitness is reset on clones — the caller re-evaluates)
         Assert.Equal(20, nextGen.Count);
+
+        // Elites should preserve fitness from the previous generation
+        var eliteFitnesses = nextGen.Take(2).Select(c => c.Fitness).OrderDescending().ToList();
+        Assert.Equal(19.0, eliteFitnesses[0]);
+        Assert.Equal(18.0, eliteFitnesses[1]);
+
+        // Elites are clones (different instances), not the same reference
+        Assert.NotSame(population[^1], nextGen[0]);
+        Assert.NotSame(population[^2], nextGen[1]);
+    }
+
+    [Fact]
+    public void FullGA_ConvergesOnKnownOptimum()
+    {
+        // Fitness = -(X-7)^2 - (Y-0.3)^2 → optimum at X=7, Y=0.3
+        var axes = SimpleAxes; // X in [1..10], Y in [0.1..0.5]
+        var config = GeneticConfigResolver.Resolve(new GeneticConfig
+        {
+            PopulationSize = 30,
+            MaxGenerations = 100,
+            MaxEvaluations = 10_000,
+            StagnationLimit = 30,
+            EliteCount = 2,
+        }, axes);
+
+        var ga = new GeneticAlgorithm(config);
+        var rng = new Random(42);
+        var population = ga.CreateInitialPopulation(axes, rng);
+
+        var bestFitness = double.MinValue;
+        var stagnation = 0;
+
+        for (var gen = 0; gen < config.MaxGenerations; gen++)
+        {
+            // Evaluate: fitness = -(x-7)^2 - (y-0.3)^2
+            foreach (var c in population)
+            {
+                if (c.Fitness != double.MinValue) continue; // skip elites
+                var x = ((NumericGene)c.Genes["X"]).Value;
+                var y = ((NumericGene)c.Genes["Y"]).Value;
+                c.Fitness = -Math.Pow(x - 7.0, 2) - Math.Pow(y - 0.3, 2);
+            }
+
+            var genBest = population.Max(c => c.Fitness);
+            if (genBest > bestFitness)
+            {
+                bestFitness = genBest;
+                stagnation = 0;
+            }
+            else
+            {
+                stagnation++;
+            }
+
+            if (ga.ShouldTerminate(gen + 1, (long)(gen + 1) * config.PopulationSize, stagnation, TimeSpan.Zero))
+                break;
+
+            population = ga.Evolve(population, axes, gen, stagnation, rng);
+        }
+
+        // Find the best individual
+        var best = population.OrderByDescending(c => c.Fitness).First();
+        var bestX = ((NumericGene)best.Genes["X"]).Value;
+        var bestY = ((NumericGene)best.Genes["Y"]).Value;
+
+        // Should converge within 2 steps of the optimum
+        Assert.InRange(bestX, 5.0, 9.0); // optimal X=7, step=1
+        Assert.InRange(bestY, 0.1, 0.5); // optimal Y=0.3, step=0.1
+        Assert.True(bestFitness > -5.0, $"Expected fitness > -5, got {bestFitness}");
     }
 
     [Fact]

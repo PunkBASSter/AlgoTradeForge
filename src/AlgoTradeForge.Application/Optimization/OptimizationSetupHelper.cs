@@ -29,6 +29,83 @@ public sealed class OptimizationSetupHelper(
 {
     public IOptimizationSpaceProvider SpaceProvider => spaceProvider;
 
+    /// <summary>
+    /// Routes DataSubscription/SubscriptionAxis DTOs into resolved fixed and axis subscription lists,
+    /// pre-loading data into the cache. Encapsulates the shared routing logic between brute-force
+    /// and genetic optimization handlers.
+    /// </summary>
+    public async Task<(List<DataSubscription> FixedSubscriptions,
+        List<DataSubscription> AxisSubscriptions,
+        Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> DataCache)>
+        ResolveSubscriptionsAsync(
+            List<DataSubscriptionDto>? dataSubs,
+            List<DataSubscriptionDto>? axisSubs,
+            DateOnly fromDate, DateOnly toDate,
+            CancellationToken ct)
+    {
+        var hasDataSubs = dataSubs is { Count: > 0 };
+        var hasAxisSubs = axisSubs is { Count: > 0 };
+
+        if (!hasDataSubs && !hasAxisSubs)
+            throw new ArgumentException("At least one DataSubscription or SubscriptionAxis entry must be provided.");
+
+        List<DataSubscriptionDto> fixedDtos;
+        List<DataSubscriptionDto> axisDtos;
+
+        if (hasAxisSubs)
+        {
+            fixedDtos = dataSubs ?? [];
+            axisDtos = axisSubs!;
+        }
+        else if (dataSubs!.Count > 1)
+        {
+            fixedDtos = [];
+            axisDtos = dataSubs;
+        }
+        else
+        {
+            fixedDtos = dataSubs;
+            axisDtos = [];
+        }
+
+        var fixedSubscriptions = new List<DataSubscription>();
+        var axisSubscriptions = new List<DataSubscription>();
+        var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
+
+        foreach (var sub in fixedDtos)
+            await ResolveAndCacheAsync(sub, fixedSubscriptions, dataCache, fromDate, toDate, ct);
+        foreach (var sub in axisDtos)
+            await ResolveAndCacheAsync(sub, axisSubscriptions, dataCache, fromDate, toDate, ct);
+
+        return (fixedSubscriptions, axisSubscriptions, dataCache);
+    }
+
+    /// <summary>
+    /// Appends axis subscriptions as a discrete axis and filters out empty axes.
+    /// </summary>
+    public static List<ResolvedAxis> AppendSubscriptionAxisAndFilter(
+        IReadOnlyList<ResolvedAxis> resolvedAxes,
+        List<DataSubscription> axisSubscriptions)
+    {
+        var allAxes = axisSubscriptions.Count > 0
+            ? new List<ResolvedAxis>(resolvedAxes)
+            {
+                new ResolvedDiscreteAxis("DataSubscriptions",
+                    axisSubscriptions.Cast<object>().ToList())
+            }
+            : new List<ResolvedAxis>(resolvedAxes);
+
+        return allAxes
+            .Where(a => a switch
+            {
+                ResolvedNumericAxis n => n.Values.Count > 0,
+                ResolvedDiscreteAxis d => d.Values.Count > 0,
+                ResolvedModuleSlotAxis m => m.Variants.Count > 0,
+                _ => true
+            })
+            .ToList();
+    }
+
     public async Task ResolveAndCacheAsync(
         DataSubscriptionDto sub,
         List<DataSubscription> target,

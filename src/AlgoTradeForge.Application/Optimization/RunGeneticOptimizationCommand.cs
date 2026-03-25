@@ -1,9 +1,10 @@
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.Domain.Reporting;
 
 namespace AlgoTradeForge.Application.Optimization;
 
-public sealed record RunGeneticOptimizationCommand : ICommand<OptimizationSubmissionDto>
+public sealed record RunGeneticOptimizationCommand : ICommand<OptimizationSubmissionDto>, ITrialFilterOptions
 {
     public required string StrategyName { get; init; }
     public Dictionary<string, OptimizationAxisOverride>? Axes { get; init; }
@@ -18,5 +19,5 @@ public sealed record RunGeneticOptimizationCommand : ICommand<OptimizationSubmis
     public double? MinSharpeRatio { get; init; }
     public double? MinSortinoRatio { get; init; }
     public double? MinAnnualizedReturnPct { get; init; }
-    public required GeneticOptimizationSettings GeneticSettings { get; init; }
+    public required GeneticConfig GeneticSettings { get; init; }
 }

@@ -46,76 +46,21 @@ public sealed class RunOptimizationCommandHandler(
                 await progressCache.RemoveRunKeyAsync(runKey, ct);
             }
 
-        // 2. Synchronous validation and data loading
+        // 2. Validation and data loading
         var descriptor = helper.SpaceProvider.GetDescriptor(command.StrategyName)
             ?? throw new ArgumentException($"Strategy '{command.StrategyName}' not found.");
 
         var settings = command.BacktestSettings;
-        var dataSubs = command.DataSubscriptions;
-        var axisSubs = command.SubscriptionAxis;
-        var hasDataSubs = dataSubs is { Count: > 0 };
-        var hasAxisSubs = axisSubs is { Count: > 0 };
-
-        if (!hasDataSubs && !hasAxisSubs)
-            throw new ArgumentException("At least one DataSubscription or SubscriptionAxis entry must be provided.");
-
         var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
         var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
 
-        // Resolve fixed vs axis subscriptions based on which fields are populated
-        List<DataSubscriptionDto> fixedDtos;
-        List<DataSubscriptionDto> axisDtos;
-
-        if (hasAxisSubs)
-        {
-            // Explicit axis: dataSubscriptions are fixed, subscriptionAxis are discrete candidates
-            fixedDtos = dataSubs ?? [];
-            axisDtos = axisSubs!;
-        }
-        else if (dataSubs!.Count > 1)
-        {
-            // Backward compat: multiple dataSubscriptions with no axis → treat as discrete axis
-            fixedDtos = [];
-            axisDtos = dataSubs;
-        }
-        else
-        {
-            // Single fixed subscription, no axis
-            fixedDtos = dataSubs;
-            axisDtos = [];
-        }
-
-        // Resolve all subscriptions and pre-load data
-        var fixedSubscriptions = new List<DataSubscription>();
-        var axisSubscriptions = new List<DataSubscription>();
-        var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
-
-        foreach (var sub in fixedDtos)
-            await helper.ResolveAndCacheAsync(sub, fixedSubscriptions, dataCache, fromDate, toDate, ct);
-        foreach (var sub in axisDtos)
-            await helper.ResolveAndCacheAsync(sub, axisSubscriptions, dataCache, fromDate, toDate, ct);
+        var (fixedSubscriptions, axisSubscriptions, dataCache) =
+            await helper.ResolveSubscriptionsAsync(
+                command.DataSubscriptions, command.SubscriptionAxis, fromDate, toDate, ct);
 
         var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes);
-
-        if (axisSubscriptions.Count > 0)
-        {
-            var allAxes = new List<ResolvedAxis>(resolvedAxes)
-            {
-                new ResolvedDiscreteAxis("DataSubscriptions",
-                    axisSubscriptions.Cast<object>().ToList())
-            };
-            resolvedAxes = allAxes;
-        }
-
-        var activeAxes = resolvedAxes
-            .Where(a => a switch
-            {
-                ResolvedNumericAxis n => n.Values.Count > 0,
-                ResolvedDiscreteAxis d => d.Values.Count > 0,
-                ResolvedModuleSlotAxis m => m.Variants.Count > 0,
-                _ => true
-            })
-            .ToList();
+        var activeAxes = OptimizationSetupHelper.AppendSubscriptionAxisAndFilter(
+            resolvedAxes, axisSubscriptions);
 
         var estimatedCount = cartesianGenerator.EstimateCount(activeAxes);
         if (estimatedCount > command.MaxCombinations)

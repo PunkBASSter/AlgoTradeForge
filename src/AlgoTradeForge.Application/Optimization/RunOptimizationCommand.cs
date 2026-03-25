@@ -3,7 +3,7 @@ using AlgoTradeForge.Domain.Reporting;
 
 namespace AlgoTradeForge.Application.Optimization;
 
-public sealed record RunOptimizationCommand : ICommand<OptimizationSubmissionDto>
+public sealed record RunOptimizationCommand : ICommand<OptimizationSubmissionDto>, ITrialFilterOptions
 {
     public required string StrategyName { get; init; }
     public Dictionary<string, OptimizationAxisOverride>? Axes { get; init; }

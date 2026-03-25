@@ -20,11 +20,9 @@ public sealed class TrialFilter
         _minAnnualizedReturnPct = minAnnualizedReturnPct;
     }
 
-    public TrialFilter(RunOptimizationCommand c)
-        : this(c.MinProfitFactor, c.MaxDrawdownPct, c.MinSharpeRatio, c.MinSortinoRatio, c.MinAnnualizedReturnPct) { }
-
-    public TrialFilter(RunGeneticOptimizationCommand c)
-        : this(c.MinProfitFactor, c.MaxDrawdownPct, c.MinSharpeRatio, c.MinSortinoRatio, c.MinAnnualizedReturnPct) { }
+    public TrialFilter(ITrialFilterOptions options)
+        : this(options.MinProfitFactor, options.MaxDrawdownPct, options.MinSharpeRatio,
+            options.MinSortinoRatio, options.MinAnnualizedReturnPct) { }
 
     public bool Passes(PerformanceMetrics m) =>
         (!_minProfitFactor.HasValue        || m.ProfitFactor        >= _minProfitFactor.Value) &&
