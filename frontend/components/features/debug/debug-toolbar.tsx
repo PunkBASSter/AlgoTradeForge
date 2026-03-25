@@ -2,7 +2,7 @@
 
 // T026 - Debug toolbar with step/play/stop controls
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useDebugStore } from "@/lib/stores/debug-store";
 import type { DebugCommand } from "@/types/api";
@@ -20,10 +20,19 @@ export function DebugToolbar({
 }: DebugToolbarProps) {
   const [runToTimestamp, setRunToTimestamp] = useState("");
   const [runToSequence, setRunToSequence] = useState("");
-  const [exportEnabled, setExportEnabled] = useState(false);
+  const [exportEnabled, setExportEnabled] = useState(true);
   const autoStep = useDebugStore((s) => s.autoStep);
   const setAutoStep = useDebugStore((s) => s.setAutoStep);
   const isPlaying = autoStep !== null;
+
+  // Send initial set_export when toolbar mounts (session became active)
+  const sentInitial = useRef(false);
+  useEffect(() => {
+    if (!disabled && !sentInitial.current) {
+      sentInitial.current = true;
+      onCommand({ command: "set_export", mutations: true });
+    }
+  }, [disabled, onCommand]);
 
   return (
     <div data-testid="debug-toolbar" className="flex flex-wrap items-center gap-2 p-3 bg-bg-panel rounded-lg border border-border-default">

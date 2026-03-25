@@ -2,7 +2,7 @@
 
 // T028 - Debug page with full session lifecycle
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useDebugStore } from "@/lib/stores/debug-store";
 import { useDebugWebSocket } from "@/hooks/use-debug-websocket";
@@ -93,6 +93,31 @@ export default function DebugPage() {
     [client, toast]
   );
 
+  // Read autostart config synchronously so SessionConfigEditor never races for the key
+  const [autostartConfig] = useState<StartDebugSessionRequest | null>(() => {
+    if (typeof window === "undefined") return null;
+    const autostart = sessionStorage.getItem("debug-session-autostart");
+    if (!autostart) return null;
+    sessionStorage.removeItem("debug-session-autostart");
+    const stored = sessionStorage.getItem("debug-session-config");
+    if (!stored) return null;
+    sessionStorage.removeItem("debug-session-config");
+    try {
+      const config = JSON.parse(stored) as StartDebugSessionRequest;
+      if (config.strategyName && config.dataSubscription) return config;
+    } catch { /* invalid JSON */ }
+    return null;
+  });
+
+  // Fire handleStart once on mount when autostart config is present
+  const autostartFired = useRef(false);
+  useEffect(() => {
+    if (autostartConfig && !autostartFired.current) {
+      autostartFired.current = true;
+      handleStart(autostartConfig);
+    }
+  }, [autostartConfig, handleStart]);
+
   const handleStop = useCallback(async () => {
     const s = useDebugStore.getState();
     if (s.sessionId) {
@@ -119,8 +144,15 @@ export default function DebugPage() {
     <div className="p-6 space-y-4">
       <h1 className="text-xl font-bold text-text-primary">Debug Session</h1>
 
-      {store.sessionState === "idle" && (
+      {store.sessionState === "idle" && !autostartConfig && (
         <SessionConfigEditor onStart={handleStart} />
+      )}
+
+      {store.sessionState === "idle" && autostartConfig && (
+        <div className="flex items-center gap-2 text-text-secondary">
+          <div className="w-4 h-4 border-2 border-accent-blue border-t-transparent rounded-full animate-spin" />
+          Starting session...
+        </div>
       )}
 
       {store.sessionState === "configuring" && (

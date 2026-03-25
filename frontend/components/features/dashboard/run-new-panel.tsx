@@ -3,6 +3,7 @@
 // T060 - RunNewPanel with slide-over and mode-aware CodeMirror JSON editor
 
 import { useRef, useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
@@ -21,6 +22,7 @@ import type {
   RunOptimizationRequest,
   RunGeneticOptimizationRequest,
   StartLiveSessionRequest,
+  StartDebugSessionRequest,
 } from "@/types/api";
 
 const EDITOR_EXTENSIONS = [
@@ -56,8 +58,10 @@ export function RunNewPanel({
   const [submitting, setSubmitting] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [useGenetic, setUseGenetic] = useState(false);
+  const [useDebug, setUseDebug] = useState(false);
   const { toast } = useToast();
   const client = getClient();
+  const router = useRouter();
 
   const { data: strategies } = useAvailableStrategies();
 
@@ -68,11 +72,12 @@ export function RunNewPanel({
 
   const template = useMemo(() => {
     if (!descriptor) return null;
-    if (mode === "backtest") return descriptor.backtestTemplate;
+    if (mode === "backtest")
+      return useDebug ? descriptor.debugSessionTemplate : descriptor.backtestTemplate;
     if (mode === "live") return descriptor.liveSessionTemplate;
     if (useGenetic) return descriptor.geneticOptimizationTemplate;
     return descriptor.optimizationTemplate;
-  }, [mode, descriptor, useGenetic]);
+  }, [mode, descriptor, useGenetic, useDebug]);
 
   // Create editor once when the slide-over opens
   useEffect(() => {
@@ -106,10 +111,15 @@ export function RunNewPanel({
     if (mode !== "optimization") setUseGenetic(false);
   }, [mode]);
 
-  // Update editor content when mode, selectedStrategy, or initialContent changes
-  const prevKeyRef = useRef(`${mode}:${selectedStrategy}:${useGenetic}:${initialContent ? "ic" : ""}`);
+  // Reset useDebug when mode leaves backtest
   useEffect(() => {
-    const key = `${mode}:${selectedStrategy}:${useGenetic}:${initialContent ? "ic" : ""}`;
+    if (mode !== "backtest") setUseDebug(false);
+  }, [mode]);
+
+  // Update editor content when mode, selectedStrategy, or initialContent changes
+  const prevKeyRef = useRef(`${mode}:${selectedStrategy}:${useGenetic}:${useDebug}:${initialContent ? "ic" : ""}`);
+  useEffect(() => {
+    const key = `${mode}:${selectedStrategy}:${useGenetic}:${useDebug}:${initialContent ? "ic" : ""}`;
     if (!open || !editorViewRef.current || key === prevKeyRef.current) return;
     prevKeyRef.current = key;
 
@@ -119,7 +129,7 @@ export function RunNewPanel({
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: newDoc },
     });
-  }, [open, mode, selectedStrategy, template, initialContent, useGenetic]);
+  }, [open, mode, selectedStrategy, template, initialContent, useGenetic, useDebug]);
 
   const handleToggle = (genetic: boolean) => {
     if (!descriptor || !editorViewRef.current) {
@@ -158,7 +168,46 @@ export function RunNewPanel({
     });
 
     setUseGenetic(genetic);
-    prevKeyRef.current = `${mode}:${selectedStrategy}:${genetic}:${initialContent ? "ic" : ""}`;
+    prevKeyRef.current = `${mode}:${selectedStrategy}:${genetic}:${useDebug}:${initialContent ? "ic" : ""}`;
+  };
+
+  const handleDebugToggle = (debug: boolean) => {
+    if (!descriptor || !editorViewRef.current) {
+      setUseDebug(debug);
+      return;
+    }
+
+    const targetTemplate = debug
+      ? descriptor.debugSessionTemplate
+      : descriptor.backtestTemplate;
+
+    const view = editorViewRef.current;
+    let merged: Record<string, unknown> = { ...targetTemplate };
+
+    try {
+      const current = JSON.parse(view.state.doc.toString()) as Record<string, unknown>;
+      const sharedKeys = [
+        "strategyName",
+        "dataSubscription",
+        "backtestSettings",
+        "strategyParameters",
+      ];
+      for (const key of sharedKeys) {
+        if (current[key] !== undefined) {
+          merged[key] = current[key];
+        }
+      }
+    } catch {
+      // JSON parse failed — fall back to full template swap
+    }
+
+    const newDoc = JSON.stringify(merged, null, 2);
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: newDoc },
+    });
+
+    setUseDebug(debug);
+    prevKeyRef.current = `${mode}:${selectedStrategy}:${useGenetic}:${debug}:${initialContent ? "ic" : ""}`;
   };
 
   const handleSubmit = async () => {
@@ -209,6 +258,13 @@ export function RunNewPanel({
       }
     }
 
+    if (mode === "backtest" && useDebug) {
+      sessionStorage.setItem("debug-session-config", JSON.stringify(parsed as StartDebugSessionRequest));
+      sessionStorage.setItem("debug-session-autostart", "true");
+      router.push("/debug");
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (mode === "live") {
@@ -254,7 +310,7 @@ export function RunNewPanel({
     <SlideOver
       open={open}
       onClose={handleClose}
-      title={`New ${mode === "backtest" ? "Backtest" : mode === "live" ? "Live Session" : "Optimization"}`}
+      title={`New ${mode === "backtest" ? (useDebug ? "Debug Session" : "Backtest") : mode === "live" ? "Live Session" : "Optimization"}`}
     >
       {activeRunId ? (
         <div className="space-y-4">
@@ -272,6 +328,17 @@ export function RunNewPanel({
           <p className="shrink-0 text-sm text-text-secondary">
             Edit the JSON configuration below and click Run.
           </p>
+          {mode === "backtest" && (
+            <div className="shrink-0">
+              <ToggleSwitch
+                leftLabel="Backtest"
+                rightLabel="Debug"
+                checked={useDebug}
+                onChange={handleDebugToggle}
+                disabled={submitting}
+              />
+            </div>
+          )}
           {mode === "optimization" && (
             <div className="shrink-0">
               <ToggleSwitch
@@ -295,7 +362,7 @@ export function RunNewPanel({
               loading={submitting}
               data-testid="submit-run"
             >
-              Run
+              {useDebug ? "Debug" : "Run"}
             </Button>
             <Button variant="ghost" onClick={handleClose}>
               Cancel

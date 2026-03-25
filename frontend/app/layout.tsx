@@ -21,7 +21,6 @@ export const metadata: Metadata = {
 
 const navLinks = [
   { href: "/all/backtest", label: "Dashboard" },
-  { href: "/debug", label: "Debug" },
 ];
 
 export default function RootLayout({
