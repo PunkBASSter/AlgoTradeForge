@@ -10,6 +10,7 @@ import type {
   EventsData,
   RunBacktestRequest,
   RunOptimizationRequest,
+  RunGeneticOptimizationRequest,
   OptimizationRun,
   OptimizationSubmission,
   OptimizationStatus,
@@ -36,6 +37,7 @@ const mockStrategyDescriptors: StrategyDescriptor[] = strategiesData.map((name) 
   optimizationTemplate: {},
   liveSessionTemplate: {},
   debugSessionTemplate: {},
+  geneticOptimizationTemplate: {},
 }));
 import backtestsData from "./mock-data/backtests.json";
 import optimizationsData from "./mock-data/optimizations.json";
@@ -205,6 +207,13 @@ export const mockClient: typeof import("./api-client").apiClient & {
 
   async runOptimization(
     _req: RunOptimizationRequest,
+  ): Promise<OptimizationSubmission> {
+    await delay(1200);
+    return { id: optimizations.items[0].id, totalCombinations: optimizations.items[0].totalCombinations };
+  },
+
+  async runGeneticOptimization(
+    _req: RunGeneticOptimizationRequest,
   ): Promise<OptimizationSubmission> {
     await delay(1200);
     return { id: optimizations.items[0].id, totalCombinations: optimizations.items[0].totalCombinations };

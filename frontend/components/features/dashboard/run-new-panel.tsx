@@ -15,9 +15,11 @@ import { useToast } from "@/components/ui/toast";
 import { getClient } from "@/lib/services";
 import { RunProgress } from "@/components/features/dashboard/run-progress";
 import { useAvailableStrategies } from "@/hooks/use-available-strategies";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import type {
   RunBacktestRequest,
   RunOptimizationRequest,
+  RunGeneticOptimizationRequest,
   StartLiveSessionRequest,
 } from "@/types/api";
 
@@ -53,6 +55,7 @@ export function RunNewPanel({
   const editorViewRef = useRef<EditorView | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [useGenetic, setUseGenetic] = useState(false);
   const { toast } = useToast();
   const client = getClient();
 
@@ -67,8 +70,9 @@ export function RunNewPanel({
     if (!descriptor) return null;
     if (mode === "backtest") return descriptor.backtestTemplate;
     if (mode === "live") return descriptor.liveSessionTemplate;
+    if (useGenetic) return descriptor.geneticOptimizationTemplate;
     return descriptor.optimizationTemplate;
-  }, [mode, descriptor]);
+  }, [mode, descriptor, useGenetic]);
 
   // Create editor once when the slide-over opens
   useEffect(() => {
@@ -97,10 +101,15 @@ export function RunNewPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mode/strategy changes handled by separate effect below
   }, [open]);
 
-  // Update editor content when mode, selectedStrategy, or initialContent changes
-  const prevKeyRef = useRef(`${mode}:${selectedStrategy}:${initialContent ? "ic" : ""}`);
+  // Reset useGenetic when mode changes away from optimization
   useEffect(() => {
-    const key = `${mode}:${selectedStrategy}:${initialContent ? "ic" : ""}`;
+    if (mode !== "optimization") setUseGenetic(false);
+  }, [mode]);
+
+  // Update editor content when mode, selectedStrategy, or initialContent changes
+  const prevKeyRef = useRef(`${mode}:${selectedStrategy}:${useGenetic}:${initialContent ? "ic" : ""}`);
+  useEffect(() => {
+    const key = `${mode}:${selectedStrategy}:${useGenetic}:${initialContent ? "ic" : ""}`;
     if (!open || !editorViewRef.current || key === prevKeyRef.current) return;
     prevKeyRef.current = key;
 
@@ -110,7 +119,47 @@ export function RunNewPanel({
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: newDoc },
     });
-  }, [open, mode, selectedStrategy, template, initialContent]);
+  }, [open, mode, selectedStrategy, template, initialContent, useGenetic]);
+
+  const handleToggle = (genetic: boolean) => {
+    if (!descriptor || !editorViewRef.current) {
+      setUseGenetic(genetic);
+      return;
+    }
+
+    const targetTemplate = genetic
+      ? descriptor.geneticOptimizationTemplate
+      : descriptor.optimizationTemplate;
+
+    const view = editorViewRef.current;
+    let merged: Record<string, unknown> = { ...targetTemplate };
+
+    try {
+      const current = JSON.parse(view.state.doc.toString()) as Record<string, unknown>;
+      const sharedKeys = [
+        "strategyName",
+        "backtestSettings",
+        "optimizationAxes",
+        "subscriptionAxis",
+        "optimizationSettings",
+      ];
+      for (const key of sharedKeys) {
+        if (current[key] !== undefined) {
+          merged[key] = current[key];
+        }
+      }
+    } catch {
+      // JSON parse failed — fall back to full template swap
+    }
+
+    const newDoc = JSON.stringify(merged, null, 2);
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: newDoc },
+    });
+
+    setUseGenetic(genetic);
+    prevKeyRef.current = `${mode}:${selectedStrategy}:${genetic}:${initialContent ? "ic" : ""}`;
+  };
 
   const handleSubmit = async () => {
     if (!editorViewRef.current) return;
@@ -172,6 +221,9 @@ export function RunNewPanel({
         if (mode === "backtest") {
           const submission = await client.runBacktest(parsed as RunBacktestRequest);
           runId = submission.id;
+        } else if (useGenetic) {
+          const submission = await client.runGeneticOptimization(parsed as RunGeneticOptimizationRequest);
+          runId = submission.id;
         } else {
           const submission = await client.runOptimization(parsed as RunOptimizationRequest);
           runId = submission.id;
@@ -220,6 +272,15 @@ export function RunNewPanel({
           <p className="text-sm text-text-secondary">
             Edit the JSON configuration below and click Run.
           </p>
+          {mode === "optimization" && (
+            <ToggleSwitch
+              leftLabel="Grid"
+              rightLabel="Genetic"
+              checked={useGenetic}
+              onChange={handleToggle}
+              disabled={submitting}
+            />
+          )}
           <div
             ref={editorContainerRef}
             data-testid="json-editor"

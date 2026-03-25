@@ -18,6 +18,7 @@ export interface StrategyDescriptor {
   optimizationTemplate: Record<string, unknown>;
   liveSessionTemplate: Record<string, unknown>;
   debugSessionTemplate: Record<string, unknown>;
+  geneticOptimizationTemplate: Record<string, unknown>;
 }
 
 export interface ParameterAxisDescriptor {
@@ -282,6 +283,37 @@ export interface DataSubscription {
   assetName: string;
   exchange: string;
   timeFrame: string;
+}
+
+export interface FitnessWeightsInput {
+  sharpeWeight?: number;
+  sortinoWeight?: number;
+  profitFactorWeight?: number;
+  annualizedReturnWeight?: number;
+  maxDrawdownThreshold?: number;
+  minTrades?: number;
+}
+
+export interface GeneticSettingsInput {
+  populationSize?: number;
+  maxGenerations?: number;
+  maxEvaluations?: number;
+  eliteCount?: number;
+  crossoverRate?: number;
+  tournamentSize?: number;
+  stagnationLimit?: number;
+  timeBudgetMinutes?: number;
+  fitnessWeights?: FitnessWeightsInput;
+}
+
+export interface RunGeneticOptimizationRequest {
+  strategyName: string;
+  backtestSettings: BacktestSettingsInput;
+  optimizationSettings?: OptimizationSettingsInput;
+  geneticSettings?: GeneticSettingsInput;
+  optimizationAxes?: Record<string, OptimizationAxisOverride>;
+  dataSubscriptions?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[];
 }
 
 // ---------------------------------------------------------------------------

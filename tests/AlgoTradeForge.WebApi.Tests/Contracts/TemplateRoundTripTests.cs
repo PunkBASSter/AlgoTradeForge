@@ -95,6 +95,34 @@ public sealed class TemplateRoundTripTests
     }
 
     [Fact]
+    public void GeneticOptimizationTemplate_RoundTrips()
+    {
+        var template = StrategyTemplateBuilder.BuildGeneticOptimizationTemplate(
+            "BuyAndHold", NoAxes, SampleAssets);
+
+        var json = JsonSerializer.Serialize(template, Json);
+        var request = JsonSerializer.Deserialize<RunGeneticOptimizationRequest>(json, Json);
+
+        Assert.NotNull(request);
+        Assert.Equal("BuyAndHold", request.StrategyName);
+        Assert.NotNull(request.BacktestSettings);
+        Assert.True(request.BacktestSettings.InitialCash > 0, "InitialCash should be positive");
+        Assert.NotNull(request.SubscriptionAxis);
+        Assert.NotEmpty(request.SubscriptionAxis);
+        Assert.Equal("BTCUSDT", request.SubscriptionAxis[0].AssetName);
+        Assert.NotNull(request.GeneticSettings);
+        Assert.Equal(2, request.GeneticSettings.EliteCount);
+        Assert.Equal(0.85, request.GeneticSettings.CrossoverRate);
+        Assert.Equal(3, request.GeneticSettings.TournamentSize);
+        Assert.Equal(20, request.GeneticSettings.StagnationLimit);
+        Assert.NotNull(request.GeneticSettings.FitnessWeights);
+        Assert.Equal(0.5, request.GeneticSettings.FitnessWeights.SharpeWeight);
+        Assert.Equal(0.2, request.GeneticSettings.FitnessWeights.SortinoWeight);
+        Assert.Equal(30.0, request.GeneticSettings.FitnessWeights.MaxDrawdownThreshold);
+        Assert.Equal(10, request.GeneticSettings.FitnessWeights.MinTrades);
+    }
+
+    [Fact]
     public void BacktestTemplate_WithQuoteAssetParam_RoundTrips()
     {
         var axes = new ParameterAxis[]

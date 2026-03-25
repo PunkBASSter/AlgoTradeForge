@@ -10,6 +10,7 @@ import type {
   EventsData,
   RunBacktestRequest,
   RunOptimizationRequest,
+  RunGeneticOptimizationRequest,
   OptimizationRun,
   OptimizationSubmission,
   OptimizationStatus,
@@ -229,6 +230,16 @@ export const apiClient = {
     req: RunOptimizationRequest,
   ): Promise<OptimizationSubmission> {
     return request<OptimizationSubmission>("/api/optimizations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    });
+  },
+
+  runGeneticOptimization(
+    req: RunGeneticOptimizationRequest,
+  ): Promise<OptimizationSubmission> {
+    return request<OptimizationSubmission>("/api/optimizations/genetic", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),

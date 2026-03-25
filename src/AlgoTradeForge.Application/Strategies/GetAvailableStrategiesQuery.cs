@@ -25,7 +25,8 @@ public sealed class GetAvailableStrategiesQueryHandler(
                     StrategyTemplateBuilder.BuildBacktestTemplate(d.StrategyName, defaults, d.Axes, availableAssets),
                     StrategyTemplateBuilder.BuildOptimizationTemplate(d.StrategyName, d.Axes, availableAssets),
                     StrategyTemplateBuilder.BuildLiveSessionTemplate(d.StrategyName, defaults, d.Axes, availableAssets),
-                    StrategyTemplateBuilder.BuildDebugSessionTemplate(d.StrategyName, defaults, d.Axes, availableAssets));
+                    StrategyTemplateBuilder.BuildDebugSessionTemplate(d.StrategyName, defaults, d.Axes, availableAssets),
+                    StrategyTemplateBuilder.BuildGeneticOptimizationTemplate(d.StrategyName, d.Axes, availableAssets));
             })
             .ToList();
         return Task.FromResult<IReadOnlyList<StrategyDescriptorDto>>(result);

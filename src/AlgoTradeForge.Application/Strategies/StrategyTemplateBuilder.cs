@@ -68,6 +68,34 @@ public static class StrategyTemplateBuilder
         };
     }
 
+    public static Dictionary<string, object> BuildGeneticOptimizationTemplate(
+        string strategyName,
+        IReadOnlyList<ParameterAxis> axes,
+        IReadOnlyList<AvailableAssetInfo> availableAssets)
+    {
+        var template = BuildOptimizationTemplate(strategyName, axes, availableAssets);
+        template["geneticSettings"] = new Dictionary<string, object>
+        {
+            ["populationSize"] = 0,
+            ["maxGenerations"] = 0,
+            ["maxEvaluations"] = 0,
+            ["eliteCount"] = 2,
+            ["crossoverRate"] = 0.85,
+            ["tournamentSize"] = 3,
+            ["stagnationLimit"] = 20,
+            ["fitnessWeights"] = new Dictionary<string, object>
+            {
+                ["sharpeWeight"] = 0.5,
+                ["sortinoWeight"] = 0.2,
+                ["profitFactorWeight"] = 0.15,
+                ["annualizedReturnWeight"] = 0.15,
+                ["maxDrawdownThreshold"] = 30.0,
+                ["minTrades"] = 10,
+            },
+        };
+        return template;
+    }
+
     public static Dictionary<string, object> BuildLiveSessionTemplate(
         string strategyName,
         IReadOnlyDictionary<string, object> paramDefaults,
