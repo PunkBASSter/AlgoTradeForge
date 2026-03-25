@@ -14,6 +14,7 @@ public sealed record GeneticSettingsInput
     public double CrossoverRate { get; init; } = 0.85;
     public int TournamentSize { get; init; } = 3;
     public int StagnationLimit { get; init; } = 20;
+    public int? TimeBudgetMinutes { get; init; }
     public FitnessWeightsInput? FitnessWeights { get; init; }
 }
 

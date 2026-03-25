@@ -10,23 +10,21 @@ public sealed class TrialFilter
     private readonly double? _minSortinoRatio;
     private readonly double? _minAnnualizedReturnPct;
 
-    public TrialFilter(RunOptimizationCommand command)
+    public TrialFilter(double? minProfitFactor, double? maxDrawdownPct,
+        double? minSharpeRatio, double? minSortinoRatio, double? minAnnualizedReturnPct)
     {
-        _minProfitFactor = command.MinProfitFactor;
-        _maxDrawdownPct = command.MaxDrawdownPct;
-        _minSharpeRatio = command.MinSharpeRatio;
-        _minSortinoRatio = command.MinSortinoRatio;
-        _minAnnualizedReturnPct = command.MinAnnualizedReturnPct;
+        _minProfitFactor = minProfitFactor;
+        _maxDrawdownPct = maxDrawdownPct;
+        _minSharpeRatio = minSharpeRatio;
+        _minSortinoRatio = minSortinoRatio;
+        _minAnnualizedReturnPct = minAnnualizedReturnPct;
     }
 
-    public TrialFilter(RunGeneticOptimizationCommand command)
-    {
-        _minProfitFactor = command.MinProfitFactor;
-        _maxDrawdownPct = command.MaxDrawdownPct;
-        _minSharpeRatio = command.MinSharpeRatio;
-        _minSortinoRatio = command.MinSortinoRatio;
-        _minAnnualizedReturnPct = command.MinAnnualizedReturnPct;
-    }
+    public TrialFilter(RunOptimizationCommand c)
+        : this(c.MinProfitFactor, c.MaxDrawdownPct, c.MinSharpeRatio, c.MinSortinoRatio, c.MinAnnualizedReturnPct) { }
+
+    public TrialFilter(RunGeneticOptimizationCommand c)
+        : this(c.MinProfitFactor, c.MaxDrawdownPct, c.MinSharpeRatio, c.MinSortinoRatio, c.MinAnnualizedReturnPct) { }
 
     public bool Passes(PerformanceMetrics m) =>
         (!_minProfitFactor.HasValue        || m.ProfitFactor        >= _minProfitFactor.Value) &&

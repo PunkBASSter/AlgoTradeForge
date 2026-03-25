@@ -62,6 +62,6 @@ public static class GeneticConfigResolver
             var subDims = ComputeEffectiveDimensions(variant.SubAxes);
             if (subDims > maxSubDims) maxSubDims = subDims;
         }
-        return module.Variants.Count + maxSubDims;
+        return 1 + maxSubDims;
     }
 }

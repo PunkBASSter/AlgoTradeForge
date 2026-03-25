@@ -252,13 +252,15 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                     started_at, completed_at, duration_ms, total_combinations,
                     sort_by, data_start, data_end,
                     initial_cash, commission, slippage_ticks, max_parallelism,
-                    asset_name, exchange, timeframe, filtered_trials, failed_trials
+                    asset_name, exchange, timeframe, filtered_trials, failed_trials,
+                    optimization_method, generations_completed
                 ) VALUES (
                     $id, $stratName, $stratVer,
                     $startedAt, $completedAt, $durationMs, $totalCombinations,
                     $sortBy, $dataStart, $dataEnd,
                     $cash, $commission, $slippage, $maxParallelism,
-                    $asset, $exchange, $tf, $filteredTrials, $failedTrials
+                    $asset, $exchange, $tf, $filteredTrials, $failedTrials,
+                    $optMethod, $gensCompleted
                 )
                 """;
 
@@ -281,6 +283,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             cmd.Parameters.AddWithValue("$tf", record.DataSubscription.TimeFrame);
             cmd.Parameters.AddWithValue("$filteredTrials", record.FilteredTrials);
             cmd.Parameters.AddWithValue("$failedTrials", record.FailedTrials);
+            cmd.Parameters.AddWithValue("$optMethod", (object?)record.OptimizationMethod ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$gensCompleted", record.GenerationsCompleted.HasValue ? record.GenerationsCompleted.Value : DBNull.Value);
 
             await cmd.ExecuteNonQueryAsync(ct);
         }
@@ -610,6 +614,12 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         MaxParallelism = reader.GetInt32(reader.GetOrdinal("max_parallelism")),
         FilteredTrials = reader.GetInt64(reader.GetOrdinal("filtered_trials")),
         FailedTrials = reader.GetInt64(reader.GetOrdinal("failed_trials")),
+        OptimizationMethod = reader.IsDBNull(reader.GetOrdinal("optimization_method"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("optimization_method")),
+        GenerationsCompleted = reader.IsDBNull(reader.GetOrdinal("generations_completed"))
+            ? null
+            : reader.GetInt32(reader.GetOrdinal("generations_completed")),
         Trials = [], // loaded separately
     };
 

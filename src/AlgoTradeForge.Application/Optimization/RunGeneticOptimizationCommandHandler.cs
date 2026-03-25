@@ -153,6 +153,12 @@ public sealed class RunGeneticOptimizationCommandHandler(
         var state = new EvalState();
         var generationsCompleted = 0;
 
+        var maxParallelism = command.MaxDegreeOfParallelism > 0
+            ? command.MaxDegreeOfParallelism
+            : Environment.ProcessorCount;
+        var primarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
+            command.DataSubscriptions, command.SubscriptionAxis);
+
         try
         {
             var stopwatch = Stopwatch.StartNew();
@@ -161,9 +167,6 @@ public sealed class RunGeneticOptimizationCommandHandler(
             var rng = new Random();
             long totalEvals = 0;
 
-            var maxParallelism = command.MaxDegreeOfParallelism > 0
-                ? command.MaxDegreeOfParallelism
-                : Environment.ProcessorCount;
             var trialTimeout = timeoutOptions.Value.BacktestTimeout;
 
             // Create initial population
@@ -223,8 +226,6 @@ public sealed class RunGeneticOptimizationCommandHandler(
 
             var trials = topTrials.DrainSorted();
             var failedTrialDetails = failedTrials.Drain(runId);
-            var primarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
-                command.DataSubscriptions, command.SubscriptionAxis);
 
             var record = new OptimizationRunRecord
             {
@@ -256,10 +257,6 @@ public sealed class RunGeneticOptimizationCommandHandler(
         catch (OperationCanceledException)
         {
             logger.LogInformation("GA Optimization {RunId} was cancelled", runId);
-            var primarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
-                command.DataSubscriptions, command.SubscriptionAxis);
-            var maxParallelism = command.MaxDegreeOfParallelism > 0
-                ? command.MaxDegreeOfParallelism : Environment.ProcessorCount;
             await helper.SaveErrorOptimizationAsync(
                 command.StrategyName, command.BacktestSettings, primarySub,
                 command.SortBy, maxParallelism,
@@ -271,10 +268,6 @@ public sealed class RunGeneticOptimizationCommandHandler(
         catch (Exception ex)
         {
             logger.LogError(ex, "GA Optimization {RunId} failed", runId);
-            var primarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
-                command.DataSubscriptions, command.SubscriptionAxis);
-            var maxParallelism = command.MaxDegreeOfParallelism > 0
-                ? command.MaxDegreeOfParallelism : Environment.ProcessorCount;
             await helper.SaveErrorOptimizationAsync(
                 command.StrategyName, command.BacktestSettings, primarySub,
                 command.SortBy, maxParallelism,
@@ -331,21 +324,26 @@ public sealed class RunGeneticOptimizationCommandHandler(
         for (var i = 0; i < fitnesses.Length; i++)
             fitnesses[i] = double.MinValue;
 
-        var partitions = Partitioner.Create(0, population.Count)
-            .GetDynamicPartitions();
+        var actualTasks = Math.Min(maxParallelism, population.Count);
+        var partitions = Partitioner.Create(
+            Enumerable.Range(0, population.Count),
+            EnumerablePartitionerOptions.NoBuffering)
+            .GetPartitions(actualTasks);
 
-        var tasks = new Task[Math.Min(maxParallelism, population.Count)];
+        var tasks = new Task[partitions.Count];
         for (var p = 0; p < tasks.Length; p++)
         {
+            var partition = partitions[p];
             tasks[p] = Task.Factory.StartNew(() =>
             {
-                var trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                try
+                using (partition)
                 {
-                    foreach (var (start, end) in partitions)
+                    var trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    try
                     {
-                        for (var i = start; i < end; i++)
+                        while (partition.MoveNext())
                         {
+                            var i = partition.Current;
                             ct.ThrowIfCancellationRequested();
 
                             if (!trialCts.TryReset())
@@ -389,10 +387,10 @@ public sealed class RunGeneticOptimizationCommandHandler(
                             }
                         }
                     }
-                }
-                finally
-                {
-                    trialCts.Dispose();
+                    finally
+                    {
+                        trialCts.Dispose();
+                    }
                 }
             }, ct, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }

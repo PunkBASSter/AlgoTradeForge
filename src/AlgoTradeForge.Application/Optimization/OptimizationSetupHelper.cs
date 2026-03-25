@@ -10,6 +10,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
+using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.Application.Optimization;
 
@@ -23,7 +24,8 @@ public sealed class OptimizationSetupHelper(
     IHistoryRepository historyRepository,
     IMetricsCalculator metricsCalculator,
     IOptimizationSpaceProvider spaceProvider,
-    IRunRepository runRepository)
+    IRunRepository runRepository,
+    ILogger<OptimizationSetupHelper> logger)
 {
     public IOptimizationSpaceProvider SpaceProvider => spaceProvider;
 
@@ -195,9 +197,9 @@ public sealed class OptimizationSetupHelper(
             };
             await runRepository.SaveOptimizationAsync(record);
         }
-        catch
+        catch (Exception ex)
         {
-            // Swallow — caller handles logging
+            logger.LogWarning(ex, "Failed to persist error record for optimization {RunId}", optimizationRunId);
         }
     }
 

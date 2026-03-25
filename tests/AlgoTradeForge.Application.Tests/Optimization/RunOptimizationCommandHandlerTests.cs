@@ -49,7 +49,8 @@ public class RunOptimizationCommandHandlerTests
 
         var helper = new OptimizationSetupHelper(
             engine, _assetRepository, _historyRepository,
-            _metricsCalculator, _spaceProvider, _runRepository);
+            _metricsCalculator, _spaceProvider, _runRepository,
+            NullLogger<OptimizationSetupHelper>.Instance);
 
         return new RunOptimizationCommandHandler(
             _strategyFactory, helper, new OptimizationAxisResolver(),

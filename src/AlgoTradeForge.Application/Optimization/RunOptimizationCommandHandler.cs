@@ -167,6 +167,13 @@ public sealed class RunOptimizationCommandHandler(
         var failedTrials = new FailedTrialCollector(capacity: 100);
         long filteredOutCount = 0;
         long failedTrialCount = 0;
+
+        var maxParallelism = command.MaxDegreeOfParallelism > 0
+            ? command.MaxDegreeOfParallelism
+            : Environment.ProcessorCount;
+        var optPrimarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
+            command.DataSubscriptions, command.SubscriptionAxis);
+
         try
         {
             var stopwatch = Stopwatch.StartNew();
@@ -174,9 +181,6 @@ public sealed class RunOptimizationCommandHandler(
             string? strategyVersion = null;
             long processedCount = 0;
 
-            var maxParallelism = command.MaxDegreeOfParallelism > 0
-                ? command.MaxDegreeOfParallelism
-                : Environment.ProcessorCount;
             var trialTimeout = timeoutOptions.Value.BacktestTimeout;
             var progressInterval = (long)Math.Clamp(estimatedCount / 10_000.0, 100, 10_000);
 
@@ -264,8 +268,6 @@ public sealed class RunOptimizationCommandHandler(
 
             var trials = topTrials.DrainSorted();
             var failedTrialDetails = failedTrials.Drain(optimizationRunId);
-            var optPrimarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
-                command.DataSubscriptions, command.SubscriptionAxis);
 
             var optimizationRecord = new OptimizationRunRecord
             {
@@ -296,11 +298,6 @@ public sealed class RunOptimizationCommandHandler(
         catch (OperationCanceledException)
         {
             logger.LogInformation("Optimization {RunId} was cancelled", optimizationRunId);
-            var optPrimarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
-                command.DataSubscriptions, command.SubscriptionAxis);
-            var maxParallelism = command.MaxDegreeOfParallelism > 0
-                ? command.MaxDegreeOfParallelism
-                : Environment.ProcessorCount;
             await helper.SaveErrorOptimizationAsync(
                 command.StrategyName, command.BacktestSettings, optPrimarySub,
                 command.SortBy, maxParallelism,
@@ -311,11 +308,6 @@ public sealed class RunOptimizationCommandHandler(
         catch (Exception ex)
         {
             logger.LogError(ex, "Optimization {RunId} failed", optimizationRunId);
-            var optPrimarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
-                command.DataSubscriptions, command.SubscriptionAxis);
-            var maxParallelism = command.MaxDegreeOfParallelism > 0
-                ? command.MaxDegreeOfParallelism
-                : Environment.ProcessorCount;
             await helper.SaveErrorOptimizationAsync(
                 command.StrategyName, command.BacktestSettings, optPrimarySub,
                 command.SortBy, maxParallelism,

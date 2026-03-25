@@ -25,7 +25,16 @@ public sealed class Chromosome
     private static Gene CloneGene(Gene gene) => gene switch
     {
         ModuleGene mg when mg.SubGenes is not null =>
-            mg with { SubGenes = new Dictionary<string, Gene>(mg.SubGenes) },
+            mg with { SubGenes = DeepCloneSubGenes(mg.SubGenes) },
         _ => gene // records are immutable, no deep copy needed for Numeric/Discrete
     };
+
+    private static Dictionary<string, Gene> DeepCloneSubGenes(
+        IReadOnlyDictionary<string, Gene> subGenes)
+    {
+        var cloned = new Dictionary<string, Gene>(subGenes.Count);
+        foreach (var (key, gene) in subGenes)
+            cloned[key] = CloneGene(gene);
+        return cloned;
+    }
 }

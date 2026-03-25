@@ -112,8 +112,8 @@ public class GeneticConfigResolverTests
             ])
         };
 
-        // 1 (A) + module(2 variants + max(2 sub, 1 sub) = 2+2 = 4) = 5
-        Assert.Equal(5, GeneticConfigResolver.ComputeEffectiveDimensions(axes));
+        // 1 (A) + module(1 variant-selection + max(2, 1) sub) = 4
+        Assert.Equal(4, GeneticConfigResolver.ComputeEffectiveDimensions(axes));
     }
 
     [Fact]

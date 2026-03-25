@@ -149,6 +149,9 @@ public static class OptimizationEndpoints
                 CrossoverRate = request.GeneticSettings.CrossoverRate,
                 TournamentSize = request.GeneticSettings.TournamentSize,
                 StagnationLimit = request.GeneticSettings.StagnationLimit,
+                TimeBudget = request.GeneticSettings.TimeBudgetMinutes.HasValue
+                    ? TimeSpan.FromMinutes(request.GeneticSettings.TimeBudgetMinutes.Value)
+                    : null,
                 SharpeWeight = fitnessWeights?.SharpeWeight ?? 0.5,
                 SortinoWeight = fitnessWeights?.SortinoWeight ?? 0.2,
                 ProfitFactorWeight = fitnessWeights?.ProfitFactorWeight ?? 0.15,
