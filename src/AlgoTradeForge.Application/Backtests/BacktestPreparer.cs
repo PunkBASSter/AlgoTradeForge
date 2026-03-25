@@ -56,10 +56,16 @@ public sealed class BacktestPreparer(
 
         if (strategy.DataSubscriptions.Count == 0)
         {
-            var timeFrame = !string.IsNullOrEmpty(sub.TimeFrame)
-                && TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out var parsed)
-                ? parsed
-                : TimeSpan.FromMinutes(1);
+            TimeSpan timeFrame;
+            if (string.IsNullOrEmpty(sub.TimeFrame))
+            {
+                timeFrame = TimeSpan.FromMinutes(1);
+            }
+            else if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out timeFrame))
+            {
+                throw new ArgumentException($"Invalid TimeFrame format: '{sub.TimeFrame}'");
+            }
+
             strategy.DataSubscriptions.Add(new DataSubscription(asset, timeFrame));
         }
 
