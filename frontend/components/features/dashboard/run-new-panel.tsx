@@ -29,7 +29,7 @@ const EDITOR_EXTENSIONS = [
   linter(jsonParseLinter()),
   oneDark,
   EditorView.theme({
-    "&": { height: "400px" },
+    "&": { height: "100%" },
     ".cm-scroller": { overflow: "auto" },
   }),
 ];
@@ -268,25 +268,27 @@ export function RunNewPanel({
           </Button>
         </div>
       ) : (
-        <div className="space-y-4">
-          <p className="text-sm text-text-secondary">
+        <div className="flex h-full flex-col gap-4">
+          <p className="shrink-0 text-sm text-text-secondary">
             Edit the JSON configuration below and click Run.
           </p>
           {mode === "optimization" && (
-            <ToggleSwitch
-              leftLabel="Grid"
-              rightLabel="Genetic"
-              checked={useGenetic}
-              onChange={handleToggle}
-              disabled={submitting}
-            />
+            <div className="shrink-0">
+              <ToggleSwitch
+                leftLabel="Grid"
+                rightLabel="Genetic"
+                checked={useGenetic}
+                onChange={handleToggle}
+                disabled={submitting}
+              />
+            </div>
           )}
           <div
             ref={editorContainerRef}
             data-testid="json-editor"
-            className="rounded-lg overflow-hidden border border-border-default"
+            className="min-h-0 flex-1 rounded-lg overflow-hidden border border-border-default"
           />
-          <div className="flex gap-2">
+          <div className="shrink-0 flex gap-2">
             <Button
               variant="primary"
               onClick={handleSubmit}

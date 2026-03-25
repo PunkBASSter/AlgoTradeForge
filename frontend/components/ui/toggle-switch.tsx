@@ -30,7 +30,7 @@ export function ToggleSwitch({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-accent-blue focus:ring-offset-1 focus:ring-offset-bg-base disabled:cursor-not-allowed disabled:opacity-50 ${
-          checked ? "bg-accent-blue" : "bg-bg-surface"
+          checked ? "bg-accent-blue" : "bg-border-default"
         }`}
       >
         <span

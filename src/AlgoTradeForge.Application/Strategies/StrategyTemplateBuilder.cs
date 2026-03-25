@@ -73,8 +73,9 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<ParameterAxis> axes,
         IReadOnlyList<AvailableAssetInfo> availableAssets)
     {
-        var template = BuildOptimizationTemplate(strategyName, axes, availableAssets);
-        template["geneticSettings"] = new Dictionary<string, object>
+        var grid = BuildOptimizationTemplate(strategyName, axes, availableAssets);
+
+        var geneticSettings = new Dictionary<string, object>
         {
             ["populationSize"] = 0,
             ["maxGenerations"] = 0,
@@ -93,7 +94,17 @@ public static class StrategyTemplateBuilder
                 ["minTrades"] = 10,
             },
         };
-        return template;
+
+        // Maintain section order: settings together, then axes
+        return new Dictionary<string, object>
+        {
+            ["strategyName"] = grid["strategyName"],
+            ["backtestSettings"] = grid["backtestSettings"],
+            ["optimizationSettings"] = grid["optimizationSettings"],
+            ["geneticSettings"] = geneticSettings,
+            ["subscriptionAxis"] = grid["subscriptionAxis"],
+            ["optimizationAxes"] = grid["optimizationAxes"],
+        };
     }
 
     public static Dictionary<string, object> BuildLiveSessionTemplate(
