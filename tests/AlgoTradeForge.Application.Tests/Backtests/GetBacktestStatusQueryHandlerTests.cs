@@ -44,10 +44,13 @@ public class GetBacktestStatusQueryHandlerTests
         {
             Id = id, StrategyName = "S", StrategyVersion = "1",
             Parameters = new Dictionary<string, object>(),
-            AssetName = "BTC", Exchange = "Binance", TimeFrame = "00:01:00",
-            InitialCash = 10_000m, Commission = 0m, SlippageTicks = 0,
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTC", Exchange = "Binance", TimeFrame = "00:01:00" },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10_000m, CommissionPerTrade = 0m, SlippageTicks = 0,
+                StartTime = DateTimeOffset.UtcNow, EndTime = DateTimeOffset.UtcNow,
+            },
             StartedAt = DateTimeOffset.UtcNow, CompletedAt = DateTimeOffset.UtcNow,
-            DataStart = DateTimeOffset.UtcNow, DataEnd = DateTimeOffset.UtcNow,
             DurationMs = 100, TotalBars = 10,
             Metrics = new Domain.Reporting.PerformanceMetrics
             {

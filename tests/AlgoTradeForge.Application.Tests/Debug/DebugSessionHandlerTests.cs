@@ -70,12 +70,14 @@ public class DebugSessionHandlerTests
 
         var dto = await CreateStartHandler().HandleAsync(new StartDebugSessionCommand
         {
-            AssetName = "AAPL",
-            Exchange = "NASDAQ",
+            DataSubscription = new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 100_000m,
+                StartTime = Start,
+                EndTime = Start.AddDays(1),
+            },
             StrategyName = "TestStrategy",
-            InitialCash = 100_000m,
-            StartTime = Start,
-            EndTime = Start.AddDays(1),
         }, TestContext.Current.CancellationToken);
 
         Assert.NotEqual(Guid.Empty, dto.SessionId);
@@ -106,12 +108,14 @@ public class DebugSessionHandlerTests
 
         var sessionDto = await startHandler.HandleAsync(new StartDebugSessionCommand
         {
-            AssetName = "AAPL",
-            Exchange = "NASDAQ",
+            DataSubscription = new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 100_000m,
+                StartTime = Start,
+                EndTime = Start.AddDays(1),
+            },
             StrategyName = "TestStrategy",
-            InitialCash = 100_000m,
-            StartTime = Start,
-            EndTime = Start.AddDays(1),
         }, TestContext.Current.CancellationToken);
 
         // Step to first bar
@@ -178,12 +182,14 @@ public class DebugSessionHandlerTests
 
         var sessionDto = await startHandler.HandleAsync(new StartDebugSessionCommand
         {
-            AssetName = "AAPL",
-            Exchange = "NASDAQ",
+            DataSubscription = new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 100_000m,
+                StartTime = Start,
+                EndTime = Start.AddDays(1),
+            },
             StrategyName = "TestStrategy",
-            InitialCash = 100_000m,
-            StartTime = Start,
-            EndTime = Start.AddDays(1),
         }, TestContext.Current.CancellationToken);
 
         // Continue to completion

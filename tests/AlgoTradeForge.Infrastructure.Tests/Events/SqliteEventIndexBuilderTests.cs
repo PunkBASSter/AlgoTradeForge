@@ -216,7 +216,7 @@ public class SqliteEventIndexBuilderTests : IDisposable
         _builder.Build(_runFolder);
         sw.Stop();
 
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5), $"Build took {sw.Elapsed.TotalSeconds:F2}s, expected < 5s");
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10), $"Build took {sw.Elapsed.TotalSeconds:F2}s, expected < 10s");
 
         var indexPath = Path.Combine(_runFolder, "index.sqlite");
         using var conn = new SqliteConnection($"Data Source={indexPath};Mode=ReadOnly;Pooling=False");

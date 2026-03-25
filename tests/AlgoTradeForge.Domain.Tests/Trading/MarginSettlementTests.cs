@@ -194,6 +194,120 @@ public class MarginSettlementTests
         Assert.Equal("Insufficient margin", result);
     }
 
+    [Fact]
+    public void ValidateSettlement_CloseLong_PassesValidation()
+    {
+        var portfolio = CreatePortfolio(10_000L);
+        portfolio.Apply(TestFills.Buy(TestPerp, 50_000L, 1m));
+
+        // Sell to close existing long — should pass (no new margin needed)
+        var order = CreateOrder(TestPerp, OrderSide.Sell, 1m);
+        var prices = new Dictionary<string, long> { ["BTCUSDT_PERP"] = 50_000L };
+
+        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 0L, prices);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ValidateSettlement_CloseShort_PassesValidation()
+    {
+        var portfolio = CreatePortfolio(10_000L);
+        portfolio.Apply(TestFills.Sell(TestPerp, 50_000L, 1m));
+
+        // Buy to close existing short — should pass
+        var order = CreateOrder(TestPerp, OrderSide.Buy, 1m);
+        var prices = new Dictionary<string, long> { ["BTCUSDT_PERP"] = 50_000L };
+
+        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 0L, prices);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ValidateSettlement_PartialClose_PassesValidation()
+    {
+        var portfolio = CreatePortfolio(10_000L);
+        portfolio.Apply(TestFills.Buy(TestPerp, 50_000L, 1m));
+
+        // Sell half — reduces position, no new margin needed
+        var order = CreateOrder(TestPerp, OrderSide.Sell, 0.5m);
+        var prices = new Dictionary<string, long> { ["BTCUSDT_PERP"] = 50_000L };
+
+        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 0L, prices);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ValidateSettlement_AddToPosition_ChecksMarginForIncrease()
+    {
+        // Long 1 BTC at 50K, margin used = 50000 * 1 * 0.10 = 5000
+        // Cash = 10000 (margin settlement deducts only commission)
+        // Equity at 50K = 10000 + 0 = 10000, Available = 10000 - 5000 = 5000
+        var portfolio = CreatePortfolio(10_000L);
+        portfolio.Apply(TestFills.Buy(TestPerp, 50_000L, 1m));
+
+        // Buy 1 more: increasingQty = 1, margin = 50000 * 1 * 0.10 = 5000 <= 5000
+        var order = CreateOrder(TestPerp, OrderSide.Buy, 1m);
+        var prices = new Dictionary<string, long> { ["BTCUSDT_PERP"] = 50_000L };
+
+        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 0L, prices);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ValidateSettlement_FlipPosition_NoAdditionalMargin()
+    {
+        var portfolio = CreatePortfolio(10_000L);
+        portfolio.Apply(TestFills.Buy(TestPerp, 50_000L, 1m));
+
+        // Sell 1.5: long 1 → short 0.5. |newQty|=0.5 < |currentQty|=1 → increasingQty=0
+        var order = CreateOrder(TestPerp, OrderSide.Sell, 1.5m);
+        var prices = new Dictionary<string, long> { ["BTCUSDT_PERP"] = 50_000L };
+
+        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 0L, prices);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ValidateSettlement_FlipToLarger_ChecksExcess()
+    {
+        // Long 1 BTC at 50K, cash = 3000 (tight margin)
+        // UsedMargin = 5000, Equity = 3000, Available = 3000 - 5000 = -2000
+        var portfolio = CreatePortfolio(3_000L);
+        portfolio.Apply(TestFills.Buy(TestPerp, 50_000L, 1m));
+
+        // Sell 3: long 1 → short 2. |newQty|=2 > |currentQty|=1 → increasingQty=1
+        // margin = 50000 * 1 * 0.10 = 5000 > -2000 → rejected
+        var order = CreateOrder(TestPerp, OrderSide.Sell, 3m);
+        var prices = new Dictionary<string, long> { ["BTCUSDT_PERP"] = 50_000L };
+
+        var result = _settlement.ValidateSettlement(order, 50_000L, portfolio, commission: 0L, prices);
+
+        Assert.Equal("Insufficient margin", result);
+    }
+
+    [Fact]
+    public void ValidateSettlement_FullClose_CommissionStillChecked()
+    {
+        // Long 1 BTC at 50K, price dropped to 40K
+        // Cash = 10000, UnrealizedPnl = -10000, Equity = 0, UsedMargin = 5000
+        // Available = 0 - 5000 = -5000
+        // Close sell: increasingQty = 0, but commission = 100 > -5000 → rejected
+        var portfolio = CreatePortfolio(10_000L);
+        portfolio.Apply(TestFills.Buy(TestPerp, 50_000L, 1m));
+
+        var order = CreateOrder(TestPerp, OrderSide.Sell, 1m);
+        var prices = new Dictionary<string, long> { ["BTCUSDT_PERP"] = 40_000L };
+
+        var result = _settlement.ValidateSettlement(order, 40_000L, portfolio, commission: 100L, prices);
+
+        Assert.Equal("Insufficient margin", result);
+    }
+
     #endregion
 
     #region Portfolio integration — margin settlement round-trip

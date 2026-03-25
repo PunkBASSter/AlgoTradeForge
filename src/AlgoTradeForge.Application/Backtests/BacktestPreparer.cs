@@ -1,3 +1,4 @@
+using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Application.Optimization;
@@ -30,18 +31,21 @@ public sealed class BacktestPreparer(
         Func<BacktestOptions, IIndicatorFactory> indicatorFactoryProvider,
         CancellationToken ct = default)
     {
-        var asset = await assetRepository.GetByNameAsync(command.AssetName, command.Exchange, ct)
-            ?? throw new ArgumentException($"Asset '{command.AssetName}' not found.", nameof(command));
+        var sub = command.DataSubscription;
+        var settings = command.BacktestSettings;
+
+        var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
+            ?? throw new ArgumentException($"Asset '{sub.AssetName}' not found.", nameof(command));
 
         var scale = new ScaleContext(asset);
 
         var options = new BacktestOptions
         {
-            InitialCash = scale.AmountToTicks(command.InitialCash),
-            StartTime = command.StartTime,
-            EndTime = command.EndTime,
-            CommissionPerTrade = scale.AmountToTicks(command.CommissionPerTrade),
-            SlippageTicks = command.SlippageTicks,
+            InitialCash = scale.AmountToTicks(settings.InitialCash),
+            StartTime = settings.StartTime,
+            EndTime = settings.EndTime,
+            CommissionPerTrade = settings.CommissionPerTrade,
+            SlippageTicks = settings.SlippageTicks,
             UseDetailedExecutionLogic = command.UseDetailedExecutionLogic
         };
 
@@ -52,12 +56,21 @@ public sealed class BacktestPreparer(
 
         if (strategy.DataSubscriptions.Count == 0)
         {
-            var timeFrame = command.TimeFrame ?? TimeSpan.FromMinutes(1);
+            TimeSpan timeFrame;
+            if (string.IsNullOrEmpty(sub.TimeFrame))
+            {
+                timeFrame = TimeSpan.FromMinutes(1);
+            }
+            else if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out timeFrame))
+            {
+                throw new ArgumentException($"Invalid TimeFrame format: '{sub.TimeFrame}'");
+            }
+
             strategy.DataSubscriptions.Add(new DataSubscription(asset, timeFrame));
         }
 
-        var fromDate = DateOnly.FromDateTime(command.StartTime.UtcDateTime);
-        var toDate = DateOnly.FromDateTime(command.EndTime.UtcDateTime);
+        var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
+        var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
 
         var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
         for (var i = 0; i < strategy.DataSubscriptions.Count; i++)

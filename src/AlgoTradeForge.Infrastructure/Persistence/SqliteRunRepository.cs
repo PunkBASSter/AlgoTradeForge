@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Domain.Reporting;
 using Microsoft.Data.Sqlite;
@@ -114,13 +115,13 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         cmd.Parameters.AddWithValue("$stratName", r.StrategyName);
         cmd.Parameters.AddWithValue("$stratVer", r.StrategyVersion);
         cmd.Parameters.AddWithValue("$paramsJson", JsonSerializer.Serialize(r.Parameters, JsonOptions));
-        cmd.Parameters.AddWithValue("$cash", r.InitialCash.ToString(CultureInfo.InvariantCulture));
-        cmd.Parameters.AddWithValue("$commission", r.Commission.ToString(CultureInfo.InvariantCulture));
-        cmd.Parameters.AddWithValue("$slippage", r.SlippageTicks);
+        cmd.Parameters.AddWithValue("$cash", r.BacktestSettings.InitialCash.ToString(CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$commission", r.BacktestSettings.CommissionPerTrade.ToString(CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$slippage", r.BacktestSettings.SlippageTicks);
         cmd.Parameters.AddWithValue("$startedAt", r.StartedAt.ToString("O"));
         cmd.Parameters.AddWithValue("$completedAt", r.CompletedAt.ToString("O"));
-        cmd.Parameters.AddWithValue("$dataStart", r.DataStart.ToString("O"));
-        cmd.Parameters.AddWithValue("$dataEnd", r.DataEnd.ToString("O"));
+        cmd.Parameters.AddWithValue("$dataStart", r.BacktestSettings.StartTime.ToString("O"));
+        cmd.Parameters.AddWithValue("$dataEnd", r.BacktestSettings.EndTime.ToString("O"));
         cmd.Parameters.AddWithValue("$durationMs", r.DurationMs);
         cmd.Parameters.AddWithValue("$totalBars", r.TotalBars);
         cmd.Parameters.AddWithValue("$metricsJson", JsonSerializer.Serialize(r.Metrics, JsonOptions));
@@ -129,9 +130,9 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         cmd.Parameters.AddWithValue("$runFolder", (object?)r.RunFolderPath ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$runMode", r.RunMode);
         cmd.Parameters.AddWithValue("$optId", r.OptimizationRunId.HasValue ? r.OptimizationRunId.Value.ToString() : DBNull.Value);
-        cmd.Parameters.AddWithValue("$asset", r.AssetName);
-        cmd.Parameters.AddWithValue("$exchange", r.Exchange);
-        cmd.Parameters.AddWithValue("$tf", r.TimeFrame);
+        cmd.Parameters.AddWithValue("$asset", r.DataSubscription.AssetName);
+        cmd.Parameters.AddWithValue("$exchange", r.DataSubscription.Exchange);
+        cmd.Parameters.AddWithValue("$tf", r.DataSubscription.TimeFrame);
         cmd.Parameters.AddWithValue("$errorMsg", (object?)r.ErrorMessage ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$errorStack", (object?)r.ErrorStackTrace ?? DBNull.Value);
 
@@ -269,15 +270,15 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             cmd.Parameters.AddWithValue("$durationMs", record.DurationMs);
             cmd.Parameters.AddWithValue("$totalCombinations", record.TotalCombinations);
             cmd.Parameters.AddWithValue("$sortBy", record.SortBy);
-            cmd.Parameters.AddWithValue("$dataStart", record.DataStart.ToString("O"));
-            cmd.Parameters.AddWithValue("$dataEnd", record.DataEnd.ToString("O"));
-            cmd.Parameters.AddWithValue("$cash", record.InitialCash.ToString(CultureInfo.InvariantCulture));
-            cmd.Parameters.AddWithValue("$commission", record.Commission.ToString(CultureInfo.InvariantCulture));
-            cmd.Parameters.AddWithValue("$slippage", record.SlippageTicks);
+            cmd.Parameters.AddWithValue("$dataStart", record.BacktestSettings.StartTime.ToString("O"));
+            cmd.Parameters.AddWithValue("$dataEnd", record.BacktestSettings.EndTime.ToString("O"));
+            cmd.Parameters.AddWithValue("$cash", record.BacktestSettings.InitialCash.ToString(CultureInfo.InvariantCulture));
+            cmd.Parameters.AddWithValue("$commission", record.BacktestSettings.CommissionPerTrade.ToString(CultureInfo.InvariantCulture));
+            cmd.Parameters.AddWithValue("$slippage", record.BacktestSettings.SlippageTicks);
             cmd.Parameters.AddWithValue("$maxParallelism", record.MaxParallelism);
-            cmd.Parameters.AddWithValue("$asset", record.AssetName);
-            cmd.Parameters.AddWithValue("$exchange", record.Exchange);
-            cmd.Parameters.AddWithValue("$tf", record.TimeFrame);
+            cmd.Parameters.AddWithValue("$asset", record.DataSubscription.AssetName);
+            cmd.Parameters.AddWithValue("$exchange", record.DataSubscription.Exchange);
+            cmd.Parameters.AddWithValue("$tf", record.DataSubscription.TimeFrame);
             cmd.Parameters.AddWithValue("$filteredTrials", record.FilteredTrials);
             cmd.Parameters.AddWithValue("$failedTrials", record.FailedTrials);
 
@@ -542,16 +543,22 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             StrategyName = reader.GetString(reader.GetOrdinal("strategy_name")),
             StrategyVersion = reader.GetString(reader.GetOrdinal("strategy_version")),
             Parameters = DeserializeParameters(reader.GetString(reader.GetOrdinal("parameters_json"))),
-            AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
-            Exchange = reader.GetString(reader.GetOrdinal("exchange")),
-            TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
-            InitialCash = decimal.Parse(reader.GetString(reader.GetOrdinal("initial_cash")), CultureInfo.InvariantCulture),
-            Commission = decimal.Parse(reader.GetString(reader.GetOrdinal("commission")), CultureInfo.InvariantCulture),
-            SlippageTicks = reader.GetInt32(reader.GetOrdinal("slippage_ticks")),
+            DataSubscription = new DataSubscriptionDto
+            {
+                AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
+                Exchange = reader.GetString(reader.GetOrdinal("exchange")),
+                TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
+            },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = decimal.Parse(reader.GetString(reader.GetOrdinal("initial_cash")), CultureInfo.InvariantCulture),
+                StartTime = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_start")), CultureInfo.InvariantCulture),
+                EndTime = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_end")), CultureInfo.InvariantCulture),
+                CommissionPerTrade = decimal.Parse(reader.GetString(reader.GetOrdinal("commission")), CultureInfo.InvariantCulture),
+                SlippageTicks = reader.GetInt32(reader.GetOrdinal("slippage_ticks")),
+            },
             StartedAt = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("started_at")), CultureInfo.InvariantCulture),
             CompletedAt = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("completed_at")), CultureInfo.InvariantCulture),
-            DataStart = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_start")), CultureInfo.InvariantCulture),
-            DataEnd = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_end")), CultureInfo.InvariantCulture),
             DurationMs = reader.GetInt64(reader.GetOrdinal("duration_ms")),
             TotalBars = reader.GetInt32(reader.GetOrdinal("total_bars")),
             Metrics = JsonSerializer.Deserialize<PerformanceMetrics>(
@@ -586,15 +593,21 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         DurationMs = reader.GetInt64(reader.GetOrdinal("duration_ms")),
         TotalCombinations = reader.GetInt64(reader.GetOrdinal("total_combinations")),
         SortBy = reader.GetString(reader.GetOrdinal("sort_by")),
-        DataStart = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_start")), CultureInfo.InvariantCulture),
-        DataEnd = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_end")), CultureInfo.InvariantCulture),
-        InitialCash = decimal.Parse(reader.GetString(reader.GetOrdinal("initial_cash")), CultureInfo.InvariantCulture),
-        Commission = decimal.Parse(reader.GetString(reader.GetOrdinal("commission")), CultureInfo.InvariantCulture),
-        SlippageTicks = reader.GetInt32(reader.GetOrdinal("slippage_ticks")),
+        DataSubscription = new DataSubscriptionDto
+        {
+            AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
+            Exchange = reader.GetString(reader.GetOrdinal("exchange")),
+            TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
+        },
+        BacktestSettings = new BacktestSettingsDto
+        {
+            InitialCash = decimal.Parse(reader.GetString(reader.GetOrdinal("initial_cash")), CultureInfo.InvariantCulture),
+            StartTime = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_start")), CultureInfo.InvariantCulture),
+            EndTime = DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("data_end")), CultureInfo.InvariantCulture),
+            CommissionPerTrade = decimal.Parse(reader.GetString(reader.GetOrdinal("commission")), CultureInfo.InvariantCulture),
+            SlippageTicks = reader.GetInt32(reader.GetOrdinal("slippage_ticks")),
+        },
         MaxParallelism = reader.GetInt32(reader.GetOrdinal("max_parallelism")),
-        AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
-        Exchange = reader.GetString(reader.GetOrdinal("exchange")),
-        TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
         FilteredTrials = reader.GetInt64(reader.GetOrdinal("filtered_trials")),
         FailedTrials = reader.GetInt64(reader.GetOrdinal("failed_trials")),
         Trials = [], // loaded separately

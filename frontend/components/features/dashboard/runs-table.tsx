@@ -16,9 +16,9 @@ interface RunsTableProps {
 const backtestColumns: Column<BacktestRun>[] = [
   { key: "strategyVersion", header: "Version" },
   { key: "id", header: "Run ID", render: (v) => String(v).substring(0, 8) },
-  { key: "assetName", header: "Asset" },
-  { key: "exchange", header: "Exchange" },
-  { key: "timeFrame", header: "TF" },
+  { key: "dataSubscription.assetName", header: "Asset", render: (_v, row) => row.dataSubscription.assetName },
+  { key: "dataSubscription.exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
+  { key: "dataSubscription.timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
   {
     key: "sortino",
     header: "Sortino",
@@ -45,6 +45,11 @@ const backtestColumns: Column<BacktestRun>[] = [
     render: (_v, row) => formatPercent(row.metrics?.winRatePct ?? 0),
   },
   {
+    key: "trades",
+    header: "Trades",
+    render: (_v, row) => Math.round((row.metrics?.totalTrades ?? 0) / 2),
+  },
+  {
     key: "netProfit",
     header: "Net Profit",
     render: (_v, row) => formatNumber(row.metrics?.netProfit ?? 0),
@@ -54,9 +59,9 @@ const backtestColumns: Column<BacktestRun>[] = [
 const optimizationColumns: Column<OptimizationRun>[] = [
   { key: "strategyVersion", header: "Version" },
   { key: "id", header: "Run ID", render: (v) => String(v).substring(0, 8) },
-  { key: "assetName", header: "Asset" },
-  { key: "exchange", header: "Exchange" },
-  { key: "timeFrame", header: "TF" },
+  { key: "dataSubscription.assetName", header: "Asset", render: (_v, row) => row.dataSubscription.assetName },
+  { key: "dataSubscription.exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
+  { key: "dataSubscription.timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
   { key: "totalCombinations", header: "Combinations" },
   { key: "sortBy", header: "Sort By" },
   {

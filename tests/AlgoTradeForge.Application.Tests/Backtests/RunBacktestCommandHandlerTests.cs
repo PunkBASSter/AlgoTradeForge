@@ -59,12 +59,14 @@ public class RunBacktestCommandHandlerTests
 
     private static RunBacktestCommand CreateCommand() => new()
     {
-        AssetName = "BTCUSDT",
-        Exchange = "Binance",
+        DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
+        BacktestSettings = new BacktestSettingsDto
+        {
+            InitialCash = 10_000m,
+            StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
+        },
         StrategyName = "TestStrategy",
-        InitialCash = 10_000m,
-        StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero)
     };
 
     private void SetupPreparerMocks()
@@ -132,6 +134,13 @@ public class RunBacktestCommandHandlerTests
         var handler = CreateHandler();
         var command = CreateCommand();
 
+        // Block the background task so it can't clean up progress before we assert
+        using var gate = new SemaphoreSlim(0, 1);
+        var sink = Substitute.For<IRunSink>();
+        sink.RunFolderPath.Returns("/test/run/path");
+        _runSinkFactory.Create(Arg.Any<RunIdentity>())
+            .Returns(_ => { gate.Wait(); return sink; });
+
         // Act
         var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
@@ -139,6 +148,8 @@ public class RunBacktestCommandHandlerTests
         var progress = await _progressCache.GetProgressAsync(result.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(progress);
         Assert.Equal(10, progress.Value.Total);
+
+        gate.Release(); // let background task proceed and clean up
     }
 
     [Fact]
@@ -149,6 +160,13 @@ public class RunBacktestCommandHandlerTests
         var handler = CreateHandler();
         var command = CreateCommand();
 
+        // Block the background task so it can't clean up the run key before we assert
+        using var gate = new SemaphoreSlim(0, 1);
+        var sink = Substitute.For<IRunSink>();
+        sink.RunFolderPath.Returns("/test/run/path");
+        _runSinkFactory.Create(Arg.Any<RunIdentity>())
+            .Returns(_ => { gate.Wait(); return sink; });
+
         // Act
         var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
@@ -156,6 +174,8 @@ public class RunBacktestCommandHandlerTests
         var runKey = RunKeyBuilder.Build(command);
         var mappedId = await _progressCache.TryGetRunIdByKeyAsync(runKey, TestContext.Current.CancellationToken);
         Assert.Equal(result.Id, mappedId);
+
+        gate.Release(); // let background task proceed and clean up
     }
 
     [Fact]

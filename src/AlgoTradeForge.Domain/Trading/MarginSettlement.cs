@@ -18,8 +18,17 @@ public sealed class MarginSettlement : ISettlementCalculator
         IReadOnlyDictionary<string, long> lastPrices)
     {
         var marginRate = (order.Asset as IMarginAsset)?.MarginRequirement ?? 1.0m;
+
+        // Only the portion that increases absolute exposure requires new margin.
+        // Closing or reducing a position releases margin — it doesn't consume more.
+        var currentPosition = portfolio.GetPosition(order.Asset.Name);
+        var currentQty = currentPosition?.Quantity ?? 0m;
+        var orderDirection = order.Side == OrderSide.Buy ? 1 : -1;
+        var newQty = currentQty + order.Quantity * orderDirection;
+        var increasingQty = Math.Max(0m, Math.Abs(newQty) - Math.Abs(currentQty));
+
         var marginRequired = MoneyConvert.ToLong(
-            fillPrice * order.Quantity * order.Asset.Multiplier * marginRate) + commission;
+            fillPrice * increasingQty * order.Asset.Multiplier * marginRate) + commission;
         if (marginRequired > portfolio.AvailableMargin(lastPrices))
             return "Insufficient margin";
 

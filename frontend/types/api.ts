@@ -47,21 +47,29 @@ export interface PagedResponse<T> {
 // Backtest run
 // ---------------------------------------------------------------------------
 
+export interface DataSubscriptionResponse {
+  assetName: string;
+  exchange: string;
+  timeFrame: string;
+}
+
+export interface BacktestSettingsResponse {
+  initialCash: number;
+  commissionPerTrade: number;
+  slippageTicks: number;
+  startTime: string;
+  endTime: string;
+}
+
 export interface BacktestRun {
   id: string;
   strategyName: string;
   strategyVersion: string;
   parameters: Record<string, unknown>;
-  assetName: string;
-  exchange: string;
-  timeFrame: string;
-  initialCash: number;
-  commission: number;
-  slippageTicks: number;
+  dataSubscription: DataSubscriptionResponse;
+  backtestSettings: BacktestSettingsResponse;
   startedAt: string;
   completedAt: string;
-  dataStart: string;
-  dataEnd: string;
   durationMs: number;
   totalBars: number;
   metrics: Record<string, number>;
@@ -87,15 +95,9 @@ export interface OptimizationRun {
   filteredTrials: number;
   failedTrials: number;
   sortBy: string;
-  dataStart: string;
-  dataEnd: string;
-  initialCash: number;
-  commission: number;
-  slippageTicks: number;
+  dataSubscription: DataSubscriptionResponse;
+  backtestSettings: BacktestSettingsResponse;
   maxParallelism: number;
-  assetName: string;
-  exchange: string;
-  timeFrame: string;
   trials: BacktestRun[];
   failedTrialDetails: FailedTrialDetail[];
 }
@@ -228,31 +230,28 @@ export function deriveOptimizationStatus(data: OptimizationStatus): RunStatusTyp
 // Request types
 // ---------------------------------------------------------------------------
 
-export interface RunBacktestRequest {
+export interface DataSubscriptionInput {
   assetName: string;
   exchange: string;
-  strategyName: string;
+  timeFrame?: string;
+}
+
+export interface BacktestSettingsInput {
   initialCash: number;
   startTime: string;
   endTime: string;
   commissionPerTrade?: number;
   slippageTicks?: number;
-  timeFrame?: string;
+}
+
+export interface RunBacktestRequest {
+  dataSubscription: DataSubscriptionInput;
+  backtestSettings: BacktestSettingsInput;
+  strategyName: string;
   strategyParameters?: Record<string, unknown>;
 }
 
-export interface RunOptimizationRequest {
-  strategyName: string;
-  optimizationAxes?: Record<string, OptimizationAxisOverride>;
-  dataSubscriptions?: DataSubscription[];
-  subscriptionAxis?: DataSubscription[];
-  initialCash: number;
-  startTime: string;
-  endTime: string;
-  commissionPerTrade?: number;
-  slippageTicks?: number;
-  maxDegreeOfParallelism?: number;
-  maxCombinations?: number;
+export interface OptimizationSettingsInput {
   sortBy?: string;
   maxTrialsToKeep?: number;
   minProfitFactor?: number | null;
@@ -260,6 +259,17 @@ export interface RunOptimizationRequest {
   minSharpeRatio?: number | null;
   minSortinoRatio?: number | null;
   minAnnualizedReturnPct?: number | null;
+  maxDegreeOfParallelism?: number;
+  maxCombinations?: number;
+}
+
+export interface RunOptimizationRequest {
+  strategyName: string;
+  backtestSettings: BacktestSettingsInput;
+  optimizationSettings?: OptimizationSettingsInput;
+  optimizationAxes?: Record<string, OptimizationAxisOverride>;
+  dataSubscriptions?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[];
 }
 
 export type OptimizationAxisOverride =
@@ -269,7 +279,7 @@ export type OptimizationAxisOverride =
   | { variants: Record<string, Record<string, OptimizationAxisOverride> | null> };
 
 export interface DataSubscription {
-  asset: string;
+  assetName: string;
   exchange: string;
   timeFrame: string;
 }
@@ -372,15 +382,9 @@ export interface LiveLastBar {
 // ---------------------------------------------------------------------------
 
 export interface StartDebugSessionRequest {
-  assetName: string;
-  exchange: string;
+  dataSubscription: DataSubscriptionInput;
+  backtestSettings: BacktestSettingsInput;
   strategyName: string;
-  initialCash: number;
-  startTime: string;
-  endTime: string;
-  commissionPerTrade?: number;
-  slippageTicks?: number;
-  timeFrame?: string;
   strategyParameters?: Record<string, unknown>;
 }
 

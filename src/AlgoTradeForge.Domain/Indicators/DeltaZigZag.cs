@@ -4,12 +4,13 @@ namespace AlgoTradeForge.Domain.Indicators;
 
 /// <summary>
 /// Dynamic-depth zigzag indicator. Reversal threshold = lastSwingSize * delta,
-/// floored at minimumThreshold. Ported from Python onboarding/zigzag/DeltaZigZag.py.
+/// floored at minimumThresholdPct percent of the current bar's close price.
+/// Ported from Python onboarding/zigzag/DeltaZigZag.py.
 /// </summary>
 public sealed class DeltaZigZag : Int64IndicatorBase
 {
-    private readonly decimal _delta;
-    private readonly long _minimumThreshold;
+    private readonly double _delta;
+    private readonly double _minimumThresholdPct;
 
     private readonly IndicatorBuffer<long> _buffer = new("Value", skipDefaultValues: true);
     private readonly Dictionary<string, IndicatorBuffer<long>> _buffers;
@@ -18,12 +19,13 @@ public sealed class DeltaZigZag : Int64IndicatorBase
     private int _lastPivotIndex;
     private long _currentExtremum;
     private long _lastSwingSize;
+    private long _lastClose;
     private int _lastProcessedIndex = -1;
 
-    public DeltaZigZag(decimal delta, long minimumThreshold)
+    public DeltaZigZag(double delta, double minimumThresholdPct)
     {
         _delta = delta;
-        _minimumThreshold = minimumThreshold;
+        _minimumThresholdPct = minimumThresholdPct;
         _buffers = new Dictionary<string, IndicatorBuffer<long>> { ["Value"] = _buffer };
     }
 
@@ -40,6 +42,7 @@ public sealed class DeltaZigZag : Int64IndicatorBase
         for (var i = startIndex; i < series.Count; i++)
         {
             var bar = series[i];
+            _lastClose = bar.Close;
             var threshold = GetThreshold();
 
             if (_direction > 0)
@@ -92,10 +95,12 @@ public sealed class DeltaZigZag : Int64IndicatorBase
 
     private long GetThreshold()
     {
-        if (_lastSwingSize == 0)
-            return _minimumThreshold;
+        var floor = (long)(_lastClose * _minimumThresholdPct / 100.0);
 
-        var dynamic = MoneyConvert.ToLong(_lastSwingSize * _delta);
-        return Math.Max(dynamic, _minimumThreshold);
+        if (_lastSwingSize == 0)
+            return floor;
+
+        var dynamic = (long)(_lastSwingSize * _delta);
+        return Math.Max(dynamic, floor);
     }
 }

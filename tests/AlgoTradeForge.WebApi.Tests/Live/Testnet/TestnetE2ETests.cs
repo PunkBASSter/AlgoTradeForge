@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using AlgoTradeForge.Application.Optimization;
+using AlgoTradeForge.Application;
 using AlgoTradeForge.Infrastructure.Tests.Live.Testnet;
 using AlgoTradeForge.WebApi.Contracts;
 
@@ -39,8 +39,8 @@ public sealed class TestnetE2ETests(TestnetApiFactory factory) : IDisposable
             InitialCash = 100m,
             DataSubscriptions =
             [
-                new DataSubscriptionDto { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
-                new DataSubscriptionDto { Asset = "ETHUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
+                new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
+                new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
             ],
             EnabledEvents = ["OnBarComplete", "OnTrade"],
         };

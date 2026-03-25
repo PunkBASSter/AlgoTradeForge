@@ -53,7 +53,7 @@ public sealed class FileSystemAssetRepository(
             var decimalDigits = ReadDecimalDigitsFromFeedsJson(dataRoot, info, logger);
 
             Asset asset = info.IsFutures
-                ? CryptoPerpetualAsset.Create(info.Symbol, info.Exchange, decimalDigits)
+                ? CryptoPerpetualAsset.Create(info.Symbol, info.Exchange, decimalDigits, margin: 0.05m)
                 : CryptoAsset.Create(info.Symbol, info.Exchange, decimalDigits);
 
             dict[key] = asset;
@@ -72,8 +72,10 @@ public sealed class FileSystemAssetRepository(
 
         // Perpetual variants for hardcoded crypto assets
         dict["BTCUSDT_PERP|Binance"] = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", decimalDigits: 2,
+            margin: 0.05m,
             minOrderQuantity: 0.001m, maxOrderQuantity: 500m, quantityStepSize: 0.001m);
         dict["ETHUSDT_PERP|Binance"] = CryptoPerpetualAsset.Create("ETHUSDT", "Binance", decimalDigits: 2,
+            margin: 0.05m,
             minOrderQuantity: 0.001m, maxOrderQuantity: 10000m, quantityStepSize: 0.001m);
 
         dict["AAPL|NASDAQ"] = new EquityAsset { Name = "AAPL", Exchange = "NASDAQ" };

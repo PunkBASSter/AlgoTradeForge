@@ -10,16 +10,18 @@ public static class RunKeyBuilder
 {
     public static string Build(RunBacktestCommand cmd)
     {
+        var sub = cmd.DataSubscription;
+        var settings = cmd.BacktestSettings;
         var sb = new StringBuilder();
         sb.Append(cmd.StrategyName).Append('|');
-        sb.Append(cmd.AssetName).Append('|');
-        sb.Append(cmd.Exchange).Append('|');
-        sb.Append(cmd.TimeFrame?.ToString() ?? "default").Append('|');
-        sb.Append(cmd.StartTime.ToUniversalTime().ToString("O")).Append('|');
-        sb.Append(cmd.EndTime.ToUniversalTime().ToString("O")).Append('|');
-        sb.Append(cmd.InitialCash).Append('|');
-        sb.Append(cmd.CommissionPerTrade).Append('|');
-        sb.Append(cmd.SlippageTicks);
+        sb.Append(sub.AssetName).Append('|');
+        sb.Append(sub.Exchange).Append('|');
+        sb.Append(!string.IsNullOrEmpty(sub.TimeFrame) ? sub.TimeFrame : "default").Append('|');
+        sb.Append(settings.StartTime.ToUniversalTime().ToString("O")).Append('|');
+        sb.Append(settings.EndTime.ToUniversalTime().ToString("O")).Append('|');
+        sb.Append(settings.InitialCash).Append('|');
+        sb.Append(settings.CommissionPerTrade).Append('|');
+        sb.Append(settings.SlippageTicks);
 
         if (cmd.StrategyParameters is { Count: > 0 })
         {
@@ -32,13 +34,14 @@ public static class RunKeyBuilder
 
     public static string Build(RunOptimizationCommand cmd)
     {
+        var settings = cmd.BacktestSettings;
         var sb = new StringBuilder();
         sb.Append(cmd.StrategyName).Append('|');
-        sb.Append(cmd.StartTime.ToUniversalTime().ToString("O")).Append('|');
-        sb.Append(cmd.EndTime.ToUniversalTime().ToString("O")).Append('|');
-        sb.Append(cmd.InitialCash).Append('|');
-        sb.Append(cmd.CommissionPerTrade).Append('|');
-        sb.Append(cmd.SlippageTicks).Append('|');
+        sb.Append(settings.StartTime.ToUniversalTime().ToString("O")).Append('|');
+        sb.Append(settings.EndTime.ToUniversalTime().ToString("O")).Append('|');
+        sb.Append(settings.InitialCash).Append('|');
+        sb.Append(settings.CommissionPerTrade).Append('|');
+        sb.Append(settings.SlippageTicks).Append('|');
         sb.Append(cmd.MaxDegreeOfParallelism).Append('|');
         sb.Append(cmd.MaxCombinations).Append('|');
         sb.Append(cmd.SortBy);
@@ -47,22 +50,22 @@ public static class RunKeyBuilder
         {
             sb.Append('|');
             var sorted = cmd.DataSubscriptions
-                .OrderBy(d => d.Asset)
+                .OrderBy(d => d.AssetName)
                 .ThenBy(d => d.Exchange)
                 .ThenBy(d => d.TimeFrame);
             foreach (var sub in sorted)
-                sb.Append(sub.Asset).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
+                sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
         }
 
         if (cmd.SubscriptionAxis is { Count: > 0 })
         {
             sb.Append("|axis:");
             var sortedAxis = cmd.SubscriptionAxis
-                .OrderBy(d => d.Asset)
+                .OrderBy(d => d.AssetName)
                 .ThenBy(d => d.Exchange)
                 .ThenBy(d => d.TimeFrame);
             foreach (var sub in sortedAxis)
-                sb.Append(sub.Asset).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
+                sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
         }
 
         if (cmd.Axes is { Count: > 0 })
@@ -90,11 +93,11 @@ public static class RunKeyBuilder
         {
             sb.Append('|');
             var sorted = cmd.DataSubscriptions
-                .OrderBy(d => d.Asset)
+                .OrderBy(d => d.AssetName)
                 .ThenBy(d => d.Exchange)
                 .ThenBy(d => d.TimeFrame);
             foreach (var sub in sorted)
-                sb.Append(sub.Asset).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
+                sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
         }
 
         return HashString(sb.ToString());

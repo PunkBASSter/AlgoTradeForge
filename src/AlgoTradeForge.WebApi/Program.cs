@@ -18,6 +18,9 @@ using AlgoTradeForge.WebApi.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Shared JSON options for FE-facing API (camelCase + case-insensitive)
+builder.Services.AddSingleton(JsonDefaults.Api);
+
 // Add OpenAPI/Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -86,6 +89,9 @@ builder.Services.AddInfrastructure(strategyAssemblies);
 
 builder.Services.AddSingleton<IAssetRepository, FileSystemAssetRepository>();
 
+// Debug WebSocket handler (instance class for constructor-injected JSON options)
+builder.Services.AddSingleton<DebugWebSocketHandler>();
+
 // CORS for frontend dev server
 builder.Services.AddCors(options =>
 {
@@ -122,7 +128,7 @@ app.MapBacktestEndpoints();
 app.MapOptimizationEndpoints();
 app.MapStrategyEndpoints();
 app.MapDebugEndpoints();
-app.MapDebugWebSocket();
+DebugWebSocketHandler.MapDebugWebSocket(app);
 app.MapLiveEndpoints();
 
 app.Run();

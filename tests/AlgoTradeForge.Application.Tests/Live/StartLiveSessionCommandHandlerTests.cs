@@ -21,7 +21,7 @@ public class StartLiveSessionCommandHandlerTests
 
     private static readonly List<DataSubscriptionDto> DefaultSubscriptions =
     [
-        new() { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
+        new() { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
     ];
 
     private static IInt64BarStrategy CreateStrategyWithSubscriptions(
@@ -386,8 +386,8 @@ public class StartLiveSessionCommandHandlerTests
             StrategyName = "MultiAsset", InitialCash = 10000m,
             DataSubscriptions =
             [
-                new() { Asset = "ETHUSDT", Exchange = "Binance", TimeFrame = "00:05:00" },
-                new() { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
+                new() { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "00:05:00" },
+                new() { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
             ],
         };
 

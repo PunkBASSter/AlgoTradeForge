@@ -18,7 +18,8 @@ public sealed class StartDebugSessionCommandHandler(
 {
     public async Task<DebugSessionDto> HandleAsync(StartDebugSessionCommand command, CancellationToken ct = default)
     {
-        var session = sessionStore.Create(command.AssetName, command.StrategyName);
+        var session = sessionStore.Create(command.DataSubscription.AssetName, command.StrategyName);
+        string? resolvedAssetName = null;
 
         IRunSink? sink = null;
         RunIdentity? capturedIdentity = null;
@@ -30,9 +31,9 @@ public sealed class StartDebugSessionCommandHandler(
                 capturedIdentity = new RunIdentity
                 {
                     StrategyName = command.StrategyName,
-                    AssetName = command.AssetName,
-                    StartTime = command.StartTime,
-                    EndTime = command.EndTime,
+                    AssetName = command.DataSubscription.AssetName,
+                    StartTime = command.BacktestSettings.StartTime,
+                    EndTime = command.BacktestSettings.EndTime,
                     InitialCash = options.InitialCash,
                     RunMode = ExportMode.Backtest,
                     RunTimestamp = session.CreatedAt,
@@ -56,6 +57,10 @@ public sealed class StartDebugSessionCommandHandler(
         }
 
         var runSink = sink ?? throw new InvalidOperationException("Indicator factory callback was not invoked.");
+
+        // Normalize asset name from the resolved asset (consistent with optimization path)
+        resolvedAssetName = AssetLookupName.From(setup.Strategy.DataSubscriptions[0].Asset);
+        capturedIdentity = capturedIdentity! with { AssetName = resolvedAssetName };
 
         // Debug sessions must export bar/indicator events for the visual debugger.
         // The default IsExportable=false is correct for normal backtests and optimization,
@@ -84,14 +89,14 @@ public sealed class StartDebugSessionCommandHandler(
                 var equityValues = result.EquityCurve.Select(e => e.Value).ToList();
                 var (metrics, _) = metricsCalculator.Calculate(
                     result.Fills, equityValues, setup.Options.InitialCash,
-                    command.StartTime, command.EndTime);
+                    command.BacktestSettings.StartTime, command.BacktestSettings.EndTime);
 
                 var scaledMetrics = MetricsScaler.ScaleDown(metrics, setup.Scale);
 
                 return new BacktestResultDto
                 {
                     Id = session.Id,
-                    AssetName = command.AssetName,
+                    AssetName = resolvedAssetName!,
                     StrategyName = command.StrategyName,
                     InitialCapital = scaledMetrics.InitialCapital,
                     FinalEquity = scaledMetrics.FinalEquity,
@@ -114,6 +119,6 @@ public sealed class StartDebugSessionCommandHandler(
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default);
 
-        return new DebugSessionDto(session.Id, command.AssetName, command.StrategyName, session.CreatedAt);
+        return new DebugSessionDto(session.Id, resolvedAssetName!, command.StrategyName, session.CreatedAt);
     }
 }

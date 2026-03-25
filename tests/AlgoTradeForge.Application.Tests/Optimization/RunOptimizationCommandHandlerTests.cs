@@ -59,12 +59,15 @@ public class RunOptimizationCommandHandlerTests
     private static RunOptimizationCommand CreateCommand() => new()
     {
         StrategyName = "TestStrategy",
-        InitialCash = 10_000m,
-        StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
+        BacktestSettings = new BacktestSettingsDto
+        {
+            InitialCash = 10_000m,
+            StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
+        },
         DataSubscriptions =
         [
-            new DataSubscriptionDto { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }
+            new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }
         ],
         SubscriptionAxis = null,
         Axes = new Dictionary<string, OptimizationAxisOverride>
@@ -231,8 +234,8 @@ public class RunOptimizationCommandHandlerTests
         SetupAssetMock("ETHUSDT", "Binance", TestAssets.EthUsdt);
     }
 
-    private static DataSubscriptionDto BtcSub => new() { Asset = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" };
-    private static DataSubscriptionDto EthSub => new() { Asset = "ETHUSDT", Exchange = "Binance", TimeFrame = "01:00:00" };
+    private static DataSubscriptionDto BtcSub => new() { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" };
+    private static DataSubscriptionDto EthSub => new() { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "01:00:00" };
 
     [Fact]
     public async Task HandleAsync_SingleDataSubscription_NoAxis_FixedSingleFeed()
@@ -344,7 +347,7 @@ public class RunOptimizationCommandHandlerTests
 
     // ── Multi-asset per-trial scaling tests ─────────────────────────
 
-    private static DataSubscriptionDto SolSub => new() { Asset = "SOLUSDT", Exchange = "Binance", TimeFrame = "01:00:00" };
+    private static DataSubscriptionDto SolSub => new() { AssetName = "SOLUSDT", Exchange = "Binance", TimeFrame = "01:00:00" };
 
     [Fact]
     public async Task HandleAsync_MultiAssetWithQuoteAssetParam_AxesResolvedWithoutScaling()

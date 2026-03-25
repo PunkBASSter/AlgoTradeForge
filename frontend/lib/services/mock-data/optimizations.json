@@ -11,32 +11,31 @@
       "filteredTrials": 12,
       "failedTrials": 0,
       "sortBy": "sharpeRatio",
-      "dataStart": "2025-01-01T00:00:00Z",
-      "dataEnd": "2025-10-31T23:59:59Z",
-      "initialCash": 10000,
-      "commission": 0.001,
-      "slippageTicks": 1,
       "maxParallelism": 4,
-      "assetName": "BTCUSDT",
-      "exchange": "Binance",
-      "timeFrame": "01:00:00",
       "failedTrialDetails": [],
+      "dataSubscription": {
+        "assetName": "BTCUSDT",
+        "exchange": "Binance",
+        "timeFrame": "01:00:00"
+      },
+      "backtestSettings": {
+        "initialCash": 10000,
+        "commissionPerTrade": 0.001,
+        "slippageTicks": 1,
+        "startTime": "2025-01-01T00:00:00Z",
+        "endTime": "2025-10-31T23:59:59Z"
+      },
       "trials": [
         {
           "id": "bt-opt1-t1",
           "strategyName": "SmaCrossover",
           "strategyVersion": "1.2.0",
-          "parameters": { "fastPeriod": 8, "slowPeriod": 21 },
-          "assetName": "BTCUSDT",
-          "exchange": "Binance",
-          "timeFrame": "01:00:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "fastPeriod": 8,
+            "slowPeriod": 21
+          },
           "startedAt": "2025-11-20T10:00:00Z",
           "completedAt": "2025-11-20T10:03:12Z",
-          "dataStart": "2025-01-01T00:00:00Z",
-          "dataEnd": "2025-10-31T23:59:59Z",
           "durationMs": 192400,
           "totalBars": 7296,
           "metrics": {
@@ -49,64 +48,78 @@
             "maxDrawdownPct": 6.8,
             "winRatePct": 57.14,
             "profitFactor": 1.92,
-            "averageWin": 105.20,
-            "averageLoss": -74.30,
+            "averageWin": 105.2,
+            "averageLoss": -74.3,
             "expectancy": 30.86
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-001"
+          "optimizationRunId": "opt-001",
+          "dataSubscription": {
+            "assetName": "BTCUSDT",
+            "exchange": "Binance",
+            "timeFrame": "01:00:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-01-01T00:00:00Z",
+            "endTime": "2025-10-31T23:59:59Z"
+          }
         },
         {
           "id": "bt-opt1-t2",
           "strategyName": "SmaCrossover",
           "strategyVersion": "1.2.0",
-          "parameters": { "fastPeriod": 10, "slowPeriod": 30 },
-          "assetName": "BTCUSDT",
-          "exchange": "Binance",
-          "timeFrame": "01:00:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "fastPeriod": 10,
+            "slowPeriod": 30
+          },
           "startedAt": "2025-11-20T10:03:12Z",
           "completedAt": "2025-11-20T10:06:44Z",
-          "dataStart": "2025-01-01T00:00:00Z",
-          "dataEnd": "2025-10-31T23:59:59Z",
           "durationMs": 212100,
           "totalBars": 7296,
           "metrics": {
             "totalTrades": 87,
             "winningTrades": 46,
             "losingTrades": 41,
-            "netProfit": 2340.50,
+            "netProfit": 2340.5,
             "sharpeRatio": 1.82,
             "sortinoRatio": 2.45,
             "maxDrawdownPct": 8.3,
             "winRatePct": 52.87,
             "profitFactor": 1.65,
-            "averageWin": 112.30,
-            "averageLoss": -78.40,
-            "expectancy": 26.90
+            "averageWin": 112.3,
+            "averageLoss": -78.4,
+            "expectancy": 26.9
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-001"
+          "optimizationRunId": "opt-001",
+          "dataSubscription": {
+            "assetName": "BTCUSDT",
+            "exchange": "Binance",
+            "timeFrame": "01:00:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-01-01T00:00:00Z",
+            "endTime": "2025-10-31T23:59:59Z"
+          }
         },
         {
           "id": "bt-opt1-t3",
           "strategyName": "SmaCrossover",
           "strategyVersion": "1.2.0",
-          "parameters": { "fastPeriod": 5, "slowPeriod": 15 },
-          "assetName": "BTCUSDT",
-          "exchange": "Binance",
-          "timeFrame": "01:00:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "fastPeriod": 5,
+            "slowPeriod": 15
+          },
           "startedAt": "2025-11-20T10:06:44Z",
           "completedAt": "2025-11-20T10:09:58Z",
-          "dataStart": "2025-01-01T00:00:00Z",
-          "dataEnd": "2025-10-31T23:59:59Z",
           "durationMs": 194500,
           "totalBars": 7296,
           "metrics": {
@@ -119,29 +132,36 @@
             "maxDrawdownPct": 16.4,
             "winRatePct": 46.84,
             "profitFactor": 0.82,
-            "averageWin": 88.60,
-            "averageLoss": -72.40,
+            "averageWin": 88.6,
+            "averageLoss": -72.4,
             "expectancy": -5.54
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-001"
+          "optimizationRunId": "opt-001",
+          "dataSubscription": {
+            "assetName": "BTCUSDT",
+            "exchange": "Binance",
+            "timeFrame": "01:00:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-01-01T00:00:00Z",
+            "endTime": "2025-10-31T23:59:59Z"
+          }
         },
         {
           "id": "bt-opt1-t4",
           "strategyName": "SmaCrossover",
           "strategyVersion": "1.2.0",
-          "parameters": { "fastPeriod": 12, "slowPeriod": 50 },
-          "assetName": "BTCUSDT",
-          "exchange": "Binance",
-          "timeFrame": "01:00:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "fastPeriod": 12,
+            "slowPeriod": 50
+          },
           "startedAt": "2025-11-20T10:09:58Z",
           "completedAt": "2025-11-20T10:12:30Z",
-          "dataStart": "2025-01-01T00:00:00Z",
-          "dataEnd": "2025-10-31T23:59:59Z",
           "durationMs": 152200,
           "totalBars": 7296,
           "metrics": {
@@ -154,29 +174,36 @@
             "maxDrawdownPct": 9.1,
             "winRatePct": 62.22,
             "profitFactor": 1.78,
-            "averageWin": 156.30,
-            "averageLoss": -118.70,
-            "expectancy": 42.00
+            "averageWin": 156.3,
+            "averageLoss": -118.7,
+            "expectancy": 42
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-001"
+          "optimizationRunId": "opt-001",
+          "dataSubscription": {
+            "assetName": "BTCUSDT",
+            "exchange": "Binance",
+            "timeFrame": "01:00:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-01-01T00:00:00Z",
+            "endTime": "2025-10-31T23:59:59Z"
+          }
         },
         {
           "id": "bt-opt1-t5",
           "strategyName": "SmaCrossover",
           "strategyVersion": "1.2.0",
-          "parameters": { "fastPeriod": 7, "slowPeriod": 25 },
-          "assetName": "BTCUSDT",
-          "exchange": "Binance",
-          "timeFrame": "01:00:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "fastPeriod": 7,
+            "slowPeriod": 25
+          },
           "startedAt": "2025-11-20T10:12:30Z",
           "completedAt": "2025-11-20T10:15:34Z",
-          "dataStart": "2025-01-01T00:00:00Z",
-          "dataEnd": "2025-10-31T23:59:59Z",
           "durationMs": 184200,
           "totalBars": 7296,
           "metrics": {
@@ -185,17 +212,29 @@
             "losingTrades": 44,
             "netProfit": 2012.34,
             "sharpeRatio": 1.68,
-            "sortinoRatio": 2.30,
+            "sortinoRatio": 2.3,
             "maxDrawdownPct": 7.9,
-            "winRatePct": 55.10,
+            "winRatePct": 55.1,
             "profitFactor": 1.58,
-            "averageWin": 98.70,
-            "averageLoss": -68.50,
+            "averageWin": 98.7,
+            "averageLoss": -68.5,
             "expectancy": 20.53
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-001"
+          "optimizationRunId": "opt-001",
+          "dataSubscription": {
+            "assetName": "BTCUSDT",
+            "exchange": "Binance",
+            "timeFrame": "01:00:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-01-01T00:00:00Z",
+            "endTime": "2025-10-31T23:59:59Z"
+          }
         }
       ]
     },
@@ -210,40 +249,44 @@
       "filteredTrials": 8,
       "failedTrials": 2,
       "sortBy": "netProfit",
-      "dataStart": "2025-04-01T00:00:00Z",
-      "dataEnd": "2025-12-31T23:59:59Z",
-      "initialCash": 10000,
-      "commission": 0.001,
-      "slippageTicks": 1,
       "maxParallelism": 8,
-      "assetName": "ETHUSDT",
-      "exchange": "Binance",
-      "timeFrame": "01:00:00",
       "failedTrialDetails": [
         {
           "exceptionType": "DivideByZeroException",
           "exceptionMessage": "Attempted to divide by zero.",
           "stackTrace": null,
-          "sampleParameters": { "rsiPeriod": 3, "overbought": 90, "oversold": 10 },
+          "sampleParameters": {
+            "rsiPeriod": 3,
+            "overbought": 90,
+            "oversold": 10
+          },
           "occurrenceCount": 2
         }
       ],
+      "dataSubscription": {
+        "assetName": "ETHUSDT",
+        "exchange": "Binance",
+        "timeFrame": "01:00:00"
+      },
+      "backtestSettings": {
+        "initialCash": 10000,
+        "commissionPerTrade": 0.001,
+        "slippageTicks": 1,
+        "startTime": "2025-04-01T00:00:00Z",
+        "endTime": "2025-12-31T23:59:59Z"
+      },
       "trials": [
         {
           "id": "bt-opt2-t1",
           "strategyName": "RsiMomentum",
           "strategyVersion": "1.0.0",
-          "parameters": { "rsiPeriod": 14, "overbought": 70, "oversold": 30 },
-          "assetName": "ETHUSDT",
-          "exchange": "Binance",
-          "timeFrame": "01:00:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "rsiPeriod": 14,
+            "overbought": 70,
+            "oversold": 30
+          },
           "startedAt": "2026-01-10T14:00:00Z",
           "completedAt": "2026-01-10T14:05:42Z",
-          "dataStart": "2025-04-01T00:00:00Z",
-          "dataEnd": "2025-12-31T23:59:59Z",
           "durationMs": 342100,
           "totalBars": 6576,
           "metrics": {
@@ -256,29 +299,37 @@
             "maxDrawdownPct": 7.5,
             "winRatePct": 58.95,
             "profitFactor": 1.95,
-            "averageWin": 132.40,
-            "averageLoss": -95.80,
+            "averageWin": 132.4,
+            "averageLoss": -95.8,
             "expectancy": 44.32
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-002"
+          "optimizationRunId": "opt-002",
+          "dataSubscription": {
+            "assetName": "ETHUSDT",
+            "exchange": "Binance",
+            "timeFrame": "01:00:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-04-01T00:00:00Z",
+            "endTime": "2025-12-31T23:59:59Z"
+          }
         },
         {
           "id": "bt-opt2-t2",
           "strategyName": "RsiMomentum",
           "strategyVersion": "1.0.0",
-          "parameters": { "rsiPeriod": 21, "overbought": 75, "oversold": 25 },
-          "assetName": "ETHUSDT",
-          "exchange": "Binance",
-          "timeFrame": "01:00:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "rsiPeriod": 21,
+            "overbought": 75,
+            "oversold": 25
+          },
           "startedAt": "2026-01-10T14:05:42Z",
           "completedAt": "2026-01-10T14:11:08Z",
-          "dataStart": "2025-04-01T00:00:00Z",
-          "dataEnd": "2025-12-31T23:59:59Z",
           "durationMs": 326400,
           "totalBars": 6576,
           "metrics": {
@@ -291,29 +342,37 @@
             "maxDrawdownPct": 5.2,
             "winRatePct": 63.46,
             "profitFactor": 2.32,
-            "averageWin": 198.30,
-            "averageLoss": -141.60,
+            "averageWin": 198.3,
+            "averageLoss": -141.6,
             "expectancy": 68.61
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-002"
+          "optimizationRunId": "opt-002",
+          "dataSubscription": {
+            "assetName": "ETHUSDT",
+            "exchange": "Binance",
+            "timeFrame": "01:00:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-04-01T00:00:00Z",
+            "endTime": "2025-12-31T23:59:59Z"
+          }
         },
         {
           "id": "bt-opt2-t3",
           "strategyName": "RsiMomentum",
           "strategyVersion": "1.0.0",
-          "parameters": { "rsiPeriod": 7, "overbought": 65, "oversold": 35 },
-          "assetName": "ETHUSDT",
-          "exchange": "Binance",
-          "timeFrame": "01:00:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "rsiPeriod": 7,
+            "overbought": 65,
+            "oversold": 35
+          },
           "startedAt": "2026-01-10T14:11:08Z",
           "completedAt": "2026-01-10T14:16:33Z",
-          "dataStart": "2025-04-01T00:00:00Z",
-          "dataEnd": "2025-12-31T23:59:59Z",
           "durationMs": 325600,
           "totalBars": 6576,
           "metrics": {
@@ -326,29 +385,37 @@
             "maxDrawdownPct": 18.3,
             "winRatePct": 48.28,
             "profitFactor": 0.77,
-            "averageWin": 65.40,
-            "averageLoss": -53.10,
+            "averageWin": 65.4,
+            "averageLoss": -53.1,
             "expectancy": -6.08
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-002"
+          "optimizationRunId": "opt-002",
+          "dataSubscription": {
+            "assetName": "ETHUSDT",
+            "exchange": "Binance",
+            "timeFrame": "01:00:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-04-01T00:00:00Z",
+            "endTime": "2025-12-31T23:59:59Z"
+          }
         },
         {
           "id": "bt-opt2-t4",
           "strategyName": "RsiMomentum",
           "strategyVersion": "1.0.0",
-          "parameters": { "rsiPeriod": 14, "overbought": 80, "oversold": 20 },
-          "assetName": "ETHUSDT",
-          "exchange": "Binance",
-          "timeFrame": "01:00:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "rsiPeriod": 14,
+            "overbought": 80,
+            "oversold": 20
+          },
           "startedAt": "2026-01-10T14:16:33Z",
           "completedAt": "2026-01-10T14:22:11Z",
-          "dataStart": "2025-04-01T00:00:00Z",
-          "dataEnd": "2025-12-31T23:59:59Z",
           "durationMs": 338200,
           "totalBars": 6576,
           "metrics": {
@@ -361,13 +428,25 @@
             "maxDrawdownPct": 4.1,
             "winRatePct": 67.86,
             "profitFactor": 2.78,
-            "averageWin": 245.60,
-            "averageLoss": -178.90,
+            "averageWin": 245.6,
+            "averageLoss": -178.9,
             "expectancy": 103.22
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-002"
+          "optimizationRunId": "opt-002",
+          "dataSubscription": {
+            "assetName": "ETHUSDT",
+            "exchange": "Binance",
+            "timeFrame": "01:00:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-04-01T00:00:00Z",
+            "endTime": "2025-12-31T23:59:59Z"
+          }
         }
       ]
     },
@@ -382,67 +461,75 @@
       "filteredTrials": 25,
       "failedTrials": 0,
       "sortBy": "profitFactor",
-      "dataStart": "2025-06-01T00:00:00Z",
-      "dataEnd": "2026-01-31T23:59:59Z",
-      "initialCash": 10000,
-      "commission": 0.001,
-      "slippageTicks": 1,
       "maxParallelism": 6,
-      "assetName": "SOLUSDT",
-      "exchange": "Binance",
-      "timeFrame": "00:15:00",
       "failedTrialDetails": [],
+      "dataSubscription": {
+        "assetName": "SOLUSDT",
+        "exchange": "Binance",
+        "timeFrame": "00:15:00"
+      },
+      "backtestSettings": {
+        "initialCash": 10000,
+        "commissionPerTrade": 0.001,
+        "slippageTicks": 1,
+        "startTime": "2025-06-01T00:00:00Z",
+        "endTime": "2026-01-31T23:59:59Z"
+      },
       "trials": [
         {
           "id": "bt-opt3-t1",
           "strategyName": "MeanReversion",
           "strategyVersion": "1.1.0",
-          "parameters": { "lookback": 40, "zScoreEntry": 2.0, "zScoreExit": 0.5 },
-          "assetName": "SOLUSDT",
-          "exchange": "Binance",
-          "timeFrame": "00:15:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "lookback": 40,
+            "zScoreEntry": 2,
+            "zScoreExit": 0.5
+          },
           "startedAt": "2026-02-05T09:30:00Z",
           "completedAt": "2026-02-05T09:38:22Z",
-          "dataStart": "2025-06-01T00:00:00Z",
-          "dataEnd": "2026-01-31T23:59:59Z",
           "durationMs": 502400,
           "totalBars": 23424,
           "metrics": {
             "totalTrades": 345,
             "winningTrades": 213,
             "losingTrades": 132,
-            "netProfit": 5678.90,
+            "netProfit": 5678.9,
             "sharpeRatio": 2.56,
             "sortinoRatio": 3.78,
             "maxDrawdownPct": 4.5,
             "winRatePct": 61.74,
             "profitFactor": 2.45,
-            "averageWin": 58.70,
-            "averageLoss": -38.20,
+            "averageWin": 58.7,
+            "averageLoss": -38.2,
             "expectancy": 16.46
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-003"
+          "optimizationRunId": "opt-003",
+          "dataSubscription": {
+            "assetName": "SOLUSDT",
+            "exchange": "Binance",
+            "timeFrame": "00:15:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-06-01T00:00:00Z",
+            "endTime": "2026-01-31T23:59:59Z"
+          }
         },
         {
           "id": "bt-opt3-t2",
           "strategyName": "MeanReversion",
           "strategyVersion": "1.1.0",
-          "parameters": { "lookback": 30, "zScoreEntry": 1.5, "zScoreExit": 0.3 },
-          "assetName": "SOLUSDT",
-          "exchange": "Binance",
-          "timeFrame": "00:15:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "lookback": 30,
+            "zScoreEntry": 1.5,
+            "zScoreExit": 0.3
+          },
           "startedAt": "2026-02-05T09:38:22Z",
           "completedAt": "2026-02-05T09:46:55Z",
-          "dataStart": "2025-06-01T00:00:00Z",
-          "dataEnd": "2026-01-31T23:59:59Z",
           "durationMs": 513200,
           "totalBars": 23424,
           "metrics": {
@@ -453,31 +540,39 @@
             "sharpeRatio": 1.78,
             "sortinoRatio": 2.51,
             "maxDrawdownPct": 8.9,
-            "winRatePct": 58.20,
+            "winRatePct": 58.2,
             "profitFactor": 1.68,
-            "averageWin": 42.30,
-            "averageLoss": -30.80,
-            "expectancy": 7.60
+            "averageWin": 42.3,
+            "averageLoss": -30.8,
+            "expectancy": 7.6
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-003"
+          "optimizationRunId": "opt-003",
+          "dataSubscription": {
+            "assetName": "SOLUSDT",
+            "exchange": "Binance",
+            "timeFrame": "00:15:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-06-01T00:00:00Z",
+            "endTime": "2026-01-31T23:59:59Z"
+          }
         },
         {
           "id": "bt-opt3-t3",
           "strategyName": "MeanReversion",
           "strategyVersion": "1.1.0",
-          "parameters": { "lookback": 60, "zScoreEntry": 2.5, "zScoreExit": 0.8 },
-          "assetName": "SOLUSDT",
-          "exchange": "Binance",
-          "timeFrame": "00:15:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "lookback": 60,
+            "zScoreEntry": 2.5,
+            "zScoreExit": 0.8
+          },
           "startedAt": "2026-02-05T09:46:55Z",
           "completedAt": "2026-02-05T09:54:12Z",
-          "dataStart": "2025-06-01T00:00:00Z",
-          "dataEnd": "2026-01-31T23:59:59Z",
           "durationMs": 437400,
           "totalBars": 23424,
           "metrics": {
@@ -490,29 +585,37 @@
             "maxDrawdownPct": 3.8,
             "winRatePct": 66.29,
             "profitFactor": 2.67,
-            "averageWin": 72.50,
-            "averageLoss": -52.10,
+            "averageWin": 72.5,
+            "averageLoss": -52.1,
             "expectancy": 23.79
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-003"
+          "optimizationRunId": "opt-003",
+          "dataSubscription": {
+            "assetName": "SOLUSDT",
+            "exchange": "Binance",
+            "timeFrame": "00:15:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-06-01T00:00:00Z",
+            "endTime": "2026-01-31T23:59:59Z"
+          }
         },
         {
           "id": "bt-opt3-t4",
           "strategyName": "MeanReversion",
           "strategyVersion": "1.1.0",
-          "parameters": { "lookback": 20, "zScoreEntry": 1.0, "zScoreExit": 0.2 },
-          "assetName": "SOLUSDT",
-          "exchange": "Binance",
-          "timeFrame": "00:15:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "lookback": 20,
+            "zScoreEntry": 1,
+            "zScoreExit": 0.2
+          },
           "startedAt": "2026-02-05T09:54:12Z",
           "completedAt": "2026-02-05T10:02:48Z",
-          "dataStart": "2025-06-01T00:00:00Z",
-          "dataEnd": "2026-01-31T23:59:59Z",
           "durationMs": 516200,
           "totalBars": 23424,
           "metrics": {
@@ -525,29 +628,37 @@
             "maxDrawdownPct": 22.1,
             "winRatePct": 51.82,
             "profitFactor": 0.72,
-            "averageWin": 28.40,
-            "averageLoss": -24.50,
+            "averageWin": 28.4,
+            "averageLoss": -24.5,
             "expectancy": -3.41
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-003"
+          "optimizationRunId": "opt-003",
+          "dataSubscription": {
+            "assetName": "SOLUSDT",
+            "exchange": "Binance",
+            "timeFrame": "00:15:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-06-01T00:00:00Z",
+            "endTime": "2026-01-31T23:59:59Z"
+          }
         },
         {
           "id": "bt-opt3-t5",
           "strategyName": "MeanReversion",
           "strategyVersion": "1.1.0",
-          "parameters": { "lookback": 50, "zScoreEntry": 2.0, "zScoreExit": 0.6 },
-          "assetName": "SOLUSDT",
-          "exchange": "Binance",
-          "timeFrame": "00:15:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "lookback": 50,
+            "zScoreEntry": 2,
+            "zScoreExit": 0.6
+          },
           "startedAt": "2026-02-05T09:54:12Z",
           "completedAt": "2026-02-05T10:02:48Z",
-          "dataStart": "2025-06-01T00:00:00Z",
-          "dataEnd": "2026-01-31T23:59:59Z",
           "durationMs": 488100,
           "totalBars": 23424,
           "metrics": {
@@ -560,29 +671,37 @@
             "maxDrawdownPct": 5.1,
             "winRatePct": 63.25,
             "profitFactor": 2.38,
-            "averageWin": 65.80,
-            "averageLoss": -44.30,
-            "expectancy": 20.90
+            "averageWin": 65.8,
+            "averageLoss": -44.3,
+            "expectancy": 20.9
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-003"
+          "optimizationRunId": "opt-003",
+          "dataSubscription": {
+            "assetName": "SOLUSDT",
+            "exchange": "Binance",
+            "timeFrame": "00:15:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-06-01T00:00:00Z",
+            "endTime": "2026-01-31T23:59:59Z"
+          }
         },
         {
           "id": "bt-opt3-t6",
           "strategyName": "MeanReversion",
           "strategyVersion": "1.1.0",
-          "parameters": { "lookback": 35, "zScoreEntry": 1.8, "zScoreExit": 0.4 },
-          "assetName": "SOLUSDT",
-          "exchange": "Binance",
-          "timeFrame": "00:15:00",
-          "initialCash": 10000,
-          "commission": 0.001,
-          "slippageTicks": 1,
+          "parameters": {
+            "lookback": 35,
+            "zScoreEntry": 1.8,
+            "zScoreExit": 0.4
+          },
           "startedAt": "2026-02-05T09:54:12Z",
           "completedAt": "2026-02-05T10:02:48Z",
-          "dataStart": "2025-06-01T00:00:00Z",
-          "dataEnd": "2026-01-31T23:59:59Z",
           "durationMs": 502300,
           "totalBars": 23424,
           "metrics": {
@@ -595,13 +714,25 @@
             "maxDrawdownPct": 6.7,
             "winRatePct": 60.15,
             "profitFactor": 2.12,
-            "averageWin": 48.90,
-            "averageLoss": -34.60,
+            "averageWin": 48.9,
+            "averageLoss": -34.6,
             "expectancy": 11.74
           },
           "hasCandleData": false,
           "runMode": "optimization",
-          "optimizationRunId": "opt-003"
+          "optimizationRunId": "opt-003",
+          "dataSubscription": {
+            "assetName": "SOLUSDT",
+            "exchange": "Binance",
+            "timeFrame": "00:15:00"
+          },
+          "backtestSettings": {
+            "initialCash": 10000,
+            "commissionPerTrade": 0.001,
+            "slippageTicks": 1,
+            "startTime": "2025-06-01T00:00:00Z",
+            "endTime": "2026-01-31T23:59:59Z"
+          }
         }
       ]
     }

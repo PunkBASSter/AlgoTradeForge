@@ -8,16 +8,10 @@ public sealed record BacktestRunRecord
     public required string StrategyName { get; init; }
     public required string StrategyVersion { get; init; }
     public required IReadOnlyDictionary<string, object> Parameters { get; init; }
-    public required string AssetName { get; init; }
-    public required string Exchange { get; init; }
-    public required string TimeFrame { get; init; }
-    public required decimal InitialCash { get; init; }
-    public required decimal Commission { get; init; }
-    public required int SlippageTicks { get; init; }
+    public required DataSubscriptionDto DataSubscription { get; init; }
+    public required BacktestSettingsDto BacktestSettings { get; init; }
     public required DateTimeOffset StartedAt { get; init; }
     public required DateTimeOffset CompletedAt { get; init; }
-    public required DateTimeOffset DataStart { get; init; }
-    public required DateTimeOffset DataEnd { get; init; }
     public required long DurationMs { get; init; }
     public required int TotalBars { get; init; }
     public required PerformanceMetrics Metrics { get; init; }

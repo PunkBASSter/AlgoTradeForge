@@ -1,4 +1,4 @@
-using AlgoTradeForge.Application.Optimization;
+using AlgoTradeForge.Application;
 using AlgoTradeForge.Domain.Live;
 
 namespace AlgoTradeForge.WebApi.Contracts;

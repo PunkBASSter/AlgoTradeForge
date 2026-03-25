@@ -32,6 +32,10 @@ const mockStrategyDescriptors: StrategyDescriptor[] = strategiesData.map((name) 
   name,
   parameterDefaults: {},
   optimizationAxes: [],
+  backtestTemplate: {},
+  optimizationTemplate: {},
+  liveSessionTemplate: {},
+  debugSessionTemplate: {},
 }));
 import backtestsData from "./mock-data/backtests.json";
 import optimizationsData from "./mock-data/optimizations.json";
@@ -89,13 +93,13 @@ export const mockClient: typeof import("./api-client").apiClient & {
       );
     }
     if (params?.assetName) {
-      filtered = filtered.filter((b) => b.assetName === params.assetName);
+      filtered = filtered.filter((b) => b.dataSubscription.assetName === params.assetName);
     }
     if (params?.exchange) {
-      filtered = filtered.filter((b) => b.exchange === params.exchange);
+      filtered = filtered.filter((b) => b.dataSubscription.exchange === params.exchange);
     }
     if (params?.timeFrame) {
-      filtered = filtered.filter((b) => b.timeFrame === params.timeFrame);
+      filtered = filtered.filter((b) => b.dataSubscription.timeFrame === params.timeFrame);
     }
     if (params?.standaloneOnly) {
       filtered = filtered.filter((b) => b.runMode === "standalone");
@@ -168,13 +172,13 @@ export const mockClient: typeof import("./api-client").apiClient & {
       );
     }
     if (params?.assetName) {
-      filtered = filtered.filter((o) => o.assetName === params.assetName);
+      filtered = filtered.filter((o) => o.dataSubscription.assetName === params.assetName);
     }
     if (params?.exchange) {
-      filtered = filtered.filter((o) => o.exchange === params.exchange);
+      filtered = filtered.filter((o) => o.dataSubscription.exchange === params.exchange);
     }
     if (params?.timeFrame) {
-      filtered = filtered.filter((o) => o.timeFrame === params.timeFrame);
+      filtered = filtered.filter((o) => o.dataSubscription.timeFrame === params.timeFrame);
     }
 
     const offset = params?.offset ?? 0;
@@ -293,7 +297,7 @@ export const mockClient: typeof import("./api-client").apiClient & {
     await delay();
     return {
       sessionId: "mock-debug-session-001",
-      assetName: req.assetName,
+      assetName: req.dataSubscription.assetName,
       strategyName: req.strategyName,
       createdAt: new Date().toISOString(),
     };

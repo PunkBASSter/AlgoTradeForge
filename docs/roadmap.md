@@ -5,6 +5,7 @@
 ## QA
 - Debug on futures, investigate rejections
 - Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
+- Ensure 0.001% per trade set on optimizations
 
 ## Overfitting control
 - Walk Forward OPTI

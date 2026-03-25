@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.WebApi.Contracts;
 using AlgoTradeForge.WebApi.Tests.Infrastructure;
@@ -13,11 +14,21 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
     private static RunOptimizationRequest MakeOptimizationRequest() => new()
     {
         StrategyName = "BuyAndHold",
+        BacktestSettings = new()
+        {
+            InitialCash = 10_000m,
+            StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
+        },
+        OptimizationSettings = new()
+        {
+            MaxDegreeOfParallelism = 1,
+        },
         DataSubscriptions =
         [
             new DataSubscriptionDto
             {
-                Asset = "BTCUSDT",
+                AssetName = "BTCUSDT",
                 Exchange = "Binance",
                 TimeFrame = "01:00:00",
             }
@@ -26,10 +37,6 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         {
             ["Quantity"] = new RangeOverride(1m, 3m, 2m), // 2 values: 1, 3
         },
-        InitialCash = 10_000m,
-        StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
-        MaxDegreeOfParallelism = 1,
     };
 
     // ── Happy paths ──────────────────────────────────────────────────
@@ -98,18 +105,21 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         var request = new RunOptimizationRequest
         {
             StrategyName = "NonExistentStrategy",
+            BacktestSettings = new()
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
+            },
             DataSubscriptions =
             [
                 new DataSubscriptionDto
                 {
-                    Asset = "BTCUSDT",
+                    AssetName = "BTCUSDT",
                     Exchange = "Binance",
                     TimeFrame = "01:00:00",
                 }
             ],
-            InitialCash = 10_000m,
-            StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
         };
 
         var response = await Client.PostAsJsonAsync("/api/optimizations", request, Json, TestContext.Current.CancellationToken);
@@ -123,18 +133,21 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         var request = new RunOptimizationRequest
         {
             StrategyName = "BuyAndHold",
+            BacktestSettings = new()
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
+            },
             DataSubscriptions =
             [
                 new DataSubscriptionDto
                 {
-                    Asset = "FAKEUSDT",
+                    AssetName = "FAKEUSDT",
                     Exchange = "FakeExchange",
                     TimeFrame = "01:00:00",
                 }
             ],
-            InitialCash = 10_000m,
-            StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
         };
 
         var response = await Client.PostAsJsonAsync("/api/optimizations", request, Json, TestContext.Current.CancellationToken);
@@ -163,6 +176,44 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Post_WithSubscriptionAxis_Returns202WithSubmission()
+    {
+        var request = new RunOptimizationRequest
+        {
+            StrategyName = "BuyAndHold",
+            BacktestSettings = new()
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
+            },
+            OptimizationSettings = new()
+            {
+                MaxDegreeOfParallelism = 1,
+            },
+            SubscriptionAxis =
+            [
+                new DataSubscriptionDto
+                {
+                    AssetName = "BTCUSDT",
+                    Exchange = "Binance",
+                    TimeFrame = "01:00:00",
+                }
+            ],
+            OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
+            {
+                ["Quantity"] = new RangeOverride(1m, 3m, 2m),
+            },
+        };
+
+        var (response, body) = await SubmitOptimizationAsync(request);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.NotEqual(Guid.Empty, body.Id);
+        Assert.True(body.TotalCombinations > 0);
+    }
+
     // ── Cancel test ──────────────────────────────────────────────────
 
     [Fact]
@@ -172,11 +223,21 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         var request = new RunOptimizationRequest
         {
             StrategyName = "BuyAndHold",
+            BacktestSettings = new()
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 4, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+            OptimizationSettings = new()
+            {
+                MaxDegreeOfParallelism = 1,
+            },
             DataSubscriptions =
             [
                 new DataSubscriptionDto
                 {
-                    Asset = "BTCUSDT",
+                    AssetName = "BTCUSDT",
                     Exchange = "Binance",
                     TimeFrame = "01:00:00",
                 }
@@ -185,10 +246,6 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
             {
                 ["Quantity"] = new RangeOverride(0.1m, 10m, 0.1m),
             },
-            InitialCash = 10_000m,
-            StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            EndTime = new DateTimeOffset(2025, 4, 1, 0, 0, 0, TimeSpan.Zero),
-            MaxDegreeOfParallelism = 1,
         };
 
         var (_, submission) = await SubmitOptimizationAsync(request);

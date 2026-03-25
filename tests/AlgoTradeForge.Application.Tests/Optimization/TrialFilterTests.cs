@@ -24,9 +24,12 @@ public sealed class TrialFilterTests
         double? minAnnualizedReturnPct = null) => new()
     {
         StrategyName = "Test",
-        InitialCash = 10_000m,
-        StartTime = DateTimeOffset.UtcNow.AddDays(-30),
-        EndTime = DateTimeOffset.UtcNow,
+        BacktestSettings = new BacktestSettingsDto
+        {
+            InitialCash = 10_000m,
+            StartTime = DateTimeOffset.UtcNow.AddDays(-30),
+            EndTime = DateTimeOffset.UtcNow,
+        },
         MinProfitFactor = minProfitFactor,
         MaxDrawdownPct = maxDrawdownPct,
         MinSharpeRatio = minSharpeRatio,

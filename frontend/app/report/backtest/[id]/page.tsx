@@ -118,15 +118,19 @@ export default function BacktestReportPage({
 
   const handleRerun = () => {
     const config: RunBacktestRequest = {
-      assetName: backtest.assetName,
-      exchange: backtest.exchange,
+      dataSubscription: {
+        assetName: backtest.dataSubscription.assetName,
+        exchange: backtest.dataSubscription.exchange,
+        timeFrame: toTimeSpan(backtest.dataSubscription.timeFrame),
+      },
+      backtestSettings: {
+        initialCash: backtest.backtestSettings.initialCash,
+        startTime: backtest.backtestSettings.startTime,
+        endTime: backtest.backtestSettings.endTime,
+        commissionPerTrade: backtest.backtestSettings.commissionPerTrade,
+        slippageTicks: backtest.backtestSettings.slippageTicks,
+      },
       strategyName: backtest.strategyName,
-      initialCash: backtest.initialCash,
-      startTime: backtest.dataStart,
-      endTime: backtest.dataEnd,
-      commissionPerTrade: backtest.commission,
-      slippageTicks: backtest.slippageTicks,
-      timeFrame: toTimeSpan(backtest.timeFrame),
       strategyParameters: Object.fromEntries(
         Object.entries(backtest.parameters).filter(
           ([k]) => !INTERNAL_PARAM_KEYS.has(k),
@@ -139,15 +143,19 @@ export default function BacktestReportPage({
 
   const handleDebug = () => {
     const config: StartDebugSessionRequest = {
-      assetName: backtest.assetName,
-      exchange: backtest.exchange,
+      dataSubscription: {
+        assetName: backtest.dataSubscription.assetName,
+        exchange: backtest.dataSubscription.exchange,
+        timeFrame: toTimeSpan(backtest.dataSubscription.timeFrame),
+      },
+      backtestSettings: {
+        initialCash: backtest.backtestSettings.initialCash,
+        startTime: backtest.backtestSettings.startTime,
+        endTime: backtest.backtestSettings.endTime,
+        commissionPerTrade: backtest.backtestSettings.commissionPerTrade,
+        slippageTicks: backtest.backtestSettings.slippageTicks,
+      },
       strategyName: backtest.strategyName,
-      initialCash: backtest.initialCash,
-      startTime: backtest.dataStart,
-      endTime: backtest.dataEnd,
-      commissionPerTrade: backtest.commission,
-      slippageTicks: backtest.slippageTicks,
-      timeFrame: toTimeSpan(backtest.timeFrame),
       strategyParameters: Object.fromEntries(
         Object.entries(backtest.parameters).filter(
           ([k]) => !INTERNAL_PARAM_KEYS.has(k),
@@ -170,10 +178,10 @@ export default function BacktestReportPage({
             </span>
           </h1>
           <p className="text-sm text-text-secondary mt-1">
-            {backtest.assetName} / {backtest.exchange} / {backtest.timeFrame}
+            {backtest.dataSubscription.assetName} / {backtest.dataSubscription.exchange} / {backtest.dataSubscription.timeFrame}
             {" -- "}
-            {new Date(backtest.dataStart).toLocaleDateString()} to{" "}
-            {new Date(backtest.dataEnd).toLocaleDateString()}
+            {new Date(backtest.backtestSettings.startTime).toLocaleDateString()} to{" "}
+            {new Date(backtest.backtestSettings.endTime).toLocaleDateString()}
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -73,7 +73,7 @@ public class MetricsCalculator : IMetricsCalculator
     private static TradeStatistics ComputeTradeStatistics(IReadOnlyList<Fill> fills)
     {
         var stats = new TradeStatistics();
-        var positions = new Dictionary<string, (decimal Quantity, long AvgEntry, Asset Asset)>();
+        var positions = new Dictionary<string, (decimal Quantity, long AvgEntry, Asset Asset, long AccumulatedCommission)>();
 
         foreach (var fill in fills)
         {
@@ -82,7 +82,7 @@ public class MetricsCalculator : IMetricsCalculator
             var multiplier = fill.Asset.Multiplier;
 
             if (!positions.TryGetValue(key, out var pos))
-                pos = (0m, 0L, fill.Asset);
+                pos = (0m, 0L, fill.Asset, 0L);
 
             var direction = fill.Side == OrderSide.Buy ? 1 : -1;
             var fillQuantity = fill.Quantity * direction;
@@ -91,27 +91,33 @@ public class MetricsCalculator : IMetricsCalculator
             if (pos.Quantity != 0 && Math.Sign(newQuantity) != Math.Sign(pos.Quantity))
             {
                 // Full reversal — close existing position
-                var pnl = MoneyConvert.ToLong(pos.Quantity * (fill.Price - pos.AvgEntry) * multiplier);
-                RecordPnl(stats, pnl, fill.Timestamp.ToUnixTimeMilliseconds());
-                pos = (newQuantity, fill.Price, fill.Asset);
+                var grossPnl = MoneyConvert.ToLong(pos.Quantity * (fill.Price - pos.AvgEntry) * multiplier);
+                var roundTripCommission = pos.AccumulatedCommission + fill.Commission;
+                var netPnl = grossPnl - roundTripCommission;
+                RecordPnl(stats, grossPnl, netPnl, fill.Timestamp.ToUnixTimeMilliseconds());
+                pos = (newQuantity, fill.Price, fill.Asset, 0L);
             }
             else if (pos.Quantity == 0)
             {
-                pos = (newQuantity, fill.Price, fill.Asset);
+                pos = (newQuantity, fill.Price, fill.Asset, fill.Commission);
             }
             else if (Math.Abs(newQuantity) < Math.Abs(pos.Quantity))
             {
                 // Partial close
                 var closedQuantity = Math.Abs(pos.Quantity) - Math.Abs(newQuantity);
-                var pnl = MoneyConvert.ToLong(closedQuantity * (fill.Price - pos.AvgEntry) * Math.Sign(pos.Quantity) * multiplier);
-                RecordPnl(stats, pnl, fill.Timestamp.ToUnixTimeMilliseconds());
-                pos = (newQuantity, pos.AvgEntry, fill.Asset);
+                var grossPnl = MoneyConvert.ToLong(closedQuantity * (fill.Price - pos.AvgEntry) * Math.Sign(pos.Quantity) * multiplier);
+                var closeFraction = closedQuantity / Math.Abs(pos.Quantity);
+                var attributedEntryCommission = MoneyConvert.ToLong(closeFraction * pos.AccumulatedCommission);
+                var roundTripCommission = attributedEntryCommission + fill.Commission;
+                var netPnl = grossPnl - roundTripCommission;
+                RecordPnl(stats, grossPnl, netPnl, fill.Timestamp.ToUnixTimeMilliseconds());
+                pos = (newQuantity, pos.AvgEntry, fill.Asset, pos.AccumulatedCommission - attributedEntryCommission);
             }
             else
             {
                 // Adding to position — weighted average entry
                 var totalCost = pos.Quantity * pos.AvgEntry + fillQuantity * fill.Price;
-                pos = (newQuantity, MoneyConvert.ToLong(totalCost / newQuantity), fill.Asset);
+                pos = (newQuantity, MoneyConvert.ToLong(totalCost / newQuantity), fill.Asset, pos.AccumulatedCommission + fill.Commission);
             }
 
             positions[key] = pos;
@@ -120,20 +126,20 @@ public class MetricsCalculator : IMetricsCalculator
         return stats;
     }
 
-    private static void RecordPnl(TradeStatistics stats, long pnl, long exitTimestampMs)
+    private static void RecordPnl(TradeStatistics stats, long grossPnl, long netPnl, long exitTimestampMs)
     {
-        if (pnl > 0)
+        if (grossPnl > 0)
         {
             stats.WinningTrades++;
-            stats.GrossProfit += (double)pnl;
+            stats.GrossProfit += (double)grossPnl;
         }
-        else if (pnl < 0)
+        else if (grossPnl < 0)
         {
             stats.LosingTrades++;
-            stats.GrossLoss += (double)Math.Abs(pnl);
+            stats.GrossLoss += (double)Math.Abs(grossPnl);
         }
         stats.RoundTrips++;
-        stats.Trades.Add(new ClosedTrade(exitTimestampMs, pnl));
+        stats.Trades.Add(new ClosedTrade(exitTimestampMs, netPnl));
     }
 
     private static List<double> BuildDoubleCurve(IReadOnlyList<long> equityCurve)

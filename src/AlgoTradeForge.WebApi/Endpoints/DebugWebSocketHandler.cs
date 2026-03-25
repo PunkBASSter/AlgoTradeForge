@@ -13,20 +13,17 @@ namespace AlgoTradeForge.WebApi.Endpoints;
 ///   Server → Client: raw JSONL events (same format as file sink), snapshot responses, error/completion messages
 ///   Client → Server: command JSON messages (same format as DebugCommandRequest)
 /// </summary>
-public static class DebugWebSocketHandler
+public sealed class DebugWebSocketHandler(JsonSerializerOptions jsonOptions)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    public static void MapDebugWebSocket(IEndpointRouteBuilder app)
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
-    public static void MapDebugWebSocket(this IEndpointRouteBuilder app)
-    {
-        app.Map("/api/debug-sessions/{id:guid}/ws", HandleWebSocket)
+        app.Map("/api/debug-sessions/{id:guid}/ws",
+            (HttpContext ctx, Guid id, IDebugSessionStore store, DebugWebSocketHandler handler)
+                => handler.HandleWebSocket(ctx, id, store))
             .AddEndpointFilter<LocalhostOnlyFilter>();
     }
 
-    private static async Task HandleWebSocket(HttpContext context, Guid id, IDebugSessionStore store)
+    private async Task HandleWebSocket(HttpContext context, Guid id, IDebugSessionStore store)
     {
         if (!context.WebSockets.IsWebSocketRequest)
         {
@@ -77,7 +74,7 @@ public static class DebugWebSocketHandler
 
     private const int MaxMessageSize = 64 * 1024; // 64 KB
 
-    private static async Task RunCommandLoop(WebSocket webSocket, DebugSession session, CancellationToken ct)
+    private async Task RunCommandLoop(WebSocket webSocket, DebugSession session, CancellationToken ct)
     {
         var buffer = new byte[4096];
         using var accumulator = new MemoryStream();
@@ -118,7 +115,7 @@ public static class DebugWebSocketHandler
         }
     }
 
-    private static async Task ProcessCommand(
+    private async Task ProcessCommand(
         DebugSession session, ReadOnlyMemory<byte> messageBytes, CancellationToken ct)
     {
         var sink = session.WebSocketSink!;
@@ -159,7 +156,7 @@ public static class DebugWebSocketHandler
         }
     }
 
-    private static void SendSnapshot(
+    private void SendSnapshot(
         WebSocketSink sink, DebugSnapshot snapshot, bool sessionActive)
     {
         var response = new WebSocketSnapshotMessage(
@@ -167,21 +164,21 @@ public static class DebugWebSocketHandler
             snapshot.SubscriptionIndex, snapshot.IsExportableSubscription,
             snapshot.FillsThisBar, snapshot.PortfolioEquity);
 
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(response, JsonOptions);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(response, jsonOptions);
         sink.SendMessage(bytes);
     }
 
-    private static void SendSetExportAck(WebSocketSink sink, bool mutations)
+    private void SendSetExportAck(WebSocketSink sink, bool mutations)
     {
         var response = new WebSocketSetExportAckMessage("set_export_ack", mutations);
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(response, JsonOptions);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(response, jsonOptions);
         sink.SendMessage(bytes);
     }
 
-    private static void SendError(WebSocketSink sink, string message)
+    private void SendError(WebSocketSink sink, string message)
     {
         var response = new WebSocketErrorMessage("error", message);
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(response, JsonOptions);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(response, jsonOptions);
         sink.SendMessage(bytes);
     }
 

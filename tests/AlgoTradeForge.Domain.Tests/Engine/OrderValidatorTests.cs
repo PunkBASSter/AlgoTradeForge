@@ -28,7 +28,7 @@ public class OrderValidatorTests
     private static readonly IReadOnlyDictionary<string, long> NoPrices =
         new Dictionary<string, long>();
 
-    private static BacktestOptions CreateOptions(long initialCash = 100_000L, long commission = 0L) =>
+    private static BacktestOptions CreateOptions(long initialCash = 100_000L, decimal commission = 0m) =>
         new()
         {
             InitialCash = initialCash,
@@ -124,7 +124,7 @@ public class OrderValidatorTests
         // 10 shares * 10_000 = 100_000 exactly equals cash, but commission pushes it over
         var portfolio = new Portfolio { InitialCash = 100_000L };
         portfolio.Initialize();
-        var options = CreateOptions(commission: 1L);
+        var options = CreateOptions(commission: 0.001m);
 
         var result = _validator.ValidateSettlement(order, 10_000L, portfolio, options, NoPrices);
 

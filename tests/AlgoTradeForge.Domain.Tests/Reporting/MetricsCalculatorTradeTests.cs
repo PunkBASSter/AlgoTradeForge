@@ -99,4 +99,64 @@ public class MetricsCalculatorTradeTests
         Assert.Single(trades);
         Assert.Equal(-100L, trades[0].RealizedPnl);
     }
+
+    [Fact]
+    public void RoundTrip_WithCommission_ReturnsNetPnl()
+    {
+        var exitTime = new DateTimeOffset(2024, 3, 15, 14, 0, 0, TimeSpan.Zero);
+        var fills = new List<Fill>
+        {
+            TestFills.Buy(TestAssets.Aapl, 100L, 10m, commission: 5L, timestamp: Start),
+            TestFills.Sell(TestAssets.Aapl, 121L, 10m, commission: 5L, timestamp: exitTime),
+        };
+        var equityCurve = new List<long> { 10_000L, 10_200L };
+
+        var (_, trades) = _sut.Calculate(fills, equityCurve, 10_000L, Start, End);
+
+        Assert.Single(trades);
+        // Gross PnL = (121-100) * 10 * 1 = 210, round-trip commission = 5+5 = 10
+        // Net PnL = 210 - 10 = 200
+        Assert.Equal(200L, trades[0].RealizedPnl);
+    }
+
+    [Fact]
+    public void PartialClose_WithCommission_AttributesProportionally()
+    {
+        var exitTime = new DateTimeOffset(2024, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var fills = new List<Fill>
+        {
+            TestFills.Buy(TestAssets.Aapl, 100L, 10m, commission: 10L, timestamp: Start),
+            TestFills.Sell(TestAssets.Aapl, 110L, 5m, commission: 5L, timestamp: exitTime),
+        };
+        var equityCurve = new List<long> { 10_000L, 10_035L };
+
+        var (_, trades) = _sut.Calculate(fills, equityCurve, 10_000L, Start, End);
+
+        Assert.Single(trades);
+        // Gross PnL = (110-100) * 5 * 1 = 50
+        // Entry commission attributed = 10 * (5/10) = 5, exit commission = 5
+        // Net PnL = 50 - 5 - 5 = 40
+        Assert.Equal(40L, trades[0].RealizedPnl);
+    }
+
+    [Fact]
+    public void GrossMetrics_UnchangedByCommissionFix()
+    {
+        var exitTime = new DateTimeOffset(2024, 3, 15, 14, 0, 0, TimeSpan.Zero);
+        var fills = new List<Fill>
+        {
+            TestFills.Buy(TestAssets.Aapl, 100L, 10m, commission: 5L, timestamp: Start),
+            TestFills.Sell(TestAssets.Aapl, 121L, 10m, commission: 5L, timestamp: exitTime),
+        };
+        var equityCurve = new List<long> { 10_000L, 10_200L };
+
+        var (metrics, _) = _sut.Calculate(fills, equityCurve, 10_000L, Start, End);
+
+        // GrossProfit uses gross PnL (210), not net (200)
+        Assert.Equal(210m, metrics.GrossProfit);
+        Assert.Equal(0m, metrics.GrossLoss);
+        Assert.Equal(10m, metrics.TotalCommissions);
+        // NetProfit = GrossProfit - GrossLoss - TotalCommissions = 210 - 0 - 10 = 200
+        Assert.Equal(200m, metrics.NetProfit);
+    }
 }

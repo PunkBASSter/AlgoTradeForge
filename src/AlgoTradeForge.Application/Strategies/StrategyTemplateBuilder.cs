@@ -15,15 +15,21 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<ParameterAxis> axes,
         IReadOnlyList<AvailableAssetInfo> availableAssets) => new()
     {
-        ["assetName"] = FirstAssetOrDefault(availableAssets),
-        ["exchange"] = FirstExchangeOrDefault(availableAssets),
+        ["dataSubscription"] = new Dictionary<string, object>
+        {
+            ["assetName"] = FirstAssetOrDefault(availableAssets),
+            ["exchange"] = FirstExchangeOrDefault(availableAssets),
+            ["timeFrame"] = "01:00:00",
+        },
+        ["backtestSettings"] = new Dictionary<string, object>
+        {
+            ["initialCash"] = 10000,
+            ["startTime"] = "2025-01-01T00:00:00Z",
+            ["endTime"] = "2025-12-31T23:59:59Z",
+            ["commissionPerTrade"] = 0.001,
+            ["slippageTicks"] = 0,
+        },
         ["strategyName"] = strategyName,
-        ["initialCash"] = 10000,
-        ["startTime"] = "2025-01-01T00:00:00Z",
-        ["endTime"] = "2025-12-31T23:59:59Z",
-        ["commissionPerTrade"] = 0.001,
-        ["slippageTicks"] = 2,
-        ["timeFrame"] = "01:00:00",
         ["strategyParameters"] = ConvertToHumanReadable(paramDefaults, axes),
     };
 
@@ -39,20 +45,25 @@ public static class StrategyTemplateBuilder
         return new Dictionary<string, object>
         {
             ["strategyName"] = strategyName,
-            ["dataSubscriptions"] = new List<Dictionary<string, object>>(),
+            ["backtestSettings"] = new Dictionary<string, object>
+            {
+                ["initialCash"] = 10000,
+                ["startTime"] = "2025-01-01T00:00:00Z",
+                ["endTime"] = "2025-12-31T23:59:59Z",
+                ["commissionPerTrade"] = 0.001,
+                ["slippageTicks"] = 0,
+            },
+            ["optimizationSettings"] = new Dictionary<string, object>
+            {
+                ["sortBy"] = "sortinoRatio",
+                ["maxTrialsToKeep"] = 10000,
+                ["minProfitFactor"] = 0.5,
+                ["maxDrawdownPct"] = 95.0,
+                ["minSharpeRatio"] = -5.0,
+                ["minSortinoRatio"] = -5.0,
+                ["minAnnualizedReturnPct"] = -100.0,
+            },
             ["subscriptionAxis"] = BuildSubscriptions(availableAssets, "01:00:00"),
-            ["initialCash"] = 10000,
-            ["startTime"] = "2025-01-01T00:00:00Z",
-            ["endTime"] = "2025-12-31T23:59:59Z",
-            ["commissionPerTrade"] = 0.001,
-            ["slippageTicks"] = 2,
-            ["sortBy"] = "sortinoRatio",
-            ["maxTrialsToKeep"] = 10000,
-            ["minProfitFactor"] = 0.5,
-            ["maxDrawdownPct"] = 95.0,
-            ["minSharpeRatio"] = -5.0,
-            ["minSortinoRatio"] = -5.0,
-            ["minAnnualizedReturnPct"] = -100.0,
             ["optimizationAxes"] = axisOverrides.Count > 0 ? axisOverrides : null!,
         };
     }
@@ -76,15 +87,21 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<ParameterAxis> axes,
         IReadOnlyList<AvailableAssetInfo> availableAssets) => new()
     {
-        ["assetName"] = FirstAssetOrDefault(availableAssets),
-        ["exchange"] = FirstExchangeOrDefault(availableAssets),
+        ["dataSubscription"] = new Dictionary<string, object>
+        {
+            ["assetName"] = FirstAssetOrDefault(availableAssets),
+            ["exchange"] = FirstExchangeOrDefault(availableAssets),
+            ["timeFrame"] = "01:00:00",
+        },
+        ["backtestSettings"] = new Dictionary<string, object>
+        {
+            ["initialCash"] = 10000,
+            ["startTime"] = "2025-01-01T00:00:00Z",
+            ["endTime"] = "2025-12-31T23:59:59Z",
+            ["commissionPerTrade"] = 0.001,
+            ["slippageTicks"] = 0,
+        },
         ["strategyName"] = strategyName,
-        ["initialCash"] = 10000,
-        ["startTime"] = "2025-01-01T00:00:00Z",
-        ["endTime"] = "2025-12-31T23:59:59Z",
-        ["commissionPerTrade"] = 0.001,
-        ["slippageTicks"] = 2,
-        ["timeFrame"] = "01:00:00",
         ["strategyParameters"] = ConvertToHumanReadable(paramDefaults, axes),
     };
 
@@ -98,12 +115,12 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<AvailableAssetInfo> assets, string timeFrame)
     {
         if (assets.Count == 0)
-            return [new() { ["asset"] = DefaultAsset, ["exchange"] = DefaultExchange, ["timeFrame"] = timeFrame }];
+            return [new() { ["assetName"] = DefaultAsset, ["exchange"] = DefaultExchange, ["timeFrame"] = timeFrame }];
 
         return assets
             .Select(a => new Dictionary<string, object>
             {
-                ["asset"] = a.LookupName,
+                ["assetName"] = a.LookupName,
                 ["exchange"] = a.Exchange,
                 ["timeFrame"] = timeFrame,
             })

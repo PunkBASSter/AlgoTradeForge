@@ -48,9 +48,9 @@ export function OptimizationTrialsTable({
       },
       { key: "strategyVersion", header: "Version" },
       { key: "id", header: "Run ID", render: (v) => String(v).substring(0, 8) },
-      { key: "assetName", header: "Asset" },
-      { key: "exchange", header: "Exchange" },
-      { key: "timeFrame", header: "TF" },
+      { key: "dataSubscription.assetName", header: "Asset", render: (_v, row) => row.dataSubscription.assetName },
+      { key: "dataSubscription.exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
+      { key: "dataSubscription.timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
       {
         key: "sortino",
         header: "Sortino",
@@ -77,6 +77,11 @@ export function OptimizationTrialsTable({
         render: (_v, row) => formatPercent(row.metrics?.winRatePct ?? 0),
       },
       {
+        key: "trades",
+        header: "Trades",
+        render: (_v, row) => Math.round((row.metrics?.totalTrades ?? 0) / 2),
+      },
+      {
         key: "netProfit",
         header: "Net Profit",
         render: (_v, row) => formatNumber(row.metrics?.netProfit ?? 0),
@@ -89,15 +94,19 @@ export function OptimizationTrialsTable({
             onClick={(e) => {
               e.stopPropagation();
               const config: StartDebugSessionRequest = {
-                assetName: row.assetName,
-                exchange: row.exchange,
+                dataSubscription: {
+                  assetName: row.dataSubscription.assetName,
+                  exchange: row.dataSubscription.exchange,
+                  timeFrame: toTimeSpan(row.dataSubscription.timeFrame),
+                },
+                backtestSettings: {
+                  initialCash: row.backtestSettings.initialCash,
+                  startTime: row.backtestSettings.startTime,
+                  endTime: row.backtestSettings.endTime,
+                  commissionPerTrade: row.backtestSettings.commissionPerTrade,
+                  slippageTicks: row.backtestSettings.slippageTicks,
+                },
                 strategyName: row.strategyName,
-                initialCash: row.initialCash,
-                startTime: row.dataStart,
-                endTime: row.dataEnd,
-                commissionPerTrade: row.commission,
-                slippageTicks: row.slippageTicks,
-                timeFrame: toTimeSpan(row.timeFrame),
                 strategyParameters: Object.fromEntries(
                   Object.entries(row.parameters).filter(
                     ([k]) => !INTERNAL_PARAM_KEYS.has(k),
@@ -157,19 +166,19 @@ export function OptimizationTrialsTable({
     if (assetFilter) {
       const lower = assetFilter.toLowerCase();
       result = result.filter((t) =>
-        t.assetName.toLowerCase().includes(lower),
+        t.dataSubscription.assetName.toLowerCase().includes(lower),
       );
     }
     if (exchangeFilter) {
       const lower = exchangeFilter.toLowerCase();
       result = result.filter((t) =>
-        t.exchange.toLowerCase().includes(lower),
+        t.dataSubscription.exchange.toLowerCase().includes(lower),
       );
     }
     if (timeFrameFilter) {
       const lower = timeFrameFilter.toLowerCase();
       result = result.filter((t) =>
-        t.timeFrame.toLowerCase().includes(lower),
+        t.dataSubscription.timeFrame.toLowerCase().includes(lower),
       );
     }
     return result;
