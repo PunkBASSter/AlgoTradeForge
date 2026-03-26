@@ -68,6 +68,13 @@ public static class StrategyEndpoints
             ClrType = MapClrTypeName(n.ClrType),
             Unit = n.Unit == ParamUnit.Raw ? null : char.ToLowerInvariant(n.Unit.ToString()[0]) + n.Unit.ToString()[1..],
         },
+        DiscreteSetAxis d => new ParameterAxisResponse
+        {
+            Name = d.Name,
+            Type = "discrete",
+            ClrType = MapClrTypeName(d.ClrType),
+            DiscreteValues = d.Values.Select(v => v.ToString()!).ToList(),
+        },
         ModuleSlotAxis m => new ParameterAxisResponse
         {
             Name = m.Name,

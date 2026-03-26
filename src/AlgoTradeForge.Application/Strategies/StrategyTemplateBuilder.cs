@@ -215,6 +215,12 @@ public static class StrategyTemplateBuilder
                 ["step"] = n.Step,
             };
 
+        if (axis is DiscreteSetAxis d)
+            return new Dictionary<string, object>
+            {
+                ["values"] = d.Values.Select(v => v.ToString()!).ToList(),
+            };
+
         return new Dictionary<string, object>
         {
             ["min"] = 0,

@@ -128,6 +128,14 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
         if (targetType == typeof(long)) return Convert.ToInt64(value);
         if (targetType == typeof(float)) return Convert.ToSingle(value);
 
+        // Handle enum conversions (from string name or integer value)
+        if (targetType.IsEnum)
+        {
+            if (value is string s)
+                return Enum.Parse(targetType, s, ignoreCase: true);
+            return Enum.ToObject(targetType, Convert.ToInt32(value));
+        }
+
         return Convert.ChangeType(value, targetType);
     }
 
@@ -140,6 +148,13 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
         if (targetType == typeof(float)) return (float)element.GetDouble();
         if (targetType == typeof(string)) return element.GetString()!;
         if (targetType == typeof(bool)) return element.GetBoolean();
+
+        if (targetType.IsEnum)
+        {
+            return element.ValueKind == JsonValueKind.String
+                ? Enum.Parse(targetType, element.GetString()!, ignoreCase: true)
+                : Enum.ToObject(targetType, element.GetInt32());
+        }
 
         return element.Deserialize(targetType)!;
     }

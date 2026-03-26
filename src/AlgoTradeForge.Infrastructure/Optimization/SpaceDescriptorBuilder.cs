@@ -127,18 +127,29 @@ public sealed class SpaceDescriptorBuilder : IOptimizationSpaceProvider
 
             if (optimizable is not null)
             {
-                if (!NumericTypes.Contains(prop.PropertyType))
+                if (prop.PropertyType.IsEnum)
+                {
+                    axes.Add(new DiscreteSetAxis(
+                        prop.Name,
+                        ResolveEnumValues(prop.PropertyType, optimizable, paramsType.Name, prop.Name),
+                        prop.PropertyType));
+                }
+                else if (NumericTypes.Contains(prop.PropertyType))
+                {
+                    axes.Add(new NumericRangeAxis(
+                        prop.Name,
+                        (decimal)optimizable.Min,
+                        (decimal)optimizable.Max,
+                        (decimal)optimizable.Step,
+                        prop.PropertyType,
+                        optimizable.Unit));
+                }
+                else
+                {
                     throw new InvalidOperationException(
-                        $"[Optimizable] on '{paramsType.Name}.{prop.Name}' requires a numeric type " +
-                        $"(decimal, double, int, long), but found '{prop.PropertyType.Name}'.");
-
-                axes.Add(new NumericRangeAxis(
-                    prop.Name,
-                    (decimal)optimizable.Min,
-                    (decimal)optimizable.Max,
-                    (decimal)optimizable.Step,
-                    prop.PropertyType,
-                    optimizable.Unit));
+                        $"[Optimizable] on '{paramsType.Name}.{prop.Name}' requires a numeric or enum type, " +
+                        $"but found '{prop.PropertyType.Name}'.");
+                }
             }
             else if (moduleSlot is not null)
             {
@@ -189,6 +200,44 @@ public sealed class SpaceDescriptorBuilder : IOptimizationSpaceProvider
         }
 
         return variants;
+    }
+
+    private static IReadOnlyList<object> ResolveEnumValues(
+        Type enumType, OptimizableAttribute attr, string paramsTypeName, string propName)
+    {
+        if (attr.Include is not null && attr.Exclude is not null)
+            throw new InvalidOperationException(
+                $"[Optimizable] on '{paramsTypeName}.{propName}' cannot specify both Include and Exclude.");
+
+        var allValues = Enum.GetValues(enumType).Cast<object>().ToList();
+
+        if (attr.Include is { Length: > 0 })
+        {
+            var parsed = attr.Include.Select(s => ParseEnumValue(enumType, s, paramsTypeName, propName)).ToList();
+            return parsed;
+        }
+
+        if (attr.Exclude is { Length: > 0 })
+        {
+            var excluded = new HashSet<object>(
+                attr.Exclude.Select(s => ParseEnumValue(enumType, s, paramsTypeName, propName)));
+            return allValues.Where(v => !excluded.Contains(v)).ToList();
+        }
+
+        return allValues;
+    }
+
+    private static object ParseEnumValue(Type enumType, string value, string paramsTypeName, string propName)
+    {
+        if (Enum.TryParse(enumType, value, ignoreCase: true, out var result) && result is not null)
+            return result;
+
+        if (int.TryParse(value, out var intVal))
+            return Enum.ToObject(enumType, intVal);
+
+        throw new InvalidOperationException(
+            $"[Optimizable] on '{paramsTypeName}.{propName}': '{value}' is not a valid member of {enumType.Name}. " +
+            $"Valid values: {string.Join(", ", Enum.GetNames(enumType))}.");
     }
 
     private static Type? FindModuleParamsType(Type implType)
