@@ -316,6 +316,29 @@ export interface RunGeneticOptimizationRequest {
   subscriptionAxis?: DataSubscription[];
 }
 
+export interface EvaluateOptimizationRequest {
+  strategyName: string;
+  optimizationAxes?: Record<string, OptimizationAxisOverride>;
+  dataSubscriptions?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[];
+  optimizationSettings?: OptimizationSettingsInput;
+  mode?: "BruteForce" | "Genetic";
+  geneticSettings?: GeneticSettingsInput;
+}
+
+export interface OptimizationEvaluation {
+  totalCombinations: number;
+  exceedsMaxCombinations: boolean;
+  maxCombinations: number;
+  effectiveDimensions: number;
+  geneticConfig?: {
+    populationSize: number;
+    maxGenerations: number;
+    maxEvaluations: number;
+    mutationRate: number;
+  } | null;
+}
+
 // ---------------------------------------------------------------------------
 // Live session types
 // ---------------------------------------------------------------------------

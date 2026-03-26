@@ -32,6 +32,13 @@ public static class OptimizationEndpoints
             .Produces<OptimizationSubmissionResponse>(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status400BadRequest);
 
+        group.MapPost("/evaluate", EvaluateOptimization)
+            .WithName("EvaluateOptimization")
+            .WithSummary("Preview combination count and GA config without running")
+            .WithOpenApi()
+            .Produces<OptimizationEvaluationResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status400BadRequest);
+
         group.MapGet("/", ListOptimizations)
             .WithName("ListOptimizations")
             .WithSummary("List optimization runs with optional filters")
@@ -118,8 +125,6 @@ public static class OptimizationEndpoints
         ICommandHandler<RunGeneticOptimizationCommand, OptimizationSubmissionDto> handler,
         CancellationToken ct)
     {
-        var gs = request.GeneticSettings;
-        var fw = gs.FitnessWeights;
         var command = new RunGeneticOptimizationCommand
         {
             StrategyName = request.StrategyName,
@@ -142,28 +147,7 @@ public static class OptimizationEndpoints
             MinSharpeRatio = request.OptimizationSettings.MinSharpeRatio,
             MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
             MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
-            GeneticSettings = new GeneticConfig
-            {
-                PopulationSize = gs.PopulationSize,
-                MaxGenerations = gs.MaxGenerations,
-                MaxEvaluations = gs.MaxEvaluations,
-                EliteCount = gs.EliteCount,
-                CrossoverRate = gs.CrossoverRate,
-                TournamentSize = gs.TournamentSize,
-                StagnationLimit = gs.StagnationLimit,
-                TimeBudget = gs.TimeBudgetMinutes.HasValue
-                    ? TimeSpan.FromMinutes(gs.TimeBudgetMinutes.Value)
-                    : null,
-                MinTrades = fw?.MinTrades ?? 10,
-                MaxDrawdownThreshold = fw?.MaxDrawdownThreshold ?? 30.0,
-                Weights = new FitnessWeights
-                {
-                    SharpeWeight = fw?.SharpeWeight ?? 0.5,
-                    SortinoWeight = fw?.SortinoWeight ?? 0.2,
-                    ProfitFactorWeight = fw?.ProfitFactorWeight ?? 0.15,
-                    AnnualizedReturnWeight = fw?.AnnualizedReturnWeight ?? 0.15,
-                },
-            },
+            GeneticSettings = MapGeneticSettings(request.GeneticSettings),
         };
 
         try
@@ -180,6 +164,79 @@ public static class OptimizationEndpoints
         {
             return Results.BadRequest(new { error = ex.Message });
         }
+    }
+
+    private static async Task<IResult> EvaluateOptimization(
+        EvaluateOptimizationRequest request,
+        IQueryHandler<EvaluateOptimizationQuery, OptimizationEvaluationDto> handler,
+        CancellationToken ct)
+    {
+        var mode = request.Mode ?? "BruteForce";
+        var query = new EvaluateOptimizationQuery
+        {
+            StrategyName = request.StrategyName,
+            Axes = request.OptimizationAxes,
+            DataSubscriptions = request.DataSubscriptions,
+            SubscriptionAxis = request.SubscriptionAxis,
+            MaxCombinations = request.OptimizationSettings?.MaxCombinations ?? 100_000,
+            Mode = mode,
+            GeneticSettings = mode.Equals("Genetic", StringComparison.OrdinalIgnoreCase) && request.GeneticSettings is { } gs
+                ? MapGeneticSettings(gs)
+                : null,
+        };
+
+        try
+        {
+            var dto = await handler.HandleAsync(query, ct);
+            var response = new OptimizationEvaluationResponse
+            {
+                TotalCombinations = dto.TotalCombinations,
+                ExceedsMaxCombinations = dto.ExceedsMaxCombinations,
+                MaxCombinations = dto.MaxCombinations,
+                EffectiveDimensions = dto.EffectiveDimensions,
+                GeneticConfig = dto.GeneticConfig is { } gc
+                    ? new ResolvedGeneticConfigResponse
+                    {
+                        PopulationSize = gc.PopulationSize,
+                        MaxGenerations = gc.MaxGenerations,
+                        MaxEvaluations = gc.MaxEvaluations,
+                        MutationRate = gc.MutationRate,
+                    }
+                    : null,
+            };
+            return Results.Ok(response);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static GeneticConfig MapGeneticSettings(GeneticSettingsInput gs)
+    {
+        var fw = gs.FitnessWeights;
+        return new GeneticConfig
+        {
+            PopulationSize = gs.PopulationSize,
+            MaxGenerations = gs.MaxGenerations,
+            MaxEvaluations = gs.MaxEvaluations,
+            EliteCount = gs.EliteCount,
+            CrossoverRate = gs.CrossoverRate,
+            TournamentSize = gs.TournamentSize,
+            StagnationLimit = gs.StagnationLimit,
+            TimeBudget = gs.TimeBudgetMinutes.HasValue
+                ? TimeSpan.FromMinutes(gs.TimeBudgetMinutes.Value)
+                : null,
+            MinTrades = fw?.MinTrades ?? 10,
+            MaxDrawdownThreshold = fw?.MaxDrawdownThreshold ?? 30.0,
+            Weights = new FitnessWeights
+            {
+                SharpeWeight = fw?.SharpeWeight ?? 0.5,
+                SortinoWeight = fw?.SortinoWeight ?? 0.2,
+                ProfitFactorWeight = fw?.ProfitFactorWeight ?? 0.15,
+                AnnualizedReturnWeight = fw?.AnnualizedReturnWeight ?? 0.15,
+            },
+        };
     }
 
     private static async Task<IResult> GetOptimizationStatus(

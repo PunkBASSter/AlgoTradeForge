@@ -11,9 +11,11 @@ import type {
   RunBacktestRequest,
   RunOptimizationRequest,
   RunGeneticOptimizationRequest,
+  EvaluateOptimizationRequest,
   OptimizationRun,
   OptimizationSubmission,
   OptimizationStatus,
+  OptimizationEvaluation,
   StartDebugSessionRequest,
   DebugSession,
   DebugSessionStatus,
@@ -240,6 +242,16 @@ export const apiClient = {
     req: RunGeneticOptimizationRequest,
   ): Promise<OptimizationSubmission> {
     return request<OptimizationSubmission>("/api/optimizations/genetic", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    });
+  },
+
+  evaluateOptimization(
+    req: EvaluateOptimizationRequest,
+  ): Promise<OptimizationEvaluation> {
+    return request<OptimizationEvaluation>("/api/optimizations/evaluate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),

@@ -30,6 +30,25 @@ public sealed class OptimizationSetupHelper(
     public IOptimizationSpaceProvider SpaceProvider => spaceProvider;
 
     /// <summary>
+    /// Routes DataSubscription/SubscriptionAxis DTOs into fixed vs axis lists.
+    /// Pure routing logic — no I/O. Used by both the execution path and the evaluate query.
+    /// </summary>
+    public static (List<T> Fixed, List<T> Axis) RouteSubscriptions<T>(
+        List<T>? dataSubs, List<T>? axisSubs)
+    {
+        var hasDataSubs = dataSubs is { Count: > 0 };
+        var hasAxisSubs = axisSubs is { Count: > 0 };
+
+        if (hasAxisSubs)
+            return (dataSubs ?? [], axisSubs!);
+
+        if (hasDataSubs && dataSubs!.Count > 1)
+            return ([], dataSubs);
+
+        return (dataSubs ?? [], []);
+    }
+
+    /// <summary>
     /// Routes DataSubscription/SubscriptionAxis DTOs into resolved fixed and axis subscription lists,
     /// pre-loading data into the cache. Encapsulates the shared routing logic between brute-force
     /// and genetic optimization handlers.
@@ -49,24 +68,7 @@ public sealed class OptimizationSetupHelper(
         if (!hasDataSubs && !hasAxisSubs)
             throw new ArgumentException("At least one DataSubscription or SubscriptionAxis entry must be provided.");
 
-        List<DataSubscriptionDto> fixedDtos;
-        List<DataSubscriptionDto> axisDtos;
-
-        if (hasAxisSubs)
-        {
-            fixedDtos = dataSubs ?? [];
-            axisDtos = axisSubs!;
-        }
-        else if (dataSubs!.Count > 1)
-        {
-            fixedDtos = [];
-            axisDtos = dataSubs;
-        }
-        else
-        {
-            fixedDtos = dataSubs;
-            axisDtos = [];
-        }
+        var (fixedDtos, axisDtos) = RouteSubscriptions(dataSubs, axisSubs);
 
         var fixedSubscriptions = new List<DataSubscription>();
         var axisSubscriptions = new List<DataSubscription>();
@@ -87,13 +89,28 @@ public sealed class OptimizationSetupHelper(
         IReadOnlyList<ResolvedAxis> resolvedAxes,
         List<DataSubscription> axisSubscriptions)
     {
-        var allAxes = axisSubscriptions.Count > 0
-            ? new List<ResolvedAxis>(resolvedAxes)
-            {
-                new ResolvedDiscreteAxis("DataSubscriptions",
-                    axisSubscriptions.Cast<object>().ToList())
-            }
-            : new List<ResolvedAxis>(resolvedAxes);
+        return AppendSubscriptionAxisAndFilter(resolvedAxes, axisSubscriptions.Count,
+            axisSubscriptions.Cast<object>().ToList());
+    }
+
+    /// <summary>
+    /// Count-only overload: appends a placeholder subscription axis with the given count
+    /// and filters out empty axes. Used by the evaluate path where actual subscriptions
+    /// are not loaded.
+    /// </summary>
+    public static List<ResolvedAxis> AppendSubscriptionAxisAndFilter(
+        IReadOnlyList<ResolvedAxis> resolvedAxes,
+        int subscriptionAxisCount,
+        List<object>? axisValues = null)
+    {
+        var allAxes = new List<ResolvedAxis>(resolvedAxes);
+
+        if (subscriptionAxisCount > 0)
+        {
+            var values = axisValues
+                ?? Enumerable.Range(0, subscriptionAxisCount).Select(i => (object)i).ToList();
+            allAxes.Add(new ResolvedDiscreteAxis("DataSubscriptions", values));
+        }
 
         return allAxes
             .Where(a => a switch

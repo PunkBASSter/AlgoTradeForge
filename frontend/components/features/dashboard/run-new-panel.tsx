@@ -2,7 +2,7 @@
 
 // T060 - RunNewPanel with slide-over and mode-aware CodeMirror JSON editor
 
-import { useRef, useEffect, useState, useMemo } from "react";
+import { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
@@ -21,6 +21,8 @@ import type {
   RunBacktestRequest,
   RunOptimizationRequest,
   RunGeneticOptimizationRequest,
+  EvaluateOptimizationRequest,
+  OptimizationEvaluation,
   StartLiveSessionRequest,
   StartDebugSessionRequest,
 } from "@/types/api";
@@ -35,6 +37,29 @@ const EDITOR_EXTENSIONS = [
     ".cm-scroller": { overflow: "auto" },
   }),
 ];
+
+/** Extract evaluation-relevant fields from editor JSON for cache key. */
+function computeEvalCacheKey(text: string, genetic: boolean): string | null {
+  try {
+    const obj = JSON.parse(text) as Record<string, unknown>;
+    const keyParts = {
+      strategyName: obj.strategyName,
+      optimizationAxes: obj.optimizationAxes,
+      subscriptionAxis: obj.subscriptionAxis,
+      dataSubscriptions: obj.dataSubscriptions,
+      maxCombinations: (obj.optimizationSettings as Record<string, unknown> | undefined)?.maxCombinations,
+      geneticSettings: genetic ? obj.geneticSettings : undefined,
+      mode: genetic ? "Genetic" : "BruteForce",
+    };
+    return JSON.stringify(keyParts);
+  } catch {
+    return null;
+  }
+}
+
+function formatNumber(n: number): string {
+  return n.toLocaleString();
+}
 
 interface RunNewPanelProps {
   open: boolean;
@@ -59,6 +84,11 @@ export function RunNewPanel({
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [useGenetic, setUseGenetic] = useState(false);
   const [useDebug, setUseDebug] = useState(false);
+  const [evaluation, setEvaluation] = useState<OptimizationEvaluation | null>(null);
+  const [evaluating, setEvaluating] = useState(false);
+  const evaluationCacheRef = useRef<Map<string, OptimizationEvaluation>>(new Map());
+  const useGeneticRef = useRef(useGenetic);
+  useGeneticRef.current = useGenetic;
   const { toast } = useToast();
   const client = getClient();
   const router = useRouter();
@@ -79,6 +109,22 @@ export function RunNewPanel({
     return descriptor.optimizationTemplate;
   }, [mode, descriptor, useGenetic, useDebug]);
 
+  const isOptimization = mode === "optimization";
+
+  // Handle editor doc changes: check cache, clear or restore evaluation
+  const handleDocChange = useCallback((text: string) => {
+    if (!isOptimization) return;
+    const cacheKey = computeEvalCacheKey(text, useGeneticRef.current);
+    if (cacheKey) {
+      const cached = evaluationCacheRef.current.get(cacheKey);
+      if (cached) {
+        setEvaluation(cached);
+        return;
+      }
+    }
+    setEvaluation(null);
+  }, [isOptimization]);
+
   // Create editor once when the slide-over opens
   useEffect(() => {
     if (!open || !editorContainerRef.current) return;
@@ -87,9 +133,17 @@ export function RunNewPanel({
     if (editorViewRef.current) return;
 
     const initialDoc = initialContent ?? template;
+    const extensions = [
+      ...EDITOR_EXTENSIONS,
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          handleDocChange(update.state.doc.toString());
+        }
+      }),
+    ];
     const state = EditorState.create({
       doc: JSON.stringify(initialDoc, null, 2),
-      extensions: EDITOR_EXTENSIONS,
+      extensions,
     });
 
     const view = new EditorView({
@@ -116,6 +170,13 @@ export function RunNewPanel({
     if (mode !== "backtest") setUseDebug(false);
   }, [mode]);
 
+  // Clear evaluation when mode changes away from optimization
+  useEffect(() => {
+    if (!isOptimization) {
+      setEvaluation(null);
+    }
+  }, [isOptimization]);
+
   // Update editor content when mode, selectedStrategy, or initialContent changes
   const prevKeyRef = useRef(`${mode}:${selectedStrategy}:${useGenetic}:${useDebug}:${initialContent ? "ic" : ""}`);
   useEffect(() => {
@@ -132,6 +193,7 @@ export function RunNewPanel({
   }, [open, mode, selectedStrategy, template, initialContent, useGenetic, useDebug]);
 
   const handleToggle = (genetic: boolean) => {
+    setEvaluation(null);
     if (!descriptor || !editorViewRef.current) {
       setUseGenetic(genetic);
       return;
@@ -199,7 +261,7 @@ export function RunNewPanel({
       : descriptor.backtestTemplate;
 
     const view = editorViewRef.current;
-    let merged: Record<string, unknown> = { ...targetTemplate };
+    const merged: Record<string, unknown> = { ...targetTemplate };
 
     try {
       const current = JSON.parse(view.state.doc.toString()) as Record<string, unknown>;
@@ -225,6 +287,59 @@ export function RunNewPanel({
 
     setUseDebug(debug);
     prevKeyRef.current = `${mode}:${selectedStrategy}:${useGenetic}:${debug}:${initialContent ? "ic" : ""}`;
+  };
+
+  const handleEvaluate = async () => {
+    if (!editorViewRef.current) return;
+
+    const text = editorViewRef.current.state.doc.toString();
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      toast("Invalid JSON", "error");
+      return;
+    }
+
+    if (!parsed.strategyName) {
+      toast("Missing required field: strategyName", "error");
+      return;
+    }
+
+    // Check cache first
+    const cacheKey = computeEvalCacheKey(text, useGenetic);
+    if (cacheKey) {
+      const cached = evaluationCacheRef.current.get(cacheKey);
+      if (cached) {
+        setEvaluation(cached);
+        return;
+      }
+    }
+
+    setEvaluating(true);
+    try {
+      const req: EvaluateOptimizationRequest = {
+        strategyName: parsed.strategyName as string,
+        optimizationAxes: parsed.optimizationAxes as EvaluateOptimizationRequest["optimizationAxes"],
+        dataSubscriptions: parsed.dataSubscriptions as EvaluateOptimizationRequest["dataSubscriptions"],
+        subscriptionAxis: parsed.subscriptionAxis as EvaluateOptimizationRequest["subscriptionAxis"],
+        optimizationSettings: parsed.optimizationSettings as EvaluateOptimizationRequest["optimizationSettings"],
+        mode: useGenetic ? "Genetic" : "BruteForce",
+        geneticSettings: useGenetic ? parsed.geneticSettings as EvaluateOptimizationRequest["geneticSettings"] : undefined,
+      };
+
+      const result = await client.evaluateOptimization(req);
+      setEvaluation(result);
+
+      // Cache the result
+      if (cacheKey) {
+        evaluationCacheRef.current.set(cacheKey, result);
+      }
+    } catch (err) {
+      toast(String(err), "error");
+    } finally {
+      setEvaluating(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -316,12 +431,17 @@ export function RunNewPanel({
       setActiveRunId(null);
       onSuccess();
     }
+    setEvaluation(null);
+    evaluationCacheRef.current.clear();
     onClose();
   };
 
   const handleRunComplete = () => {
     onSuccess();
   };
+
+  // Determine if Run should be enabled for optimization mode
+  const canRun = !isOptimization || (evaluation !== null && !evaluation.exceedsMaxCombinations);
 
   return (
     <SlideOver
@@ -343,7 +463,9 @@ export function RunNewPanel({
       ) : (
         <div className="flex h-full flex-col gap-4">
           <p className="shrink-0 text-sm text-text-secondary">
-            Edit the JSON configuration below and click Run.
+            {isOptimization
+              ? "Edit the JSON configuration below, click Evaluate to preview, then Run."
+              : "Edit the JSON configuration below and click Run."}
           </p>
           {mode === "backtest" && (
             <div className="shrink-0">
@@ -356,14 +478,14 @@ export function RunNewPanel({
               />
             </div>
           )}
-          {mode === "optimization" && (
+          {isOptimization && (
             <div className="shrink-0">
               <ToggleSwitch
                 leftLabel="Grid"
                 rightLabel="Genetic"
                 checked={useGenetic}
                 onChange={handleToggle}
-                disabled={submitting}
+                disabled={submitting || evaluating}
               />
             </div>
           )}
@@ -372,11 +494,50 @@ export function RunNewPanel({
             data-testid="json-editor"
             className="min-h-0 flex-1 rounded-lg overflow-hidden border border-border-default"
           />
+          {isOptimization && evaluation && (
+            <div
+              data-testid="evaluation-result"
+              className={`shrink-0 rounded-lg px-3 py-2 text-sm ${
+                evaluation.exceedsMaxCombinations
+                  ? "bg-red-900/30 border border-red-700 text-red-300"
+                  : "bg-green-900/30 border border-green-700 text-green-300"
+              }`}
+            >
+              {evaluation.geneticConfig ? (
+                <span>
+                  Search space: {formatNumber(evaluation.totalCombinations)}
+                  {" | "}Dims: {evaluation.effectiveDimensions}
+                  {" | "}Pop: {evaluation.geneticConfig.populationSize}
+                  {" | "}Gens: {evaluation.geneticConfig.maxGenerations}
+                  {" | "}Evals: {formatNumber(evaluation.geneticConfig.maxEvaluations)}
+                </span>
+              ) : evaluation.exceedsMaxCombinations ? (
+                <span>
+                  {formatNumber(evaluation.totalCombinations)} combinations
+                  {" \u2014 "}exceeds limit of {formatNumber(evaluation.maxCombinations)}
+                </span>
+              ) : (
+                <span>{formatNumber(evaluation.totalCombinations)} combinations</span>
+              )}
+            </div>
+          )}
           <div className="shrink-0 flex gap-2">
+            {isOptimization && (
+              <Button
+                variant="secondary"
+                onClick={handleEvaluate}
+                loading={evaluating}
+                disabled={submitting}
+                data-testid="evaluate-optimization"
+              >
+                Evaluate
+              </Button>
+            )}
             <Button
               variant="primary"
               onClick={handleSubmit}
               loading={submitting}
+              disabled={!canRun || evaluating}
               data-testid="submit-run"
             >
               {useDebug ? "Debug" : "Run"}
