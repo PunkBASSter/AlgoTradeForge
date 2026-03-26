@@ -256,6 +256,7 @@ public static class OptimizationEndpoints
             FilteredTrials = dto.Result?.FilteredTrials ?? 0,
             FailedTrials = dto.Result?.FailedTrials ?? 0,
             Result = dto.Result is not null ? MapToResponse(dto.Result) : null,
+            Status = dto.Result?.Status ?? OptimizationRunStatus.InProgress,
         });
     }
 
@@ -346,6 +347,8 @@ public static class OptimizationEndpoints
         Trials = r.Trials.Select(MapTrialToResponse).ToList(),
         OptimizationMethod = r.OptimizationMethod,
         GenerationsCompleted = r.GenerationsCompleted,
+        Status = r.Status,
+        ErrorMessage = r.ErrorMessage,
         FailedTrialDetails = r.FailedTrialDetails.Select(f => new FailedTrialResponse
         {
             ExceptionType = f.ExceptionType,

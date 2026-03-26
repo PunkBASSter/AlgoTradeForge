@@ -16,4 +16,5 @@ public sealed record OptimizationStatusResponse
     public long FilteredTrials { get; init; }
     public long FailedTrials { get; init; }
     public OptimizationRunResponse? Result { get; init; }
+    public required string Status { get; init; }
 }

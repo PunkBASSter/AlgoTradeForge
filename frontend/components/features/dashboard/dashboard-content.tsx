@@ -8,6 +8,7 @@ import { RunsTable } from "@/components/features/dashboard/runs-table";
 import { Pagination } from "@/components/ui/pagination";
 import { useLiveSessions } from "@/hooks/use-live-sessions";
 import { useRunNew } from "@/contexts/run-new-context";
+import { OPTIMIZATION_LIST_POLL_MS } from "@/hooks/use-run-status";
 
 const LIMIT = 50;
 
@@ -71,6 +72,12 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
     queryKey: ["optimizations", queryParams],
     queryFn: () => client.getOptimizations(queryParams),
     enabled: mode === "optimization",
+    refetchInterval: (query) => {
+      const hasInProgress = query.state.data?.items?.some(
+        (r) => r.status === "InProgress",
+      );
+      return hasInProgress ? OPTIMIZATION_LIST_POLL_MS : false;
+    },
   });
 
   const liveSessionsQuery = useLiveSessions(mode === "live");

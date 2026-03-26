@@ -330,6 +330,7 @@ public class SqliteRunRepositoryTests : IDisposable
             Trials = [trial1, trial2],
         };
 
+        await _repo.InsertOptimizationPlaceholderAsync(optRecord, TestContext.Current.CancellationToken);
         await _repo.SaveOptimizationAsync(optRecord, TestContext.Current.CancellationToken);
 
         var loaded = await _repo.GetOptimizationByIdAsync(optId, TestContext.Current.CancellationToken);
@@ -343,6 +344,7 @@ public class SqliteRunRepositoryTests : IDisposable
         Assert.Equal(10000m, loaded.BacktestSettings.InitialCash);
         Assert.Equal(4, loaded.MaxParallelism);
         Assert.Equal(2, loaded.Trials.Count);
+        Assert.Equal(OptimizationRunStatus.Completed, loaded.Status);
 
         // Verify optimization data subscription fields
         Assert.Equal("BTCUSDT", loaded.DataSubscription.AssetName);
@@ -392,6 +394,7 @@ public class SqliteRunRepositoryTests : IDisposable
             MaxParallelism = 1,
             Trials = [trial],
         };
+        await _repo.InsertOptimizationPlaceholderAsync(opt, TestContext.Current.CancellationToken);
         await _repo.SaveOptimizationAsync(opt, TestContext.Current.CancellationToken);
 
         // Save another backtest with "Alpha" (duplicate)
@@ -442,6 +445,7 @@ public class SqliteRunRepositoryTests : IDisposable
             MaxParallelism = 1,
             Trials = [trial],
         };
+        await _repo.InsertOptimizationPlaceholderAsync(opt, TestContext.Current.CancellationToken);
         await _repo.SaveOptimizationAsync(opt, TestContext.Current.CancellationToken);
 
         // Without filter: both rows visible
@@ -469,6 +473,100 @@ public class SqliteRunRepositoryTests : IDisposable
     {
         var query = new BacktestRunQuery { Limit = -5 };
         Assert.Equal(1, query.Limit);
+    }
+
+    // ── Status tracking ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task InsertPlaceholder_ReturnsInProgressStatus()
+    {
+        var optId = Guid.NewGuid();
+        var optRecord = MakeOptimizationRecord(optId);
+
+        await _repo.InsertOptimizationPlaceholderAsync(optRecord, TestContext.Current.CancellationToken);
+
+        var loaded = await _repo.GetOptimizationByIdAsync(optId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(OptimizationRunStatus.InProgress, loaded.Status);
+    }
+
+    [Fact]
+    public async Task SaveOptimization_WithErrorMessage_StoresFailedStatus()
+    {
+        var optId = Guid.NewGuid();
+        var optRecord = MakeOptimizationRecord(optId) with
+        {
+            ErrorMessage = "Something went wrong",
+            Status = OptimizationRunStatus.Failed,
+        };
+
+        await _repo.InsertOptimizationPlaceholderAsync(optRecord, TestContext.Current.CancellationToken);
+        await _repo.SaveOptimizationAsync(optRecord, TestContext.Current.CancellationToken);
+
+        var loaded = await _repo.GetOptimizationByIdAsync(optId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(OptimizationRunStatus.Failed, loaded.Status);
+    }
+
+    [Fact]
+    public async Task SaveOptimization_WithCancelledMessage_StoresCancelledStatus()
+    {
+        var optId = Guid.NewGuid();
+        var optRecord = MakeOptimizationRecord(optId) with
+        {
+            ErrorMessage = OptimizationRunStatus.CancelledMessage,
+            Status = OptimizationRunStatus.Cancelled,
+        };
+
+        await _repo.InsertOptimizationPlaceholderAsync(optRecord, TestContext.Current.CancellationToken);
+        await _repo.SaveOptimizationAsync(optRecord, TestContext.Current.CancellationToken);
+
+        var loaded = await _repo.GetOptimizationByIdAsync(optId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(OptimizationRunStatus.Cancelled, loaded.Status);
+    }
+
+    [Fact]
+    public async Task SaveOptimization_ThrowsWhenPlaceholderMissing()
+    {
+        var optRecord = MakeOptimizationRecord(Guid.NewGuid());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _repo.SaveOptimizationAsync(optRecord, TestContext.Current.CancellationToken));
+    }
+
+    private static OptimizationRunRecord MakeOptimizationRecord(Guid optId)
+    {
+        var trial = MakeBacktestRecord(optimizationRunId: optId, runFolderPath: null) with
+        {
+            Id = Guid.NewGuid(),
+        };
+        return new OptimizationRunRecord
+        {
+            Id = optId,
+            StrategyName = "BuyAndHold",
+            StrategyVersion = "1.0.0",
+            StartedAt = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            CompletedAt = new DateTimeOffset(2025, 1, 1, 0, 1, 0, TimeSpan.Zero),
+            DurationMs = 60000,
+            TotalCombinations = 1,
+            SortBy = "SharpeRatio",
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10000m,
+                CommissionPerTrade = 0m,
+                SlippageTicks = 0,
+                StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
+            },
+            MaxParallelism = 1,
+            Trials = [trial],
+            Status = OptimizationRunStatus.InProgress,
+        };
     }
 
     [Fact]
@@ -589,7 +687,7 @@ public class SqliteRunRepositoryTests : IDisposable
         {
             var optId = Guid.NewGuid();
             var trial = MakeBacktestRecord(optimizationRunId: optId, runFolderPath: null) with { Id = Guid.NewGuid() };
-            await _repo.SaveOptimizationAsync(new OptimizationRunRecord
+            var optRecord = new OptimizationRunRecord
             {
                 Id = optId,
                 StrategyName = "BuyAndHold",
@@ -610,7 +708,9 @@ public class SqliteRunRepositoryTests : IDisposable
                 },
                 MaxParallelism = 1,
                 Trials = [trial],
-            }, TestContext.Current.CancellationToken);
+            };
+            await _repo.InsertOptimizationPlaceholderAsync(optRecord, TestContext.Current.CancellationToken);
+            await _repo.SaveOptimizationAsync(optRecord, TestContext.Current.CancellationToken);
         }
 
         var page = await _repo.QueryOptimizationsAsync(new OptimizationRunQuery { Limit = 2, Offset = 0 }, TestContext.Current.CancellationToken);

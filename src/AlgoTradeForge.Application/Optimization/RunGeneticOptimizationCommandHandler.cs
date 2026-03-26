@@ -50,7 +50,31 @@ public sealed class RunGeneticOptimizationCommandHandler(
         var runId = Guid.NewGuid();
         await progressCache.SetProgressAsync(runId, 0, gaConfig.MaxEvaluations, ct);
 
-        // 4. Launch background task
+        // 4. Insert placeholder row so the run is visible in the list immediately
+        var primarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
+            command.DataSubscriptions, command.SubscriptionAxis);
+        var maxParallelism = command.MaxDegreeOfParallelism > 0
+            ? command.MaxDegreeOfParallelism
+            : Environment.ProcessorCount;
+        await helper.InsertPlaceholderAsync(new OptimizationRunRecord
+        {
+            Id = runId,
+            StrategyName = command.StrategyName,
+            StrategyVersion = "0",
+            StartedAt = startedAt,
+            CompletedAt = startedAt,
+            DurationMs = 0,
+            TotalCombinations = gaConfig.MaxEvaluations,
+            SortBy = command.SortBy,
+            DataSubscription = primarySub,
+            BacktestSettings = command.BacktestSettings,
+            MaxParallelism = maxParallelism,
+            Trials = [],
+            OptimizationMethod = "Genetic",
+            Status = OptimizationRunStatus.InProgress,
+        }, ct);
+
+        // 5. Launch background task
         _ = Task.Factory.StartNew(
             () => RunGeneticOptimizationAsync(
                 command, fixedSubscriptions, dataCache, activeAxes,
@@ -196,7 +220,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
                 command.SortBy, maxParallelism,
                 runId, startedAt, gaConfig.MaxEvaluations, topTrials,
                 failedTrials, state.FilteredOutCount, state.FailedTrialCount,
-                "Run was cancelled by user.",
+                OptimizationRunStatus.CancelledMessage,
                 optimizationMethod: "Genetic", generationsCompleted: generationsCompleted);
         }
         catch (Exception ex)

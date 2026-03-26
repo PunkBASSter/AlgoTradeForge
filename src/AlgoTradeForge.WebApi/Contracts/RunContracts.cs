@@ -83,4 +83,6 @@ public sealed record OptimizationRunResponse
     public List<FailedTrialResponse> FailedTrialDetails { get; init; } = [];
     public string? OptimizationMethod { get; init; }
     public int? GenerationsCompleted { get; init; }
+    public required string Status { get; init; }
+    public string? ErrorMessage { get; init; }
 }

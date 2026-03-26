@@ -288,6 +288,7 @@ public sealed class OptimizationSetupHelper(
                 ErrorStackTrace = errorStackTrace,
                 OptimizationMethod = optimizationMethod,
                 GenerationsCompleted = generationsCompleted,
+                Status = OptimizationRunStatus.FromError(errorMessage),
             };
             await runRepository.SaveOptimizationAsync(record);
         }
@@ -316,6 +317,9 @@ public sealed class OptimizationSetupHelper(
 
     public static string CacheKey(Asset asset, TimeSpan timeFrame) =>
         $"{asset.Name}|{asset.Settlement}|{timeFrame}";
+
+    public async Task InsertPlaceholderAsync(OptimizationRunRecord record, CancellationToken ct = default) =>
+        await runRepository.InsertOptimizationPlaceholderAsync(record, ct);
 
     public async Task SaveOptimizationAsync(OptimizationRunRecord record) =>
         await runRepository.SaveOptimizationAsync(record);

@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 7;
+    private const int CurrentVersion = 9;
 
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -34,7 +34,9 @@ internal static class SqliteDbInitializer
             filtered_trials     INTEGER NOT NULL DEFAULT 0,
             failed_trials       INTEGER NOT NULL DEFAULT 0,
             optimization_method TEXT    NULL,
-            generations_completed INTEGER NULL
+            generations_completed INTEGER NULL,
+            error_message       TEXT    NULL,
+            status              TEXT    NOT NULL DEFAULT 'Completed'
         );
 
         CREATE TABLE IF NOT EXISTS backtest_runs (
@@ -99,6 +101,17 @@ internal static class SqliteDbInitializer
     private const string MigrationV7 = """
         ALTER TABLE optimization_runs ADD COLUMN optimization_method TEXT NULL;
         ALTER TABLE optimization_runs ADD COLUMN generations_completed INTEGER NULL;
+        """;
+
+    private const string MigrationV8 = """
+        ALTER TABLE optimization_runs ADD COLUMN error_message TEXT NULL;
+        """;
+
+    private const string MigrationV9 = """
+        ALTER TABLE optimization_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'Completed';
+        UPDATE optimization_runs SET status = 'InProgress' WHERE completed_at = '';
+        UPDATE optimization_runs SET status = 'Cancelled' WHERE error_message = 'Run was cancelled by user.' AND completed_at != '';
+        UPDATE optimization_runs SET status = 'Failed' WHERE error_message IS NOT NULL AND error_message != 'Run was cancelled by user.' AND completed_at != '';
         """;
 
     private const string MigrationV5 = """
@@ -173,6 +186,31 @@ internal static class SqliteDbInitializer
             await migrateCmd.ExecuteNonQueryAsync();
             await SetVersionAsync(connection, 7);
         }
+
+        if (currentVersion < 8)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV8;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 8);
+        }
+
+        if (currentVersion < 9)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV9;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 9);
+        }
+
+        // Mark any orphaned in-progress runs as failed (server crashed during execution)
+        await using var orphanCmd = connection.CreateCommand();
+        orphanCmd.CommandText = """
+            UPDATE optimization_runs
+            SET completed_at = started_at, error_message = 'Server restarted during execution', status = 'Failed'
+            WHERE status = 'InProgress'
+            """;
+        await orphanCmd.ExecuteNonQueryAsync();
     }
 
     private static async Task<int> GetVersionAsync(SqliteConnection connection)

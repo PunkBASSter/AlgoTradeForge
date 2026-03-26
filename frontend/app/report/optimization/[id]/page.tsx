@@ -4,8 +4,10 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useOptimizationDetail, useDeleteOptimization } from "@/hooks/use-optimizations";
 import { OptimizationTrialsTable } from "@/components/features/report/optimization-trials-table";
+import { RunProgress } from "@/components/features/dashboard/run-progress";
 import { StatItem } from "@/components/ui/stat-item";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -73,11 +75,14 @@ export default function OptimizationReportPage({
   const { id } = React.use(params);
   const router = useRouter();
 
+  const queryClient = useQueryClient();
   const {
     data: optimization,
     isLoading,
     error,
   } = useOptimizationDetail(id);
+
+  const isInProgress = optimization?.status === "InProgress";
 
   const deleteMutation = useDeleteOptimization();
 
@@ -132,15 +137,28 @@ export default function OptimizationReportPage({
             {new Date(optimization.backtestSettings.endTime).toLocaleDateString()}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={deleteMutation.isPending}
-          className="shrink-0 px-3 py-1.5 rounded-md text-sm font-medium bg-accent-red text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
-        >
-          {deleteMutation.isPending ? "Deleting..." : "Delete"}
-        </button>
+        {!isInProgress && (
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleteMutation.isPending}
+            className="shrink-0 px-3 py-1.5 rounded-md text-sm font-medium bg-accent-red text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+          >
+            {deleteMutation.isPending ? "Deleting..." : "Delete"}
+          </button>
+        )}
       </div>
+
+      {/* In-progress: show live progress with polling */}
+      {isInProgress && (
+        <RunProgress
+          runId={id}
+          mode="optimization"
+          onComplete={() => {
+            queryClient.invalidateQueries({ queryKey: ["optimization", id] });
+          }}
+        />
+      )}
 
       {/* Run Info */}
       <div className="rounded-lg border border-border-default bg-bg-panel p-4">
@@ -149,30 +167,36 @@ export default function OptimizationReportPage({
             label="Total Combinations"
             value={formatNumber(optimization.totalCombinations, 0)}
           />
-          <StatItem
-            label="Kept Trials"
-            value={formatNumber(optimization.trials.length, 0)}
-          />
-          <StatItem
-            label="Filtered"
-            value={formatNumber(optimization.filteredTrials, 0)}
-          />
-          <StatItem
-            label="Failed"
-            value={formatNumber(optimization.failedTrials, 0)}
-          />
-          <StatItem
-            label="Duration"
-            value={formatDuration(optimization.durationMs)}
-          />
+          {!isInProgress && (
+            <>
+              <StatItem
+                label="Kept Trials"
+                value={formatNumber(optimization.trials.length, 0)}
+              />
+              <StatItem
+                label="Filtered"
+                value={formatNumber(optimization.filteredTrials, 0)}
+              />
+              <StatItem
+                label="Failed"
+                value={formatNumber(optimization.failedTrials, 0)}
+              />
+              <StatItem
+                label="Duration"
+                value={formatDuration(optimization.durationMs)}
+              />
+            </>
+          )}
           <StatItem
             label="Started"
             value={new Date(optimization.startedAt).toLocaleString()}
           />
-          <StatItem
-            label="Completed"
-            value={new Date(optimization.completedAt).toLocaleString()}
-          />
+          {!isInProgress && (
+            <StatItem
+              label="Completed"
+              value={new Date(optimization.completedAt).toLocaleString()}
+            />
+          )}
           <StatItem
             label="Sort By"
             value={toTitleCase(optimization.sortBy)}
@@ -196,16 +220,28 @@ export default function OptimizationReportPage({
         </div>
       </div>
 
+      {/* Error message for failed/cancelled runs */}
+      {optimization.errorMessage && !isInProgress && (
+        <div className="p-4 rounded-lg border border-accent-red bg-red-900/10">
+          <p className="text-sm font-medium text-accent-red mb-1">
+            {optimization.status === "Cancelled" ? "Cancelled" : "Error"}
+          </p>
+          <p className="text-sm text-text-secondary">{optimization.errorMessage}</p>
+        </div>
+      )}
+
       {/* Failed trial details (collapsible) */}
-      <FailedTrialDetails details={optimization.failedTrialDetails} />
+      {!isInProgress && <FailedTrialDetails details={optimization.failedTrialDetails} />}
 
       {/* Trials table */}
-      <div className="space-y-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
-          Trials ({optimization.trials.length})
-        </h2>
-        <OptimizationTrialsTable trials={optimization.trials} />
-      </div>
+      {!isInProgress && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
+            Trials ({optimization.trials.length})
+          </h2>
+          <OptimizationTrialsTable trials={optimization.trials} />
+        </div>
+      )}
     </div>
   );
 }

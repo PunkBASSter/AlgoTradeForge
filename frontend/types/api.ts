@@ -101,6 +101,8 @@ export interface OptimizationRun {
   maxParallelism: number;
   trials: BacktestRun[];
   failedTrialDetails: FailedTrialDetail[];
+  status: string;
+  errorMessage?: string;
 }
 
 export interface FailedTrialDetail {
@@ -205,6 +207,7 @@ export interface OptimizationStatus {
   completedCombinations: number;
   totalCombinations: number;
   result?: OptimizationRun;
+  status: string;
 }
 
 /** Derive run status from backend data (no status field in API response). */
@@ -220,9 +223,9 @@ export function deriveBacktestStatus(data: BacktestStatus): RunStatusType {
 
 /** Derive optimization status from backend data. */
 export function deriveOptimizationStatus(data: OptimizationStatus): RunStatusType {
-  if (data.result) {
-    return "Completed";
-  }
+  if (data.status === "Completed") return "Completed";
+  if (data.status === "Cancelled") return "Cancelled";
+  if (data.status === "Failed") return "Failed";
   if (data.completedCombinations === 0) return "Pending";
   return "Running";
 }

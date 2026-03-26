@@ -73,7 +73,31 @@ public sealed class RunOptimizationCommandHandler(
         await progressCache.SetProgressAsync(optimizationRunId, 0, estimatedCount, ct);
         await progressCache.SetRunKeyAsync(runKey, optimizationRunId, ct);
 
-        // 4. Start background task on a dedicated thread (coordinates long-running parallel work)
+        // 4. Insert placeholder row so the run is visible in the list immediately
+        var optPrimarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
+            command.DataSubscriptions, command.SubscriptionAxis);
+        var maxParallelism = command.MaxDegreeOfParallelism > 0
+            ? command.MaxDegreeOfParallelism
+            : Environment.ProcessorCount;
+        await helper.InsertPlaceholderAsync(new OptimizationRunRecord
+        {
+            Id = optimizationRunId,
+            StrategyName = command.StrategyName,
+            StrategyVersion = "0",
+            StartedAt = startedAt,
+            CompletedAt = startedAt,
+            DurationMs = 0,
+            TotalCombinations = estimatedCount,
+            SortBy = command.SortBy,
+            DataSubscription = optPrimarySub,
+            BacktestSettings = command.BacktestSettings,
+            MaxParallelism = maxParallelism,
+            Trials = [],
+            OptimizationMethod = "BruteForce",
+            Status = OptimizationRunStatus.InProgress,
+        }, ct);
+
+        // 5. Start background task on a dedicated thread (coordinates long-running parallel work)
         _ = Task.Factory.StartNew(
             () => RunOptimizationAsync(
                 command, fixedSubscriptions, dataCache, activeAxes,
@@ -247,7 +271,8 @@ public sealed class RunOptimizationCommandHandler(
                 command.StrategyName, command.BacktestSettings, optPrimarySub,
                 command.SortBy, maxParallelism,
                 optimizationRunId, startedAt, estimatedCount, topTrials,
-                failedTrials, filteredOutCount, failedTrialCount, "Run was cancelled by user.",
+                failedTrials, filteredOutCount, failedTrialCount,
+                OptimizationRunStatus.CancelledMessage,
                 optimizationMethod: "BruteForce");
         }
         catch (Exception ex)
