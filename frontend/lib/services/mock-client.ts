@@ -228,7 +228,7 @@ export const mockClient: typeof import("./api-client").apiClient & {
     return {
       totalCombinations: 12500,
       exceedsMaxCombinations: false,
-      maxCombinations: 100000,
+      maxCombinations: 500000,
       effectiveDimensions: 4,
       geneticConfig: req.mode === "Genetic" ? {
         populationSize: 50,

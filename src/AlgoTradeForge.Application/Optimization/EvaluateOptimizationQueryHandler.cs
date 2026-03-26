@@ -48,10 +48,14 @@ public sealed class EvaluateOptimizationQueryHandler(
             };
         }
 
+        // Genetic mode has no combination limit — cost is governed by MaxEvaluations.
+        // Only brute-force is gated by MaxCombinations.
+        var isGenetic = geneticConfigDto is not null;
+
         var dto = new OptimizationEvaluationDto
         {
             TotalCombinations = totalCombinations,
-            ExceedsMaxCombinations = totalCombinations > query.MaxCombinations,
+            ExceedsMaxCombinations = !isGenetic && totalCombinations > query.MaxCombinations,
             MaxCombinations = query.MaxCombinations,
             EffectiveDimensions = effectiveDimensions,
             GeneticConfig = geneticConfigDto,

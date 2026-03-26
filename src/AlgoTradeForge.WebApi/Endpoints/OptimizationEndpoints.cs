@@ -178,7 +178,7 @@ public static class OptimizationEndpoints
             Axes = request.OptimizationAxes,
             DataSubscriptions = request.DataSubscriptions,
             SubscriptionAxis = request.SubscriptionAxis,
-            MaxCombinations = request.OptimizationSettings?.MaxCombinations ?? 100_000,
+            MaxCombinations = request.OptimizationSettings?.MaxCombinations ?? 500_000,
             Mode = mode,
             GeneticSettings = mode.Equals("Genetic", StringComparison.OrdinalIgnoreCase) && request.GeneticSettings is { } gs
                 ? MapGeneticSettings(gs)

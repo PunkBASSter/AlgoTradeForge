@@ -16,7 +16,7 @@ public sealed record OptimizationSettingsInput
     public double? MinSortinoRatio { get; init; }
     public double? MinAnnualizedReturnPct { get; init; }
     public int MaxDegreeOfParallelism { get; init; } = -1;
-    public long MaxCombinations { get; init; } = 100_000;
+    public long MaxCombinations { get; init; } = 500_000;
 }
 
 public sealed record RunOptimizationRequest

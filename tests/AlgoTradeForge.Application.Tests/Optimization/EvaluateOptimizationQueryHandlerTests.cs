@@ -50,7 +50,7 @@ public class EvaluateOptimizationQueryHandlerTests
 
         Assert.Equal(15, result.TotalCombinations); // 5 * 3
         Assert.False(result.ExceedsMaxCombinations);
-        Assert.Equal(100_000, result.MaxCombinations);
+        Assert.Equal(500_000, result.MaxCombinations);
         Assert.Null(result.GeneticConfig);
     }
 
@@ -309,6 +309,32 @@ public class EvaluateOptimizationQueryHandlerTests
 
         Assert.Null(result.GeneticConfig);
         Assert.True(result.EffectiveDimensions >= 1);
+    }
+
+    [Fact]
+    public async Task Genetic_NeverExceedsMaxCombinations()
+    {
+        var descriptor = MakeDescriptor("TestStrategy",
+            new NumericRangeAxis("Period", 1, 1000, 1, typeof(int), ParamUnit.Raw));
+        _spaceProvider.GetDescriptor("TestStrategy").Returns(descriptor);
+
+        var query = new EvaluateOptimizationQuery
+        {
+            StrategyName = "TestStrategy",
+            Axes = new Dictionary<string, OptimizationAxisOverride>
+            {
+                ["Period"] = new RangeOverride(1, 1000, 1), // 1000 values — exceeds MaxCombinations
+            },
+            MaxCombinations = 500,
+            Mode = "Genetic",
+        };
+
+        var result = await _handler.HandleAsync(query, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1000, result.TotalCombinations);
+        // Genetic mode ignores MaxCombinations — cost is governed by MaxEvaluations
+        Assert.False(result.ExceedsMaxCombinations);
+        Assert.NotNull(result.GeneticConfig);
     }
 
     [Fact]

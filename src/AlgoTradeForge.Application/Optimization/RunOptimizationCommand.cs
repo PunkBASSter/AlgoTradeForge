@@ -11,7 +11,7 @@ public sealed record RunOptimizationCommand : ICommand<OptimizationSubmissionDto
     public List<DataSubscriptionDto>? SubscriptionAxis { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public int MaxDegreeOfParallelism { get; init; } = -1;
-    public long MaxCombinations { get; init; } = 100_000;
+    public long MaxCombinations { get; init; } = 500_000;
     public string SortBy { get; init; } = MetricNames.Default;
     public int MaxTrialsToKeep { get; init; } = 10_000;
     public double? MinProfitFactor { get; init; }

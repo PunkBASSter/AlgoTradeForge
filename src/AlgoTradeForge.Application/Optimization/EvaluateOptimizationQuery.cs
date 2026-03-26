@@ -9,7 +9,7 @@ public sealed record EvaluateOptimizationQuery : IQuery<OptimizationEvaluationDt
     public Dictionary<string, OptimizationAxisOverride>? Axes { get; init; }
     public List<DataSubscriptionDto>? DataSubscriptions { get; init; }
     public List<DataSubscriptionDto>? SubscriptionAxis { get; init; }
-    public long MaxCombinations { get; init; } = 100_000;
+    public long MaxCombinations { get; init; } = 500_000;
     public required string Mode { get; init; } // "BruteForce" or "Genetic"
     public GeneticConfig? GeneticSettings { get; init; }
 }
