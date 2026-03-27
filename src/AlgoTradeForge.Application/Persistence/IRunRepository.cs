@@ -12,6 +12,8 @@ public interface IRunRepository
     Task<PagedResult<OptimizationRunRecord>> QueryOptimizationsAsync(OptimizationRunQuery query, CancellationToken ct = default);
     Task<bool> DeleteOptimizationAsync(Guid id, CancellationToken ct = default);
 
+    Task<bool> DeleteBacktestAsync(Guid id, CancellationToken ct = default);
+
     Task<IReadOnlyList<TradePoint>?> GetTradePnlAsync(Guid id, CancellationToken ct = default);
     Task<IReadOnlyList<string>> GetDistinctStrategyNamesAsync(CancellationToken ct = default);
 }

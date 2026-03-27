@@ -51,6 +51,7 @@ public static class DependencyInjection
         services.AddScoped<IQueryHandler<GetDistinctStrategyNamesQuery, IReadOnlyList<string>>, GetDistinctStrategyNamesQueryHandler>();
         services.AddScoped<IQueryHandler<GetAvailableStrategiesQuery, IReadOnlyList<StrategyDescriptorDto>>, GetAvailableStrategiesQueryHandler>();
         services.AddScoped<ICommandHandler<DeleteOptimizationCommand, bool>, DeleteOptimizationCommandHandler>();
+        services.AddScoped<ICommandHandler<DeleteBacktestCommand, bool>, DeleteBacktestCommandHandler>();
         services.AddScoped<ICommandHandler<CancelRunCommand, bool>, CancelRunCommandHandler>();
 
         // Debug session management

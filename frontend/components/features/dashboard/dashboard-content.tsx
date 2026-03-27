@@ -32,33 +32,22 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
   const [offset, setOffset] = useState(0);
   const { openWithContent } = useRunNew();
 
-  // Check for rerun config from backtest report page
-  useEffect(() => {
-    if (mode !== "backtest") return;
-    const stored = sessionStorage.getItem(SESSION_KEYS.RERUN_BACKTEST);
-    if (!stored) return;
-    sessionStorage.removeItem(SESSION_KEYS.RERUN_BACKTEST);
-    try {
-      const config = JSON.parse(stored) as Record<string, unknown>;
-      openWithContent(config);
-    } catch {
-      // ignore invalid JSON
-    }
-  }, [mode, openWithContent]);
+  // Check for rerun config from report pages (backtest or optimization)
+  const rerunKey = mode === "backtest" ? SESSION_KEYS.RERUN_BACKTEST
+    : mode === "optimization" ? SESSION_KEYS.RERUN_OPTIMIZATION
+    : null;
 
-  // Check for rerun config from optimization report page
   useEffect(() => {
-    if (mode !== "optimization") return;
-    const stored = sessionStorage.getItem(SESSION_KEYS.RERUN_OPTIMIZATION);
+    if (!rerunKey) return;
+    const stored = sessionStorage.getItem(rerunKey);
     if (!stored) return;
-    sessionStorage.removeItem(SESSION_KEYS.RERUN_OPTIMIZATION);
+    sessionStorage.removeItem(rerunKey);
     try {
-      const config = JSON.parse(stored) as Record<string, unknown>;
-      openWithContent(config);
+      openWithContent(JSON.parse(stored) as Record<string, unknown>);
     } catch {
       // ignore invalid JSON
     }
-  }, [mode, openWithContent]);
+  }, [rerunKey, openWithContent]);
 
   const client = getClient();
 

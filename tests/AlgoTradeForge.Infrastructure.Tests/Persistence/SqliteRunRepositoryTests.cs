@@ -747,4 +747,45 @@ public class SqliteRunRepositoryTests : IDisposable
         Assert.Equal(3, page.TotalCount);
         Assert.Equal(2, page.Items.Count);
     }
+
+    // ── Delete backtest ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task DeleteBacktest_StandaloneRun_ReturnsTrue()
+    {
+        var record = MakeBacktestRecord();
+        await _repo.SaveAsync(record, TestContext.Current.CancellationToken);
+
+        var deleted = await _repo.DeleteBacktestAsync(record.Id, TestContext.Current.CancellationToken);
+
+        Assert.True(deleted);
+
+        var loaded = await _repo.GetByIdAsync(record.Id, TestContext.Current.CancellationToken);
+        Assert.Null(loaded);
+    }
+
+    [Fact]
+    public async Task DeleteBacktest_OptimizationTrial_ReturnsFalse()
+    {
+        var optId = Guid.NewGuid();
+        var optRecord = MakeOptimizationRecord(optId);
+
+        await _repo.InsertOptimizationPlaceholderAsync(optRecord, TestContext.Current.CancellationToken);
+        await _repo.SaveOptimizationAsync(optRecord, TestContext.Current.CancellationToken);
+
+        var trialId = optRecord.Trials[0].Id;
+        var deleted = await _repo.DeleteBacktestAsync(trialId, TestContext.Current.CancellationToken);
+
+        Assert.False(deleted);
+
+        var loaded = await _repo.GetByIdAsync(trialId, TestContext.Current.CancellationToken);
+        Assert.NotNull(loaded);
+    }
+
+    [Fact]
+    public async Task DeleteBacktest_NonExistent_ReturnsFalse()
+    {
+        var deleted = await _repo.DeleteBacktestAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
+        Assert.False(deleted);
+    }
 }

@@ -211,6 +211,13 @@ export const apiClient = {
     );
   },
 
+  async deleteBacktest(id: string): Promise<void> {
+    await requestVoid(
+      `/api/backtests/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+  },
+
   // --- Optimizations ---
 
   getOptimizations(

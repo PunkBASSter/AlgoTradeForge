@@ -546,6 +546,21 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         return affected > 0;
     }
 
+    // ── Delete standalone backtest ─────────────────────────────────────
+
+    public async Task<bool> DeleteBacktestAsync(Guid id, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM backtest_runs WHERE id = $id AND optimization_run_id IS NULL";
+        cmd.Parameters.AddWithValue("$id", id.ToString());
+
+        var affected = await cmd.ExecuteNonQueryAsync(ct);
+        return affected > 0;
+    }
+
     // ── Distinct strategy names ────────────────────────────────────────
 
     public async Task<IReadOnlyList<string>> GetDistinctStrategyNamesAsync(CancellationToken ct = default)

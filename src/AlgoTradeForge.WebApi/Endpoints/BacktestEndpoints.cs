@@ -65,6 +65,13 @@ public static class BacktestEndpoints
             .WithOpenApi()
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapDelete("/{id:guid}", DeleteBacktest)
+            .WithName("DeleteBacktest")
+            .WithSummary("Delete a standalone backtest run")
+            .WithOpenApi()
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> RunBacktest(
@@ -211,6 +218,18 @@ public static class BacktestEndpoints
             return Results.NotFound(new { error = $"Backtest '{id}' not found." });
 
         return Results.Ok(trades.Select(t => new TradePointResponse(t.TimestampMs, t.Pnl)).ToList());
+    }
+
+    private static async Task<IResult> DeleteBacktest(
+        Guid id,
+        ICommandHandler<DeleteBacktestCommand, bool> handler,
+        CancellationToken ct)
+    {
+        var deleted = await handler.HandleAsync(new DeleteBacktestCommand(id), ct);
+        if (!deleted)
+            return Results.NotFound(new { error = $"Backtest with ID '{id}' not found." });
+
+        return Results.NoContent();
     }
 
     internal static BacktestRunResponse MapToResponse(BacktestRunRecord r) => new()
