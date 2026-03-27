@@ -62,6 +62,15 @@ public static class StrategyTemplateBuilder
                 ["minSharpeRatio"] = -5.0,
                 ["minSortinoRatio"] = -5.0,
                 ["minAnnualizedReturnPct"] = -100.0,
+                ["fitnessWeights"] = new Dictionary<string, object>
+                {
+                    ["sharpeWeight"] = 0.5,
+                    ["sortinoWeight"] = 0.2,
+                    ["profitFactorWeight"] = 0.15,
+                    ["annualizedReturnWeight"] = 0.15,
+                    ["maxDrawdownThreshold"] = 30.0,
+                    ["minTrades"] = 10,
+                },
             },
             ["subscriptionAxis"] = BuildSubscriptions(availableAssets, "01:00:00"),
             ["optimizationAxes"] = axisOverrides.Count > 0 ? axisOverrides : null!,
@@ -74,18 +83,6 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<AvailableAssetInfo> availableAssets)
     {
         var grid = BuildOptimizationTemplate(strategyName, axes, availableAssets);
-
-        // Add fitnessWeights to optimizationSettings (shared by both brute force and GA)
-        var optSettings = (Dictionary<string, object>)grid["optimizationSettings"];
-        optSettings["fitnessWeights"] = new Dictionary<string, object>
-        {
-            ["sharpeWeight"] = 0.5,
-            ["sortinoWeight"] = 0.2,
-            ["profitFactorWeight"] = 0.15,
-            ["annualizedReturnWeight"] = 0.15,
-            ["maxDrawdownThreshold"] = 30.0,
-            ["minTrades"] = 10,
-        };
 
         var geneticSettings = new Dictionary<string, object>
         {

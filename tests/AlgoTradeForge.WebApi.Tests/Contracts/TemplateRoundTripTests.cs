@@ -57,6 +57,11 @@ public sealed class TemplateRoundTripTests
         Assert.NotEmpty(request.SubscriptionAxis);
         Assert.Equal("BTCUSDT", request.SubscriptionAxis[0].AssetName);
         Assert.Equal("Binance", request.SubscriptionAxis[0].Exchange);
+        Assert.NotNull(request.OptimizationSettings.FitnessWeights);
+        Assert.Equal(0.5, request.OptimizationSettings.FitnessWeights.SharpeWeight);
+        Assert.Equal(0.2, request.OptimizationSettings.FitnessWeights.SortinoWeight);
+        Assert.Equal(30.0, request.OptimizationSettings.FitnessWeights.MaxDrawdownThreshold);
+        Assert.Equal(10, request.OptimizationSettings.FitnessWeights.MinTrades);
     }
 
     [Fact]
