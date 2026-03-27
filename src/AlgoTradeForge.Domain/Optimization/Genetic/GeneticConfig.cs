@@ -49,6 +49,14 @@ public sealed record GeneticConfig
 
     /// <summary>Custom fitness weights. Null = default composite.</summary>
     public FitnessWeights? Weights { get; init; }
+
+    /// <summary>
+    /// When true, caches fitness results by parameter key so duplicate chromosomes
+    /// skip evaluation. Saves time when the GA re-discovers identical parameter sets,
+    /// but assumes deterministic backtests (same params always produce the same result).
+    /// Default: false.
+    /// </summary>
+    public bool EnableFitnessCache { get; init; }
 }
 
 /// <summary>

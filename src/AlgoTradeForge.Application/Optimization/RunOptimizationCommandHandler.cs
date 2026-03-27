@@ -235,7 +235,7 @@ public sealed class RunOptimizationCommandHandler(
             await progressCache.SetProgressAsync(
                 optimizationRunId, Interlocked.Read(ref processedCount), estimatedCount, ct);
 
-            var trials = topTrials.DrainSorted();
+            var trials = topTrials.DeduplicateAndDrainSorted();
             var failedTrialDetails = failedTrials.Drain(optimizationRunId);
 
             var optimizationRecord = new OptimizationRunRecord

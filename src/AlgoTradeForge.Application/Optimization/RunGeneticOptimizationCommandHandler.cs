@@ -120,6 +120,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
             var ga = new GeneticAlgorithm(gaConfig);
             var fitnessFunction = new CompositeFitnessFunction(gaConfig);
             var rng = new Random();
+            var cache = GeneticFitnessCache.Create(gaConfig);
             long totalEvals = 0;
 
             var trialTimeout = timeoutOptions.Value.BacktestTimeout;
@@ -136,16 +137,18 @@ public sealed class RunGeneticOptimizationCommandHandler(
 
                 // Count elites that will be skipped (already have valid fitness)
                 var elitesSkipped = population.Count(c => c.Fitness != double.MinValue);
+                var hitsBefore = cache?.ReadHits() ?? 0;
 
                 // Evaluate all individuals in parallel (elites are skipped)
                 EvaluatePopulation(
                     population, command.StrategyName, command.BacktestSettings,
                     factory, fixedSubscriptions, dataCache,
                     fitnessFunction, filter, topTrials, failedTrials,
-                    runId, startedAt, state,
+                    runId, startedAt, state, cache,
                     maxParallelism, trialTimeout, ct);
 
-                totalEvals += population.Count - elitesSkipped;
+                var cacheHitsThisGen = (cache?.ReadHits() ?? 0) - hitsBefore;
+                totalEvals += population.Count - elitesSkipped - cacheHitsThisGen;
                 generationsCompleted = gen + 1;
 
                 // Update progress
@@ -165,8 +168,8 @@ public sealed class RunGeneticOptimizationCommandHandler(
                 }
 
                 logger.LogDebug(
-                    "GA {RunId} gen {Gen}: best={Best:F4}, stagnation={Stagnation}, evals={Evals}",
-                    runId, gen, bestFitness, stagnation, totalEvals);
+                    "GA {RunId} gen {Gen}: best={Best:F4}, stagnation={Stagnation}, evals={Evals}, cacheHits={CacheHits}",
+                    runId, gen, bestFitness, stagnation, totalEvals, cache?.ReadHits() ?? 0);
 
                 // Check termination
                 if (ga.ShouldTerminate(generationsCompleted, totalEvals, stagnation, stopwatch.Elapsed))
@@ -182,7 +185,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
             await progressCache.SetProgressAsync(
                 runId, totalEvals, gaConfig.MaxEvaluations, CancellationToken.None);
 
-            var trials = topTrials.DrainSorted();
+            var trials = topTrials.DeduplicateAndDrainSorted();
             var failedTrialDetails = failedTrials.Drain(runId);
 
             var record = new OptimizationRunRecord
@@ -209,8 +212,8 @@ public sealed class RunGeneticOptimizationCommandHandler(
             await helper.SaveOptimizationAsync(record);
 
             logger.LogInformation(
-                "GA Optimization {RunId}: {Gens} generations, {Evals} evaluations, {Kept} kept, {Filtered} filtered, {Failed} failed in {Duration}ms",
-                runId, generationsCompleted, totalEvals, trials.Count, state.FilteredOutCount, state.FailedTrialCount, stopwatch.ElapsedMilliseconds);
+                "GA Optimization {RunId}: {Gens} generations, {Evals} evaluations, {Kept} kept, {Filtered} filtered, {Failed} failed ({CacheHits} cache hits) in {Duration}ms",
+                runId, generationsCompleted, totalEvals, trials.Count, state.FilteredOutCount, state.FailedTrialCount, cache?.ReadHits() ?? 0, stopwatch.ElapsedMilliseconds);
         }
         catch (OperationCanceledException)
         {
@@ -269,6 +272,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
         Guid runId,
         DateTimeOffset startedAt,
         EvalState state,
+        GeneticFitnessCache? cache,
         int maxParallelism,
         TimeSpan trialTimeout,
         CancellationToken ct)
@@ -308,6 +312,23 @@ public sealed class RunGeneticOptimizationCommandHandler(
                             if (fitnesses[i] != double.MinValue)
                                 continue;
 
+                            // Check fitness cache for duplicate chromosomes
+                            string? cacheKey = null;
+                            if (cache is not null)
+                            {
+                                if (cache.TryGet(combos[i], out cacheKey, out var cached))
+                                {
+                                    fitnesses[i] = cached.Fitness;
+                                    if (cached.WasFailed)
+                                        Interlocked.Increment(ref state.FailedTrialCount);
+                                    else if (cached.WasFilteredOut)
+                                        Interlocked.Increment(ref state.FilteredOutCount);
+                                    else if (cached.Record is not null)
+                                        topTrials.TryAdd(cached.Record);
+                                    continue;
+                                }
+                            }
+
                             if (!trialCts.TryReset())
                             {
                                 trialCts.Dispose();
@@ -322,17 +343,24 @@ public sealed class RunGeneticOptimizationCommandHandler(
                                     combos[i], factory, fixedSubscriptions, dataCache,
                                     runId, startedAt, ref state.StrategyVersion, trialCts.Token);
 
+                                var filteredOut = !filter.Passes(record.Metrics);
                                 fitnesses[i] = fitnessFunction.Evaluate(record.Metrics);
 
-                                if (filter.Passes(record.Metrics))
+                                if (!filteredOut)
                                     topTrials.TryAdd(record);
                                 else
                                     Interlocked.Increment(ref state.FilteredOutCount);
+
+                                cache?.TryAdd(cacheKey!, new CachedFitnessEntry(
+                                    fitnesses[i], filteredOut, WasFailed: false,
+                                    Record: filteredOut ? null : record));
                             }
                             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                             {
                                 Interlocked.Increment(ref state.FailedTrialCount);
                                 failedTrials.RecordTimeout(combos[i].Values, trialTimeout);
+                                cache?.TryAdd(cacheKey!, new CachedFitnessEntry(
+                                    double.MinValue, false, WasFailed: true, Record: null));
                             }
                             catch (OperationCanceledException)
                             {
@@ -346,6 +374,8 @@ public sealed class RunGeneticOptimizationCommandHandler(
                                     ex.GetType().FullName ?? ex.GetType().Name,
                                     ex.Message,
                                     ex.StackTrace ?? string.Empty);
+                                cache?.TryAdd(cacheKey!, new CachedFitnessEntry(
+                                    double.MinValue, false, WasFailed: true, Record: null));
                             }
                         }
                     }

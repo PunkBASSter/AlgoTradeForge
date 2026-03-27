@@ -280,7 +280,7 @@ public sealed class OptimizationSetupHelper(
                 DataSubscription = primarySub,
                 BacktestSettings = backtestSettings,
                 MaxParallelism = maxParallelism,
-                Trials = topTrials.DrainSorted(),
+                Trials = topTrials.DeduplicateAndDrainSorted(),
                 FailedTrialDetails = failedTrials.Drain(optimizationRunId),
                 FilteredTrials = filteredOutCount,
                 FailedTrials = failedTrialCount,
