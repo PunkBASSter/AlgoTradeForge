@@ -570,6 +570,35 @@ public class SqliteRunRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task InsertPlaceholder_PersistsInputJson()
+    {
+        var optId = Guid.NewGuid();
+        var inputJson = """{"strategyName":"BuyAndHold","backtestSettings":{"initialCash":10000}}""";
+        var optRecord = MakeOptimizationRecord(optId) with { InputJson = inputJson };
+
+        await _repo.InsertOptimizationPlaceholderAsync(optRecord, TestContext.Current.CancellationToken);
+
+        var loaded = await _repo.GetOptimizationByIdAsync(optId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(inputJson, loaded.InputJson);
+    }
+
+    [Fact]
+    public async Task InsertPlaceholder_NullInputJson_RoundTrips()
+    {
+        var optId = Guid.NewGuid();
+        var optRecord = MakeOptimizationRecord(optId);
+
+        await _repo.InsertOptimizationPlaceholderAsync(optRecord, TestContext.Current.CancellationToken);
+
+        var loaded = await _repo.GetOptimizationByIdAsync(optId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Null(loaded.InputJson);
+    }
+
+    [Fact]
     public void OptimizationLimit_ClampedToMaxLimit()
     {
         var query = new OptimizationRunQuery { Limit = 10_000 };

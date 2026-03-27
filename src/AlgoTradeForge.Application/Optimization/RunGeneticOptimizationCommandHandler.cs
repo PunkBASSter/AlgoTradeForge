@@ -72,6 +72,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
             MaxParallelism = maxParallelism,
             Trials = [],
             OptimizationMethod = "Genetic",
+            InputJson = command.InputJson,
             Status = OptimizationRunStatus.InProgress,
         }, ct);
 

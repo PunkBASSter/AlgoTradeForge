@@ -33,6 +33,7 @@ public sealed record OptimizationRunRecord
     public long FailedTrials { get; init; }
     public required IReadOnlyList<BacktestRunRecord> Trials { get; init; }
     public IReadOnlyList<FailedTrialRecord> FailedTrialDetails { get; init; } = [];
+    public string? InputJson { get; init; }
     public string? ErrorMessage { get; init; }
     public string? ErrorStackTrace { get; init; }
     public string? OptimizationMethod { get; init; }

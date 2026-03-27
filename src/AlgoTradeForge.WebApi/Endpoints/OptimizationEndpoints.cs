@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
@@ -12,6 +13,7 @@ namespace AlgoTradeForge.WebApi.Endpoints;
 public static class OptimizationEndpoints
 {
     private static bool _isDevelopment;
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     public static void MapOptimizationEndpoints(this IEndpointRouteBuilder app)
     {
         _isDevelopment = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().IsDevelopment();
@@ -104,6 +106,7 @@ public static class OptimizationEndpoints
             MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
             MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
             FitnessConfig = MapFitnessConfig(request.OptimizationSettings.FitnessWeights),
+            InputJson = JsonSerializer.Serialize(request, JsonOptions),
         };
 
         try
@@ -150,6 +153,7 @@ public static class OptimizationEndpoints
             MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
             MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
             GeneticSettings = MapGeneticSettings(request.GeneticSettings, request.OptimizationSettings.FitnessWeights),
+            InputJson = JsonSerializer.Serialize(request, JsonOptions),
         };
 
         try
@@ -357,6 +361,7 @@ public static class OptimizationEndpoints
         Trials = r.Trials.Select(MapTrialToResponse).ToList(),
         OptimizationMethod = r.OptimizationMethod,
         GenerationsCompleted = r.GenerationsCompleted,
+        InputJson = r.InputJson,
         Status = r.Status,
         ErrorMessage = r.ErrorMessage,
         FailedTrialDetails = r.FailedTrialDetails.Select(f => new FailedTrialResponse

@@ -99,6 +99,9 @@ export interface OptimizationRun {
   dataSubscription: DataSubscriptionResponse;
   backtestSettings: BacktestSettingsResponse;
   maxParallelism: number;
+  optimizationMethod?: string;
+  generationsCompleted?: number;
+  inputJson?: string;
   trials: BacktestRun[];
   failedTrialDetails: FailedTrialDetail[];
   status: string;
@@ -265,6 +268,7 @@ export interface OptimizationSettingsInput {
   minAnnualizedReturnPct?: number | null;
   maxDegreeOfParallelism?: number;
   maxCombinations?: number;
+  fitnessWeights?: FitnessWeightsInput;
 }
 
 export interface RunOptimizationRequest {
@@ -306,7 +310,6 @@ export interface GeneticSettingsInput {
   tournamentSize?: number;
   stagnationLimit?: number;
   timeBudgetMinutes?: number;
-  fitnessWeights?: FitnessWeightsInput;
 }
 
 export interface RunGeneticOptimizationRequest {

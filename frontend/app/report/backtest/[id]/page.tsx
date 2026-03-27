@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { ChartSkeleton } from "@/components/features/charts/chart-skeleton";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { RunBacktestRequest } from "@/types/api";
+import { SESSION_KEYS } from "@/lib/constants";
 
 const INTERNAL_PARAM_KEYS = new Set(["DataSubscriptions"]);
 
@@ -137,7 +138,7 @@ export default function BacktestReportPage({
         ),
       ),
     };
-    sessionStorage.setItem("rerun-backtest-config", JSON.stringify(config));
+    sessionStorage.setItem(SESSION_KEYS.RERUN_BACKTEST, JSON.stringify(config));
     router.push(`/${backtest.strategyName}/backtest`);
   };
 

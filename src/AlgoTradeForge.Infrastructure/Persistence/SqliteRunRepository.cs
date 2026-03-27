@@ -249,14 +249,14 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 sort_by, data_start, data_end,
                 initial_cash, commission, slippage_ticks, max_parallelism,
                 asset_name, exchange, timeframe, filtered_trials, failed_trials,
-                optimization_method, generations_completed, error_message, status
+                optimization_method, generations_completed, input_json, error_message, status
             ) VALUES (
                 $id, $stratName, $stratVer,
                 $startedAt, '', 0, $totalCombinations,
                 $sortBy, $dataStart, $dataEnd,
                 $cash, $commission, $slippage, $maxParallelism,
                 $asset, $exchange, $tf, 0, 0,
-                $optMethod, NULL, NULL, 'InProgress'
+                $optMethod, NULL, $inputJson, NULL, 'InProgress'
             )
             """;
 
@@ -276,6 +276,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         cmd.Parameters.AddWithValue("$exchange", record.DataSubscription.Exchange);
         cmd.Parameters.AddWithValue("$tf", record.DataSubscription.TimeFrame);
         cmd.Parameters.AddWithValue("$optMethod", (object?)record.OptimizationMethod ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$inputJson", (object?)record.InputJson ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -664,6 +665,9 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             MaxParallelism = reader.GetInt32(reader.GetOrdinal("max_parallelism")),
             FilteredTrials = reader.GetInt64(reader.GetOrdinal("filtered_trials")),
             FailedTrials = reader.GetInt64(reader.GetOrdinal("failed_trials")),
+            InputJson = reader.IsDBNull(reader.GetOrdinal("input_json"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("input_json")),
             ErrorMessage = errorMessage,
             OptimizationMethod = reader.IsDBNull(reader.GetOrdinal("optimization_method"))
                 ? null

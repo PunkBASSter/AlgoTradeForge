@@ -8,6 +8,7 @@ import { Table, type Column } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { formatNumber, formatPercent } from "@/lib/utils/format";
 import type { BacktestRun, StartDebugSessionRequest } from "@/types/api";
+import { SESSION_KEYS } from "@/lib/constants";
 
 const INTERNAL_PARAM_KEYS = new Set(["DataSubscriptions"]);
 
@@ -113,7 +114,7 @@ export function OptimizationTrialsTable({
                   ),
                 ),
               };
-              sessionStorage.setItem("debug-session-config", JSON.stringify(config));
+              sessionStorage.setItem(SESSION_KEYS.DEBUG_CONFIG, JSON.stringify(config));
               router.push("/debug");
             }}
             className="p-1 rounded hover:bg-bg-surface text-text-muted hover:text-text-primary transition-colors"

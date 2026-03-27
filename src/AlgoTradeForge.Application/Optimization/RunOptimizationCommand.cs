@@ -21,6 +21,7 @@ public sealed record RunOptimizationCommand : ICommand<OptimizationSubmissionDto
     public double? MinSortinoRatio { get; init; }
     public double? MinAnnualizedReturnPct { get; init; }
     public FitnessConfig? FitnessConfig { get; init; }
+    public string? InputJson { get; init; }
 }
 
 public abstract record OptimizationAxisOverride;

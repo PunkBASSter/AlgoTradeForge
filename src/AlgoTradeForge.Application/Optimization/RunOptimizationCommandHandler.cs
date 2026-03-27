@@ -95,6 +95,7 @@ public sealed class RunOptimizationCommandHandler(
             MaxParallelism = maxParallelism,
             Trials = [],
             OptimizationMethod = "BruteForce",
+            InputJson = command.InputJson,
             Status = OptimizationRunStatus.InProgress,
         }, ct);
 

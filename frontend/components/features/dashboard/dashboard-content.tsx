@@ -9,6 +9,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { useLiveSessions } from "@/hooks/use-live-sessions";
 import { useRunNew } from "@/contexts/run-new-context";
 import { OPTIMIZATION_LIST_POLL_MS } from "@/hooks/use-run-status";
+import { SESSION_KEYS } from "@/lib/constants";
 
 const LIMIT = 50;
 
@@ -34,9 +35,23 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
   // Check for rerun config from backtest report page
   useEffect(() => {
     if (mode !== "backtest") return;
-    const stored = sessionStorage.getItem("rerun-backtest-config");
+    const stored = sessionStorage.getItem(SESSION_KEYS.RERUN_BACKTEST);
     if (!stored) return;
-    sessionStorage.removeItem("rerun-backtest-config");
+    sessionStorage.removeItem(SESSION_KEYS.RERUN_BACKTEST);
+    try {
+      const config = JSON.parse(stored) as Record<string, unknown>;
+      openWithContent(config);
+    } catch {
+      // ignore invalid JSON
+    }
+  }, [mode, openWithContent]);
+
+  // Check for rerun config from optimization report page
+  useEffect(() => {
+    if (mode !== "optimization") return;
+    const stored = sessionStorage.getItem(SESSION_KEYS.RERUN_OPTIMIZATION);
+    if (!stored) return;
+    sessionStorage.removeItem(SESSION_KEYS.RERUN_OPTIMIZATION);
     try {
       const config = JSON.parse(stored) as Record<string, unknown>;
       openWithContent(config);

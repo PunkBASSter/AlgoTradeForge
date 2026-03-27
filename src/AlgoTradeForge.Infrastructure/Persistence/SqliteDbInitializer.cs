@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 9;
+    private const int CurrentVersion = 10;
 
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -35,6 +35,7 @@ internal static class SqliteDbInitializer
             failed_trials       INTEGER NOT NULL DEFAULT 0,
             optimization_method TEXT    NULL,
             generations_completed INTEGER NULL,
+            input_json          TEXT    NULL,
             error_message       TEXT    NULL,
             status              TEXT    NOT NULL DEFAULT 'Completed'
         );
@@ -112,6 +113,10 @@ internal static class SqliteDbInitializer
         UPDATE optimization_runs SET status = 'InProgress' WHERE completed_at = '';
         UPDATE optimization_runs SET status = 'Cancelled' WHERE error_message = 'Run was cancelled by user.' AND completed_at != '';
         UPDATE optimization_runs SET status = 'Failed' WHERE error_message IS NOT NULL AND error_message != 'Run was cancelled by user.' AND completed_at != '';
+        """;
+
+    private const string MigrationV10 = """
+        ALTER TABLE optimization_runs ADD COLUMN input_json TEXT NULL;
         """;
 
     private const string MigrationV5 = """
@@ -201,6 +206,14 @@ internal static class SqliteDbInitializer
             migrateCmd.CommandText = MigrationV9;
             await migrateCmd.ExecuteNonQueryAsync();
             await SetVersionAsync(connection, 9);
+        }
+
+        if (currentVersion < 10)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV10;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 10);
         }
 
         // Mark any orphaned in-progress runs as failed (server crashed during execution)

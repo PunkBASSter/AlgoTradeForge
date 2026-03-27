@@ -26,6 +26,7 @@ import type {
   StartLiveSessionRequest,
   StartDebugSessionRequest,
 } from "@/types/api";
+import { SESSION_KEYS } from "@/lib/constants";
 
 const EDITOR_EXTENSIONS = [
   basicSetup,
@@ -164,6 +165,12 @@ export function RunNewPanel({
   useEffect(() => {
     if (mode !== "optimization") setUseGenetic(false);
   }, [mode]);
+
+  // Auto-detect genetic mode from initialContent (e.g. optimization re-run)
+  useEffect(() => {
+    if (mode !== "optimization" || !initialContent) return;
+    setUseGenetic("geneticSettings" in initialContent);
+  }, [mode, initialContent]);
 
   // Reset useDebug when mode leaves backtest
   useEffect(() => {
@@ -391,8 +398,8 @@ export function RunNewPanel({
     }
 
     if (mode === "backtest" && useDebug) {
-      sessionStorage.setItem("debug-session-config", JSON.stringify(parsed as StartDebugSessionRequest));
-      sessionStorage.setItem("debug-session-autostart", "true");
+      sessionStorage.setItem(SESSION_KEYS.DEBUG_CONFIG, JSON.stringify(parsed as StartDebugSessionRequest));
+      sessionStorage.setItem(SESSION_KEYS.DEBUG_AUTOSTART, "true");
       router.push("/debug");
       return;
     }

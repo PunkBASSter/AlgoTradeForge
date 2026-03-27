@@ -9,6 +9,7 @@ import { useOptimizationDetail, useDeleteOptimization } from "@/hooks/use-optimi
 import { OptimizationTrialsTable } from "@/components/features/report/optimization-trials-table";
 import { RunProgress } from "@/components/features/dashboard/run-progress";
 import { StatItem } from "@/components/ui/stat-item";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   formatCurrency,
@@ -17,6 +18,7 @@ import {
   toTitleCase,
 } from "@/lib/utils/format";
 import type { FailedTrialDetail } from "@/types/api";
+import { SESSION_KEYS } from "@/lib/constants";
 
 function FailedTrialDetails({ details }: { details: FailedTrialDetail[] }) {
   const [open, setOpen] = React.useState(false);
@@ -83,8 +85,15 @@ export default function OptimizationReportPage({
   } = useOptimizationDetail(id);
 
   const isInProgress = optimization?.status === "InProgress";
+  const hasInputJson = !!optimization?.inputJson;
 
   const deleteMutation = useDeleteOptimization();
+
+  const handleRerun = () => {
+    if (!optimization?.inputJson) return;
+    sessionStorage.setItem(SESSION_KEYS.RERUN_OPTIMIZATION, optimization.inputJson);
+    router.push(`/${optimization.strategyName}/optimization`);
+  };
 
   const handleDelete = () => {
     if (!confirm("Delete this optimization and all its trials? This cannot be undone.")) return;
@@ -138,14 +147,22 @@ export default function OptimizationReportPage({
           </p>
         </div>
         {!isInProgress && (
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={deleteMutation.isPending}
-            className="shrink-0 px-3 py-1.5 rounded-md text-sm font-medium bg-accent-red text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
-          >
-            {deleteMutation.isPending ? "Deleting..." : "Delete"}
-          </button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={handleRerun}
+              disabled={!hasInputJson}
+            >
+              Re-run
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleDelete}
+              loading={deleteMutation.isPending}
+            >
+              Delete
+            </Button>
+          </div>
         )}
       </div>
 

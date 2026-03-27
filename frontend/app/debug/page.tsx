@@ -13,6 +13,7 @@ import { ChartSkeleton } from "@/components/features/charts/chart-skeleton";
 import { useToast } from "@/components/ui/toast";
 import { getClient } from "@/lib/services";
 import type { StartDebugSessionRequest, DebugCommand } from "@/types/api";
+import { SESSION_KEYS } from "@/lib/constants";
 
 const ChartStack = dynamic(
   () =>
@@ -96,12 +97,12 @@ export default function DebugPage() {
   // Read autostart config synchronously so SessionConfigEditor never races for the key
   const [autostartConfig] = useState<StartDebugSessionRequest | null>(() => {
     if (typeof window === "undefined") return null;
-    const autostart = sessionStorage.getItem("debug-session-autostart");
+    const autostart = sessionStorage.getItem(SESSION_KEYS.DEBUG_AUTOSTART);
     if (!autostart) return null;
-    sessionStorage.removeItem("debug-session-autostart");
-    const stored = sessionStorage.getItem("debug-session-config");
+    sessionStorage.removeItem(SESSION_KEYS.DEBUG_AUTOSTART);
+    const stored = sessionStorage.getItem(SESSION_KEYS.DEBUG_CONFIG);
     if (!stored) return null;
-    sessionStorage.removeItem("debug-session-config");
+    sessionStorage.removeItem(SESSION_KEYS.DEBUG_CONFIG);
     try {
       const config = JSON.parse(stored) as StartDebugSessionRequest;
       if (config.strategyName && config.dataSubscription) return config;
