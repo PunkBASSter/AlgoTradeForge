@@ -3,9 +3,10 @@
 ## Launch optimized but not overtrained Delta ZigZag Breakout to live on multiple (30+) assets: crypto, stocks, maybe FX, maybe FUT.
 
 ## QA
-- Investigate lots of the same trials: http://localhost:3000/report/optimization/090a8ca3-dacc-4bf5-a8bf-82bad40c1bee
-- Deal with limits of combinations for optimization
 - Debug and fix trend zigzag
+- Add optimization Re-run button to expose the all same settings
+- Add preview/quick popup for optimization run
+- Estimate the data volume on the current runs, evaluate DB performance and further performance capacity
 
 ## Overfitting control
 - Walk Forward OPTI

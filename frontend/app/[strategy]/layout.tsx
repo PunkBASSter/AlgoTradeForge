@@ -57,21 +57,21 @@ export default function StrategyLayout({
     <div className="flex min-h-[calc(100vh-100px)]">
       {/* Collapsible sidebar */}
       <aside
-        className={`hidden xl:flex shrink-0 border-r border-border-default bg-bg-surface transition-[width] duration-200 ${
-          collapsed ? "w-3" : "w-56"
+        className={`hidden sm:flex shrink-0 border-r border-border-default bg-bg-surface transition-[width] duration-200 ${
+          collapsed ? "w-6" : "w-56"
         }`}
       >
         {collapsed ? (
           <button
             onClick={toggle}
-            className="w-full flex items-start justify-center pt-4 text-text-muted hover:text-text-primary transition-colors"
+            className="w-full flex items-start justify-center pt-3 text-text-muted hover:text-text-primary transition-colors"
             aria-label="Expand sidebar"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"
               fill="currentColor"
-              className="w-3.5 h-3.5"
+              className="w-5 h-5"
             >
               <path
                 fillRule="evenodd"
@@ -88,14 +88,14 @@ export default function StrategyLayout({
               </h3>
               <button
                 onClick={toggle}
-                className="text-text-muted hover:text-text-primary transition-colors p-1"
+                className="text-text-muted hover:text-text-primary transition-colors p-1.5"
                 aria-label="Collapse sidebar"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 20 20"
                   fill="currentColor"
-                  className="w-3.5 h-3.5"
+                  className="w-4 h-4"
                 >
                   <path
                     fillRule="evenodd"
