@@ -3,6 +3,7 @@ using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
+using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.WebApi.Contracts;
 
@@ -102,6 +103,7 @@ public static class OptimizationEndpoints
             MinSharpeRatio = request.OptimizationSettings.MinSharpeRatio,
             MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
             MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
+            FitnessConfig = MapFitnessConfig(request.OptimizationSettings.FitnessWeights),
         };
 
         try
@@ -147,7 +149,7 @@ public static class OptimizationEndpoints
             MinSharpeRatio = request.OptimizationSettings.MinSharpeRatio,
             MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
             MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
-            GeneticSettings = MapGeneticSettings(request.GeneticSettings),
+            GeneticSettings = MapGeneticSettings(request.GeneticSettings, request.OptimizationSettings.FitnessWeights),
         };
 
         try
@@ -181,7 +183,7 @@ public static class OptimizationEndpoints
             MaxCombinations = request.OptimizationSettings?.MaxCombinations ?? 500_000,
             Mode = mode,
             GeneticSettings = mode.Equals("Genetic", StringComparison.OrdinalIgnoreCase) && request.GeneticSettings is { } gs
-                ? MapGeneticSettings(gs)
+                ? MapGeneticSettings(gs, request.OptimizationSettings?.FitnessWeights)
                 : null,
         };
 
@@ -212,9 +214,8 @@ public static class OptimizationEndpoints
         }
     }
 
-    private static GeneticConfig MapGeneticSettings(GeneticSettingsInput gs)
+    private static GeneticConfig MapGeneticSettings(GeneticSettingsInput gs, FitnessWeightsInput? fw)
     {
-        var fw = gs.FitnessWeights;
         return new GeneticConfig
         {
             PopulationSize = gs.PopulationSize,
@@ -227,15 +228,24 @@ public static class OptimizationEndpoints
             TimeBudget = gs.TimeBudgetMinutes.HasValue
                 ? TimeSpan.FromMinutes(gs.TimeBudgetMinutes.Value)
                 : null,
-            MinTrades = fw?.MinTrades ?? 10,
-            MaxDrawdownThreshold = fw?.MaxDrawdownThreshold ?? 30.0,
+            Fitness = MapFitnessConfig(fw) ?? new FitnessConfig(),
+        };
+    }
+
+    private static FitnessConfig? MapFitnessConfig(FitnessWeightsInput? fw)
+    {
+        if (fw is null) return null;
+        return new FitnessConfig
+        {
             Weights = new FitnessWeights
             {
-                SharpeWeight = fw?.SharpeWeight ?? 0.5,
-                SortinoWeight = fw?.SortinoWeight ?? 0.2,
-                ProfitFactorWeight = fw?.ProfitFactorWeight ?? 0.15,
-                AnnualizedReturnWeight = fw?.AnnualizedReturnWeight ?? 0.15,
+                SharpeWeight = fw.SharpeWeight,
+                SortinoWeight = fw.SortinoWeight,
+                ProfitFactorWeight = fw.ProfitFactorWeight,
+                AnnualizedReturnWeight = fw.AnnualizedReturnWeight,
             },
+            MinTrades = fw.MinTrades,
+            MaxDrawdownThreshold = fw.MaxDrawdownThreshold,
         };
     }
 

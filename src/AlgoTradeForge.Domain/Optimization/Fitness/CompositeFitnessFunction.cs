@@ -1,6 +1,6 @@
 using AlgoTradeForge.Domain.Reporting;
 
-namespace AlgoTradeForge.Domain.Optimization.Genetic;
+namespace AlgoTradeForge.Domain.Optimization.Fitness;
 
 /// <summary>
 /// Weighted composite fitness with drawdown and trade-count penalties.
@@ -19,7 +19,7 @@ public sealed class CompositeFitnessFunction : IFitnessFunction
     private readonly int _minTrades;
     private readonly double _maxDrawdownThreshold;
 
-    public CompositeFitnessFunction(GeneticConfig config)
+    public CompositeFitnessFunction(FitnessConfig config)
     {
         _weights = config.Weights ?? new FitnessWeights();
         _minTrades = config.MinTrades;

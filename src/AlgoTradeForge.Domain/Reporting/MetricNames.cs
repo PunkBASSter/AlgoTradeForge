@@ -22,5 +22,6 @@ public static class MetricNames
     public const string FinalEquity = nameof(PerformanceMetrics.FinalEquity);
     public const string TradingDays = nameof(PerformanceMetrics.TradingDays);
 
+    public const string Fitness = "Fitness";
     public const string Default = SharpeRatio;
 }

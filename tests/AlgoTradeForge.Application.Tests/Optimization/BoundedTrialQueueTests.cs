@@ -1,5 +1,6 @@
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Reporting;
 using Xunit;
 
@@ -199,5 +200,52 @@ public sealed class BoundedTrialQueueTests
         var queue = new BoundedTrialQueue(10, MetricNames.SharpeRatio);
         var results = queue.DrainSorted();
         Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Fitness_function_ranks_by_composite_score()
+    {
+        var fitnessFunction = new CompositeFitnessFunction();
+        var queue = new BoundedTrialQueue(3, fitnessFunction);
+
+        // Good all-around: moderate Sharpe, decent Sortino, good PF
+        var balanced = MakeRecord(sharpe: 1.5, sortino: 2.0, profitFactor: 2.5);
+        // One-dimensional: great Sharpe but nothing else
+        var sharpeOnly = MakeRecord(sharpe: 3.0, sortino: 0.5, profitFactor: 1.1);
+        // Poor overall
+        var weak = MakeRecord(sharpe: 0.3, sortino: 0.2, profitFactor: 0.8);
+
+        queue.TryAdd(weak);
+        queue.TryAdd(balanced);
+        queue.TryAdd(sharpeOnly);
+
+        var results = queue.DrainSorted();
+        Assert.Equal(3, results.Count);
+        // All three should be ranked — verify best-first ordering via composite
+        var fitness0 = fitnessFunction.Evaluate(results[0].Metrics);
+        var fitness1 = fitnessFunction.Evaluate(results[1].Metrics);
+        var fitness2 = fitnessFunction.Evaluate(results[2].Metrics);
+        Assert.True(fitness0 >= fitness1, $"First ({fitness0}) should be >= second ({fitness1})");
+        Assert.True(fitness1 >= fitness2, $"Second ({fitness1}) should be >= third ({fitness2})");
+    }
+
+    [Fact]
+    public void Fitness_function_penalizes_high_drawdown()
+    {
+        var fitnessFunction = new CompositeFitnessFunction();
+        var queue = new BoundedTrialQueue(2, fitnessFunction);
+
+        // Great Sharpe but extreme drawdown
+        var highDdRecord = MakeRecord(sharpe: 3.0, sortino: 3.0, profitFactor: 3.0, maxDrawdownPct: 80.0);
+        // Moderate metrics, reasonable drawdown
+        var balancedRecord = MakeRecord(sharpe: 1.5, sortino: 1.5, profitFactor: 2.0, maxDrawdownPct: 15.0);
+
+        queue.TryAdd(highDdRecord);
+        queue.TryAdd(balancedRecord);
+
+        var results = queue.DrainSorted();
+        // Balanced trial should rank first despite lower raw metrics, due to DD penalty
+        Assert.Equal(15.0, results[0].Metrics.MaxDrawdownPct);
+        Assert.Equal(80.0, results[1].Metrics.MaxDrawdownPct);
     }
 }

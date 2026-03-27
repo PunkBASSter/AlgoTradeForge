@@ -1,3 +1,5 @@
+using AlgoTradeForge.Domain.Optimization.Fitness;
+
 namespace AlgoTradeForge.Domain.Optimization.Genetic;
 
 /// <summary>
@@ -41,14 +43,8 @@ public sealed record GeneticConfig
     /// <summary>Probability of switching module variant during mutation.</summary>
     public double ModuleVariantMutationRate { get; init; } = 0.1;
 
-    /// <summary>Minimum trades for fitness penalty threshold.</summary>
-    public int MinTrades { get; init; } = 10;
-
-    /// <summary>Max drawdown threshold for quadratic penalty.</summary>
-    public double MaxDrawdownThreshold { get; init; } = 30.0;
-
-    /// <summary>Custom fitness weights. Null = default composite.</summary>
-    public FitnessWeights? Weights { get; init; }
+    /// <summary>Fitness evaluation configuration (weights, penalties).</summary>
+    public FitnessConfig Fitness { get; init; } = new();
 
     /// <summary>
     /// When true, caches fitness results by parameter key so duplicate chromosomes
@@ -57,15 +53,4 @@ public sealed record GeneticConfig
     /// Default: false.
     /// </summary>
     public bool EnableFitnessCache { get; init; }
-}
-
-/// <summary>
-/// Weights for the composite fitness function.
-/// </summary>
-public sealed record FitnessWeights
-{
-    public double SharpeWeight { get; init; } = 0.5;
-    public double SortinoWeight { get; init; } = 0.2;
-    public double ProfitFactorWeight { get; init; } = 0.15;
-    public double AnnualizedReturnWeight { get; init; } = 0.15;
 }

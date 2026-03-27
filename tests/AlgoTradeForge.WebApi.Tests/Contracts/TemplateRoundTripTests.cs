@@ -115,11 +115,11 @@ public sealed class TemplateRoundTripTests
         Assert.Equal(0.85, request.GeneticSettings.CrossoverRate);
         Assert.Equal(3, request.GeneticSettings.TournamentSize);
         Assert.Equal(20, request.GeneticSettings.StagnationLimit);
-        Assert.NotNull(request.GeneticSettings.FitnessWeights);
-        Assert.Equal(0.5, request.GeneticSettings.FitnessWeights.SharpeWeight);
-        Assert.Equal(0.2, request.GeneticSettings.FitnessWeights.SortinoWeight);
-        Assert.Equal(30.0, request.GeneticSettings.FitnessWeights.MaxDrawdownThreshold);
-        Assert.Equal(10, request.GeneticSettings.FitnessWeights.MinTrades);
+        Assert.NotNull(request.OptimizationSettings.FitnessWeights);
+        Assert.Equal(0.5, request.OptimizationSettings.FitnessWeights.SharpeWeight);
+        Assert.Equal(0.2, request.OptimizationSettings.FitnessWeights.SortinoWeight);
+        Assert.Equal(30.0, request.OptimizationSettings.FitnessWeights.MaxDrawdownThreshold);
+        Assert.Equal(10, request.OptimizationSettings.FitnessWeights.MinTrades);
     }
 
     [Fact]

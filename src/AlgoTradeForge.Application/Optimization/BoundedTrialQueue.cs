@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
@@ -31,6 +32,13 @@ public sealed class BoundedTrialQueue
             MaxDrawdownPct   => (m => m.MaxDrawdownPct, true),
             _                => (m => m.SharpeRatio, false),
         };
+    }
+
+    public BoundedTrialQueue(int capacity, IFitnessFunction fitnessFunction)
+    {
+        _capacity = capacity;
+        _priorityExtractor = fitnessFunction.Evaluate;
+        // higher fitness = better, _ascending defaults to false
     }
 
     /// <summary>

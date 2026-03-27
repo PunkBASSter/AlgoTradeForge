@@ -75,6 +75,18 @@ public static class StrategyTemplateBuilder
     {
         var grid = BuildOptimizationTemplate(strategyName, axes, availableAssets);
 
+        // Add fitnessWeights to optimizationSettings (shared by both brute force and GA)
+        var optSettings = (Dictionary<string, object>)grid["optimizationSettings"];
+        optSettings["fitnessWeights"] = new Dictionary<string, object>
+        {
+            ["sharpeWeight"] = 0.5,
+            ["sortinoWeight"] = 0.2,
+            ["profitFactorWeight"] = 0.15,
+            ["annualizedReturnWeight"] = 0.15,
+            ["maxDrawdownThreshold"] = 30.0,
+            ["minTrades"] = 10,
+        };
+
         var geneticSettings = new Dictionary<string, object>
         {
             ["populationSize"] = 0,
@@ -84,15 +96,6 @@ public static class StrategyTemplateBuilder
             ["crossoverRate"] = 0.85,
             ["tournamentSize"] = 3,
             ["stagnationLimit"] = 20,
-            ["fitnessWeights"] = new Dictionary<string, object>
-            {
-                ["sharpeWeight"] = 0.5,
-                ["sortinoWeight"] = 0.2,
-                ["profitFactorWeight"] = 0.15,
-                ["annualizedReturnWeight"] = 0.15,
-                ["maxDrawdownThreshold"] = 30.0,
-                ["minTrades"] = 10,
-            },
         };
 
         // Maintain section order: settings together, then axes

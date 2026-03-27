@@ -17,6 +17,17 @@ public sealed record OptimizationSettingsInput
     public double? MinAnnualizedReturnPct { get; init; }
     public int MaxDegreeOfParallelism { get; init; } = -1;
     public long MaxCombinations { get; init; } = 500_000;
+    public FitnessWeightsInput? FitnessWeights { get; init; }
+}
+
+public sealed record FitnessWeightsInput
+{
+    public double SharpeWeight { get; init; } = 0.5;
+    public double SortinoWeight { get; init; } = 0.2;
+    public double ProfitFactorWeight { get; init; } = 0.15;
+    public double AnnualizedReturnWeight { get; init; } = 0.15;
+    public double MaxDrawdownThreshold { get; init; } = 30.0;
+    public int MinTrades { get; init; } = 10;
 }
 
 public sealed record RunOptimizationRequest

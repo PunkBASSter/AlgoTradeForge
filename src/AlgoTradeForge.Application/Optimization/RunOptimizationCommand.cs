@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Reporting;
 
 namespace AlgoTradeForge.Application.Optimization;
@@ -19,6 +20,7 @@ public sealed record RunOptimizationCommand : ICommand<OptimizationSubmissionDto
     public double? MinSharpeRatio { get; init; }
     public double? MinSortinoRatio { get; init; }
     public double? MinAnnualizedReturnPct { get; init; }
+    public FitnessConfig? FitnessConfig { get; init; }
 }
 
 public abstract record OptimizationAxisOverride;

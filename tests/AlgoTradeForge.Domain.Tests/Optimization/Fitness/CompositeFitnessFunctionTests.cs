@@ -1,8 +1,8 @@
-using AlgoTradeForge.Domain.Optimization.Genetic;
+using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Reporting;
 using Xunit;
 
-namespace AlgoTradeForge.Domain.Tests.Optimization.Genetic;
+namespace AlgoTradeForge.Domain.Tests.Optimization.Fitness;
 
 public class CompositeFitnessFunctionTests
 {
@@ -112,5 +112,24 @@ public class CompositeFitnessFunctionTests
         var highSortino = sharpeFocused.Evaluate(CreateMetrics(sharpe: 0.5, sortino: 5.0));
         // With all weight on Sharpe, high Sharpe should win
         Assert.True(highSharpe > highSortino);
+    }
+
+    [Fact]
+    public void FitnessConfig_Constructor_UsesConfigValues()
+    {
+        var config = new FitnessConfig
+        {
+            Weights = new FitnessWeights { SharpeWeight = 1.0, SortinoWeight = 0, ProfitFactorWeight = 0, AnnualizedReturnWeight = 0 },
+            MinTrades = 5,
+            MaxDrawdownThreshold = 50.0,
+        };
+        var fitness = new CompositeFitnessFunction(config);
+
+        // With 50% DD threshold, a 45% DD should not be penalized
+        var result = fitness.Evaluate(CreateMetrics(maxDrawdown: 45.0));
+        var defaultFitness = _fitness.Evaluate(CreateMetrics(maxDrawdown: 45.0));
+        // Default threshold is 30%, so default fitness should be lower (penalized)
+        Assert.True(result > defaultFitness,
+            $"Custom threshold ({result}) should score higher than default ({defaultFitness})");
     }
 }

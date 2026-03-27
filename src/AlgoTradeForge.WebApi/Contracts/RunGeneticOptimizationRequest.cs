@@ -15,17 +15,6 @@ public sealed record GeneticSettingsInput
     public int TournamentSize { get; init; } = 3;
     public int StagnationLimit { get; init; } = 20;
     public int? TimeBudgetMinutes { get; init; }
-    public FitnessWeightsInput? FitnessWeights { get; init; }
-}
-
-public sealed record FitnessWeightsInput
-{
-    public double SharpeWeight { get; init; } = 0.5;
-    public double SortinoWeight { get; init; } = 0.2;
-    public double ProfitFactorWeight { get; init; } = 0.15;
-    public double AnnualizedReturnWeight { get; init; } = 0.15;
-    public double MaxDrawdownThreshold { get; init; } = 30.0;
-    public int MinTrades { get; init; } = 10;
 }
 
 public sealed record RunGeneticOptimizationRequest

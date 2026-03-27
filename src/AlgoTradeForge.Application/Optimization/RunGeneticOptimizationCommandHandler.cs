@@ -5,6 +5,7 @@ using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
@@ -118,7 +119,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
         {
             var stopwatch = Stopwatch.StartNew();
             var ga = new GeneticAlgorithm(gaConfig);
-            var fitnessFunction = new CompositeFitnessFunction(gaConfig);
+            var fitnessFunction = new CompositeFitnessFunction(gaConfig.Fitness);
             var rng = new Random();
             var cache = GeneticFitnessCache.Create(gaConfig);
             long totalEvals = 0;

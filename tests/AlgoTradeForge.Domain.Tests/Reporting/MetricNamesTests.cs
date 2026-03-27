@@ -16,7 +16,9 @@ public class MetricNamesTests
 
         var constants = typeof(MetricNames)
             .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
-            .Where(f => f.IsLiteral && !f.IsInitOnly && f.Name != nameof(MetricNames.Default))
+            .Where(f => f.IsLiteral && !f.IsInitOnly
+                && f.Name != nameof(MetricNames.Default)
+                && f.Name != nameof(MetricNames.Fitness))
             .ToDictionary(f => f.Name, f => (string)f.GetRawConstantValue()!);
 
         // Every PerformanceMetrics property must have a matching constant

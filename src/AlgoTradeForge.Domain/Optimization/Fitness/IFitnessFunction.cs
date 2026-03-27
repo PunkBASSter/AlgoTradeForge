@@ -1,6 +1,6 @@
 using AlgoTradeForge.Domain.Reporting;
 
-namespace AlgoTradeForge.Domain.Optimization.Genetic;
+namespace AlgoTradeForge.Domain.Optimization.Fitness;
 
 public interface IFitnessFunction
 {

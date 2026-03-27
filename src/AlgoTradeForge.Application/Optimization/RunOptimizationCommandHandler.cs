@@ -6,6 +6,7 @@ using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Optimization;
+using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
 using Microsoft.Extensions.Logging;
@@ -88,7 +89,7 @@ public sealed class RunOptimizationCommandHandler(
             CompletedAt = startedAt,
             DurationMs = 0,
             TotalCombinations = estimatedCount,
-            SortBy = command.SortBy,
+            SortBy = command.FitnessConfig is not null ? Fitness : command.SortBy,
             DataSubscription = optPrimarySub,
             BacktestSettings = command.BacktestSettings,
             MaxParallelism = maxParallelism,
@@ -132,7 +133,9 @@ public sealed class RunOptimizationCommandHandler(
             throw new ArgumentException("MaxTrialsToKeep must be at least 1.");
 
         var filter = new TrialFilter(command);
-        var topTrials = new BoundedTrialQueue(command.MaxTrialsToKeep, command.SortBy);
+        var topTrials = command.FitnessConfig is { } fc
+            ? new BoundedTrialQueue(command.MaxTrialsToKeep, new CompositeFitnessFunction(fc))
+            : new BoundedTrialQueue(command.MaxTrialsToKeep, command.SortBy);
         var failedTrials = new FailedTrialCollector(capacity: 100);
         long filteredOutCount = 0;
         long failedTrialCount = 0;
@@ -247,7 +250,7 @@ public sealed class RunOptimizationCommandHandler(
                 CompletedAt = DateTimeOffset.UtcNow,
                 DurationMs = (long)stopwatch.Elapsed.TotalMilliseconds,
                 TotalCombinations = estimatedCount,
-                SortBy = command.SortBy,
+                SortBy = command.FitnessConfig is not null ? Fitness : command.SortBy,
                 DataSubscription = optPrimarySub,
                 BacktestSettings = command.BacktestSettings,
                 MaxParallelism = maxParallelism,
