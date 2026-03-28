@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Domain.Optimization.Fitness;
 
 namespace AlgoTradeForge.Application.Backtests;
 
@@ -9,4 +10,5 @@ public sealed record RunBacktestCommand : ICommand<BacktestSubmissionDto>, IBack
     public required string StrategyName { get; init; }
     public bool UseDetailedExecutionLogic { get; init; }
     public IDictionary<string, object>? StrategyParameters { get; init; }
+    public FitnessConfig? FitnessConfig { get; init; }
 }

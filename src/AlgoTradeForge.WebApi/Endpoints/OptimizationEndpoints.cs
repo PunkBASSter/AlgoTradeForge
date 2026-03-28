@@ -1,8 +1,11 @@
+using System.Text.Json;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
+using AlgoTradeForge.Domain.Optimization.Fitness;
+using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.WebApi.Contracts;
 
 namespace AlgoTradeForge.WebApi.Endpoints;
@@ -10,6 +13,7 @@ namespace AlgoTradeForge.WebApi.Endpoints;
 public static class OptimizationEndpoints
 {
     private static bool _isDevelopment;
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     public static void MapOptimizationEndpoints(this IEndpointRouteBuilder app)
     {
         _isDevelopment = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().IsDevelopment();
@@ -19,9 +23,23 @@ public static class OptimizationEndpoints
 
         group.MapPost("/", RunOptimization)
             .WithName("RunOptimization")
-            .WithSummary("Submit an optimization for background execution")
+            .WithSummary("Submit a brute-force optimization for background execution")
             .WithOpenApi()
             .Produces<OptimizationSubmissionResponse>(StatusCodes.Status202Accepted)
+            .Produces(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/genetic", RunGeneticOptimization)
+            .WithName("RunGeneticOptimization")
+            .WithSummary("Submit a genetic algorithm optimization for background execution")
+            .WithOpenApi()
+            .Produces<OptimizationSubmissionResponse>(StatusCodes.Status202Accepted)
+            .Produces(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/evaluate", EvaluateOptimization)
+            .WithName("EvaluateOptimization")
+            .WithSummary("Preview combination count and GA config without running")
+            .WithOpenApi()
+            .Produces<OptimizationEvaluationResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);
 
         group.MapGet("/", ListOptimizations)
@@ -80,13 +98,14 @@ public static class OptimizationEndpoints
             },
             MaxDegreeOfParallelism = request.OptimizationSettings.MaxDegreeOfParallelism,
             MaxCombinations = request.OptimizationSettings.MaxCombinations,
-            SortBy = request.OptimizationSettings.SortBy,
             MaxTrialsToKeep = request.OptimizationSettings.MaxTrialsToKeep,
             MinProfitFactor = request.OptimizationSettings.MinProfitFactor,
             MaxDrawdownPct = request.OptimizationSettings.MaxDrawdownPct,
             MinSharpeRatio = request.OptimizationSettings.MinSharpeRatio,
             MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
             MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
+            FitnessConfig = MapFitnessConfig(request.OptimizationSettings.FitnessWeights),
+            InputJson = JsonSerializer.Serialize(request, JsonOptions),
         };
 
         try
@@ -105,6 +124,118 @@ public static class OptimizationEndpoints
         }
     }
 
+    private static async Task<IResult> RunGeneticOptimization(
+        RunGeneticOptimizationRequest request,
+        ICommandHandler<RunGeneticOptimizationCommand, OptimizationSubmissionDto> handler,
+        CancellationToken ct)
+    {
+        var command = new RunGeneticOptimizationCommand
+        {
+            StrategyName = request.StrategyName,
+            Axes = request.OptimizationAxes,
+            DataSubscriptions = request.DataSubscriptions,
+            SubscriptionAxis = request.SubscriptionAxis,
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = request.BacktestSettings.InitialCash,
+                StartTime = request.BacktestSettings.StartTime,
+                EndTime = request.BacktestSettings.EndTime,
+                CommissionPerTrade = request.BacktestSettings.CommissionPerTrade,
+                SlippageTicks = request.BacktestSettings.SlippageTicks,
+            },
+            MaxDegreeOfParallelism = request.OptimizationSettings.MaxDegreeOfParallelism,
+            MaxTrialsToKeep = request.OptimizationSettings.MaxTrialsToKeep,
+            MinProfitFactor = request.OptimizationSettings.MinProfitFactor,
+            MaxDrawdownPct = request.OptimizationSettings.MaxDrawdownPct,
+            MinSharpeRatio = request.OptimizationSettings.MinSharpeRatio,
+            MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
+            MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
+            GeneticSettings = MapGeneticSettings(request.GeneticSettings, request.OptimizationSettings.FitnessWeights),
+            InputJson = JsonSerializer.Serialize(request, JsonOptions),
+        };
+
+        try
+        {
+            var submission = await handler.HandleAsync(command, ct);
+            var response = new OptimizationSubmissionResponse
+            {
+                Id = submission.Id,
+                TotalCombinations = submission.TotalCombinations,
+            };
+            return Results.Accepted($"/api/optimizations/{submission.Id}/status", response);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> EvaluateOptimization(
+        EvaluateOptimizationRequest request,
+        IQueryHandler<EvaluateOptimizationQuery, OptimizationEvaluationDto> handler,
+        CancellationToken ct)
+    {
+        var mode = request.Mode ?? "BruteForce";
+        var query = new EvaluateOptimizationQuery
+        {
+            StrategyName = request.StrategyName,
+            Axes = request.OptimizationAxes,
+            DataSubscriptions = request.DataSubscriptions,
+            SubscriptionAxis = request.SubscriptionAxis,
+            MaxCombinations = request.OptimizationSettings?.MaxCombinations ?? 500_000,
+            Mode = mode,
+            GeneticSettings = mode.Equals("Genetic", StringComparison.OrdinalIgnoreCase) && request.GeneticSettings is { } gs
+                ? MapGeneticSettings(gs, request.OptimizationSettings?.FitnessWeights)
+                : null,
+        };
+
+        try
+        {
+            var dto = await handler.HandleAsync(query, ct);
+            var response = new OptimizationEvaluationResponse
+            {
+                TotalCombinations = dto.TotalCombinations,
+                ExceedsMaxCombinations = dto.ExceedsMaxCombinations,
+                MaxCombinations = dto.MaxCombinations,
+                EffectiveDimensions = dto.EffectiveDimensions,
+                GeneticConfig = dto.GeneticConfig is { } gc
+                    ? new ResolvedGeneticConfigResponse
+                    {
+                        PopulationSize = gc.PopulationSize,
+                        MaxGenerations = gc.MaxGenerations,
+                        MaxEvaluations = gc.MaxEvaluations,
+                        MutationRate = gc.MutationRate,
+                    }
+                    : null,
+            };
+            return Results.Ok(response);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static GeneticConfig MapGeneticSettings(GeneticSettingsInput gs, FitnessWeightsInput? fw)
+    {
+        return new GeneticConfig
+        {
+            PopulationSize = gs.PopulationSize,
+            MaxGenerations = gs.MaxGenerations,
+            MaxEvaluations = gs.MaxEvaluations,
+            EliteCount = gs.EliteCount,
+            CrossoverRate = gs.CrossoverRate,
+            TournamentSize = gs.TournamentSize,
+            StagnationLimit = gs.StagnationLimit,
+            TimeBudget = gs.TimeBudgetMinutes.HasValue
+                ? TimeSpan.FromMinutes(gs.TimeBudgetMinutes.Value)
+                : null,
+            Fitness = MapFitnessConfig(fw) ?? new FitnessConfig(),
+        };
+    }
+
+    private static FitnessConfig? MapFitnessConfig(FitnessWeightsInput? fw) => fw?.ToFitnessConfig();
+
     private static async Task<IResult> GetOptimizationStatus(
         Guid id,
         IQueryHandler<GetOptimizationStatusQuery, OptimizationStatusDto?> handler,
@@ -122,6 +253,7 @@ public static class OptimizationEndpoints
             FilteredTrials = dto.Result?.FilteredTrials ?? 0,
             FailedTrials = dto.Result?.FailedTrials ?? 0,
             Result = dto.Result is not null ? MapToResponse(dto.Result) : null,
+            Status = dto.Result?.Status ?? OptimizationRunStatus.InProgress,
         });
     }
 
@@ -210,6 +342,11 @@ public static class OptimizationEndpoints
         BacktestSettings = r.BacktestSettings,
         MaxParallelism = r.MaxParallelism,
         Trials = r.Trials.Select(MapTrialToResponse).ToList(),
+        OptimizationMethod = r.OptimizationMethod,
+        GenerationsCompleted = r.GenerationsCompleted,
+        InputJson = r.InputJson,
+        Status = r.Status,
+        ErrorMessage = r.ErrorMessage,
         FailedTrialDetails = r.FailedTrialDetails.Select(f => new FailedTrialResponse
         {
             ExceptionType = f.ExceptionType,
@@ -232,7 +369,7 @@ public static class OptimizationEndpoints
         CompletedAt = r.CompletedAt,
         DurationMs = r.DurationMs,
         TotalBars = r.TotalBars,
-        Metrics = MetricsMapping.ToDict(r.Metrics),
+        Metrics = MetricsMapping.ToDict(r.Metrics, r.FitnessScore),
         HasCandleData = r.RunFolderPath is not null,
         RunMode = r.RunMode,
         OptimizationRunId = r.OptimizationRunId,

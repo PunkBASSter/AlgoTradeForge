@@ -53,6 +53,7 @@ public static class StrategyEndpoints
         OptimizationTemplate = new Dictionary<string, object>(dto.OptimizationTemplate),
         LiveSessionTemplate = new Dictionary<string, object>(dto.LiveSessionTemplate),
         DebugSessionTemplate = new Dictionary<string, object>(dto.DebugSessionTemplate),
+        GeneticOptimizationTemplate = new Dictionary<string, object>(dto.GeneticOptimizationTemplate),
     };
 
     private static ParameterAxisResponse MapAxis(ParameterAxis axis) => axis switch
@@ -66,6 +67,13 @@ public static class StrategyEndpoints
             Step = n.Step,
             ClrType = MapClrTypeName(n.ClrType),
             Unit = n.Unit == ParamUnit.Raw ? null : char.ToLowerInvariant(n.Unit.ToString()[0]) + n.Unit.ToString()[1..],
+        },
+        DiscreteSetAxis d => new ParameterAxisResponse
+        {
+            Name = d.Name,
+            Type = "discrete",
+            ClrType = MapClrTypeName(d.ClrType),
+            DiscreteValues = d.Values.Select(v => v.ToString()!).ToList(),
         },
         ModuleSlotAxis m => new ParameterAxisResponse
         {

@@ -18,6 +18,7 @@ export interface StrategyDescriptor {
   optimizationTemplate: Record<string, unknown>;
   liveSessionTemplate: Record<string, unknown>;
   debugSessionTemplate: Record<string, unknown>;
+  geneticOptimizationTemplate: Record<string, unknown>;
 }
 
 export interface ParameterAxisDescriptor {
@@ -98,8 +99,13 @@ export interface OptimizationRun {
   dataSubscription: DataSubscriptionResponse;
   backtestSettings: BacktestSettingsResponse;
   maxParallelism: number;
+  optimizationMethod?: string;
+  generationsCompleted?: number;
+  inputJson?: string;
   trials: BacktestRun[];
   failedTrialDetails: FailedTrialDetail[];
+  status: string;
+  errorMessage?: string;
 }
 
 export interface FailedTrialDetail {
@@ -204,6 +210,7 @@ export interface OptimizationStatus {
   completedCombinations: number;
   totalCombinations: number;
   result?: OptimizationRun;
+  status: string;
 }
 
 /** Derive run status from backend data (no status field in API response). */
@@ -219,9 +226,9 @@ export function deriveBacktestStatus(data: BacktestStatus): RunStatusType {
 
 /** Derive optimization status from backend data. */
 export function deriveOptimizationStatus(data: OptimizationStatus): RunStatusType {
-  if (data.result) {
-    return "Completed";
-  }
+  if (data.status === "Completed") return "Completed";
+  if (data.status === "Cancelled") return "Cancelled";
+  if (data.status === "Failed") return "Failed";
   if (data.completedCombinations === 0) return "Pending";
   return "Running";
 }
@@ -261,6 +268,7 @@ export interface OptimizationSettingsInput {
   minAnnualizedReturnPct?: number | null;
   maxDegreeOfParallelism?: number;
   maxCombinations?: number;
+  fitnessWeights?: FitnessWeightsInput;
 }
 
 export interface RunOptimizationRequest {
@@ -282,6 +290,59 @@ export interface DataSubscription {
   assetName: string;
   exchange: string;
   timeFrame: string;
+}
+
+export interface FitnessWeightsInput {
+  sharpeWeight?: number;
+  sortinoWeight?: number;
+  profitFactorWeight?: number;
+  annualizedReturnWeight?: number;
+  maxDrawdownThreshold?: number;
+  minTrades?: number;
+}
+
+export interface GeneticSettingsInput {
+  populationSize?: number;
+  maxGenerations?: number;
+  maxEvaluations?: number;
+  eliteCount?: number;
+  crossoverRate?: number;
+  tournamentSize?: number;
+  stagnationLimit?: number;
+  timeBudgetMinutes?: number;
+}
+
+export interface RunGeneticOptimizationRequest {
+  strategyName: string;
+  backtestSettings: BacktestSettingsInput;
+  optimizationSettings?: OptimizationSettingsInput;
+  geneticSettings?: GeneticSettingsInput;
+  optimizationAxes?: Record<string, OptimizationAxisOverride>;
+  dataSubscriptions?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[];
+}
+
+export interface EvaluateOptimizationRequest {
+  strategyName: string;
+  optimizationAxes?: Record<string, OptimizationAxisOverride>;
+  dataSubscriptions?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[];
+  optimizationSettings?: OptimizationSettingsInput;
+  mode?: "BruteForce" | "Genetic";
+  geneticSettings?: GeneticSettingsInput;
+}
+
+export interface OptimizationEvaluation {
+  totalCombinations: number;
+  exceedsMaxCombinations: boolean;
+  maxCombinations: number;
+  effectiveDimensions: number;
+  geneticConfig?: {
+    populationSize: number;
+    maxGenerations: number;
+    maxEvaluations: number;
+    mutationRate: number;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------

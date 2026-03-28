@@ -2,13 +2,12 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Optimization;
-using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Optimization.Fitness;
 
 namespace AlgoTradeForge.WebApi.Contracts;
 
 public sealed record OptimizationSettingsInput
 {
-    public string SortBy { get; init; } = MetricNames.Default;
     public int MaxTrialsToKeep { get; init; } = 10_000;
     public double? MinProfitFactor { get; init; }
     public double? MaxDrawdownPct { get; init; }
@@ -16,7 +15,31 @@ public sealed record OptimizationSettingsInput
     public double? MinSortinoRatio { get; init; }
     public double? MinAnnualizedReturnPct { get; init; }
     public int MaxDegreeOfParallelism { get; init; } = -1;
-    public long MaxCombinations { get; init; } = 100_000;
+    public long MaxCombinations { get; init; } = 500_000;
+    public FitnessWeightsInput? FitnessWeights { get; init; }
+}
+
+public sealed record FitnessWeightsInput
+{
+    public double SharpeWeight { get; init; } = 0.5;
+    public double SortinoWeight { get; init; } = 0.2;
+    public double ProfitFactorWeight { get; init; } = 0.15;
+    public double AnnualizedReturnWeight { get; init; } = 0.15;
+    public double MaxDrawdownThreshold { get; init; } = 30.0;
+    public int MinTrades { get; init; } = 10;
+
+    public FitnessConfig ToFitnessConfig() => new()
+    {
+        Weights = new FitnessWeights
+        {
+            SharpeWeight = SharpeWeight,
+            SortinoWeight = SortinoWeight,
+            ProfitFactorWeight = ProfitFactorWeight,
+            AnnualizedReturnWeight = AnnualizedReturnWeight,
+        },
+        MinTrades = MinTrades,
+        MaxDrawdownThreshold = MaxDrawdownThreshold,
+    };
 }
 
 public sealed record RunOptimizationRequest

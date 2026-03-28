@@ -8,6 +8,7 @@ import { EditorState } from "@codemirror/state";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { linter } from "@codemirror/lint";
+import { SESSION_KEYS } from "@/lib/constants";
 import { basicSetup } from "codemirror";
 import { Button } from "@/components/ui/button";
 import { useAvailableStrategies } from "@/hooks/use-available-strategies";
@@ -32,9 +33,9 @@ export function SessionConfigEditor({
   // Check for pre-filled config from backtest/optimization "Debug" button
   const prefillRef = useRef<Record<string, unknown> | null>(null);
   useEffect(() => {
-    const stored = sessionStorage.getItem("debug-session-config");
+    const stored = sessionStorage.getItem(SESSION_KEYS.DEBUG_CONFIG);
     if (!stored) return;
-    sessionStorage.removeItem("debug-session-config");
+    sessionStorage.removeItem(SESSION_KEYS.DEBUG_CONFIG);
     try {
       const parsed = JSON.parse(stored) as Record<string, unknown>;
       prefillRef.current = parsed;

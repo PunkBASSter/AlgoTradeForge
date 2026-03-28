@@ -2,12 +2,32 @@ using AlgoTradeForge.Domain.Reporting;
 
 namespace AlgoTradeForge.Application.Optimization;
 
-public sealed class TrialFilter(RunOptimizationCommand command)
+public sealed class TrialFilter
 {
+    private readonly double? _minProfitFactor;
+    private readonly double? _maxDrawdownPct;
+    private readonly double? _minSharpeRatio;
+    private readonly double? _minSortinoRatio;
+    private readonly double? _minAnnualizedReturnPct;
+
+    public TrialFilter(double? minProfitFactor, double? maxDrawdownPct,
+        double? minSharpeRatio, double? minSortinoRatio, double? minAnnualizedReturnPct)
+    {
+        _minProfitFactor = minProfitFactor;
+        _maxDrawdownPct = maxDrawdownPct;
+        _minSharpeRatio = minSharpeRatio;
+        _minSortinoRatio = minSortinoRatio;
+        _minAnnualizedReturnPct = minAnnualizedReturnPct;
+    }
+
+    public TrialFilter(ITrialFilterOptions options)
+        : this(options.MinProfitFactor, options.MaxDrawdownPct, options.MinSharpeRatio,
+            options.MinSortinoRatio, options.MinAnnualizedReturnPct) { }
+
     public bool Passes(PerformanceMetrics m) =>
-        (!command.MinProfitFactor.HasValue        || m.ProfitFactor        >= command.MinProfitFactor.Value) &&
-        (!command.MaxDrawdownPct.HasValue         || m.MaxDrawdownPct      <= command.MaxDrawdownPct.Value) &&
-        (!command.MinSharpeRatio.HasValue         || m.SharpeRatio         >= command.MinSharpeRatio.Value) &&
-        (!command.MinSortinoRatio.HasValue        || m.SortinoRatio        >= command.MinSortinoRatio.Value) &&
-        (!command.MinAnnualizedReturnPct.HasValue || m.AnnualizedReturnPct >= command.MinAnnualizedReturnPct.Value);
+        (!_minProfitFactor.HasValue        || m.ProfitFactor        >= _minProfitFactor.Value) &&
+        (!_maxDrawdownPct.HasValue         || m.MaxDrawdownPct      <= _maxDrawdownPct.Value) &&
+        (!_minSharpeRatio.HasValue         || m.SharpeRatio         >= _minSharpeRatio.Value) &&
+        (!_minSortinoRatio.HasValue        || m.SortinoRatio        >= _minSortinoRatio.Value) &&
+        (!_minAnnualizedReturnPct.HasValue || m.AnnualizedReturnPct >= _minAnnualizedReturnPct.Value);
 }

@@ -62,9 +62,48 @@ public static class StrategyTemplateBuilder
                 ["minSharpeRatio"] = -5.0,
                 ["minSortinoRatio"] = -5.0,
                 ["minAnnualizedReturnPct"] = -100.0,
+                ["fitnessWeights"] = new Dictionary<string, object>
+                {
+                    ["sharpeWeight"] = 0.5,
+                    ["sortinoWeight"] = 0.2,
+                    ["profitFactorWeight"] = 0.15,
+                    ["annualizedReturnWeight"] = 0.15,
+                    ["maxDrawdownThreshold"] = 30.0,
+                    ["minTrades"] = 10,
+                },
             },
             ["subscriptionAxis"] = BuildSubscriptions(availableAssets, "01:00:00"),
             ["optimizationAxes"] = axisOverrides.Count > 0 ? axisOverrides : null!,
+        };
+    }
+
+    public static Dictionary<string, object> BuildGeneticOptimizationTemplate(
+        string strategyName,
+        IReadOnlyList<ParameterAxis> axes,
+        IReadOnlyList<AvailableAssetInfo> availableAssets)
+    {
+        var grid = BuildOptimizationTemplate(strategyName, axes, availableAssets);
+
+        var geneticSettings = new Dictionary<string, object>
+        {
+            ["populationSize"] = 0,
+            ["maxGenerations"] = 0,
+            ["maxEvaluations"] = 0,
+            ["eliteCount"] = 2,
+            ["crossoverRate"] = 0.85,
+            ["tournamentSize"] = 3,
+            ["stagnationLimit"] = 20,
+        };
+
+        // Maintain section order: settings together, then axes
+        return new Dictionary<string, object>
+        {
+            ["strategyName"] = grid["strategyName"],
+            ["backtestSettings"] = grid["backtestSettings"],
+            ["optimizationSettings"] = grid["optimizationSettings"],
+            ["geneticSettings"] = geneticSettings,
+            ["subscriptionAxis"] = grid["subscriptionAxis"],
+            ["optimizationAxes"] = grid["optimizationAxes"],
         };
     }
 
@@ -174,6 +213,12 @@ public static class StrategyTemplateBuilder
                 ["min"] = n.Min,
                 ["max"] = n.Max,
                 ["step"] = n.Step,
+            };
+
+        if (axis is DiscreteSetAxis d)
+            return new Dictionary<string, object>
+            {
+                ["values"] = d.Values.Select(v => v.ToString()!).ToList(),
             };
 
         return new Dictionary<string, object>

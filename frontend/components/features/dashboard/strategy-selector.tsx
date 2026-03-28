@@ -1,9 +1,9 @@
 "use client";
 
-// T053 - Strategy selector sidebar component (URL-driven)
-
+import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useStrategies } from "@/hooks/use-strategies";
 import { useAvailableStrategies } from "@/hooks/use-available-strategies";
 
 interface StrategySelectorProps {
@@ -11,41 +11,41 @@ interface StrategySelectorProps {
 }
 
 export function StrategySelector({ selected }: StrategySelectorProps) {
-  const { data: strategies, isLoading } = useAvailableStrategies();
+  const { data: ranStrategies } = useStrategies();
+  const { data: availableStrategies, isLoading } = useAvailableStrategies();
   const pathname = usePathname();
 
-  // Derive mode from current URL: /strategy/backtest or /strategy/optimization
-  const mode = pathname.endsWith("/optimization") ? "optimization" : "backtest";
+  // Merge: recency-sorted strategies with runs first, then any never-run strategies
+  const strategies = useMemo(() => {
+    const ran = ranStrategies ?? [];
+    const available = availableStrategies?.map((s) => s.name) ?? [];
+    const ranSet = new Set(ran);
+    return [...ran, ...available.filter((name) => !ranSet.has(name))];
+  }, [ranStrategies, availableStrategies]);
+
+  // Derive mode from current URL
+  const mode = pathname.endsWith("/optimization")
+    ? "optimization"
+    : pathname.endsWith("/live")
+      ? "live"
+      : "backtest";
 
   return (
     <div className="space-y-1">
-      <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider px-3 mb-2">
-        Strategies
-      </h3>
-      <Link
-        href={`/all/${mode}`}
-        className={`block w-full text-left px-3 py-2 text-sm rounded transition-colors ${
-          selected === null
-            ? "bg-accent-blue text-white"
-            : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-        }`}
-      >
-        All Strategies
-      </Link>
       {isLoading && (
         <div className="px-3 py-2 text-sm text-text-muted">Loading...</div>
       )}
-      {strategies?.map((s) => (
+      {strategies.map((name) => (
         <Link
-          key={s.name}
-          href={`/${s.name}/${mode}`}
+          key={name}
+          href={`/${name}/${mode}`}
           className={`block w-full text-left px-3 py-2 text-sm rounded transition-colors ${
-            selected === s.name
+            selected === name
               ? "bg-accent-blue text-white"
               : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
           }`}
         >
-          {s.name}
+          {name}
         </Link>
       ))}
     </div>

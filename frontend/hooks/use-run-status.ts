@@ -5,6 +5,10 @@ import { getClient } from "@/lib/services";
 import type { BacktestStatus, OptimizationStatus, RunStatusType } from "@/types/api";
 import { deriveBacktestStatus, deriveOptimizationStatus } from "@/types/api";
 
+export const OPTIMIZATION_LIST_POLL_MS = 5_000;
+export const OPTIMIZATION_STATUS_POLL_BASE_MS = 5_000;
+export const OPTIMIZATION_STATUS_POLL_MAX_MS = 30_000;
+
 function isTerminal(status: RunStatusType): boolean {
   return status === "Completed" || status === "Failed" || status === "Cancelled";
 }
@@ -39,7 +43,7 @@ export function useOptimizationStatus(id: string | null) {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (data && isTerminal(deriveOptimizationStatus(data))) return false;
-      return backoffInterval(query, 5_000, 30_000);
+      return backoffInterval(query, OPTIMIZATION_STATUS_POLL_BASE_MS, OPTIMIZATION_STATUS_POLL_MAX_MS);
     },
   });
 }

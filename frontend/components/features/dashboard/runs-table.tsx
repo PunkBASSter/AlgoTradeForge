@@ -20,6 +20,11 @@ const backtestColumns: Column<BacktestRun>[] = [
   { key: "dataSubscription.exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
   { key: "dataSubscription.timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
   {
+    key: "fitness",
+    header: "Fitness",
+    render: (_v, row) => row.metrics?.fitness != null ? formatNumber(row.metrics.fitness, 4) : "—",
+  },
+  {
     key: "sortino",
     header: "Sortino",
     render: (_v, row) => formatNumber(row.metrics?.sortinoRatio ?? 0),
@@ -63,11 +68,20 @@ const optimizationColumns: Column<OptimizationRun>[] = [
   { key: "dataSubscription.exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
   { key: "dataSubscription.timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
   { key: "totalCombinations", header: "Combinations" },
-  { key: "sortBy", header: "Sort By" },
+  {
+    key: "status",
+    header: "Status",
+    render: (_v, row) => {
+      if (row.status === "InProgress") return <span className="text-blue-400">In Progress</span>;
+      if (row.status === "Failed") return <span className="text-red-400">Failed</span>;
+      if (row.status === "Cancelled") return <span className="text-yellow-400">Cancelled</span>;
+      return <span className="text-green-400">Completed</span>;
+    },
+  },
   {
     key: "durationMs",
     header: "Duration",
-    render: (v) => `${(Number(v) / 1000).toFixed(1)}s`,
+    render: (v, row) => row.status === "InProgress" ? "—" : `${(Number(v) / 1000).toFixed(1)}s`,
   },
 ];
 

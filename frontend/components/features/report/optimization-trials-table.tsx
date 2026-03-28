@@ -8,6 +8,7 @@ import { Table, type Column } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { formatNumber, formatPercent } from "@/lib/utils/format";
 import type { BacktestRun, StartDebugSessionRequest } from "@/types/api";
+import { SESSION_KEYS } from "@/lib/constants";
 
 const INTERNAL_PARAM_KEYS = new Set(["DataSubscriptions"]);
 
@@ -51,6 +52,11 @@ export function OptimizationTrialsTable({
       { key: "dataSubscription.assetName", header: "Asset", render: (_v, row) => row.dataSubscription.assetName },
       { key: "dataSubscription.exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
       { key: "dataSubscription.timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
+      {
+        key: "fitness",
+        header: "Fitness",
+        render: (_v, row) => row.metrics?.fitness != null ? formatNumber(row.metrics.fitness, 4) : "—",
+      },
       {
         key: "sortino",
         header: "Sortino",
@@ -113,7 +119,7 @@ export function OptimizationTrialsTable({
                   ),
                 ),
               };
-              sessionStorage.setItem("debug-session-config", JSON.stringify(config));
+              sessionStorage.setItem(SESSION_KEYS.DEBUG_CONFIG, JSON.stringify(config));
               router.push("/debug");
             }}
             className="p-1 rounded hover:bg-bg-surface text-text-muted hover:text-text-primary transition-colors"

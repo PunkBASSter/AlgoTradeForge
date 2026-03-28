@@ -1,5 +1,8 @@
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Domain.Optimization.Fitness;
+using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Strategy;
 using static AlgoTradeForge.Domain.Reporting.MetricNames;
 
 namespace AlgoTradeForge.Application.Optimization;
@@ -29,6 +32,13 @@ public sealed class BoundedTrialQueue
             MaxDrawdownPct   => (m => m.MaxDrawdownPct, true),
             _                => (m => m.SharpeRatio, false),
         };
+    }
+
+    public BoundedTrialQueue(int capacity, IFitnessFunction fitnessFunction)
+    {
+        _capacity = capacity;
+        _priorityExtractor = fitnessFunction.Evaluate;
+        // higher fitness = better, _ascending defaults to false
     }
 
     /// <summary>
@@ -69,4 +79,42 @@ public sealed class BoundedTrialQueue
         items.Reverse();
         return items;
     }
+
+    /// <summary>
+    /// Drains the heap, removes duplicate trials (same parameters + asset), and returns sorted best-first.
+    /// Keeps the first (best) occurrence of each duplicate. Not thread-safe.
+    /// </summary>
+    public List<BacktestRunRecord> DeduplicateAndDrainSorted()
+    {
+        var items = DrainSorted();
+        var seen = new HashSet<string>();
+        return items.Where(r => seen.Add(BuildTrialKey(r))).ToList();
+    }
+
+    internal static string BuildTrialKey(BacktestRunRecord record)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(record.DataSubscription.AssetName)
+          .Append(':').Append(record.DataSubscription.Exchange)
+          .Append(':').Append(record.DataSubscription.TimeFrame)
+          .Append('|');
+
+        var first = true;
+        foreach (var key in record.Parameters.Keys
+            .Where(k => !IsDataSubscriptionParam(record.Parameters[k]))
+            .OrderBy(k => k, StringComparer.Ordinal))
+        {
+            if (!first) sb.Append('|');
+            first = false;
+            sb.Append(key).Append('=');
+            AppendValue(sb, record.Parameters[key]);
+        }
+        return sb.ToString();
+    }
+
+    private static bool IsDataSubscriptionParam(object value) =>
+        value is DataSubscription or DataSubscriptionDto;
+
+    private static void AppendValue(System.Text.StringBuilder sb, object value) =>
+        ParameterKeyBuilder.AppendValue(sb, value);
 }

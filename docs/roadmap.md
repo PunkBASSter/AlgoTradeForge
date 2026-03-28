@@ -3,15 +3,13 @@
 ## Launch optimized but not overtrained Delta ZigZag Breakout to live on multiple (30+) assets: crypto, stocks, maybe FX, maybe FUT.
 
 ## QA
-- Debug on futures, investigate rejections
-- Test optimization with multiple subscriptions as params (how to correctly provide them to the optimizer, on the trials tab which asset is going to be?)
-- Ensure 0.001% per trade set on optimizations
+- Debug and fix trend zigzag
+- Add optimization Re-run button to expose the all same settings
+- Add preview/quick popup for optimization run
+- Estimate the data volume on the current runs, evaluate DB performance and further performance capacity
 
 ## Overfitting control
-- Walk Forward OPTI
-- Permutations test
-- Overfitting evaluation, effective param ranges
-- Implement other optimizers (genetic, bayesian, random search)
+@overfitting-detection-requirements.md
 
 ## Live
 @docs/live-connector-binance.md

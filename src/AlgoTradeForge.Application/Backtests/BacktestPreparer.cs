@@ -61,7 +61,8 @@ public sealed class BacktestPreparer(
             {
                 timeFrame = TimeSpan.FromMinutes(1);
             }
-            else if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out timeFrame))
+            else if (!TimeFrameFormatter.TryParseShorthand(sub.TimeFrame, out timeFrame)
+                     && !TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out timeFrame))
             {
                 throw new ArgumentException($"Invalid TimeFrame format: '{sub.TimeFrame}'");
             }

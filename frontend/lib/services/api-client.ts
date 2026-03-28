@@ -10,9 +10,12 @@ import type {
   EventsData,
   RunBacktestRequest,
   RunOptimizationRequest,
+  RunGeneticOptimizationRequest,
+  EvaluateOptimizationRequest,
   OptimizationRun,
   OptimizationSubmission,
   OptimizationStatus,
+  OptimizationEvaluation,
   StartDebugSessionRequest,
   DebugSession,
   DebugSessionStatus,
@@ -208,6 +211,13 @@ export const apiClient = {
     );
   },
 
+  async deleteBacktest(id: string): Promise<void> {
+    await requestVoid(
+      `/api/backtests/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+  },
+
   // --- Optimizations ---
 
   getOptimizations(
@@ -229,6 +239,26 @@ export const apiClient = {
     req: RunOptimizationRequest,
   ): Promise<OptimizationSubmission> {
     return request<OptimizationSubmission>("/api/optimizations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    });
+  },
+
+  runGeneticOptimization(
+    req: RunGeneticOptimizationRequest,
+  ): Promise<OptimizationSubmission> {
+    return request<OptimizationSubmission>("/api/optimizations/genetic", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    });
+  },
+
+  evaluateOptimization(
+    req: EvaluateOptimizationRequest,
+  ): Promise<OptimizationEvaluation> {
+    return request<OptimizationEvaluation>("/api/optimizations/evaluate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),

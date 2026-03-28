@@ -20,6 +20,7 @@ public sealed record BacktestRunRecord
     public string? RunFolderPath { get; init; }
     public required string RunMode { get; init; }
     public Guid? OptimizationRunId { get; init; }
+    public double? FitnessScore { get; init; }
     public string? ErrorMessage { get; init; }
     public string? ErrorStackTrace { get; init; }
 }

@@ -18,7 +18,9 @@ public static class DependencyInjection
     {
         services.AddSingleton<BacktestPreparer>();
         services.AddSingleton<ICommandHandler<RunBacktestCommand, BacktestSubmissionDto>, RunBacktestCommandHandler>();
+        services.AddSingleton<OptimizationSetupHelper>();
         services.AddSingleton<ICommandHandler<RunOptimizationCommand, OptimizationSubmissionDto>, RunOptimizationCommandHandler>();
+        services.AddSingleton<ICommandHandler<RunGeneticOptimizationCommand, OptimizationSubmissionDto>, RunGeneticOptimizationCommandHandler>();
         services.AddSingleton<OptimizationAxisResolver>();
 
         // Progress tracking
@@ -45,9 +47,11 @@ public static class DependencyInjection
         services.AddScoped<IQueryHandler<GetOptimizationByIdQuery, OptimizationRunRecord?>, GetOptimizationByIdQueryHandler>();
         services.AddScoped<IQueryHandler<GetOptimizationStatusQuery, OptimizationStatusDto?>, GetOptimizationStatusQueryHandler>();
         services.AddScoped<IQueryHandler<ListOptimizationRunsQuery, PagedResult<OptimizationRunRecord>>, ListOptimizationRunsQueryHandler>();
+        services.AddScoped<IQueryHandler<EvaluateOptimizationQuery, OptimizationEvaluationDto>, EvaluateOptimizationQueryHandler>();
         services.AddScoped<IQueryHandler<GetDistinctStrategyNamesQuery, IReadOnlyList<string>>, GetDistinctStrategyNamesQueryHandler>();
         services.AddScoped<IQueryHandler<GetAvailableStrategiesQuery, IReadOnlyList<StrategyDescriptorDto>>, GetAvailableStrategiesQueryHandler>();
         services.AddScoped<ICommandHandler<DeleteOptimizationCommand, bool>, DeleteOptimizationCommandHandler>();
+        services.AddScoped<ICommandHandler<DeleteBacktestCommand, bool>, DeleteBacktestCommandHandler>();
         services.AddScoped<ICommandHandler<CancelRunCommand, bool>, CancelRunCommandHandler>();
 
         // Debug session management

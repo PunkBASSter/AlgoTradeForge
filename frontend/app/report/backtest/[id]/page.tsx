@@ -10,29 +10,17 @@ import {
   useBacktestEquity,
   useBacktestTrades,
   useBacktestEvents,
+  useDeleteBacktest,
 } from "@/hooks/use-backtests";
 import { MetricsPanel } from "@/components/features/report/metrics-panel";
 import { ParamsPanel } from "@/components/features/report/params-panel";
 import { Button } from "@/components/ui/button";
 import { ChartSkeleton } from "@/components/features/charts/chart-skeleton";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { RunBacktestRequest, StartDebugSessionRequest } from "@/types/api";
+import type { RunBacktestRequest } from "@/types/api";
+import { SESSION_KEYS } from "@/lib/constants";
 
 const INTERNAL_PARAM_KEYS = new Set(["DataSubscriptions"]);
-
-/** Convert shorthand timeframe (e.g. "1h", "15m", "1d") to .NET TimeSpan format ("01:00:00"). */
-function toTimeSpan(tf: string): string {
-  const match = tf.match(/^(\d+)([smhd])$/);
-  if (!match) return tf; // already in TimeSpan format or unknown — pass through
-  const n = parseInt(match[1], 10);
-  switch (match[2]) {
-    case "s": return `00:00:${String(n).padStart(2, "0")}`;
-    case "m": return `00:${String(n).padStart(2, "0")}:00`;
-    case "h": return `${String(n).padStart(2, "0")}:00:00`;
-    case "d": return `${n}.00:00:00`;
-    default: return tf;
-  }
-}
 
 const EquityChart = dynamic(
   () =>
@@ -72,6 +60,8 @@ export default function BacktestReportPage({
     isLoading: backtestLoading,
     error: backtestError,
   } = useBacktestDetail(id);
+
+  const deleteMutation = useDeleteBacktest();
 
   const {
     data: equity,
@@ -121,7 +111,7 @@ export default function BacktestReportPage({
       dataSubscription: {
         assetName: backtest.dataSubscription.assetName,
         exchange: backtest.dataSubscription.exchange,
-        timeFrame: toTimeSpan(backtest.dataSubscription.timeFrame),
+        timeFrame: backtest.dataSubscription.timeFrame,
       },
       backtestSettings: {
         initialCash: backtest.backtestSettings.initialCash,
@@ -137,33 +127,15 @@ export default function BacktestReportPage({
         ),
       ),
     };
-    sessionStorage.setItem("rerun-backtest-config", JSON.stringify(config));
+    sessionStorage.setItem(SESSION_KEYS.RERUN_BACKTEST, JSON.stringify(config));
     router.push(`/${backtest.strategyName}/backtest`);
   };
 
-  const handleDebug = () => {
-    const config: StartDebugSessionRequest = {
-      dataSubscription: {
-        assetName: backtest.dataSubscription.assetName,
-        exchange: backtest.dataSubscription.exchange,
-        timeFrame: toTimeSpan(backtest.dataSubscription.timeFrame),
-      },
-      backtestSettings: {
-        initialCash: backtest.backtestSettings.initialCash,
-        startTime: backtest.backtestSettings.startTime,
-        endTime: backtest.backtestSettings.endTime,
-        commissionPerTrade: backtest.backtestSettings.commissionPerTrade,
-        slippageTicks: backtest.backtestSettings.slippageTicks,
-      },
-      strategyName: backtest.strategyName,
-      strategyParameters: Object.fromEntries(
-        Object.entries(backtest.parameters).filter(
-          ([k]) => !INTERNAL_PARAM_KEYS.has(k),
-        ),
-      ),
-    };
-    sessionStorage.setItem("debug-session-config", JSON.stringify(config));
-    router.push("/debug");
+  const handleDelete = () => {
+    if (!confirm("Delete this backtest? This cannot be undone.")) return;
+    deleteMutation.mutate(id, {
+      onSuccess: () => router.push("/"),
+    });
   };
 
   return (
@@ -185,11 +157,15 @@ export default function BacktestReportPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={handleDebug}>
-            Debug
-          </Button>
           <Button variant="secondary" onClick={handleRerun}>
             Re-run
+          </Button>
+          <Button
+            variant="danger"
+            onClick={handleDelete}
+            loading={deleteMutation.isPending}
+          >
+            Delete
           </Button>
         </div>
       </div>

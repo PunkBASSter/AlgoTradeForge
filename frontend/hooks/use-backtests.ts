@@ -1,6 +1,6 @@
 // T038 - TanStack Query hooks for backtests
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { getClient } from "@/lib/services";
 
 export function useBacktestDetail(id: string) {
@@ -36,5 +36,16 @@ export function useBacktestEvents(id: string, enabled = true) {
     queryKey: ["backtest", id, "events"],
     queryFn: () => client.getBacktestEvents(id),
     enabled: !!id && enabled,
+  });
+}
+
+export function useDeleteBacktest() {
+  const client = getClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => client.deleteBacktest(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["backtests"] });
+    },
   });
 }

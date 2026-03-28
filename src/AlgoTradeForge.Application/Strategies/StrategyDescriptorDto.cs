@@ -9,4 +9,5 @@ public sealed record StrategyDescriptorDto(
     IReadOnlyDictionary<string, object> BacktestTemplate,
     IReadOnlyDictionary<string, object> OptimizationTemplate,
     IReadOnlyDictionary<string, object> LiveSessionTemplate,
-    IReadOnlyDictionary<string, object> DebugSessionTemplate);
+    IReadOnlyDictionary<string, object> DebugSessionTemplate,
+    IReadOnlyDictionary<string, object> GeneticOptimizationTemplate);

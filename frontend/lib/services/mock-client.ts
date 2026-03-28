@@ -10,9 +10,12 @@ import type {
   EventsData,
   RunBacktestRequest,
   RunOptimizationRequest,
+  RunGeneticOptimizationRequest,
+  EvaluateOptimizationRequest,
   OptimizationRun,
   OptimizationSubmission,
   OptimizationStatus,
+  OptimizationEvaluation,
   StartDebugSessionRequest,
   StartLiveSessionRequest,
   LiveSessionSubmission,
@@ -36,6 +39,7 @@ const mockStrategyDescriptors: StrategyDescriptor[] = strategiesData.map((name) 
   optimizationTemplate: {},
   liveSessionTemplate: {},
   debugSessionTemplate: {},
+  geneticOptimizationTemplate: {},
 }));
 import backtestsData from "./mock-data/backtests.json";
 import optimizationsData from "./mock-data/optimizations.json";
@@ -158,6 +162,10 @@ export const mockClient: typeof import("./api-client").apiClient & {
     return { id, status: "Cancelled" };
   },
 
+  async deleteBacktest(_id: string): Promise<void> {
+    await delay();
+  },
+
   // --- Optimizations ---
 
   async getOptimizations(
@@ -208,6 +216,31 @@ export const mockClient: typeof import("./api-client").apiClient & {
   ): Promise<OptimizationSubmission> {
     await delay(1200);
     return { id: optimizations.items[0].id, totalCombinations: optimizations.items[0].totalCombinations };
+  },
+
+  async runGeneticOptimization(
+    _req: RunGeneticOptimizationRequest,
+  ): Promise<OptimizationSubmission> {
+    await delay(1200);
+    return { id: optimizations.items[0].id, totalCombinations: optimizations.items[0].totalCombinations };
+  },
+
+  async evaluateOptimization(
+    req: EvaluateOptimizationRequest,
+  ): Promise<OptimizationEvaluation> {
+    await delay(500);
+    return {
+      totalCombinations: 12500,
+      exceedsMaxCombinations: false,
+      maxCombinations: 500000,
+      effectiveDimensions: 4,
+      geneticConfig: req.mode === "Genetic" ? {
+        populationSize: 50,
+        maxGenerations: 200,
+        maxEvaluations: 10000,
+        mutationRate: 0.25,
+      } : null,
+    };
   },
 
   async getOptimizationStatus(id: string): Promise<OptimizationStatus> {

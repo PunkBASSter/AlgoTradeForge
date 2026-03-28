@@ -57,6 +57,11 @@ public sealed class TemplateRoundTripTests
         Assert.NotEmpty(request.SubscriptionAxis);
         Assert.Equal("BTCUSDT", request.SubscriptionAxis[0].AssetName);
         Assert.Equal("Binance", request.SubscriptionAxis[0].Exchange);
+        Assert.NotNull(request.OptimizationSettings.FitnessWeights);
+        Assert.Equal(0.5, request.OptimizationSettings.FitnessWeights.SharpeWeight);
+        Assert.Equal(0.2, request.OptimizationSettings.FitnessWeights.SortinoWeight);
+        Assert.Equal(30.0, request.OptimizationSettings.FitnessWeights.MaxDrawdownThreshold);
+        Assert.Equal(10, request.OptimizationSettings.FitnessWeights.MinTrades);
     }
 
     [Fact]
@@ -92,6 +97,34 @@ public sealed class TemplateRoundTripTests
         Assert.Equal("BTCUSDT", request.DataSubscription.AssetName);
         Assert.NotNull(request.BacktestSettings);
         Assert.True(request.BacktestSettings.InitialCash > 0, "InitialCash should be positive");
+    }
+
+    [Fact]
+    public void GeneticOptimizationTemplate_RoundTrips()
+    {
+        var template = StrategyTemplateBuilder.BuildGeneticOptimizationTemplate(
+            "BuyAndHold", NoAxes, SampleAssets);
+
+        var json = JsonSerializer.Serialize(template, Json);
+        var request = JsonSerializer.Deserialize<RunGeneticOptimizationRequest>(json, Json);
+
+        Assert.NotNull(request);
+        Assert.Equal("BuyAndHold", request.StrategyName);
+        Assert.NotNull(request.BacktestSettings);
+        Assert.True(request.BacktestSettings.InitialCash > 0, "InitialCash should be positive");
+        Assert.NotNull(request.SubscriptionAxis);
+        Assert.NotEmpty(request.SubscriptionAxis);
+        Assert.Equal("BTCUSDT", request.SubscriptionAxis[0].AssetName);
+        Assert.NotNull(request.GeneticSettings);
+        Assert.Equal(2, request.GeneticSettings.EliteCount);
+        Assert.Equal(0.85, request.GeneticSettings.CrossoverRate);
+        Assert.Equal(3, request.GeneticSettings.TournamentSize);
+        Assert.Equal(20, request.GeneticSettings.StagnationLimit);
+        Assert.NotNull(request.OptimizationSettings.FitnessWeights);
+        Assert.Equal(0.5, request.OptimizationSettings.FitnessWeights.SharpeWeight);
+        Assert.Equal(0.2, request.OptimizationSettings.FitnessWeights.SortinoWeight);
+        Assert.Equal(30.0, request.OptimizationSettings.FitnessWeights.MaxDrawdownThreshold);
+        Assert.Equal(10, request.OptimizationSettings.FitnessWeights.MinTrades);
     }
 
     [Fact]
