@@ -9,10 +9,7 @@
 - Estimate the data volume on the current runs, evaluate DB performance and further performance capacity
 
 ## Overfitting control
-- Walk Forward OPTI
-- Permutations test
-- Overfitting evaluation, effective param ranges
-- Implement other optimizers (genetic, bayesian, random search)
+@overfitting-detection-requirements.md
 
 ## Live
 @docs/live-connector-binance.md
