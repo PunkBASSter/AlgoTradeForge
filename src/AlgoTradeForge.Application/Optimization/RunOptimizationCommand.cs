@@ -1,6 +1,5 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain.Optimization.Fitness;
-using AlgoTradeForge.Domain.Reporting;
 
 namespace AlgoTradeForge.Application.Optimization;
 
@@ -13,7 +12,6 @@ public sealed record RunOptimizationCommand : ICommand<OptimizationSubmissionDto
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public int MaxDegreeOfParallelism { get; init; } = -1;
     public long MaxCombinations { get; init; } = 500_000;
-    public string SortBy { get; init; } = MetricNames.Default;
     public int MaxTrialsToKeep { get; init; } = 10_000;
     public double? MinProfitFactor { get; init; }
     public double? MaxDrawdownPct { get; init; }

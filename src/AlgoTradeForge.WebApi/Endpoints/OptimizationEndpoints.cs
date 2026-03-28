@@ -98,7 +98,6 @@ public static class OptimizationEndpoints
             },
             MaxDegreeOfParallelism = request.OptimizationSettings.MaxDegreeOfParallelism,
             MaxCombinations = request.OptimizationSettings.MaxCombinations,
-            SortBy = request.OptimizationSettings.SortBy,
             MaxTrialsToKeep = request.OptimizationSettings.MaxTrialsToKeep,
             MinProfitFactor = request.OptimizationSettings.MinProfitFactor,
             MaxDrawdownPct = request.OptimizationSettings.MaxDrawdownPct,
@@ -145,7 +144,6 @@ public static class OptimizationEndpoints
                 SlippageTicks = request.BacktestSettings.SlippageTicks,
             },
             MaxDegreeOfParallelism = request.OptimizationSettings.MaxDegreeOfParallelism,
-            SortBy = request.OptimizationSettings.SortBy,
             MaxTrialsToKeep = request.OptimizationSettings.MaxTrialsToKeep,
             MinProfitFactor = request.OptimizationSettings.MinProfitFactor,
             MaxDrawdownPct = request.OptimizationSettings.MaxDrawdownPct,
@@ -236,22 +234,7 @@ public static class OptimizationEndpoints
         };
     }
 
-    private static FitnessConfig? MapFitnessConfig(FitnessWeightsInput? fw)
-    {
-        if (fw is null) return null;
-        return new FitnessConfig
-        {
-            Weights = new FitnessWeights
-            {
-                SharpeWeight = fw.SharpeWeight,
-                SortinoWeight = fw.SortinoWeight,
-                ProfitFactorWeight = fw.ProfitFactorWeight,
-                AnnualizedReturnWeight = fw.AnnualizedReturnWeight,
-            },
-            MinTrades = fw.MinTrades,
-            MaxDrawdownThreshold = fw.MaxDrawdownThreshold,
-        };
-    }
+    private static FitnessConfig? MapFitnessConfig(FitnessWeightsInput? fw) => fw?.ToFitnessConfig();
 
     private static async Task<IResult> GetOptimizationStatus(
         Guid id,
@@ -386,7 +369,7 @@ public static class OptimizationEndpoints
         CompletedAt = r.CompletedAt,
         DurationMs = r.DurationMs,
         TotalBars = r.TotalBars,
-        Metrics = MetricsMapping.ToDict(r.Metrics),
+        Metrics = MetricsMapping.ToDict(r.Metrics, r.FitnessScore),
         HasCandleData = r.RunFolderPath is not null,
         RunMode = r.RunMode,
         OptimizationRunId = r.OptimizationRunId,

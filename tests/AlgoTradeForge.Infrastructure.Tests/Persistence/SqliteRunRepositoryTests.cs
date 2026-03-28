@@ -788,4 +788,100 @@ public class SqliteRunRepositoryTests : IDisposable
         var deleted = await _repo.DeleteBacktestAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
         Assert.False(deleted);
     }
+
+    // ── FitnessScore persistence ─────────────────────────────────────
+
+    [Fact]
+    public async Task SaveAndGetById_FitnessScore_RoundTrips()
+    {
+        var record = MakeBacktestRecord() with { FitnessScore = 0.8765 };
+
+        await _repo.SaveAsync(record, TestContext.Current.CancellationToken);
+        var loaded = await _repo.GetByIdAsync(record.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.NotNull(loaded.FitnessScore);
+        Assert.Equal(0.8765, loaded.FitnessScore.Value, precision: 10);
+    }
+
+    [Fact]
+    public async Task SaveAndGetById_NullFitnessScore_RoundTrips()
+    {
+        var record = MakeBacktestRecord(); // FitnessScore defaults to null
+
+        await _repo.SaveAsync(record, TestContext.Current.CancellationToken);
+        var loaded = await _repo.GetByIdAsync(record.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Null(loaded.FitnessScore);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public async Task SaveAndGetById_NonFiniteFitnessScore_StoredAsNull(double nonFinite)
+    {
+        var record = MakeBacktestRecord() with { FitnessScore = nonFinite };
+
+        await _repo.SaveAsync(record, TestContext.Current.CancellationToken);
+        var loaded = await _repo.GetByIdAsync(record.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Null(loaded.FitnessScore);
+    }
+
+    [Fact]
+    public async Task OptimizationTrials_SortedByFitnessScore()
+    {
+        var optId = Guid.NewGuid();
+        var trial1 = MakeBacktestRecord(optimizationRunId: optId, runFolderPath: null) with
+        {
+            Id = Guid.NewGuid(),
+            FitnessScore = 0.5,
+        };
+        var trial2 = MakeBacktestRecord(optimizationRunId: optId, runFolderPath: null) with
+        {
+            Id = Guid.NewGuid(),
+            FitnessScore = 0.9,
+        };
+        var trial3 = MakeBacktestRecord(optimizationRunId: optId, runFolderPath: null) with
+        {
+            Id = Guid.NewGuid(),
+            FitnessScore = 0.7,
+        };
+        var optRecord = new OptimizationRunRecord
+        {
+            Id = optId,
+            StrategyName = "BuyAndHold",
+            StrategyVersion = "1.0.0",
+            StartedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            DurationMs = 100,
+            TotalCombinations = 3,
+            SortBy = MetricNames.Fitness,
+            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10000m,
+                CommissionPerTrade = 0m,
+                SlippageTicks = 0,
+                StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2024, 12, 31, 0, 0, 0, TimeSpan.Zero),
+            },
+            MaxParallelism = 1,
+            Trials = [trial1, trial2, trial3],
+        };
+        await _repo.InsertOptimizationPlaceholderAsync(optRecord, TestContext.Current.CancellationToken);
+        await _repo.SaveOptimizationAsync(optRecord, TestContext.Current.CancellationToken);
+
+        var loaded = await _repo.GetOptimizationByIdAsync(optId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(3, loaded.Trials.Count);
+        // Should be sorted descending by fitness_score
+        Assert.Equal(0.9, loaded.Trials[0].FitnessScore!.Value, precision: 10);
+        Assert.Equal(0.7, loaded.Trials[1].FitnessScore!.Value, precision: 10);
+        Assert.Equal(0.5, loaded.Trials[2].FitnessScore!.Value, precision: 10);
+    }
 }

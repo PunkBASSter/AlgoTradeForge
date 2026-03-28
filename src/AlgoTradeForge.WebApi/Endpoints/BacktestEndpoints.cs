@@ -96,7 +96,8 @@ public static class BacktestEndpoints
                 SlippageTicks = request.BacktestSettings.SlippageTicks,
             },
             StrategyName = request.StrategyName,
-            StrategyParameters = request.StrategyParameters
+            StrategyParameters = request.StrategyParameters,
+            FitnessConfig = request.FitnessWeights?.ToFitnessConfig(),
         };
 
         try
@@ -244,7 +245,7 @@ public static class BacktestEndpoints
         CompletedAt = r.CompletedAt,
         DurationMs = r.DurationMs,
         TotalBars = r.TotalBars,
-        Metrics = MetricsMapping.ToDict(r.Metrics),
+        Metrics = MetricsMapping.ToDict(r.Metrics, r.FitnessScore),
         HasCandleData = r.RunFolderPath is not null,
         RunMode = r.RunMode,
         OptimizationRunId = r.OptimizationRunId,

@@ -29,7 +29,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         duration_ms, total_bars, metrics_json,
         run_folder_path, run_mode, optimization_run_id,
         asset_name, exchange, timeframe,
-        error_message, error_stack_trace
+        error_message, error_stack_trace, fitness_score
         """;
 
     public SqliteRunRepository(IOptions<RunStorageOptions> options)
@@ -98,7 +98,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 trade_pnl_json,
                 run_folder_path, run_mode, optimization_run_id,
                 asset_name, exchange, timeframe,
-                error_message, error_stack_trace
+                error_message, error_stack_trace, fitness_score
             ) VALUES (
                 $id, $stratName, $stratVer, $paramsJson,
                 $cash, $commission, $slippage,
@@ -107,7 +107,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 $tradePnlJson,
                 $runFolder, $runMode, $optId,
                 $asset, $exchange, $tf,
-                $errorMsg, $errorStack
+                $errorMsg, $errorStack, $fitnessScore
             )
             """;
 
@@ -135,6 +135,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         cmd.Parameters.AddWithValue("$tf", r.DataSubscription.TimeFrame);
         cmd.Parameters.AddWithValue("$errorMsg", (object?)r.ErrorMessage ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$errorStack", (object?)r.ErrorStackTrace ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$fitnessScore",
+            r.FitnessScore is { } fs && double.IsFinite(fs) ? fs : DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -633,6 +635,9 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 : reader.GetString(reader.GetOrdinal("run_folder_path")),
             RunMode = reader.GetString(reader.GetOrdinal("run_mode")),
             OptimizationRunId = optIdStr is not null ? Guid.Parse(optIdStr) : null,
+            FitnessScore = reader.IsDBNull(reader.GetOrdinal("fitness_score"))
+                ? null
+                : reader.GetDouble(reader.GetOrdinal("fitness_score")),
             ErrorMessage = reader.IsDBNull(reader.GetOrdinal("error_message"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("error_message")),
@@ -695,16 +700,18 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         };
     }
 
-    private static string GetTrialOrderByClause(string sortBy) => sortBy.ToLowerInvariant() switch
+    private static string GetTrialOrderByClause(string sortBy)
     {
-        "sharperatio"    => " ORDER BY json_extract(metrics_json, '$.sharpeRatio') DESC",
-        "netprofit"      => " ORDER BY json_extract(metrics_json, '$.netProfit') DESC",
-        "sortinoratio"   => " ORDER BY json_extract(metrics_json, '$.sortinoRatio') DESC",
-        "profitfactor"   => " ORDER BY json_extract(metrics_json, '$.profitFactor') DESC",
-        "winratepct"     => " ORDER BY json_extract(metrics_json, '$.winRatePct') DESC",
-        "maxdrawdownpct" => " ORDER BY json_extract(metrics_json, '$.maxDrawdownPct') ASC",
-        _                => " ORDER BY json_extract(metrics_json, '$.sharpeRatio') DESC",
-    };
+        var cmp = StringComparison.OrdinalIgnoreCase;
+        if (sortBy.Equals(MetricNames.Fitness, cmp))      return " ORDER BY fitness_score DESC NULLS LAST";
+        if (sortBy.Equals(MetricNames.SharpeRatio, cmp))   return " ORDER BY json_extract(metrics_json, '$.sharpeRatio') DESC";
+        if (sortBy.Equals(MetricNames.NetProfit, cmp))     return " ORDER BY json_extract(metrics_json, '$.netProfit') DESC";
+        if (sortBy.Equals(MetricNames.SortinoRatio, cmp))  return " ORDER BY json_extract(metrics_json, '$.sortinoRatio') DESC";
+        if (sortBy.Equals(MetricNames.ProfitFactor, cmp))  return " ORDER BY json_extract(metrics_json, '$.profitFactor') DESC";
+        if (sortBy.Equals(MetricNames.WinRatePct, cmp))    return " ORDER BY json_extract(metrics_json, '$.winRatePct') DESC";
+        if (sortBy.Equals(MetricNames.MaxDrawdownPct, cmp)) return " ORDER BY json_extract(metrics_json, '$.maxDrawdownPct') ASC";
+        return " ORDER BY fitness_score DESC NULLS LAST";
+    }
 
     private static string SerializeEquityCurve(IReadOnlyList<EquityPoint> curve)
     {

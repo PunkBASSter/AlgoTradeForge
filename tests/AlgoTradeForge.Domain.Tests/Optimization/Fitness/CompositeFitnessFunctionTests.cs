@@ -132,4 +132,31 @@ public class CompositeFitnessFunctionTests
         Assert.True(result > defaultFitness,
             $"Custom threshold ({result}) should score higher than default ({defaultFitness})");
     }
+
+    [Fact]
+    public void FitnessConfig_Default_IsSingleton()
+    {
+        var a = FitnessConfig.Default;
+        var b = FitnessConfig.Default;
+        Assert.Same(a, b);
+    }
+
+    [Fact]
+    public void FitnessConfig_Default_HasExpectedValues()
+    {
+        var cfg = FitnessConfig.Default;
+        Assert.Equal(10, cfg.MinTrades);
+        Assert.Equal(30.0, cfg.MaxDrawdownThreshold);
+        Assert.Null(cfg.Weights); // uses CompositeFitnessFunction's built-in defaults
+    }
+
+    [Fact]
+    public void FitnessConfig_Default_ProducesSameResultAsParameterlessConstructor()
+    {
+        var fromDefault = new CompositeFitnessFunction(FitnessConfig.Default);
+        var fromParameterless = new CompositeFitnessFunction();
+
+        var metrics = CreateMetrics();
+        Assert.Equal(fromParameterless.Evaluate(metrics), fromDefault.Evaluate(metrics));
+    }
 }

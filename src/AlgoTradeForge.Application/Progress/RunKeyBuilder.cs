@@ -43,8 +43,7 @@ public static class RunKeyBuilder
         sb.Append(settings.CommissionPerTrade).Append('|');
         sb.Append(settings.SlippageTicks).Append('|');
         sb.Append(cmd.MaxDegreeOfParallelism).Append('|');
-        sb.Append(cmd.MaxCombinations).Append('|');
-        sb.Append(cmd.SortBy);
+        sb.Append(cmd.MaxCombinations);
 
         if (cmd.DataSubscriptions is { Count: > 0 })
         {

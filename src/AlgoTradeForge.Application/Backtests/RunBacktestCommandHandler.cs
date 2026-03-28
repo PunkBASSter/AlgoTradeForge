@@ -5,6 +5,7 @@ using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.Indicators;
+using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Reporting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -136,6 +137,9 @@ public sealed class RunBacktestCommandHandler(
 
             var scaledMetrics = MetricsScaler.ScaleDown(metrics, setup.Scale);
 
+            var fitnessFunc = new CompositeFitnessFunction(command.FitnessConfig ?? FitnessConfig.Default);
+            var fitnessScore = fitnessFunc.Evaluate(scaledMetrics);
+
             var completedAt = DateTimeOffset.UtcNow;
             var primarySub = setup.Strategy.DataSubscriptions[0];
 
@@ -161,6 +165,7 @@ public sealed class RunBacktestCommandHandler(
                 DurationMs = (long)result.Duration.TotalMilliseconds,
                 TotalBars = result.TotalBarsProcessed,
                 Metrics = scaledMetrics,
+                FitnessScore = fitnessScore,
                 EquityCurve = equityCurve,
                 TradePnl = tradePnl,
                 RunFolderPath = runFolderPath,

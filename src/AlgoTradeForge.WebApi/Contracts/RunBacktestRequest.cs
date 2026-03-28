@@ -22,4 +22,5 @@ public sealed record RunBacktestRequest
     public required BacktestSettingsInput BacktestSettings { get; init; }
     public required string StrategyName { get; init; }
     public Dictionary<string, object>? StrategyParameters { get; init; }
+    public FitnessWeightsInput? FitnessWeights { get; init; }
 }

@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 10;
+    private const int CurrentVersion = 11;
 
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -64,7 +64,8 @@ internal static class SqliteDbInitializer
             exchange            TEXT    NOT NULL,
             timeframe           TEXT    NOT NULL,
             error_message       TEXT    NULL,
-            error_stack_trace   TEXT    NULL
+            error_stack_trace   TEXT    NULL,
+            fitness_score       REAL    NULL
         );
 
         CREATE INDEX IF NOT EXISTS ix_br_strategy ON backtest_runs(strategy_name);
@@ -117,6 +118,10 @@ internal static class SqliteDbInitializer
 
     private const string MigrationV10 = """
         ALTER TABLE optimization_runs ADD COLUMN input_json TEXT NULL;
+        """;
+
+    private const string MigrationV11 = """
+        ALTER TABLE backtest_runs ADD COLUMN fitness_score REAL NULL;
         """;
 
     private const string MigrationV5 = """
@@ -214,6 +219,14 @@ internal static class SqliteDbInitializer
             migrateCmd.CommandText = MigrationV10;
             await migrateCmd.ExecuteNonQueryAsync();
             await SetVersionAsync(connection, 10);
+        }
+
+        if (currentVersion < 11)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV11;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 11);
         }
 
         // Mark any orphaned in-progress runs as failed (server crashed during execution)

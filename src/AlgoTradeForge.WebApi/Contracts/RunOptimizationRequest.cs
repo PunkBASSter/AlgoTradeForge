@@ -2,13 +2,12 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Optimization;
-using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Optimization.Fitness;
 
 namespace AlgoTradeForge.WebApi.Contracts;
 
 public sealed record OptimizationSettingsInput
 {
-    public string SortBy { get; init; } = MetricNames.Default;
     public int MaxTrialsToKeep { get; init; } = 10_000;
     public double? MinProfitFactor { get; init; }
     public double? MaxDrawdownPct { get; init; }
@@ -28,6 +27,19 @@ public sealed record FitnessWeightsInput
     public double AnnualizedReturnWeight { get; init; } = 0.15;
     public double MaxDrawdownThreshold { get; init; } = 30.0;
     public int MinTrades { get; init; } = 10;
+
+    public FitnessConfig ToFitnessConfig() => new()
+    {
+        Weights = new FitnessWeights
+        {
+            SharpeWeight = SharpeWeight,
+            SortinoWeight = SortinoWeight,
+            ProfitFactorWeight = ProfitFactorWeight,
+            AnnualizedReturnWeight = AnnualizedReturnWeight,
+        },
+        MinTrades = MinTrades,
+        MaxDrawdownThreshold = MaxDrawdownThreshold,
+    };
 }
 
 public sealed record RunOptimizationRequest

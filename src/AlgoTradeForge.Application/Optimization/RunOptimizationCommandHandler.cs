@@ -89,7 +89,7 @@ public sealed class RunOptimizationCommandHandler(
             CompletedAt = startedAt,
             DurationMs = 0,
             TotalCombinations = estimatedCount,
-            SortBy = command.FitnessConfig is not null ? Fitness : command.SortBy,
+            SortBy = Fitness,
             DataSubscription = optPrimarySub,
             BacktestSettings = command.BacktestSettings,
             MaxParallelism = maxParallelism,
@@ -134,9 +134,9 @@ public sealed class RunOptimizationCommandHandler(
             throw new ArgumentException("MaxTrialsToKeep must be at least 1.");
 
         var filter = new TrialFilter(command);
-        var topTrials = command.FitnessConfig is { } fc
-            ? new BoundedTrialQueue(command.MaxTrialsToKeep, new CompositeFitnessFunction(fc))
-            : new BoundedTrialQueue(command.MaxTrialsToKeep, command.SortBy);
+        var fitnessConfig = command.FitnessConfig ?? FitnessConfig.Default;
+        var fitnessFunc = new CompositeFitnessFunction(fitnessConfig);
+        var topTrials = new BoundedTrialQueue(command.MaxTrialsToKeep, fitnessFunc);
         var failedTrials = new FailedTrialCollector(capacity: 100);
         long filteredOutCount = 0;
         long failedTrialCount = 0;
@@ -190,6 +190,7 @@ public sealed class RunOptimizationCommandHandler(
                                         command.StrategyName, command.BacktestSettings,
                                         combination, factory, fixedSubscriptions, dataCache,
                                         optimizationRunId, startedAt, ref strategyVersion, trialCts.Token);
+                                    record = record with { FitnessScore = fitnessFunc.Evaluate(record.Metrics) };
                                     if (filter.Passes(record.Metrics))
                                         topTrials.TryAdd(record);
                                     else
@@ -251,7 +252,7 @@ public sealed class RunOptimizationCommandHandler(
                 CompletedAt = DateTimeOffset.UtcNow,
                 DurationMs = (long)stopwatch.Elapsed.TotalMilliseconds,
                 TotalCombinations = estimatedCount,
-                SortBy = command.FitnessConfig is not null ? Fitness : command.SortBy,
+                SortBy = Fitness,
                 DataSubscription = optPrimarySub,
                 BacktestSettings = command.BacktestSettings,
                 MaxParallelism = maxParallelism,
@@ -273,7 +274,7 @@ public sealed class RunOptimizationCommandHandler(
             logger.LogInformation("Optimization {RunId} was cancelled", optimizationRunId);
             await helper.SaveErrorOptimizationAsync(
                 command.StrategyName, command.BacktestSettings, optPrimarySub,
-                command.SortBy, maxParallelism,
+                Fitness, maxParallelism,
                 optimizationRunId, startedAt, estimatedCount, topTrials,
                 failedTrials, filteredOutCount, failedTrialCount,
                 OptimizationRunStatus.CancelledMessage,
@@ -284,7 +285,7 @@ public sealed class RunOptimizationCommandHandler(
             logger.LogError(ex, "Optimization {RunId} failed", optimizationRunId);
             await helper.SaveErrorOptimizationAsync(
                 command.StrategyName, command.BacktestSettings, optPrimarySub,
-                command.SortBy, maxParallelism,
+                Fitness, maxParallelism,
                 optimizationRunId, startedAt, estimatedCount, topTrials,
                 failedTrials, filteredOutCount, failedTrialCount, ex.Message, ex.StackTrace,
                 optimizationMethod: "BruteForce");

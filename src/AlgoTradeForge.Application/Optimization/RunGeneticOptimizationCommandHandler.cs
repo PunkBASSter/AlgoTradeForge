@@ -10,6 +10,7 @@ using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
 using Microsoft.Extensions.Logging;
+using static AlgoTradeForge.Domain.Reporting.MetricNames;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Application.Optimization;
@@ -66,7 +67,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
             CompletedAt = startedAt,
             DurationMs = 0,
             TotalCombinations = gaConfig.MaxEvaluations,
-            SortBy = command.SortBy,
+            SortBy = Fitness,
             DataSubscription = primarySub,
             BacktestSettings = command.BacktestSettings,
             MaxParallelism = maxParallelism,
@@ -105,7 +106,8 @@ public sealed class RunGeneticOptimizationCommandHandler(
         var ct = cts.Token;
 
         var filter = new TrialFilter(command);
-        var topTrials = new BoundedTrialQueue(command.MaxTrialsToKeep, command.SortBy);
+        var fitnessFunction = new CompositeFitnessFunction(gaConfig.Fitness);
+        var topTrials = new BoundedTrialQueue(command.MaxTrialsToKeep, fitnessFunction);
         var failedTrials = new FailedTrialCollector(capacity: 100);
         var state = new EvalState();
         var generationsCompleted = 0;
@@ -120,7 +122,6 @@ public sealed class RunGeneticOptimizationCommandHandler(
         {
             var stopwatch = Stopwatch.StartNew();
             var ga = new GeneticAlgorithm(gaConfig);
-            var fitnessFunction = new CompositeFitnessFunction(gaConfig.Fitness);
             var rng = new Random();
             var cache = GeneticFitnessCache.Create(gaConfig);
             long totalEvals = 0;
@@ -199,7 +200,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
                 CompletedAt = DateTimeOffset.UtcNow,
                 DurationMs = (long)stopwatch.Elapsed.TotalMilliseconds,
                 TotalCombinations = totalEvals,
-                SortBy = command.SortBy,
+                SortBy = Fitness,
                 DataSubscription = primarySub,
                 BacktestSettings = command.BacktestSettings,
                 MaxParallelism = maxParallelism,
@@ -222,7 +223,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
             logger.LogInformation("GA Optimization {RunId} was cancelled", runId);
             await helper.SaveErrorOptimizationAsync(
                 command.StrategyName, command.BacktestSettings, primarySub,
-                command.SortBy, maxParallelism,
+                Fitness, maxParallelism,
                 runId, startedAt, gaConfig.MaxEvaluations, topTrials,
                 failedTrials, state.FilteredOutCount, state.FailedTrialCount,
                 OptimizationRunStatus.CancelledMessage,
@@ -233,7 +234,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
             logger.LogError(ex, "GA Optimization {RunId} failed", runId);
             await helper.SaveErrorOptimizationAsync(
                 command.StrategyName, command.BacktestSettings, primarySub,
-                command.SortBy, maxParallelism,
+                Fitness, maxParallelism,
                 runId, startedAt, gaConfig.MaxEvaluations, topTrials,
                 failedTrials, state.FilteredOutCount, state.FailedTrialCount,
                 ex.Message, ex.StackTrace,
@@ -347,6 +348,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
 
                                 var filteredOut = !filter.Passes(record.Metrics);
                                 fitnesses[i] = fitnessFunction.Evaluate(record.Metrics);
+                                record = record with { FitnessScore = fitnesses[i] };
 
                                 if (!filteredOut)
                                     topTrials.TryAdd(record);

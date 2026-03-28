@@ -53,6 +53,11 @@ export function OptimizationTrialsTable({
       { key: "dataSubscription.exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
       { key: "dataSubscription.timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
       {
+        key: "fitness",
+        header: "Fitness",
+        render: (_v, row) => row.metrics?.fitness != null ? formatNumber(row.metrics.fitness, 4) : "—",
+      },
+      {
         key: "sortino",
         header: "Sortino",
         render: (_v, row) => formatNumber(row.metrics?.sortinoRatio ?? 0),
