@@ -29,6 +29,27 @@ public class ValidationThresholdProfileTests
         Assert.Equal(30.0, profile.BasicProfitability.MaxDrawdownPct);
         Assert.Equal(0.01, profile.StatisticalSignificance.DsrPValue);
         Assert.Equal(0.99, profile.StatisticalSignificance.MinPsr);
+        Assert.Equal(0.60, profile.WalkForwardOptimization.MinWfe);
+        Assert.Equal(0.80, profile.WalkForwardOptimization.MinProfitableWindowsPct);
+        Assert.Equal(0.60, profile.WalkForwardMatrix.MinWfe);
+        Assert.Equal(0.25, profile.ParameterLandscape.MaxDegradationPct);
+        Assert.Equal(0.60, profile.ParameterLandscape.MinClusterConcentration);
+    }
+
+    [Fact]
+    public void CryptoStandard_HasStage3To5Defaults()
+    {
+        var profile = ValidationThresholdProfile.CryptoStandard();
+
+        Assert.Equal(0.30, profile.ParameterLandscape.MaxDegradationPct);
+        Assert.Equal(0.50, profile.ParameterLandscape.MinClusterConcentration);
+        Assert.Equal(0.10, profile.ParameterLandscape.SensitivityRange);
+        Assert.Equal(0.50, profile.WalkForwardOptimization.MinWfe);
+        Assert.Equal(0.70, profile.WalkForwardOptimization.MinProfitableWindowsPct);
+        Assert.Equal(0.20, profile.WalkForwardOptimization.OosPct);
+        Assert.Equal(6, profile.WalkForwardMatrix.PeriodCounts.Length);
+        Assert.Equal(3, profile.WalkForwardMatrix.OosPcts.Length);
+        Assert.Equal(0.50, profile.WalkForwardMatrix.MinWfe);
     }
 
     [Fact]

@@ -49,4 +49,5 @@ public sealed record StageResultResponse
     public int CandidatesIn { get; init; }
     public int CandidatesOut { get; init; }
     public long DurationMs { get; init; }
+    public string? DetailJson { get; init; }
 }

@@ -111,12 +111,22 @@ public class ValidationPipelineTests
         int count, bool strongMetrics)
     {
         var trials = CreateTrialSummaries(count, strongMetrics, 0);
-        var pnlRows = trials.Select(_ =>
-            strongMetrics
-                ? new double[] { 10.0, 20.0, 30.0 }
-                : new double[] { -50.0, -60.0, -70.0 }
-        ).ToArray();
-        var cache = new SimulationCache([100, 200, 300], pnlRows);
+
+        // Use 500 bars so that WFO (5 windows) and WFM (up to 15 periods) have enough data.
+        // Consistent positive P&L ensures WFE ≈ 1.0 for strong metrics.
+        const int barCount = 500;
+        var pnlRows = trials.Select((_, t) =>
+        {
+            var row = new double[barCount];
+            var perBar = strongMetrics ? 10.0 + t * 0.5 : -5.0;
+            for (var b = 0; b < barCount; b++) row[b] = perBar;
+            return row;
+        }).ToArray();
+
+        var timestamps = new long[barCount];
+        for (var i = 0; i < barCount; i++) timestamps[i] = i * 86400000L;
+
+        var cache = new SimulationCache(timestamps, pnlRows);
         return (cache, trials);
     }
 

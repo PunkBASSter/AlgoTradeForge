@@ -9,9 +9,6 @@ public class StubStageTests
 {
     [Theory]
     [InlineData(typeof(PreFlightStage), 0, "PreFlight")]
-    [InlineData(typeof(ParameterLandscapeStage), 3, "ParameterLandscape")]
-    [InlineData(typeof(WalkForwardOptimizationStage), 4, "WalkForwardOptimization")]
-    [InlineData(typeof(WalkForwardMatrixStage), 5, "WalkForwardMatrix")]
     [InlineData(typeof(MonteCarloPermutationStage), 6, "MonteCarloPermutation")]
     [InlineData(typeof(SelectionBiasAuditStage), 7, "SelectionBiasAudit")]
     public void StubStage_PassesAllCandidates(Type stageType, int expectedNumber, string expectedName)
@@ -35,9 +32,6 @@ public class StubStageTests
 
     [Theory]
     [InlineData(typeof(PreFlightStage))]
-    [InlineData(typeof(ParameterLandscapeStage))]
-    [InlineData(typeof(WalkForwardOptimizationStage))]
-    [InlineData(typeof(WalkForwardMatrixStage))]
     [InlineData(typeof(MonteCarloPermutationStage))]
     [InlineData(typeof(SelectionBiasAuditStage))]
     public void StubStage_EmptyCandidates_ReturnsEmpty(Type stageType)

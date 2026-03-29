@@ -33,6 +33,10 @@ public sealed class SimulationCache
     /// <summary>Returns the P&amp;L row for a single trial as a span (zero-allocation).</summary>
     public ReadOnlySpan<double> GetTrialPnl(int trialIndex) => TrialPnlMatrix[trialIndex];
 
+    /// <summary>Returns a sub-window of a trial's P&amp;L as a span (zero-allocation, zero-copy).</summary>
+    public ReadOnlySpan<double> GetTrialPnlWindow(int trialIndex, int startBar, int length) =>
+        TrialPnlMatrix[trialIndex].AsSpan(startBar, length);
+
     /// <summary>Returns a cross-sectional column slice (all trials at one bar). Allocates a new array.</summary>
     public double[] GetBarPnl(int barIndex)
     {

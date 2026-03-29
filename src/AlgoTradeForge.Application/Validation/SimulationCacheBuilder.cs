@@ -57,6 +57,7 @@ public static class SimulationCacheBuilder
                 Index = i,
                 Id = trials[i].Id,
                 Metrics = trials[i].Metrics,
+                Parameters = trials[i].Parameters,
             };
         }
 

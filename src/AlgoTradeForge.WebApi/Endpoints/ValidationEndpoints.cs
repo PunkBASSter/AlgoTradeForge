@@ -159,6 +159,7 @@ public static class ValidationEndpoints
             CandidatesIn = s.CandidatesIn,
             CandidatesOut = s.CandidatesOut,
             DurationMs = s.DurationMs,
+            DetailJson = s.CandidateVerdictsJson,
         }).ToList(),
     };
 }

@@ -7,22 +7,22 @@ namespace AlgoTradeForge.Domain.Validation;
 public sealed record ValidationThresholdProfile
 {
     public required string Name { get; init; }
-    public Stage0Thresholds PreFlight { get; init; } = new();
-    public Stage1Thresholds BasicProfitability { get; init; } = new();
-    public Stage2Thresholds StatisticalSignificance { get; init; } = new();
-    public Stage3Thresholds ParameterLandscape { get; init; } = new();
-    public Stage4Thresholds WalkForwardOptimization { get; init; } = new();
-    public Stage5Thresholds WalkForwardMatrix { get; init; } = new();
-    public Stage6Thresholds MonteCarloPermutation { get; init; } = new();
-    public Stage7Thresholds SelectionBiasAudit { get; init; } = new();
+    public Stage0PreFlightThresholds PreFlight { get; init; } = new();
+    public Stage1BasicProfitabilityThresholds BasicProfitability { get; init; } = new();
+    public Stage2StatisticalSignificanceThresholds StatisticalSignificance { get; init; } = new();
+    public Stage3ParameterLandscapeThresholds ParameterLandscape { get; init; } = new();
+    public Stage4WalkForwardOptimizationThresholds WalkForwardOptimization { get; init; } = new();
+    public Stage5WalkForwardMatrixThresholds WalkForwardMatrix { get; init; } = new();
+    public Stage6MonteCarloPermutationThresholds MonteCarloPermutation { get; init; } = new();
+    public Stage7SelectionBiasAuditThresholds SelectionBiasAudit { get; init; } = new();
     public SafetyFloorThresholds SafetyFloors { get; init; } = new();
 
-    public sealed record Stage0Thresholds
+    public sealed record Stage0PreFlightThresholds
     {
         public int MinBarsPerTrade { get; init; } = 1;
     }
 
-    public sealed record Stage1Thresholds
+    public sealed record Stage1BasicProfitabilityThresholds
     {
         public decimal MinNetProfit { get; init; } = 0m;
         public double MinProfitFactor { get; init; } = 1.05;
@@ -30,7 +30,7 @@ public sealed record ValidationThresholdProfile
         public double MaxDrawdownPct { get; init; } = 40.0;
     }
 
-    public sealed record Stage2Thresholds
+    public sealed record Stage2StatisticalSignificanceThresholds
     {
         public double DsrPValue { get; init; } = 0.05;
         public double MinPsr { get; init; } = 0.95;
@@ -39,29 +39,40 @@ public sealed record ValidationThresholdProfile
         public double MinSharpe { get; init; } = 0.5;
     }
 
-    public sealed record Stage3Thresholds
+    public sealed record Stage3ParameterLandscapeThresholds
     {
-        public double MinNeighborCorrelation { get; init; } = 0.3;
+        public double MaxDegradationPct { get; init; } = 0.30;
+        public double MinClusterConcentration { get; init; } = 0.50;
+        public int SensitivityIterations { get; init; } = 500;
+        public double SensitivityRange { get; init; } = 0.10;
     }
 
-    public sealed record Stage4Thresholds
+    public sealed record Stage4WalkForwardOptimizationThresholds
     {
-        public double MinWfe { get; init; } = 0.30;
-        public int MinWindows { get; init; } = 5;
+        public double MinWfe { get; init; } = 0.50;
+        public double MinProfitableWindowsPct { get; init; } = 0.70;
+        public double MaxOosDrawdownExcess { get; init; } = 0.50;
+        public int MinWfoRuns { get; init; } = 5;
+        public double OosPct { get; init; } = 0.20;
     }
 
-    public sealed record Stage5Thresholds
+    public sealed record Stage5WalkForwardMatrixThresholds
     {
-        public double MinWfe { get; init; } = 0.30;
+        public int[] PeriodCounts { get; init; } = [4, 6, 8, 10, 12, 15];
+        public double[] OosPcts { get; init; } = [0.15, 0.20, 0.25];
+        public int MinContiguousRows { get; init; } = 3;
+        public int MinContiguousCols { get; init; } = 3;
+        public int MinCellsPassing { get; init; } = 7;
+        public double MinWfe { get; init; } = 0.50;
     }
 
-    public sealed record Stage6Thresholds
+    public sealed record Stage6MonteCarloPermutationThresholds
     {
         public double MaxPbo { get; init; } = 0.60;
         public int Permutations { get; init; } = 1000;
     }
 
-    public sealed record Stage7Thresholds
+    public sealed record Stage7SelectionBiasAuditThresholds
     {
         public double MaxPbo { get; init; } = 0.60;
     }
@@ -76,19 +87,35 @@ public sealed record ValidationThresholdProfile
     public static ValidationThresholdProfile CryptoConservative() => new()
     {
         Name = "Crypto-Conservative",
-        BasicProfitability = new Stage1Thresholds
+        BasicProfitability = new Stage1BasicProfitabilityThresholds
         {
             MinProfitFactor = 1.10,
             MinTradeCount = 50,
             MaxDrawdownPct = 30.0,
         },
-        StatisticalSignificance = new Stage2Thresholds
+        StatisticalSignificance = new Stage2StatisticalSignificanceThresholds
         {
             DsrPValue = 0.01,
             MinPsr = 0.99,
             MinProfitFactor = 1.40,
             MinRecoveryFactor = 2.0,
             MinSharpe = 0.8,
+        },
+        ParameterLandscape = new Stage3ParameterLandscapeThresholds
+        {
+            MaxDegradationPct = 0.25,
+            MinClusterConcentration = 0.60,
+        },
+        WalkForwardOptimization = new Stage4WalkForwardOptimizationThresholds
+        {
+            MinWfe = 0.60,
+            MinProfitableWindowsPct = 0.80,
+            MaxOosDrawdownExcess = 0.40,
+        },
+        WalkForwardMatrix = new Stage5WalkForwardMatrixThresholds
+        {
+            MinWfe = 0.60,
+            MinCellsPassing = 8,
         },
     };
 
