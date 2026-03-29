@@ -129,6 +129,7 @@ app.MapOptimizationEndpoints();
 app.MapStrategyEndpoints();
 app.MapDebugEndpoints();
 DebugWebSocketHandler.MapDebugWebSocket(app);
+app.MapValidationEndpoints();
 app.MapLiveEndpoints();
 
 app.Run();

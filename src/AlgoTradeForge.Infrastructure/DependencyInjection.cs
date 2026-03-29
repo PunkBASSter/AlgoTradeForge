@@ -37,6 +37,7 @@ public static class DependencyInjection
         services.AddSingleton<IPostRunPipeline, PostRunPipeline>();
 
         services.AddSingleton<IRunRepository, SqliteRunRepository>();
+        services.AddSingleton<IValidationRepository, SqliteValidationRepository>();
 
         // Live trading
         services.Configure<BinanceLiveOptions>(_ => { });

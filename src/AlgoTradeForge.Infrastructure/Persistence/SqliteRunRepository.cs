@@ -727,7 +727,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         foreach (var element in doc.RootElement.EnumerateArray())
         {
             var t = element.GetProperty("t").GetInt64();
-            var v = element.GetProperty("v").GetDecimal();
+            var v = element.GetProperty("v").GetDouble();
             points.Add(new EquityPoint(t, v));
         }
         return points;
@@ -746,7 +746,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         foreach (var element in doc.RootElement.EnumerateArray())
         {
             var t = element.GetProperty("t").GetInt64();
-            var p = element.GetProperty("p").GetDecimal();
+            var p = element.GetProperty("p").GetDouble();
             trades.Add(new TradePoint(t, p));
         }
         return trades;

@@ -118,11 +118,11 @@ public class MetricsScalerTests
 
         Assert.Equal(3, result.Length);
         Assert.Equal(1000L, result[0].TimestampMs);
-        Assert.Equal(1000.00m, result[0].Value);
+        Assert.Equal(1000.00, result[0].Value, precision: 10);
         Assert.Equal(2000L, result[1].TimestampMs);
-        Assert.Equal(1050.00m, result[1].Value);
+        Assert.Equal(1050.00, result[1].Value, precision: 10);
         Assert.Equal(3000L, result[2].TimestampMs);
-        Assert.Equal(1100.00m, result[2].Value);
+        Assert.Equal(1100.00, result[2].Value, precision: 10);
     }
 
     [Fact]
@@ -148,9 +148,9 @@ public class MetricsScalerTests
 
         Assert.Equal(2, result.Length);
         Assert.Equal(1000L, result[0].TimestampMs);
-        Assert.Equal(50.00m, result[0].Pnl);
+        Assert.Equal(50.00, result[0].Pnl, precision: 10);
         Assert.Equal(2000L, result[1].TimestampMs);
-        Assert.Equal(-30.00m, result[1].Pnl);
+        Assert.Equal(-30.00, result[1].Pnl, precision: 10);
     }
 
     [Fact]

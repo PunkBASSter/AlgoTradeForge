@@ -238,7 +238,7 @@ public sealed class OptimizationSetupHelper(
             DurationMs = (long)trialWatch.Elapsed.TotalMilliseconds,
             TotalBars = result.TotalBarsProcessed,
             Metrics = scaledMetrics,
-            EquityCurve = [],
+            EquityCurve = MetricsScaler.ScaleEquityCurve(result.EquityCurve, scale),
             TradePnl = tradePnl,
             RunFolderPath = null,
             RunMode = RunModes.Backtest,

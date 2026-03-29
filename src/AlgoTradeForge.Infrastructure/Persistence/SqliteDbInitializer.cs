@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 11;
+    private const int CurrentVersion = 12;
 
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -84,6 +84,39 @@ internal static class SqliteDbInitializer
             occurrence_count       INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS ix_oft_opt_id ON optimization_failed_trials(optimization_run_id);
+
+        CREATE TABLE IF NOT EXISTS validation_runs (
+            id                      TEXT    NOT NULL PRIMARY KEY,
+            optimization_run_id     TEXT    NOT NULL REFERENCES optimization_runs(id),
+            strategy_name           TEXT    NOT NULL,
+            strategy_version        TEXT    NULL,
+            started_at              TEXT    NOT NULL,
+            completed_at            TEXT    NULL,
+            duration_ms             INTEGER NOT NULL DEFAULT 0,
+            status                  TEXT    NOT NULL DEFAULT 'InProgress',
+            threshold_profile_name  TEXT    NOT NULL,
+            threshold_profile_json  TEXT    NULL,
+            candidates_in           INTEGER NOT NULL DEFAULT 0,
+            candidates_out          INTEGER NOT NULL DEFAULT 0,
+            composite_score         REAL    NOT NULL DEFAULT 0,
+            verdict                 TEXT    NOT NULL DEFAULT 'Red',
+            verdict_summary         TEXT    NULL,
+            invocation_count        INTEGER NOT NULL DEFAULT 1,
+            error_message           TEXT    NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_validation_runs_opt_id ON validation_runs(optimization_run_id);
+
+        CREATE TABLE IF NOT EXISTS validation_stage_results (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            validation_run_id       TEXT    NOT NULL REFERENCES validation_runs(id),
+            stage_number            INTEGER NOT NULL,
+            stage_name              TEXT    NOT NULL,
+            candidates_in           INTEGER NOT NULL DEFAULT 0,
+            candidates_out          INTEGER NOT NULL DEFAULT 0,
+            duration_ms             INTEGER NOT NULL DEFAULT 0,
+            candidate_verdicts_json TEXT    NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_vsr_validation_run_id ON validation_stage_results(validation_run_id);
         """;
 
     private const string MigrationV3 = """
@@ -122,6 +155,41 @@ internal static class SqliteDbInitializer
 
     private const string MigrationV11 = """
         ALTER TABLE backtest_runs ADD COLUMN fitness_score REAL NULL;
+        """;
+
+    private const string MigrationV12 = """
+        CREATE TABLE IF NOT EXISTS validation_runs (
+            id                      TEXT    NOT NULL PRIMARY KEY,
+            optimization_run_id     TEXT    NOT NULL REFERENCES optimization_runs(id),
+            strategy_name           TEXT    NOT NULL,
+            strategy_version        TEXT    NULL,
+            started_at              TEXT    NOT NULL,
+            completed_at            TEXT    NULL,
+            duration_ms             INTEGER NOT NULL DEFAULT 0,
+            status                  TEXT    NOT NULL DEFAULT 'InProgress',
+            threshold_profile_name  TEXT    NOT NULL,
+            threshold_profile_json  TEXT    NULL,
+            candidates_in           INTEGER NOT NULL DEFAULT 0,
+            candidates_out          INTEGER NOT NULL DEFAULT 0,
+            composite_score         REAL    NOT NULL DEFAULT 0,
+            verdict                 TEXT    NOT NULL DEFAULT 'Red',
+            verdict_summary         TEXT    NULL,
+            invocation_count        INTEGER NOT NULL DEFAULT 1,
+            error_message           TEXT    NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_validation_runs_opt_id ON validation_runs(optimization_run_id);
+
+        CREATE TABLE IF NOT EXISTS validation_stage_results (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            validation_run_id       TEXT    NOT NULL REFERENCES validation_runs(id),
+            stage_number            INTEGER NOT NULL,
+            stage_name              TEXT    NOT NULL,
+            candidates_in           INTEGER NOT NULL DEFAULT 0,
+            candidates_out          INTEGER NOT NULL DEFAULT 0,
+            duration_ms             INTEGER NOT NULL DEFAULT 0,
+            candidate_verdicts_json TEXT    NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_vsr_validation_run_id ON validation_stage_results(validation_run_id);
         """;
 
     private const string MigrationV5 = """
@@ -229,6 +297,14 @@ internal static class SqliteDbInitializer
             await SetVersionAsync(connection, 11);
         }
 
+        if (currentVersion < 12)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV12;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 12);
+        }
+
         // Mark any orphaned in-progress runs as failed (server crashed during execution)
         await using var orphanCmd = connection.CreateCommand();
         orphanCmd.CommandText = """
@@ -237,6 +313,14 @@ internal static class SqliteDbInitializer
             WHERE status = 'InProgress'
             """;
         await orphanCmd.ExecuteNonQueryAsync();
+
+        await using var orphanValCmd = connection.CreateCommand();
+        orphanValCmd.CommandText = """
+            UPDATE validation_runs
+            SET completed_at = started_at, error_message = 'Server restarted during execution', status = 'Failed'
+            WHERE status = 'InProgress'
+            """;
+        await orphanValCmd.ExecuteNonQueryAsync();
     }
 
     private static async Task<int> GetVersionAsync(SqliteConnection connection)
