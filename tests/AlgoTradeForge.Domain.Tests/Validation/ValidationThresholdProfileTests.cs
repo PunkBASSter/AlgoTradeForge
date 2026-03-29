@@ -13,9 +13,27 @@ public class ValidationThresholdProfileTests
         Assert.Equal("Crypto-Standard", profile.Name);
         Assert.Equal(1.05, profile.BasicProfitability.MinProfitFactor);
         Assert.Equal(30, profile.BasicProfitability.MinTradeCount);
+        Assert.Equal(2.0, profile.BasicProfitability.MinTStatistic);
         Assert.Equal(40.0, profile.BasicProfitability.MaxDrawdownPct);
         Assert.Equal(0.05, profile.StatisticalSignificance.DsrPValue);
         Assert.Equal(0.95, profile.StatisticalSignificance.MinPsr);
+
+        // Stage 6 defaults
+        Assert.Equal(1000, profile.MonteCarloPermutation.BootstrapIterations);
+        Assert.Equal(1.5, profile.MonteCarloPermutation.MaxDrawdownMultiplier);
+        Assert.Equal(1000, profile.MonteCarloPermutation.PermutationIterations);
+        Assert.Equal(0.05, profile.MonteCarloPermutation.MaxPermutationPValue);
+        Assert.Equal(2.0, profile.MonteCarloPermutation.CostStressMultiplier);
+
+        // Stage 7 defaults
+        Assert.Equal(16, profile.SelectionBiasAudit.CscvBlocks);
+        Assert.Equal(0.30, profile.SelectionBiasAudit.MaxPbo);
+        Assert.Equal(0.70, profile.SelectionBiasAudit.MinProfitableSubPeriods);
+        Assert.Equal(0.85, profile.SelectionBiasAudit.MinR2);
+        Assert.Equal(8, profile.SelectionBiasAudit.SubPeriodCount);
+        Assert.Equal(60, profile.SelectionBiasAudit.RollingSharpeWindow);
+        Assert.Equal(-0.001, profile.SelectionBiasAudit.MaxSharpeDecaySlope);
+        Assert.Equal(60, profile.SelectionBiasAudit.RegimeVolWindow);
     }
 
     [Fact]
@@ -34,6 +52,18 @@ public class ValidationThresholdProfileTests
         Assert.Equal(0.60, profile.WalkForwardMatrix.MinWfe);
         Assert.Equal(0.25, profile.ParameterLandscape.MaxDegradationPct);
         Assert.Equal(0.60, profile.ParameterLandscape.MinClusterConcentration);
+
+        // Stage 6 conservative overrides
+        Assert.Equal(2000, profile.MonteCarloPermutation.BootstrapIterations);
+        Assert.Equal(1.3, profile.MonteCarloPermutation.MaxDrawdownMultiplier);
+        Assert.Equal(2000, profile.MonteCarloPermutation.PermutationIterations);
+        Assert.Equal(0.01, profile.MonteCarloPermutation.MaxPermutationPValue);
+        Assert.Equal(2.5, profile.MonteCarloPermutation.CostStressMultiplier);
+
+        // Stage 7 conservative overrides
+        Assert.Equal(0.20, profile.SelectionBiasAudit.MaxPbo);
+        Assert.Equal(0.80, profile.SelectionBiasAudit.MinProfitableSubPeriods);
+        Assert.Equal(0.90, profile.SelectionBiasAudit.MinR2);
     }
 
     [Fact]

@@ -13,7 +13,7 @@ public sealed record ValidationThresholdProfile
     public Stage3ParameterLandscapeThresholds ParameterLandscape { get; init; } = new();
     public Stage4WalkForwardOptimizationThresholds WalkForwardOptimization { get; init; } = new();
     public Stage5WalkForwardMatrixThresholds WalkForwardMatrix { get; init; } = new();
-    public Stage6MonteCarloPermutationThresholds MonteCarloPermutation { get; init; } = new();
+    public Stage6MonteCarloPnlDeltasPermutationThresholds MonteCarloPermutation { get; init; } = new();
     public Stage7SelectionBiasAuditThresholds SelectionBiasAudit { get; init; } = new();
     public SafetyFloorThresholds SafetyFloors { get; init; } = new();
 
@@ -27,6 +27,7 @@ public sealed record ValidationThresholdProfile
         public decimal MinNetProfit { get; init; } = 0m;
         public double MinProfitFactor { get; init; } = 1.05;
         public int MinTradeCount { get; init; } = 30;
+        public double MinTStatistic { get; init; } = 2.0;
         public double MaxDrawdownPct { get; init; } = 40.0;
     }
 
@@ -66,15 +67,25 @@ public sealed record ValidationThresholdProfile
         public double MinWfe { get; init; } = 0.50;
     }
 
-    public sealed record Stage6MonteCarloPermutationThresholds
+    public sealed record Stage6MonteCarloPnlDeltasPermutationThresholds
     {
-        public double MaxPbo { get; init; } = 0.60;
-        public int Permutations { get; init; } = 1000;
+        public int BootstrapIterations { get; init; } = 1000;
+        public double MaxDrawdownMultiplier { get; init; } = 1.5;
+        public int PermutationIterations { get; init; } = 1000;
+        public double MaxPermutationPValue { get; init; } = 0.05;
+        public double CostStressMultiplier { get; init; } = 2.0;
     }
 
     public sealed record Stage7SelectionBiasAuditThresholds
     {
-        public double MaxPbo { get; init; } = 0.60;
+        public int CscvBlocks { get; init; } = 16;
+        public double MaxPbo { get; init; } = 0.30;
+        public double MinProfitableSubPeriods { get; init; } = 0.70;
+        public double MinR2 { get; init; } = 0.85;
+        public int SubPeriodCount { get; init; } = 8;
+        public int RollingSharpeWindow { get; init; } = 60;
+        public double MaxSharpeDecaySlope { get; init; } = -0.001;
+        public int RegimeVolWindow { get; init; } = 60;
     }
 
     public sealed record SafetyFloorThresholds
@@ -116,6 +127,20 @@ public sealed record ValidationThresholdProfile
         {
             MinWfe = 0.60,
             MinCellsPassing = 8,
+        },
+        MonteCarloPermutation = new Stage6MonteCarloPnlDeltasPermutationThresholds
+        {
+            BootstrapIterations = 2000,
+            MaxDrawdownMultiplier = 1.3,
+            PermutationIterations = 2000,
+            MaxPermutationPValue = 0.01,
+            CostStressMultiplier = 2.5,
+        },
+        SelectionBiasAudit = new Stage7SelectionBiasAuditThresholds
+        {
+            MaxPbo = 0.20,
+            MinProfitableSubPeriods = 0.80,
+            MinR2 = 0.90,
         },
     };
 

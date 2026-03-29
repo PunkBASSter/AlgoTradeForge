@@ -113,13 +113,15 @@ public class ValidationPipelineTests
         var trials = CreateTrialSummaries(count, strongMetrics, 0);
 
         // Use 500 bars so that WFO (5 windows) and WFM (up to 15 periods) have enough data.
-        // Consistent positive P&L ensures WFE ≈ 1.0 for strong metrics.
+        // Trending positive P&L ensures WFE ≈ 1.0 and passes Stage 6 permutation test
+        // (constant P&L would give p-value=1.0 since shuffling identical values is a no-op).
         const int barCount = 500;
         var pnlRows = trials.Select((_, t) =>
         {
             var row = new double[barCount];
-            var perBar = strongMetrics ? 10.0 + t * 0.5 : -5.0;
-            for (var b = 0; b < barCount; b++) row[b] = perBar;
+            var baseVal = strongMetrics ? 10.0 + t * 0.5 : -5.0;
+            for (var b = 0; b < barCount; b++)
+                row[b] = strongMetrics ? baseVal + b * 0.02 : baseVal;
             return row;
         }).ToArray();
 

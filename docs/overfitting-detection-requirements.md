@@ -138,10 +138,15 @@ Applied to all parameter combinations from the completed optimization run. No ad
 
 ### Stage 6 — Monte Carlo and permutation audit (cost: high, 1,000–10,000 simulations)
 
-- **Trade-level bootstrap** (1,000 iterations): 95th percentile max drawdown must not exceed 1.5× observed max drawdown. Probability of ruin at 95% CI < 5%.
-- **Price permutation test** (1,000 iterations): Strategy must outperform ≥95% of permuted price series (p < 0.05).
-- **Noise injection** (500 iterations): Strategy must retain >70% of Sharpe on noise-injected data.
+**Implemented (Phase 3):**
+- **Bar-level P&L bootstrap** (1,000 iterations): Shuffles per-bar P&L deltas to generate synthetic equity paths. 95th percentile max drawdown must not exceed 1.5× observed max drawdown. Probability of ruin at 95% CI < 5%.
+- **P&L delta permutation test** (1,000 iterations): Shuffles the P&L return sequence to test whether sequential ordering is significant (p < 0.05). Catches serial dependence vs. noise.
 - **Transaction cost stress test**: Strategy must remain profitable at 2× assumed costs.
+
+**Deferred (see `overfitting-monte-carlo-gaps.md`):**
+- **Price permutation test** (1,000 iterations): Strategy must outperform ≥95% of permuted price series (p < 0.05). Requires BacktestEngine integration.
+- **Parameter permutation test** (1,000 iterations): Randomize parameters ±10–20%, re-backtest. Requires BacktestEngine integration.
+- **Noise injection** (500 iterations): Strategy must retain >70% of Sharpe on noise-injected OHLC data. Requires BacktestEngine integration.
 
 **Expected filter rate**: 20–40% of Stage 5 survivors eliminated.
 

@@ -44,7 +44,7 @@ SimulationCache
 ├── TrialPnlMatrix: double[N][T]           // Per-bar P&L delta per trial (row-major)
 ├── TrialParameters: ParameterCombination[] // Maps trial index → params
 ├── TrialMetrics: PerformanceMetrics[]      // Pre-computed metrics per trial
-├── TrialTrades: ClosedTrade[][]            // Per-trial trade list (for bootstrap)
+├── TrialTrades: ClosedTrade[][]            // Per-trial trade list (deferred — see overfitting-monte-carlo-gaps.md)
 ├── TrialCount (N), BarCount (T)
 │
 ├── SliceWindow(startBar, endBar)          // → ReadOnlySpan view into matrix
@@ -105,8 +105,8 @@ ValidationThresholdProfile
 ├── Stage5: PeriodCounts[4,6,8,10,12,15], OosPcts[0.15,0.20,0.25],
 │           MinContiguousCluster(3×3), MinCellsPassing(7)
 ├── Stage6: BootstrapIter(1000), MaxDdMultiplier(1.5), PermutationIter(1000),
-│           MinPermutationPValue(0.05), NoiseIter(500), MinNoiseRetention(0.70),
-│           CostStressMultiplier(2.0)
+│           MaxPermutationPValue(0.05), CostStressMultiplier(2.0)
+│           // NoiseIter, MinNoiseRetention deferred — see overfitting-monte-carlo-gaps.md
 ├── Stage7: CscvBlocks(16), MaxPbo(0.30), SpaReplications(1000),
 │           MinSpaPValue(0.05), MinProfitableSubPeriods(0.70), MinR2(0.85)
 └── SafetyFloors: MinTradeCount(30), MaxPbo(0.60), MinWfe(0.30)
@@ -205,7 +205,8 @@ simulation_cache_metadata
 | **`SimulationCache`** | T×N P&L matrix with zero-allocation window slicing via `Span<double>` |
 | **`Statistics/DeflatedSharpeRatio`** | Closed-form DSR and PSR. Ported from Bailey & López de Prado (2014). Inputs: observed Sharpe, N trials, T length, skewness, kurtosis |
 | **`Statistics/PboCalculator`** | CSCV/PBO: partitions T×N returns into S blocks, enumerates C(S,S/2) combos, computes fraction where IS-optimal ranks below OOS median. Parallelizable via `Parallel.For` |
-| **`Statistics/MonteCarloBootstrap`** | Trade-level bootstrap (shuffle trades → synthetic equity curves → drawdown percentiles). Price permutation (log-return shuffle → exponentiate → synthetic series) |
+| **`Statistics/MonteCarloBootstrap`** | Bar-level P&L bootstrap (shuffle bar deltas → synthetic equity curves → drawdown percentiles) |
+| **`Statistics/PermutationTester`** | P&L delta permutation test (shuffle return sequence → Sharpe distribution → p-value). Price and parameter permutation deferred — see `overfitting-monte-carlo-gaps.md` |
 | **`Statistics/WalkForwardEngine`** | WFO using SimulationCache slicing: per-window IS optimization + OOS evaluation. Also drives WFM by iterating over config grid |
 | **`Statistics/ParameterSensitivityAnalyzer`** | Parameter perturbation grid (±range%), evaluates fitness from cache where possible |
 | **`Statistics/ClusterAnalyzer`** | K-Means on top-N parameter sets, silhouette scoring, centroid extraction. Self-contained (no external lib needed for typical 2–10 dimensions) |
@@ -292,7 +293,7 @@ simulation_cache_metadata
 | 3 | `Parallel.ForEach` across parameter perturbations |
 | 4 | `Parallel.For` across WFO windows |
 | 5 | `Parallel.For` across 18 WFM grid cells |
-| 6 | `Parallel.For` across MC iterations; `Partitioner+LongRunning` for price permutation re-backtests |
+| 6 | `Parallel.For` across MC bootstrap and permutation iterations |
 | 7 | `Parallel.For` across C(S,S/2) CSCV combinations |
 
 ### AD-4: Pipeline Extensibility
@@ -353,7 +354,7 @@ simulation_cache_metadata
   │  │   │ Stage 3: Parameter Landscape (sensitivity, cluster)  med│        │
   │  │   │ Stage 4: Walk-Forward Optimization          ◄── cache   │        │
   │  │   │ Stage 5: Walk-Forward Matrix (6×3 grid)     ◄── cache   │        │
-  │  │   │ Stage 6: Monte Carlo & Permutation          ◄── engine  │        │
+  │  │   │ Stage 6: Monte Carlo & P&L Permutation      ◄── cache   │        │
   │  │   │ Stage 7: Selection Bias Audit (PBO)         ◄── cache   │        │
   │  │   └──────────────────────────────────────────────────────────┘        │
   │  │         each stage: survivors in → filter → survivors out             │
@@ -386,7 +387,7 @@ simulation_cache_metadata
     │   CompositeScoreCalc    │
     │                         │
     │ (existing, reused)      │
-    │   BacktestEngine        │  ◄── Stage 6 only (price permutation)
+    │   BacktestEngine        │  ◄── deferred: price/param permutation, noise injection
     │   MetricsCalculator     │  ◄── Sub-window metric computation
     │   PerformanceMetrics    │  ◄── Extended with recovery factor
     └─────────────────────────┘
@@ -451,15 +452,17 @@ DATA FLOW:
 
 **Why second:** WFO/WFM are 25% of composite score — highest value. They depend on Phase 1's cache.
 
-### Phase 3 — Monte Carlo, Permutation, and Selection Bias
+### Phase 3 — Monte Carlo, P&L Permutation, and Selection Bias
 **Goal:** Computationally expensive statistical audits.
 
-- `MonteCarloBootstrap` in Domain (trade bootstrap + price permutation)
-- **Stage 6** (Monte Carlo & Permutation) — includes parallel backtest re-runs for permutation tests
+- `MonteCarloBootstrap` in Domain (bar-level P&L bootstrap → drawdown percentiles, equity fan bands)
+- `PermutationTester` in Domain (P&L delta permutation → Sharpe significance test)
+- **Stage 6** (Monte Carlo & P&L Permutation) — bootstrap drawdown, P&L permutation, cost stress
 - `PboCalculator` in Domain (CSCV with parallelized C(S,S/2) enumeration)
 - `RegimeDetector`, `SubPeriodAnalyzer`, `DecayAnalyzer` in Domain
 - **Stage 7** (Selection Bias Audit) fully implemented
 - Frontend: Monte Carlo fan chart, PBO histogram, rolling Sharpe chart
+- **Deferred:** price permutation, parameter permutation, noise injection, Hansen's SPA — see `overfitting-monte-carlo-gaps.md`
 
 ### Phase 4 — Reporting Dashboard + Composite Scoring
 **Goal:** Complete trader-facing interface.

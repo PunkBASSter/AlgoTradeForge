@@ -15,11 +15,11 @@ public sealed class ValidationPipeline
         new PreFlightStage(),               // 0
         new BasicProfitabilityStage(),      // 1
         new StatisticalSignificanceStage(), // 2
-        new ParameterLandscapeStage(),      // 3 (stub)
-        new WalkForwardOptimizationStage(), // 4 (stub)
-        new WalkForwardMatrixStage(),       // 5 (stub)
-        new MonteCarloPermutationStage(),   // 6 (stub)
-        new SelectionBiasAuditStage(),      // 7 (stub)
+        new ParameterLandscapeStage(),      // 3
+        new WalkForwardOptimizationStage(), // 4
+        new WalkForwardMatrixStage(),       // 5
+        new MonteCarloPnlDeltasPermutationStage(),   // 6
+        new SelectionBiasAuditStage(),      // 7
     ];
 
     private static readonly JsonSerializerOptions JsonOptions = new()

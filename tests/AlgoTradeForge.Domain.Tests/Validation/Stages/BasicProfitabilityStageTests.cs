@@ -98,11 +98,47 @@ public class BasicProfitabilityStageTests
         Assert.Single(result.SurvivingIndices);
     }
 
-    private static ValidationContext CreateContext(params TrialSummary[] trials)
+    [Fact]
+    public void Fails_TStatisticBelowThreshold()
     {
-        var cache = new SimulationCache(
-            [100, 200, 300],
-            trials.Select(_ => new double[] { 0.0, 0.0, 0.0 }).ToArray());
+        // Near-zero mean with high variance → low t-stat
+        var noisyPnl = new double[] { 500, -490, 480, -470, 460, -450, 440, -430, 420, -410 };
+        var context = CreateContext(
+            [noisyPnl],
+            CreateTrial(0, netProfit: 100m, profitFactor: 1.5, tradeCount: 50, maxDrawdownPct: 10));
+
+        var result = _stage.Execute(context, TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.SurvivingIndices);
+        Assert.Equal("T_STATISTIC_BELOW_THRESHOLD", result.Verdicts[0].ReasonCode);
+    }
+
+    [Fact]
+    public void TStatistic_MetricIsAttached()
+    {
+        var context = CreateContext(
+            CreateTrial(0, netProfit: 100m, profitFactor: 1.5, tradeCount: 50, maxDrawdownPct: 10));
+
+        var result = _stage.Execute(context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Verdicts[0].Metrics.ContainsKey("tStatistic"));
+    }
+
+    // Default P&L: steady positive returns giving t-stat > 2.0 on 10000 initial equity.
+    // Each bar adds ~100, giving ~1% return with low variance.
+    private static readonly double[] DefaultPnl =
+        [100, 105, 98, 102, 101, 103, 99, 104, 97, 106, 100, 102, 98, 101, 103, 99, 105, 97, 104, 100];
+
+    private static ValidationContext CreateContext(params TrialSummary[] trials) =>
+        CreateContext(null, trials);
+
+    private static ValidationContext CreateContext(double[][]? pnlMatrix, params TrialSummary[] trials)
+    {
+        var matrix = pnlMatrix ?? trials.Select(_ => (double[])DefaultPnl.Clone()).ToArray();
+        var barCount = matrix[0].Length;
+        var timestamps = Enumerable.Range(0, barCount).Select(i => (long)(i * 100)).ToArray();
+
+        var cache = new SimulationCache(timestamps, matrix);
 
         return new ValidationContext
         {

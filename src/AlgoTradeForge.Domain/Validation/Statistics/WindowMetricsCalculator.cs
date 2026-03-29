@@ -104,7 +104,7 @@ public static class WindowMetricsCalculator
             sumSq += diff * diff;
         }
 
-        var stdev = Math.Sqrt(sumSq / (returns.Length - 1));
+        var stdev = Math.Sqrt(sumSq / returns.Length);
         if (stdev <= 1e-15) return 0;
 
         return (mean / stdev) * Math.Sqrt(annualizationFactor);

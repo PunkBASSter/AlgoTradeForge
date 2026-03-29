@@ -114,30 +114,40 @@ Tracks progress across the 5 phases defined in `overfitting-detection-TRD.md`.
 
 ### Domain Layer
 
-- [ ] `MonteCarloBootstrap` — trade-level bootstrap (shuffle trades → synthetic equity curves → drawdown percentiles)
-- [ ] `MonteCarloBootstrap` — price permutation (log-return shuffle → exponentiate → synthetic series)
-- [ ] `MonteCarloBootstrap` unit tests
-- [ ] `MonteCarloResult` record (drawdown percentiles, equity fan bands, probability of ruin)
-- [ ] `PermutationTestResult` record
-- [ ] `PboCalculator` — CSCV/PBO: partition T×N returns into S blocks, enumerate C(S,S/2) combos
-- [ ] `PboCalculator` unit tests
-- [ ] `PboResult` record (PBO, logit distribution, num combinations/blocks)
-- [ ] `RegimeDetector` — 60-day rolling volatility with percentile-based Bull/Bear/Sideways classification
-- [ ] `RegimeDetector` unit tests
-- [ ] `RegimeAnalysisResult` record
-- [ ] `SubPeriodAnalyzer` — equal sub-periods, per-period metrics, R² via linear regression
-- [ ] `SubPeriodAnalyzer` unit tests
-- [ ] `SubPeriodConsistencyResult` record
-- [ ] `DecayAnalyzer` — rolling Sharpe time series + linear regression slope
-- [ ] `DecayAnalyzer` unit tests
-- [ ] `DecayAnalysisResult` record
+- [x] `MonteCarloBootstrap` — bar-level bootstrap (shuffle P&L deltas → synthetic equity curves → drawdown percentiles)
+- [x] `MonteCarloBootstrap` unit tests
+- [x] `MonteCarloResult` record (drawdown percentiles, equity fan bands, probability of ruin)
+- [x] `PermutationTester` — P&L delta permutation test (`RunPnlPermutation`)
+- [x] `PermutationTester` unit tests
+- [x] `PermutationTestResult` record
+- [x] `PboCalculator` — CSCV/PBO: partition T×N returns into S blocks, enumerate C(S,S/2) combos
+- [x] `PboCalculator` unit tests
+- [x] `PboResult` record (PBO, logit distribution, num combinations/blocks)
+- [x] `RegimeDetector` — rolling volatility with percentile-based Bull/Bear/Sideways classification
+- [x] `RegimeDetector` unit tests
+- [x] `RegimeAnalysisResult` record
+- [x] `SubPeriodAnalyzer` — equal sub-periods, per-period metrics, R² via linear regression
+- [x] `SubPeriodAnalyzer` unit tests
+- [x] `SubPeriodConsistencyResult` record
+- [x] `DecayAnalyzer` — rolling Sharpe time series + linear regression slope
+- [x] `DecayAnalyzer` unit tests
+- [x] `DecayAnalysisResult` record
+- [x] `ValidationThresholdProfile` — expanded Stage 6/7 thresholds, CryptoConservative overrides
 
-### Application Layer — Stage Implementations
+### Stage Implementations (Domain Layer)
 
-- [ ] Stage 6: `MonteCarloPermutationStage` — bootstrap drawdown, permutation p-value, noise retention, cost stress
-- [ ] Stage 6 unit tests (with `Parallel.For` across MC iterations)
-- [ ] Stage 7: `SelectionBiasAuditStage` — CSCV/PBO, SPA, sub-period consistency, equity R²
-- [ ] Stage 7 unit tests (with `Parallel.For` across CSCV combinations)
+- [x] Stage 6: `MonteCarloPnlPermutationStage` — bootstrap drawdown, P&L permutation p-value, cost stress test
+- [x] Stage 6 unit tests
+- [x] Stage 7: `SelectionBiasAuditStage` — CSCV/PBO gate, sub-period consistency, regime (informational), decay analysis
+- [x] Stage 7 unit tests
+
+### Deferred — see `overfitting-monte-carlo-gaps.md`
+
+- [ ] Price permutation test (requires BacktestEngine in ValidationContext)
+- [ ] Parameter permutation test (requires BacktestEngine in ValidationContext)
+- [ ] Noise injection (requires BacktestEngine in ValidationContext)
+- [ ] Hansen's SPA test (optional, overlaps with CSCV/PBO)
+- [ ] Trade-level bootstrap (requires ClosedTrade records in ValidationContext)
 
 ### Frontend
 

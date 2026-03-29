@@ -9,8 +9,6 @@ public class StubStageTests
 {
     [Theory]
     [InlineData(typeof(PreFlightStage), 0, "PreFlight")]
-    [InlineData(typeof(MonteCarloPermutationStage), 6, "MonteCarloPermutation")]
-    [InlineData(typeof(SelectionBiasAuditStage), 7, "SelectionBiasAudit")]
     public void StubStage_PassesAllCandidates(Type stageType, int expectedNumber, string expectedName)
     {
         var stage = (IValidationStage)Activator.CreateInstance(stageType)!;
@@ -32,8 +30,6 @@ public class StubStageTests
 
     [Theory]
     [InlineData(typeof(PreFlightStage))]
-    [InlineData(typeof(MonteCarloPermutationStage))]
-    [InlineData(typeof(SelectionBiasAuditStage))]
     public void StubStage_EmptyCandidates_ReturnsEmpty(Type stageType)
     {
         var stage = (IValidationStage)Activator.CreateInstance(stageType)!;
