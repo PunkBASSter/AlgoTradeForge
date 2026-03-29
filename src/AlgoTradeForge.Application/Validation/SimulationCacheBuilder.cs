@@ -10,6 +10,16 @@ namespace AlgoTradeForge.Application.Validation;
 /// </summary>
 public static class SimulationCacheBuilder
 {
+    /// <summary>Estimates the in-memory size of a cache built from the given trials.</summary>
+    /// <remarks>Assumes uniform bar count across trials (enforced by <see cref="Build"/>).</remarks>
+    public static long EstimateSize(IReadOnlyList<BacktestRunRecord> trials)
+    {
+        if (trials.Count == 0) return 0;
+        var barCount = trials[0].EquityCurve.Count;
+        return (long)trials.Count * barCount * sizeof(double)  // matrix
+             + (long)barCount * sizeof(long);                   // timestamps
+    }
+
     public static SimulationCache Build(IReadOnlyList<BacktestRunRecord> trials)
     {
         if (trials.Count == 0)

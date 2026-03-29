@@ -9,6 +9,7 @@ public interface IRunRepository
     Task InsertOptimizationPlaceholderAsync(OptimizationRunRecord record, CancellationToken ct = default);
     Task SaveOptimizationAsync(OptimizationRunRecord record, CancellationToken ct = default);
     Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, CancellationToken ct = default);
+    Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, bool includeEquityCurves, CancellationToken ct = default);
     Task<PagedResult<OptimizationRunRecord>> QueryOptimizationsAsync(OptimizationRunQuery query, CancellationToken ct = default);
     Task<bool> DeleteOptimizationAsync(Guid id, CancellationToken ct = default);
 

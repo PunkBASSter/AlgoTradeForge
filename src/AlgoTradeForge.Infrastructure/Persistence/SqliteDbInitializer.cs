@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 13;
+    private const int CurrentVersion = 14;
 
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -207,6 +207,25 @@ internal static class SqliteDbInitializer
         CREATE INDEX IF NOT EXISTS ix_oft_opt_id ON optimization_failed_trials(optimization_run_id);
         """;
 
+    private const string MigrationV14 = """
+        CREATE TABLE IF NOT EXISTS threshold_profiles (
+            name            TEXT    NOT NULL PRIMARY KEY,
+            profile_json    TEXT    NOT NULL,
+            is_builtin      INTEGER NOT NULL DEFAULT 0,
+            created_at      TEXT    NOT NULL,
+            updated_at      TEXT    NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS simulation_cache_metadata (
+            optimization_run_id TEXT    NOT NULL PRIMARY KEY REFERENCES optimization_runs(id),
+            bar_count           INTEGER NOT NULL,
+            trial_count         INTEGER NOT NULL,
+            cache_file_path     TEXT    NULL,
+            created_at          TEXT    NOT NULL,
+            size_bytes          INTEGER NOT NULL DEFAULT 0
+        );
+        """;
+
     public static async Task EnsureCreatedAsync(string connectionString)
     {
         await using var connection = new SqliteConnection(connectionString);
@@ -315,6 +334,14 @@ internal static class SqliteDbInitializer
             await AddColumnIfNotExistsAsync(connection, "validation_runs", "category_scores_json", "TEXT NULL");
             await AddColumnIfNotExistsAsync(connection, "validation_runs", "rejections_json", "TEXT NULL");
             await SetVersionAsync(connection, 13);
+        }
+
+        if (currentVersion < 14)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV14;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 14);
         }
 
         // Mark any orphaned in-progress runs as failed (server crashed during execution)

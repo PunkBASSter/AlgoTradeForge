@@ -35,6 +35,7 @@ import type {
   ValidationListParams,
   RunValidationRequest,
 } from "@/types/validation";
+import type { ThresholdProfileResponse } from "@/types/threshold-profile";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -372,6 +373,12 @@ export const apiClient = {
       `/api/validations/${encodeURIComponent(id)}`,
       { method: "DELETE" },
     );
+  },
+
+  // --- Threshold profiles ---
+
+  getThresholdProfiles(): Promise<ThresholdProfileResponse[]> {
+    return request<ThresholdProfileResponse[]>("/api/threshold-profiles");
   },
 
   // --- Debug sessions ---

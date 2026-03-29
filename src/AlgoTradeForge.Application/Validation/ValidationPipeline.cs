@@ -33,7 +33,8 @@ public sealed class ValidationPipeline
         ValidationThresholdProfile profile,
         Guid validationRunId,
         Action<int, int>? onProgress,
-        CancellationToken ct)
+        CancellationToken ct,
+        long totalCombinations = 0)
     {
         var context = new ValidationContext
         {
@@ -41,6 +42,7 @@ public sealed class ValidationPipeline
             Trials = trials,
             Profile = profile,
             ActiveCandidateIndices = Enumerable.Range(0, trials.Count).ToList(),
+            TotalCombinations = totalCombinations,
         };
 
         var stageResults = new List<StageResultRecord>(Stages.Count);

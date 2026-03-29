@@ -19,7 +19,20 @@ public sealed record ValidationThresholdProfile
 
     public sealed record Stage0PreFlightThresholds
     {
+        /// <summary>Minimum bars per trade for data sufficiency.</summary>
         public int MinBarsPerTrade { get; init; } = 1;
+
+        /// <summary>Timestamp gap detection: gaps exceeding this multiple of the median interval are flagged.</summary>
+        public double MaxGapRatio { get; init; } = 3.0;
+
+        /// <summary>Maximum number of detected timestamp gaps before failing.</summary>
+        public int MaxAllowedGaps { get; init; } = 10;
+
+        /// <summary>Multiplier on the MinBTL formula result (set > 1.0 for extra conservatism).</summary>
+        public double MinBtlSafetyFactor { get; init; } = 1.0;
+
+        /// <summary>Reject all candidates if every trial has zero commissions (fantasy backtest).</summary>
+        public bool RequireNonZeroCosts { get; init; } = true;
     }
 
     public sealed record Stage1BasicProfitabilityThresholds
@@ -149,10 +162,13 @@ public sealed record ValidationThresholdProfile
         Name = "Crypto-Standard",
     };
 
+    /// <summary>Names of all built-in threshold profiles.</summary>
+    public static IReadOnlyList<string> BuiltInNames { get; } = ["Crypto-Standard", "Crypto-Conservative"];
+
     public static ValidationThresholdProfile GetByName(string name) => name switch
     {
         "Crypto-Conservative" => CryptoConservative(),
         "Crypto-Standard" => CryptoStandard(),
-        _ => throw new ArgumentException($"Unknown threshold profile: '{name}'."),
+        _ => throw new ArgumentException($"Unknown threshold profile: '{name}'. Built-in profiles: {string.Join(", ", BuiltInNames)}."),
     };
 }

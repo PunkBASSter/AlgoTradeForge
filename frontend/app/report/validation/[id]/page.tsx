@@ -110,13 +110,21 @@ export default function ValidationReportPage({
           {!isInProgress && <VerdictBadge verdict={validation.verdict} size="lg" />}
         </div>
         {!isInProgress && (
-          <Button
-            variant="danger"
-            onClick={handleDelete}
-            loading={deleteMutation.isPending}
-          >
-            Delete
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => window.open(`/api/validations/${id}/report`, "_blank")}
+            >
+              Export HTML
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleDelete}
+              loading={deleteMutation.isPending}
+            >
+              Delete
+            </Button>
+          </div>
         )}
       </div>
 

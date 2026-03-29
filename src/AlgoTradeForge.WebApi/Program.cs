@@ -5,6 +5,7 @@ using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
+using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Reporting;
@@ -20,6 +21,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Shared JSON options for FE-facing API (camelCase + case-insensitive)
 builder.Services.AddSingleton(JsonDefaults.Api);
+
+// Configure minimal API request/response JSON to match frontend conventions
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+    options.SerializerOptions.PropertyNameCaseInsensitive = true;
+});
 
 // Add OpenAPI/Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -56,6 +64,10 @@ builder.Services.Configure<RunStorageOptions>(
 // Register live trading config
 builder.Services.Configure<BinanceLiveOptions>(
     builder.Configuration.GetSection("BinanceLive"));
+
+// Register simulation cache config
+builder.Services.Configure<SimulationCacheOptions>(
+    builder.Configuration.GetSection("SimulationCache"));
 
 // Register Infrastructure services
 builder.Services.Configure<CandleStorageOptions>(
@@ -130,6 +142,7 @@ app.MapStrategyEndpoints();
 app.MapDebugEndpoints();
 DebugWebSocketHandler.MapDebugWebSocket(app);
 app.MapValidationEndpoints();
+app.MapThresholdProfileEndpoints();
 app.MapLiveEndpoints();
 
 app.Run();

@@ -431,4 +431,12 @@ export const mockClient: typeof import("./api-client").apiClient & {
   async deleteValidation(_id: string): Promise<void> {
     await delay();
   },
+
+  async getThresholdProfiles() {
+    await delay();
+    return [
+      { name: "Crypto-Standard", isBuiltIn: true, profileJson: "{}" },
+      { name: "Crypto-Conservative", isBuiltIn: true, profileJson: "{}" },
+    ];
+  },
 };

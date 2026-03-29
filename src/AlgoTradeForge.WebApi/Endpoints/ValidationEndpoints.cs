@@ -61,6 +61,13 @@ public static class ValidationEndpoints
             .WithOpenApi()
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{id:guid}/report", GetValidationReport)
+            .WithName("GetValidationReport")
+            .WithSummary("Download validation report as HTML")
+            .WithOpenApi()
+            .Produces(StatusCodes.Status200OK, contentType: "text/html")
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> ListValidations(
@@ -199,6 +206,19 @@ public static class ValidationEndpoints
             return Results.NotFound(new { error = $"Validation with ID '{id}' not found." });
 
         return Results.NoContent();
+    }
+
+    private static async Task<IResult> GetValidationReport(
+        Guid id,
+        IValidationRepository repository,
+        CancellationToken ct)
+    {
+        var record = await repository.GetByIdAsync(id, ct);
+        if (record is null)
+            return Results.NotFound(new { error = $"Validation with ID '{id}' not found." });
+
+        var html = ValidationReportGenerator.GenerateHtml(record);
+        return Results.Content(html, "text/html", System.Text.Encoding.UTF8);
     }
 
     private static ValidationRunSummaryResponse MapToSummary(ValidationRunRecord r) => new()

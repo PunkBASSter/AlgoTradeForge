@@ -370,7 +370,10 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
 
     // ── Get optimization by ID ─────────────────────────────────────────
 
-    public async Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, CancellationToken ct = default)
+    public Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, CancellationToken ct = default)
+        => GetOptimizationByIdAsync(id, includeEquityCurves: false, ct);
+
+    public async Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, bool includeEquityCurves, CancellationToken ct = default)
     {
         await EnsureInitializedAsync(ct);
         await using var conn = await CreateConnectionAsync(ct);
@@ -399,7 +402,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
 
             await using var trialReader = await trialCmd.ExecuteReaderAsync(ct);
             while (await trialReader.ReadAsync(ct))
-                trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: false));
+                trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: includeEquityCurves));
         }
 
         // Load failed trial details

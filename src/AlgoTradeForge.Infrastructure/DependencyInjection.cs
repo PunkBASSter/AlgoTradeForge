@@ -10,7 +10,9 @@ using AlgoTradeForge.Infrastructure.IO;
 using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Optimization;
+using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Infrastructure.Persistence;
+using AlgoTradeForge.Infrastructure.Validation;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace AlgoTradeForge.Infrastructure;
@@ -38,6 +40,8 @@ public static class DependencyInjection
 
         services.AddSingleton<IRunRepository, SqliteRunRepository>();
         services.AddSingleton<IValidationRepository, SqliteValidationRepository>();
+        services.AddSingleton<ISimulationCacheFileStore, SimulationCacheFileStore>();
+        services.AddSingleton<IThresholdProfileRepository, SqliteThresholdProfileRepository>();
 
         // Live trading
         services.Configure<BinanceLiveOptions>(_ => { });
