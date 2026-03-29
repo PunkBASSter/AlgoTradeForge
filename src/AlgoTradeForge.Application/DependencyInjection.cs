@@ -59,6 +59,8 @@ public static class DependencyInjection
         services.AddSingleton<ICommandHandler<RunValidationCommand, ValidationSubmissionDto>, RunValidationCommandHandler>();
         services.AddScoped<IQueryHandler<GetValidationByIdQuery, ValidationRunRecord?>, GetValidationByIdQueryHandler>();
         services.AddScoped<IQueryHandler<GetValidationStatusQuery, ValidationStatusDto?>, GetValidationStatusQueryHandler>();
+        services.AddScoped<IQueryHandler<GetValidationEquityQuery, ValidationEquityDto?>, GetValidationEquityQueryHandler>();
+        services.AddScoped<IQueryHandler<ListValidationsQuery, PagedResult<ValidationRunRecord>>, ListValidationsQueryHandler>();
 
         // Debug session management
         services.AddSingleton<IDebugSessionStore, InMemoryDebugSessionStore>();

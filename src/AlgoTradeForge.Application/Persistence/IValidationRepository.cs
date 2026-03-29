@@ -7,5 +7,6 @@ public interface IValidationRepository
     Task<ValidationRunRecord?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<int> CountByOptimizationIdAsync(Guid optimizationId, CancellationToken ct = default);
     Task<IReadOnlyList<ValidationRunRecord>> ListAsync(CancellationToken ct = default);
+    Task<PagedResult<ValidationRunRecord>> QueryAsync(ValidationRunQuery query, CancellationToken ct = default);
     Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
 }

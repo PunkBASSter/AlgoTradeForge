@@ -468,11 +468,17 @@ DATA FLOW:
 **Goal:** Complete trader-facing interface.
 
 - `CompositeScoreCalculator` — weighted aggregation + hard rejection rules → traffic-light
-- Full validation scorecard page (tabbed layout)
-- Remaining charts: equity comparison (IS/OOS overlay), drawdown underwater, monthly returns heatmap
+- Full validation scorecard page (tabbed layout: Scorecard | Stages | Charts)
 - Stage drill-down UI (click stage → candidate verdicts → individual metrics)
 - Meta-overfitting warning display (invocation count)
-- Side-by-side strategy comparison view
+- `GET /api/validations/{id}/equity` — serves surviving trials' equity curves and PnL deltas on-demand by reconstructing from persisted `BacktestRunRecord` equity curves (no new storage)
+- Equity comparison chart — TradingView multi-line overlay of top survivors
+- Drawdown underwater chart — TradingView baseline series for best survivor
+- Monthly returns heatmap — canvas-based calendar grid (months × years)
+- `GET /api/validations` — list endpoint with filtering (strategy, profile, date range) + pagination
+- Validation list page (`/{strategy}/validation`) with sortable table and checkbox multi-select
+- Side-by-side comparison view (`/report/validation/compare?ids=...`) — category score heatmap, verdict badges, key metrics across 2–4 runs
+- NavBar integration — "Validation" tab alongside Backtest/Optimization/Live
 
 ### Phase 5 — Hardening, Export, and Pre-Flight
 **Goal:** Production readiness and edge cases.

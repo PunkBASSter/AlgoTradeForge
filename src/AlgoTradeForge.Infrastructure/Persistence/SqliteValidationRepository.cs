@@ -107,6 +107,8 @@ public sealed class SqliteValidationRepository : IValidationRepository, IDisposa
                 composite_score = $compositeScore,
                 verdict = $verdict,
                 verdict_summary = $verdictSummary,
+                category_scores_json = $categoryScoresJson,
+                rejections_json = $rejectionsJson,
                 error_message = $errorMsg
             WHERE id = $id
             """;
@@ -122,6 +124,8 @@ public sealed class SqliteValidationRepository : IValidationRepository, IDisposa
         updateCmd.Parameters.AddWithValue("$compositeScore", record.CompositeScore);
         updateCmd.Parameters.AddWithValue("$verdict", record.Verdict);
         updateCmd.Parameters.AddWithValue("$verdictSummary", (object?)record.VerdictSummary ?? DBNull.Value);
+        updateCmd.Parameters.AddWithValue("$categoryScoresJson", (object?)record.CategoryScoresJson ?? DBNull.Value);
+        updateCmd.Parameters.AddWithValue("$rejectionsJson", (object?)record.RejectionsJson ?? DBNull.Value);
         updateCmd.Parameters.AddWithValue("$errorMsg", (object?)record.ErrorMessage ?? DBNull.Value);
 
         await updateCmd.ExecuteNonQueryAsync(ct);
@@ -222,6 +226,64 @@ public sealed class SqliteValidationRepository : IValidationRepository, IDisposa
         return results;
     }
 
+    public async Task<PagedResult<ValidationRunRecord>> QueryAsync(ValidationRunQuery query, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
+
+        var parameters = new List<SqliteParameter>();
+        var conditions = new List<string>();
+
+        if (query.StrategyName is not null)
+        {
+            conditions.Add("strategy_name = $stratName");
+            parameters.Add(new SqliteParameter("$stratName", query.StrategyName));
+        }
+        if (query.ThresholdProfileName is not null)
+        {
+            conditions.Add("threshold_profile_name = $profile");
+            parameters.Add(new SqliteParameter("$profile", query.ThresholdProfileName));
+        }
+        if (query.From is not null)
+        {
+            conditions.Add("started_at >= $from");
+            parameters.Add(new SqliteParameter("$from", query.From.Value.ToString("O")));
+        }
+        if (query.To is not null)
+        {
+            conditions.Add("started_at <= $to");
+            parameters.Add(new SqliteParameter("$to", query.To.Value.ToString("O")));
+        }
+
+        var whereClause = conditions.Count > 0
+            ? " WHERE " + string.Join(" AND ", conditions)
+            : "";
+
+        // Count total matching rows
+        await using var countCmd = conn.CreateCommand();
+        countCmd.CommandText = $"SELECT COUNT(*) FROM validation_runs{whereClause}";
+        foreach (var p in parameters)
+            countCmd.Parameters.Add(new SqliteParameter(p.ParameterName, p.Value));
+        var totalCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync(ct));
+
+        // Fetch page
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT * FROM validation_runs{whereClause} ORDER BY started_at DESC LIMIT $limit OFFSET $offset";
+        foreach (var p in parameters)
+            cmd.Parameters.Add(new SqliteParameter(p.ParameterName, p.Value));
+        cmd.Parameters.AddWithValue("$limit", query.Limit);
+        cmd.Parameters.AddWithValue("$offset", query.Offset);
+
+        var results = new List<ValidationRunRecord>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(ReadValidationRun(reader));
+        }
+
+        return new PagedResult<ValidationRunRecord>(results, totalCount);
+    }
+
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         await EnsureInitializedAsync(ct);
@@ -266,6 +328,8 @@ public sealed class SqliteValidationRepository : IValidationRepository, IDisposa
             CompositeScore = Convert.ToDouble(r["composite_score"]),
             Verdict = r["verdict"].ToString()!,
             VerdictSummary = r["verdict_summary"] as string,
+            CategoryScoresJson = r["category_scores_json"] as string,
+            RejectionsJson = r["rejections_json"] as string,
             InvocationCount = Convert.ToInt32(r["invocation_count"]),
             ErrorMessage = r["error_message"] as string,
         };

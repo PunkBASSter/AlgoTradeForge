@@ -84,7 +84,7 @@ export function WfmHeatmap({ result }: WfmHeatmapProps) {
                 {wfe.toFixed(2)}
               </div>
             ))}
-          </Fr agment>
+          </Fragment>
         ))}
       </div>
 

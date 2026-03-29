@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 12;
+    private const int CurrentVersion = 13;
 
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -102,7 +102,9 @@ internal static class SqliteDbInitializer
             verdict                 TEXT    NOT NULL DEFAULT 'Red',
             verdict_summary         TEXT    NULL,
             invocation_count        INTEGER NOT NULL DEFAULT 1,
-            error_message           TEXT    NULL
+            error_message           TEXT    NULL,
+            category_scores_json    TEXT    NULL,
+            rejections_json         TEXT    NULL
         );
         CREATE INDEX IF NOT EXISTS ix_validation_runs_opt_id ON validation_runs(optimization_run_id);
 
@@ -305,6 +307,16 @@ internal static class SqliteDbInitializer
             await SetVersionAsync(connection, 12);
         }
 
+        if (currentVersion < 13)
+        {
+            // Schema's CREATE TABLE IF NOT EXISTS may have already created
+            // validation_runs with these columns (for DBs upgrading from < v12).
+            // SQLite has no ADD COLUMN IF NOT EXISTS, so check PRAGMA first.
+            await AddColumnIfNotExistsAsync(connection, "validation_runs", "category_scores_json", "TEXT NULL");
+            await AddColumnIfNotExistsAsync(connection, "validation_runs", "rejections_json", "TEXT NULL");
+            await SetVersionAsync(connection, 13);
+        }
+
         // Mark any orphaned in-progress runs as failed (server crashed during execution)
         await using var orphanCmd = connection.CreateCommand();
         orphanCmd.CommandText = """
@@ -329,6 +341,19 @@ internal static class SqliteDbInitializer
         cmd.CommandText = "SELECT version FROM schema_version LIMIT 1";
         var result = await cmd.ExecuteScalarAsync();
         return result is not null ? Convert.ToInt32(result) : 0;
+    }
+
+    private static async Task AddColumnIfNotExistsAsync(
+        SqliteConnection connection, string table, string column, string definition)
+    {
+        await using var checkCmd = connection.CreateCommand();
+        checkCmd.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'";
+        var exists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
+        if (exists) return;
+
+        await using var alterCmd = connection.CreateCommand();
+        alterCmd.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition}";
+        await alterCmd.ExecuteNonQueryAsync();
     }
 
     private static async Task SetVersionAsync(SqliteConnection connection, int version)

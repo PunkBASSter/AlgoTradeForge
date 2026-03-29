@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
@@ -12,6 +13,12 @@ public static class ValidationEndpoints
     {
         var group = app.MapGroup("/api/validations")
             .WithTags("Validations");
+
+        group.MapGet("/", ListValidations)
+            .WithName("ListValidations")
+            .WithSummary("List validation runs with optional filters")
+            .WithOpenApi()
+            .Produces<PagedResponse<ValidationRunSummaryResponse>>(StatusCodes.Status200OK);
 
         group.MapPost("/", RunValidation)
             .WithName("RunValidation")
@@ -41,12 +48,47 @@ public static class ValidationEndpoints
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
+        group.MapGet("/{id:guid}/equity", GetValidationEquity)
+            .WithName("GetValidationEquity")
+            .WithSummary("Get equity curves and P&L deltas for surviving trials")
+            .WithOpenApi()
+            .Produces<ValidationEquityResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapDelete("/{id:guid}", DeleteValidation)
             .WithName("DeleteValidation")
             .WithSummary("Delete a validation run")
             .WithOpenApi()
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status404NotFound);
+    }
+
+    private static async Task<IResult> ListValidations(
+        IQueryHandler<ListValidationsQuery, PagedResult<ValidationRunRecord>> handler,
+        string? strategyName,
+        string? thresholdProfileName,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int limit = 50,
+        int offset = 0,
+        CancellationToken ct = default)
+    {
+        var filter = new ValidationRunQuery
+        {
+            StrategyName = strategyName,
+            ThresholdProfileName = thresholdProfileName,
+            From = from,
+            To = to,
+            Limit = limit,
+            Offset = offset,
+        };
+
+        var paged = await handler.HandleAsync(new ListValidationsQuery(filter), ct);
+        var items = paged.Items.Select(MapToSummary).ToList();
+        var response = new PagedResponse<ValidationRunSummaryResponse>(
+            items, paged.TotalCount, filter.Limit, filter.Offset,
+            filter.Offset + items.Count < paged.TotalCount);
+        return Results.Ok(response);
     }
 
     private static async Task<IResult> RunValidation(
@@ -119,6 +161,31 @@ public static class ValidationEndpoints
         return Results.Ok(new { id, status = "Cancelled" });
     }
 
+    private static async Task<IResult> GetValidationEquity(
+        Guid id,
+        IQueryHandler<GetValidationEquityQuery, ValidationEquityDto?> handler,
+        CancellationToken ct)
+    {
+        var dto = await handler.HandleAsync(new GetValidationEquityQuery(id), ct);
+        if (dto is null)
+            return Results.NotFound(new { error = $"Validation with ID '{id}' not found." });
+
+        var response = new ValidationEquityResponse
+        {
+            Trials = dto.Trials.Select(t => new TrialEquityResponse
+            {
+                TrialIndex = t.TrialIndex,
+                TrialId = t.TrialId,
+                Timestamps = t.Timestamps,
+                Equity = t.Equity,
+                PnlDeltas = t.PnlDeltas,
+            }).ToList(),
+            InitialEquity = dto.InitialEquity,
+        };
+
+        return Results.Ok(response);
+    }
+
     private static async Task<IResult> DeleteValidation(
         Guid id,
         IRunCancellationRegistry cancellationRegistry,
@@ -133,6 +200,25 @@ public static class ValidationEndpoints
 
         return Results.NoContent();
     }
+
+    private static ValidationRunSummaryResponse MapToSummary(ValidationRunRecord r) => new()
+    {
+        Id = r.Id,
+        StrategyName = r.StrategyName,
+        StrategyVersion = r.StrategyVersion,
+        ThresholdProfileName = r.ThresholdProfileName,
+        StartedAt = r.StartedAt,
+        CompletedAt = r.CompletedAt,
+        DurationMs = r.DurationMs,
+        Status = r.Status,
+        CandidatesIn = r.CandidatesIn,
+        CandidatesOut = r.CandidatesOut,
+        CompositeScore = r.CompositeScore,
+        Verdict = r.Verdict,
+        VerdictSummary = r.VerdictSummary,
+        InvocationCount = r.InvocationCount,
+        CategoryScores = DeserializeJsonDict(r.CategoryScoresJson),
+    };
 
     private static ValidationRunResponse MapToResponse(ValidationRunRecord r) => new()
     {
@@ -150,6 +236,8 @@ public static class ValidationEndpoints
         CompositeScore = r.CompositeScore,
         Verdict = r.Verdict,
         VerdictSummary = r.VerdictSummary,
+        Rejections = DeserializeJsonList(r.RejectionsJson),
+        CategoryScores = DeserializeJsonDict(r.CategoryScoresJson),
         InvocationCount = r.InvocationCount,
         ErrorMessage = r.ErrorMessage,
         StageResults = r.StageResults.Select(s => new StageResultResponse
@@ -162,4 +250,22 @@ public static class ValidationEndpoints
             DetailJson = s.CandidateVerdictsJson,
         }).ToList(),
     };
+
+    private static readonly JsonSerializerOptions CamelCase = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    private static IReadOnlyList<string> DeserializeJsonList(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return [];
+        return JsonSerializer.Deserialize<List<string>>(json, CamelCase) ?? [];
+    }
+
+    private static IReadOnlyDictionary<string, double> DeserializeJsonDict(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return new Dictionary<string, double>();
+        return JsonSerializer.Deserialize<Dictionary<string, double>>(json, CamelCase)
+            ?? new Dictionary<string, double>();
+    }
 }

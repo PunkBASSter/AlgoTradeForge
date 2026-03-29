@@ -25,6 +25,8 @@ public sealed record ValidationRunRecord
     public double CompositeScore { get; init; }
     public string Verdict { get; init; } = "Red";
     public string? VerdictSummary { get; init; }
+    public string? CategoryScoresJson { get; init; }
+    public string? RejectionsJson { get; init; }
     public int InvocationCount { get; init; } = 1;
     public string? ErrorMessage { get; init; }
     public IReadOnlyList<StageResultRecord> StageResults { get; init; } = [];

@@ -26,6 +26,15 @@ import type {
   LiveSessionListResponse,
   LiveSessionData,
 } from "@/types/api";
+import type {
+  ValidationRun,
+  ValidationRunSummary,
+  ValidationStatus,
+  ValidationSubmission,
+  ValidationEquityResponse,
+  ValidationListParams,
+  RunValidationRequest,
+} from "@/types/validation";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -314,6 +323,53 @@ export const apiClient = {
   async stopLiveSession(id: string): Promise<void> {
     await requestVoid(
       `/api/live/sessions/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  // --- Validations ---
+
+  getValidations(params?: ValidationListParams): Promise<PagedResponse<ValidationRunSummary>> {
+    const qs = buildQueryString({ ...params });
+    return request<PagedResponse<ValidationRunSummary>>(`/api/validations${qs}`);
+  },
+
+  getValidation(id: string): Promise<ValidationRun> {
+    return request<ValidationRun>(
+      `/api/validations/${encodeURIComponent(id)}`,
+    );
+  },
+
+  getValidationStatus(id: string): Promise<ValidationStatus> {
+    return request<ValidationStatus>(
+      `/api/validations/${encodeURIComponent(id)}/status`,
+    );
+  },
+
+  getValidationEquity(id: string): Promise<ValidationEquityResponse> {
+    return request<ValidationEquityResponse>(
+      `/api/validations/${encodeURIComponent(id)}/equity`,
+    );
+  },
+
+  runValidation(req: RunValidationRequest): Promise<ValidationSubmission> {
+    return request<ValidationSubmission>("/api/validations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    });
+  },
+
+  cancelValidation(id: string): Promise<{ id: string; status: string }> {
+    return request<{ id: string; status: string }>(
+      `/api/validations/${encodeURIComponent(id)}/cancel`,
+      { method: "POST" },
+    );
+  },
+
+  async deleteValidation(id: string): Promise<void> {
+    await requestVoid(
+      `/api/validations/${encodeURIComponent(id)}`,
       { method: "DELETE" },
     );
   },

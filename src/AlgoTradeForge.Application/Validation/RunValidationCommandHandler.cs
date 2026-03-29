@@ -112,10 +112,10 @@ public sealed class RunValidationCommandHandler(
 
             sw.Stop();
 
-            // Determine verdict
+            // Compute composite score and verdict
             var candidatesOut = survivors.Count;
-            var verdict = candidatesOut > 0 ? "Green" : "Red";
-            var verdictSummary = $"{candidatesOut}/{trials.Count} candidates survived all stages.";
+            var scoreResult = CompositeScoreCalculator.Calculate(
+                stageResults, profile, trials.Count, candidatesOut);
 
             // Save completed record
             var record = new ValidationRunRecord
@@ -132,8 +132,11 @@ public sealed class RunValidationCommandHandler(
                 ThresholdProfileJson = thresholdProfileJson,
                 CandidatesIn = trials.Count,
                 CandidatesOut = candidatesOut,
-                Verdict = verdict,
-                VerdictSummary = verdictSummary,
+                CompositeScore = scoreResult.CompositeScore,
+                Verdict = scoreResult.Verdict,
+                VerdictSummary = scoreResult.VerdictSummary,
+                CategoryScoresJson = JsonSerializer.Serialize(scoreResult.CategoryScores, JsonOptions),
+                RejectionsJson = JsonSerializer.Serialize(scoreResult.Rejections, JsonOptions),
                 InvocationCount = invocationCount,
                 StageResults = stageResults,
             };
@@ -142,7 +145,7 @@ public sealed class RunValidationCommandHandler(
 
             logger.LogInformation(
                 "Validation {RunId}: {In} candidates → {Out} survivors, verdict={Verdict} in {Duration}ms",
-                validationId, trials.Count, candidatesOut, verdict, sw.ElapsedMilliseconds);
+                validationId, trials.Count, candidatesOut, scoreResult.Verdict, sw.ElapsedMilliseconds);
         }
         catch (OperationCanceledException)
         {

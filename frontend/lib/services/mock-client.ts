@@ -366,4 +366,69 @@ export const mockClient: typeof import("./api-client").apiClient & {
   getMockDebugEvents(): string[] {
     return debugEventLines;
   },
+
+  // --- Validations (stubs) ---
+
+  async getValidations(_params?: Record<string, unknown>) {
+    await delay();
+    return { items: [], totalCount: 0, limit: 50, offset: 0, hasMore: false };
+  },
+
+  async getValidation(_id: string) {
+    await delay();
+    return {
+      id: "mock-validation-001",
+      optimizationRunId: "mock-opt-001",
+      strategyName: "MockStrategy",
+      strategyVersion: "1.0",
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      durationMs: 5000,
+      status: "Completed",
+      thresholdProfileName: "Crypto-Standard",
+      candidatesIn: 10,
+      candidatesOut: 3,
+      compositeScore: 72.5,
+      verdict: "Green",
+      verdictSummary: "Strategy PASSES validation at 73/100 — 3/10 candidates survived all stages.",
+      rejections: [] as string[],
+      categoryScores: { Data: 80, Stats: 75, Params: 70, WFO: 72, WFM: 65, MC: 78, SubPeriod: 68 },
+      invocationCount: 1,
+      errorMessage: null,
+      stageResults: [],
+    };
+  },
+
+  async getValidationEquity(_id: string) {
+    await delay();
+    return {
+      trials: [{
+        trialIndex: 0,
+        trialId: "mock-trial-001",
+        timestamps: [1700000000000, 1700086400000, 1700172800000],
+        equity: [10000, 10100, 10250],
+        pnlDeltas: [0, 100, 150],
+      }],
+      initialEquity: 10000,
+    };
+  },
+
+  async getValidationStatus(_id: string) {
+    await delay();
+    return { id: "mock-validation-001", status: "Completed", currentStage: 8, totalStages: 8, result: null };
+  },
+
+  async runValidation(_req: { optimizationRunId: string; thresholdProfileName?: string }) {
+    await delay();
+    return { id: "mock-validation-new", candidateCount: 10 };
+  },
+
+  async cancelValidation(_id: string) {
+    await delay();
+    return { id: _id, status: "Cancelled" };
+  },
+
+  async deleteValidation(_id: string): Promise<void> {
+    await delay();
+  },
 };

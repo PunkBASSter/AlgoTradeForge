@@ -161,21 +161,55 @@ Tracks progress across the 5 phases defined in `overfitting-detection-TRD.md`.
 
 ### Domain Layer
 
-- [ ] `CompositeScoreCalculator` — weighted aggregation (WFO 25%, Stats 20%, Params 15%, MC 15%, Regime 10%, SubPeriod 10%, Data 5%)
-- [ ] Hard rejection rules → traffic-light verdict (Red / Yellow / Green)
-- [ ] `CompositeScoreCalculator` unit tests
+- [x] `MetricNormalizer` — piecewise-linear 0–100 normalization for heterogeneous metrics
+- [x] `MetricNormalizer` unit tests
+- [x] `CompositeScoreResult` record (score, verdict, summary, rejections, category scores)
+- [x] `CompositeScoreCalculator` — weighted aggregation (WFO 15%, WFM 10%, Stats 20%, Params 15%, MC 15%, SubPeriod 10%, Data 5%)
+- [x] Hard rejection rules → traffic-light verdict (Red / Yellow / Green)
+- [x] `CompositeScoreCalculator` unit tests
+
+### Application Layer
+
+- [x] Wired `CompositeScoreCalculator` into `RunValidationCommandHandler`
+- [x] Added `CategoryScoresJson`, `RejectionsJson` to `ValidationRunRecord`
+
+### Infrastructure Layer
+
+- [x] SQLite migration v13 — `category_scores_json` and `rejections_json` columns
+- [x] `SqliteValidationRepository` — updated INSERT/SELECT/ReadValidationRun for new columns
+
+### WebApi Layer
+
+- [x] `ValidationRunResponse` — added `Rejections` and `CategoryScores` fields
+- [x] `ValidationEndpoints` — deserialization of JSON fields in response mapping
 
 ### Frontend
 
-- [ ] Validation scorecard page (`/validations/[id]`) — tabbed layout: Scorecard | Stages | Charts
-- [ ] Traffic-light verdict + composite score (0–100) + one-sentence summary
-- [ ] Stage progression bar
-- [ ] Stage drill-down UI (click stage → candidate verdicts → individual metrics)
-- [ ] Equity comparison chart (IS, OOS, stitched WFO equity curves overlaid)
-- [ ] Drawdown underwater chart
-- [ ] Monthly returns heatmap (months × years)
-- [ ] Meta-overfitting warning display (invocation count escalation at 3, 5, 10+)
-- [ ] Side-by-side strategy comparison view
+- [x] Validation types (`ValidationRun`, `ValidationStatus`, `ValidationSubmission`)
+- [x] API client validation methods (get, status, run, cancel, delete)
+- [x] `use-validations.ts` hooks (detail, status polling, mutations)
+- [x] `verdict-badge.tsx` — Green/Yellow/Red traffic-light badge
+- [x] `composite-scorecard.tsx` — score gauge, category bars, rejection alerts, meta-overfitting warning
+- [x] `stage-pipeline.tsx` — expandable stage funnel with survival bars
+- [x] `candidate-verdicts-table.tsx` — sortable per-stage verdict detail table
+- [x] Validation scorecard page (`/report/validation/[id]`) — tabbed layout: Scorecard | Stages | Charts
+- [x] Traffic-light verdict + composite score (0–100) + one-sentence summary
+- [x] Stage progression bar
+- [x] Stage drill-down UI (click stage → candidate verdicts → individual metrics)
+- [x] Meta-overfitting warning display (invocation count escalation at 3, 5, 10+)
+- [x] `GetValidationEquityQuery` — on-demand reconstruction of PnL deltas from persisted equity curves
+- [x] `GET /api/validations/{id}/equity` — serves surviving trials' equity + PnL deltas
+- [x] `equity-comparison-chart.tsx` — TradingView multi-line overlay of top survivors
+- [x] `drawdown-chart.tsx` — TradingView underwater plot for best survivor
+- [x] `monthly-returns-heatmap.tsx` — canvas-based calendar grid (months × years)
+- [x] `GET /api/validations` — list endpoint with strategy/profile/date filtering + pagination
+- [x] `ListValidationsQuery` + handler + `ValidationRunQuery` filter record
+- [x] `SqliteValidationRepository.QueryAsync` — filtered list with WHERE/LIMIT/OFFSET
+- [x] `validation-list-table.tsx` — sortable table with checkbox multi-select (up to 4)
+- [x] `[strategy]/validation/page.tsx` — validation list page
+- [x] `validation-comparison.tsx` — side-by-side category heatmap, score gauges, key metrics
+- [x] `/report/validation/compare?ids=...` — comparison page (2–4 runs)
+- [x] NavBar — added "Validation" tab
 
 ---
 

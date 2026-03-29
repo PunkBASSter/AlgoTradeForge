@@ -81,3 +81,89 @@ export interface CandidateVerdict {
   reasonCode: string | null;
   metrics: Record<string, number>;
 }
+
+// Phase 4 — Validation run types
+
+export interface ValidationRun {
+  id: string;
+  optimizationRunId: string;
+  strategyName: string;
+  strategyVersion: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  durationMs: number;
+  status: string;
+  thresholdProfileName: string;
+  candidatesIn: number;
+  candidatesOut: number;
+  compositeScore: number;
+  verdict: string;
+  verdictSummary: string | null;
+  rejections: string[];
+  categoryScores: Record<string, number>;
+  invocationCount: number;
+  errorMessage: string | null;
+  stageResults: StageResultResponse[];
+}
+
+export interface ValidationStatus {
+  id: string;
+  status: string;
+  currentStage: number;
+  totalStages: number;
+  result: ValidationRun | null;
+}
+
+export interface ValidationSubmission {
+  id: string;
+  candidateCount: number;
+}
+
+export interface RunValidationRequest {
+  optimizationRunId: string;
+  thresholdProfileName?: string;
+}
+
+// List/filter types
+
+export interface ValidationListParams {
+  strategyName?: string;
+  thresholdProfileName?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ValidationRunSummary {
+  id: string;
+  strategyName: string;
+  strategyVersion: string | null;
+  thresholdProfileName: string;
+  startedAt: string;
+  completedAt: string | null;
+  durationMs: number;
+  status: string;
+  candidatesIn: number;
+  candidatesOut: number;
+  compositeScore: number;
+  verdict: string;
+  verdictSummary: string | null;
+  invocationCount: number;
+  categoryScores: Record<string, number>;
+}
+
+// Equity data for chart rendering
+
+export interface ValidationEquityResponse {
+  trials: TrialEquityData[];
+  initialEquity: number;
+}
+
+export interface TrialEquityData {
+  trialIndex: number;
+  trialId: string;
+  timestamps: number[];
+  equity: number[];
+  pnlDeltas: number[];
+}
