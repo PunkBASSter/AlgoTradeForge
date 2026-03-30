@@ -537,6 +537,33 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             await cmd.ExecuteNonQueryAsync(ct);
         }
 
+        // Delete validation stage results (grandchild — must go before validation_runs)
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "DELETE FROM validation_stage_results WHERE validation_run_id IN (SELECT id FROM validation_runs WHERE optimization_run_id = $id)";
+            cmd.Parameters.AddWithValue("$id", idStr);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Delete validation runs
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "DELETE FROM validation_runs WHERE optimization_run_id = $id";
+            cmd.Parameters.AddWithValue("$id", idStr);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Delete simulation cache metadata
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "DELETE FROM simulation_cache_metadata WHERE optimization_run_id = $id";
+            cmd.Parameters.AddWithValue("$id", idStr);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
         // Delete parent optimization run
         int affected;
         await using (var cmd = conn.CreateCommand())
