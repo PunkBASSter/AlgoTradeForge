@@ -25,9 +25,9 @@ public sealed record BacktestRunRecord
     public string? ErrorStackTrace { get; init; }
 }
 
-public sealed record EquityPoint(long TimestampMs, decimal Value);
+public sealed record EquityPoint(long TimestampMs, double Value);
 
-public sealed record TradePoint(long TimestampMs, decimal Pnl);
+public sealed record TradePoint(long TimestampMs, double Pnl);
 
 public static class RunModes
 {

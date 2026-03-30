@@ -6,8 +6,10 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useOptimizationDetail, useDeleteOptimization } from "@/hooks/use-optimizations";
+import { useRunValidation } from "@/hooks/use-validations";
 import { OptimizationTrialsTable } from "@/components/features/report/optimization-trials-table";
 import { RunProgress } from "@/components/features/dashboard/run-progress";
+import { RunValidationDialog } from "@/components/features/validation/run-validation-dialog";
 import { StatItem } from "@/components/ui/stat-item";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -85,9 +87,24 @@ export default function OptimizationReportPage({
   } = useOptimizationDetail(id);
 
   const isInProgress = optimization?.status === "InProgress";
+  const isCompleted = optimization?.status === "Completed";
   const hasInputJson = !!optimization?.inputJson;
 
   const deleteMutation = useDeleteOptimization();
+  const runValidation = useRunValidation();
+  const [validationDialogOpen, setValidationDialogOpen] = React.useState(false);
+
+  const handleRunValidation = (profileName: string) => {
+    runValidation.mutate(
+      { optimizationRunId: id, thresholdProfileName: profileName },
+      {
+        onSuccess: (data) => {
+          setValidationDialogOpen(false);
+          router.push(`/report/validation/${data.id}`);
+        },
+      },
+    );
+  };
 
   const handleRerun = () => {
     if (!optimization?.inputJson) return;
@@ -148,6 +165,14 @@ export default function OptimizationReportPage({
         </div>
         {!isInProgress && (
           <div className="flex items-center gap-2">
+            {isCompleted && (
+              <Button
+                variant="primary"
+                onClick={() => setValidationDialogOpen(true)}
+              >
+                Run Validation
+              </Button>
+            )}
             <Button
               variant="secondary"
               onClick={handleRerun}
@@ -259,6 +284,14 @@ export default function OptimizationReportPage({
           <OptimizationTrialsTable trials={optimization.trials} />
         </div>
       )}
+
+      {/* Run Validation dialog */}
+      <RunValidationDialog
+        open={validationDialogOpen}
+        onClose={() => setValidationDialogOpen(false)}
+        onSubmit={handleRunValidation}
+        loading={runValidation.isPending}
+      />
     </div>
   );
 }

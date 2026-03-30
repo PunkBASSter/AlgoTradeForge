@@ -370,7 +370,10 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
 
     // ── Get optimization by ID ─────────────────────────────────────────
 
-    public async Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, CancellationToken ct = default)
+    public Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, CancellationToken ct = default)
+        => GetOptimizationByIdAsync(id, includeEquityCurves: false, ct);
+
+    public async Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, bool includeEquityCurves, CancellationToken ct = default)
     {
         await EnsureInitializedAsync(ct);
         await using var conn = await CreateConnectionAsync(ct);
@@ -399,7 +402,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
 
             await using var trialReader = await trialCmd.ExecuteReaderAsync(ct);
             while (await trialReader.ReadAsync(ct))
-                trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: false));
+                trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: includeEquityCurves));
         }
 
         // Load failed trial details
@@ -530,6 +533,33 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         {
             cmd.Transaction = tx;
             cmd.CommandText = "DELETE FROM backtest_runs WHERE optimization_run_id = $id";
+            cmd.Parameters.AddWithValue("$id", idStr);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Delete validation stage results (grandchild — must go before validation_runs)
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "DELETE FROM validation_stage_results WHERE validation_run_id IN (SELECT id FROM validation_runs WHERE optimization_run_id = $id)";
+            cmd.Parameters.AddWithValue("$id", idStr);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Delete validation runs
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "DELETE FROM validation_runs WHERE optimization_run_id = $id";
+            cmd.Parameters.AddWithValue("$id", idStr);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Delete simulation cache metadata
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "DELETE FROM simulation_cache_metadata WHERE optimization_run_id = $id";
             cmd.Parameters.AddWithValue("$id", idStr);
             await cmd.ExecuteNonQueryAsync(ct);
         }
@@ -727,7 +757,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         foreach (var element in doc.RootElement.EnumerateArray())
         {
             var t = element.GetProperty("t").GetInt64();
-            var v = element.GetProperty("v").GetDecimal();
+            var v = element.GetProperty("v").GetDouble();
             points.Add(new EquityPoint(t, v));
         }
         return points;
@@ -746,7 +776,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         foreach (var element in doc.RootElement.EnumerateArray())
         {
             var t = element.GetProperty("t").GetInt64();
-            var p = element.GetProperty("p").GetDecimal();
+            var p = element.GetProperty("p").GetDouble();
             trades.Add(new TradePoint(t, p));
         }
         return trades;

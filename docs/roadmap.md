@@ -10,6 +10,15 @@
 
 ## Overfitting control
 @overfitting-detection-requirements.md
+Consider extending existing cache sizes up to several GB overall, configure heap size properly to avoid OOM exceptions.
+Caches: GA trials cache (up to 200MB?); Overfitting detection runs cache, equity curve (200MB).
+Reason: 64GB available memory can be utilized much better.
+```
+Equity curve retention tradeoff: The one-line change EquityCurve = MetricsScaler.ScaleEquityCurve(...) increases    
+  memory per trial from ~0 bytes to ~80KB (10K bars × 8 bytes). With BoundedTrialQueue capped at 10K trials and
+  GC-eligible eviction, peak usage is ~800MB — acceptable for server workloads.
+```
+This can be increased at least by 5 times if needed. May need host config update.
 
 ## Live
 @docs/live-connector-binance.md

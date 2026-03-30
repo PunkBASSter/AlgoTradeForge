@@ -26,7 +26,7 @@ internal static class MetricsScaler
     {
         var result = new EquityPoint[curve.Count];
         for (var i = 0; i < curve.Count; i++)
-            result[i] = new EquityPoint(curve[i].TimestampMs, scale.TicksToAmount(curve[i].Value));
+            result[i] = new EquityPoint(curve[i].TimestampMs, (double)scale.TicksToAmount(curve[i].Value));
         return result;
     }
 
@@ -36,7 +36,7 @@ internal static class MetricsScaler
         for (var i = 0; i < trades.Count; i++)
             result[i] = new TradePoint(
                 trades[i].ExitTimestampMs,
-                scale.TicksToAmount(trades[i].RealizedPnl));
+                (double)scale.TicksToAmount(trades[i].RealizedPnl));
         return result;
     }
 }

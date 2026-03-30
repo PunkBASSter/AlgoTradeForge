@@ -62,6 +62,7 @@ public static class StrategyTemplateBuilder
                 ["minSharpeRatio"] = -5.0,
                 ["minSortinoRatio"] = -5.0,
                 ["minAnnualizedReturnPct"] = -100.0,
+                ["minTradeCount"] = 30,
                 ["fitnessWeights"] = new Dictionary<string, object>
                 {
                     ["sharpeWeight"] = 0.5,

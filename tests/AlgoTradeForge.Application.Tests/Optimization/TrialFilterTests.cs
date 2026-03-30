@@ -17,6 +17,8 @@ public sealed class TrialFilterTests
     };
 
     private static RunOptimizationCommand MakeCommand(
+        int? minTradeCount = null,
+        decimal? minNetProfit = null,
         double? minProfitFactor = null,
         double? maxDrawdownPct = null,
         double? minSharpeRatio = null,
@@ -30,6 +32,8 @@ public sealed class TrialFilterTests
             StartTime = DateTimeOffset.UtcNow.AddDays(-30),
             EndTime = DateTimeOffset.UtcNow,
         },
+        MinTradeCount = minTradeCount,
+        MinNetProfit = minNetProfit,
         MinProfitFactor = minProfitFactor,
         MaxDrawdownPct = maxDrawdownPct,
         MinSharpeRatio = minSharpeRatio,
@@ -58,6 +62,53 @@ public sealed class TrialFilterTests
             InitialCapital = 10_000m, FinalEquity = 10_000m, TradingDays = 0,
         };
         Assert.True(filter.Passes(zeroMetrics));
+    }
+
+    [Fact]
+    public void Default_command_filters_low_trade_count()
+    {
+        // RunOptimizationCommand defaults MinTradeCount to 30
+        var command = new RunOptimizationCommand
+        {
+            StrategyName = "Test",
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10_000m,
+                StartTime = DateTimeOffset.UtcNow.AddDays(-30),
+                EndTime = DateTimeOffset.UtcNow,
+            },
+        };
+        var filter = new TrialFilter(command);
+
+        // 3 trades — the exact problem scenario (inflated metrics, few trades)
+        var junkMetrics = GoodMetrics with { TotalTrades = 3 };
+        Assert.False(filter.Passes(junkMetrics));
+
+        // 30 trades — at threshold, should pass
+        var okMetrics = GoodMetrics with { TotalTrades = 30 };
+        Assert.True(filter.Passes(okMetrics));
+    }
+
+    [Theory]
+    [InlineData(50, true)]   // above threshold
+    [InlineData(30, true)]   // exactly at threshold
+    [InlineData(10, false)]  // below threshold
+    public void MinTradeCount_filters_correctly(int totalTrades, bool expected)
+    {
+        var filter = new TrialFilter(MakeCommand(minTradeCount: 30));
+        var metrics = GoodMetrics with { TotalTrades = totalTrades };
+        Assert.Equal(expected, filter.Passes(metrics));
+    }
+
+    [Theory]
+    [InlineData(5_000, true)]   // above threshold
+    [InlineData(0, true)]       // exactly at threshold
+    [InlineData(-100, false)]   // below threshold
+    public void MinNetProfit_filters_correctly(decimal netProfit, bool expected)
+    {
+        var filter = new TrialFilter(MakeCommand(minNetProfit: 0m));
+        var metrics = GoodMetrics with { NetProfit = netProfit };
+        Assert.Equal(expected, filter.Passes(metrics));
     }
 
     [Theory]
@@ -119,6 +170,7 @@ public sealed class TrialFilterTests
     public void Multiple_filters_all_must_pass()
     {
         var filter = new TrialFilter(MakeCommand(
+            minTradeCount: 20,
             minProfitFactor: 1.5,
             maxDrawdownPct: 20.0,
             minSharpeRatio: 1.0));
@@ -133,5 +185,9 @@ public sealed class TrialFilterTests
         // One fails (profit factor too low)
         var badPf = GoodMetrics with { ProfitFactor = 1.0 };
         Assert.False(filter.Passes(badPf));
+
+        // One fails (too few trades)
+        var lowTrades = GoodMetrics with { TotalTrades = 10 };
+        Assert.False(filter.Passes(lowTrades));
     }
 }

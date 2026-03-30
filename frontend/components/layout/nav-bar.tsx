@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 const modeTabs = [
   { id: "backtest", label: "Backtest" },
   { id: "optimization", label: "Optimization" },
+  { id: "validation", label: "Validation" },
   { id: "live", label: "Live Trading" },
 ] as const;
 
@@ -41,13 +42,15 @@ export function NavBar() {
           AlgoTradeForge
         </Link>
         {showTabs && (
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-1" role="tablist">
             {modeTabs.map((tab) => {
               const isActive = mode === tab.id;
               return (
                 <Link
                   key={tab.id}
                   href={`/${strategy}/${tab.id}`}
+                  role="tab"
+                  aria-selected={isActive}
                   className={`px-3 py-1.5 text-sm rounded transition-colors ${
                     isActive
                       ? "bg-accent-blue text-white"

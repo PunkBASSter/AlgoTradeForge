@@ -7,6 +7,7 @@ using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Strategies;
+using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -53,6 +54,13 @@ public static class DependencyInjection
         services.AddScoped<ICommandHandler<DeleteOptimizationCommand, bool>, DeleteOptimizationCommandHandler>();
         services.AddScoped<ICommandHandler<DeleteBacktestCommand, bool>, DeleteBacktestCommandHandler>();
         services.AddScoped<ICommandHandler<CancelRunCommand, bool>, CancelRunCommandHandler>();
+
+        // Validation
+        services.AddSingleton<ICommandHandler<RunValidationCommand, ValidationSubmissionDto>, RunValidationCommandHandler>();
+        services.AddScoped<IQueryHandler<GetValidationByIdQuery, ValidationRunRecord?>, GetValidationByIdQueryHandler>();
+        services.AddScoped<IQueryHandler<GetValidationStatusQuery, ValidationStatusDto?>, GetValidationStatusQueryHandler>();
+        services.AddScoped<IQueryHandler<GetValidationEquityQuery, ValidationEquityDto?>, GetValidationEquityQueryHandler>();
+        services.AddScoped<IQueryHandler<ListValidationsQuery, PagedResult<ValidationRunRecord>>, ListValidationsQueryHandler>();
 
         // Debug session management
         services.AddSingleton<IDebugSessionStore, InMemoryDebugSessionStore>();

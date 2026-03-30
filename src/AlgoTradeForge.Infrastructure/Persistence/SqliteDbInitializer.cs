@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 11;
+    private const int CurrentVersion = 14;
 
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -84,6 +84,41 @@ internal static class SqliteDbInitializer
             occurrence_count       INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS ix_oft_opt_id ON optimization_failed_trials(optimization_run_id);
+
+        CREATE TABLE IF NOT EXISTS validation_runs (
+            id                      TEXT    NOT NULL PRIMARY KEY,
+            optimization_run_id     TEXT    NOT NULL REFERENCES optimization_runs(id),
+            strategy_name           TEXT    NOT NULL,
+            strategy_version        TEXT    NULL,
+            started_at              TEXT    NOT NULL,
+            completed_at            TEXT    NULL,
+            duration_ms             INTEGER NOT NULL DEFAULT 0,
+            status                  TEXT    NOT NULL DEFAULT 'InProgress',
+            threshold_profile_name  TEXT    NOT NULL,
+            threshold_profile_json  TEXT    NULL,
+            candidates_in           INTEGER NOT NULL DEFAULT 0,
+            candidates_out          INTEGER NOT NULL DEFAULT 0,
+            composite_score         REAL    NOT NULL DEFAULT 0,
+            verdict                 TEXT    NOT NULL DEFAULT 'Red',
+            verdict_summary         TEXT    NULL,
+            invocation_count        INTEGER NOT NULL DEFAULT 1,
+            error_message           TEXT    NULL,
+            category_scores_json    TEXT    NULL,
+            rejections_json         TEXT    NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_validation_runs_opt_id ON validation_runs(optimization_run_id);
+
+        CREATE TABLE IF NOT EXISTS validation_stage_results (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            validation_run_id       TEXT    NOT NULL REFERENCES validation_runs(id),
+            stage_number            INTEGER NOT NULL,
+            stage_name              TEXT    NOT NULL,
+            candidates_in           INTEGER NOT NULL DEFAULT 0,
+            candidates_out          INTEGER NOT NULL DEFAULT 0,
+            duration_ms             INTEGER NOT NULL DEFAULT 0,
+            candidate_verdicts_json TEXT    NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_vsr_validation_run_id ON validation_stage_results(validation_run_id);
         """;
 
     private const string MigrationV3 = """
@@ -124,6 +159,41 @@ internal static class SqliteDbInitializer
         ALTER TABLE backtest_runs ADD COLUMN fitness_score REAL NULL;
         """;
 
+    private const string MigrationV12 = """
+        CREATE TABLE IF NOT EXISTS validation_runs (
+            id                      TEXT    NOT NULL PRIMARY KEY,
+            optimization_run_id     TEXT    NOT NULL REFERENCES optimization_runs(id),
+            strategy_name           TEXT    NOT NULL,
+            strategy_version        TEXT    NULL,
+            started_at              TEXT    NOT NULL,
+            completed_at            TEXT    NULL,
+            duration_ms             INTEGER NOT NULL DEFAULT 0,
+            status                  TEXT    NOT NULL DEFAULT 'InProgress',
+            threshold_profile_name  TEXT    NOT NULL,
+            threshold_profile_json  TEXT    NULL,
+            candidates_in           INTEGER NOT NULL DEFAULT 0,
+            candidates_out          INTEGER NOT NULL DEFAULT 0,
+            composite_score         REAL    NOT NULL DEFAULT 0,
+            verdict                 TEXT    NOT NULL DEFAULT 'Red',
+            verdict_summary         TEXT    NULL,
+            invocation_count        INTEGER NOT NULL DEFAULT 1,
+            error_message           TEXT    NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_validation_runs_opt_id ON validation_runs(optimization_run_id);
+
+        CREATE TABLE IF NOT EXISTS validation_stage_results (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            validation_run_id       TEXT    NOT NULL REFERENCES validation_runs(id),
+            stage_number            INTEGER NOT NULL,
+            stage_name              TEXT    NOT NULL,
+            candidates_in           INTEGER NOT NULL DEFAULT 0,
+            candidates_out          INTEGER NOT NULL DEFAULT 0,
+            duration_ms             INTEGER NOT NULL DEFAULT 0,
+            candidate_verdicts_json TEXT    NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_vsr_validation_run_id ON validation_stage_results(validation_run_id);
+        """;
+
     private const string MigrationV5 = """
         CREATE TABLE IF NOT EXISTS optimization_failed_trials (
             id                     TEXT    NOT NULL PRIMARY KEY,
@@ -135,6 +205,25 @@ internal static class SqliteDbInitializer
             occurrence_count       INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS ix_oft_opt_id ON optimization_failed_trials(optimization_run_id);
+        """;
+
+    private const string MigrationV14 = """
+        CREATE TABLE IF NOT EXISTS threshold_profiles (
+            name            TEXT    NOT NULL PRIMARY KEY,
+            profile_json    TEXT    NOT NULL,
+            is_builtin      INTEGER NOT NULL DEFAULT 0,
+            created_at      TEXT    NOT NULL,
+            updated_at      TEXT    NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS simulation_cache_metadata (
+            optimization_run_id TEXT    NOT NULL PRIMARY KEY REFERENCES optimization_runs(id),
+            bar_count           INTEGER NOT NULL,
+            trial_count         INTEGER NOT NULL,
+            cache_file_path     TEXT    NULL,
+            created_at          TEXT    NOT NULL,
+            size_bytes          INTEGER NOT NULL DEFAULT 0
+        );
         """;
 
     public static async Task EnsureCreatedAsync(string connectionString)
@@ -229,6 +318,32 @@ internal static class SqliteDbInitializer
             await SetVersionAsync(connection, 11);
         }
 
+        if (currentVersion < 12)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV12;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 12);
+        }
+
+        if (currentVersion < 13)
+        {
+            // Schema's CREATE TABLE IF NOT EXISTS may have already created
+            // validation_runs with these columns (for DBs upgrading from < v12).
+            // SQLite has no ADD COLUMN IF NOT EXISTS, so check PRAGMA first.
+            await AddColumnIfNotExistsAsync(connection, "validation_runs", "category_scores_json", "TEXT NULL");
+            await AddColumnIfNotExistsAsync(connection, "validation_runs", "rejections_json", "TEXT NULL");
+            await SetVersionAsync(connection, 13);
+        }
+
+        if (currentVersion < 14)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV14;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 14);
+        }
+
         // Mark any orphaned in-progress runs as failed (server crashed during execution)
         await using var orphanCmd = connection.CreateCommand();
         orphanCmd.CommandText = """
@@ -237,6 +352,14 @@ internal static class SqliteDbInitializer
             WHERE status = 'InProgress'
             """;
         await orphanCmd.ExecuteNonQueryAsync();
+
+        await using var orphanValCmd = connection.CreateCommand();
+        orphanValCmd.CommandText = """
+            UPDATE validation_runs
+            SET completed_at = started_at, error_message = 'Server restarted during execution', status = 'Failed'
+            WHERE status = 'InProgress'
+            """;
+        await orphanValCmd.ExecuteNonQueryAsync();
     }
 
     private static async Task<int> GetVersionAsync(SqliteConnection connection)
@@ -245,6 +368,19 @@ internal static class SqliteDbInitializer
         cmd.CommandText = "SELECT version FROM schema_version LIMIT 1";
         var result = await cmd.ExecuteScalarAsync();
         return result is not null ? Convert.ToInt32(result) : 0;
+    }
+
+    private static async Task AddColumnIfNotExistsAsync(
+        SqliteConnection connection, string table, string column, string definition)
+    {
+        await using var checkCmd = connection.CreateCommand();
+        checkCmd.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'";
+        var exists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
+        if (exists) return;
+
+        await using var alterCmd = connection.CreateCommand();
+        alterCmd.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition}";
+        await alterCmd.ExecuteNonQueryAsync();
     }
 
     private static async Task SetVersionAsync(SqliteConnection connection, int version)

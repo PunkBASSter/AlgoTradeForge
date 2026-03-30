@@ -104,6 +104,8 @@ public static class OptimizationEndpoints
             MinSharpeRatio = request.OptimizationSettings.MinSharpeRatio,
             MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
             MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
+            MinTradeCount = request.OptimizationSettings.MinTradeCount,
+            MinNetProfit = request.OptimizationSettings.MinNetProfit,
             FitnessConfig = MapFitnessConfig(request.OptimizationSettings.FitnessWeights),
             InputJson = JsonSerializer.Serialize(request, JsonOptions),
         };
@@ -150,6 +152,8 @@ public static class OptimizationEndpoints
             MinSharpeRatio = request.OptimizationSettings.MinSharpeRatio,
             MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
             MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
+            MinTradeCount = request.OptimizationSettings.MinTradeCount,
+            MinNetProfit = request.OptimizationSettings.MinNetProfit,
             GeneticSettings = MapGeneticSettings(request.GeneticSettings, request.OptimizationSettings.FitnessWeights),
             InputJson = JsonSerializer.Serialize(request, JsonOptions),
         };

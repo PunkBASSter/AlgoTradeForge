@@ -14,6 +14,8 @@ public sealed record OptimizationSettingsInput
     public double? MinSharpeRatio { get; init; }
     public double? MinSortinoRatio { get; init; }
     public double? MinAnnualizedReturnPct { get; init; }
+    public int? MinTradeCount { get; init; } = 30;
+    public decimal? MinNetProfit { get; init; }
     public int MaxDegreeOfParallelism { get; init; } = -1;
     public long MaxCombinations { get; init; } = 500_000;
     public FitnessWeightsInput? FitnessWeights { get; init; }

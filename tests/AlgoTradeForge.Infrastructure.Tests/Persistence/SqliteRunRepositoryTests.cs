@@ -78,14 +78,14 @@ public class SqliteRunRepositoryTests : IDisposable
             Metrics = MakeMetrics(),
             EquityCurve =
             [
-                new EquityPoint(1704067200000, 10000m),
-                new EquityPoint(1704070800000, 10100m),
-                new EquityPoint(1704074400000, 10050m),
+                new EquityPoint(1704067200000, 10000.0),
+                new EquityPoint(1704070800000, 10100.0),
+                new EquityPoint(1704074400000, 10050.0),
             ],
             TradePnl =
             [
-                new TradePoint(1704070800000, 150.50m),
-                new TradePoint(1704074400000, -49.50m),
+                new TradePoint(1704070800000, 150.50),
+                new TradePoint(1704074400000, -49.50),
             ],
             RunFolderPath = runFolderPath,
             RunMode = "Backtest",
@@ -650,8 +650,8 @@ public class SqliteRunRepositoryTests : IDisposable
 
         Assert.NotNull(trades);
         Assert.Equal(2, trades.Count);
-        Assert.Equal(150.50m, trades[0].Pnl);
-        Assert.Equal(-49.50m, trades[1].Pnl);
+        Assert.Equal(150.50, trades[0].Pnl);
+        Assert.Equal(-49.50, trades[1].Pnl);
     }
 
     [Fact]

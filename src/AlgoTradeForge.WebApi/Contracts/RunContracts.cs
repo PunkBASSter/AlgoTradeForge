@@ -25,9 +25,9 @@ public sealed record BacktestRunResponse
     public string? ErrorStackTrace { get; init; }
 }
 
-public sealed record EquityPointResponse(long TimestampMs, decimal Value);
+public sealed record EquityPointResponse(long TimestampMs, double Value);
 
-public sealed record TradePointResponse(long TimestampMs, decimal Pnl);
+public sealed record TradePointResponse(long TimestampMs, double Pnl);
 
 public static class MetricsMapping
 {

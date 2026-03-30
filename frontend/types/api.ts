@@ -266,6 +266,8 @@ export interface OptimizationSettingsInput {
   minSharpeRatio?: number | null;
   minSortinoRatio?: number | null;
   minAnnualizedReturnPct?: number | null;
+  minTradeCount?: number | null;
+  minNetProfit?: number | null;
   maxDegreeOfParallelism?: number;
   maxCombinations?: number;
   fitnessWeights?: FitnessWeightsInput;

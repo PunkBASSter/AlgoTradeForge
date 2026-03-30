@@ -18,6 +18,8 @@ public sealed record RunOptimizationCommand : ICommand<OptimizationSubmissionDto
     public double? MinSharpeRatio { get; init; }
     public double? MinSortinoRatio { get; init; }
     public double? MinAnnualizedReturnPct { get; init; }
+    public int? MinTradeCount { get; init; } = 30;
+    public decimal? MinNetProfit { get; init; }
     public FitnessConfig? FitnessConfig { get; init; }
     public string? InputJson { get; init; }
 }

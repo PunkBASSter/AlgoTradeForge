@@ -55,12 +55,23 @@ public sealed class KestrelWebApplicationFactory : WebApplicationFactory<Program
 
     protected override IHost CreateHost(IHostBuilder builder)
     {
-        // Clean up from previous runs
+        // Clean up from previous runs — retry to handle Windows file locking
         SqliteConnection.ClearAllPools();
         if (Directory.Exists(TestDataDir))
         {
-            try { Directory.Delete(TestDataDir, recursive: true); }
-            catch { /* best-effort */ }
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    Directory.Delete(TestDataDir, recursive: true);
+                    break;
+                }
+                catch when (attempt < 2)
+                {
+                    SqliteConnection.ClearAllPools();
+                    Thread.Sleep(500);
+                }
+            }
         }
         Directory.CreateDirectory(TestDataDir);
         Directory.CreateDirectory(EventLogsDir);
