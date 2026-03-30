@@ -11,4 +11,6 @@ public interface ITrialFilterOptions
     double? MinSharpeRatio { get; }
     double? MinSortinoRatio { get; }
     double? MinAnnualizedReturnPct { get; }
+    int? MinTradeCount { get; }
+    decimal? MinNetProfit { get; }
 }

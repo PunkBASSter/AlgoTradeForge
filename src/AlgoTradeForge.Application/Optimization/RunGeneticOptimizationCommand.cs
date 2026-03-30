@@ -17,6 +17,8 @@ public sealed record RunGeneticOptimizationCommand : ICommand<OptimizationSubmis
     public double? MinSharpeRatio { get; init; }
     public double? MinSortinoRatio { get; init; }
     public double? MinAnnualizedReturnPct { get; init; }
+    public int? MinTradeCount { get; init; } = 30;
+    public decimal? MinNetProfit { get; init; }
     public required GeneticConfig GeneticSettings { get; init; }
     public string? InputJson { get; init; }
 }
