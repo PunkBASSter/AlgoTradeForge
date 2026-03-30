@@ -67,7 +67,7 @@ function StageRow({ stage }: { stage: StageResultResponse }) {
 
         {/* Stats */}
         <span className="flex-none text-xs text-text-muted w-20 text-right">
-          {stage.candidatesOut}/{stage.candidatesIn}
+          {stage.candidatesIn}/{stage.candidatesOut}
           {eliminated > 0 && (
             <span className="text-red-400 ml-1">(-{eliminated})</span>
           )}

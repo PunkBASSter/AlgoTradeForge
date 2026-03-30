@@ -114,7 +114,7 @@ export function ValidationListTable({ validations, isLoading }: ValidationListTa
                   )}
                 </td>
                 <td className="p-2 text-right text-text-secondary">
-                  {formatNumber(v.candidatesOut, 0)}/{formatNumber(v.candidatesIn, 0)}
+                  {formatNumber(v.candidatesIn, 0)}/{formatNumber(v.candidatesOut, 0)}
                 </td>
                 <td className="p-2 text-right text-text-muted">{formatDuration(v.durationMs)}</td>
                 <td className="p-2 text-text-muted">{new Date(v.startedAt).toLocaleDateString()}</td>

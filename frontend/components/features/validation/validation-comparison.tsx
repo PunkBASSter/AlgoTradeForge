@@ -132,7 +132,7 @@ export function ValidationComparison({ validations }: ValidationComparisonProps)
               <td className="p-3 text-text-secondary">Candidates In / Out</td>
               {validations.map((v) => (
                 <td key={v.id} className="p-3 text-center text-text-primary">
-                  {formatNumber(v.candidatesOut, 0)}/{formatNumber(v.candidatesIn, 0)}
+                  {formatNumber(v.candidatesIn, 0)}/{formatNumber(v.candidatesOut, 0)}
                 </td>
               ))}
             </tr>
