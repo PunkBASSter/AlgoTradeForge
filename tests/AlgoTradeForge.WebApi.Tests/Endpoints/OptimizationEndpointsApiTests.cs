@@ -23,6 +23,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         OptimizationSettings = new()
         {
             MaxDegreeOfParallelism = 1,
+            MinTradeCount = null,
         },
         DataSubscriptions =
         [
