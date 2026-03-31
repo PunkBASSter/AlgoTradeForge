@@ -36,16 +36,18 @@ public sealed class ValidationPipeline
         CancellationToken ct,
         long totalCombinations = 0)
     {
+        var allIndices = Enumerable.Range(0, trials.Count).ToList();
         var context = new ValidationContext
         {
             Cache = cache,
             Trials = trials,
             Profile = profile,
-            ActiveCandidateIndices = Enumerable.Range(0, trials.Count).ToList(),
+            AllCandidateIndices = allIndices,
             TotalCombinations = totalCombinations,
         };
 
         var stageResults = new List<StageResultRecord>(Stages.Count);
+        var rawResults = new List<StageResult>(Stages.Count);
 
         for (var i = 0; i < Stages.Count; i++)
         {
@@ -53,29 +55,39 @@ public sealed class ValidationPipeline
             onProgress?.Invoke(i, Stages.Count);
 
             var stage = Stages[i];
-            var candidatesIn = context.ActiveCandidateIndices.Count;
-
-            if (candidatesIn == 0) break;
 
             var sw = Stopwatch.StartNew();
             var result = stage.Execute(context, ct);
             sw.Stop();
 
-            context.ActiveCandidateIndices = result.SurvivingIndices;
+            rawResults.Add(result);
 
             stageResults.Add(new StageResultRecord
             {
                 ValidationRunId = validationRunId,
                 StageNumber = stage.StageNumber,
                 StageName = stage.StageName,
-                CandidatesIn = candidatesIn,
+                CandidatesIn = allIndices.Count,
                 CandidatesOut = result.SurvivingIndices.Count,
                 DurationMs = (long)sw.Elapsed.TotalMilliseconds,
                 CandidateVerdictsJson = JsonSerializer.Serialize(result.Verdicts, JsonOptions),
             });
         }
 
+        // Final survivors = intersection of all stages' surviving indices
+        HashSet<int>? survivors = null;
+        foreach (var result in rawResults)
+        {
+            if (survivors is null)
+                survivors = [.. result.SurvivingIndices];
+            else
+                survivors.IntersectWith(result.SurvivingIndices);
+        }
+
+        var finalSurvivors = survivors?.OrderBy(x => x).ToList()
+            ?? (IReadOnlyList<int>)[];
+
         onProgress?.Invoke(Stages.Count, Stages.Count);
-        return (stageResults, context.ActiveCandidateIndices);
+        return (stageResults, finalSurvivors);
     }
 }

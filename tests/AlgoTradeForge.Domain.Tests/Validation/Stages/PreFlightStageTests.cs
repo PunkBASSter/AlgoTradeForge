@@ -238,7 +238,7 @@ public class PreFlightStageTests
             Cache = cache,
             Trials = trials,
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = [0, 1, 2],
+            AllCandidateIndices = [0, 1, 2],
             TotalCombinations = 10,
         };
 
@@ -288,7 +288,7 @@ public class PreFlightStageTests
             Cache = cache,
             Trials = trials,
             Profile = profile ?? ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = Enumerable.Range(0, trialCount).ToList(),
+            AllCandidateIndices = Enumerable.Range(0, trialCount).ToList(),
             TotalCombinations = totalCombinations,
         };
     }

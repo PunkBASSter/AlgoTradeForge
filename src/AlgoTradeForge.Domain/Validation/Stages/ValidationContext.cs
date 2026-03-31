@@ -5,7 +5,7 @@ public sealed class ValidationContext
     public required SimulationCache Cache { get; init; }
     public required IReadOnlyList<TrialSummary> Trials { get; init; }
     public required ValidationThresholdProfile Profile { get; init; }
-    public required IReadOnlyList<int> ActiveCandidateIndices { get; set; }
+    public required IReadOnlyList<int> AllCandidateIndices { get; init; }
 
     /// <summary>
     /// Total parameter combinations tested during the source optimization run.

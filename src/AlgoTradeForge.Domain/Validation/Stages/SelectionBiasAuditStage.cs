@@ -16,7 +16,7 @@ public sealed class SelectionBiasAuditStage : IValidationStage
     {
         var thresholds = context.Profile.SelectionBiasAudit;
         var survivors = new List<int>();
-        var verdicts = new List<CandidateVerdict>(context.ActiveCandidateIndices.Count);
+        var verdicts = new List<CandidateVerdict>(context.AllCandidateIndices.Count);
 
         // Gate check: CSCV/PBO (runs once, applies to all)
         var pboResult = PboCalculator.Compute(context.Cache, thresholds.CscvBlocks, ct);
@@ -26,7 +26,7 @@ public sealed class SelectionBiasAuditStage : IValidationStage
             ? (double)context.Trials[0].Metrics.InitialCapital
             : 10000.0;
 
-        foreach (var idx in context.ActiveCandidateIndices)
+        foreach (var idx in context.AllCandidateIndices)
         {
             ct.ThrowIfCancellationRequested();
 

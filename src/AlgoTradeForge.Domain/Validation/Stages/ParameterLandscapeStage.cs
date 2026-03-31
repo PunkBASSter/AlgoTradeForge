@@ -15,14 +15,14 @@ public sealed class ParameterLandscapeStage : IValidationStage
     {
         var thresholds = context.Profile.ParameterLandscape;
         var survivors = new List<int>();
-        var verdicts = new List<CandidateVerdict>(context.ActiveCandidateIndices.Count);
+        var verdicts = new List<CandidateVerdict>(context.AllCandidateIndices.Count);
 
         // Check if any trial has parameters
         var hasParameters = context.Trials.Any(t => t.Parameters is not null && t.Parameters.Count > 0);
         if (!hasParameters)
         {
             // Skip stage — pass all candidates through with NO_PARAMETERS reason
-            foreach (var idx in context.ActiveCandidateIndices)
+            foreach (var idx in context.AllCandidateIndices)
             {
                 survivors.Add(idx);
                 verdicts.Add(new CandidateVerdict(context.Trials[idx].Id, true, "NO_PARAMETERS", []));
@@ -32,7 +32,7 @@ public sealed class ParameterLandscapeStage : IValidationStage
         }
 
         // Cluster analysis on all active trials
-        var activeTrials = context.ActiveCandidateIndices
+        var activeTrials = context.AllCandidateIndices
             .Where(i => context.Trials[i].Parameters is not null)
             .ToList();
 
@@ -49,7 +49,7 @@ public sealed class ParameterLandscapeStage : IValidationStage
         // If cluster concentration is too low, reject all candidates
         if (clusterResult.PrimaryClusterConcentration < thresholds.MinClusterConcentration)
         {
-            foreach (var idx in context.ActiveCandidateIndices)
+            foreach (var idx in context.AllCandidateIndices)
             {
                 verdicts.Add(new CandidateVerdict(context.Trials[idx].Id, false,
                     "CLUSTER_CONCENTRATION_LOW",
@@ -66,11 +66,11 @@ public sealed class ParameterLandscapeStage : IValidationStage
 
         // Sensitivity analysis for active candidates
         var sensitivityResult = ParameterSensitivityAnalyzer.Analyze(
-            context.Trials, context.ActiveCandidateIndices,
+            context.Trials, context.AllCandidateIndices,
             thresholds.SensitivityRange, thresholds.MaxDegradationPct);
 
         // Per-candidate verdicts
-        foreach (var idx in context.ActiveCandidateIndices)
+        foreach (var idx in context.AllCandidateIndices)
         {
             ct.ThrowIfCancellationRequested();
 

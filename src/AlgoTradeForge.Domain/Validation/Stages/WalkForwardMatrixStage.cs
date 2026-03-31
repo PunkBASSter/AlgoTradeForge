@@ -14,7 +14,7 @@ public sealed class WalkForwardMatrixStage : IValidationStage
     {
         var thresholds = context.Profile.WalkForwardMatrix;
         var survivors = new List<int>();
-        var verdicts = new List<CandidateVerdict>(context.ActiveCandidateIndices.Count);
+        var verdicts = new List<CandidateVerdict>(context.AllCandidateIndices.Count);
 
         var config = new WfmConfig
         {
@@ -24,8 +24,8 @@ public sealed class WalkForwardMatrixStage : IValidationStage
             MinContiguousRows = thresholds.MinContiguousRows,
             MinContiguousCols = thresholds.MinContiguousCols,
             MinCellsPassing = thresholds.MinCellsPassing,
-            MinProfitableWindowsPct = thresholds.MinProfitableWindowsPct,
-            MaxOosDrawdownExcess = thresholds.MaxOosDrawdownExcess,
+            MinProfitableWindowsPct = context.Profile.WalkForwardOptimization.MinProfitableWindowsPct,
+            MaxOosDrawdownExcess = context.Profile.WalkForwardOptimization.MaxOosDrawdownExcess,
         };
 
         var initialEquity = context.Trials.Count > 0
@@ -48,7 +48,7 @@ public sealed class WalkForwardMatrixStage : IValidationStage
 
         var passed = gateReason is null;
 
-        foreach (var idx in context.ActiveCandidateIndices)
+        foreach (var idx in context.AllCandidateIndices)
         {
             ct.ThrowIfCancellationRequested();
 

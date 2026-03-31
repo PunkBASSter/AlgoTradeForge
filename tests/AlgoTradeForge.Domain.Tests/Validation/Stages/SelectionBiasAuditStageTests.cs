@@ -25,7 +25,7 @@ public class SelectionBiasAuditStageTests
             Cache = cache,
             Trials = [CreateTrial(0), CreateTrial(1)],
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = [0, 1],
+            AllCandidateIndices = [0, 1],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -75,7 +75,7 @@ public class SelectionBiasAuditStageTests
             Cache = cache,
             Trials = [CreateTrial(0), CreateTrial(1)],
             Profile = profile,
-            ActiveCandidateIndices = [0],
+            AllCandidateIndices = [0],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -124,7 +124,7 @@ public class SelectionBiasAuditStageTests
             Cache = cache,
             Trials = [CreateTrial(0), CreateTrial(1)],
             Profile = profile,
-            ActiveCandidateIndices = [0],
+            AllCandidateIndices = [0],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -170,7 +170,7 @@ public class SelectionBiasAuditStageTests
             Cache = cache,
             Trials = [CreateTrial(0), CreateTrial(1)],
             Profile = profile,
-            ActiveCandidateIndices = [0],
+            AllCandidateIndices = [0],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -213,7 +213,7 @@ public class SelectionBiasAuditStageTests
             Cache = cache,
             Trials = [CreateTrial(0), CreateTrial(1)],
             Profile = profile,
-            ActiveCandidateIndices = [0],
+            AllCandidateIndices = [0],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -257,7 +257,7 @@ public class SelectionBiasAuditStageTests
             Cache = cache,
             Trials = [CreateTrial(0), CreateTrial(1)],
             Profile = profile,
-            ActiveCandidateIndices = [0],
+            AllCandidateIndices = [0],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -281,7 +281,7 @@ public class SelectionBiasAuditStageTests
             Cache = cache,
             Trials = [CreateTrial(0), CreateTrial(1)],
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = [],
+            AllCandidateIndices = [],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);

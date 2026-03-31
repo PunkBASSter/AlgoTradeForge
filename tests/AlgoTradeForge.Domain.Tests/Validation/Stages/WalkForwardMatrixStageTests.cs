@@ -54,7 +54,7 @@ public class WalkForwardMatrixStageTests
             Cache = cache,
             Trials = trials,
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = Enumerable.Range(0, trialCount).ToList(),
+            AllCandidateIndices = Enumerable.Range(0, trialCount).ToList(),
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -80,7 +80,7 @@ public class WalkForwardMatrixStageTests
             Cache = cache,
             Trials = [CreateTrial(0)],
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = [],
+            AllCandidateIndices = [],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -111,7 +111,7 @@ public class WalkForwardMatrixStageTests
             Cache = cache,
             Trials = trials,
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = Enumerable.Range(0, trialCount).ToList(),
+            AllCandidateIndices = Enumerable.Range(0, trialCount).ToList(),
         };
     }
 

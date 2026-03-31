@@ -16,13 +16,13 @@ public sealed class MonteCarloPnlDeltasPermutationStage : IValidationStage
     {
         var thresholds = context.Profile.MonteCarloPermutation;
         var survivors = new List<int>();
-        var verdicts = new List<CandidateVerdict>(context.ActiveCandidateIndices.Count);
+        var verdicts = new List<CandidateVerdict>(context.AllCandidateIndices.Count);
 
         var initialEquity = context.Trials.Count > 0
             ? (double)context.Trials[0].Metrics.InitialCapital
             : 10000.0;
 
-        foreach (var idx in context.ActiveCandidateIndices)
+        foreach (var idx in context.AllCandidateIndices)
         {
             ct.ThrowIfCancellationRequested();
 

@@ -24,7 +24,7 @@ public class ValidationPipelineTests
     }
 
     [Fact]
-    public void EarlyExit_WhenAllEliminated()
+    public void AllEliminated_AllStagesStillRun()
     {
         var (cache, trials) = CreateTrials(3, strongMetrics: false);
         var profile = ValidationThresholdProfile.CryptoStandard();
@@ -33,11 +33,8 @@ public class ValidationPipelineTests
         var (stageResults, survivors) = pipeline.Execute(
             cache, trials, profile, Guid.NewGuid(), null, CancellationToken.None);
 
-        // BasicProfitability (stage 1) should eliminate all; pipeline breaks after stage 2
-        // (PreFlight runs first as stage 0, then BasicProfitability as stage 1, then break)
-        Assert.Equal(2, stageResults.Count);
-        Assert.Equal("PreFlight", stageResults[0].StageName);
-        Assert.Equal("BasicProfitability", stageResults[1].StageName);
+        // All 8 stages run regardless of eliminations
+        Assert.Equal(ValidationPipeline.StageCount, stageResults.Count);
         Assert.Empty(survivors);
     }
 
@@ -82,7 +79,7 @@ public class ValidationPipelineTests
     }
 
     [Fact]
-    public void StageResults_CandidateFlowIsConsistent()
+    public void StageResults_AllStagesReceiveAllCandidates()
     {
         // Mix: 2 strong trials + 1 weak (negative NetProfit)
         var strongTrials = CreateTrialSummaries(2, strongMetrics: true, startIndex: 0);
@@ -103,9 +100,9 @@ public class ValidationPipelineTests
         var (stageResults, _) = pipeline.Execute(
             cache, allTrials, profile, Guid.NewGuid(), null, CancellationToken.None);
 
-        // Verify chain: CandidatesIn[N+1] == CandidatesOut[N]
-        for (var i = 1; i < stageResults.Count; i++)
-            Assert.Equal(stageResults[i - 1].CandidatesOut, stageResults[i].CandidatesIn);
+        // All 8 stages run and each receives all 3 candidates
+        Assert.Equal(ValidationPipeline.StageCount, stageResults.Count);
+        Assert.All(stageResults, sr => Assert.Equal(allTrials.Length, sr.CandidatesIn));
     }
 
     private static (SimulationCache Cache, TrialSummary[] Trials) CreateTrials(

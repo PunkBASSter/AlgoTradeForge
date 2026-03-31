@@ -146,7 +146,7 @@ public class BasicProfitabilityStageTests
             Cache = cache,
             Trials = trials.ToList(),
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = Enumerable.Range(0, trials.Length).ToList(),
+            AllCandidateIndices = Enumerable.Range(0, trials.Length).ToList(),
         };
     }
 

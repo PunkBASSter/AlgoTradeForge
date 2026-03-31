@@ -264,10 +264,7 @@ public static class CompositeScoreCalculator
         var survivorStr = $"{candidatesOut}/{candidatesIn} candidates survived";
 
         if (rejections.Count > 0 && rejections[0] == "NO_SURVIVORS")
-        {
-            var lastStage = stageResults.Count > 0 ? stageResults[^1].StageName : "unknown";
-            return $"Strategy FAILS — no candidates survived pipeline (last stage: {lastStage}).";
-        }
+            return "Strategy FAILS — no candidates passed all stages.";
 
         if (rejections.Count > 0)
         {

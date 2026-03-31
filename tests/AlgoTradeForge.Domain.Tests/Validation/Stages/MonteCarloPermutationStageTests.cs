@@ -101,7 +101,7 @@ public class MonteCarloPermutationStageTests
             Cache = cache,
             Trials = [CreateTrial(0, 100m, 5.0, 10m)],
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = [],
+            AllCandidateIndices = [],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -136,7 +136,7 @@ public class MonteCarloPermutationStageTests
             Cache = cache,
             Trials = trials,
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = [0, 1],
+            AllCandidateIndices = [0, 1],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -160,7 +160,7 @@ public class MonteCarloPermutationStageTests
             Cache = cache,
             Trials = [trial],
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = [0],
+            AllCandidateIndices = [0],
         };
     }
 

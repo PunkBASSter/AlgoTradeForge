@@ -15,10 +15,10 @@ public sealed class StatisticalSignificanceStage : IValidationStage
     {
         var thresholds = context.Profile.StatisticalSignificance;
         var survivors = new List<int>();
-        var verdicts = new List<CandidateVerdict>(context.ActiveCandidateIndices.Count);
+        var verdicts = new List<CandidateVerdict>(context.AllCandidateIndices.Count);
         var totalTrialCount = context.Trials.Count;
 
-        foreach (var idx in context.ActiveCandidateIndices)
+        foreach (var idx in context.AllCandidateIndices)
         {
             ct.ThrowIfCancellationRequested();
 

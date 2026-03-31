@@ -56,7 +56,7 @@ public sealed class PreFlightStage : IValidationStage
         var gapResult = worstGapResult;
 
         // --- Check 3: Cost model validation ---
-        var costResult = CheckCostModel(context.Trials, context.ActiveCandidateIndices, thresholds.RequireNonZeroCosts);
+        var costResult = CheckCostModel(context.Trials, context.AllCandidateIndices, thresholds.RequireNonZeroCosts);
 
         // Determine if the global checks pass — these are pool-wide, not per-candidate.
         // If any global check fails, ALL candidates are rejected.
@@ -68,10 +68,10 @@ public sealed class PreFlightStage : IValidationStage
             : null;
 
         // Also check for NaN in P&L matrix (per-candidate)
-        var verdicts = new List<CandidateVerdict>(context.ActiveCandidateIndices.Count);
-        var survivors = new List<int>(context.ActiveCandidateIndices.Count);
+        var verdicts = new List<CandidateVerdict>(context.AllCandidateIndices.Count);
+        var survivors = new List<int>(context.AllCandidateIndices.Count);
 
-        foreach (var idx in context.ActiveCandidateIndices)
+        foreach (var idx in context.AllCandidateIndices)
         {
             ct.ThrowIfCancellationRequested();
 

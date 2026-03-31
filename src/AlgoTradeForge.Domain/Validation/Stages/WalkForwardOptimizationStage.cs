@@ -14,7 +14,7 @@ public sealed class WalkForwardOptimizationStage : IValidationStage
     {
         var thresholds = context.Profile.WalkForwardOptimization;
         var survivors = new List<int>();
-        var verdicts = new List<CandidateVerdict>(context.ActiveCandidateIndices.Count);
+        var verdicts = new List<CandidateVerdict>(context.AllCandidateIndices.Count);
 
         // Build WFO config from thresholds
         var config = new WfoConfig
@@ -44,7 +44,7 @@ public sealed class WalkForwardOptimizationStage : IValidationStage
 
         var passed = gateReason is null;
 
-        foreach (var idx in context.ActiveCandidateIndices)
+        foreach (var idx in context.AllCandidateIndices)
         {
             ct.ThrowIfCancellationRequested();
 
