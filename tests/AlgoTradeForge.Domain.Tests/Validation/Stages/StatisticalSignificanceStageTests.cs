@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Tests.Validation.TestHelpers;
 using Xunit;
 using AlgoTradeForge.Domain.Validation;
 using AlgoTradeForge.Domain.Validation.Stages;
@@ -101,7 +102,8 @@ public class StatisticalSignificanceStageTests
             matrix[i] = pnl;
         }
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, matrix.Length);
+        var cache = new SimulationCache(tsArray, matrix);
 
         return new ValidationContext
         {

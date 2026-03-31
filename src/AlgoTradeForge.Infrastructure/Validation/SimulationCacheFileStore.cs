@@ -7,13 +7,18 @@ namespace AlgoTradeForge.Infrastructure.Validation;
 /// <summary>
 /// Binary file persistence for <see cref="SimulationCache"/>.
 ///
-/// Binary format (all little-endian):
-///   [int32 trialCount][int32 barCount]
-///   [long[barCount] timestamps]
-///   [double[trialCount * barCount] matrix — row-major, one row per trial]
+/// Binary format v2 (all little-endian, per-trial timestamps):
+///   [int32 version = 2]
+///   [int32 trialCount]
+///   For each trial:
+///     [int32 barCount_t]
+///     [long[barCount_t] timestamps]
+///     [double[barCount_t] pnlDeltas]
 /// </summary>
 public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
 {
+    private const int FormatVersion = 2;
+
     /// <summary>Writes the cache to a binary file.</summary>
     public void Write(SimulationCache cache, string filePath)
     {
@@ -22,19 +27,21 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
         using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
         using var writer = new BinaryWriter(fs);
 
+        writer.Write(FormatVersion);
         writer.Write(cache.TrialCount);
-        writer.Write(cache.BarCount);
 
-        // Timestamps
-        for (var i = 0; i < cache.BarCount; i++)
-            writer.Write(cache.BarTimestamps[i]);
-
-        // P&L matrix (row-major)
         for (var t = 0; t < cache.TrialCount; t++)
         {
-            var row = cache.TrialPnlMatrix[t];
-            for (var b = 0; b < cache.BarCount; b++)
-                writer.Write(row[b]);
+            var barCount = cache.GetBarCount(t);
+            writer.Write(barCount);
+
+            var timestamps = cache.TrialTimestamps[t];
+            for (var b = 0; b < barCount; b++)
+                writer.Write(timestamps[b]);
+
+            var pnl = cache.TrialPnlMatrix[t];
+            for (var b = 0; b < barCount; b++)
+                writer.Write(pnl[b]);
         }
     }
 
@@ -44,20 +51,30 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
         using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536);
         using var reader = new BinaryReader(fs);
 
+        var version = reader.ReadInt32();
+        if (version != FormatVersion)
+            throw new InvalidDataException(
+                $"Unsupported SimulationCache binary format version {version} (expected {FormatVersion}).");
+
         var trialCount = reader.ReadInt32();
-        var barCount = reader.ReadInt32();
 
-        var timestamps = new long[barCount];
-        for (var i = 0; i < barCount; i++)
-            timestamps[i] = reader.ReadInt64();
-
+        var timestamps = new long[trialCount][];
         var matrix = new double[trialCount][];
+
         for (var t = 0; t < trialCount; t++)
         {
-            var row = new double[barCount];
+            var barCount = reader.ReadInt32();
+
+            var ts = new long[barCount];
             for (var b = 0; b < barCount; b++)
-                row[b] = reader.ReadDouble();
-            matrix[t] = row;
+                ts[b] = reader.ReadInt64();
+
+            var pnl = new double[barCount];
+            for (var b = 0; b < barCount; b++)
+                pnl[b] = reader.ReadDouble();
+
+            timestamps[t] = ts;
+            matrix[t] = pnl;
         }
 
         return new SimulationCache(timestamps, matrix);
@@ -73,37 +90,35 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
         if (trials.Count == 0)
             throw new ArgumentException("No trials provided.", nameof(trials));
 
-        var firstCurve = trials[0].EquityCurve;
-        if (firstCurve.Count == 0)
+        if (trials[0].EquityCurve.Count == 0)
             throw new ArgumentException("Trial 0 has an empty equity curve.");
-
-        var barCount = firstCurve.Count;
-        var trialCount = trials.Count;
 
         Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
 
         using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
         using var writer = new BinaryWriter(fs);
 
-        writer.Write(trialCount);
-        writer.Write(barCount);
+        writer.Write(FormatVersion);
+        writer.Write(trials.Count);
 
-        // Timestamps from first trial
-        for (var i = 0; i < barCount; i++)
-            writer.Write(firstCurve[i].TimestampMs);
-
-        // P&L delta matrix — compute on the fly per trial
-        for (var t = 0; t < trialCount; t++)
+        for (var t = 0; t < trials.Count; t++)
         {
             var curve = trials[t].EquityCurve;
-            if (curve.Count != barCount)
-                throw new ArgumentException(
-                    $"Trial {t} has {curve.Count} equity points but expected {barCount}.");
+            var barCount = curve.Count;
+            writer.Write(barCount);
 
-            var initialCapital = (double)trials[t].Metrics.InitialCapital;
-            writer.Write(curve[0].Value - initialCapital);
-            for (var i = 1; i < barCount; i++)
-                writer.Write(curve[i].Value - curve[i - 1].Value);
+            // Timestamps
+            for (var i = 0; i < barCount; i++)
+                writer.Write(curve[i].TimestampMs);
+
+            // P&L deltas
+            if (barCount > 0)
+            {
+                var initialCapital = (double)trials[t].Metrics.InitialCapital;
+                writer.Write(curve[0].Value - initialCapital);
+                for (var i = 1; i < barCount; i++)
+                    writer.Write(curve[i].Value - curve[i - 1].Value);
+            }
         }
     }
 }

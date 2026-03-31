@@ -8,8 +8,8 @@ namespace AlgoTradeForge.Domain.Validation.Stages;
 ///   parameter combinations tested (N), based on the expected maximum Sharpe
 ///   under the null from extreme value theory.
 ///
-/// Check 2 — Data quality: Detects timestamp gaps in the simulation cache that
-///   may indicate missing data or data feed issues.
+/// Check 2 — Data quality: Detects timestamp gaps in per-trial timestamp arrays
+///   that may indicate missing data or data feed issues.
 ///
 /// Check 3 — Cost model: Verifies that at least one trial was run with non-zero
 ///   commissions, catching zero-commission fantasy backtests.
@@ -25,10 +25,35 @@ public sealed class PreFlightStage : IValidationStage
         var cache = context.Cache;
 
         // --- Check 1: MinBTL (Minimum Backtest Length) ---
-        var minBtlResult = CheckMinBtl(cache.BarCount, context.TotalCombinations, thresholds.MinBtlSafetyFactor);
+        // Use the minimum bar count across all trials (conservative)
+        var minBarCount = int.MaxValue;
+        var maxBarCount = 0;
+        for (var t = 0; t < cache.TrialCount; t++)
+        {
+            var bc = cache.GetBarCount(t);
+            if (bc < minBarCount) minBarCount = bc;
+            if (bc > maxBarCount) maxBarCount = bc;
+        }
+
+        if (cache.TrialCount == 0) minBarCount = 0;
+
+        var minBtlResult = CheckMinBtl(minBarCount, context.TotalCombinations, thresholds.MinBtlSafetyFactor);
 
         // --- Check 2: Data quality (timestamp gaps) ---
-        var gapResult = CheckTimestampGaps(cache.BarTimestamps, thresholds.MaxGapRatio, thresholds.MaxAllowedGaps);
+        // Check per-trial timestamps, report worst-case across all trials
+        var worstGapResult = new GapCheckResult(true, 0, 0);
+        for (var t = 0; t < cache.TrialCount; t++)
+        {
+            var trialGaps = CheckTimestampGaps(
+                cache.TrialTimestamps[t], thresholds.MaxGapRatio, thresholds.MaxAllowedGaps);
+
+            worstGapResult = new GapCheckResult(
+                worstGapResult.Passed && trialGaps.Passed,
+                Math.Max(worstGapResult.GapCount, trialGaps.GapCount),
+                Math.Max(worstGapResult.LargestGapMs, trialGaps.LargestGapMs));
+        }
+
+        var gapResult = worstGapResult;
 
         // --- Check 3: Cost model validation ---
         var costResult = CheckCostModel(context.Trials, context.ActiveCandidateIndices, thresholds.RequireNonZeroCosts);
@@ -53,7 +78,8 @@ public sealed class PreFlightStage : IValidationStage
             var trial = context.Trials[idx];
             var metrics = new Dictionary<string, double>
             {
-                ["barCount"] = cache.BarCount,
+                ["minBarCount"] = minBarCount,
+                ["maxBarCount"] = maxBarCount,
                 ["totalCombinations"] = context.TotalCombinations,
                 ["minBtlBars"] = minBtlResult.MinBtlBars,
                 ["gapCount"] = gapResult.GapCount,

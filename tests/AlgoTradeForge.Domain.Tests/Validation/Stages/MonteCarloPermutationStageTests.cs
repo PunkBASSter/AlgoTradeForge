@@ -94,7 +94,7 @@ public class MonteCarloPermutationStageTests
     [Fact]
     public void EmptyCandidates_ReturnsEmpty()
     {
-        var cache = new SimulationCache([100, 200, 300], [new double[] { 1, 2, 3 }]);
+        var cache = new SimulationCache([new long[] { 100, 200, 300 }], [new double[] { 1, 2, 3 }]);
         var context = new ValidationContext
         {
             Cache = cache,
@@ -122,7 +122,7 @@ public class MonteCarloPermutationStageTests
         }
 
         var timestamps = Enumerable.Range(0, 200).Select(i => (long)(i * 1000)).ToArray();
-        var cache = new SimulationCache(timestamps, [pnl0, pnl1]);
+        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()], [pnl0, pnl1]);
 
         var trials = new[]
         {
@@ -151,7 +151,7 @@ public class MonteCarloPermutationStageTests
         double[] pnl, decimal netProfit, double maxDrawdownPct, decimal totalCommissions)
     {
         var timestamps = Enumerable.Range(0, pnl.Length).Select(i => (long)(i * 1000)).ToArray();
-        var cache = new SimulationCache(timestamps, [pnl]);
+        var cache = new SimulationCache([timestamps], [pnl]);
         var trial = CreateTrial(0, netProfit, maxDrawdownPct, totalCommissions);
 
         return new ValidationContext

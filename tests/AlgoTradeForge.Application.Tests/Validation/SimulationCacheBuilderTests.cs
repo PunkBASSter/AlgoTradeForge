@@ -19,7 +19,7 @@ public class SimulationCacheBuilderTests
         var cache = SimulationCacheBuilder.Build(trials);
 
         Assert.Equal(2, cache.TrialCount);
-        Assert.Equal(3, cache.BarCount);
+        Assert.Equal(3, cache.MaxBarCount);
 
         // Trial 0: deltas = [10000-10000, 10050-10000, 10120-10050] = [0, 50, 70]
         var row0 = cache.GetTrialPnl(0);
@@ -44,7 +44,7 @@ public class SimulationCacheBuilderTests
 
         var cache = SimulationCacheBuilder.Build(trials);
 
-        Assert.Equal(new long[] { 1000, 2000 }, cache.BarTimestamps);
+        Assert.Equal(new long[] { 1000, 2000 }, cache.TrialTimestamps[0]);
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public class SimulationCacheBuilderTests
     }
 
     [Fact]
-    public void Build_MismatchedCurveLengths_Throws()
+    public void Build_VariableLengthCurves_Succeeds()
     {
         var trials = new List<BacktestRunRecord>
         {
@@ -73,7 +73,12 @@ public class SimulationCacheBuilderTests
             CreateTrial(10000m, [(100, 10050m)]), // only 1 point
         };
 
-        Assert.Throws<ArgumentException>(() => SimulationCacheBuilder.Build(trials));
+        var cache = SimulationCacheBuilder.Build(trials);
+
+        Assert.Equal(2, cache.TrialCount);
+        Assert.Equal(2, cache.MaxBarCount);
+        Assert.Equal(2, cache.GetBarCount(0));
+        Assert.Equal(1, cache.GetBarCount(1));
     }
 
     [Fact]

@@ -18,7 +18,7 @@ public class SelectionBiasAuditStageTests
         var pnl = new double[200];
         for (var i = 0; i < 200; i++) pnl[i] = rng.NextDouble() * 20 - 10;
 
-        var cache = new SimulationCache(timestamps, [pnl, (double[])pnl.Clone()]);
+        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()], [pnl, (double[])pnl.Clone()]);
         var context = new ValidationContext
         {
             Cache = cache,
@@ -52,7 +52,7 @@ public class SelectionBiasAuditStageTests
             pnl1[i] = -5.0;             // Consistently negative
         }
 
-        var cache = new SimulationCache(timestamps, [pnl0, pnl1]);
+        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()], [pnl0, pnl1]);
 
         // Use a permissive profile to focus on PBO gate
         var profile = ValidationThresholdProfile.CryptoStandard() with
@@ -102,13 +102,13 @@ public class SelectionBiasAuditStageTests
         for (var i = 100; i < 200; i++) pnl0[i] = -15.0;
         for (var i = 0; i < 200; i++) pnl1[i] = -1.0; // Bad trial (ensures low PBO for trial 0)
 
-        var cache = new SimulationCache(timestamps, [pnl0, pnl1]);
+        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()], [pnl0, pnl1]);
 
         var profile = ValidationThresholdProfile.CryptoStandard() with
         {
             SelectionBiasAudit = new ValidationThresholdProfile.Stage7SelectionBiasAuditThresholds
             {
-                MaxPbo = 0.60,
+                MaxPbo = 1.0, // Allow PBO gate to pass so subperiod check can fire
                 MinProfitableSubPeriods = 0.90, // Strict: require 90% profitable sub-periods
                 MinR2 = 0.10,
                 SubPeriodCount = 4,
@@ -148,7 +148,7 @@ public class SelectionBiasAuditStageTests
             pnl1[i] = -1.0;
         }
 
-        var cache = new SimulationCache(timestamps, [pnl0, pnl1]);
+        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()], [pnl0, pnl1]);
 
         var profile = ValidationThresholdProfile.CryptoStandard() with
         {
@@ -191,7 +191,7 @@ public class SelectionBiasAuditStageTests
             pnl1[i] = -1.0;
         }
 
-        var cache = new SimulationCache(timestamps, [pnl0, pnl1]);
+        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()], [pnl0, pnl1]);
 
         var profile = ValidationThresholdProfile.CryptoStandard() with
         {
@@ -235,7 +235,7 @@ public class SelectionBiasAuditStageTests
             pnl1[i] = -1.0;
         }
 
-        var cache = new SimulationCache(timestamps, [pnl0, pnl1]);
+        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()], [pnl0, pnl1]);
 
         var profile = ValidationThresholdProfile.CryptoStandard() with
         {
@@ -272,7 +272,7 @@ public class SelectionBiasAuditStageTests
     public void EmptyCandidates_ReturnsEmpty()
     {
         var timestamps = Enumerable.Range(0, 100).Select(i => (long)(i * 1000)).ToArray();
-        var cache = new SimulationCache(timestamps,
+        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()],
             [Enumerable.Repeat(1.0, 100).ToArray(), Enumerable.Repeat(2.0, 100).ToArray()]);
 
         var context = new ValidationContext

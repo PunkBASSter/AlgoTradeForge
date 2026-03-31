@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Tests.Validation.TestHelpers;
 using AlgoTradeForge.Domain.Validation;
 using AlgoTradeForge.Domain.Validation.Stages;
 using Xunit;
@@ -45,7 +46,8 @@ public class WalkForwardMatrixStageTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, trialCount);
+        var cache = new SimulationCache(tsArray, matrix);
         var trials = Enumerable.Range(0, trialCount).Select(CreateTrial).ToList();
 
         var context = new ValidationContext
@@ -69,8 +71,9 @@ public class WalkForwardMatrixStageTests
     [Fact]
     public void EmptyCandidates_ReturnsEmpty()
     {
+        var ts = Enumerable.Range(0, 100).Select(i => (long)i).ToArray();
         var cache = new SimulationCache(
-            Enumerable.Range(0, 100).Select(i => (long)i).ToArray(),
+            [ts],
             [Enumerable.Range(0, 100).Select(_ => 1.0).ToArray()]);
 
         var context = new ValidationContext
@@ -101,7 +104,8 @@ public class WalkForwardMatrixStageTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, trialCount);
+        var cache = new SimulationCache(tsArray, matrix);
         var trials = Enumerable.Range(0, trialCount).Select(CreateTrial).ToList();
 
         return new ValidationContext

@@ -29,7 +29,7 @@ public class PreFlightStageTests
         {
             Assert.True(v.Passed);
             Assert.Null(v.ReasonCode);
-            Assert.True(v.Metrics.ContainsKey("barCount"));
+            Assert.True(v.Metrics.ContainsKey("minBarCount"));
             Assert.True(v.Metrics.ContainsKey("minBtlBars"));
         });
     }
@@ -220,12 +220,16 @@ public class PreFlightStageTests
     [Fact]
     public void NaNInPnl_RejectsAffectedCandidate()
     {
-        var timestamps = Enumerable.Range(0, 100).Select(i => (long)i * 60_000).ToArray();
+        var ts = Enumerable.Range(0, 100).Select(i => (long)i * 60_000).ToArray();
+        var timestamps = new long[3][];
         var matrix = new double[3][];
-        matrix[0] = Enumerable.Repeat(1.0, 100).ToArray();
-        matrix[1] = Enumerable.Repeat(1.0, 100).ToArray();
+        for (var i = 0; i < 3; i++)
+        {
+            timestamps[i] = (long[])ts.Clone();
+            matrix[i] = Enumerable.Repeat(1.0, 100).ToArray();
+        }
+
         matrix[1][50] = double.NaN; // NaN in trial 1
-        matrix[2] = Enumerable.Repeat(1.0, 100).ToArray();
 
         var cache = new SimulationCache(timestamps, matrix);
         var trials = CreateTrials(3);
@@ -259,8 +263,8 @@ public class PreFlightStageTests
         decimal commissions = 5m,
         ValidationThresholdProfile? profile = null)
     {
-        var timestamps = Enumerable.Range(0, barCount).Select(i => (long)i * 60_000).ToArray();
-        return CreateContextWithTimestamps(timestamps, trialCount, totalCombinations, commissions, profile);
+        var ts = Enumerable.Range(0, barCount).Select(i => (long)i * 60_000).ToArray();
+        return CreateContextWithTimestamps(ts, trialCount, totalCombinations, commissions, profile);
     }
 
     private static ValidationContext CreateContextWithTimestamps(
@@ -271,11 +275,15 @@ public class PreFlightStageTests
         ValidationThresholdProfile? profile = null)
     {
         var barCount = timestamps.Length;
+        var tsArray = new long[trialCount][];
         var matrix = new double[trialCount][];
         for (var i = 0; i < trialCount; i++)
+        {
+            tsArray[i] = (long[])timestamps.Clone();
             matrix[i] = Enumerable.Repeat(1.0, barCount).ToArray();
+        }
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = new SimulationCache(tsArray, matrix);
         var trials = CreateTrials(trialCount, commissions);
 
         return new ValidationContext

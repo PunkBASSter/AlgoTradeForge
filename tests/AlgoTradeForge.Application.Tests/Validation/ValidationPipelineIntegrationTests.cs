@@ -222,7 +222,8 @@ public class ValidationPipelineIntegrationTests
             };
         }
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var tsArray = Enumerable.Range(0, trialCount).Select(_ => (long[])timestamps.Clone()).ToArray();
+        var cache = new SimulationCache(tsArray, matrix);
         return (cache, trials);
     }
 }

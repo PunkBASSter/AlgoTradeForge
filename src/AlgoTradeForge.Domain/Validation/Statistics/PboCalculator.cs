@@ -4,22 +4,24 @@ namespace AlgoTradeForge.Domain.Validation.Statistics;
 
 /// <summary>
 /// Combinatorially Symmetric Cross-Validation (CSCV) calculator that produces the
-/// Probability of Backtest Overfitting (PBO). Partitions the T×N returns matrix
-/// into S equal blocks, enumerates all C(S, S/2) IS/OOS splits, and measures how
+/// Probability of Backtest Overfitting (PBO). Partitions the returns into
+/// S equal time-range blocks, enumerates all C(S, S/2) IS/OOS splits, and measures how
 /// often the IS-optimal trial ranks below the OOS median.
 /// </summary>
 public static class PboCalculator
 {
     /// <summary>
-    /// Computes PBO from the simulation cache's T×N P&amp;L matrix.
+    /// Computes PBO from the simulation cache's P&amp;L matrix.
+    /// Blocks are defined by timestamp range to support variable-length trials.
     /// </summary>
     /// <param name="cache">Simulation cache with per-bar P&amp;L deltas for all trials.</param>
-    /// <param name="numBlocks">Number of equal blocks S to partition bars into (default 16).</param>
+    /// <param name="numBlocks">Number of equal time-range blocks S to partition into (default 16).</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>PBO result with logit distribution across all C(S, S/2) combinations.</returns>
     public static PboResult Compute(SimulationCache cache, int numBlocks, CancellationToken ct = default)
     {
-        if (cache.TrialCount < 2 || cache.BarCount < numBlocks)
+        if (cache.TrialCount < 2 || cache.MaxBarCount < numBlocks ||
+            cache.MaxTimestamp <= cache.MinTimestamp)
         {
             return new PboResult
             {
@@ -31,24 +33,40 @@ public static class PboCalculator
         }
 
         var n = cache.TrialCount;
-        var t = cache.BarCount;
         var halfBlocks = numBlocks / 2;
-        var blockSize = t / numBlocks;
+        var totalDuration = cache.MaxTimestamp - cache.MinTimestamp;
+        var blockDuration = totalDuration / numBlocks;
+
+        if (blockDuration < 1)
+        {
+            return new PboResult
+            {
+                Pbo = 0.5,
+                LogitDistribution = [],
+                NumCombinations = 0,
+                NumBlocks = numBlocks,
+            };
+        }
 
         // Pre-compute per-trial per-block cumulative P&L for fast IS/OOS summing
-        // blockPnl[trial][block] = sum of P&L deltas in that block
+        // blockPnl[trial][block] = sum of P&L deltas in that block's timestamp range
         var blockPnl = new double[n][];
         for (var trial = 0; trial < n; trial++)
         {
             blockPnl[trial] = new double[numBlocks];
-            var pnl = cache.TrialPnlMatrix[trial];
             for (var block = 0; block < numBlocks; block++)
             {
-                var start = block * blockSize;
-                var end = block == numBlocks - 1 ? t : (block + 1) * blockSize;
+                var blockStartTs = cache.MinTimestamp + block * blockDuration;
+                // long.MaxValue for last block: LowerBound returns array.Length, so FindTrialWindow captures all remaining bars
+                var blockEndTs = block == numBlocks - 1
+                    ? long.MaxValue
+                    : cache.MinTimestamp + (block + 1) * blockDuration;
+
+                var (start, len) = cache.FindTrialWindow(trial, blockStartTs, blockEndTs);
+                var span = cache.GetTrialPnlWindow(trial, start, len);
                 var sum = 0.0;
-                for (var b = start; b < end; b++)
-                    sum += pnl[b];
+                for (var b = 0; b < span.Length; b++)
+                    sum += span[b];
                 blockPnl[trial][block] = sum;
             }
         }

@@ -35,21 +35,34 @@ public sealed record WfmConfig
 /// <summary>
 /// Executes Walk-Forward Optimization and Walk-Forward Matrix analysis
 /// using the simulation cache for zero-re-backtest performance.
+/// Windows are defined by timestamp ranges to support variable-length equity curves.
 /// </summary>
 public static class WalkForwardEngine
 {
     /// <summary>
     /// Run a single Walk-Forward Optimization across rolling windows.
-    /// Uses zero-allocation span slicing into the simulation cache.
+    /// Windows are split by timestamp range, supporting per-trial variable-length data.
     /// </summary>
     public static WfoResult RunWfo(SimulationCache cache, WfoConfig config,
         double initialEquity, CancellationToken ct = default)
     {
-        var totalBars = cache.BarCount;
         var windowCount = config.WindowCount;
-        var barsPerWindow = totalBars / windowCount;
+        var totalDuration = cache.MaxTimestamp - cache.MinTimestamp;
 
-        if (barsPerWindow < 2)
+        if (totalDuration <= 0 || windowCount < 1)
+        {
+            return new WfoResult
+            {
+                Windows = [],
+                WalkForwardEfficiency = 0,
+                ProfitableWindowsPct = 0,
+                MaxOosDrawdownExcessPct = 0,
+                Passed = false,
+            };
+        }
+
+        var windowDuration = totalDuration / windowCount;
+        if (windowDuration < 1)
         {
             return new WfoResult
             {
@@ -67,28 +80,31 @@ public static class WalkForwardEngine
         {
             ct.ThrowIfCancellationRequested();
 
-            var windowStart = w * barsPerWindow;
-            var windowEnd = (w == windowCount - 1) ? totalBars : (w + 1) * barsPerWindow;
-            var windowBars = windowEnd - windowStart;
+            var windowStartTs = cache.MinTimestamp + w * windowDuration;
+            // long.MaxValue for last window: LowerBound returns array.Length, so FindTrialWindow captures all remaining bars
+            var windowEndTs = (w == windowCount - 1)
+                ? long.MaxValue
+                : cache.MinTimestamp + (w + 1) * windowDuration;
 
-            var isBars = (int)(windowBars * (1.0 - config.OosPct));
-            if (isBars < 1) isBars = 1;
-            var oosStart = windowStart + isBars;
+            // IS/OOS split by timestamp
+            var isDuration = (long)(windowDuration * (1.0 - config.OosPct));
+            if (isDuration < 1) isDuration = 1;
+            var oosStartTs = windowStartTs + isDuration;
 
-            if (oosStart >= windowEnd) continue;
+            if (oosStartTs >= windowEndTs && windowEndTs != long.MaxValue) continue;
 
-            var isLength = oosStart - windowStart;
-            var oosLength = windowEnd - oosStart;
-
-            // Find best trial on IS data — cache metrics to avoid recompute
+            // Find best trial on IS data
             var bestTrial = -1;
             var bestFitness = double.MinValue;
             WindowPerformanceMetrics? bestIsMetrics = null;
 
             for (var t = 0; t < cache.TrialCount; t++)
             {
+                var (isStart, isLen) = cache.FindTrialWindow(t, windowStartTs, oosStartTs);
+                if (isLen < 2) continue;
+
                 var isMetrics = WindowMetricsCalculator.Compute(
-                    cache.GetTrialPnlWindow(t, windowStart, isLength),
+                    cache.GetTrialPnlWindow(t, isStart, isLen),
                     initialEquity, config.AnnualizationFactor);
                 var fitness = WindowFitnessEvaluator.Evaluate(isMetrics);
                 if (fitness > bestFitness)
@@ -101,9 +117,15 @@ public static class WalkForwardEngine
 
             if (bestTrial < 0 || bestIsMetrics is null) continue;
 
+            // Re-derive best trial's IS window indices for result reporting
+            var (bestIsStart, bestIsLen) = cache.FindTrialWindow(bestTrial, windowStartTs, oosStartTs);
+
             // Compute OOS metrics for best trial
+            var (oosStart, oosLen) = cache.FindTrialWindow(bestTrial, oosStartTs, windowEndTs);
+            if (oosLen < 1) continue;
+
             var bestOosMetrics = WindowMetricsCalculator.Compute(
-                cache.GetTrialPnlWindow(bestTrial, oosStart, oosLength),
+                cache.GetTrialPnlWindow(bestTrial, oosStart, oosLen),
                 initialEquity, config.AnnualizationFactor);
 
             // WFE = OOS annualized return / IS annualized return
@@ -114,10 +136,10 @@ public static class WalkForwardEngine
             windows.Add(new WfoWindowResult
             {
                 WindowIndex = w,
-                IsStartBar = windowStart,
-                IsEndBar = oosStart,
+                IsStartBar = bestIsStart,
+                IsEndBar = bestIsStart + bestIsLen,
                 OosStartBar = oosStart,
-                OosEndBar = windowEnd,
+                OosEndBar = oosStart + oosLen,
                 IsMetrics = bestIsMetrics,
                 OosMetrics = bestOosMetrics,
                 OptimalTrialIndex = bestTrial,

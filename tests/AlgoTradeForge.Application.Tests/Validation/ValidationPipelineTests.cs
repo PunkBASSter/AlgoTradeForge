@@ -95,7 +95,9 @@ public class ValidationPipelineTests
                 : new double[] { -50.0, -60.0, -70.0 }
         ).ToArray();
 
-        var cache = new SimulationCache([100, 200, 300], pnlRows);
+        var ts = new long[] { 100, 200, 300 };
+        var tsArray = Enumerable.Range(0, pnlRows.Length).Select(_ => (long[])ts.Clone()).ToArray();
+        var cache = new SimulationCache(tsArray, pnlRows);
         var profile = ValidationThresholdProfile.CryptoStandard();
         var pipeline = new ValidationPipeline();
 
@@ -128,7 +130,8 @@ public class ValidationPipelineTests
         var timestamps = new long[barCount];
         for (var i = 0; i < barCount; i++) timestamps[i] = i * 86400000L;
 
-        var cache = new SimulationCache(timestamps, pnlRows);
+        var tsArray = Enumerable.Range(0, pnlRows.Length).Select(_ => (long[])timestamps.Clone()).ToArray();
+        var cache = new SimulationCache(tsArray, pnlRows);
         return (cache, trials);
     }
 
