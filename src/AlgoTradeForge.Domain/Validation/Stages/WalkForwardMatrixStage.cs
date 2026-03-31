@@ -24,6 +24,7 @@ public sealed class WalkForwardMatrixStage : IValidationStage
             MinContiguousRows = thresholds.MinContiguousRows,
             MinContiguousCols = thresholds.MinContiguousCols,
             MinCellsPassing = thresholds.MinCellsPassing,
+            // WFM runs WFO per-cell, so per-cell pass criteria must match the WFO stage's thresholds.
             MinProfitableWindowsPct = context.Profile.WalkForwardOptimization.MinProfitableWindowsPct,
             MaxOosDrawdownExcess = context.Profile.WalkForwardOptimization.MaxOosDrawdownExcess,
         };

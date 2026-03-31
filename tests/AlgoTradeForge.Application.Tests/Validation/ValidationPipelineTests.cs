@@ -105,6 +105,65 @@ public class ValidationPipelineTests
         Assert.All(stageResults, sr => Assert.Equal(allTrials.Length, sr.CandidatesIn));
     }
 
+    [Fact]
+    public void FinalSurvivors_IsIntersectionOfAllStages()
+    {
+        // 4 candidates; Stage A passes {0,1,2}, Stage B passes {1,2,3} → survivors = {1,2}
+        var trials = CreateTrialSummaries(4, strongMetrics: true, startIndex: 0);
+        var pnlRows = trials.Select(_ => new double[] { 1.0, 2.0, 3.0 }).ToArray();
+        var ts = new long[] { 100, 200, 300 };
+        var cache = new SimulationCache([ts], pnlRows.Select((row, _) => new TrialData(0, row)).ToArray());
+        var profile = ValidationThresholdProfile.CryptoStandard();
+
+        IValidationStage stageA = new StubStage(0, "StubA", [0, 1, 2]);
+        IValidationStage stageB = new StubStage(1, "StubB", [1, 2, 3]);
+        var pipeline = new ValidationPipeline([stageA, stageB]);
+
+        var (stageResults, survivors) = pipeline.Execute(
+            cache, trials, profile, Guid.NewGuid(), null, CancellationToken.None);
+
+        Assert.Equal(2, stageResults.Count);
+        // Stage A passes 3, Stage B passes 3 — but intersection is {1, 2}
+        Assert.Equal(3, stageResults[0].CandidatesOut);
+        Assert.Equal(3, stageResults[1].CandidatesOut);
+        Assert.Equal(2, survivors.Count);
+        Assert.Equal([1, 2], survivors);
+    }
+
+    [Fact]
+    public void FinalSurvivors_EmptyWhenNoStagesConfigured()
+    {
+        var trials = CreateTrialSummaries(2, strongMetrics: true, startIndex: 0);
+        var pnlRows = trials.Select(_ => new double[] { 1.0 }).ToArray();
+        var cache = new SimulationCache([new long[] { 100 }], pnlRows.Select((row, _) => new TrialData(0, row)).ToArray());
+        var profile = ValidationThresholdProfile.CryptoStandard();
+
+        var pipeline = new ValidationPipeline([]);
+
+        var (stageResults, survivors) = pipeline.Execute(
+            cache, trials, profile, Guid.NewGuid(), null, CancellationToken.None);
+
+        Assert.Empty(stageResults);
+        Assert.Empty(survivors);
+    }
+
+    private sealed class StubStage(int stageNumber, string stageName, IReadOnlyList<int> survivingIndices) : IValidationStage
+    {
+        public int StageNumber => stageNumber;
+        public string StageName => stageName;
+
+        public StageResult Execute(ValidationContext context, CancellationToken ct = default)
+        {
+            var verdicts = context.AllCandidateIndices.Select(idx =>
+                new CandidateVerdict(
+                    context.Trials[idx].Id,
+                    survivingIndices.Contains(idx),
+                    survivingIndices.Contains(idx) ? null : "STUB_REJECTED",
+                    [])).ToList();
+            return new StageResult(survivingIndices, verdicts);
+        }
+    }
+
     private static (SimulationCache Cache, TrialSummary[] Trials) CreateTrials(
         int count, bool strongMetrics)
     {

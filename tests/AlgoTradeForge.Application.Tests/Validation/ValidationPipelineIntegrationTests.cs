@@ -146,9 +146,9 @@ public class ValidationPipelineIntegrationTests
             totalCombinations: 1000);
         sw.Stop();
 
-        // Should complete in under 180 seconds (all stages now run on all candidates)
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(180),
-            $"Pipeline took {sw.Elapsed.TotalSeconds:F1}s, expected < 180s");
+        // Should complete in under 150 seconds (~2x observed baseline of ~75s)
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(150),
+            $"Pipeline took {sw.Elapsed.TotalSeconds:F1}s, expected < 150s");
     }
 
     // ---- Helpers ----

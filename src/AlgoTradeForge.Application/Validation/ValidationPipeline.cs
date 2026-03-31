@@ -8,9 +8,9 @@ namespace AlgoTradeForge.Application.Validation;
 
 public sealed class ValidationPipeline
 {
-    public static int StageCount => Stages.Count;
+    public static int StageCount => DefaultStages.Count;
 
-    private static readonly IReadOnlyList<IValidationStage> Stages =
+    private static readonly IReadOnlyList<IValidationStage> DefaultStages =
     [
         new PreFlightStage(),               // 0
         new BasicProfitabilityStage(),      // 1
@@ -21,6 +21,12 @@ public sealed class ValidationPipeline
         new MonteCarloPnlDeltasPermutationStage(),   // 6
         new SelectionBiasAuditStage(),      // 7
     ];
+
+    private readonly IReadOnlyList<IValidationStage> _stages;
+
+    public ValidationPipeline() => _stages = DefaultStages;
+
+    internal ValidationPipeline(IReadOnlyList<IValidationStage> stages) => _stages = stages;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -46,15 +52,15 @@ public sealed class ValidationPipeline
             TotalCombinations = totalCombinations,
         };
 
-        var stageResults = new List<StageResultRecord>(Stages.Count);
-        var rawResults = new List<StageResult>(Stages.Count);
+        var stageResults = new List<StageResultRecord>(_stages.Count);
+        var rawResults = new List<StageResult>(_stages.Count);
 
-        for (var i = 0; i < Stages.Count; i++)
+        for (var i = 0; i < _stages.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
-            onProgress?.Invoke(i, Stages.Count);
+            onProgress?.Invoke(i, _stages.Count);
 
-            var stage = Stages[i];
+            var stage = _stages[i];
 
             var sw = Stopwatch.StartNew();
             var result = stage.Execute(context, ct);
@@ -87,7 +93,7 @@ public sealed class ValidationPipeline
         var finalSurvivors = survivors?.OrderBy(x => x).ToList()
             ?? (IReadOnlyList<int>)[];
 
-        onProgress?.Invoke(Stages.Count, Stages.Count);
+        onProgress?.Invoke(_stages.Count, _stages.Count);
         return (stageResults, finalSurvivors);
     }
 }
