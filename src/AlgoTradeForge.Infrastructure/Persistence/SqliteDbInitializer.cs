@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 14;
+    private const int CurrentVersion = 15;
 
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -33,6 +33,7 @@ internal static class SqliteDbInitializer
             timeframe           TEXT    NOT NULL,
             filtered_trials     INTEGER NOT NULL DEFAULT 0,
             failed_trials       INTEGER NOT NULL DEFAULT 0,
+            dedup_skipped       INTEGER NOT NULL DEFAULT 0,
             optimization_method TEXT    NULL,
             generations_completed INTEGER NULL,
             input_json          TEXT    NULL,
@@ -342,6 +343,12 @@ internal static class SqliteDbInitializer
             migrateCmd.CommandText = MigrationV14;
             await migrateCmd.ExecuteNonQueryAsync();
             await SetVersionAsync(connection, 14);
+        }
+
+        if (currentVersion < 15)
+        {
+            await AddColumnIfNotExistsAsync(connection, "optimization_runs", "dedup_skipped", "INTEGER NOT NULL DEFAULT 0");
+            await SetVersionAsync(connection, 15);
         }
 
         // Mark any orphaned in-progress runs as failed (server crashed during execution)

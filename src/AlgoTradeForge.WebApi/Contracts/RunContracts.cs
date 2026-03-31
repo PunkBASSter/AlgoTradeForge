@@ -81,6 +81,7 @@ public sealed record OptimizationRunResponse
     public required long TotalCombinations { get; init; }
     public long FilteredTrials { get; init; }
     public long FailedTrials { get; init; }
+    public long DedupSkipped { get; init; }
     public required string SortBy { get; init; }
     public required DataSubscriptionDto DataSubscription { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }

@@ -199,6 +199,7 @@ public static class OptimizationEndpoints
             var response = new OptimizationEvaluationResponse
             {
                 TotalCombinations = dto.TotalCombinations,
+                UniqueCombinations = dto.UniqueCombinations,
                 ExceedsMaxCombinations = dto.ExceedsMaxCombinations,
                 MaxCombinations = dto.MaxCombinations,
                 EffectiveDimensions = dto.EffectiveDimensions,
@@ -341,6 +342,7 @@ public static class OptimizationEndpoints
         TotalCombinations = r.TotalCombinations,
         FilteredTrials = r.FilteredTrials,
         FailedTrials = r.FailedTrials,
+        DedupSkipped = r.DedupSkipped,
         SortBy = r.SortBy,
         DataSubscription = r.DataSubscription,
         BacktestSettings = r.BacktestSettings,
