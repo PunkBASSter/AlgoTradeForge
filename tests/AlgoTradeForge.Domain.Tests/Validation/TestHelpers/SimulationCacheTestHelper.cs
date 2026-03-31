@@ -12,11 +12,11 @@ internal static class SimulationCacheTestHelper
     /// Creates a SimulationCache where all trials share a single timeline.
     /// This is the common case for single-asset optimizations.
     /// </summary>
-    internal static SimulationCache Create(long[] timestamps, double[][] pnlMatrix) =>
-        new([timestamps], AllSameTimeline(pnlMatrix.Length), pnlMatrix);
-
-    /// <summary>
-    /// Returns a timeline index array where all trials map to timeline 0.
-    /// </summary>
-    internal static int[] AllSameTimeline(int trialCount) => new int[trialCount];
+    internal static SimulationCache Create(long[] timestamps, double[][] pnlMatrix)
+    {
+        var trials = new TrialData[pnlMatrix.Length];
+        for (var t = 0; t < pnlMatrix.Length; t++)
+            trials[t] = new TrialData(0, pnlMatrix[t]);
+        return new SimulationCache([timestamps], trials);
+    }
 }

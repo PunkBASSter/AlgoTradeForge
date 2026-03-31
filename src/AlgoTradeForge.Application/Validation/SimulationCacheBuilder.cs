@@ -45,8 +45,7 @@ public static class SimulationCacheBuilder
         // Same subscription but different bar counts (e.g., early-stopped trials) get separate timelines.
         var timelineKeys = new Dictionary<(DataSubscriptionDto Sub, int BarCount), int>();
         var timelines = new List<long[]>();
-        var trialTimelineIndex = new int[trials.Count];
-        var matrix = new double[trials.Count][];
+        var trialData = new TrialData[trials.Count];
 
         for (var t = 0; t < trials.Count; t++)
         {
@@ -63,8 +62,6 @@ public static class SimulationCacheBuilder
                 timelines.Add(ts);
             }
 
-            trialTimelineIndex[t] = tlIdx;
-
             // Build PnL deltas
             var ec = trials[t].EquityCurve;
             var deltas = new double[ec.Count];
@@ -75,10 +72,10 @@ public static class SimulationCacheBuilder
                     deltas[i] = ec[i].Value - ec[i - 1].Value;
             }
 
-            matrix[t] = deltas;
+            trialData[t] = new TrialData(tlIdx, deltas);
         }
 
-        return new SimulationCache(timelines.ToArray(), trialTimelineIndex, matrix);
+        return new SimulationCache(timelines.ToArray(), trialData);
     }
 
     public static TrialSummary[] BuildTrialSummaries(IReadOnlyList<BacktestRunRecord> trials)

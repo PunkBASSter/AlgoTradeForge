@@ -47,9 +47,10 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
         writer.Write(cache.TrialCount);
         for (var t = 0; t < cache.TrialCount; t++)
         {
-            writer.Write(cache.TrialTimelineIndex[t]);
+            var trial = cache.Trials[t];
+            writer.Write(trial.TimelineIndex);
 
-            var pnl = cache.TrialPnlMatrix[t];
+            var pnl = trial.PnlDeltas;
             for (var b = 0; b < pnl.Length; b++)
                 writer.Write(pnl[b]);
         }
@@ -86,7 +87,7 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
         // Group by (subscription, barCount) → build timelines
         var timelineKeys = new Dictionary<(DataSubscriptionDto, int), int>();
         var timelines = new List<long[]>();
-        var trialTimelineIndex = new int[trials.Count];
+        var trialTimelineIndices = new int[trials.Count];
 
         for (var t = 0; t < trials.Count; t++)
         {
@@ -102,7 +103,7 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
                 timelines.Add(ts);
             }
 
-            trialTimelineIndex[t] = tlIdx;
+            trialTimelineIndices[t] = tlIdx;
         }
 
         using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
@@ -123,7 +124,7 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
         writer.Write(trials.Count);
         for (var t = 0; t < trials.Count; t++)
         {
-            writer.Write(trialTimelineIndex[t]);
+            writer.Write(trialTimelineIndices[t]);
 
             var curve = trials[t].EquityCurve;
             if (curve.Count > 0)
@@ -150,20 +151,19 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
         }
 
         var trialCount = reader.ReadInt32();
-        var trialTimelineIndex = new int[trialCount];
-        var matrix = new double[trialCount][];
+        var trials = new TrialData[trialCount];
 
         for (var t = 0; t < trialCount; t++)
         {
-            trialTimelineIndex[t] = reader.ReadInt32();
-            var barCount = timelines[trialTimelineIndex[t]].Length;
+            var tlIdx = reader.ReadInt32();
+            var barCount = timelines[tlIdx].Length;
 
             var pnl = new double[barCount];
             for (var b = 0; b < barCount; b++)
                 pnl[b] = reader.ReadDouble();
-            matrix[t] = pnl;
+            trials[t] = new TrialData(tlIdx, pnl);
         }
 
-        return new SimulationCache(timelines, trialTimelineIndex, matrix);
+        return new SimulationCache(timelines, trials);
     }
 }

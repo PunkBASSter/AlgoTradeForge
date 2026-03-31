@@ -222,7 +222,10 @@ public class ValidationPipelineIntegrationTests
             };
         }
 
-        var cache = new SimulationCache([timestamps], new int[trialCount], matrix);
+        var trialData = new TrialData[trialCount];
+        for (var t = 0; t < trialCount; t++)
+            trialData[t] = new TrialData(0, matrix[t]);
+        var cache = new SimulationCache([timestamps], trialData);
         return (cache, trials);
     }
 }

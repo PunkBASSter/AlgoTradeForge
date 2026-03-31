@@ -28,7 +28,8 @@ public class SimulationCacheTests
             [1.0, 2.0, 3.0], // 3 PnL values but only 2 timestamps
         };
 
-        var ex = Assert.Throws<ArgumentException>(() => new SimulationCache([ts1, ts2], [0, 1], matrix));
+        var trials = new TrialData[] { new(0, matrix[0]), new(1, matrix[1]) };
+        var ex = Assert.Throws<ArgumentException>(() => new SimulationCache([ts1, ts2], trials));
         Assert.Contains("Trial 1", ex.Message);
     }
 
@@ -43,7 +44,8 @@ public class SimulationCacheTests
             [-1.0, 0.5],
         };
 
-        var cache = new SimulationCache([ts1, ts2], [0, 1], matrix);
+        var trials = new TrialData[] { new(0, matrix[0]), new(1, matrix[1]) };
+        var cache = new SimulationCache([ts1, ts2], trials);
 
         Assert.Equal(2, cache.TrialCount);
         Assert.Equal(3, cache.MaxBarCount);
@@ -125,7 +127,7 @@ public class SimulationCacheTests
     [Fact]
     public void EmptyTrialMatrix_AllowedWithZeroBars()
     {
-        var cache = new SimulationCache([], [], []);
+        var cache = new SimulationCache([], []);
 
         Assert.Equal(0, cache.TrialCount);
         Assert.Equal(0, cache.MaxBarCount);
@@ -138,7 +140,8 @@ public class SimulationCacheTests
         var ts2 = new long[] { 75, 300 };
         var matrix = new double[][] { [1, 2, 3], [4, 5] };
 
-        var cache = new SimulationCache([ts1, ts2], [0, 1], matrix);
+        var trials = new TrialData[] { new(0, matrix[0]), new(1, matrix[1]) };
+        var cache = new SimulationCache([ts1, ts2], trials);
 
         Assert.Equal(50, cache.MinTimestamp);
         Assert.Equal(300, cache.MaxTimestamp);

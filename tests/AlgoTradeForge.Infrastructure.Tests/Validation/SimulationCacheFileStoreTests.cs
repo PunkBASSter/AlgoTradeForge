@@ -99,9 +99,8 @@ public class SimulationCacheFileStoreTests : IDisposable
     public void WriteAndRead_VariableLengthTrials()
     {
         var timelines = new long[][] { [100, 200, 300], [100, 200] };
-        var trialTimelineIndex = new int[] { 0, 1 };
-        var matrix = new double[][] { [1.0, 2.0, 3.0], [-1.0, 0.5] };
-        var cache = new SimulationCache(timelines, trialTimelineIndex, matrix);
+        var trials = new TrialData[] { new(0, [1.0, 2.0, 3.0]), new(1, [-1.0, 0.5]) };
+        var cache = new SimulationCache(timelines, trials);
         var filePath = Path.Combine(_testDir, "variable.bin");
 
         _store.Write(cache, filePath);
@@ -153,7 +152,10 @@ public class SimulationCacheFileStoreTests : IDisposable
                 matrix[t][b] = (rng.NextDouble() - 0.5) * 10;
         }
 
-        var cache = new SimulationCache([timestamps], new int[5], matrix);
+        var trialData = new TrialData[5];
+        for (var t = 0; t < 5; t++)
+            trialData[t] = new TrialData(0, matrix[t]);
+        var cache = new SimulationCache([timestamps], trialData);
         Assert.Equal(1, cache.TimelineCount);
 
         var filePath = Path.Combine(_testDir, "v3_shared.bin");
@@ -198,7 +200,10 @@ public class SimulationCacheFileStoreTests : IDisposable
             matrix[t] = row;
         }
 
-        return new SimulationCache([timestamps], new int[trialCount], matrix);
+        var trialData = new TrialData[trialCount];
+        for (var t = 0; t < trialCount; t++)
+            trialData[t] = new TrialData(0, matrix[t]);
+        return new SimulationCache([timestamps], trialData);
     }
 
     private static List<BacktestRunRecord> CreateTestTrials(int trialCount, int barCount)
