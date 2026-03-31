@@ -78,6 +78,8 @@ public sealed record ValidationThresholdProfile
         public int MinContiguousCols { get; init; } = 3;
         public int MinCellsPassing { get; init; } = 7;
         public double MinWfe { get; init; } = 0.50;
+        public double MinProfitableWindowsPct { get; init; } = 0.70;
+        public double MaxOosDrawdownExcess { get; init; } = 0.50;
     }
 
     public sealed record Stage6MonteCarloPnlDeltasPermutationThresholds
@@ -140,6 +142,8 @@ public sealed record ValidationThresholdProfile
         {
             MinWfe = 0.60,
             MinCellsPassing = 8,
+            MinProfitableWindowsPct = 0.80,
+            MaxOosDrawdownExcess = 0.40,
         },
         MonteCarloPermutation = new Stage6MonteCarloPnlDeltasPermutationThresholds
         {

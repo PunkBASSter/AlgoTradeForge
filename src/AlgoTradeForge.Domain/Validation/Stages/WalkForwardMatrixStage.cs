@@ -24,6 +24,8 @@ public sealed class WalkForwardMatrixStage : IValidationStage
             MinContiguousRows = thresholds.MinContiguousRows,
             MinContiguousCols = thresholds.MinContiguousCols,
             MinCellsPassing = thresholds.MinCellsPassing,
+            MinProfitableWindowsPct = thresholds.MinProfitableWindowsPct,
+            MaxOosDrawdownExcess = thresholds.MaxOosDrawdownExcess,
         };
 
         var initialEquity = context.Trials.Count > 0
