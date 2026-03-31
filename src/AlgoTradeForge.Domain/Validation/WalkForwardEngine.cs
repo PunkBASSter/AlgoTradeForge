@@ -93,6 +93,15 @@ public static class WalkForwardEngine
 
             if (oosStartTs >= windowEndTs && windowEndTs != long.MaxValue) continue;
 
+            // Pre-compute IS/OOS windows per timeline (avoids N repeated binary searches)
+            var isWindows = new (int start, int length)[cache.TimelineCount];
+            var oosWindows = new (int start, int length)[cache.TimelineCount];
+            for (var tl = 0; tl < cache.TimelineCount; tl++)
+            {
+                isWindows[tl] = cache.FindTimelineWindow(tl, windowStartTs, oosStartTs);
+                oosWindows[tl] = cache.FindTimelineWindow(tl, oosStartTs, windowEndTs);
+            }
+
             // Find best trial on IS data
             var bestTrial = -1;
             var bestFitness = double.MinValue;
@@ -100,7 +109,7 @@ public static class WalkForwardEngine
 
             for (var t = 0; t < cache.TrialCount; t++)
             {
-                var (isStart, isLen) = cache.FindTrialWindow(t, windowStartTs, oosStartTs);
+                var (isStart, isLen) = isWindows[cache.GetTimelineIndex(t)];
                 if (isLen < 2) continue;
 
                 var isMetrics = WindowMetricsCalculator.Compute(
@@ -117,11 +126,10 @@ public static class WalkForwardEngine
 
             if (bestTrial < 0 || bestIsMetrics is null) continue;
 
-            // Re-derive best trial's IS window indices for result reporting
-            var (bestIsStart, bestIsLen) = cache.FindTrialWindow(bestTrial, windowStartTs, oosStartTs);
+            var (bestIsStart, bestIsLen) = isWindows[cache.GetTimelineIndex(bestTrial)];
 
             // Compute OOS metrics for best trial
-            var (oosStart, oosLen) = cache.FindTrialWindow(bestTrial, oosStartTs, windowEndTs);
+            var (oosStart, oosLen) = oosWindows[cache.GetTimelineIndex(bestTrial)];
             if (oosLen < 1) continue;
 
             var bestOosMetrics = WindowMetricsCalculator.Compute(

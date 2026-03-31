@@ -14,7 +14,7 @@ public class PboCalculatorTests
         var timestamps = Enumerable.Range(0, 40).Select(i => (long)(i * 1000)).ToArray();
         var pnl1 = Enumerable.Repeat(1.0, 40).ToArray();
         var pnl2 = Enumerable.Repeat(1.0, 40).ToArray();
-        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()], [pnl1, pnl2]);
+        var cache = SimulationCacheTestHelper.Create(timestamps, [pnl1, pnl2]);
 
         var result = PboCalculator.Compute(cache, numBlocks: 4, TestContext.Current.CancellationToken);
 
@@ -33,7 +33,7 @@ public class PboCalculatorTests
         var timestamps = Enumerable.Range(0, 40).Select(i => (long)(i * 1000)).ToArray();
         var pnl0 = Enumerable.Repeat(10.0, 40).ToArray();
         var pnl1 = Enumerable.Repeat(-5.0, 40).ToArray();
-        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()], [pnl0, pnl1]);
+        var cache = SimulationCacheTestHelper.Create(timestamps, [pnl0, pnl1]);
 
         var result = PboCalculator.Compute(cache, numBlocks: 4, TestContext.Current.CancellationToken);
 
@@ -55,7 +55,7 @@ public class PboCalculatorTests
 
         var pnl1 = Enumerable.Repeat(1.0, 40).ToArray(); // Consistently mediocre
 
-        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()], [pnl0, pnl1]);
+        var cache = SimulationCacheTestHelper.Create(timestamps, [pnl0, pnl1]);
 
         var result = PboCalculator.Compute(cache, numBlocks: 4, TestContext.Current.CancellationToken);
 
@@ -70,7 +70,7 @@ public class PboCalculatorTests
     {
         var timestamps = Enumerable.Range(0, 60).Select(i => (long)(i * 1000)).ToArray();
         var pnl = Enumerable.Repeat(1.0, 60).ToArray();
-        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()], [pnl, pnl.ToArray()]);
+        var cache = SimulationCacheTestHelper.Create(timestamps, [pnl, pnl.ToArray()]);
 
         // S=6 → C(6,3) = 20
         var result = PboCalculator.Compute(cache, numBlocks: 6, TestContext.Current.CancellationToken);
@@ -101,7 +101,7 @@ public class PboCalculatorTests
     {
         // Only 1 trial
         var timestamps = new long[] { 100, 200, 300 };
-        var cache = new SimulationCache([timestamps], [new double[] { 1, 2, 3 }]);
+        var cache = SimulationCacheTestHelper.Create(timestamps, [new double[] { 1, 2, 3 }]);
 
         var result = PboCalculator.Compute(cache, numBlocks: 4, TestContext.Current.CancellationToken);
 
@@ -114,7 +114,7 @@ public class PboCalculatorTests
     {
         // 2 bars but asking for 4 blocks
         var timestamps = new long[] { 100, 200 };
-        var cache = new SimulationCache([timestamps, (long[])timestamps.Clone()], [new double[] { 1, 2 }, new double[] { 3, 4 }]);
+        var cache = SimulationCacheTestHelper.Create(timestamps, [new double[] { 1, 2 }, new double[] { 3, 4 }]);
 
         var result = PboCalculator.Compute(cache, numBlocks: 4, TestContext.Current.CancellationToken);
 
@@ -135,8 +135,7 @@ public class PboCalculatorTests
                 trials[t][b] = rng.NextDouble() * 20 - 10;
         }
 
-        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, trials.Length);
-        var cache = new SimulationCache(tsArray, trials);
+        var cache = SimulationCacheTestHelper.Create(timestamps, trials);
         var result = PboCalculator.Compute(cache, numBlocks: 4, TestContext.Current.CancellationToken);
 
         Assert.InRange(result.Pbo, 0.0, 1.0);

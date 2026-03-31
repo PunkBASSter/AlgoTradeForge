@@ -98,9 +98,10 @@ public class SimulationCacheFileStoreTests : IDisposable
     [Fact]
     public void WriteAndRead_VariableLengthTrials()
     {
-        var timestamps = new long[][] { [100, 200, 300], [100, 200] };
+        var timelines = new long[][] { [100, 200, 300], [100, 200] };
+        var trialTimelineIndex = new int[] { 0, 1 };
         var matrix = new double[][] { [1.0, 2.0, 3.0], [-1.0, 0.5] };
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = new SimulationCache(timelines, trialTimelineIndex, matrix);
         var filePath = Path.Combine(_testDir, "variable.bin");
 
         _store.Write(cache, filePath);
@@ -135,29 +136,69 @@ public class SimulationCacheFileStoreTests : IDisposable
 
         var ex = Assert.Throws<InvalidDataException>(() => _store.Read(filePath));
         Assert.Contains("999", ex.Message);
+        Assert.Contains("3", ex.Message);
+    }
+
+    [Fact]
+    public void WriteAndRead_V3_SharedTimeline_RoundTrip()
+    {
+        // All 5 trials share a single timeline — verify deduplication survives serialization
+        var timestamps = new long[] { 1000, 2000, 3000, 4000, 5000 };
+        var matrix = new double[5][];
+        var rng = new Random(123);
+        for (var t = 0; t < 5; t++)
+        {
+            matrix[t] = new double[5];
+            for (var b = 0; b < 5; b++)
+                matrix[t][b] = (rng.NextDouble() - 0.5) * 10;
+        }
+
+        var cache = new SimulationCache([timestamps], new int[5], matrix);
+        Assert.Equal(1, cache.TimelineCount);
+
+        var filePath = Path.Combine(_testDir, "v3_shared.bin");
+        _store.Write(cache, filePath);
+        var loaded = _store.Read(filePath);
+
+        Assert.Equal(1, loaded.TimelineCount);
+        Assert.Equal(5, loaded.TrialCount);
+
+        // All trials should map to timeline 0
+        for (var t = 0; t < 5; t++)
+        {
+            Assert.Equal(0, loaded.GetTimelineIndex(t));
+
+            var origTs = cache.GetTrialTimestamps(t);
+            var loadedTs = loaded.GetTrialTimestamps(t);
+            for (var b = 0; b < 5; b++)
+                Assert.Equal(origTs[b], loadedTs[b]);
+
+            var origPnl = cache.GetTrialPnl(t);
+            var loadedPnl = loaded.GetTrialPnl(t);
+            for (var b = 0; b < 5; b++)
+                Assert.Equal(origPnl[b], loadedPnl[b]);
+        }
     }
 
     private static SimulationCache CreateTestCache(int trialCount, int barCount)
     {
         var rng = new Random(42);
-        var timestamps = new long[trialCount][];
+        var timestamps = new long[barCount];
         var matrix = new double[trialCount][];
+
+        for (var b = 0; b < barCount; b++)
+            timestamps[b] = 1704067200000L + b * 60_000L;
 
         for (var t = 0; t < trialCount; t++)
         {
-            var ts = new long[barCount];
             var row = new double[barCount];
             for (var b = 0; b < barCount; b++)
-            {
-                ts[b] = 1704067200000L + b * 60_000L;
                 row[b] = (rng.NextDouble() - 0.5) * 100;
-            }
 
-            timestamps[t] = ts;
             matrix[t] = row;
         }
 
-        return new SimulationCache(timestamps, matrix);
+        return new SimulationCache([timestamps], new int[trialCount], matrix);
     }
 
     private static List<BacktestRunRecord> CreateTestTrials(int trialCount, int barCount)

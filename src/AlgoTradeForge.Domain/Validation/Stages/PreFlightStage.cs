@@ -40,17 +40,17 @@ public sealed class PreFlightStage : IValidationStage
         var minBtlResult = CheckMinBtl(minBarCount, context.TotalCombinations, thresholds.MinBtlSafetyFactor);
 
         // --- Check 2: Data quality (timestamp gaps) ---
-        // Check per-trial timestamps, report worst-case across all trials
+        // Check per-timeline timestamps, report worst-case across all unique timelines
         var worstGapResult = new GapCheckResult(true, 0, 0);
-        for (var t = 0; t < cache.TrialCount; t++)
+        for (var tl = 0; tl < cache.TimelineCount; tl++)
         {
-            var trialGaps = CheckTimestampGaps(
-                cache.TrialTimestamps[t], thresholds.MaxGapRatio, thresholds.MaxAllowedGaps);
+            var tlGaps = CheckTimestampGaps(
+                cache.Timelines[tl], thresholds.MaxGapRatio, thresholds.MaxAllowedGaps);
 
             worstGapResult = new GapCheckResult(
-                worstGapResult.Passed && trialGaps.Passed,
-                Math.Max(worstGapResult.GapCount, trialGaps.GapCount),
-                Math.Max(worstGapResult.LargestGapMs, trialGaps.LargestGapMs));
+                worstGapResult.Passed && tlGaps.Passed,
+                Math.Max(worstGapResult.GapCount, tlGaps.GapCount),
+                Math.Max(worstGapResult.LargestGapMs, tlGaps.LargestGapMs));
         }
 
         var gapResult = worstGapResult;

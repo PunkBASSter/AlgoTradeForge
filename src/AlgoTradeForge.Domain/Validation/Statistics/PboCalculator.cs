@@ -48,21 +48,32 @@ public static class PboCalculator
             };
         }
 
-        // Pre-compute per-trial per-block cumulative P&L for fast IS/OOS summing
-        // blockPnl[trial][block] = sum of P&L deltas in that block's timestamp range
-        var blockPnl = new double[n][];
-        for (var trial = 0; trial < n; trial++)
+        // Pre-compute block windows per timeline (avoids N repeated binary searches for shared timelines)
+        var timelineBlockWindows = new (int start, int length)[cache.TimelineCount][];
+        for (var tl = 0; tl < cache.TimelineCount; tl++)
         {
-            blockPnl[trial] = new double[numBlocks];
+            timelineBlockWindows[tl] = new (int, int)[numBlocks];
             for (var block = 0; block < numBlocks; block++)
             {
                 var blockStartTs = cache.MinTimestamp + block * blockDuration;
-                // long.MaxValue for last block: LowerBound returns array.Length, so FindTrialWindow captures all remaining bars
+                // long.MaxValue for last block: LowerBound returns array.Length, so FindTimelineWindow captures all remaining bars
                 var blockEndTs = block == numBlocks - 1
                     ? long.MaxValue
                     : cache.MinTimestamp + (block + 1) * blockDuration;
 
-                var (start, len) = cache.FindTrialWindow(trial, blockStartTs, blockEndTs);
+                timelineBlockWindows[tl][block] = cache.FindTimelineWindow(tl, blockStartTs, blockEndTs);
+            }
+        }
+
+        // Pre-compute per-trial per-block cumulative P&L using cached timeline windows
+        var blockPnl = new double[n][];
+        for (var trial = 0; trial < n; trial++)
+        {
+            blockPnl[trial] = new double[numBlocks];
+            var windows = timelineBlockWindows[cache.GetTimelineIndex(trial)];
+            for (var block = 0; block < numBlocks; block++)
+            {
+                var (start, len) = windows[block];
                 var span = cache.GetTrialPnlWindow(trial, start, len);
                 var sum = 0.0;
                 for (var b = 0; b < span.Length; b++)

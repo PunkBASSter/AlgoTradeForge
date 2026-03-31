@@ -25,8 +25,7 @@ public class WalkForwardEngineTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, trialCount);
-        var cache = new SimulationCache(tsArray, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
         var config = new WfoConfig
         {
             WindowCount = 5,
@@ -61,8 +60,7 @@ public class WalkForwardEngineTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, 3);
-        var cache = new SimulationCache(tsArray, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
         var config = new WfoConfig
         {
             WindowCount = 1,
@@ -81,8 +79,8 @@ public class WalkForwardEngineTests
     public void RunWfo_TooFewBars_ReturnsFailed()
     {
         // 5 bars split into 10 windows → < 1 bar per window
-        var cache = new SimulationCache(
-            [new long[] { 1, 2, 3, 4, 5 }],
+        var cache = SimulationCacheTestHelper.Create(
+            new long[] { 1, 2, 3, 4, 5 },
             [new double[] { 1, 1, 1, 1, 1 }]);
 
         var config = new WfoConfig
@@ -101,8 +99,8 @@ public class WalkForwardEngineTests
     public void RunWfo_Cancellation_ThrowsOperationCancelled()
     {
         var ts = Enumerable.Range(0, 100).Select(i => (long)i).ToArray();
-        var cache = new SimulationCache(
-            [ts],
+        var cache = SimulationCacheTestHelper.Create(
+            ts,
             [Enumerable.Range(0, 100).Select(i => 10.0).ToArray()]);
 
         using var cts = new CancellationTokenSource();
@@ -136,8 +134,7 @@ public class WalkForwardEngineTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, trialCount);
-        var cache = new SimulationCache(tsArray, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
 
         var config = new WfmConfig
         {
@@ -175,8 +172,7 @@ public class WalkForwardEngineTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, trialCount);
-        var cache = new SimulationCache(tsArray, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
 
         var config = new WfmConfig
         {
@@ -216,8 +212,7 @@ public class WalkForwardEngineTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b;
 
-        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, 2);
-        var cache = new SimulationCache(tsArray, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
         var config = new WfoConfig
         {
             WindowCount = 4,

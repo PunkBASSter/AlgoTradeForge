@@ -94,8 +94,7 @@ public class ParameterLandscapeStageTests
         var matrix = trials.Length > 0
             ? trials.Select(_ => Enumerable.Range(0, barCount).Select(i => 1.0).ToArray()).ToArray()
             : [];
-        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, matrix.Length);
-        var cache = new SimulationCache(tsArray, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
 
         return new ValidationContext
         {

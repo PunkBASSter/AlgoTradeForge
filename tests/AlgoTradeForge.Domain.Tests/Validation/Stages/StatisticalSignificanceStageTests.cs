@@ -102,8 +102,7 @@ public class StatisticalSignificanceStageTests
             matrix[i] = pnl;
         }
 
-        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, matrix.Length);
-        var cache = new SimulationCache(tsArray, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
 
         return new ValidationContext
         {

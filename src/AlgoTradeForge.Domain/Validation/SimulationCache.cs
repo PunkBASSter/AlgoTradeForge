@@ -1,71 +1,93 @@
 namespace AlgoTradeForge.Domain.Validation;
 
 /// <summary>
-/// Stores per-trial P&amp;L deltas and timestamps from optimization trials.
-/// Supports variable-length equity curves across trials (e.g. when using SubscriptionAxis
-/// with different assets that have different bar counts).
+/// Stores per-trial P&amp;L deltas with deduplicated timestamp timelines.
+/// Trials sharing the same data subscription (asset/exchange/timeframe) share a single
+/// timeline array, avoiding memory duplication and repeated binary searches.
 /// </summary>
 public sealed class SimulationCache
 {
-    /// <summary>Per-trial timestamps (variable length). <c>TrialTimestamps[i].Length == TrialPnlMatrix[i].Length</c>.</summary>
-    public long[][] TrialTimestamps { get; }
+    /// <summary>Unique timestamp arrays, one per distinct data subscription. Typically 1 for single-asset optimizations.</summary>
+    public long[][] Timelines { get; }
+
+    /// <summary>Maps each trial to its timeline index. <c>Timelines[TrialTimelineIndex[t]].Length == TrialPnlMatrix[t].Length</c>.</summary>
+    public int[] TrialTimelineIndex { get; }
 
     /// <summary>Per-trial P&amp;L deltas (variable length).</summary>
     public double[][] TrialPnlMatrix { get; }
 
     public int TrialCount { get; }
 
+    /// <summary>Number of unique timelines.</summary>
+    public int TimelineCount { get; }
+
     /// <summary>Bar count of the longest trial.</summary>
     public int MaxBarCount { get; }
 
-    /// <summary>Global minimum timestamp across all trials.</summary>
+    /// <summary>Global minimum timestamp across all timelines.</summary>
     public long MinTimestamp { get; }
 
-    /// <summary>Global maximum timestamp across all trials.</summary>
+    /// <summary>Global maximum timestamp across all timelines.</summary>
     public long MaxTimestamp { get; }
 
-    public SimulationCache(long[][] trialTimestamps, double[][] trialPnlMatrix)
+    public SimulationCache(long[][] timelines, int[] trialTimelineIndex, double[][] trialPnlMatrix)
     {
-        ArgumentNullException.ThrowIfNull(trialTimestamps);
+        ArgumentNullException.ThrowIfNull(timelines);
+        ArgumentNullException.ThrowIfNull(trialTimelineIndex);
         ArgumentNullException.ThrowIfNull(trialPnlMatrix);
 
-        if (trialTimestamps.Length != trialPnlMatrix.Length)
+        if (trialTimelineIndex.Length != trialPnlMatrix.Length)
             throw new ArgumentException(
-                $"Timestamp arrays ({trialTimestamps.Length}) and PnL arrays ({trialPnlMatrix.Length}) must have the same count.");
+                $"Timeline index array ({trialTimelineIndex.Length}) and PnL array ({trialPnlMatrix.Length}) must have the same length.");
 
         var maxBars = 0;
         var minTs = long.MaxValue;
         var maxTs = long.MinValue;
 
-        for (var i = 0; i < trialPnlMatrix.Length; i++)
+        // Validate timelines and compute min/max timestamps
+        for (var tl = 0; tl < timelines.Length; tl++)
         {
-            if (trialTimestamps[i].Length != trialPnlMatrix[i].Length)
-                throw new ArgumentException(
-                    $"Trial {i} has {trialTimestamps[i].Length} timestamps but {trialPnlMatrix[i].Length} PnL values.");
-
-            var len = trialPnlMatrix[i].Length;
+            var len = timelines[tl].Length;
             if (len > maxBars) maxBars = len;
 
             if (len > 0)
             {
-                if (trialTimestamps[i][0] < minTs) minTs = trialTimestamps[i][0];
-                if (trialTimestamps[i][^1] > maxTs) maxTs = trialTimestamps[i][^1];
+                if (timelines[tl][0] < minTs) minTs = timelines[tl][0];
+                if (timelines[tl][^1] > maxTs) maxTs = timelines[tl][^1];
             }
         }
 
-        TrialTimestamps = trialTimestamps;
+        // Validate per-trial mappings
+        for (var t = 0; t < trialPnlMatrix.Length; t++)
+        {
+            var tlIdx = trialTimelineIndex[t];
+            if (tlIdx < 0 || tlIdx >= timelines.Length)
+                throw new ArgumentException(
+                    $"Trial {t} has timeline index {tlIdx} but only {timelines.Length} timelines exist.");
+
+            if (timelines[tlIdx].Length != trialPnlMatrix[t].Length)
+                throw new ArgumentException(
+                    $"Trial {t} has {trialPnlMatrix[t].Length} PnL values but its timeline has {timelines[tlIdx].Length} timestamps.");
+        }
+
+        Timelines = timelines;
+        TrialTimelineIndex = trialTimelineIndex;
         TrialPnlMatrix = trialPnlMatrix;
         TrialCount = trialPnlMatrix.Length;
+        TimelineCount = timelines.Length;
         MaxBarCount = maxBars;
-        MinTimestamp = trialPnlMatrix.Length > 0 && maxBars > 0 ? minTs : 0;
-        MaxTimestamp = trialPnlMatrix.Length > 0 && maxBars > 0 ? maxTs : 0;
+        MinTimestamp = timelines.Length > 0 && maxBars > 0 ? minTs : 0;
+        MaxTimestamp = timelines.Length > 0 && maxBars > 0 ? maxTs : 0;
     }
+
+    /// <summary>Returns the timeline index for a trial.</summary>
+    public int GetTimelineIndex(int trialIndex) => TrialTimelineIndex[trialIndex];
 
     /// <summary>Returns the bar count for a specific trial.</summary>
     public int GetBarCount(int trialIndex) => TrialPnlMatrix[trialIndex].Length;
 
-    /// <summary>Returns the timestamps for a specific trial.</summary>
-    public ReadOnlySpan<long> GetTrialTimestamps(int trialIndex) => TrialTimestamps[trialIndex];
+    /// <summary>Returns the timestamps for a specific trial (from its shared timeline).</summary>
+    public ReadOnlySpan<long> GetTrialTimestamps(int trialIndex) => Timelines[TrialTimelineIndex[trialIndex]];
 
     /// <summary>Returns the P&amp;L row for a single trial as a span (zero-allocation).</summary>
     public ReadOnlySpan<double> GetTrialPnl(int trialIndex) => TrialPnlMatrix[trialIndex];
@@ -75,22 +97,26 @@ public sealed class SimulationCache
         TrialPnlMatrix[trialIndex].AsSpan(startBar, length);
 
     /// <summary>
-    /// Finds the bar index range within a trial that falls in the timestamp range [startTsInclusive, endTsExclusive).
-    /// Uses binary search on the trial's sorted timestamps.
+    /// Finds the bar index range within a timeline that falls in [startTsInclusive, endTsExclusive).
+    /// Uses binary search. All trials sharing this timeline get the same result.
     /// </summary>
-    /// <returns>Tuple of (startBarIndex, length). Length may be 0 if no bars fall in the range.</returns>
-    public (int start, int length) FindTrialWindow(int trialIndex, long startTsInclusive, long endTsExclusive)
+    public (int start, int length) FindTimelineWindow(int timelineIndex, long startTsInclusive, long endTsExclusive)
     {
-        var timestamps = TrialTimestamps[trialIndex];
+        var timestamps = Timelines[timelineIndex];
         if (timestamps.Length == 0) return (0, 0);
 
-        // Find first bar >= startTsInclusive
         var lo = LowerBound(timestamps, startTsInclusive);
-        // Find first bar >= endTsExclusive (exclusive end)
         var hi = LowerBound(timestamps, endTsExclusive);
 
         return (lo, hi - lo);
     }
+
+    /// <summary>
+    /// Finds the bar index range within a trial's timeline that falls in [startTsInclusive, endTsExclusive).
+    /// Delegates to <see cref="FindTimelineWindow"/> using the trial's timeline.
+    /// </summary>
+    public (int start, int length) FindTrialWindow(int trialIndex, long startTsInclusive, long endTsExclusive) =>
+        FindTimelineWindow(TrialTimelineIndex[trialIndex], startTsInclusive, endTsExclusive);
 
     /// <summary>Computes cumulative equity curve for a trial: running sum of P&amp;L deltas + initial equity.</summary>
     public double[] ComputeCumulativeEquity(int trialIndex, double initialEquity)

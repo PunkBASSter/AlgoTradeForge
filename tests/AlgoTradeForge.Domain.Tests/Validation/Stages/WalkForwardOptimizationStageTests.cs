@@ -51,8 +51,7 @@ public class WalkForwardOptimizationStageTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, trialCount);
-        var cache = new SimulationCache(tsArray, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
         var trials = Enumerable.Range(0, trialCount).Select(CreateTrial).ToList();
 
         var context = new ValidationContext
@@ -74,8 +73,8 @@ public class WalkForwardOptimizationStageTests
     public void EmptyCandidates_ReturnsEmpty()
     {
         var ts = Enumerable.Range(0, 100).Select(i => (long)i).ToArray();
-        var cache = new SimulationCache(
-            [ts],
+        var cache = SimulationCacheTestHelper.Create(
+            ts,
             [Enumerable.Range(0, 100).Select(_ => 1.0).ToArray()]);
 
         var context = new ValidationContext
@@ -106,8 +105,7 @@ public class WalkForwardOptimizationStageTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, trialCount);
-        var cache = new SimulationCache(tsArray, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
         var trials = Enumerable.Range(0, trialCount).Select(CreateTrial).ToList();
 
         return new ValidationContext

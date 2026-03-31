@@ -139,8 +139,7 @@ public class BasicProfitabilityStageTests
         var barCount = matrix[0].Length;
         var timestamps = Enumerable.Range(0, barCount).Select(i => (long)(i * 100)).ToArray();
 
-        var tsArray = SimulationCacheTestHelper.ReplicateTimestamps(timestamps, matrix.Length);
-        var cache = new SimulationCache(tsArray, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
 
         return new ValidationContext
         {

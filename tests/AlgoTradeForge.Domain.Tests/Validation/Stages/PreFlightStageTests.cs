@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Tests.Validation.TestHelpers;
 using Xunit;
 using AlgoTradeForge.Domain.Validation;
 using AlgoTradeForge.Domain.Validation.Stages;
@@ -221,17 +222,15 @@ public class PreFlightStageTests
     public void NaNInPnl_RejectsAffectedCandidate()
     {
         var ts = Enumerable.Range(0, 100).Select(i => (long)i * 60_000).ToArray();
-        var timestamps = new long[3][];
         var matrix = new double[3][];
         for (var i = 0; i < 3; i++)
         {
-            timestamps[i] = (long[])ts.Clone();
             matrix[i] = Enumerable.Repeat(1.0, 100).ToArray();
         }
 
         matrix[1][50] = double.NaN; // NaN in trial 1
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = SimulationCacheTestHelper.Create(ts, matrix);
         var trials = CreateTrials(3);
 
         var context = new ValidationContext
@@ -275,15 +274,13 @@ public class PreFlightStageTests
         ValidationThresholdProfile? profile = null)
     {
         var barCount = timestamps.Length;
-        var tsArray = new long[trialCount][];
         var matrix = new double[trialCount][];
         for (var i = 0; i < trialCount; i++)
         {
-            tsArray[i] = (long[])timestamps.Clone();
             matrix[i] = Enumerable.Repeat(1.0, barCount).ToArray();
         }
 
-        var cache = new SimulationCache(tsArray, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
         var trials = CreateTrials(trialCount, commissions);
 
         return new ValidationContext

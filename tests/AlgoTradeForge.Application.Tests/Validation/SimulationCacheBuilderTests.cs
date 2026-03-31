@@ -44,7 +44,7 @@ public class SimulationCacheBuilderTests
 
         var cache = SimulationCacheBuilder.Build(trials);
 
-        Assert.Equal(new long[] { 1000, 2000 }, cache.TrialTimestamps[0]);
+        Assert.Equal(new long[] { 1000, 2000 }, cache.GetTrialTimestamps(0).ToArray());
     }
 
     [Fact]
