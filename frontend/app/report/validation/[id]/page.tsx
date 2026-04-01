@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useValidationDetail,
-  useValidationStatus,
   useValidationEquity,
   useDeleteValidation,
 } from "@/hooks/use-validations";
+import { RunProgress } from "@/components/features/dashboard/run-progress";
 import { CompositeScorecard } from "@/components/features/validation/composite-scorecard";
 import { StagePipeline } from "@/components/features/validation/stage-pipeline";
 import { VerdictBadge } from "@/components/features/validation/verdict-badge";
@@ -42,22 +42,11 @@ export default function ValidationReportPage({
     error,
   } = useValidationDetail(id);
 
-  const { data: statusData } = useValidationStatus(id);
-
-  const isInProgress = validation?.status === "InProgress"
-    || (statusData?.status === "InProgress" && !validation);
-
+  const isInProgress = validation?.status === "InProgress";
   const isCompleted = validation?.status === "Completed";
   const { data: equityData } = useValidationEquity(id, isCompleted && activeTab === "charts");
 
   const deleteMutation = useDeleteValidation();
-
-  // When status polling detects completion, refetch the detail
-  React.useEffect(() => {
-    if (statusData?.status === "Completed") {
-      queryClient.invalidateQueries({ queryKey: ["validation", id] });
-    }
-  }, [statusData?.status, id, queryClient]);
 
   const handleDelete = () => {
     if (!confirm("Delete this validation run? This cannot be undone.")) return;
@@ -65,6 +54,25 @@ export default function ValidationReportPage({
       onSuccess: () => router.push("/"),
     });
   };
+
+  // Treat 404 during initial load as in-progress (placeholder not yet persisted)
+  const is404 = error && "status" in error && (error as { status: number }).status === 404;
+  const showProgressOnly = is404 || (!validation && !isLoading && !error);
+
+  if (showProgressOnly) {
+    return (
+      <div className="p-6 space-y-6">
+        <Skeleton variant="line" width="300px" />
+        <RunProgress
+          runId={id}
+          mode="validation"
+          onComplete={() => {
+            queryClient.invalidateQueries({ queryKey: ["validation", id] });
+          }}
+        />
+      </div>
+    );
+  }
 
   if (error) {
     return (
@@ -129,21 +137,14 @@ export default function ValidationReportPage({
       </div>
 
       {/* In-progress state */}
-      {isInProgress && statusData && (
-        <div className="rounded-lg border border-border-default bg-bg-panel p-4">
-          <div className="flex items-center gap-3">
-            <div className="h-2 w-2 rounded-full bg-accent-blue animate-pulse" />
-            <span className="text-sm text-text-secondary">
-              Validation in progress — Stage {statusData.currentStage}/{statusData.totalStages}
-            </span>
-          </div>
-          <div className="mt-2 h-2 rounded-full bg-bg-tertiary overflow-hidden">
-            <div
-              className="h-full rounded-full bg-accent-blue transition-all"
-              style={{ width: `${Math.round((statusData.currentStage / statusData.totalStages) * 100)}%` }}
-            />
-          </div>
-        </div>
+      {isInProgress && (
+        <RunProgress
+          runId={id}
+          mode="validation"
+          onComplete={() => {
+            queryClient.invalidateQueries({ queryKey: ["validation", id] });
+          }}
+        />
       )}
 
       {/* Error/cancelled banner */}

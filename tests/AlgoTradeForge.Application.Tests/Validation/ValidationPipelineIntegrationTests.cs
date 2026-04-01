@@ -27,7 +27,7 @@ public class ValidationPipelineIntegrationTests
             onProgress: null, ct: CancellationToken.None,
             totalCombinations: 100);
 
-        // All 8 stages always run (no early exit)
+        // All 8 stages always run (independent evaluation, no early exit)
         Assert.Equal(ValidationPipeline.StageCount, results.Count);
 
         // Stage 0 (PreFlight) should pass all

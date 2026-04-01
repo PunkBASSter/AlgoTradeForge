@@ -4,16 +4,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useBacktestStatus, useOptimizationStatus } from "@/hooks/use-run-status";
+import { useBacktestStatus, useOptimizationStatus, useValidationStatusPolling } from "@/hooks/use-run-status";
 import { getClient } from "@/lib/services";
 import { useToast } from "@/components/ui/toast";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { RunStatusType } from "@/types/api";
 import { deriveBacktestStatus, deriveOptimizationStatus } from "@/types/api";
+import type { ValidationStatus } from "@/types/validation";
+import { deriveValidationStatus } from "@/types/validation";
 
 interface RunProgressProps {
   runId: string;
-  mode: "backtest" | "optimization";
+  mode: "backtest" | "optimization" | "validation";
   onComplete?: () => void;
 }
 
@@ -37,23 +39,29 @@ export function RunProgress({ runId, mode, onComplete }: RunProgressProps) {
 
   const backtestQuery = useBacktestStatus(mode === "backtest" ? runId : null);
   const optimizationQuery = useOptimizationStatus(mode === "optimization" ? runId : null);
+  const validationQuery = useValidationStatusPolling(mode === "validation" ? runId : null);
 
-  const isBacktest = mode === "backtest";
-  const data = isBacktest ? backtestQuery.data : optimizationQuery.data;
-  const isLoading = isBacktest ? backtestQuery.isLoading : optimizationQuery.isLoading;
-  const error = isBacktest ? backtestQuery.error : optimizationQuery.error;
+  const query = mode === "backtest" ? backtestQuery
+    : mode === "optimization" ? optimizationQuery
+    : validationQuery;
+
+  const { data, isLoading, error } = query;
 
   const handleCancel = async () => {
     setCancelling(true);
     try {
-      if (isBacktest) {
+      if (mode === "backtest") {
         await client.cancelBacktest(runId);
-      } else {
+      } else if (mode === "optimization") {
         await client.cancelOptimization(runId);
+      } else {
+        await client.cancelValidation(runId);
       }
-      const queryKey = isBacktest
+      const queryKey = mode === "backtest"
         ? ["backtest-status", runId]
-        : ["optimization-status", runId];
+        : mode === "optimization"
+          ? ["optimization-status", runId]
+          : ["validation-status", runId];
       await queryClient.invalidateQueries({ queryKey });
     } catch (err) {
       // Swallow 404 (already completed), but surface other errors
@@ -66,19 +74,26 @@ export function RunProgress({ runId, mode, onComplete }: RunProgressProps) {
     }
   };
 
+  // Derive status from mode-specific data
+  function getDerivedStatus(): RunStatusType | undefined {
+    if (!data) return undefined;
+    if (mode === "backtest")
+      return deriveBacktestStatus(data as import("@/types/api").BacktestStatus);
+    if (mode === "optimization")
+      return deriveOptimizationStatus(data as import("@/types/api").OptimizationStatus);
+    return deriveValidationStatus(data as ValidationStatus);
+  }
+
+  const derivedStatus = getDerivedStatus();
+
   // Notify parent on completion (once only)
-  const derivedStatusForEffect = data
-    ? (isBacktest
-        ? deriveBacktestStatus(data as import("@/types/api").BacktestStatus)
-        : deriveOptimizationStatus(data as import("@/types/api").OptimizationStatus))
-    : undefined;
   const hasNotifiedRef = useRef(false);
   useEffect(() => {
-    if (derivedStatusForEffect === "Completed" && onComplete && !hasNotifiedRef.current) {
+    if (derivedStatus === "Completed" && onComplete && !hasNotifiedRef.current) {
       hasNotifiedRef.current = true;
       onComplete();
     }
-  }, [derivedStatusForEffect, onComplete]);
+  }, [derivedStatus, onComplete]);
 
   if (isLoading) {
     return (
@@ -100,22 +115,29 @@ export function RunProgress({ runId, mode, onComplete }: RunProgressProps) {
     );
   }
 
-  if (!data) return null;
+  if (!data || !derivedStatus) return null;
 
-  const derivedStatus = isBacktest
-    ? deriveBacktestStatus(data as import("@/types/api").BacktestStatus)
-    : deriveOptimizationStatus(data as import("@/types/api").OptimizationStatus);
+  // Extract processed/total counts based on mode
+  let processed: number;
+  let total: number;
+  let label: string;
 
-  const processed = isBacktest
-    ? (data as { processedBars: number }).processedBars
-    : (data as { completedCombinations: number }).completedCombinations;
-  const total = isBacktest
-    ? (data as { totalBars: number }).totalBars
-    : (data as { totalCombinations: number }).totalCombinations;
+  if (mode === "backtest") {
+    processed = (data as { processedBars: number }).processedBars;
+    total = (data as { totalBars: number }).totalBars;
+    label = "Bars";
+  } else if (mode === "optimization") {
+    processed = (data as { completedCombinations: number }).completedCombinations;
+    total = (data as { totalCombinations: number }).totalCombinations;
+    label = "Combinations";
+  } else {
+    const vData = data as ValidationStatus;
+    processed = vData.currentStage;
+    total = vData.totalStages;
+    label = "Stages";
+  }
 
-  const label = isBacktest ? "Bars" : "Combinations";
-
-  const backtestResult = isBacktest ? (data as import("@/types/api").BacktestStatus).result : undefined;
+  const backtestResult = mode === "backtest" ? (data as import("@/types/api").BacktestStatus).result : undefined;
   const errorMessage = backtestResult?.errorMessage;
   const errorStackTrace = backtestResult?.errorStackTrace;
 

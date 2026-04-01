@@ -1,3 +1,5 @@
+import type { RunStatusType } from "@/types/api";
+
 // Phase 2 — Validation result types for WFO, WFM, and parameter analysis
 
 export interface WfoWindowResult {
@@ -112,6 +114,14 @@ export interface ValidationStatus {
   currentStage: number;
   totalStages: number;
   result: ValidationRun | null;
+}
+
+export function deriveValidationStatus(data: ValidationStatus): RunStatusType {
+  if (data.status === "Completed") return "Completed";
+  if (data.status === "Cancelled") return "Cancelled";
+  if (data.status === "Failed") return "Failed";
+  if (data.currentStage === 0) return "Pending";
+  return "Running";
 }
 
 export interface ValidationSubmission {

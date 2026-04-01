@@ -15,17 +15,19 @@ public sealed class MonteCarloPnlDeltasPermutationStage : IValidationStage
     public StageResult Execute(ValidationContext context, CancellationToken ct = default)
     {
         var thresholds = context.Profile.MonteCarloPermutation;
-        var survivors = new List<int>();
-        var verdicts = new List<CandidateVerdict>(context.AllCandidateIndices.Count);
+        var candidateCount = context.AllCandidateIndices.Count;
 
         var initialEquity = context.Trials.Count > 0
             ? (double)context.Trials[0].Metrics.InitialCapital
             : 10000.0;
 
-        foreach (var idx in context.AllCandidateIndices)
-        {
-            ct.ThrowIfCancellationRequested();
+        // Per-candidate Monte Carlo is expensive — parallelize across candidates.
+        // Each candidate uses its own RNG seed and read-only cache access, so no shared mutable state.
+        var results = new (bool Passed, int Idx, CandidateVerdict Verdict)[candidateCount];
 
+        Parallel.For(0, candidateCount, new ParallelOptions { CancellationToken = ct }, i =>
+        {
+            var idx = context.AllCandidateIndices[i];
             var trial = context.Trials[idx];
             var pnlDeltas = context.Cache.GetTrialPnl(idx);
             var metrics = new Dictionary<string, double>();
@@ -70,10 +72,16 @@ public sealed class MonteCarloPnlDeltasPermutationStage : IValidationStage
                 failReason ??= "COST_STRESS_UNPROFITABLE";
 
             var passed = failReason is null;
-            if (passed)
-                survivors.Add(idx);
+            results[i] = (passed, idx, new CandidateVerdict(trial.Id, passed, failReason, metrics));
+        });
 
-            verdicts.Add(new CandidateVerdict(trial.Id, passed, failReason, metrics));
+        // Collect results (preserves original candidate ordering)
+        var survivors = new List<int>();
+        var verdicts = new List<CandidateVerdict>(candidateCount);
+        foreach (var (passed, idx, verdict) in results)
+        {
+            if (passed) survivors.Add(idx);
+            verdicts.Add(verdict);
         }
 
         return new StageResult(survivors, verdicts);
