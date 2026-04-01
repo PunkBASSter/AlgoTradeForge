@@ -78,10 +78,11 @@ public sealed class RunGeneticOptimizationCommandHandler(
         }, ct);
 
         // 5. Launch background task
+        var normalizer = NormalizingEnumerable.TryCreateNormalizer(descriptor.ParamsType);
         _ = Task.Factory.StartNew(
             () => RunGeneticOptimizationAsync(
                 command, fixedSubscriptions, dataCache, activeAxes,
-                gaConfig, runId, startedAt, strategyFactory),
+                gaConfig, runId, startedAt, strategyFactory, normalizer),
             CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
         return new OptimizationSubmissionDto
@@ -99,7 +100,8 @@ public sealed class RunGeneticOptimizationCommandHandler(
         GeneticConfig gaConfig,
         Guid runId,
         DateTimeOffset startedAt,
-        IOptimizationStrategyFactory factory)
+        IOptimizationStrategyFactory factory,
+        IParameterNormalizer? normalizer)
     {
         using var cts = new CancellationTokenSource(timeoutOptions.Value.OptimizationTimeout);
         cancellationRegistry.Register(runId, cts);
@@ -147,7 +149,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
                     population, command.StrategyName, command.BacktestSettings,
                     factory, fixedSubscriptions, dataCache,
                     fitnessFunction, filter, topTrials, failedTrials,
-                    runId, startedAt, state, cache,
+                    runId, startedAt, state, cache, normalizer,
                     maxParallelism, trialTimeout, ct);
 
                 var cacheHitsThisGen = (cache?.ReadHits() ?? 0) - hitsBefore;
@@ -276,6 +278,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
         DateTimeOffset startedAt,
         EvalState state,
         GeneticFitnessCache? cache,
+        IParameterNormalizer? normalizer,
         int maxParallelism,
         TimeSpan trialTimeout,
         CancellationToken ct)
@@ -283,7 +286,15 @@ public sealed class RunGeneticOptimizationCommandHandler(
         // Convert chromosomes to combinations for evaluation
         var combos = new ParameterCombination[population.Count];
         for (var i = 0; i < population.Count; i++)
+        {
             combos[i] = ChromosomeFactory.ToParameterCombination(population[i]);
+            if (normalizer is not null)
+                combos[i] = normalizer.Normalize(combos[i]);
+        }
+
+        // Normalized duplicates become GeneticFitnessCache hits, avoiding redundant
+        // backtests. No separate DedupSkipped counter needed (unlike brute-force which
+        // pre-filters the combination stream via NormalizingEnumerable).
 
         var fitnesses = new double[population.Count];
         for (var i = 0; i < fitnesses.Length; i++)

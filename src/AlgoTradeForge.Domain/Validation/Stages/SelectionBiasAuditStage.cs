@@ -15,8 +15,7 @@ public sealed class SelectionBiasAuditStage : IValidationStage
     public StageResult Execute(ValidationContext context, CancellationToken ct = default)
     {
         var thresholds = context.Profile.SelectionBiasAudit;
-        var survivors = new List<int>();
-        var verdicts = new List<CandidateVerdict>(context.ActiveCandidateIndices.Count);
+        var candidateCount = context.AllCandidateIndices.Count;
 
         // Gate check: CSCV/PBO (runs once, applies to all)
         var pboResult = PboCalculator.Compute(context.Cache, thresholds.CscvBlocks, ct);
@@ -26,10 +25,13 @@ public sealed class SelectionBiasAuditStage : IValidationStage
             ? (double)context.Trials[0].Metrics.InitialCapital
             : 10000.0;
 
-        foreach (var idx in context.ActiveCandidateIndices)
-        {
-            ct.ThrowIfCancellationRequested();
+        // Per-candidate analysis is expensive — parallelize across candidates.
+        // Each candidate uses read-only cache access and independent analysis, so no shared mutable state.
+        var results = new (bool Passed, int Idx, CandidateVerdict Verdict)[candidateCount];
 
+        Parallel.For(0, candidateCount, new ParallelOptions { CancellationToken = ct }, i =>
+        {
+            var idx = context.AllCandidateIndices[i];
             var trial = context.Trials[idx];
             var pnlDeltas = context.Cache.GetTrialPnl(idx);
             var metrics = new Dictionary<string, double>();
@@ -40,8 +42,8 @@ public sealed class SelectionBiasAuditStage : IValidationStage
 
             if (!pboPassed)
             {
-                verdicts.Add(new CandidateVerdict(trial.Id, false, "PBO_EXCESSIVE", metrics));
-                continue;
+                results[i] = (false, idx, new CandidateVerdict(trial.Id, false, "PBO_EXCESSIVE", metrics));
+                return;
             }
 
             string? failReason = null;
@@ -80,10 +82,16 @@ public sealed class SelectionBiasAuditStage : IValidationStage
                 failReason ??= "ALPHA_DECAY_DETECTED";
 
             var passed = failReason is null;
-            if (passed)
-                survivors.Add(idx);
+            results[i] = (passed, idx, new CandidateVerdict(trial.Id, passed, failReason, metrics));
+        });
 
-            verdicts.Add(new CandidateVerdict(trial.Id, passed, failReason, metrics));
+        // Collect results (preserves original candidate ordering)
+        var survivors = new List<int>();
+        var verdicts = new List<CandidateVerdict>(candidateCount);
+        foreach (var (passed, idx, verdict) in results)
+        {
+            if (passed) survivors.Add(idx);
+            verdicts.Add(verdict);
         }
 
         return new StageResult(survivors, verdicts);

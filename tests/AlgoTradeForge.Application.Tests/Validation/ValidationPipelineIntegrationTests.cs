@@ -27,9 +27,8 @@ public class ValidationPipelineIntegrationTests
             onProgress: null, ct: CancellationToken.None,
             totalCombinations: 100);
 
-        // Should have at least a few stage results (pipeline stops when candidates exhausted)
-        Assert.NotEmpty(results);
-        Assert.True(results.Count >= 2, $"Expected at least 2 stages, got {results.Count}");
+        // All 8 stages always run (independent evaluation, no early exit)
+        Assert.Equal(ValidationPipeline.StageCount, results.Count);
 
         // Stage 0 (PreFlight) should pass all
         Assert.Equal(50, results[0].CandidatesIn);
@@ -108,11 +107,11 @@ public class ValidationPipelineIntegrationTests
             ct: CancellationToken.None,
             totalCombinations: 50);
 
-        // Should get at least 1 progress update (might get fewer if early exit)
-        Assert.NotEmpty(progressUpdates);
-        // Last update should be (8, 8) or the stage where all were eliminated
+        // All stages always run + final completion = StageCount + 1 calls
+        Assert.Equal(ValidationPipeline.StageCount + 1, progressUpdates.Count);
         var last = progressUpdates[^1];
-        Assert.Equal(last.Total, ValidationPipeline.StageCount);
+        Assert.Equal(ValidationPipeline.StageCount, last.Current);
+        Assert.Equal(ValidationPipeline.StageCount, last.Total);
     }
 
     [Fact]
@@ -134,7 +133,7 @@ public class ValidationPipelineIntegrationTests
     [Fact]
     public void PerformanceBenchmark_200Trials10KBars_CompletesInTime()
     {
-        // Regression guardrail: full pipeline should complete in < 60s
+        // Regression guardrail: full pipeline should complete in < 180s (all stages run on all candidates)
         var (cache, trials) = CreateSyntheticData(
             trialCount: 200, barCount: 10_000, meanPnlPerBar: 0.5, stdDev: 5.0, seed: 42);
         var profile = ValidationThresholdProfile.CryptoStandard();
@@ -147,9 +146,9 @@ public class ValidationPipelineIntegrationTests
             totalCombinations: 1000);
         sw.Stop();
 
-        // Should complete in under 60 seconds (typically < 15s)
-        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(60),
-            $"Pipeline took {sw.Elapsed.TotalSeconds:F1}s, expected < 60s");
+        // Should complete in under 150 seconds (~2x observed baseline of ~75s)
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(150),
+            $"Pipeline took {sw.Elapsed.TotalSeconds:F1}s, expected < 150s");
     }
 
     // ---- Helpers ----
@@ -222,7 +221,10 @@ public class ValidationPipelineIntegrationTests
             };
         }
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var trialData = new TrialData[trialCount];
+        for (var t = 0; t < trialCount; t++)
+            trialData[t] = new TrialData(0, matrix[t]);
+        var cache = new SimulationCache([timestamps], trialData);
         return (cache, trials);
     }
 }

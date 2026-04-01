@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Tests.Validation.TestHelpers;
 using Xunit;
 using AlgoTradeForge.Domain.Validation;
 using AlgoTradeForge.Domain.Validation.Stages;
@@ -101,14 +102,14 @@ public class StatisticalSignificanceStageTests
             matrix[i] = pnl;
         }
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
 
         return new ValidationContext
         {
             Cache = cache,
             Trials = trials.ToList(),
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = Enumerable.Range(0, trials.Length).ToList(),
+            AllCandidateIndices = Enumerable.Range(0, trials.Length).ToList(),
         };
     }
 

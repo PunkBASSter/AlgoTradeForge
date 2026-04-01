@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Tests.Validation.TestHelpers;
 using AlgoTradeForge.Domain.Validation;
 using AlgoTradeForge.Domain.Validation.Stages;
 using Xunit;
@@ -50,7 +51,7 @@ public class WalkForwardOptimizationStageTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
         var trials = Enumerable.Range(0, trialCount).Select(CreateTrial).ToList();
 
         var context = new ValidationContext
@@ -58,7 +59,7 @@ public class WalkForwardOptimizationStageTests
             Cache = cache,
             Trials = trials,
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = Enumerable.Range(0, trialCount).ToList(),
+            AllCandidateIndices = Enumerable.Range(0, trialCount).ToList(),
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -71,8 +72,9 @@ public class WalkForwardOptimizationStageTests
     [Fact]
     public void EmptyCandidates_ReturnsEmpty()
     {
-        var cache = new SimulationCache(
-            Enumerable.Range(0, 100).Select(i => (long)i).ToArray(),
+        var ts = Enumerable.Range(0, 100).Select(i => (long)i).ToArray();
+        var cache = SimulationCacheTestHelper.Create(
+            ts,
             [Enumerable.Range(0, 100).Select(_ => 1.0).ToArray()]);
 
         var context = new ValidationContext
@@ -80,7 +82,7 @@ public class WalkForwardOptimizationStageTests
             Cache = cache,
             Trials = [CreateTrial(0)],
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = [],
+            AllCandidateIndices = [],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -103,7 +105,7 @@ public class WalkForwardOptimizationStageTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
         var trials = Enumerable.Range(0, trialCount).Select(CreateTrial).ToList();
 
         return new ValidationContext
@@ -111,7 +113,7 @@ public class WalkForwardOptimizationStageTests
             Cache = cache,
             Trials = trials,
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = Enumerable.Range(0, trialCount).ToList(),
+            AllCandidateIndices = Enumerable.Range(0, trialCount).ToList(),
         };
     }
 

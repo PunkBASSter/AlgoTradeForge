@@ -303,6 +303,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                     total_combinations = $totalCombinations,
                     filtered_trials = $filteredTrials,
                     failed_trials = $failedTrials,
+                    dedup_skipped = $dedupSkipped,
                     error_message = $errorMsg,
                     optimization_method = $optMethod,
                     generations_completed = $gensCompleted,
@@ -317,6 +318,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             cmd.Parameters.AddWithValue("$totalCombinations", record.TotalCombinations);
             cmd.Parameters.AddWithValue("$filteredTrials", record.FilteredTrials);
             cmd.Parameters.AddWithValue("$failedTrials", record.FailedTrials);
+            cmd.Parameters.AddWithValue("$dedupSkipped", record.DedupSkipped);
             cmd.Parameters.AddWithValue("$errorMsg", (object?)record.ErrorMessage ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$optMethod", (object?)record.OptimizationMethod ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$gensCompleted", record.GenerationsCompleted.HasValue ? record.GenerationsCompleted.Value : DBNull.Value);
@@ -715,6 +717,9 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             MaxParallelism = reader.GetInt32(reader.GetOrdinal("max_parallelism")),
             FilteredTrials = reader.GetInt64(reader.GetOrdinal("filtered_trials")),
             FailedTrials = reader.GetInt64(reader.GetOrdinal("failed_trials")),
+            DedupSkipped = TryGetOrdinal(reader, "dedup_skipped") is int dedupOrd && !reader.IsDBNull(dedupOrd)
+                ? reader.GetInt64(dedupOrd)
+                : 0,
             InputJson = reader.IsDBNull(reader.GetOrdinal("input_json"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("input_json")),
@@ -817,5 +822,15 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             };
         }
         return dict;
+    }
+
+    /// <summary>
+    /// Safely gets column ordinal, returning null if the column does not exist.
+    /// Handles backward-compatible reads from databases that predate the column.
+    /// </summary>
+    private static int? TryGetOrdinal(System.Data.Common.DbDataReader reader, string name)
+    {
+        try { return reader.GetOrdinal(name); }
+        catch (ArgumentOutOfRangeException) { return null; }
     }
 }

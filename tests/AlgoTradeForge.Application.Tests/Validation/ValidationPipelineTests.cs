@@ -24,7 +24,7 @@ public class ValidationPipelineTests
     }
 
     [Fact]
-    public void EarlyExit_WhenAllEliminated()
+    public void AllEliminated_AllStagesStillRun()
     {
         var (cache, trials) = CreateTrials(3, strongMetrics: false);
         var profile = ValidationThresholdProfile.CryptoStandard();
@@ -33,11 +33,8 @@ public class ValidationPipelineTests
         var (stageResults, survivors) = pipeline.Execute(
             cache, trials, profile, Guid.NewGuid(), null, CancellationToken.None);
 
-        // BasicProfitability (stage 1) should eliminate all; pipeline breaks after stage 2
-        // (PreFlight runs first as stage 0, then BasicProfitability as stage 1, then break)
-        Assert.Equal(2, stageResults.Count);
-        Assert.Equal("PreFlight", stageResults[0].StageName);
-        Assert.Equal("BasicProfitability", stageResults[1].StageName);
+        // All 8 stages run regardless of eliminations
+        Assert.Equal(ValidationPipeline.StageCount, stageResults.Count);
         Assert.Empty(survivors);
     }
 
@@ -82,7 +79,7 @@ public class ValidationPipelineTests
     }
 
     [Fact]
-    public void StageResults_CandidateFlowIsConsistent()
+    public void StageResults_AllStagesReceiveAllCandidates()
     {
         // Mix: 2 strong trials + 1 weak (negative NetProfit)
         var strongTrials = CreateTrialSummaries(2, strongMetrics: true, startIndex: 0);
@@ -95,16 +92,76 @@ public class ValidationPipelineTests
                 : new double[] { -50.0, -60.0, -70.0 }
         ).ToArray();
 
-        var cache = new SimulationCache([100, 200, 300], pnlRows);
+        var ts = new long[] { 100, 200, 300 };
+        var cache = new SimulationCache([ts], pnlRows.Select((row, i) => new TrialData(0, row)).ToArray());
         var profile = ValidationThresholdProfile.CryptoStandard();
         var pipeline = new ValidationPipeline();
 
         var (stageResults, _) = pipeline.Execute(
             cache, allTrials, profile, Guid.NewGuid(), null, CancellationToken.None);
 
-        // Verify chain: CandidatesIn[N+1] == CandidatesOut[N]
-        for (var i = 1; i < stageResults.Count; i++)
-            Assert.Equal(stageResults[i - 1].CandidatesOut, stageResults[i].CandidatesIn);
+        // All 8 stages run and each receives all 3 candidates
+        Assert.Equal(ValidationPipeline.StageCount, stageResults.Count);
+        Assert.All(stageResults, sr => Assert.Equal(allTrials.Length, sr.CandidatesIn));
+    }
+
+    [Fact]
+    public void FinalSurvivors_IsIntersectionOfAllStages()
+    {
+        // 4 candidates; Stage A passes {0,1,2}, Stage B passes {1,2,3} → survivors = {1,2}
+        var trials = CreateTrialSummaries(4, strongMetrics: true, startIndex: 0);
+        var pnlRows = trials.Select(_ => new double[] { 1.0, 2.0, 3.0 }).ToArray();
+        var ts = new long[] { 100, 200, 300 };
+        var cache = new SimulationCache([ts], pnlRows.Select((row, _) => new TrialData(0, row)).ToArray());
+        var profile = ValidationThresholdProfile.CryptoStandard();
+
+        IValidationStage stageA = new StubStage(0, "StubA", [0, 1, 2]);
+        IValidationStage stageB = new StubStage(1, "StubB", [1, 2, 3]);
+        var pipeline = new ValidationPipeline([stageA, stageB]);
+
+        var (stageResults, survivors) = pipeline.Execute(
+            cache, trials, profile, Guid.NewGuid(), null, CancellationToken.None);
+
+        Assert.Equal(2, stageResults.Count);
+        // Stage A passes 3, Stage B passes 3 — but intersection is {1, 2}
+        Assert.Equal(3, stageResults[0].CandidatesOut);
+        Assert.Equal(3, stageResults[1].CandidatesOut);
+        Assert.Equal(2, survivors.Count);
+        Assert.Equal([1, 2], survivors);
+    }
+
+    [Fact]
+    public void FinalSurvivors_EmptyWhenNoStagesConfigured()
+    {
+        var trials = CreateTrialSummaries(2, strongMetrics: true, startIndex: 0);
+        var pnlRows = trials.Select(_ => new double[] { 1.0 }).ToArray();
+        var cache = new SimulationCache([new long[] { 100 }], pnlRows.Select((row, _) => new TrialData(0, row)).ToArray());
+        var profile = ValidationThresholdProfile.CryptoStandard();
+
+        var pipeline = new ValidationPipeline([]);
+
+        var (stageResults, survivors) = pipeline.Execute(
+            cache, trials, profile, Guid.NewGuid(), null, CancellationToken.None);
+
+        Assert.Empty(stageResults);
+        Assert.Empty(survivors);
+    }
+
+    private sealed class StubStage(int stageNumber, string stageName, IReadOnlyList<int> survivingIndices) : IValidationStage
+    {
+        public int StageNumber => stageNumber;
+        public string StageName => stageName;
+
+        public StageResult Execute(ValidationContext context, CancellationToken ct = default)
+        {
+            var verdicts = context.AllCandidateIndices.Select(idx =>
+                new CandidateVerdict(
+                    context.Trials[idx].Id,
+                    survivingIndices.Contains(idx),
+                    survivingIndices.Contains(idx) ? null : "STUB_REJECTED",
+                    [])).ToList();
+            return new StageResult(survivingIndices, verdicts);
+        }
     }
 
     private static (SimulationCache Cache, TrialSummary[] Trials) CreateTrials(
@@ -128,7 +185,7 @@ public class ValidationPipelineTests
         var timestamps = new long[barCount];
         for (var i = 0; i < barCount; i++) timestamps[i] = i * 86400000L;
 
-        var cache = new SimulationCache(timestamps, pnlRows);
+        var cache = new SimulationCache([timestamps], pnlRows.Select((row, i) => new TrialData(0, row)).ToArray());
         return (cache, trials);
     }
 

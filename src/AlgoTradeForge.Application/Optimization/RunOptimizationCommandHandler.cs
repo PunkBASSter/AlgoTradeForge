@@ -100,11 +100,12 @@ public sealed class RunOptimizationCommandHandler(
         }, ct);
 
         // 5. Start background task on a dedicated thread (coordinates long-running parallel work)
+        var normalizer = NormalizingEnumerable.TryCreateNormalizer(descriptor.ParamsType);
         _ = Task.Factory.StartNew(
             () => RunOptimizationAsync(
                 command, fixedSubscriptions, dataCache, activeAxes,
                 estimatedCount, optimizationRunId, runKey, startedAt,
-                strategyFactory),
+                strategyFactory, normalizer),
             CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
         return new OptimizationSubmissionDto
@@ -124,7 +125,8 @@ public sealed class RunOptimizationCommandHandler(
         Guid optimizationRunId,
         string runKey,
         DateTimeOffset startedAt,
-        IOptimizationStrategyFactory factory)
+        IOptimizationStrategyFactory factory,
+        IParameterNormalizer? normalizer)
     {
         using var cts = new CancellationTokenSource(timeoutOptions.Value.OptimizationTimeout);
         cancellationRegistry.Register(optimizationRunId, cts);
@@ -153,6 +155,14 @@ public sealed class RunOptimizationCommandHandler(
             var combinations = cartesianGenerator.Enumerate(activeAxes);
             string? strategyVersion = null;
             long processedCount = 0;
+
+            // Apply parameter normalization + dedup if the strategy supports it
+            NormalizingEnumerable? normEnumerable = null;
+            if (normalizer is not null)
+            {
+                normEnumerable = new NormalizingEnumerable(combinations, normalizer);
+                combinations = normEnumerable.Enumerate();
+            }
 
             var trialTimeout = timeoutOptions.Value.BacktestTimeout;
             var progressInterval = (long)Math.Clamp(estimatedCount / 10_000.0, 100, 10_000);
@@ -243,6 +253,8 @@ public sealed class RunOptimizationCommandHandler(
             var trials = topTrials.DeduplicateAndDrainSorted();
             var failedTrialDetails = failedTrials.Drain(optimizationRunId);
 
+            var dedupSkipped = normEnumerable?.SkippedCount ?? 0;
+
             var optimizationRecord = new OptimizationRunRecord
             {
                 Id = optimizationRunId,
@@ -260,14 +272,15 @@ public sealed class RunOptimizationCommandHandler(
                 FailedTrialDetails = failedTrialDetails,
                 FilteredTrials = Interlocked.Read(ref filteredOutCount),
                 FailedTrials = Interlocked.Read(ref failedTrialCount),
+                DedupSkipped = dedupSkipped,
                 OptimizationMethod = "BruteForce",
             };
 
             await helper.SaveOptimizationAsync(optimizationRecord);
 
             logger.LogInformation(
-                "Optimization {RunId}: {Total} executed, {Kept} kept, {Filtered} filtered, {Failed} failed in {Duration}ms",
-                optimizationRunId, processedCount, trials.Count, filteredOutCount, failedTrialCount, stopwatch.ElapsedMilliseconds);
+                "Optimization {RunId}: {Total} executed, {Dedup} deduped, {Kept} kept, {Filtered} filtered, {Failed} failed in {Duration}ms",
+                optimizationRunId, processedCount, dedupSkipped, trials.Count, filteredOutCount, failedTrialCount, stopwatch.ElapsedMilliseconds);
         }
         catch (OperationCanceledException)
         {

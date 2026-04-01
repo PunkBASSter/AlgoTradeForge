@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Tests.Validation.TestHelpers;
 using Xunit;
 using AlgoTradeForge.Domain.Validation;
 using AlgoTradeForge.Domain.Validation.Stages;
@@ -138,14 +139,14 @@ public class BasicProfitabilityStageTests
         var barCount = matrix[0].Length;
         var timestamps = Enumerable.Range(0, barCount).Select(i => (long)(i * 100)).ToArray();
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
 
         return new ValidationContext
         {
             Cache = cache,
             Trials = trials.ToList(),
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = Enumerable.Range(0, trials.Length).ToList(),
+            AllCandidateIndices = Enumerable.Range(0, trials.Length).ToList(),
         };
     }
 

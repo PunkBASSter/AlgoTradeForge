@@ -38,6 +38,28 @@ public sealed class GetValidationStatusQueryHandler(
         var record = await repository.GetByIdAsync(query.Id, ct);
         if (record is null) return null;
 
+        // Detect orphaned run: DB says InProgress but no active progress in cache
+        // means the background task died without updating the record.
+        if (record.Status == ValidationRunStatus.InProgress)
+        {
+            var failed = record with
+            {
+                Status = ValidationRunStatus.Failed,
+                CompletedAt = DateTimeOffset.UtcNow,
+                DurationMs = (long)(DateTimeOffset.UtcNow - record.StartedAt).TotalMilliseconds,
+                ErrorMessage = "Run did not complete — background task was interrupted.",
+            };
+            await repository.SaveAsync(failed, ct);
+            return new ValidationStatusDto
+            {
+                Id = query.Id,
+                Status = ValidationRunStatus.Failed,
+                CurrentStage = 0,
+                TotalStages = ValidationPipeline.StageCount,
+                Result = failed,
+            };
+        }
+
         return new ValidationStatusDto
         {
             Id = query.Id,

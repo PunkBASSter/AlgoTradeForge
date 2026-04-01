@@ -1,21 +1,17 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.7.1 → 1.7.2
+Version change: 1.7.2 → 1.7.3
 Modified principles: None
 Added sections: None
 Removed sections: None
 Modified sections:
-  - Backend > Solution Layout: Updated directory tree to reflect current
-    project structure after branch 018 (extra-data-feeds). Added Domain
-    directories: Assets/, Collections/, Events/, Indicators/, Live/,
-    Optimization/ (with Attributes/, Space/), Strategy/Modules/.
-    Added Application directories: Events/, IO/, Optimization/, Progress/,
-    Strategies/. Added Infrastructure directories: Events/, Persistence/,
-    Plugins/. Added test directories: Events/, History/, Indicators/,
-    Live/, Optimization/, Reporting/, Strategy/. Added Application.Tests.
-Trigger: Solution Layout was stale — missing ~15 directories added across
-  branches 003–018.
+  - Backend > Code Style: Added "Parameter normalization (dedup)" convention
+    documenting `IParameterNormalizer` interface for eliminating redundant
+    optimization trials when strategy parameters are conditionally irrelevant.
+    Covers brute-force, genetic, and evaluate flows plus persistence.
+Trigger: New framework feature (branch 025-overfitting-prevention) adding
+  optional `IParameterNormalizer` to strategy params classes.
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible
   - .specify/templates/spec-template.md ✅ compatible
@@ -226,6 +222,22 @@ frontend/
     serialization. Use `StrategyTemplateBuilder.ConvertToHumanReadable()` or
     equivalent axis-aware conversion. Exposing raw tick values causes
     double-scaling when users submit them back through `ParameterScaler`.
+- **Parameter normalization (dedup)**: When a strategy has parameters that are
+  conditionally irrelevant (e.g., a trend-sensitivity parameter that has no
+  effect when the trading mode ignores trend), the strategy's params class
+  SHOULD implement `IParameterNormalizer` (in `Domain.Optimization.Space`).
+  The `Normalize(ParameterCombination)` method fixes irrelevant parameters to
+  canonical values so the optimizer can skip duplicate trials automatically.
+  - Both brute-force (`RunOptimizationCommandHandler`) and genetic
+    (`RunGeneticOptimizationCommandHandler`) paths apply normalization.
+  - The evaluate endpoint (`EvaluateOptimizationQueryHandler`) reports
+    `UniqueCombinations` alongside `TotalCombinations` when a normalizer
+    exists, and gates `ExceedsMaxCombinations` on the unique count.
+  - `NormalizingEnumerable` (Application layer) wraps the lazy combination
+    stream with inline normalization + `HashSet`-based dedup. Thread-safe
+    because `Partitioner.Create(NoBuffering)` serializes `MoveNext()`.
+  - Dedup statistics are persisted as `DedupSkipped` on
+    `OptimizationRunRecord` and exposed in the API response.
 - MUST prefer non-nesting `using` declarations (`using var x = ...;`) over
   block-scoped `using (var x = ...) { }` unless early disposal within a
   larger scope is required (e.g., releasing a file handle before a
@@ -466,4 +478,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.7.2 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-03-20
+**Version**: 1.7.3 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-03-30

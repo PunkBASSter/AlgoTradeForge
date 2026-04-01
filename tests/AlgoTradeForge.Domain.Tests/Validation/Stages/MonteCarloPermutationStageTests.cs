@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Tests.Validation.TestHelpers;
 using AlgoTradeForge.Domain.Validation;
 using AlgoTradeForge.Domain.Validation.Stages;
 using Xunit;
@@ -94,13 +95,13 @@ public class MonteCarloPermutationStageTests
     [Fact]
     public void EmptyCandidates_ReturnsEmpty()
     {
-        var cache = new SimulationCache([100, 200, 300], [new double[] { 1, 2, 3 }]);
+        var cache = SimulationCacheTestHelper.Create(new long[] { 100, 200, 300 }, [new double[] { 1, 2, 3 }]);
         var context = new ValidationContext
         {
             Cache = cache,
             Trials = [CreateTrial(0, 100m, 5.0, 10m)],
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = [],
+            AllCandidateIndices = [],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -122,7 +123,7 @@ public class MonteCarloPermutationStageTests
         }
 
         var timestamps = Enumerable.Range(0, 200).Select(i => (long)(i * 1000)).ToArray();
-        var cache = new SimulationCache(timestamps, [pnl0, pnl1]);
+        var cache = SimulationCacheTestHelper.Create(timestamps, [pnl0, pnl1]);
 
         var trials = new[]
         {
@@ -135,7 +136,7 @@ public class MonteCarloPermutationStageTests
             Cache = cache,
             Trials = trials,
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = [0, 1],
+            AllCandidateIndices = [0, 1],
         };
 
         var result = _stage.Execute(context, TestContext.Current.CancellationToken);
@@ -151,7 +152,7 @@ public class MonteCarloPermutationStageTests
         double[] pnl, decimal netProfit, double maxDrawdownPct, decimal totalCommissions)
     {
         var timestamps = Enumerable.Range(0, pnl.Length).Select(i => (long)(i * 1000)).ToArray();
-        var cache = new SimulationCache(timestamps, [pnl]);
+        var cache = SimulationCacheTestHelper.Create(timestamps, [pnl]);
         var trial = CreateTrial(0, netProfit, maxDrawdownPct, totalCommissions);
 
         return new ValidationContext
@@ -159,7 +160,7 @@ public class MonteCarloPermutationStageTests
             Cache = cache,
             Trials = [trial],
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = [0],
+            AllCandidateIndices = [0],
         };
     }
 

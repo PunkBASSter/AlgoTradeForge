@@ -4,10 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { getClient } from "@/lib/services";
 import type { BacktestStatus, OptimizationStatus, RunStatusType } from "@/types/api";
 import { deriveBacktestStatus, deriveOptimizationStatus } from "@/types/api";
+import type { ValidationStatus } from "@/types/validation";
+import { deriveValidationStatus } from "@/types/validation";
 
 export const OPTIMIZATION_LIST_POLL_MS = 5_000;
 export const OPTIMIZATION_STATUS_POLL_BASE_MS = 5_000;
 export const OPTIMIZATION_STATUS_POLL_MAX_MS = 30_000;
+export const VALIDATION_STATUS_POLL_BASE_MS = 2_000;
+export const VALIDATION_STATUS_POLL_MAX_MS = 15_000;
 
 function isTerminal(status: RunStatusType): boolean {
   return status === "Completed" || status === "Failed" || status === "Cancelled";
@@ -44,6 +48,20 @@ export function useOptimizationStatus(id: string | null) {
       const data = query.state.data;
       if (data && isTerminal(deriveOptimizationStatus(data))) return false;
       return backoffInterval(query, OPTIMIZATION_STATUS_POLL_BASE_MS, OPTIMIZATION_STATUS_POLL_MAX_MS);
+    },
+  });
+}
+
+export function useValidationStatusPolling(id: string | null) {
+  const client = getClient();
+  return useQuery<ValidationStatus>({
+    queryKey: ["validation-status", id],
+    queryFn: () => client.getValidationStatus(id!),
+    enabled: !!id,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data && isTerminal(deriveValidationStatus(data))) return false;
+      return backoffInterval(query, VALIDATION_STATUS_POLL_BASE_MS, VALIDATION_STATUS_POLL_MAX_MS);
     },
   });
 }

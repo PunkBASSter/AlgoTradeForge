@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Tests.Validation.TestHelpers;
 using AlgoTradeForge.Domain.Validation;
 using Xunit;
 
@@ -8,31 +9,50 @@ public class SimulationCacheTests
     [Fact]
     public void Constructor_ValidInput_Succeeds()
     {
-        var timestamps = new long[] { 100, 200, 300 };
-        var matrix = new double[][]
-        {
-            [1.0, 2.0, 3.0],
-            [-1.0, 0.5, 1.5],
-        };
-
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = CreateTestCache();
 
         Assert.Equal(2, cache.TrialCount);
-        Assert.Equal(3, cache.BarCount);
+        Assert.Equal(3, cache.MaxBarCount);
+        Assert.Equal(3, cache.GetBarCount(0));
+        Assert.Equal(3, cache.GetBarCount(1));
     }
 
     [Fact]
-    public void Constructor_MismatchedRowLength_Throws()
+    public void Constructor_MismatchedTimestampAndPnlLength_Throws()
     {
-        var timestamps = new long[] { 100, 200, 300 };
+        var ts1 = new long[] { 100, 200, 300 };
+        var ts2 = new long[] { 100, 200 };
         var matrix = new double[][]
         {
             [1.0, 2.0, 3.0],
-            [1.0, 2.0], // wrong length
+            [1.0, 2.0, 3.0], // 3 PnL values but only 2 timestamps
         };
 
-        var ex = Assert.Throws<ArgumentException>(() => new SimulationCache(timestamps, matrix));
+        var trials = new TrialData[] { new(0, matrix[0]), new(1, matrix[1]) };
+        var ex = Assert.Throws<ArgumentException>(() => new SimulationCache([ts1, ts2], trials));
         Assert.Contains("Trial 1", ex.Message);
+    }
+
+    [Fact]
+    public void Constructor_VariableLengthTrials_Succeeds()
+    {
+        var ts1 = new long[] { 100, 200, 300 };
+        var ts2 = new long[] { 100, 200 };
+        var matrix = new double[][]
+        {
+            [1.0, 2.0, 3.0],
+            [-1.0, 0.5],
+        };
+
+        var trials = new TrialData[] { new(0, matrix[0]), new(1, matrix[1]) };
+        var cache = new SimulationCache([ts1, ts2], trials);
+
+        Assert.Equal(2, cache.TrialCount);
+        Assert.Equal(3, cache.MaxBarCount);
+        Assert.Equal(3, cache.GetBarCount(0));
+        Assert.Equal(2, cache.GetBarCount(1));
+        Assert.Equal(100, cache.MinTimestamp);
+        Assert.Equal(300, cache.MaxTimestamp);
     }
 
     [Fact]
@@ -49,39 +69,46 @@ public class SimulationCacheTests
     }
 
     [Fact]
-    public void GetBarPnl_ReturnsColumnSlice()
+    public void GetTrialTimestamps_ReturnsCorrectTimestamps()
     {
         var cache = CreateTestCache();
 
-        var col = cache.GetBarPnl(1);
+        var ts = cache.GetTrialTimestamps(0);
 
-        Assert.Equal(2, col.Length);
-        Assert.Equal(2.0, col[0]);  // trial 0, bar 1
-        Assert.Equal(0.5, col[1]);  // trial 1, bar 1
+        Assert.Equal(3, ts.Length);
+        Assert.Equal(100, ts[0]);
+        Assert.Equal(200, ts[1]);
+        Assert.Equal(300, ts[2]);
     }
 
     [Fact]
-    public void SliceWindow_CreatesSubset()
+    public void FindTrialWindow_ReturnsCorrectRange()
     {
         var cache = CreateTestCache();
 
-        var sliced = cache.SliceWindow(1, 3);
+        // Window [100, 250) should include bars at 100, 200
+        var (start, length) = cache.FindTrialWindow(0, 100, 250);
+        Assert.Equal(0, start);
+        Assert.Equal(2, length);
 
-        Assert.Equal(2, sliced.BarCount);
-        Assert.Equal(2, sliced.TrialCount);
-        Assert.Equal(200, sliced.BarTimestamps[0]);
-        Assert.Equal(300, sliced.BarTimestamps[1]);
-        Assert.Equal(2.0, sliced.GetTrialPnl(0)[0]);
+        // Window [200, 400) should include bars at 200, 300
+        var (start2, length2) = cache.FindTrialWindow(0, 200, 400);
+        Assert.Equal(1, start2);
+        Assert.Equal(2, length2);
+
+        // Empty window
+        var (start3, length3) = cache.FindTrialWindow(0, 400, 500);
+        Assert.Equal(0, length3);
     }
 
     [Fact]
-    public void SliceWindow_InvalidRange_Throws()
+    public void FindTrialWindow_FullRange_ReturnsAllBars()
     {
         var cache = CreateTestCache();
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => cache.SliceWindow(2, 1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => cache.SliceWindow(-1, 2));
-        Assert.Throws<ArgumentOutOfRangeException>(() => cache.SliceWindow(0, 4));
+        var (start, length) = cache.FindTrialWindow(0, 0, long.MaxValue);
+        Assert.Equal(0, start);
+        Assert.Equal(3, length);
     }
 
     [Fact]
@@ -103,17 +130,31 @@ public class SimulationCacheTests
         var cache = new SimulationCache([], []);
 
         Assert.Equal(0, cache.TrialCount);
-        Assert.Equal(0, cache.BarCount);
+        Assert.Equal(0, cache.MaxBarCount);
+    }
+
+    [Fact]
+    public void MinMaxTimestamp_ComputedCorrectly()
+    {
+        var ts1 = new long[] { 50, 100, 200 };
+        var ts2 = new long[] { 75, 300 };
+        var matrix = new double[][] { [1, 2, 3], [4, 5] };
+
+        var trials = new TrialData[] { new(0, matrix[0]), new(1, matrix[1]) };
+        var cache = new SimulationCache([ts1, ts2], trials);
+
+        Assert.Equal(50, cache.MinTimestamp);
+        Assert.Equal(300, cache.MaxTimestamp);
     }
 
     private static SimulationCache CreateTestCache()
     {
-        var timestamps = new long[] { 100, 200, 300 };
+        var ts = new long[] { 100, 200, 300 };
         var matrix = new double[][]
         {
             [1.0, 2.0, 3.0],
             [-1.0, 0.5, 1.5],
         };
-        return new SimulationCache(timestamps, matrix);
+        return SimulationCacheTestHelper.Create(ts, matrix);
     }
 }

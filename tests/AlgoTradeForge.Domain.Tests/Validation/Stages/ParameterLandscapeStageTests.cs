@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Tests.Validation.TestHelpers;
 using AlgoTradeForge.Domain.Validation;
 using AlgoTradeForge.Domain.Validation.Stages;
 using Xunit;
@@ -89,18 +90,18 @@ public class ParameterLandscapeStageTests
     private static ValidationContext CreateContext(params TrialSummary[] trials)
     {
         var barCount = 10;
-        var cache = new SimulationCache(
-            Enumerable.Range(0, barCount).Select(i => (long)(i * 86400000)).ToArray(),
-            trials.Length > 0
-                ? trials.Select(_ => Enumerable.Range(0, barCount).Select(i => 1.0).ToArray()).ToArray()
-                : []);
+        var timestamps = Enumerable.Range(0, barCount).Select(i => (long)(i * 86400000)).ToArray();
+        var matrix = trials.Length > 0
+            ? trials.Select(_ => Enumerable.Range(0, barCount).Select(i => 1.0).ToArray()).ToArray()
+            : [];
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
 
         return new ValidationContext
         {
             Cache = cache,
             Trials = trials.ToList(),
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = Enumerable.Range(0, trials.Length).ToList(),
+            AllCandidateIndices = Enumerable.Range(0, trials.Length).ToList(),
         };
     }
 

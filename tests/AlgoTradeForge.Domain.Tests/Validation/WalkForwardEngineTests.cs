@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Tests.Validation.TestHelpers;
 using AlgoTradeForge.Domain.Validation;
 using Xunit;
 
@@ -24,7 +25,7 @@ public class WalkForwardEngineTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
         var config = new WfoConfig
         {
             WindowCount = 5,
@@ -59,7 +60,7 @@ public class WalkForwardEngineTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
         var config = new WfoConfig
         {
             WindowCount = 1,
@@ -78,8 +79,8 @@ public class WalkForwardEngineTests
     public void RunWfo_TooFewBars_ReturnsFailed()
     {
         // 5 bars split into 10 windows → < 1 bar per window
-        var cache = new SimulationCache(
-            [1, 2, 3, 4, 5],
+        var cache = SimulationCacheTestHelper.Create(
+            new long[] { 1, 2, 3, 4, 5 },
             [new double[] { 1, 1, 1, 1, 1 }]);
 
         var config = new WfoConfig
@@ -97,8 +98,9 @@ public class WalkForwardEngineTests
     [Fact]
     public void RunWfo_Cancellation_ThrowsOperationCancelled()
     {
-        var cache = new SimulationCache(
-            Enumerable.Range(0, 100).Select(i => (long)i).ToArray(),
+        var ts = Enumerable.Range(0, 100).Select(i => (long)i).ToArray();
+        var cache = SimulationCacheTestHelper.Create(
+            ts,
             [Enumerable.Range(0, 100).Select(i => 10.0).ToArray()]);
 
         using var cts = new CancellationTokenSource();
@@ -132,7 +134,7 @@ public class WalkForwardEngineTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
 
         var config = new WfmConfig
         {
@@ -170,7 +172,7 @@ public class WalkForwardEngineTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b * 86400000L;
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
 
         var config = new WfmConfig
         {
@@ -193,7 +195,10 @@ public class WalkForwardEngineTests
     [Fact]
     public void RunWfo_WindowSplits_AreCorrect()
     {
-        // 100 bars, 4 windows → 25 bars each, 80% IS / 20% OOS
+        // 100 bars with timestamps 0..99, 4 windows, 80% IS / 20% OOS
+        // totalDuration = 99, windowDuration = 99/4 = 24
+        // Window 0: ts [0, 24), IS ts [0, 19), OOS ts [19, 24)
+        //   → IS bars 0..18 (19 bars), OOS bars 19..23 (5 bars)
         var barCount = 100;
         var matrix = new double[2][];
         for (var t = 0; t < 2; t++)
@@ -207,7 +212,7 @@ public class WalkForwardEngineTests
         for (var b = 0; b < barCount; b++)
             timestamps[b] = b;
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
         var config = new WfoConfig
         {
             WindowCount = 4,
@@ -219,10 +224,11 @@ public class WalkForwardEngineTests
 
         Assert.Equal(4, result.Windows.Count);
 
-        // First window: bars 0-24, IS: 0-19, OOS: 20-24
-        Assert.Equal(0, result.Windows[0].IsStartBar);
-        Assert.Equal(20, result.Windows[0].IsEndBar);
-        Assert.Equal(20, result.Windows[0].OosStartBar);
-        Assert.Equal(25, result.Windows[0].OosEndBar);
+        // First window: timestamps [0, 24), IS [0, 19), OOS [19, 24)
+        var w0 = result.Windows[0];
+        Assert.Equal(0, w0.IsStartBar);
+        Assert.Equal(19, w0.IsEndBar);   // bars 0..18
+        Assert.Equal(19, w0.OosStartBar);
+        Assert.Equal(24, w0.OosEndBar);  // bars 19..23
     }
 }

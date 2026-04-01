@@ -31,6 +31,7 @@ public sealed record OptimizationRunRecord
     public required int MaxParallelism { get; init; }
     public long FilteredTrials { get; init; }
     public long FailedTrials { get; init; }
+    public long DedupSkipped { get; init; }
     public required IReadOnlyList<BacktestRunRecord> Trials { get; init; }
     public IReadOnlyList<FailedTrialRecord> FailedTrialDetails { get; init; } = [];
     public string? InputJson { get; init; }

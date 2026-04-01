@@ -30,10 +30,24 @@ public sealed class EvaluateOptimizationQueryHandler(
         // 4. Count combinations
         var totalCombinations = cartesianGenerator.EstimateCount(activeAxes);
 
-        // 5. Compute effective dimensions
+        // 5. Compute unique combinations after normalization (if strategy supports it)
+        long? uniqueCombinations = null;
+        var normalizer = NormalizingEnumerable.TryCreateNormalizer(descriptor.ParamsType);
+        if (normalizer is not null && totalCombinations <= query.MaxCombinations)
+        {
+            var seen = new HashSet<string>();
+            foreach (var combo in cartesianGenerator.Enumerate(activeAxes))
+            {
+                var normalized = normalizer.Normalize(combo);
+                seen.Add(GeneticFitnessCache.BuildCacheKey(normalized));
+            }
+            uniqueCombinations = seen.Count;
+        }
+
+        // 6. Compute effective dimensions
         var effectiveDimensions = GeneticConfigResolver.ComputeEffectiveDimensions(activeAxes);
 
-        // 6. Resolve genetic config if in genetic mode
+        // 7. Resolve genetic config if in genetic mode
         ResolvedGeneticConfigDto? geneticConfigDto = null;
         if (string.Equals(query.Mode, "Genetic", StringComparison.OrdinalIgnoreCase))
         {
@@ -51,11 +65,13 @@ public sealed class EvaluateOptimizationQueryHandler(
         // Genetic mode has no combination limit — cost is governed by MaxEvaluations.
         // Only brute-force is gated by MaxCombinations.
         var isGenetic = geneticConfigDto is not null;
+        var effectiveCount = uniqueCombinations ?? totalCombinations;
 
         var dto = new OptimizationEvaluationDto
         {
             TotalCombinations = totalCombinations,
-            ExceedsMaxCombinations = !isGenetic && totalCombinations > query.MaxCombinations,
+            UniqueCombinations = uniqueCombinations,
+            ExceedsMaxCombinations = !isGenetic && effectiveCount > query.MaxCombinations,
             MaxCombinations = query.MaxCombinations,
             EffectiveDimensions = effectiveDimensions,
             GeneticConfig = geneticConfigDto,

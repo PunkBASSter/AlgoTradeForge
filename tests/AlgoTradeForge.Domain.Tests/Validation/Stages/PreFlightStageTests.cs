@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Tests.Validation.TestHelpers;
 using Xunit;
 using AlgoTradeForge.Domain.Validation;
 using AlgoTradeForge.Domain.Validation.Stages;
@@ -29,7 +30,7 @@ public class PreFlightStageTests
         {
             Assert.True(v.Passed);
             Assert.Null(v.ReasonCode);
-            Assert.True(v.Metrics.ContainsKey("barCount"));
+            Assert.True(v.Metrics.ContainsKey("minBarCount"));
             Assert.True(v.Metrics.ContainsKey("minBtlBars"));
         });
     }
@@ -220,14 +221,16 @@ public class PreFlightStageTests
     [Fact]
     public void NaNInPnl_RejectsAffectedCandidate()
     {
-        var timestamps = Enumerable.Range(0, 100).Select(i => (long)i * 60_000).ToArray();
+        var ts = Enumerable.Range(0, 100).Select(i => (long)i * 60_000).ToArray();
         var matrix = new double[3][];
-        matrix[0] = Enumerable.Repeat(1.0, 100).ToArray();
-        matrix[1] = Enumerable.Repeat(1.0, 100).ToArray();
-        matrix[1][50] = double.NaN; // NaN in trial 1
-        matrix[2] = Enumerable.Repeat(1.0, 100).ToArray();
+        for (var i = 0; i < 3; i++)
+        {
+            matrix[i] = Enumerable.Repeat(1.0, 100).ToArray();
+        }
 
-        var cache = new SimulationCache(timestamps, matrix);
+        matrix[1][50] = double.NaN; // NaN in trial 1
+
+        var cache = SimulationCacheTestHelper.Create(ts, matrix);
         var trials = CreateTrials(3);
 
         var context = new ValidationContext
@@ -235,7 +238,7 @@ public class PreFlightStageTests
             Cache = cache,
             Trials = trials,
             Profile = ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = [0, 1, 2],
+            AllCandidateIndices = [0, 1, 2],
             TotalCombinations = 10,
         };
 
@@ -259,8 +262,8 @@ public class PreFlightStageTests
         decimal commissions = 5m,
         ValidationThresholdProfile? profile = null)
     {
-        var timestamps = Enumerable.Range(0, barCount).Select(i => (long)i * 60_000).ToArray();
-        return CreateContextWithTimestamps(timestamps, trialCount, totalCombinations, commissions, profile);
+        var ts = Enumerable.Range(0, barCount).Select(i => (long)i * 60_000).ToArray();
+        return CreateContextWithTimestamps(ts, trialCount, totalCombinations, commissions, profile);
     }
 
     private static ValidationContext CreateContextWithTimestamps(
@@ -273,9 +276,11 @@ public class PreFlightStageTests
         var barCount = timestamps.Length;
         var matrix = new double[trialCount][];
         for (var i = 0; i < trialCount; i++)
+        {
             matrix[i] = Enumerable.Repeat(1.0, barCount).ToArray();
+        }
 
-        var cache = new SimulationCache(timestamps, matrix);
+        var cache = SimulationCacheTestHelper.Create(timestamps, matrix);
         var trials = CreateTrials(trialCount, commissions);
 
         return new ValidationContext
@@ -283,7 +288,7 @@ public class PreFlightStageTests
             Cache = cache,
             Trials = trials,
             Profile = profile ?? ValidationThresholdProfile.CryptoStandard(),
-            ActiveCandidateIndices = Enumerable.Range(0, trialCount).ToList(),
+            AllCandidateIndices = Enumerable.Range(0, trialCount).ToList(),
             TotalCombinations = totalCombinations,
         };
     }

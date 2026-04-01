@@ -111,7 +111,10 @@ public static class ValidationEndpoints
 
         try
         {
-            var submission = await handler.HandleAsync(command, ct);
+            // CancellationToken.None: handler does synchronous setup (placeholder insertion,
+            // progress registration) then launches background work with its own 30-min timeout.
+            // Client disconnect must not abort the setup phase.
+            var submission = await handler.HandleAsync(command, CancellationToken.None);
             var response = new ValidationSubmissionResponse
             {
                 Id = submission.Id,

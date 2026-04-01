@@ -17,6 +17,13 @@ public sealed record EvaluateOptimizationQuery : IQuery<OptimizationEvaluationDt
 public sealed record OptimizationEvaluationDto
 {
     public long TotalCombinations { get; init; }
+
+    /// <summary>
+    /// Actual trial count after parameter normalization dedup.
+    /// Null when the strategy does not implement <see cref="Domain.Optimization.Space.IParameterNormalizer"/>.
+    /// </summary>
+    public long? UniqueCombinations { get; init; }
+
     public bool ExceedsMaxCombinations { get; init; }
     public long MaxCombinations { get; init; }
     public int EffectiveDimensions { get; init; }
