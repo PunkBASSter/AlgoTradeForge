@@ -13,6 +13,7 @@ public sealed class Sma : Int64IndicatorBase
     {
         _period = period;
         _buffers = new Dictionary<string, IndicatorBuffer<long>> { ["Value"] = _buffer };
+        ApplyBufferCapacity();
     }
 
     public override IReadOnlyDictionary<string, IndicatorBuffer<long>> Buffers => _buffers;

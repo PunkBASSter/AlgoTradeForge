@@ -19,6 +19,7 @@ public sealed class Rsi : DoubleIndicatorBase
     {
         _period = period;
         _buffers = new Dictionary<string, IndicatorBuffer<double>> { ["Value"] = _buffer };
+        ApplyBufferCapacity();
     }
 
     public override IReadOnlyDictionary<string, IndicatorBuffer<double>> Buffers => _buffers;

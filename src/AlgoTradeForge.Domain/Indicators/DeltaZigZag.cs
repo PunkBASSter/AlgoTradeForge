@@ -27,6 +27,7 @@ public sealed class DeltaZigZag : Int64IndicatorBase
         _delta = delta;
         _minimumThresholdPct = minimumThresholdPct;
         _buffers = new Dictionary<string, IndicatorBuffer<long>> { ["Value"] = _buffer };
+        ApplyBufferCapacity();
     }
 
     public override IReadOnlyDictionary<string, IndicatorBuffer<long>> Buffers => _buffers;

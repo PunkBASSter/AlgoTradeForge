@@ -13,6 +13,13 @@ public sealed class RingBuffer<T>(int capacity) : IReadOnlyList<T>
 
     public int Count { get; private set; }
 
+    /// <summary>Returns true if the absolute index is within the retained window.</summary>
+    public bool IsRetained(int index)
+    {
+        var age = Count - 1 - index;
+        return (uint)age < (uint)_items.Length;
+    }
+
     public T this[int index]
     {
         get
@@ -20,7 +27,7 @@ public sealed class RingBuffer<T>(int capacity) : IReadOnlyList<T>
             var age = Count - 1 - index;
             if ((uint)age >= (uint)_items.Length)
                 throw new ArgumentOutOfRangeException(nameof(index));
-            return _items[((_head - 1 - age) % _items.Length + _items.Length) % _items.Length];
+            return _items[SlotFor(age)];
         }
     }
 
@@ -30,6 +37,20 @@ public sealed class RingBuffer<T>(int capacity) : IReadOnlyList<T>
         _head = (_head + 1) % _items.Length;
         Count++;
     }
+
+    /// <summary>
+    /// Writes a value at an absolute index. Silent no-op if the index has been evicted or is out of range.
+    /// </summary>
+    public void Set(int index, T value)
+    {
+        var age = Count - 1 - index;
+        if ((uint)age >= (uint)_items.Length)
+            return;
+        _items[SlotFor(age)] = value;
+    }
+
+    private int SlotFor(int age) =>
+        ((_head - 1 - age) % _items.Length + _items.Length) % _items.Length;
 
     public IEnumerator<T> GetEnumerator()
     {
