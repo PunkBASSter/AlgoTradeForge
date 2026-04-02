@@ -10,6 +10,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-10
 - SQLite (existing, via SqliteRunRepository) for completed results; IDistributedCache (AddDistributedMemoryCache(), swappable to Redis) for in-progress state (009-long-running-ops)
 - C# 14 / .NET 10 + ASP.NET Core (minimal APIs), `Microsoft.Extensions.Hosting` (BackgroundService), `System.Text.Json`, `Serilog`, `HttpClient` (019-history-loader)
 - Flat monthly-partitioned CSV files + `feeds.json` schema files per asset directory (019-history-loader)
+- C# 14 / .NET 10 + Existing AlgoTradeForge solution (Domain, Application, Infrastructure, WebApi). No new NuGet packages. (027-strategy-module-framework)
+- N/A — all new types are in-memory domain objects. No persistence changes. (027-strategy-module-framework)
 
 - C# 14 / .NET 10 + `Microsoft.Extensions.Hosting` (BackgroundService), `System.Text.Json` (Binance API parsing), `Serilog` (structured logging) (002-candle-ingestor)
 
@@ -93,6 +95,7 @@ All monetary/price values in the Domain layer use `long` (Int64). When convertin
 - **Parameter normalization (dedup)**: When a strategy has parameters that are conditionally irrelevant (e.g., `NumberOfLevels` has no effect when `Mode != FollowTrend`), the params class should implement `IParameterNormalizer` (`Domain.Optimization.Space`). The `Normalize()` method fixes irrelevant params to canonical values; the optimizer deduplicates identical normalized combinations automatically. Both brute-force and genetic paths apply normalization. The evaluate endpoint reports `UniqueCombinations` when a normalizer exists. `NormalizingEnumerable` (Application) wraps the lazy combination stream. Dedup stats are persisted as `DedupSkipped` on `OptimizationRunRecord`.
 
 ## Recent Changes
+- 027-strategy-module-framework: Added C# 14 / .NET 10 + Existing AlgoTradeForge solution (Domain, Application, Infrastructure, WebApi). No new NuGet packages.
 - 019-history-loader: Added C# 14 / .NET 10 + ASP.NET Core (minimal APIs), `Microsoft.Extensions.Hosting` (BackgroundService), `System.Text.Json`, `Serilog`, `HttpClient`
 - 018-extra-data-feeds: Asset type hierarchy (CryptoAsset, EquityAsset, FutureAsset, CryptoPerpetualAsset), settlement system (ISettlementCalculator → CashAndCarry/Margin), aux data feeds (FeedSeries, IFeedContext, BacktestFeedContext, auto-apply), order validation (IOrderValidator), event bus (IEventBus/IEventBusReceiver)
 - 009-long-running-ops: Added C# 14 / .NET 10 + ASP.NET Core (minimal APIs), System.Threading (Task.Run, Interlocked, CancellationTokenSource), IDistributedCache for progress tracking
