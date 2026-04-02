@@ -1,21 +1,24 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.7.2 → 1.7.3
+Version change: 1.7.3 → 1.8.0
 Modified principles: None
 Added sections: None
 Removed sections: None
 Modified sections:
-  - Backend > Code Style: Added "Parameter normalization (dedup)" convention
-    documenting `IParameterNormalizer` interface for eliminating redundant
-    optimization trials when strategy parameters are conditionally irrelevant.
-    Covers brute-force, genetic, and evaluate flows plus persistence.
-Trigger: New framework feature (branch 025-overfitting-prevention) adding
-  optional `IParameterNormalizer` to strategy params classes.
+  - Backend > Code Style: Added "Indicator buffer memory (ring buffer)"
+    convention documenting bounded indicator buffers via RingBuffer<T>,
+    the CapacityLimit tri-state (null/0/N), ApplyBufferCapacity() call
+    requirement, Count semantics (total appended vs retained), and
+    Set() vs Revise() mutation contracts (silent no-op vs throw on
+    evicted indices).
+Trigger: Branch 027-strategy-module-framework — IndicatorBase<T> base
+  class extraction + bounded buffer support for memory savings in long
+  backtests.
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ compatible
-  - .specify/templates/spec-template.md ✅ compatible
-  - .specify/templates/tasks-template.md ✅ compatible
+  - .specify/templates/plan-template.md ✅ compatible (no indicator refs)
+  - .specify/templates/spec-template.md ✅ compatible (no indicator refs)
+  - .specify/templates/tasks-template.md ✅ compatible (no indicator refs)
 Follow-up TODOs: None
 -->
 
@@ -238,6 +241,27 @@ frontend/
     because `Partitioner.Create(NoBuffering)` serializes `MoveNext()`.
   - Dedup statistics are persisted as `DedupSkipped` on
     `OptimizationRunRecord` and exposed in the API response.
+- **Indicator buffer memory (ring buffer)**: All indicators deriving from
+  `IndicatorBase<T>` (via `Int64IndicatorBase` or `DoubleIndicatorBase`)
+  MUST call `ApplyBufferCapacity()` at the end of their constructor, after
+  `Buffers` is populated. This switches each `IndicatorBuffer<T>` from
+  unbounded `List<T>` growth to a bounded `RingBuffer<T>`, retaining only
+  the most recent values. `CapacityLimit` is a tri-state:
+  - `null` (default) — auto-sizes to `Max(MinimumHistory * 2, 256)`.
+  - `0` — explicitly unbounded (all values retained; use for indicators
+    whose strategies access historical pivots at arbitrary depth).
+  - `N` — fixed capacity of N values.
+  - `IndicatorBuffer<T>.Count` reports total values ever appended (not
+    retained count), so strategies can index by bar number. Accessing an
+    evicted index throws `ArgumentOutOfRangeException`.
+  - `Set()` on an evicted index is a silent no-op (best-effort overwrite).
+  - `Revise()` on an evicted index throws `ArgumentOutOfRangeException` —
+    this indicates the indicator's `CapacityLimit` is too small for its
+    revision window, which is a logic bug. If an indicator relocates
+    pivots (e.g., DeltaZigZag), its capacity MUST be large enough to
+    retain all indices that may be revised.
+  - `SetCapacity()` MUST be called before any data is appended; calling
+    it after data has been added throws `InvalidOperationException`.
 - MUST prefer non-nesting `using` declarations (`using var x = ...;`) over
   block-scoped `using (var x = ...) { }` unless early disposal within a
   larger scope is required (e.g., releasing a file handle before a
@@ -478,4 +502,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.7.3 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-03-30
+**Version**: 1.8.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-04-02
