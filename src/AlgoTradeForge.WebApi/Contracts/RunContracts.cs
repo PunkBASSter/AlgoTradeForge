@@ -11,7 +11,7 @@ public sealed record BacktestRunResponse
     public required string StrategyName { get; init; }
     public required string StrategyVersion { get; init; }
     public required Dictionary<string, object> Parameters { get; init; }
-    public required DataSubscriptionDto DataSubscription { get; init; }
+    public required IReadOnlyList<DataSubscriptionDto> DataSubscriptions { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public required DateTimeOffset StartedAt { get; init; }
     public required DateTimeOffset CompletedAt { get; init; }
@@ -83,7 +83,7 @@ public sealed record OptimizationRunResponse
     public long FailedTrials { get; init; }
     public long DedupSkipped { get; init; }
     public required string SortBy { get; init; }
-    public required DataSubscriptionDto DataSubscription { get; init; }
+    public required IReadOnlyList<DataSubscriptionDto> DataSubscriptions { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public required int MaxParallelism { get; init; }
     public required List<BacktestRunResponse> Trials { get; init; }

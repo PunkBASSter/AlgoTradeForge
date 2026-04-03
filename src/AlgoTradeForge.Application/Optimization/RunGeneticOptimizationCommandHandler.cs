@@ -53,7 +53,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
         await progressCache.SetProgressAsync(runId, 0, gaConfig.MaxEvaluations, ct);
 
         // 4. Insert placeholder row so the run is visible in the list immediately
-        var primarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
+        var primarySub = OptimizationSetupHelper.GetSubscriptionDtos(
             command.DataSubscriptions, command.SubscriptionAxis);
         var maxParallelism = command.MaxDegreeOfParallelism > 0
             ? command.MaxDegreeOfParallelism
@@ -68,7 +68,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
             DurationMs = 0,
             TotalCombinations = gaConfig.MaxEvaluations,
             SortBy = Fitness,
-            DataSubscription = primarySub,
+            DataSubscriptions = primarySub,
             BacktestSettings = command.BacktestSettings,
             MaxParallelism = maxParallelism,
             Trials = [],
@@ -117,7 +117,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
         var maxParallelism = command.MaxDegreeOfParallelism > 0
             ? command.MaxDegreeOfParallelism
             : Environment.ProcessorCount;
-        var primarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
+        var primarySub = OptimizationSetupHelper.GetSubscriptionDtos(
             command.DataSubscriptions, command.SubscriptionAxis);
 
         try
@@ -203,7 +203,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
                 DurationMs = (long)stopwatch.Elapsed.TotalMilliseconds,
                 TotalCombinations = totalEvals,
                 SortBy = Fitness,
-                DataSubscription = primarySub,
+                DataSubscriptions = primarySub,
                 BacktestSettings = command.BacktestSettings,
                 MaxParallelism = maxParallelism,
                 Trials = trials,

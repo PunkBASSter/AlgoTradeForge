@@ -219,19 +219,19 @@ public sealed class OptimizationSetupHelper(
         var tradePnl = MetricsScaler.ScaleTradePnl(trades, scale);
         trialWatch.Stop();
 
-        var trialPrimarySub = strategy.DataSubscriptions[0];
         return new BacktestRunRecord
         {
             Id = Guid.NewGuid(),
             StrategyName = strategyName,
             StrategyVersion = strategy.Version,
             Parameters = combination.Values, // Store original unscaled values
-            DataSubscription = new DataSubscriptionDto
-            {
-                AssetName = AssetLookupName.From(trialPrimarySub.Asset),
-                Exchange = trialPrimarySub.Asset.Exchange,
-                TimeFrame = TimeFrameFormatter.Format(trialPrimarySub.TimeFrame),
-            },
+            DataSubscriptions = strategy.DataSubscriptions
+                .Select(s => new DataSubscriptionDto
+                {
+                    AssetName = AssetLookupName.From(s.Asset),
+                    Exchange = s.Asset.Exchange,
+                    TimeFrame = TimeFrameFormatter.Format(s.TimeFrame),
+                }).ToList(),
             BacktestSettings = settings,
             StartedAt = startedAt,
             CompletedAt = DateTimeOffset.UtcNow,
@@ -249,7 +249,7 @@ public sealed class OptimizationSetupHelper(
     public async Task SaveErrorOptimizationAsync(
         string strategyName,
         BacktestSettingsDto backtestSettings,
-        DataSubscriptionDto primarySub,
+        IReadOnlyList<DataSubscriptionDto> subscriptions,
         string sortBy,
         int maxParallelism,
         Guid optimizationRunId,
@@ -277,7 +277,7 @@ public sealed class OptimizationSetupHelper(
                 DurationMs = (long)(completedAt - startedAt).TotalMilliseconds,
                 TotalCombinations = estimatedCount,
                 SortBy = sortBy,
-                DataSubscription = primarySub,
+                DataSubscriptions = subscriptions,
                 BacktestSettings = backtestSettings,
                 MaxParallelism = maxParallelism,
                 Trials = topTrials.DeduplicateAndDrainSorted(),
@@ -298,21 +298,21 @@ public sealed class OptimizationSetupHelper(
         }
     }
 
-    public static DataSubscriptionDto GetPrimarySubscriptionDto(
+    public static IReadOnlyList<DataSubscriptionDto> GetSubscriptionDtos(
         List<DataSubscriptionDto>? fixedSubs, List<DataSubscriptionDto>? axisSubs)
     {
         if (fixedSubs is { Count: > 0 })
         {
             var primary = fixedSubs[0];
             if (axisSubs is { Count: > 0 })
-                return primary with { AssetName = $"{primary.AssetName} (+{axisSubs.Count} more)" };
-            return primary;
+                return [primary with { AssetName = $"{primary.AssetName} (+{axisSubs.Count} more)" }];
+            return [primary];
         }
 
         var first = axisSubs![0];
         if (axisSubs.Count > 1)
-            return first with { AssetName = $"{first.AssetName} (+{axisSubs.Count - 1} more)" };
-        return first;
+            return [first with { AssetName = $"{first.AssetName} (+{axisSubs.Count - 1} more)" }];
+        return [first];
     }
 
     public static string CacheKey(Asset asset, TimeSpan timeFrame) =>

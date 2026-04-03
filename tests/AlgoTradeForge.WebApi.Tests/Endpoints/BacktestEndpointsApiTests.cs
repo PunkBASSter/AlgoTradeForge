@@ -34,8 +34,8 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
         Assert.NotNull(status.Result);
         Assert.Equal(submission.Id, status.Result.Id);
         Assert.Equal("BuyAndHold", status.Result.StrategyName);
-        Assert.Equal("BTCUSDT", status.Result.DataSubscription.AssetName);
-        Assert.Equal("Binance", status.Result.DataSubscription.Exchange);
+        Assert.Equal("BTCUSDT", status.Result.DataSubscriptions[0].AssetName);
+        Assert.Equal("Binance", status.Result.DataSubscriptions[0].Exchange);
         Assert.True(status.Result.Metrics.ContainsKey("totalTrades"));
         Assert.True(status.Result.Metrics.ContainsKey("sharpeRatio"));
         Assert.True(status.Result.Metrics.ContainsKey("netProfit"));
@@ -142,16 +142,36 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     }
 
     [Fact]
+    public async Task Post_EmptySubscriptions_Returns400()
+    {
+        var request = new RunBacktestRequest
+        {
+            DataSubscriptions = [],
+            BacktestSettings = new()
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
+            },
+            StrategyName = "BuyAndHold",
+        };
+
+        var response = await Client.PostAsJsonAsync("/api/backtests", request, Json, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Post_UnknownAsset_Returns400()
     {
         var request = new RunBacktestRequest
         {
-            DataSubscription = new()
+            DataSubscriptions = [new()
             {
                 AssetName = "FAKEUSDT",
                 Exchange = "FakeExchange",
                 TimeFrame = "01:00:00",
-            },
+            }],
             BacktestSettings = new()
             {
                 InitialCash = 10_000m,

@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 15;
+    private const int CurrentVersion = 16;
 
     private const string Schema = """
         PRAGMA journal_mode=WAL;
@@ -38,7 +38,8 @@ internal static class SqliteDbInitializer
             generations_completed INTEGER NULL,
             input_json          TEXT    NULL,
             error_message       TEXT    NULL,
-            status              TEXT    NOT NULL DEFAULT 'Completed'
+            status              TEXT    NOT NULL DEFAULT 'Completed',
+            subscriptions_json  TEXT    NULL
         );
 
         CREATE TABLE IF NOT EXISTS backtest_runs (
@@ -66,7 +67,8 @@ internal static class SqliteDbInitializer
             timeframe           TEXT    NOT NULL,
             error_message       TEXT    NULL,
             error_stack_trace   TEXT    NULL,
-            fitness_score       REAL    NULL
+            fitness_score       REAL    NULL,
+            subscriptions_json  TEXT    NULL
         );
 
         CREATE INDEX IF NOT EXISTS ix_br_strategy ON backtest_runs(strategy_name);
@@ -227,6 +229,11 @@ internal static class SqliteDbInitializer
         );
         """;
 
+    private const string MigrationV16 = """
+        ALTER TABLE backtest_runs ADD COLUMN subscriptions_json TEXT NULL;
+        ALTER TABLE optimization_runs ADD COLUMN subscriptions_json TEXT NULL;
+        """;
+
     public static async Task EnsureCreatedAsync(string connectionString)
     {
         await using var connection = new SqliteConnection(connectionString);
@@ -349,6 +356,14 @@ internal static class SqliteDbInitializer
         {
             await AddColumnIfNotExistsAsync(connection, "optimization_runs", "dedup_skipped", "INTEGER NOT NULL DEFAULT 0");
             await SetVersionAsync(connection, 15);
+        }
+
+        if (currentVersion < 16)
+        {
+            await using var migrateCmd = connection.CreateCommand();
+            migrateCmd.CommandText = MigrationV16;
+            await migrateCmd.ExecuteNonQueryAsync();
+            await SetVersionAsync(connection, 16);
         }
 
         // Mark any orphaned in-progress runs as failed (server crashed during execution)

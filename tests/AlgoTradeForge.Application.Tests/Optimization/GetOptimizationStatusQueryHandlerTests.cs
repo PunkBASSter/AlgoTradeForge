@@ -47,7 +47,7 @@ public class GetOptimizationStatusQueryHandlerTests
             Id = id, StrategyName = "S", StrategyVersion = "1",
             StartedAt = DateTimeOffset.UtcNow, CompletedAt = DateTimeOffset.UtcNow,
             DurationMs = 500, TotalCombinations = 50, SortBy = "SharpeRatio",
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTC", Exchange = "Binance", TimeFrame = "00:01:00" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTC", Exchange = "Binance", TimeFrame = "00:01:00" }],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10_000m, CommissionPerTrade = 0m, SlippageTicks = 0,

@@ -27,6 +27,11 @@ public sealed class PairsTradingStrategy(
 
     protected override void OnStrategyInit()
     {
+        if (DataSubscriptions.Count < 2)
+            throw new InvalidOperationException(
+                "PairsTradingStrategy requires 2 data subscriptions (primary + secondary). " +
+                "Provide an additional subscription via 'additionalSubscriptions'.");
+
         // ATR on primary subscription
         _atr = new Atr(Params.AtrPeriod);
         Indicators.Create(_atr, DataSubscriptions[0]);

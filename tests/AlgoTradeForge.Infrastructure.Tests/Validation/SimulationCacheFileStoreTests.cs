@@ -228,12 +228,12 @@ public class SimulationCacheFileStoreTests : IDisposable
                 StrategyName = "Test",
                 StrategyVersion = "1.0",
                 Parameters = new Dictionary<string, object>(),
-                DataSubscription = new DataSubscriptionDto
+                DataSubscriptions = [new DataSubscriptionDto
                 {
                     AssetName = "TEST",
                     Exchange = "Binance",
                     TimeFrame = "1m",
-                },
+                }],
                 BacktestSettings = new BacktestSettingsDto
                 {
                     InitialCash = initialCapital,

@@ -6,6 +6,8 @@ namespace AlgoTradeForge.Domain.Strategy.PairsTrading;
 
 public sealed class PairsTradingParams : ModularStrategyParamsBase
 {
+    public override int RequiredSubscriptionCount => 2;
+
     public CrossAssetParams CrossAsset { get; init; } = new();
 
     [Optimizable(Min = 5, Max = 50, Step = 5)]

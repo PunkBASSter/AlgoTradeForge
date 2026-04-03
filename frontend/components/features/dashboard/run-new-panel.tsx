@@ -274,7 +274,7 @@ export function RunNewPanel({
       const current = JSON.parse(view.state.doc.toString()) as Record<string, unknown>;
       const sharedKeys = [
         "strategyName",
-        "dataSubscription",
+        "dataSubscriptions",
         "backtestSettings",
         "strategyParameters",
       ];
@@ -364,11 +364,12 @@ export function RunNewPanel({
     // Basic runtime validation of required fields
     const obj = parsed as Record<string, unknown>;
     if (mode === "backtest") {
-      const ds = obj.dataSubscription as Record<string, unknown> | undefined;
+      const dsArr = obj.dataSubscriptions as Record<string, unknown>[] | undefined;
+      const ds = dsArr?.[0];
       const bs = obj.backtestSettings as Record<string, unknown> | undefined;
       const missing: string[] = [];
-      if (!ds?.assetName) missing.push("dataSubscription.assetName");
-      if (!ds?.exchange) missing.push("dataSubscription.exchange");
+      if (!ds?.assetName) missing.push("dataSubscriptions[0].assetName");
+      if (!ds?.exchange) missing.push("dataSubscriptions[0].exchange");
       if (!bs?.initialCash) missing.push("backtestSettings.initialCash");
       if (!bs?.startTime) missing.push("backtestSettings.startTime");
       if (!bs?.endTime) missing.push("backtestSettings.endTime");

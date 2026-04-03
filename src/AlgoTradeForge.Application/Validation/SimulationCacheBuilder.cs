@@ -25,7 +25,7 @@ public static class SimulationCacheBuilder
         {
             var bars = trial.EquityCurve.Count;
             totalBars += bars;
-            if (seen.Add((trial.DataSubscription, bars)))
+            if (seen.Add((trial.DataSubscriptions[0], bars)))
                 uniqueTimelineBars += bars;
         }
 
@@ -49,7 +49,7 @@ public static class SimulationCacheBuilder
 
         for (var t = 0; t < trials.Count; t++)
         {
-            var key = (trials[t].DataSubscription, trials[t].EquityCurve.Count);
+            var key = (trials[t].DataSubscriptions[0], trials[t].EquityCurve.Count);
             if (!timelineKeys.TryGetValue(key, out var tlIdx))
             {
                 // First trial for this (subscription, barCount) — extract timestamps as the timeline

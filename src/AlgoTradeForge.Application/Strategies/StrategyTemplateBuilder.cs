@@ -13,14 +13,10 @@ public static class StrategyTemplateBuilder
         string strategyName,
         IReadOnlyDictionary<string, object> paramDefaults,
         IReadOnlyList<ParameterAxis> axes,
-        IReadOnlyList<AvailableAssetInfo> availableAssets) => new()
+        IReadOnlyList<AvailableAssetInfo> availableAssets,
+        int requiredSubscriptionCount = 1) => new()
     {
-        ["dataSubscription"] = new Dictionary<string, object>
-        {
-            ["assetName"] = FirstAssetOrDefault(availableAssets),
-            ["exchange"] = FirstExchangeOrDefault(availableAssets),
-            ["timeFrame"] = "01:00:00",
-        },
+        ["dataSubscriptions"] = BuildSubscriptionList(availableAssets, "01:00:00", requiredSubscriptionCount),
         ["backtestSettings"] = new Dictionary<string, object>
         {
             ["initialCash"] = 10000,
@@ -125,14 +121,10 @@ public static class StrategyTemplateBuilder
         string strategyName,
         IReadOnlyDictionary<string, object> paramDefaults,
         IReadOnlyList<ParameterAxis> axes,
-        IReadOnlyList<AvailableAssetInfo> availableAssets) => new()
+        IReadOnlyList<AvailableAssetInfo> availableAssets,
+        int requiredSubscriptionCount = 1) => new()
     {
-        ["dataSubscription"] = new Dictionary<string, object>
-        {
-            ["assetName"] = FirstAssetOrDefault(availableAssets),
-            ["exchange"] = FirstExchangeOrDefault(availableAssets),
-            ["timeFrame"] = "01:00:00",
-        },
+        ["dataSubscriptions"] = BuildSubscriptionList(availableAssets, "01:00:00", requiredSubscriptionCount),
         ["backtestSettings"] = new Dictionary<string, object>
         {
             ["initialCash"] = 10000,
@@ -150,6 +142,27 @@ public static class StrategyTemplateBuilder
 
     private static string FirstExchangeOrDefault(IReadOnlyList<AvailableAssetInfo> assets) =>
         assets.Count > 0 ? assets[0].Exchange : DefaultExchange;
+
+    private const string DefaultSecondaryAsset = "ETHUSDT";
+
+    private static List<Dictionary<string, object>> BuildSubscriptionList(
+        IReadOnlyList<AvailableAssetInfo> assets, string timeFrame, int count)
+    {
+        var result = new List<Dictionary<string, object>>();
+        for (var i = 0; i < count; i++)
+        {
+            var assetName = i < assets.Count ? assets[i].LookupName
+                : i == 0 ? DefaultAsset : DefaultSecondaryAsset;
+            var exchange = i < assets.Count ? assets[i].Exchange : DefaultExchange;
+            result.Add(new Dictionary<string, object>
+            {
+                ["assetName"] = assetName,
+                ["exchange"] = exchange,
+                ["timeFrame"] = timeFrame,
+            });
+        }
+        return result;
+    }
 
     private static List<Dictionary<string, object>> BuildSubscriptions(
         IReadOnlyList<AvailableAssetInfo> assets, string timeFrame)

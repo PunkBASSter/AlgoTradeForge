@@ -87,12 +87,12 @@ public abstract class ApiTestBase : IDisposable
         DateTimeOffset? startTime = null,
         DateTimeOffset? endTime = null) => new()
     {
-        DataSubscription = new()
+        DataSubscriptions = [new()
         {
             AssetName = "BTCUSDT",
             Exchange = "Binance",
             TimeFrame = timeFrame ?? "01:00:00",
-        },
+        }],
         BacktestSettings = new()
         {
             InitialCash = 10_000m,
@@ -104,12 +104,12 @@ public abstract class ApiTestBase : IDisposable
 
     protected static StartDebugSessionRequest MakeDebugSessionRequest() => new()
     {
-        DataSubscription = new()
+        DataSubscriptions = [new()
         {
             AssetName = "BTCUSDT",
             Exchange = "Binance",
             TimeFrame = "01:00:00",
-        },
+        }],
         BacktestSettings = new()
         {
             InitialCash = 10_000m,

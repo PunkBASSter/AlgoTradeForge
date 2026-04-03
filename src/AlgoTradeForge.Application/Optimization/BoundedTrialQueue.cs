@@ -94,9 +94,10 @@ public sealed class BoundedTrialQueue
     internal static string BuildTrialKey(BacktestRunRecord record)
     {
         var sb = new System.Text.StringBuilder();
-        sb.Append(record.DataSubscription.AssetName)
-          .Append(':').Append(record.DataSubscription.Exchange)
-          .Append(':').Append(record.DataSubscription.TimeFrame)
+        var primary = record.DataSubscriptions[0];
+        sb.Append(primary.AssetName)
+          .Append(':').Append(primary.Exchange)
+          .Append(':').Append(primary.TimeFrame)
           .Append('|');
 
         var first = true;

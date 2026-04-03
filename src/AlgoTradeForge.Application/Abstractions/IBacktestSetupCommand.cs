@@ -2,7 +2,7 @@ namespace AlgoTradeForge.Application.Abstractions;
 
 public interface IBacktestSetupCommand
 {
-    DataSubscriptionDto DataSubscription { get; }
+    IReadOnlyList<DataSubscriptionDto> DataSubscriptions { get; }
     BacktestSettingsDto BacktestSettings { get; }
     string StrategyName { get; }
     bool UseDetailedExecutionLogic { get; }

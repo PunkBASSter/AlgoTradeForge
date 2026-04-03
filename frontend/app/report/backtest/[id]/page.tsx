@@ -108,11 +108,11 @@ export default function BacktestReportPage({
 
   const handleRerun = () => {
     const config: RunBacktestRequest = {
-      dataSubscription: {
-        assetName: backtest.dataSubscription.assetName,
-        exchange: backtest.dataSubscription.exchange,
-        timeFrame: backtest.dataSubscription.timeFrame,
-      },
+      dataSubscriptions: [{
+        assetName: backtest.dataSubscriptions[0]?.assetName ?? "",
+        exchange: backtest.dataSubscriptions[0]?.exchange ?? "",
+        timeFrame: backtest.dataSubscriptions[0]?.timeFrame ?? "",
+      }],
       backtestSettings: {
         initialCash: backtest.backtestSettings.initialCash,
         startTime: backtest.backtestSettings.startTime,
@@ -150,7 +150,7 @@ export default function BacktestReportPage({
             </span>
           </h1>
           <p className="text-sm text-text-secondary mt-1">
-            {backtest.dataSubscription.assetName} / {backtest.dataSubscription.exchange} / {backtest.dataSubscription.timeFrame}
+            {backtest.dataSubscriptions[0]?.assetName} / {backtest.dataSubscriptions[0]?.exchange} / {backtest.dataSubscriptions[0]?.timeFrame}
             {" -- "}
             {new Date(backtest.backtestSettings.startTime).toLocaleDateString()} to{" "}
             {new Date(backtest.backtestSettings.endTime).toLocaleDateString()}

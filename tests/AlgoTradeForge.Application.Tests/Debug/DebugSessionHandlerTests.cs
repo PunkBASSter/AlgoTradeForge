@@ -70,7 +70,7 @@ public class DebugSessionHandlerTests
 
         var dto = await CreateStartHandler().HandleAsync(new StartDebugSessionCommand
         {
-            DataSubscription = new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" }],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 100_000m,
@@ -108,7 +108,7 @@ public class DebugSessionHandlerTests
 
         var sessionDto = await startHandler.HandleAsync(new StartDebugSessionCommand
         {
-            DataSubscription = new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" }],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 100_000m,
@@ -182,7 +182,7 @@ public class DebugSessionHandlerTests
 
         var sessionDto = await startHandler.HandleAsync(new StartDebugSessionCommand
         {
-            DataSubscription = new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" }],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 100_000m,

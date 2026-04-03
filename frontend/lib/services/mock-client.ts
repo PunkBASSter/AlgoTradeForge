@@ -97,13 +97,13 @@ export const mockClient: typeof import("./api-client").apiClient & {
       );
     }
     if (params?.assetName) {
-      filtered = filtered.filter((b) => b.dataSubscription.assetName === params.assetName);
+      filtered = filtered.filter((b) => b.dataSubscriptions[0]?.assetName === params.assetName);
     }
     if (params?.exchange) {
-      filtered = filtered.filter((b) => b.dataSubscription.exchange === params.exchange);
+      filtered = filtered.filter((b) => b.dataSubscriptions[0]?.exchange === params.exchange);
     }
     if (params?.timeFrame) {
-      filtered = filtered.filter((b) => b.dataSubscription.timeFrame === params.timeFrame);
+      filtered = filtered.filter((b) => b.dataSubscriptions[0]?.timeFrame === params.timeFrame);
     }
     if (params?.standaloneOnly) {
       filtered = filtered.filter((b) => b.runMode === "standalone");
@@ -180,13 +180,13 @@ export const mockClient: typeof import("./api-client").apiClient & {
       );
     }
     if (params?.assetName) {
-      filtered = filtered.filter((o) => o.dataSubscription.assetName === params.assetName);
+      filtered = filtered.filter((o) => o.dataSubscriptions[0]?.assetName === params.assetName);
     }
     if (params?.exchange) {
-      filtered = filtered.filter((o) => o.dataSubscription.exchange === params.exchange);
+      filtered = filtered.filter((o) => o.dataSubscriptions[0]?.exchange === params.exchange);
     }
     if (params?.timeFrame) {
-      filtered = filtered.filter((o) => o.dataSubscription.timeFrame === params.timeFrame);
+      filtered = filtered.filter((o) => o.dataSubscriptions[0]?.timeFrame === params.timeFrame);
     }
 
     const offset = params?.offset ?? 0;
@@ -330,7 +330,7 @@ export const mockClient: typeof import("./api-client").apiClient & {
     await delay();
     return {
       sessionId: "mock-debug-session-001",
-      assetName: req.dataSubscription.assetName,
+      assetName: req.dataSubscriptions[0]?.assetName ?? "",
       strategyName: req.strategyName,
       createdAt: new Date().toISOString(),
     };

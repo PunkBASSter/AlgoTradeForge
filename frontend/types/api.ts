@@ -67,7 +67,7 @@ export interface BacktestRun {
   strategyName: string;
   strategyVersion: string;
   parameters: Record<string, unknown>;
-  dataSubscription: DataSubscriptionResponse;
+  dataSubscriptions: DataSubscriptionResponse[];
   backtestSettings: BacktestSettingsResponse;
   startedAt: string;
   completedAt: string;
@@ -96,7 +96,7 @@ export interface OptimizationRun {
   filteredTrials: number;
   failedTrials: number;
   sortBy: string;
-  dataSubscription: DataSubscriptionResponse;
+  dataSubscriptions: DataSubscriptionResponse[];
   backtestSettings: BacktestSettingsResponse;
   maxParallelism: number;
   optimizationMethod?: string;
@@ -252,7 +252,7 @@ export interface BacktestSettingsInput {
 }
 
 export interface RunBacktestRequest {
-  dataSubscription: DataSubscriptionInput;
+  dataSubscriptions: DataSubscriptionInput[];
   backtestSettings: BacktestSettingsInput;
   strategyName: string;
   strategyParameters?: Record<string, unknown>;
@@ -445,7 +445,7 @@ export interface LiveLastBar {
 // ---------------------------------------------------------------------------
 
 export interface StartDebugSessionRequest {
-  dataSubscription: DataSubscriptionInput;
+  dataSubscriptions: DataSubscriptionInput[];
   backtestSettings: BacktestSettingsInput;
   strategyName: string;
   strategyParameters?: Record<string, unknown>;

@@ -31,11 +31,11 @@ public sealed class BacktestPreparer(
         Func<BacktestOptions, IIndicatorFactory> indicatorFactoryProvider,
         CancellationToken ct = default)
     {
-        var sub = command.DataSubscription;
+        var primarySub = command.DataSubscriptions[0];
         var settings = command.BacktestSettings;
 
-        var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
-            ?? throw new ArgumentException($"Asset '{sub.AssetName}' not found.", nameof(command));
+        var asset = await assetRepository.GetByNameAsync(primarySub.AssetName, primarySub.Exchange, ct)
+            ?? throw new ArgumentException($"Asset '{primarySub.AssetName}' not found.", nameof(command));
 
         var scale = new ScaleContext(asset);
 
@@ -56,18 +56,26 @@ public sealed class BacktestPreparer(
 
         if (strategy.DataSubscriptions.Count == 0)
         {
-            TimeSpan timeFrame;
-            if (string.IsNullOrEmpty(sub.TimeFrame))
+            foreach (var sub in command.DataSubscriptions)
             {
-                timeFrame = TimeSpan.FromMinutes(1);
-            }
-            else if (!TimeFrameFormatter.TryParseShorthand(sub.TimeFrame, out timeFrame)
-                     && !TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out timeFrame))
-            {
-                throw new ArgumentException($"Invalid TimeFrame format: '{sub.TimeFrame}'");
-            }
+                var subAsset = sub == primarySub
+                    ? asset
+                    : await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
+                      ?? throw new ArgumentException($"Asset '{sub.AssetName}' not found.");
 
-            strategy.DataSubscriptions.Add(new DataSubscription(asset, timeFrame));
+                TimeSpan timeFrame;
+                if (string.IsNullOrEmpty(sub.TimeFrame))
+                {
+                    timeFrame = TimeSpan.FromMinutes(1);
+                }
+                else if (!TimeFrameFormatter.TryParseShorthand(sub.TimeFrame, out timeFrame)
+                         && !TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out timeFrame))
+                {
+                    throw new ArgumentException($"Invalid TimeFrame format: '{sub.TimeFrame}'");
+                }
+
+                strategy.DataSubscriptions.Add(new DataSubscription(subAsset, timeFrame));
+            }
         }
 
         var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);

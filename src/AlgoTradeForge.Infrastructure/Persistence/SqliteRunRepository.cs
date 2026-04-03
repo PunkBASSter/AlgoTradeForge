@@ -29,7 +29,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         duration_ms, total_bars, metrics_json,
         run_folder_path, run_mode, optimization_run_id,
         asset_name, exchange, timeframe,
-        error_message, error_stack_trace, fitness_score
+        error_message, error_stack_trace, fitness_score,
+        subscriptions_json
         """;
 
     public SqliteRunRepository(IOptions<RunStorageOptions> options)
@@ -98,7 +99,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 trade_pnl_json,
                 run_folder_path, run_mode, optimization_run_id,
                 asset_name, exchange, timeframe,
-                error_message, error_stack_trace, fitness_score
+                error_message, error_stack_trace, fitness_score,
+                subscriptions_json
             ) VALUES (
                 $id, $stratName, $stratVer, $paramsJson,
                 $cash, $commission, $slippage,
@@ -107,7 +109,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 $tradePnlJson,
                 $runFolder, $runMode, $optId,
                 $asset, $exchange, $tf,
-                $errorMsg, $errorStack, $fitnessScore
+                $errorMsg, $errorStack, $fitnessScore,
+                $subscriptionsJson
             )
             """;
 
@@ -130,13 +133,15 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         cmd.Parameters.AddWithValue("$runFolder", (object?)r.RunFolderPath ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$runMode", r.RunMode);
         cmd.Parameters.AddWithValue("$optId", r.OptimizationRunId.HasValue ? r.OptimizationRunId.Value.ToString() : DBNull.Value);
-        cmd.Parameters.AddWithValue("$asset", r.DataSubscription.AssetName);
-        cmd.Parameters.AddWithValue("$exchange", r.DataSubscription.Exchange);
-        cmd.Parameters.AddWithValue("$tf", r.DataSubscription.TimeFrame);
+        cmd.Parameters.AddWithValue("$asset", r.DataSubscriptions[0].AssetName);
+        cmd.Parameters.AddWithValue("$exchange", r.DataSubscriptions[0].Exchange);
+        cmd.Parameters.AddWithValue("$tf", r.DataSubscriptions[0].TimeFrame);
         cmd.Parameters.AddWithValue("$errorMsg", (object?)r.ErrorMessage ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$errorStack", (object?)r.ErrorStackTrace ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$fitnessScore",
             r.FitnessScore is { } fs && double.IsFinite(fs) ? fs : DBNull.Value);
+        cmd.Parameters.AddWithValue("$subscriptionsJson",
+            JsonSerializer.Serialize(r.DataSubscriptions, JsonOptions));
 
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -251,14 +256,16 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 sort_by, data_start, data_end,
                 initial_cash, commission, slippage_ticks, max_parallelism,
                 asset_name, exchange, timeframe, filtered_trials, failed_trials,
-                optimization_method, generations_completed, input_json, error_message, status
+                optimization_method, generations_completed, input_json, error_message, status,
+                subscriptions_json
             ) VALUES (
                 $id, $stratName, $stratVer,
                 $startedAt, '', 0, $totalCombinations,
                 $sortBy, $dataStart, $dataEnd,
                 $cash, $commission, $slippage, $maxParallelism,
                 $asset, $exchange, $tf, 0, 0,
-                $optMethod, NULL, $inputJson, NULL, 'InProgress'
+                $optMethod, NULL, $inputJson, NULL, 'InProgress',
+                $subscriptionsJson
             )
             """;
 
@@ -274,11 +281,13 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         cmd.Parameters.AddWithValue("$commission", record.BacktestSettings.CommissionPerTrade.ToString(CultureInfo.InvariantCulture));
         cmd.Parameters.AddWithValue("$slippage", record.BacktestSettings.SlippageTicks);
         cmd.Parameters.AddWithValue("$maxParallelism", record.MaxParallelism);
-        cmd.Parameters.AddWithValue("$asset", record.DataSubscription.AssetName);
-        cmd.Parameters.AddWithValue("$exchange", record.DataSubscription.Exchange);
-        cmd.Parameters.AddWithValue("$tf", record.DataSubscription.TimeFrame);
+        cmd.Parameters.AddWithValue("$asset", record.DataSubscriptions[0].AssetName);
+        cmd.Parameters.AddWithValue("$exchange", record.DataSubscriptions[0].Exchange);
+        cmd.Parameters.AddWithValue("$tf", record.DataSubscriptions[0].TimeFrame);
         cmd.Parameters.AddWithValue("$optMethod", (object?)record.OptimizationMethod ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$inputJson", (object?)record.InputJson ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$subscriptionsJson",
+            JsonSerializer.Serialize(record.DataSubscriptions, JsonOptions));
 
         await cmd.ExecuteNonQueryAsync(ct);
     }
@@ -630,18 +639,27 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             ? null
             : reader.GetString(reader.GetOrdinal("optimization_run_id"));
 
+        var subscriptionsOrd = TryGetOrdinal(reader, "subscriptions_json");
+        var subscriptionsJson = subscriptionsOrd is int sOrd && !reader.IsDBNull(sOrd)
+            ? reader.GetString(sOrd)
+            : null;
+
+        var dataSubscriptions = subscriptionsJson is not null
+            ? (IReadOnlyList<DataSubscriptionDto>)JsonSerializer.Deserialize<List<DataSubscriptionDto>>(subscriptionsJson, JsonOptions)!
+            : [new DataSubscriptionDto
+            {
+                AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
+                Exchange = reader.GetString(reader.GetOrdinal("exchange")),
+                TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
+            }];
+
         return new BacktestRunRecord
         {
             Id = Guid.Parse(reader.GetString(reader.GetOrdinal("id"))),
             StrategyName = reader.GetString(reader.GetOrdinal("strategy_name")),
             StrategyVersion = reader.GetString(reader.GetOrdinal("strategy_version")),
             Parameters = DeserializeParameters(reader.GetString(reader.GetOrdinal("parameters_json"))),
-            DataSubscription = new DataSubscriptionDto
-            {
-                AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
-                Exchange = reader.GetString(reader.GetOrdinal("exchange")),
-                TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
-            },
+            DataSubscriptions = dataSubscriptions,
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = decimal.Parse(reader.GetString(reader.GetOrdinal("initial_cash")), CultureInfo.InvariantCulture),
@@ -690,6 +708,20 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             ? startedAt
             : DateTimeOffset.Parse(completedAtRaw, CultureInfo.InvariantCulture);
 
+        var subscriptionsOrd = TryGetOrdinal(reader, "subscriptions_json");
+        var subscriptionsJson = subscriptionsOrd is int sOrd && !reader.IsDBNull(sOrd)
+            ? reader.GetString(sOrd)
+            : null;
+
+        var dataSubscriptions = subscriptionsJson is not null
+            ? (IReadOnlyList<DataSubscriptionDto>)JsonSerializer.Deserialize<List<DataSubscriptionDto>>(subscriptionsJson, JsonOptions)!
+            : [new DataSubscriptionDto
+            {
+                AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
+                Exchange = reader.GetString(reader.GetOrdinal("exchange")),
+                TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
+            }];
+
         return new OptimizationRunRecord
         {
             Id = Guid.Parse(reader.GetString(reader.GetOrdinal("id"))),
@@ -700,12 +732,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             DurationMs = reader.GetInt64(reader.GetOrdinal("duration_ms")),
             TotalCombinations = reader.GetInt64(reader.GetOrdinal("total_combinations")),
             SortBy = reader.GetString(reader.GetOrdinal("sort_by")),
-            DataSubscription = new DataSubscriptionDto
-            {
-                AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
-                Exchange = reader.GetString(reader.GetOrdinal("exchange")),
-                TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
-            },
+            DataSubscriptions = dataSubscriptions,
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = decimal.Parse(reader.GetString(reader.GetOrdinal("initial_cash")), CultureInfo.InvariantCulture),

@@ -18,7 +18,7 @@ public sealed record BacktestSettingsInput
 
 public sealed record RunBacktestRequest
 {
-    public required DataSubscriptionInput DataSubscription { get; init; }
+    public required List<DataSubscriptionInput> DataSubscriptions { get; init; }
     public required BacktestSettingsInput BacktestSettings { get; init; }
     public required string StrategyName { get; init; }
     public Dictionary<string, object>? StrategyParameters { get; init; }

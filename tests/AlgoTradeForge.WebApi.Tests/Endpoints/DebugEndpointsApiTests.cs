@@ -95,16 +95,36 @@ public sealed class DebugEndpointsApiTests : ApiTestBase
     }
 
     [Fact]
+    public async Task Post_EmptySubscriptions_Returns400()
+    {
+        var request = new StartDebugSessionRequest
+        {
+            DataSubscriptions = [],
+            BacktestSettings = new()
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 1, 5, 0, 0, 0, TimeSpan.Zero),
+            },
+            StrategyName = "BuyAndHold",
+        };
+
+        var response = await Client.PostAsJsonAsync("/api/debug-sessions", request, Json, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Post_InvalidStrategy_Returns400()
     {
         var request = new StartDebugSessionRequest
         {
-            DataSubscription = new()
+            DataSubscriptions = [new()
             {
                 AssetName = "BTCUSDT",
                 Exchange = "Binance",
                 TimeFrame = "01:00:00",
-            },
+            }],
             BacktestSettings = new()
             {
                 InitialCash = 10_000m,

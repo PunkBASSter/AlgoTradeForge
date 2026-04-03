@@ -120,12 +120,12 @@ public class SimulationCacheBuilderTests
             StrategyName = "Test",
             StrategyVersion = "1.0",
             Parameters = new Dictionary<string, object>(),
-            DataSubscription = new DataSubscriptionDto
+            DataSubscriptions = [new DataSubscriptionDto
             {
                 AssetName = "BTCUSDT",
                 Exchange = "binance",
                 TimeFrame = "1h",
-            },
+            }],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = initialCapital,

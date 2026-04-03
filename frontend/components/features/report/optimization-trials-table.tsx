@@ -49,9 +49,9 @@ export function OptimizationTrialsTable({
       },
       { key: "strategyVersion", header: "Version" },
       { key: "id", header: "Run ID", render: (v) => String(v).substring(0, 8) },
-      { key: "dataSubscription.assetName", header: "Asset", render: (_v, row) => row.dataSubscription.assetName },
-      { key: "dataSubscription.exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
-      { key: "dataSubscription.timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
+      { key: "dataSubscriptions.asset", header: "Asset", render: (_v, row) => row.dataSubscriptions[0]?.assetName },
+      { key: "dataSubscriptions.exchange", header: "Exchange", render: (_v, row) => row.dataSubscriptions[0]?.exchange },
+      { key: "dataSubscriptions.tf", header: "TF", render: (_v, row) => row.dataSubscriptions[0]?.timeFrame },
       {
         key: "fitness",
         header: "Fitness",
@@ -100,11 +100,11 @@ export function OptimizationTrialsTable({
             onClick={(e) => {
               e.stopPropagation();
               const config: StartDebugSessionRequest = {
-                dataSubscription: {
-                  assetName: row.dataSubscription.assetName,
-                  exchange: row.dataSubscription.exchange,
-                  timeFrame: toTimeSpan(row.dataSubscription.timeFrame),
-                },
+                dataSubscriptions: [{
+                  assetName: row.dataSubscriptions[0]?.assetName ?? "",
+                  exchange: row.dataSubscriptions[0]?.exchange ?? "",
+                  timeFrame: toTimeSpan(row.dataSubscriptions[0]?.timeFrame ?? ""),
+                }],
                 backtestSettings: {
                   initialCash: row.backtestSettings.initialCash,
                   startTime: row.backtestSettings.startTime,
@@ -172,19 +172,19 @@ export function OptimizationTrialsTable({
     if (assetFilter) {
       const lower = assetFilter.toLowerCase();
       result = result.filter((t) =>
-        t.dataSubscription.assetName.toLowerCase().includes(lower),
+        t.dataSubscriptions[0]?.assetName.toLowerCase().includes(lower),
       );
     }
     if (exchangeFilter) {
       const lower = exchangeFilter.toLowerCase();
       result = result.filter((t) =>
-        t.dataSubscription.exchange.toLowerCase().includes(lower),
+        t.dataSubscriptions[0]?.exchange.toLowerCase().includes(lower),
       );
     }
     if (timeFrameFilter) {
       const lower = timeFrameFilter.toLowerCase();
       result = result.filter((t) =>
-        t.dataSubscription.timeFrame.toLowerCase().includes(lower),
+        t.dataSubscriptions[0]?.timeFrame.toLowerCase().includes(lower),
       );
     }
     return result;

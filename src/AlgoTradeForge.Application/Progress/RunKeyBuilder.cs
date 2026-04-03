@@ -10,13 +10,13 @@ public static class RunKeyBuilder
 {
     public static string Build(RunBacktestCommand cmd)
     {
-        var sub = cmd.DataSubscription;
         var settings = cmd.BacktestSettings;
         var sb = new StringBuilder();
         sb.Append(cmd.StrategyName).Append('|');
-        sb.Append(sub.AssetName).Append('|');
-        sb.Append(sub.Exchange).Append('|');
-        sb.Append(!string.IsNullOrEmpty(sub.TimeFrame) ? sub.TimeFrame : "default").Append('|');
+        foreach (var sub in cmd.DataSubscriptions.OrderBy(s => s.AssetName).ThenBy(s => s.Exchange))
+            sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':')
+              .Append(!string.IsNullOrEmpty(sub.TimeFrame) ? sub.TimeFrame : "default").Append(',');
+        sb.Append('|');
         sb.Append(settings.StartTime.ToUniversalTime().ToString("O")).Append('|');
         sb.Append(settings.EndTime.ToUniversalTime().ToString("O")).Append('|');
         sb.Append(settings.InitialCash).Append('|');

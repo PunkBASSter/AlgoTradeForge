@@ -75,7 +75,7 @@ public sealed class RunOptimizationCommandHandler(
         await progressCache.SetRunKeyAsync(runKey, optimizationRunId, ct);
 
         // 4. Insert placeholder row so the run is visible in the list immediately
-        var optPrimarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
+        var optPrimarySub = OptimizationSetupHelper.GetSubscriptionDtos(
             command.DataSubscriptions, command.SubscriptionAxis);
         var maxParallelism = command.MaxDegreeOfParallelism > 0
             ? command.MaxDegreeOfParallelism
@@ -90,7 +90,7 @@ public sealed class RunOptimizationCommandHandler(
             DurationMs = 0,
             TotalCombinations = estimatedCount,
             SortBy = Fitness,
-            DataSubscription = optPrimarySub,
+            DataSubscriptions = optPrimarySub,
             BacktestSettings = command.BacktestSettings,
             MaxParallelism = maxParallelism,
             Trials = [],
@@ -146,7 +146,7 @@ public sealed class RunOptimizationCommandHandler(
         var maxParallelism = command.MaxDegreeOfParallelism > 0
             ? command.MaxDegreeOfParallelism
             : Environment.ProcessorCount;
-        var optPrimarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
+        var optPrimarySub = OptimizationSetupHelper.GetSubscriptionDtos(
             command.DataSubscriptions, command.SubscriptionAxis);
 
         try
@@ -265,7 +265,7 @@ public sealed class RunOptimizationCommandHandler(
                 DurationMs = (long)stopwatch.Elapsed.TotalMilliseconds,
                 TotalCombinations = estimatedCount,
                 SortBy = Fitness,
-                DataSubscription = optPrimarySub,
+                DataSubscriptions = optPrimarySub,
                 BacktestSettings = command.BacktestSettings,
                 MaxParallelism = maxParallelism,
                 Trials = trials,

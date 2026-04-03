@@ -156,8 +156,8 @@ export default function OptimizationReportPage({
             </span>
           </h1>
           <p className="text-sm text-text-secondary mt-1">
-            {optimization.dataSubscription.assetName} / {optimization.dataSubscription.exchange} /{" "}
-            {optimization.dataSubscription.timeFrame}
+            {optimization.dataSubscriptions[0]?.assetName} / {optimization.dataSubscriptions[0]?.exchange} /{" "}
+            {optimization.dataSubscriptions[0]?.timeFrame}
             {" -- "}
             {new Date(optimization.backtestSettings.startTime).toLocaleDateString()} to{" "}
             {new Date(optimization.backtestSettings.endTime).toLocaleDateString()}

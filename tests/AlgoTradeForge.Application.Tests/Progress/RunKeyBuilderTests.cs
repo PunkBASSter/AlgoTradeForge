@@ -47,11 +47,11 @@ public sealed class RunKeyBuilderTests
     {
         var cmdEmpty = MakeBacktestCommand() with
         {
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "" }
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "" }]
         };
         var cmdDefault = MakeBacktestCommand() with
         {
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "default" }
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "default" }]
         };
 
         Assert.Equal(RunKeyBuilder.Build(cmdEmpty), RunKeyBuilder.Build(cmdDefault));
@@ -162,7 +162,7 @@ public sealed class RunKeyBuilderTests
 
     private static RunBacktestCommand MakeBacktestCommand() => new()
     {
-        DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" },
+        DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }],
         BacktestSettings = new BacktestSettingsDto
         {
             InitialCash = 10000m,
