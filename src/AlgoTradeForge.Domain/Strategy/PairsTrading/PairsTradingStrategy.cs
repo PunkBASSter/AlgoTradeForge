@@ -12,7 +12,8 @@ namespace AlgoTradeForge.Domain.Strategy.PairsTrading;
 /// <summary>
 /// Pairs trading strategy using z-score of the cross-asset spread.
 /// Enters when z-score exceeds entry threshold, exits on reversion or cointegration break.
-/// Submits BOTH legs (buy A + sell B or inverse) with hedge ratio.
+/// Executes on primary asset only — the secondary subscription provides the spread signal
+/// but is not traded directly. True two-leg execution is a future enhancement.
 /// </summary>
 [StrategyKey("PairsTrading")]
 public sealed class PairsTradingStrategy(

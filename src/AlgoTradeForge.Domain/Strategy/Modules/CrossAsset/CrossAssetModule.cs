@@ -26,9 +26,9 @@ public sealed class CrossAssetModule(CrossAssetParams parameters)
 
     public void Update(Int64Bar bar, DataSubscription sub, StrategyContext context)
     {
-        if (ReferenceEquals(sub, _sub1))
+        if (sub == _sub1)
             _prices1.Add(bar.Close);
-        else if (ReferenceEquals(sub, _sub2))
+        else if (sub == _sub2)
             _prices2.Add(bar.Close);
 
         // Need matching data from both series
