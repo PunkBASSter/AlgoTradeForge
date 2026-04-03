@@ -70,33 +70,23 @@ public sealed class DonchianBreakoutStrategy(
             Context.CurrentAtr = atrValues[^1];
     }
 
-    protected override int OnGenerateSignal(
-        Int64Bar bar, StrategyContext context, out OrderSide direction)
+    protected override int OnGenerateSignal(Int64Bar bar, StrategyContext context)
     {
-        direction = OrderSide.Buy;
-
         var upper = _entryChannel.Buffers["Upper"];
         var lower = _entryChannel.Buffers["Lower"];
         if (upper.Count < 2) return 0;
 
-        // Previous bar's channel values
         var prevUpper = upper[^2];
         var prevLower = lower[^2];
         if (prevUpper == 0 || prevLower == 0) return 0;
 
         // Breakout above previous bar's upper channel
         if (bar.High > prevUpper)
-        {
-            direction = OrderSide.Buy;
-            return 80;
-        }
+            return 80;  // Buy
 
         // Breakout below previous bar's lower channel
         if (bar.Low < prevLower)
-        {
-            direction = OrderSide.Sell;
-            return 80;
-        }
+            return -80; // Sell
 
         return 0;
     }

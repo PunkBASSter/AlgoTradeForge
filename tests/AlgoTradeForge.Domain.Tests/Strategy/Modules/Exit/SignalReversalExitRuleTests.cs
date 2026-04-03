@@ -24,15 +24,15 @@ public sealed class SignalReversalExitRuleTests
     [Fact]
     public void Name_ReturnsExpectedValue()
     {
-        var rule = new SignalReversalExitRule((_, _) => (0, OrderSide.Buy));
+        var rule = new SignalReversalExitRule((_, _) => 0);
         Assert.Equal("SignalReversal", rule.Name);
     }
 
     [Fact]
     public void Evaluate_SignalFlippedFromBuyToSell_ReturnsNeg70()
     {
-        // Entry was Buy, signal now says Sell
-        var rule = new SignalReversalExitRule((_, _) => (50, OrderSide.Sell));
+        // Entry was Buy, signal now says Sell (-50)
+        var rule = new SignalReversalExitRule((_, _) => -50);
         var group = CreateGroup(OrderSide.Buy);
 
         Assert.Equal(-70, rule.Evaluate(DefaultBar, DefaultContext, group));
@@ -41,8 +41,8 @@ public sealed class SignalReversalExitRuleTests
     [Fact]
     public void Evaluate_SignalFlippedFromSellToBuy_ReturnsNeg70()
     {
-        // Entry was Sell, signal now says Buy
-        var rule = new SignalReversalExitRule((_, _) => (50, OrderSide.Buy));
+        // Entry was Sell, signal now says Buy (+50)
+        var rule = new SignalReversalExitRule((_, _) => 50);
         var group = CreateGroup(OrderSide.Sell);
 
         Assert.Equal(-70, rule.Evaluate(DefaultBar, DefaultContext, group));
@@ -51,8 +51,8 @@ public sealed class SignalReversalExitRuleTests
     [Fact]
     public void Evaluate_SignalSameDirectionAsBuy_ReturnsZero()
     {
-        // Entry was Buy, signal still says Buy
-        var rule = new SignalReversalExitRule((_, _) => (50, OrderSide.Buy));
+        // Entry was Buy, signal still says Buy (+50)
+        var rule = new SignalReversalExitRule((_, _) => 50);
         var group = CreateGroup(OrderSide.Buy);
 
         Assert.Equal(0, rule.Evaluate(DefaultBar, DefaultContext, group));
@@ -61,8 +61,8 @@ public sealed class SignalReversalExitRuleTests
     [Fact]
     public void Evaluate_SignalSameDirectionAsSell_ReturnsZero()
     {
-        // Entry was Sell, signal still says Sell
-        var rule = new SignalReversalExitRule((_, _) => (50, OrderSide.Sell));
+        // Entry was Sell, signal still says Sell (-50)
+        var rule = new SignalReversalExitRule((_, _) => -50);
         var group = CreateGroup(OrderSide.Sell);
 
         Assert.Equal(0, rule.Evaluate(DefaultBar, DefaultContext, group));
@@ -72,7 +72,7 @@ public sealed class SignalReversalExitRuleTests
     public void Evaluate_ZeroSignalStrength_ReturnsZero()
     {
         // Signal strength is 0 → no signal → no reversal
-        var rule = new SignalReversalExitRule((_, _) => (0, OrderSide.Sell));
+        var rule = new SignalReversalExitRule((_, _) => 0);
         var group = CreateGroup(OrderSide.Buy);
 
         Assert.Equal(0, rule.Evaluate(DefaultBar, DefaultContext, group));
@@ -88,7 +88,7 @@ public sealed class SignalReversalExitRuleTests
         {
             capturedBar = bar;
             capturedCtx = ctx;
-            return (0, OrderSide.Buy);
+            return 0;
         });
 
         var testBar = TestBars.Bullish();

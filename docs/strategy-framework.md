@@ -109,9 +109,9 @@ The entry pipeline runs only when capacity allows. Each step is a gate — failu
 
 3c. SIGNAL GENERATION ───────────────────────────────── [★ STRATEGY-SPECIFIC]
     ┌─────────────────────────────────────────────────────────────────────┐
-    │  abstract int OnGenerateSignal(bar, context, out OrderSide side)   │
+    │  abstract int OnGenerateSignal(bar, context)                        │
     │                                                                     │
-    │  Returns: signalStrength [-100, +100] and direction                 │
+    │  Returns: signed score [-100, +100]; + = Buy, - = Sell              │
     │  Returns 0 or near-zero when no signal present                     │
     │                                                                     │
     │  This is THE method that differs per strategy.                      │
@@ -315,9 +315,10 @@ public abstract class ModularStrategyBase<TParams> : StrategyBase<TParams>
             return;
 
         // 3c: Signal generation [★ STRATEGY-SPECIFIC]
-        var signalStrength = OnGenerateSignal(bar, Context, out var direction);
+        var signalStrength = OnGenerateSignal(bar, Context);
         if (Math.Abs(signalStrength) < Params.SignalThreshold)
             return;
+        var direction = signalStrength > 0 ? OrderSide.Buy : OrderSide.Sell;
 
         // Reconcile signal direction with filter allowance
         if (direction == OrderSide.Buy && filterScore < 0) return;
@@ -370,8 +371,8 @@ public abstract class ModularStrategyBase<TParams> : StrategyBase<TParams>
     /// Positive = bullish, negative = bearish, 0 = no signal.
     /// Sets <paramref name="direction"/> to the proposed trade side.
     /// </summary>
-    protected abstract int OnGenerateSignal(
-        Int64Bar bar, StrategyContext context, out OrderSide direction);
+    /// Signed score: positive = Buy, negative = Sell, 0 = no signal.
+    protected abstract int OnGenerateSignal(Int64Bar bar, StrategyContext context);
 
     // ── Virtual: override to customize, defaults handle common cases ─
 
@@ -681,11 +682,8 @@ public sealed class Rsi2MeanReversionStrategy(
         AddFilter(new AtrVolatilityFilterModule(Params.AtrFilter));
     }
 
-    protected override int OnGenerateSignal(
-        Int64Bar bar, StrategyContext context, out OrderSide direction)
+    protected override int OnGenerateSignal(Int64Bar bar, StrategyContext context)
     {
-        direction = OrderSide.Buy;
-
         var rsiValues = _rsi.Buffers["Value"];
         var smaValues = _trendFilter.Buffers["Value"];
         if (rsiValues.Count < 2 || smaValues.Count == 0) return 0;
@@ -693,17 +691,10 @@ public sealed class Rsi2MeanReversionStrategy(
         var rsi = rsiValues[^1];
         var sma = smaValues[^1];
 
-        // Only long when above trend filter, only short when below
         if (rsi < Params.OversoldThreshold && bar.Close > sma)
-        {
-            direction = OrderSide.Buy;
-            return 80;
-        }
+            return 80;   // Buy
         if (rsi > Params.OverboughtThreshold && bar.Close < sma)
-        {
-            direction = OrderSide.Sell;
-            return 80;
-        }
+            return -80;  // Sell
 
         return 0;
     }
@@ -741,24 +732,16 @@ public sealed class DonchianBreakoutStrategy(
         AddFilter(new RegimeFilter()); // only trade in trending regimes
     }
 
-    protected override int OnGenerateSignal(
-        Int64Bar bar, StrategyContext context, out OrderSide direction)
+    protected override int OnGenerateSignal(Int64Bar bar, StrategyContext context)
     {
-        direction = OrderSide.Buy;
         var upper = _entryChannel.Buffers["Upper"];
         var lower = _entryChannel.Buffers["Lower"];
         if (upper.Count < 2) return 0;
 
-        if (bar.Close > upper[^2])  // breakout above previous bar's channel
-        {
-            direction = OrderSide.Buy;
-            return 80;
-        }
+        if (bar.Close > upper[^2])
+            return 80;   // Buy — breakout above previous bar's channel
         if (bar.Close < lower[^2])
-        {
-            direction = OrderSide.Sell;
-            return 80;
-        }
+            return -80;  // Sell — breakout below
         return 0;
     }
 
@@ -803,25 +786,18 @@ public sealed class PairsTradingStrategy(
         _crossAsset.Initialize(Indicators, DataSubscriptions[0], DataSubscriptions[1]);
     }
 
-    protected override int OnGenerateSignal(
-        Int64Bar bar, StrategyContext context, out OrderSide direction)
+    protected override int OnGenerateSignal(Int64Bar bar, StrategyContext context)
     {
-        direction = OrderSide.Buy;
         var z = context.Get<double>("crossasset.zscore");
         var cointValid = context.Get<bool>("crossasset.cointegrated");
 
         if (!cointValid) return 0;  // no trading when cointegration broken
 
+        var strength = (int)Math.Min(Math.Abs(z) * 40, 100);
         if (z < -Params.CrossAsset.ZScoreEntryThreshold)
-        {
-            direction = OrderSide.Buy;  // long spread (buy A, sell B)
-            return (int)Math.Min(Math.Abs(z) * 40, 100);
-        }
+            return strength;   // Buy — long spread (buy A, sell B)
         if (z > Params.CrossAsset.ZScoreEntryThreshold)
-        {
-            direction = OrderSide.Sell;  // short spread (sell A, buy B)
-            return (int)Math.Min(Math.Abs(z) * 40, 100);
-        }
+            return -strength;  // Sell — short spread (sell A, buy B)
         return 0;
     }
 

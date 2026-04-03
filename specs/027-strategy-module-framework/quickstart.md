@@ -16,7 +16,7 @@ A strategy developer creates a new strategy by:
 ```
 Strategy class:
   - Inherits ModularStrategyBase<MyParams>
-  - Overrides OnGenerateSignal() → returns signal strength [-100, +100] and direction
+  - Overrides OnGenerateSignal() → returns signed score [-100, +100]; positive = Buy, negative = Sell
   - In OnStrategyInit(): creates indicators, registers filters
 
 Params class:

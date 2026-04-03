@@ -55,26 +55,17 @@ public sealed class PairsTradingStrategy(
         }
     }
 
-    protected override int OnGenerateSignal(
-        Int64Bar bar, StrategyContext context, out OrderSide direction)
+    protected override int OnGenerateSignal(Int64Bar bar, StrategyContext context)
     {
-        direction = OrderSide.Buy;
-
         var zScore = context.Get<double>("crossasset.zscore");
 
-        // Z-score > entry threshold → spread is too wide → sell spread (sell A, buy B)
+        // Z-score > entry threshold → spread too wide → sell spread (sell A, buy B)
         if (zScore > Params.CrossAsset.ZScoreEntryThreshold)
-        {
-            direction = OrderSide.Sell;
-            return 80;
-        }
+            return -80; // Sell
 
-        // Z-score < -entry threshold → spread is too narrow → buy spread (buy A, sell B)
+        // Z-score < -entry threshold → spread too narrow → buy spread (buy A, sell B)
         if (zScore < -Params.CrossAsset.ZScoreEntryThreshold)
-        {
-            direction = OrderSide.Buy;
-            return 80;
-        }
+            return 80;  // Buy
 
         return 0;
     }

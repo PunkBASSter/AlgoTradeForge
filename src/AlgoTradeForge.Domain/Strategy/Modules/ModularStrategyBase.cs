@@ -165,9 +165,12 @@ public abstract class ModularStrategyBase<TParams>(TParams parameters, IIndicato
             return;
 
         // 3c: Signal generation [STRATEGY-SPECIFIC]
-        var signalStrength = OnGenerateSignal(bar, Context, out var direction);
+        var signalStrength = OnGenerateSignal(bar, Context);
         if (Math.Abs(signalStrength) < Params.SignalThreshold)
             return;
+
+        // Derive direction from sign: positive = Buy, negative = Sell
+        var direction = signalStrength > 0 ? OrderSide.Buy : OrderSide.Sell;
 
         // Reconcile signal direction with filter
         if (direction == OrderSide.Buy && filterScore < 0) return;
@@ -229,8 +232,12 @@ public abstract class ModularStrategyBase<TParams>(TParams parameters, IIndicato
 
     // ── Abstract: the ONE method every strategy MUST implement ──
 
-    protected abstract int OnGenerateSignal(
-        Int64Bar bar, StrategyContext context, out OrderSide direction);
+    /// <summary>
+    /// Returns a signed signal score: positive = Buy, negative = Sell, 0 = no signal.
+    /// Magnitude indicates conviction (e.g., +80 = Buy strength 80, -80 = Sell strength 80).
+    /// Compared against <c>Params.SignalThreshold</c> via absolute value.
+    /// </summary>
+    protected abstract int OnGenerateSignal(Int64Bar bar, StrategyContext context);
 
     // ── Virtual: override to customize, defaults handle common cases ──
 

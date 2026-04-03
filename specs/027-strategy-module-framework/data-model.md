@@ -19,7 +19,7 @@
   - `_regimeDetector: RegimeDetectorModule?` — optional regime classifier
   - `Context: StrategyContext` — per-bar shared state (protected)
 - **Sealed methods**: `OnInit()`, `OnBarComplete()`, `OnTrade()`
-- **Abstract methods**: `OnGenerateSignal(bar, context, out direction) → int`
+- **Abstract methods**: `OnGenerateSignal(bar, context) → int` (signed: +N = Buy, -N = Sell)
 - **Virtual methods**: `OnGetEntryPrice()`, `OnGetRiskLevels()`, `OnExecuteEntry()`, `OnEvaluateExit()`, `OnGetExitPrice()`, `OnStrategyInit()`, `OnContextUpdated()`, `OnOrderFilled()`
 - **Registration methods**: `AddFilter()`, `SetExit()`, `SetTrailingStop()`, `SetRegimeDetector()`
 

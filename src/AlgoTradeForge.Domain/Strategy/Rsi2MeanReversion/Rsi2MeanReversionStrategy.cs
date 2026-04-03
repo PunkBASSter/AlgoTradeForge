@@ -44,31 +44,21 @@ public sealed class Rsi2MeanReversionStrategy(
             Context.CurrentAtr = atrValues[^1];
     }
 
-    protected override int OnGenerateSignal(
-        Int64Bar bar, StrategyContext context, out OrderSide direction)
+    protected override int OnGenerateSignal(Int64Bar bar, StrategyContext context)
     {
-        direction = OrderSide.Buy;
-
         var rsiValues = _rsi.Buffers["Value"];
         var smaValues = _trendFilter.Buffers["Value"];
         if (rsiValues.Count < Params.RsiPeriod + 1 || smaValues.Count == 0) return 0;
 
         var rsi = rsiValues[^1];
         var sma = smaValues[^1];
-
-        if (sma == 0) return 0; // warmup
+        if (sma == 0) return 0;
 
         if (rsi < Params.OversoldThreshold && bar.Close > sma)
-        {
-            direction = OrderSide.Buy;
-            return 80;
-        }
+            return 80;  // Buy
 
         if (rsi > Params.OverboughtThreshold && bar.Close < sma)
-        {
-            direction = OrderSide.Sell;
-            return 80;
-        }
+            return -80; // Sell
 
         return 0;
     }
