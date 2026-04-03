@@ -1,5 +1,7 @@
 # Strategy Framework — Module Pipeline Architecture
 
+**Status: IMPLEMENTED** (2026-04-03) — All phases complete. Three model strategies (RSI2, Donchian Breakout, Pairs Trading) validated. 932+ tests passing.
+
 **The universal bar-processing pipeline that every AlgoTradeForge strategy follows, decomposed into infrastructure (base class) and strategy-specific (override) responsibilities.**
 
 Every strategy — mean-reversion, trend-following, volatility breakout, pairs trading, rotation — processes each bar through the same three-phase pipeline: **Update → Manage → Enter**. The base class (`ModularStrategyBase<TParams>`) orchestrates all infrastructure steps. A concrete strategy only implements three abstract/virtual methods that encode its unique trading logic.

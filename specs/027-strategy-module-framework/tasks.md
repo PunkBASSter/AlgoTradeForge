@@ -91,17 +91,17 @@
 
 ### Tests (write first)
 
-- [ ] T030 [P] [US6] Write tests for `TimeBasedExitRule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Exit/TimeBasedExitRuleTests.cs` — returns 0 before MaxHoldBars, returns -100 at MaxHoldBars, tracks bars since entry via OrderGroup.CreatedAt
-- [ ] T031 [P] [US6] Write tests for `ProfitTargetExitRule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Exit/ProfitTargetExitRuleTests.cs` — returns 0 when PnL < target, returns -60 when PnL >= N*ATR (uses context.CurrentAtr)
-- [ ] T032 [P] [US6] Write tests for `SignalReversalExitRule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Exit/SignalReversalExitRuleTests.cs` — returns -70 when signal direction flipped vs entry side, 0 when same direction or no signal
-- [ ] T033 [P] [US6] Write tests for `RegimeChangeExitRule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Exit/RegimeChangeExitRuleTests.cs` — returns -80 when context.CurrentRegime differs from entry regime, 0 when same, 0 when Unknown
+- [x] T030 [P] [US6] Write tests for `TimeBasedExitRule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Exit/TimeBasedExitRuleTests.cs` — returns 0 before MaxHoldBars, returns -100 at MaxHoldBars, tracks bars since entry via OrderGroup.CreatedAt
+- [x] T031 [P] [US6] Write tests for `ProfitTargetExitRule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Exit/ProfitTargetExitRuleTests.cs` — returns 0 when PnL < target, returns -60 when PnL >= N*ATR (uses context.CurrentAtr)
+- [x] T032 [P] [US6] Write tests for `SignalReversalExitRule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Exit/SignalReversalExitRuleTests.cs` — returns -70 when signal direction flipped vs entry side, 0 when same direction or no signal
+- [x] T033 [P] [US6] Write tests for `RegimeChangeExitRule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Exit/RegimeChangeExitRuleTests.cs` — returns -80 when context.CurrentRegime differs from entry regime, 0 when same, 0 when Unknown
 
 ### Implementation
 
-- [ ] T034 [P] [US6] Implement `TimeBasedExitRule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Exit/TimeBasedExitRule.cs` — `IExitRule`, computes bars held from group.CreatedAt and current bar timestamp, returns -100 when exceeded
-- [ ] T035 [P] [US6] Implement `ProfitTargetExitRule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Exit/ProfitTargetExitRule.cs` — `IExitRule`, computes unrealized PnL from group entry vs current price, compares against AtrMultiple * context.CurrentAtr
-- [ ] T036 [P] [US6] Implement `SignalReversalExitRule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Exit/SignalReversalExitRule.cs` — `IExitRule`, takes a `Func<Int64Bar, StrategyContext, (int signal, OrderSide side)>` delegate (bound to strategy's signal logic), returns -70 when sign flipped
-- [ ] T037 [P] [US6] Implement `RegimeChangeExitRule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Exit/RegimeChangeExitRule.cs` — `IExitRule`, stores entry regime when activated, returns -80 when context.CurrentRegime != entryRegime, 0 when Unknown
+- [x] T034 [P] [US6] Implement `TimeBasedExitRule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Exit/TimeBasedExitRule.cs` — `IExitRule`, computes bars held from group.CreatedAt and current bar timestamp, returns -100 when exceeded
+- [x] T035 [P] [US6] Implement `ProfitTargetExitRule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Exit/ProfitTargetExitRule.cs` — `IExitRule`, computes unrealized PnL from group entry vs current price, compares against AtrMultiple * context.CurrentAtr
+- [x] T036 [P] [US6] Implement `SignalReversalExitRule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Exit/SignalReversalExitRule.cs` — `IExitRule`, takes a `Func<Int64Bar, StrategyContext, (int signal, OrderSide side)>` delegate (bound to strategy's signal logic), returns -70 when sign flipped
+- [x] T037 [P] [US6] Implement `RegimeChangeExitRule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Exit/RegimeChangeExitRule.cs` — `IExitRule`, stores entry regime when activated, returns -80 when context.CurrentRegime != entryRegime, 0 when Unknown
 
 **Checkpoint**: Exit rules independently testable. ExitModule composes them correctly.
 
@@ -115,12 +115,12 @@
 
 ### Tests (write first)
 
-- [ ] T038 [P] [US7] Write tests for `MoneyManagementModule` AtrVolTarget path in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/MoneyManagement/MoneyManagementModuleTests.cs` — test qty = (equity * volTarget) / (ATR * multiplier), inversely proportional to ATR
-- [ ] T039 [P] [US7] Write tests for `MoneyManagementModule` HalfKelly path in same test file — test qty = 0.5 * f(winRate, payoffRatio) * equity / price, Kelly fraction formula: f = (winRate * payoffRatio - (1 - winRate)) / payoffRatio
+- [x] T038 [P] [US7] Write tests for `MoneyManagementModule` AtrVolTarget path in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/MoneyManagement/MoneyManagementModuleTests.cs` — test qty = (equity * volTarget) / (ATR * multiplier), inversely proportional to ATR
+- [x] T039 [P] [US7] Write tests for `MoneyManagementModule` HalfKelly path in same test file — test qty = 0.5 * f(winRate, payoffRatio) * equity / price, Kelly fraction formula: f = (winRate * payoffRatio - (1 - winRate)) / payoffRatio
 
 ### Implementation
 
-- [ ] T040 [US7] Complete `MoneyManagementModule` — implement AtrVolTarget and HalfKelly branches in `src/AlgoTradeForge.Domain/Strategy/Modules/MoneyManagement/MoneyManagementModule.cs`, replace `NotImplementedException` stubs from T016
+- [x] T040 [US7] Complete `MoneyManagementModule` — implement AtrVolTarget and HalfKelly branches in `src/AlgoTradeForge.Domain/Strategy/Modules/MoneyManagement/MoneyManagementModule.cs`, replace `NotImplementedException` stubs from T016
 
 **Checkpoint**: All 3 sizing methods work. Interchangeable via params.
 
@@ -134,25 +134,25 @@
 
 ### Tests (write first)
 
-- [ ] T041 [P] [US2] Write tests for `DonchianChannel` indicator in `tests/AlgoTradeForge.Domain.Tests/Indicators/DonchianChannelTests.cs` — test upper = max(high, period), lower = min(low, period), middle = (upper+lower)/2, warmup period, long output
-- [ ] T042 [P] [US2] Write tests for `Adx` indicator in `tests/AlgoTradeForge.Domain.Tests/Indicators/AdxTests.cs` — test ADX on known series, values 0-100, warmup = 2*period, double output
-- [ ] T043 [P] [US2] Write tests for `TrailingStopModule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/TrailingStop/TrailingStopModuleTests.cs` — test per-group state: Activate() creates entry, Update() ratchets stop only in favorable direction (long: up only, short: down only), GetCurrentStop() returns correct per-group value, Remove() cleans up, multiple concurrent groups tracked independently, ATR variant ratchets by ATR distance
-- [ ] T044 [P] [US2] Write tests for `RegimeDetectorModule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Regime/RegimeDetectorModuleTests.cs` — test Update() classifies Trending when ADX > threshold, RangeBound when below, writes to context.CurrentRegime, returns Unknown during warmup
-- [ ] T045 [P] [US2] Write tests for `RegimeFilterModule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Filter/RegimeFilterModuleTests.cs` — test returns 100 when regime in allowed set, -100 when not, 0 when Unknown
-- [ ] T046 [US2] Write integration test for `DonchianBreakoutStrategy` in `tests/AlgoTradeForge.Domain.Tests/Strategy/DonchianBreakoutStrategyTests.cs` — run backtest, assert: stop orders at Donchian channel boundaries, custom ATR-based risk levels, trailing stop ratchets on favorable moves, regime filter blocks range-bound entries, regime-change exit fires
+- [x] T041 [P] [US2] Write tests for `DonchianChannel` indicator in `tests/AlgoTradeForge.Domain.Tests/Indicators/DonchianChannelTests.cs` — test upper = max(high, period), lower = min(low, period), middle = (upper+lower)/2, warmup period, long output
+- [x] T042 [P] [US2] Write tests for `Adx` indicator in `tests/AlgoTradeForge.Domain.Tests/Indicators/AdxTests.cs` — test ADX on known series, values 0-100, warmup = 2*period, double output
+- [x] T043 [P] [US2] Write tests for `TrailingStopModule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/TrailingStop/TrailingStopModuleTests.cs` — test per-group state: Activate() creates entry, Update() ratchets stop only in favorable direction (long: up only, short: down only), GetCurrentStop() returns correct per-group value, Remove() cleans up, multiple concurrent groups tracked independently, ATR variant ratchets by ATR distance
+- [x] T044 [P] [US2] Write tests for `RegimeDetectorModule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Regime/RegimeDetectorModuleTests.cs` — test Update() classifies Trending when ADX > threshold, RangeBound when below, writes to context.CurrentRegime, returns Unknown during warmup
+- [x] T045 [P] [US2] Write tests for `RegimeFilterModule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Filter/RegimeFilterModuleTests.cs` — test returns 100 when regime in allowed set, -100 when not, 0 when Unknown
+- [x] T046 [US2] Write integration test for `DonchianBreakoutStrategy` in `tests/AlgoTradeForge.Domain.Tests/Strategy/DonchianBreakoutStrategyTests.cs` — run backtest, assert: stop orders at Donchian channel boundaries, custom ATR-based risk levels, trailing stop ratchets on favorable moves, regime filter blocks range-bound entries, regime-change exit fires
 
 ### Implementation
 
-- [ ] T047 [P] [US2] Implement `DonchianChannel` indicator in `src/AlgoTradeForge.Domain/Indicators/DonchianChannel.cs` — extends `Int64IndicatorBase`, 3 buffers: "Upper" (max high over period), "Lower" (min low over period), "Middle" (midpoint, long), configurable period
-- [ ] T048 [P] [US2] Implement `Adx` indicator in `src/AlgoTradeForge.Domain/Indicators/Adx.cs` — extends `DoubleIndicatorBase`, single buffer "Value" (double, 0-100), standard ADX formula (DI+, DI-, DX, smoothed ADX), configurable period, `Measure = IndicatorMeasure.MinusOnePlusOne`
-- [ ] T049 [P] [US2] Implement `TrailingStopParams` in `src/AlgoTradeForge.Domain/Strategy/Modules/TrailingStop/TrailingStopParams.cs` — extends `ModuleParamsBase`, fields: Variant (TrailingStopVariant), AtrMultiplier, AtrPeriod, DonchianPeriod with [Optimizable] attributes per data-model
-- [ ] T050 [P] [US2] Implement `TrailingStopState` value type in `src/AlgoTradeForge.Domain/Strategy/Modules/TrailingStop/TrailingStopState.cs` — record struct with CurrentStop, Direction, ActivationPrice, HighWaterMark
-- [ ] T051 [US2] Implement `TrailingStopModule` in `src/AlgoTradeForge.Domain/Strategy/Modules/TrailingStop/TrailingStopModule.cs` — `IStrategyModule<TrailingStopParams>`, `[ModuleKey("trailing-stop")]`, internal `Dictionary<long, TrailingStopState>` keyed by group ID. Methods: `Activate(groupId, entryPrice, direction, initialStop)`, `Update(groupId, bar) → long?` (ratchet only in favorable direction based on variant), `GetCurrentStop(groupId)`, `Remove(groupId)`. ATR variant: stop = highWaterMark - atrMultiplier * ATR.
-- [ ] T052 [P] [US2] Implement `RegimeDetectorParams` in `src/AlgoTradeForge.Domain/Strategy/Modules/Regime/RegimeDetectorParams.cs` — extends `ModuleParamsBase`, fields: AdxPeriod, TrendThreshold per data-model
-- [ ] T053 [US2] Implement `RegimeDetectorModule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Regime/RegimeDetectorModule.cs` — `IStrategyModule<RegimeDetectorParams>`, `[ModuleKey("regime-detector")]`. `Initialize()` creates ADX indicator. `Update(bar, context)`: compute ADX → if warmup return Unknown, if ADX > threshold → Trending, else → RangeBound. Write to `context.CurrentRegime`.
-- [ ] T054 [US2] Implement `RegimeFilterModule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Filter/RegimeFilterModule.cs` — `IFilterModule`, `[ModuleKey("filter.regime")]`. Constructor takes `MarketRegime[]` allowedRegimes. `Evaluate()`: reads context.CurrentRegime, returns 100 if in allowed set, -100 if not, 0 if Unknown.
-- [ ] T055 [P] [US2] Create `DonchianParams` in `src/AlgoTradeForge.Domain/Strategy/DonchianBreakout/DonchianParams.cs` — extends `ModularStrategyParamsBase`, fields: EntryPeriod, ExitPeriod, AtrPeriod, AtrStopMultiplier with [Optimizable] attributes. Includes TrailingStop and RegimeDetector nested params.
-- [ ] T056 [US2] Implement `DonchianBreakoutStrategy` in `src/AlgoTradeForge.Domain/Strategy/DonchianBreakout/DonchianBreakoutStrategy.cs` — `[StrategyKey("DonchianBreakout")]`, extends `ModularStrategyBase<DonchianParams>`. `OnStrategyInit()`: create DonchianChannel (entry+exit), ATR indicators, register TrailingStopModule, RegimeDetectorModule, RegimeFilter (allow Trending only), RegimeChangeExitRule. `OnGenerateSignal()`: breakout above/below previous bar's channel. `OnGetEntryPrice()`: stop order at channel boundary. `OnGetRiskLevels()`: SL at entry ∓ ATR * multiplier. `OnContextUpdated()`: write ATR to context. Activate trailing stop in `OnOrderFilled()`.
+- [x] T047 [P] [US2] Implement `DonchianChannel` indicator in `src/AlgoTradeForge.Domain/Indicators/DonchianChannel.cs` — extends `Int64IndicatorBase`, 3 buffers: "Upper" (max high over period), "Lower" (min low over period), "Middle" (midpoint, long), configurable period
+- [x] T048 [P] [US2] Implement `Adx` indicator in `src/AlgoTradeForge.Domain/Indicators/Adx.cs` — extends `DoubleIndicatorBase`, single buffer "Value" (double, 0-100), standard ADX formula (DI+, DI-, DX, smoothed ADX), configurable period, `Measure = IndicatorMeasure.MinusOnePlusOne`
+- [x] T049 [P] [US2] Implement `TrailingStopParams` in `src/AlgoTradeForge.Domain/Strategy/Modules/TrailingStop/TrailingStopParams.cs` — extends `ModuleParamsBase`, fields: Variant (TrailingStopVariant), AtrMultiplier, AtrPeriod, DonchianPeriod with [Optimizable] attributes per data-model
+- [x] T050 [P] [US2] Implement `TrailingStopState` value type in `src/AlgoTradeForge.Domain/Strategy/Modules/TrailingStop/TrailingStopState.cs` — record struct with CurrentStop, Direction, ActivationPrice, HighWaterMark
+- [x] T051 [US2] Implement `TrailingStopModule` in `src/AlgoTradeForge.Domain/Strategy/Modules/TrailingStop/TrailingStopModule.cs` — `IStrategyModule<TrailingStopParams>`, `[ModuleKey("trailing-stop")]`, internal `Dictionary<long, TrailingStopState>` keyed by group ID. Methods: `Activate(groupId, entryPrice, direction, initialStop)`, `Update(groupId, bar) → long?` (ratchet only in favorable direction based on variant), `GetCurrentStop(groupId)`, `Remove(groupId)`. ATR variant: stop = highWaterMark - atrMultiplier * ATR.
+- [x] T052 [P] [US2] Implement `RegimeDetectorParams` in `src/AlgoTradeForge.Domain/Strategy/Modules/Regime/RegimeDetectorParams.cs` — extends `ModuleParamsBase`, fields: AdxPeriod, TrendThreshold per data-model
+- [x] T053 [US2] Implement `RegimeDetectorModule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Regime/RegimeDetectorModule.cs` — `IStrategyModule<RegimeDetectorParams>`, `[ModuleKey("regime-detector")]`. `Initialize()` creates ADX indicator. `Update(bar, context)`: compute ADX → if warmup return Unknown, if ADX > threshold → Trending, else → RangeBound. Write to `context.CurrentRegime`.
+- [x] T054 [US2] Implement `RegimeFilterModule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Filter/RegimeFilterModule.cs` — `IFilterModule`, `[ModuleKey("filter.regime")]`. Constructor takes `MarketRegime[]` allowedRegimes. `Evaluate()`: reads context.CurrentRegime, returns 100 if in allowed set, -100 if not, 0 if Unknown.
+- [x] T055 [P] [US2] Create `DonchianParams` in `src/AlgoTradeForge.Domain/Strategy/DonchianBreakout/DonchianParams.cs` — extends `ModularStrategyParamsBase`, fields: EntryPeriod, ExitPeriod, AtrPeriod, AtrStopMultiplier with [Optimizable] attributes. Includes TrailingStop and RegimeDetector nested params.
+- [x] T056 [US2] Implement `DonchianBreakoutStrategy` in `src/AlgoTradeForge.Domain/Strategy/DonchianBreakout/DonchianBreakoutStrategy.cs` — `[StrategyKey("DonchianBreakout")]`, extends `ModularStrategyBase<DonchianParams>`. `OnStrategyInit()`: create DonchianChannel (entry+exit), ATR indicators, register TrailingStopModule, RegimeDetectorModule, RegimeFilter (allow Trending only), RegimeChangeExitRule. `OnGenerateSignal()`: breakout above/below previous bar's channel. `OnGetEntryPrice()`: stop order at channel boundary. `OnGetRiskLevels()`: SL at entry ∓ ATR * multiplier. `OnContextUpdated()`: write ATR to context. Activate trailing stop in `OnOrderFilled()`.
 
 **Checkpoint**: Donchian strategy runs in backtest with custom entry/exit, trailing stop, regime filtering. US2 independently testable.
 
@@ -166,19 +166,19 @@
 
 ### Tests (write first)
 
-- [ ] T057 [P] [US3] Write tests for `CrossAssetModule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/CrossAsset/CrossAssetModuleTests.cs` — test z-score calculation (spread mean/stddev), hedge ratio computation, cointegration status flag, writes to context via keys "crossasset.zscore", "crossasset.hedge_ratio", "crossasset.cointegrated"
-- [ ] T058 [P] [US3] Write tests for `CointegrationBreakExitRule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Exit/CointegrationBreakExitRuleTests.cs` — returns -100 when context "crossasset.cointegrated" is false, 0 when true
-- [ ] T059 [P] [US3] Write tests for `SessionCloseExitRule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Exit/SessionCloseExitRuleTests.cs` — returns -100 when current UTC hour matches CloseHourUtc, 0 otherwise
-- [ ] T060 [US3] Write integration test for `PairsTradingStrategy` in `tests/AlgoTradeForge.Domain.Tests/Strategy/PairsTradingStrategyTests.cs` — run backtest with 2 assets, assert: both legs entered on z-score crossing entry threshold, both legs exited on z-score reversion past exit threshold, cointegration break exits both legs immediately, secondary subscription bars update cross-asset module but don't trigger Phase 2-3
+- [x] T057 [P] [US3] Write tests for `CrossAssetModule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/CrossAsset/CrossAssetModuleTests.cs` — test z-score calculation (spread mean/stddev), hedge ratio computation, cointegration status flag, writes to context via keys "crossasset.zscore", "crossasset.hedge_ratio", "crossasset.cointegrated"
+- [x] T058 [P] [US3] Write tests for `CointegrationBreakExitRule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Exit/CointegrationBreakExitRuleTests.cs` — returns -100 when context "crossasset.cointegrated" is false, 0 when true
+- [x] T059 [P] [US3] Write tests for `SessionCloseExitRule` in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/Exit/SessionCloseExitRuleTests.cs` — returns -100 when current UTC hour matches CloseHourUtc, 0 otherwise
+- [x] T060 [US3] Write integration test for `PairsTradingStrategy` in `tests/AlgoTradeForge.Domain.Tests/Strategy/PairsTradingStrategyTests.cs` — run backtest with 2 assets, assert: both legs entered on z-score crossing entry threshold, both legs exited on z-score reversion past exit threshold, cointegration break exits both legs immediately, secondary subscription bars update cross-asset module but don't trigger Phase 2-3
 
 ### Implementation
 
-- [ ] T061 [P] [US3] Implement `CrossAssetParams` in `src/AlgoTradeForge.Domain/Strategy/Modules/CrossAsset/CrossAssetParams.cs` — extends `ModuleParamsBase`, fields: LookbackPeriod, ZScoreEntryThreshold, ZScoreExitThreshold per data-model
-- [ ] T062 [US3] Implement `CrossAssetModule` in `src/AlgoTradeForge.Domain/Strategy/Modules/CrossAsset/CrossAssetModule.cs` — `IStrategyModule<CrossAssetParams>`, `[ModuleKey("cross-asset")]`. `Initialize(factory, sub1, sub2)` sets up rolling window. `Update(bar, sub, context)`: collect close prices per subscription into rolling windows, compute spread = log(A) - hedgeRatio*log(B), z-score = (spread - mean) / stddev, simplified cointegration check (correlation threshold + spread stationarity), write to context keys.
-- [ ] T063 [P] [US3] Implement `CointegrationBreakExitRule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Exit/CointegrationBreakExitRule.cs` — `IExitRule`, reads `context.Get<bool>("crossasset.cointegrated")`, returns -100 when false
-- [ ] T064 [P] [US3] Implement `SessionCloseExitRule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Exit/SessionCloseExitRule.cs` — `IExitRule`, checks bar timestamp UTC hour against configured CloseHourUtc
-- [ ] T065 [P] [US3] Create `PairsTradingParams` in `src/AlgoTradeForge.Domain/Strategy/PairsTrading/PairsTradingParams.cs` — extends `ModularStrategyParamsBase`, nested CrossAssetParams. Two DataSubscriptions required.
-- [ ] T066 [US3] Implement `PairsTradingStrategy` in `src/AlgoTradeForge.Domain/Strategy/PairsTrading/PairsTradingStrategy.cs` — `[StrategyKey("PairsTrading")]`, extends `ModularStrategyBase<PairsTradingParams>`. `OnStrategyInit()`: create CrossAssetModule, register CointegrationBreakExitRule. `OnGenerateSignal()`: z-score threshold check from context. `OnGetRiskLevels()`: SL at extreme z-score (3*ATR). `OnExecuteEntry()`: submit BOTH legs (buy A + sell B or inverse) with hedge ratio. `OnEvaluateExit()`: z-score reversion check + cointegration break.
+- [x] T061 [P] [US3] Implement `CrossAssetParams` in `src/AlgoTradeForge.Domain/Strategy/Modules/CrossAsset/CrossAssetParams.cs` — extends `ModuleParamsBase`, fields: LookbackPeriod, ZScoreEntryThreshold, ZScoreExitThreshold per data-model
+- [x] T062 [US3] Implement `CrossAssetModule` in `src/AlgoTradeForge.Domain/Strategy/Modules/CrossAsset/CrossAssetModule.cs` — `IStrategyModule<CrossAssetParams>`, `[ModuleKey("cross-asset")]`. `Initialize(factory, sub1, sub2)` sets up rolling window. `Update(bar, sub, context)`: collect close prices per subscription into rolling windows, compute spread = log(A) - hedgeRatio*log(B), z-score = (spread - mean) / stddev, simplified cointegration check (correlation threshold + spread stationarity), write to context keys.
+- [x] T063 [P] [US3] Implement `CointegrationBreakExitRule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Exit/CointegrationBreakExitRule.cs` — `IExitRule`, reads `context.Get<bool>("crossasset.cointegrated")`, returns -100 when false
+- [x] T064 [P] [US3] Implement `SessionCloseExitRule` in `src/AlgoTradeForge.Domain/Strategy/Modules/Exit/SessionCloseExitRule.cs` — `IExitRule`, checks bar timestamp UTC hour against configured CloseHourUtc
+- [x] T065 [P] [US3] Create `PairsTradingParams` in `src/AlgoTradeForge.Domain/Strategy/PairsTrading/PairsTradingParams.cs` — extends `ModularStrategyParamsBase`, nested CrossAssetParams. Two DataSubscriptions required.
+- [x] T066 [US3] Implement `PairsTradingStrategy` in `src/AlgoTradeForge.Domain/Strategy/PairsTrading/PairsTradingStrategy.cs` — `[StrategyKey("PairsTrading")]`, extends `ModularStrategyBase<PairsTradingParams>`. `OnStrategyInit()`: create CrossAssetModule, register CointegrationBreakExitRule. `OnGenerateSignal()`: z-score threshold check from context. `OnGetRiskLevels()`: SL at extreme z-score (3*ATR). `OnExecuteEntry()`: submit BOTH legs (buy A + sell B or inverse) with hedge ratio. `OnEvaluateExit()`: z-score reversion check + cointegration break.
 
 **Checkpoint**: Pairs strategy runs in backtest with 2 assets. US3 independently testable.
 
@@ -190,8 +190,8 @@
 
 **Independent Test**: Run optimization evaluate endpoint on RSI(2) strategy, verify all [Optimizable] params discovered.
 
-- [ ] T067 [US4] Write optimization parameter discovery test in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/ModularStrategyParamsOptimizationTests.cs` — use `SpaceDescriptorBuilder` to scan `Rsi2Params`, assert it discovers: top-level params (FilterThreshold, SignalThreshold, ExitThreshold, DefaultAtrStopMultiplier, RsiPeriod, etc.), nested MoneyManagement params (Method, RiskPercent), nested TradeRegistry params (MaxConcurrentGroups). Verify `ParameterScaler` scales QuoteAsset params correctly.
-- [ ] T068 [US4] Write parallel trial isolation test in same file — create two `Rsi2MeanReversionStrategy` instances with different params, run backtests in parallel (Task.WhenAll), assert no shared state (different Context instances, different indicator instances, different trade registry state)
+- [x] T067 [US4] Write optimization parameter discovery test in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/ModularStrategyParamsOptimizationTests.cs` — use `SpaceDescriptorBuilder` to scan `Rsi2Params`, assert it discovers: top-level params (FilterThreshold, SignalThreshold, ExitThreshold, DefaultAtrStopMultiplier, RsiPeriod, etc.), nested MoneyManagement params (Method, RiskPercent), nested TradeRegistry params (MaxConcurrentGroups). Verify `ParameterScaler` scales QuoteAsset params correctly.
+- [x] T068 [US4] Write parallel trial isolation test in same file — create two `Rsi2MeanReversionStrategy` instances with different params, run backtests in parallel (Task.WhenAll), assert no shared state (different Context instances, different indicator instances, different trade registry state)
 
 **Checkpoint**: Optimization compatibility proven.
 
@@ -203,8 +203,8 @@
 
 **Independent Test**: Verify `ITradeRegistryProvider.TradeRegistry` returns the module's trade registry, `GetExpectedOrders()` works through modular base.
 
-- [ ] T069 [US5] Write `ITradeRegistryProvider` implementation test in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/ModularStrategyBaseLiveTests.cs` — verify `ModularStrategyBase` cast to `ITradeRegistryProvider` succeeds, `TradeRegistry` property returns the trade registry module, `GetExpectedOrders()` returns correct protective orders after entry, fill routing updates order group state correctly
-- [ ] T070 [US5] Write reconciliation flow test in same file — simulate: entry → fill → trailing stop update → SL modification, verify trade registry state after each step, verify `GetExpectedOrders()` reflects updated SL price, verify `RepairGroup()` resubmits missing SL
+- [x] T069 [US5] Write `ITradeRegistryProvider` implementation test in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/ModularStrategyBaseLiveTests.cs` — verify `ModularStrategyBase` cast to `ITradeRegistryProvider` succeeds, `TradeRegistry` property returns the trade registry module, `GetExpectedOrders()` returns correct protective orders after entry, fill routing updates order group state correctly
+- [x] T070 [US5] Write reconciliation flow test in same file — simulate: entry → fill → trailing stop update → SL modification, verify trade registry state after each step, verify `GetExpectedOrders()` reflects updated SL price, verify `RepairGroup()` resubmits missing SL
 
 **Checkpoint**: Live connector compatibility verified. ModularStrategyBase works identically in backtest and live.
 
@@ -214,10 +214,10 @@
 
 **Purpose**: Performance validation, observability verification, documentation
 
-- [ ] T071 [P] Write performance benchmark test in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/ModularStrategyPerformanceTests.cs` — [Trait("Category", "Performance")], benchmark: run RSI(2) modular vs. equivalent hand-coded BuyAndHold-style strategy over 10K bars, assert <10% per-bar time regression (SC-006). Verify null modules add zero overhead (no filter vs. with filter).
-- [ ] T072 [P] Write event emission verification test in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/ModularStrategyEventTests.cs` — run RSI(2) with mock IEventBus, assert FilterEvaluationEvent emitted on each Phase 3 execution, SignalEvent emitted on entry, ExitEvaluationEvent emitted on Phase 2, RiskEvent emitted on sizing
-- [ ] T073 [P] Write debug probe observability test in same file — run with mock IDebugProbe, assert `OnBarProcessed()` called after each bar, verify DebugSnapshot contains correct sequence numbers
-- [ ] T074 Update `docs/strategy-framework.md` status to reflect implementation complete, add notes on any deviations from the original design document during implementation
+- [x] T071 [P] Write performance benchmark test in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/ModularStrategyPerformanceTests.cs` — [Trait("Category", "Performance")], benchmark: run RSI(2) modular vs. equivalent hand-coded BuyAndHold-style strategy over 10K bars, assert <10% per-bar time regression (SC-006). Verify null modules add zero overhead (no filter vs. with filter).
+- [x] T072 [P] Write event emission verification test in `tests/AlgoTradeForge.Domain.Tests/Strategy/Modules/ModularStrategyEventTests.cs` — run RSI(2) with mock IEventBus, assert FilterEvaluationEvent emitted on each Phase 3 execution, SignalEvent emitted on entry, ExitEvaluationEvent emitted on Phase 2, RiskEvent emitted on sizing
+- [x] T073 [P] Write debug probe observability test in same file — run with mock IDebugProbe, assert `OnBarProcessed()` called after each bar, verify DebugSnapshot contains correct sequence numbers
+- [x] T074 Update `docs/strategy-framework.md` status to reflect implementation complete, add notes on any deviations from the original design document during implementation
 
 ---
 

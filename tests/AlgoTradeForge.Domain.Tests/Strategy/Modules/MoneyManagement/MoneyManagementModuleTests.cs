@@ -111,4 +111,163 @@ public sealed class MoneyManagementModuleTests
 
         Assert.Equal(0m, qty);
     }
+
+    // --- AtrVolTarget Tests (T038) ---
+
+    private static MoneyManagementModule CreateAtrVolTargetModule(double volTarget = 0.15) =>
+        new(new MoneyManagementParams
+        {
+            Method = SizingMethod.AtrVolTarget,
+            VolTarget = volTarget,
+        });
+
+    private static StrategyContext CreateContextWithAtr(long cash, long currentAtr, long usedMargin = 0L)
+    {
+        var context = new StrategyContext();
+        var bar = new Int64Bar(0, 50000, 51000, 49000, 50000, 1000);
+        var orders = Substitute.For<IOrderContext>();
+        orders.Cash.Returns(cash);
+        orders.UsedMargin.Returns(usedMargin);
+        context.Update(bar, DefaultSubscription, orders);
+        context.CurrentAtr = currentAtr;
+        return context;
+    }
+
+    [Fact]
+    public void AtrVolTarget_KnownInputs_ReturnsExpectedQuantity()
+    {
+        // equity=100000, volTarget=0.15, ATR=500
+        // qty = (100000 * 0.15) / 500 = 15000 / 500 = 30
+        var module = CreateAtrVolTargetModule(volTarget: 0.15);
+        var context = CreateContextWithAtr(cash: 100_000L, currentAtr: 500L);
+        var asset = CreateAsset(maxOrderQuantity: 1000m);
+
+        var qty = module.CalculateSize(entryPrice: 50_000, stopLoss: 48_000, context, asset);
+
+        Assert.Equal(30m, qty);
+    }
+
+    [Fact]
+    public void AtrVolTarget_InverselyProportionalToAtr()
+    {
+        // Higher ATR → smaller position
+        var module = CreateAtrVolTargetModule(volTarget: 0.10);
+        var asset = CreateAsset(maxOrderQuantity: 10000m);
+
+        var contextLowAtr = CreateContextWithAtr(cash: 100_000L, currentAtr: 200L);
+        var contextHighAtr = CreateContextWithAtr(cash: 100_000L, currentAtr: 1000L);
+
+        var qtyLowAtr = module.CalculateSize(50_000, 48_000, contextLowAtr, asset);
+        var qtyHighAtr = module.CalculateSize(50_000, 48_000, contextHighAtr, asset);
+
+        Assert.True(qtyLowAtr > qtyHighAtr, "Lower ATR should produce larger position");
+    }
+
+    [Fact]
+    public void AtrVolTarget_ZeroAtr_ReturnsZero()
+    {
+        var module = CreateAtrVolTargetModule(volTarget: 0.15);
+        var context = CreateContextWithAtr(cash: 100_000L, currentAtr: 0L);
+        var asset = CreateAsset();
+
+        var qty = module.CalculateSize(50_000, 48_000, context, asset);
+
+        Assert.Equal(0m, qty);
+    }
+
+    [Fact]
+    public void AtrVolTarget_ResultClampedToMaxOrderQuantity()
+    {
+        // Very small ATR → huge qty → clamped
+        var module = CreateAtrVolTargetModule(volTarget: 0.15);
+        var context = CreateContextWithAtr(cash: 1_000_000L, currentAtr: 1L);
+        var asset = CreateAsset(maxOrderQuantity: 100m);
+
+        var qty = module.CalculateSize(50_000, 48_000, context, asset);
+
+        Assert.Equal(100m, qty);
+    }
+
+    // --- HalfKelly Tests (T039) ---
+
+    private static MoneyManagementModule CreateHalfKellyModule(
+        double winRate = 0.5, double payoffRatio = 2.0) =>
+        new(new MoneyManagementParams
+        {
+            Method = SizingMethod.HalfKelly,
+            WinRate = winRate,
+            PayoffRatio = payoffRatio,
+        });
+
+    [Fact]
+    public void HalfKelly_KnownInputs_ReturnsExpectedQuantity()
+    {
+        // winRate=0.5, payoff=2.0
+        // kellyF = (0.5 * 2.0 - 0.5) / 2.0 = (1.0 - 0.5) / 2.0 = 0.25
+        // halfKelly = 0.5 * 0.25 = 0.125
+        // qty = 0.125 * 100000 / 50000 = 0.25
+        var module = CreateHalfKellyModule(winRate: 0.5, payoffRatio: 2.0);
+        var context = CreateContext(cash: 100_000L);
+        var asset = CreateAsset();
+
+        var qty = module.CalculateSize(entryPrice: 50_000, stopLoss: 48_000, context, asset);
+
+        Assert.Equal(0.25m, qty);
+    }
+
+    [Fact]
+    public void HalfKelly_HighWinRateHighPayoff_LargerPosition()
+    {
+        // winRate=0.6, payoff=3.0
+        // kellyF = (0.6 * 3.0 - 0.4) / 3.0 = (1.8 - 0.4) / 3.0 = 0.4667
+        // halfKelly = 0.5 * 0.4667 = 0.2333
+        // qty = 0.2333 * 100000 / 50000 = 0.4667
+        var module = CreateHalfKellyModule(winRate: 0.6, payoffRatio: 3.0);
+        var context = CreateContext(cash: 100_000L);
+        var asset = CreateAsset();
+
+        var qty = module.CalculateSize(entryPrice: 50_000, stopLoss: 48_000, context, asset);
+
+        Assert.True(qty > 0.25m, "Higher win rate and payoff should produce larger position than base case");
+        Assert.True(qty <= 0.467m, $"qty={qty} exceeds expected upper bound");
+    }
+
+    [Fact]
+    public void HalfKelly_NegativeKellyFraction_ReturnsZero()
+    {
+        // winRate=0.3, payoff=1.0
+        // kellyF = (0.3 * 1.0 - 0.7) / 1.0 = -0.4 → negative → 0
+        var module = CreateHalfKellyModule(winRate: 0.3, payoffRatio: 1.0);
+        var context = CreateContext(cash: 100_000L);
+        var asset = CreateAsset();
+
+        var qty = module.CalculateSize(entryPrice: 50_000, stopLoss: 48_000, context, asset);
+
+        Assert.Equal(0m, qty);
+    }
+
+    [Fact]
+    public void HalfKelly_ZeroEntryPrice_ReturnsZero()
+    {
+        var module = CreateHalfKellyModule(winRate: 0.5, payoffRatio: 2.0);
+        var context = CreateContext(cash: 100_000L);
+        var asset = CreateAsset();
+
+        var qty = module.CalculateSize(entryPrice: 0, stopLoss: 48_000, context, asset);
+
+        Assert.Equal(0m, qty);
+    }
+
+    [Fact]
+    public void HalfKelly_ResultRoundedAndClamped()
+    {
+        // Large equity, small price → huge qty → clamped to maxOrderQuantity
+        var module = CreateHalfKellyModule(winRate: 0.6, payoffRatio: 3.0);
+        var context = CreateContext(cash: 100_000_000L);
+        var asset = CreateAsset(maxOrderQuantity: 100m);
+
+        var qty = module.CalculateSize(entryPrice: 50_000, stopLoss: 48_000, context, asset);
+
+        Assert.Equal(100m, qty);
+    }
 }

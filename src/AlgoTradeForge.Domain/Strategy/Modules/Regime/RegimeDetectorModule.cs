@@ -6,21 +6,19 @@ namespace AlgoTradeForge.Domain.Strategy.Modules.Regime;
 
 /// <summary>
 /// Detects market regime (Trending vs RangeBound) using ADX.
-/// <para><b>Stub:</b> ADX indicator is not yet implemented. This module currently
-/// always returns <see cref="MarketRegime.Unknown"/>. Do not rely on regime
-/// detection until the ADX class is available (Phase 6).</para>
+/// ADX above TrendThreshold → Trending, below → RangeBound.
+/// Returns Unknown during indicator warmup.
 /// </summary>
 [ModuleKey("regime-detector")]
 public sealed class RegimeDetectorModule(RegimeDetectorParams parameters)
     : IStrategyModule<RegimeDetectorParams>
 {
-    private IIndicator<Int64Bar, double>? _adx = null;
+    private IIndicator<Int64Bar, double>? _adx;
     private bool _initialized;
 
     public void Initialize(IIndicatorFactory factory, DataSubscription subscription)
     {
-        // TODO: Create Adx indicator here once the class is implemented (Phase 6).
-        // Until then, Update() always sets regime to Unknown.
+        _adx = factory.Create<Int64Bar, double>(new Adx(parameters.AdxPeriod), subscription);
         _initialized = true;
     }
 
@@ -40,6 +38,14 @@ public sealed class RegimeDetectorModule(RegimeDetectorParams parameters)
         }
 
         var adxValue = values[^1];
+
+        // ADX outputs 0.0 during warmup period — treat as Unknown
+        if (adxValue == 0.0)
+        {
+            context.CurrentRegime = MarketRegime.Unknown;
+            return;
+        }
+
         context.CurrentRegime = adxValue > parameters.TrendThreshold
             ? MarketRegime.Trending
             : MarketRegime.RangeBound;
