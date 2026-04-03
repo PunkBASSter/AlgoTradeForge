@@ -62,6 +62,19 @@ public sealed class CrossAssetModule(CrossAssetParams parameters)
         var correlation = ComputeCorrelation(startIdx, count);
         var isCointegrated = Math.Abs(correlation) > 0.7 && stddev < Math.Abs(mean) * 2;
         context.Set("crossasset.cointegrated", isCointegrated);
+
+        // Trim consumed entries to bound memory — keep only the lookback window
+        TrimPriceLists();
+    }
+
+    private void TrimPriceLists()
+    {
+        var excess = Math.Min(_prices1.Count, _prices2.Count) - parameters.LookbackPeriod;
+        if (excess <= parameters.LookbackPeriod)
+            return;
+
+        _prices1.RemoveRange(0, excess);
+        _prices2.RemoveRange(0, excess);
     }
 
     private double ComputeHedgeRatio(int startIdx, int endIdx)

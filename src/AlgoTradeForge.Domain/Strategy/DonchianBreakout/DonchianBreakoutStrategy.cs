@@ -119,9 +119,9 @@ public sealed class DonchianBreakoutStrategy(
 
     protected override void OnOrderFilled(Fill fill, Order order)
     {
-        // Activate trailing stop on entry fill
-        // Find the group this fill belongs to
         var registry = ((ITradeRegistryProvider)this).TradeRegistry;
+
+        // Activate trailing stop on entry fill
         foreach (var group in registry.ActiveGroups)
         {
             if (group.EntryOrderId == order.Id && group.Status == OrderGroupStatus.ProtectionActive)
@@ -137,5 +137,8 @@ public sealed class DonchianBreakoutStrategy(
                 break;
             }
         }
+
+        // Clean up stale regime-change tracking for closed groups
+        _regimeChangeExit.RemoveInactive(registry.ActiveGroups);
     }
 }

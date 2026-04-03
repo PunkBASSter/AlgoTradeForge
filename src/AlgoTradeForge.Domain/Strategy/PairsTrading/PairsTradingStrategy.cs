@@ -58,6 +58,9 @@ public sealed class PairsTradingStrategy(
 
     protected override int OnGenerateSignal(Int64Bar bar, StrategyContext context)
     {
+        if (!context.Has("crossasset.zscore"))
+            return 0;
+
         var zScore = context.Get<double>("crossasset.zscore");
 
         // Z-score > entry threshold → spread too wide → sell spread (sell A, buy B)

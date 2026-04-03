@@ -35,6 +35,7 @@ public sealed class Adx : DoubleIndicatorBase
     }
 
     public override IReadOnlyDictionary<string, IndicatorBuffer<double>> Buffers => _buffers;
+    public override IndicatorMeasure Measure => IndicatorMeasure.Percent;
     public override int MinimumHistory => _period * 2;
 
     public override void Compute(IReadOnlyList<Int64Bar> series)

@@ -27,6 +27,26 @@ public sealed class RegimeChangeExitRule : IExitRule
     public void Remove(long groupId)
         => _entryRegimes.Remove(groupId);
 
+    /// <summary>
+    /// Removes tracking for all groups not in the active set.
+    /// </summary>
+    public void RemoveInactive(IEnumerable<OrderGroup> activeGroups)
+    {
+        var activeIds = new HashSet<long>();
+        foreach (var g in activeGroups)
+            activeIds.Add(g.GroupId);
+
+        var stale = new List<long>();
+        foreach (var id in _entryRegimes.Keys)
+        {
+            if (!activeIds.Contains(id))
+                stale.Add(id);
+        }
+
+        foreach (var id in stale)
+            _entryRegimes.Remove(id);
+    }
+
     public int Evaluate(Int64Bar bar, StrategyContext context, OrderGroup group)
     {
         if (!_entryRegimes.TryGetValue(group.GroupId, out var entryRegime))

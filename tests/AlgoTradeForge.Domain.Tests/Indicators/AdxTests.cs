@@ -96,7 +96,7 @@ public sealed class AdxTests
     public void Measure_IsMinusOnePlusOne()
     {
         var adx = new Adx(14);
-        Assert.Equal(IndicatorMeasure.MinusOnePlusOne, adx.Measure);
+        Assert.Equal(IndicatorMeasure.Percent, adx.Measure);
     }
 
     [Fact]
