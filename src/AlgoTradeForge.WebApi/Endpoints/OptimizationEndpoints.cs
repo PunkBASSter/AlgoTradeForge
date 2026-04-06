@@ -86,7 +86,6 @@ public static class OptimizationEndpoints
         {
             StrategyName = request.StrategyName,
             Axes = request.OptimizationAxes,
-            DataSubscriptions = request.DataSubscriptions,
             SubscriptionAxis = request.SubscriptionAxis,
             BacktestSettings = new BacktestSettingsDto
             {
@@ -135,7 +134,6 @@ public static class OptimizationEndpoints
         {
             StrategyName = request.StrategyName,
             Axes = request.OptimizationAxes,
-            DataSubscriptions = request.DataSubscriptions,
             SubscriptionAxis = request.SubscriptionAxis,
             BacktestSettings = new BacktestSettingsDto
             {
@@ -184,7 +182,6 @@ public static class OptimizationEndpoints
         {
             StrategyName = request.StrategyName,
             Axes = request.OptimizationAxes,
-            DataSubscriptions = request.DataSubscriptions,
             SubscriptionAxis = request.SubscriptionAxis,
             MaxCombinations = request.OptimizationSettings?.MaxCombinations ?? 500_000,
             Mode = mode,

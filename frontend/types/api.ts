@@ -278,8 +278,7 @@ export interface RunOptimizationRequest {
   backtestSettings: BacktestSettingsInput;
   optimizationSettings?: OptimizationSettingsInput;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
-  dataSubscriptions?: DataSubscription[];
-  subscriptionAxis?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[][];
 }
 
 export type OptimizationAxisOverride =
@@ -320,15 +319,13 @@ export interface RunGeneticOptimizationRequest {
   optimizationSettings?: OptimizationSettingsInput;
   geneticSettings?: GeneticSettingsInput;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
-  dataSubscriptions?: DataSubscription[];
-  subscriptionAxis?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[][];
 }
 
 export interface EvaluateOptimizationRequest {
   strategyName: string;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
-  dataSubscriptions?: DataSubscription[];
-  subscriptionAxis?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[][];
   optimizationSettings?: OptimizationSettingsInput;
   mode?: "BruteForce" | "Genetic";
   geneticSettings?: GeneticSettingsInput;

@@ -25,14 +25,14 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
             MaxDegreeOfParallelism = 1,
             MinTradeCount = null,
         },
-        DataSubscriptions =
+        SubscriptionAxis =
         [
-            new DataSubscriptionDto
+            [new DataSubscriptionDto
             {
                 AssetName = "BTCUSDT",
                 Exchange = "Binance",
                 TimeFrame = "01:00:00",
-            }
+            }]
         ],
         OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
         {
@@ -112,14 +112,14 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
                 StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
                 EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
             },
-            DataSubscriptions =
+            SubscriptionAxis =
             [
-                new DataSubscriptionDto
+                [new DataSubscriptionDto
                 {
                     AssetName = "BTCUSDT",
                     Exchange = "Binance",
                     TimeFrame = "01:00:00",
-                }
+                }]
             ],
         };
 
@@ -140,14 +140,14 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
                 StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
                 EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
             },
-            DataSubscriptions =
+            SubscriptionAxis =
             [
-                new DataSubscriptionDto
+                [new DataSubscriptionDto
                 {
                     AssetName = "FAKEUSDT",
                     Exchange = "FakeExchange",
                     TimeFrame = "01:00:00",
-                }
+                }]
             ],
         };
 
@@ -195,12 +195,12 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
             },
             SubscriptionAxis =
             [
-                new DataSubscriptionDto
+                [new DataSubscriptionDto
                 {
                     AssetName = "BTCUSDT",
                     Exchange = "Binance",
                     TimeFrame = "01:00:00",
-                }
+                }]
             ],
             OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
             {
@@ -234,14 +234,14 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
             {
                 MaxDegreeOfParallelism = 1,
             },
-            DataSubscriptions =
+            SubscriptionAxis =
             [
-                new DataSubscriptionDto
+                [new DataSubscriptionDto
                 {
                     AssetName = "BTCUSDT",
                     Exchange = "Binance",
                     TimeFrame = "01:00:00",
-                }
+                }]
             ],
             OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
             {

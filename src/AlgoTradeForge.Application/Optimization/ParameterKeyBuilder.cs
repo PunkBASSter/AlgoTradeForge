@@ -31,14 +31,19 @@ internal static class ParameterKeyBuilder
             case long l:
                 sb.Append(l.ToString(CultureInfo.InvariantCulture));
                 break;
-            case DataSubscription sub:
-                sb.Append(sub.Asset.Name).Append(':').Append(sub.Asset.Exchange).Append(':').Append(sub.TimeFrame);
+            case List<DataSubscription> subs:
+                sb.Append('[');
+                for (var si = 0; si < subs.Count; si++)
+                {
+                    if (si > 0) sb.Append('+');
+                    sb.Append(subs[si].Asset.Name).Append(':')
+                      .Append(subs[si].Asset.Exchange).Append(':')
+                      .Append(subs[si].TimeFrame);
+                }
+                sb.Append(']');
                 break;
             case bool b:
                 sb.Append(b ? '1' : '0');
-                break;
-            case DataSubscriptionDto dto:
-                sb.Append(dto.AssetName).Append(':').Append(dto.Exchange).Append(':').Append(dto.TimeFrame);
                 break;
             case ModuleSelection mod:
                 sb.Append(mod.TypeKey).Append('{');

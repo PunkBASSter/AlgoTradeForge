@@ -21,11 +21,10 @@ public sealed class EvaluateOptimizationQueryHandler(
         // 2. Resolve parameter axes (pure computation, no scaling needed for counting)
         var resolvedAxes = axisResolver.Resolve(descriptor, query.Axes);
 
-        // 3. Route subscriptions using the shared logic and build active axes
-        var (_, axisDtos) = OptimizationSetupHelper.RouteSubscriptions(
-            query.DataSubscriptions, query.SubscriptionAxis);
+        // 3. Build active axes with subscription axis count
+        var groupCount = query.SubscriptionAxis?.Count ?? 0;
         var activeAxes = OptimizationSetupHelper.AppendSubscriptionAxisAndFilter(
-            resolvedAxes, axisDtos.Count);
+            resolvedAxes, groupCount);
 
         // 4. Count combinations
         var totalCombinations = cartesianGenerator.EstimateCount(activeAxes);

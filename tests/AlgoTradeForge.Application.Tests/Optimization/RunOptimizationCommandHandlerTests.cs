@@ -69,11 +69,10 @@ public class RunOptimizationCommandHandlerTests
             StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
         },
-        DataSubscriptions =
+        SubscriptionAxis =
         [
-            new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }
+            [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }]
         ],
-        SubscriptionAxis = null,
         Axes = new Dictionary<string, OptimizationAxisOverride>
         {
             ["Period"] = new RangeOverride(10, 20, 5)
@@ -186,7 +185,7 @@ public class RunOptimizationCommandHandlerTests
         // Arrange
         SetupStandardMocks();
         var handler = CreateHandler();
-        var command = CreateCommand() with { DataSubscriptions = [], SubscriptionAxis = [] };
+        var command = CreateCommand() with { SubscriptionAxis = [] };
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command, TestContext.Current.CancellationToken));
@@ -242,25 +241,25 @@ public class RunOptimizationCommandHandlerTests
     private static DataSubscriptionDto EthSub => new() { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "01:00:00" };
 
     [Fact]
-    public async Task HandleAsync_SingleDataSubscription_NoAxis_FixedSingleFeed()
+    public async Task HandleAsync_SingleSubscriptionGroup_DiscreteAxisWithOneValue()
     {
-        // Arrange — single fixed sub, no axis → no discrete axis injected
+        // Arrange — single group → discrete axis with 1 value
         SetupStandardMocks(estimatedCount: 3);
         var handler = CreateHandler();
         var command = CreateCommand() with
         {
-            DataSubscriptions = [BtcSub],
-            SubscriptionAxis = null,
+            SubscriptionAxis = [[BtcSub]],
         };
 
         // Act
         var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
-        // Assert — EstimateCount called with parameter axes only (no DataSubscriptions axis)
+        // Assert — discrete axis with 1 value (single group)
         Assert.Equal(3, result.TotalCombinations);
         _cartesianGenerator.Received().EstimateCount(
             Arg.Is<IReadOnlyList<ResolvedAxis>>(axes =>
-                !axes.OfType<ResolvedDiscreteAxis>().Any(d => d.Name == "DataSubscriptions")));
+                axes.OfType<ResolvedDiscreteAxis>()
+                    .Any(d => d.Name == "DataSubscriptions" && d.Values.Count == 1)));
     }
 
     [Fact]
@@ -271,8 +270,7 @@ public class RunOptimizationCommandHandlerTests
         var handler = CreateHandler();
         var command = CreateCommand() with
         {
-            DataSubscriptions = [BtcSub, EthSub],
-            SubscriptionAxis = null,
+            SubscriptionAxis = [[BtcSub], [EthSub]],
         };
 
         // Act
@@ -294,8 +292,7 @@ public class RunOptimizationCommandHandlerTests
         var handler = CreateHandler();
         var command = CreateCommand() with
         {
-            DataSubscriptions = null,
-            SubscriptionAxis = [BtcSub, EthSub],
+            SubscriptionAxis = [[BtcSub], [EthSub]],
         };
 
         // Act
@@ -310,26 +307,21 @@ public class RunOptimizationCommandHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_FixedPlusAxis_BothPresent()
+    public async Task HandleAsync_FixedPlusAxis_InvalidCountThrows()
     {
-        // Arrange — BTC fixed + ETH as axis → discrete axis with 1 value (ETH only)
+        // Arrange — BTC fixed + ETH as axis = 2 subs per trial,
+        // but the test strategy requires only 1 → validation rejects
         SetupStandardMocksWithEth(estimatedCount: 3);
         var handler = CreateHandler();
         var command = CreateCommand() with
         {
-            DataSubscriptions = [BtcSub],
-            SubscriptionAxis = [EthSub],
+            SubscriptionAxis = [[BtcSub, EthSub]],
         };
 
-        // Act
-        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
-
-        // Assert — axis has 1 value (only the axis entry, not the fixed one)
-        Assert.Equal(3, result.TotalCombinations);
-        _cartesianGenerator.Received().EstimateCount(
-            Arg.Is<IReadOnlyList<ResolvedAxis>>(axes =>
-                axes.OfType<ResolvedDiscreteAxis>()
-                    .Any(d => d.Name == "DataSubscriptions" && d.Values.Count == 1)));
+        // Act & Assert — validation rejects mismatched subscription count
+        var ex = await Assert.ThrowsAsync<ArgumentException>(
+            () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
+        Assert.Contains("requires exactly 1 subscription(s) per group", ex.Message);
     }
 
     [Fact]
@@ -340,7 +332,6 @@ public class RunOptimizationCommandHandlerTests
         var handler = CreateHandler();
         var command = CreateCommand() with
         {
-            DataSubscriptions = [],
             SubscriptionAxis = [],
         };
 
@@ -397,8 +388,7 @@ public class RunOptimizationCommandHandlerTests
         var command = CreateCommand() with
         {
             StrategyName = "TestStrategy",
-            DataSubscriptions = null,
-            SubscriptionAxis = [BtcSub, SolSub],
+            SubscriptionAxis = [[BtcSub], [SolSub]],
             Axes = new Dictionary<string, OptimizationAxisOverride>
             {
                 ["MinThreshold"] = new FixedOverride(100m)
@@ -448,8 +438,8 @@ public class RunOptimizationCommandHandlerTests
         _cartesianGenerator.Enumerate(Arg.Any<IReadOnlyList<ResolvedAxis>>())
             .Returns(new List<ParameterCombination>
             {
-                new(new Dictionary<string, object> { ["MinThreshold"] = 100L, ["DataSubscriptions"] = btcDataSub }),
-                new(new Dictionary<string, object> { ["MinThreshold"] = 100L, ["DataSubscriptions"] = solDataSub }),
+                new(new Dictionary<string, object> { ["MinThreshold"] = 100L, ["DataSubscriptions"] = new List<DataSubscription> { btcDataSub } }),
+                new(new Dictionary<string, object> { ["MinThreshold"] = 100L, ["DataSubscriptions"] = new List<DataSubscription> { solDataSub } }),
             });
 
         // Capture scaled parameters passed to factory
@@ -459,8 +449,8 @@ public class RunOptimizationCommandHandlerTests
             {
                 var combo = callInfo.ArgAt<ParameterCombination>(1);
                 var threshold = Convert.ToInt64(combo.Values["MinThreshold"]);
-                var assetName = combo.Values.TryGetValue("DataSubscriptions", out var ds) && ds is DataSubscription sub
-                    ? sub.Asset.Name
+                var assetName = combo.Values.TryGetValue("DataSubscriptions", out var ds) && ds is List<DataSubscription> subs
+                    ? subs[0].Asset.Name
                     : "unknown";
                 capturedCombinations.Add((assetName, threshold));
 
@@ -488,8 +478,7 @@ public class RunOptimizationCommandHandlerTests
         var command = CreateCommand() with
         {
             StrategyName = "TestStrategy",
-            DataSubscriptions = null,
-            SubscriptionAxis = [BtcSub, SolSub],
+            SubscriptionAxis = [[BtcSub], [SolSub]],
             Axes = new Dictionary<string, OptimizationAxisOverride>
             {
                 ["MinThreshold"] = new FixedOverride(100m)

@@ -7,8 +7,7 @@ public sealed record RunOptimizationCommand : ICommand<OptimizationSubmissionDto
 {
     public required string StrategyName { get; init; }
     public Dictionary<string, OptimizationAxisOverride>? Axes { get; init; }
-    public List<DataSubscriptionDto>? DataSubscriptions { get; init; }
-    public List<DataSubscriptionDto>? SubscriptionAxis { get; init; }
+    public List<List<DataSubscriptionDto>>? SubscriptionAxis { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public int MaxDegreeOfParallelism { get; init; } = -1;
     public long MaxCombinations { get; init; } = 500_000;

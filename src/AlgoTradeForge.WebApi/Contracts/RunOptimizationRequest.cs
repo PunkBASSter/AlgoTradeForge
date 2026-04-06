@@ -53,8 +53,8 @@ public sealed record RunOptimizationRequest
     [JsonConverter(typeof(OptimizationAxesConverter))]
     public Dictionary<string, OptimizationAxisOverride>? OptimizationAxes { get; init; }
 
-    public List<DataSubscriptionDto>? DataSubscriptions { get; init; }
-    public List<DataSubscriptionDto>? SubscriptionAxis { get; init; }
+    [JsonConverter(typeof(SubscriptionAxisConverter))]
+    public List<List<DataSubscriptionDto>>? SubscriptionAxis { get; init; }
 }
 
 public sealed class OptimizationAxesConverter : JsonConverter<Dictionary<string, OptimizationAxisOverride>>

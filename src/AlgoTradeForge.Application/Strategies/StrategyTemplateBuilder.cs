@@ -32,7 +32,8 @@ public static class StrategyTemplateBuilder
     public static Dictionary<string, object> BuildOptimizationTemplate(
         string strategyName,
         IReadOnlyList<ParameterAxis> axes,
-        IReadOnlyList<AvailableAssetInfo> availableAssets)
+        IReadOnlyList<AvailableAssetInfo> availableAssets,
+        int requiredSubscriptionCount = 1)
     {
         var axisOverrides = new Dictionary<string, object>();
         foreach (var axis in axes)
@@ -69,7 +70,7 @@ public static class StrategyTemplateBuilder
                     ["minTrades"] = 10,
                 },
             },
-            ["subscriptionAxis"] = BuildSubscriptions(availableAssets, "01:00:00"),
+            ["subscriptionAxis"] = BuildSubscriptionGroups(availableAssets, "01:00:00", requiredSubscriptionCount),
             ["optimizationAxes"] = axisOverrides.Count > 0 ? axisOverrides : null!,
         };
     }
@@ -77,9 +78,10 @@ public static class StrategyTemplateBuilder
     public static Dictionary<string, object> BuildGeneticOptimizationTemplate(
         string strategyName,
         IReadOnlyList<ParameterAxis> axes,
-        IReadOnlyList<AvailableAssetInfo> availableAssets)
+        IReadOnlyList<AvailableAssetInfo> availableAssets,
+        int requiredSubscriptionCount = 1)
     {
-        var grid = BuildOptimizationTemplate(strategyName, axes, availableAssets);
+        var grid = BuildOptimizationTemplate(strategyName, axes, availableAssets, requiredSubscriptionCount);
 
         var geneticSettings = new Dictionary<string, object>
         {
@@ -178,6 +180,107 @@ public static class StrategyTemplateBuilder
                 ["timeFrame"] = timeFrame,
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// Builds subscription axis groups for optimization templates.
+    /// Always returns a 2D structure: <c>[[sub1], [sub2]]</c> for single-sub strategies,
+    /// <c>[[sub1, sub2], [sub3, sub4]]</c> for multi-sub strategies.
+    /// For <paramref name="groupSize"/>=2, auto-pairs by name pattern (e.g., BTCUSDT + BTCUSDT_PERP).
+    /// For larger groups, chunks sequentially.
+    /// </summary>
+    private static List<List<Dictionary<string, object>>> BuildSubscriptionGroups(
+        IReadOnlyList<AvailableAssetInfo> assets, string timeFrame, int groupSize)
+    {
+        if (groupSize <= 1)
+        {
+            return WrapAsSingletonGroups(assets, timeFrame);
+        }
+
+        if (groupSize == 2)
+        {
+            var pairs = PairByNamePattern(assets, timeFrame);
+            if (pairs.Count > 0) return pairs;
+        }
+
+        // Fallback: sequential chunking
+        var groups = new List<List<Dictionary<string, object>>>();
+        for (var i = 0; i + groupSize <= assets.Count; i += groupSize)
+        {
+            var group = new List<Dictionary<string, object>>();
+            for (var j = 0; j < groupSize; j++)
+            {
+                group.Add(new Dictionary<string, object>
+                {
+                    ["assetName"] = assets[i + j].LookupName,
+                    ["exchange"] = assets[i + j].Exchange,
+                    ["timeFrame"] = timeFrame,
+                });
+            }
+            groups.Add(group);
+        }
+
+        return groups.Count > 0
+            ? groups
+            : new List<List<Dictionary<string, object>>>
+            {
+                Enumerable.Range(0, groupSize).Select(i => new Dictionary<string, object>
+                {
+                    ["assetName"] = i == 0 ? DefaultAsset : $"{DefaultSecondaryAsset}_PERP",
+                    ["exchange"] = DefaultExchange,
+                    ["timeFrame"] = timeFrame,
+                }).ToList()
+            };
+    }
+
+    private static List<List<Dictionary<string, object>>> WrapAsSingletonGroups(
+        IReadOnlyList<AvailableAssetInfo> assets, string timeFrame)
+    {
+        if (assets.Count == 0)
+            return [[new() { ["assetName"] = DefaultAsset, ["exchange"] = DefaultExchange, ["timeFrame"] = timeFrame }]];
+
+        return assets
+            .Select(a => new List<Dictionary<string, object>>
+            {
+                new() { ["assetName"] = a.LookupName, ["exchange"] = a.Exchange, ["timeFrame"] = timeFrame }
+            })
+            .ToList();
+    }
+
+    private const string PerpSuffix = "_PERP";
+
+    /// <summary>
+    /// Auto-pairs assets by matching base names to their _PERP counterparts.
+    /// E.g., BTCUSDT → BTCUSDT_PERP, ETHUSDT → ETHUSDT_PERP.
+    /// </summary>
+    private static List<List<Dictionary<string, object>>> PairByNamePattern(
+        IReadOnlyList<AvailableAssetInfo> assets, string timeFrame)
+    {
+        var perpLookup = new Dictionary<string, AvailableAssetInfo>(StringComparer.OrdinalIgnoreCase);
+        var baseAssets = new List<AvailableAssetInfo>();
+
+        foreach (var asset in assets)
+        {
+            if (asset.LookupName.EndsWith(PerpSuffix, StringComparison.OrdinalIgnoreCase))
+                perpLookup[asset.LookupName[..^PerpSuffix.Length]] = asset;
+            else
+                baseAssets.Add(asset);
+        }
+
+        var pairs = new List<List<Dictionary<string, object>>>();
+        foreach (var baseAsset in baseAssets)
+        {
+            if (!perpLookup.TryGetValue(baseAsset.LookupName, out var perpAsset))
+                continue;
+
+            pairs.Add(
+            [
+                new() { ["assetName"] = baseAsset.LookupName, ["exchange"] = baseAsset.Exchange, ["timeFrame"] = timeFrame },
+                new() { ["assetName"] = perpAsset.LookupName, ["exchange"] = perpAsset.Exchange, ["timeFrame"] = timeFrame },
+            ]);
+        }
+
+        return pairs;
     }
 
     private static Dictionary<string, object> ConvertToHumanReadable(

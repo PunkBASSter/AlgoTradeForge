@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Domain.Strategy;
 
 namespace AlgoTradeForge.Application.Strategies;
@@ -19,25 +20,18 @@ public sealed class GetAvailableStrategiesQueryHandler(
             .Select(d =>
             {
                 var defaults = provider.GetParameterDefaults(d);
-                var reqSubs = GetRequiredSubscriptionCount(d.ParamsType);
+                var reqSubs = OptimizationSetupHelper.GetRequiredSubscriptionCount(d.ParamsType);
                 return new StrategyDescriptorDto(
                     d.StrategyName,
                     defaults,
                     d.Axes,
                     StrategyTemplateBuilder.BuildBacktestTemplate(d.StrategyName, defaults, d.Axes, availableAssets, reqSubs),
-                    StrategyTemplateBuilder.BuildOptimizationTemplate(d.StrategyName, d.Axes, availableAssets),
+                    StrategyTemplateBuilder.BuildOptimizationTemplate(d.StrategyName, d.Axes, availableAssets, reqSubs),
                     StrategyTemplateBuilder.BuildLiveSessionTemplate(d.StrategyName, defaults, d.Axes, availableAssets),
                     StrategyTemplateBuilder.BuildDebugSessionTemplate(d.StrategyName, defaults, d.Axes, availableAssets, reqSubs),
-                    StrategyTemplateBuilder.BuildGeneticOptimizationTemplate(d.StrategyName, d.Axes, availableAssets));
+                    StrategyTemplateBuilder.BuildGeneticOptimizationTemplate(d.StrategyName, d.Axes, availableAssets, reqSubs));
             })
             .ToList();
         return Task.FromResult<IReadOnlyList<StrategyDescriptorDto>>(result);
-    }
-
-    private static int GetRequiredSubscriptionCount(Type paramsType)
-    {
-        if (Activator.CreateInstance(paramsType) is StrategyParamsBase instance)
-            return instance.RequiredSubscriptionCount;
-        return 1;
     }
 }

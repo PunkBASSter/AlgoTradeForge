@@ -45,26 +45,21 @@ public static class RunKeyBuilder
         sb.Append(cmd.MaxDegreeOfParallelism).Append('|');
         sb.Append(cmd.MaxCombinations);
 
-        if (cmd.DataSubscriptions is { Count: > 0 })
-        {
-            sb.Append('|');
-            var sorted = cmd.DataSubscriptions
-                .OrderBy(d => d.AssetName)
-                .ThenBy(d => d.Exchange)
-                .ThenBy(d => d.TimeFrame);
-            foreach (var sub in sorted)
-                sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
-        }
-
         if (cmd.SubscriptionAxis is { Count: > 0 })
         {
             sb.Append("|axis:");
-            var sortedAxis = cmd.SubscriptionAxis
-                .OrderBy(d => d.AssetName)
-                .ThenBy(d => d.Exchange)
-                .ThenBy(d => d.TimeFrame);
-            foreach (var sub in sortedAxis)
-                sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
+            var sortedGroups = cmd.SubscriptionAxis
+                .Select(g => g.OrderBy(d => d.AssetName).ThenBy(d => d.Exchange).ThenBy(d => d.TimeFrame).ToList())
+                .OrderBy(g => g[0].AssetName)
+                .ThenBy(g => g[0].Exchange)
+                .ThenBy(g => g[0].TimeFrame);
+            foreach (var sortedGroup in sortedGroups)
+            {
+                sb.Append('[');
+                foreach (var sub in sortedGroup)
+                    sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
+                sb.Append(']');
+            }
         }
 
         if (cmd.Axes is { Count: > 0 })

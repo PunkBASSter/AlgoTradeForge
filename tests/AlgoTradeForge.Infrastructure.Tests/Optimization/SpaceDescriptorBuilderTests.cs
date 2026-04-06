@@ -4,6 +4,7 @@ using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.BuyAndHold;
 using AlgoTradeForge.Domain.Strategy.Modules;
+using AlgoTradeForge.Domain.Strategy.PairsTrading;
 using AlgoTradeForge.Infrastructure.Optimization;
 using Xunit;
 
@@ -80,6 +81,17 @@ public class SpaceDescriptorBuilderTests
         var second = builder.Build();
 
         Assert.Same(first, second);
+    }
+
+    [Fact]
+    public void GetParameterDefaults_ExcludesReadOnlyProperties()
+    {
+        var builder = new SpaceDescriptorBuilder([typeof(PairsTradingStrategy).Assembly]);
+        var descriptor = builder.GetDescriptor("PairsTrading")!;
+
+        var defaults = builder.GetParameterDefaults(descriptor);
+
+        Assert.False(defaults.ContainsKey("RequiredSubscriptionCount"));
     }
 
     [Fact]

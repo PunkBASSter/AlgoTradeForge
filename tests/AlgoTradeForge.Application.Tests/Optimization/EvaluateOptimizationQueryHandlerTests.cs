@@ -178,8 +178,8 @@ public class EvaluateOptimizationQueryHandlerTests
             },
             SubscriptionAxis =
             [
-                new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "binance", TimeFrame = "1:00:00" },
-                new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "binance", TimeFrame = "1:00:00" },
+                [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
+                [new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
             ],
             Mode = "BruteForce",
         };
@@ -204,16 +204,16 @@ public class EvaluateOptimizationQueryHandlerTests
             {
                 ["Period"] = new RangeOverride(10, 12, 1), // 3 values
             },
-            DataSubscriptions =
+            SubscriptionAxis =
             [
-                new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "binance", TimeFrame = "1:00:00" },
+                [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
             ],
             Mode = "BruteForce",
         };
 
         var result = await _handler.HandleAsync(query, TestContext.Current.CancellationToken);
 
-        // 3 values * 1 (no subscription axis) = 3
+        // 3 values * 1 (single subscription group, no axis variation) = 3
         Assert.Equal(3, result.TotalCombinations);
     }
 
@@ -231,11 +231,11 @@ public class EvaluateOptimizationQueryHandlerTests
             {
                 ["Period"] = new RangeOverride(10, 12, 1), // 3 values
             },
-            DataSubscriptions =
+            SubscriptionAxis =
             [
-                new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "binance", TimeFrame = "1:00:00" },
-                new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "binance", TimeFrame = "1:00:00" },
-                new DataSubscriptionDto { AssetName = "SOLUSDT", Exchange = "binance", TimeFrame = "1:00:00" },
+                [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
+                [new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
+                [new DataSubscriptionDto { AssetName = "SOLUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
             ],
             Mode = "BruteForce",
         };

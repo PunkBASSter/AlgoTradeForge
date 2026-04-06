@@ -95,6 +95,18 @@ public sealed class RunKeyBuilderTests
         Assert.Matches("^[0-9a-f]{64}$", key);
     }
 
+    [Fact]
+    public void Build_Optimization_SubscriptionGroupOrderIndependence()
+    {
+        var btc = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1:00:00" };
+        var eth = new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "1:00:00" };
+
+        var cmd1 = MakeOptimizationCommand() with { SubscriptionAxis = [[btc], [eth]] };
+        var cmd2 = MakeOptimizationCommand() with { SubscriptionAxis = [[eth], [btc]] };
+
+        Assert.Equal(RunKeyBuilder.Build(cmd1), RunKeyBuilder.Build(cmd2));
+    }
+
     // -----------------------------------------------------------------------
     // Live session fingerprint
     // -----------------------------------------------------------------------
@@ -193,9 +205,9 @@ public sealed class RunKeyBuilderTests
             StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             EndTime = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero),
         },
-        DataSubscriptions =
+        SubscriptionAxis =
         [
-            new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1:00:00" }
+            [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1:00:00" }]
         ]
     };
 }

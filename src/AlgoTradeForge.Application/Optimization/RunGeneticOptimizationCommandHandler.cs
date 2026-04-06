@@ -8,7 +8,6 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.Domain.Optimization.Space;
-using AlgoTradeForge.Domain.Strategy;
 using Microsoft.Extensions.Logging;
 using static AlgoTradeForge.Domain.Reporting.MetricNames;
 using Microsoft.Extensions.Options;
@@ -35,13 +34,17 @@ public sealed class RunGeneticOptimizationCommandHandler(
         var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
         var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
 
-        var (fixedSubscriptions, axisSubscriptions, dataCache) =
+        var (axisSubscriptionGroups, dataCache) =
             await helper.ResolveSubscriptionsAsync(
-                command.DataSubscriptions, command.SubscriptionAxis, fromDate, toDate, ct);
+                command.SubscriptionAxis, fromDate, toDate, ct);
+
+        var reqSubs = OptimizationSetupHelper.GetRequiredSubscriptionCount(descriptor.ParamsType);
+        OptimizationSetupHelper.ValidateSubscriptionCounts(
+            command.StrategyName, reqSubs, axisSubscriptionGroups);
 
         var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes);
         var activeAxes = OptimizationSetupHelper.AppendSubscriptionAxisAndFilter(
-            resolvedAxes, axisSubscriptions);
+            resolvedAxes, axisSubscriptionGroups);
 
         // 2. Validate and resolve GA config with auto-sizing
         ValidateGeneticSettings(command.GeneticSettings);
@@ -54,7 +57,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
 
         // 4. Insert placeholder row so the run is visible in the list immediately
         var primarySub = OptimizationSetupHelper.GetSubscriptionDtos(
-            command.DataSubscriptions, command.SubscriptionAxis);
+            command.SubscriptionAxis);
         var maxParallelism = command.MaxDegreeOfParallelism > 0
             ? command.MaxDegreeOfParallelism
             : Environment.ProcessorCount;
@@ -81,7 +84,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
         var normalizer = NormalizingEnumerable.TryCreateNormalizer(descriptor.ParamsType);
         _ = Task.Factory.StartNew(
             () => RunGeneticOptimizationAsync(
-                command, fixedSubscriptions, dataCache, activeAxes,
+                command, dataCache, activeAxes,
                 gaConfig, runId, startedAt, strategyFactory, normalizer),
             CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
@@ -94,7 +97,6 @@ public sealed class RunGeneticOptimizationCommandHandler(
 
     private async Task RunGeneticOptimizationAsync(
         RunGeneticOptimizationCommand command,
-        List<DataSubscription> fixedSubscriptions,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
         List<ResolvedAxis> activeAxes,
         GeneticConfig gaConfig,
@@ -118,7 +120,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
             ? command.MaxDegreeOfParallelism
             : Environment.ProcessorCount;
         var primarySub = OptimizationSetupHelper.GetSubscriptionDtos(
-            command.DataSubscriptions, command.SubscriptionAxis);
+            command.SubscriptionAxis);
 
         try
         {
@@ -147,7 +149,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
                 // Evaluate all individuals in parallel (elites are skipped)
                 EvaluatePopulation(
                     population, command.StrategyName, command.BacktestSettings,
-                    factory, fixedSubscriptions, dataCache,
+                    factory, dataCache,
                     fitnessFunction, filter, topTrials, failedTrials,
                     runId, startedAt, state, cache, normalizer,
                     maxParallelism, trialTimeout, ct);
@@ -268,7 +270,6 @@ public sealed class RunGeneticOptimizationCommandHandler(
         string strategyName,
         BacktestSettingsDto settings,
         IOptimizationStrategyFactory factory,
-        List<DataSubscription> fixedSubscriptions,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
         IFitnessFunction fitnessFunction,
         TrialFilter filter,
@@ -354,7 +355,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
                             {
                                 var record = helper.ExecuteTrial(
                                     strategyName, settings,
-                                    combos[i], factory, fixedSubscriptions, dataCache,
+                                    combos[i], factory, dataCache,
                                     runId, startedAt, ref state.StrategyVersion, trialCts.Token);
 
                                 var filteredOut = !filter.Passes(record.Metrics);
