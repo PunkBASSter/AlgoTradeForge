@@ -4,4 +4,5 @@ export const SESSION_KEYS = {
   RERUN_OPTIMIZATION: "rerun-optimization-config",
   DEBUG_CONFIG: "debug-session-config",
   DEBUG_AUTOSTART: "debug-session-autostart",
+  LAST_ROUTE: "last-strategy-route",
 } as const;
