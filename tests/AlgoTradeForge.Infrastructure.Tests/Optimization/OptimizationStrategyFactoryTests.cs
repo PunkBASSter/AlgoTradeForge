@@ -1,6 +1,11 @@
+using System.Reflection;
+using System.Text.Json;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Space;
+using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.BuyAndHold;
+using AlgoTradeForge.Domain.Strategy.DonchianBreakout;
+using AlgoTradeForge.Domain.Strategy.Modules.TrailingStop;
 using AlgoTradeForge.Infrastructure.Optimization;
 using Xunit;
 
@@ -99,6 +104,72 @@ public class OptimizationStrategyFactoryTests
     }
 
     [Fact]
+    public void Create_WithStringEncodedModuleParams_DeserializesCorrectly()
+    {
+        var strategy = _factory.Create("DonchianBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
+        {
+            ["TrailingStopConfig"] = """{"variant":0,"atrMultiplier":3.5,"atrPeriod":20,"donchianPeriod":30}""",
+            ["RegimeDetectorConfig"] = """{"adxPeriod":20,"trendThreshold":30}""",
+            ["MoneyManagement"] = """{"method":0,"riskPercent":2,"volTarget":0.15,"winRate":0.5,"payoffRatio":2}""",
+            ["TradeRegistry"] = """{"maxConcurrentGroups":0}""",
+            ["FilterWeights"] = """{"AtrFilter":2}""",
+        });
+
+        Assert.IsType<DonchianBreakoutStrategy>(strategy);
+        var trailingStop = GetParams<DonchianParams>(strategy).TrailingStopConfig;
+        Assert.Equal(TrailingStopVariant.Atr, trailingStop.Variant);
+        Assert.Equal(3.5, trailingStop.AtrMultiplier);
+        Assert.Equal(20, trailingStop.AtrPeriod);
+        Assert.Equal(30, trailingStop.DonchianPeriod);
+    }
+
+    [Fact]
+    public void Create_WithJsonElementStringModuleParams_DeserializesCorrectly()
+    {
+        // Simulate API path: JsonElement with ValueKind.String containing embedded JSON
+        using var doc = JsonDocument.Parse("""
+        {
+            "TrailingStopConfig": "{\"variant\":0,\"atrMultiplier\":3.5,\"atrPeriod\":20,\"donchianPeriod\":30}",
+            "RegimeDetectorConfig": "{\"adxPeriod\":20,\"trendThreshold\":30}"
+        }
+        """);
+        var root = doc.RootElement;
+
+        var strategy = _factory.Create("DonchianBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
+        {
+            ["TrailingStopConfig"] = root.GetProperty("TrailingStopConfig"),
+            ["RegimeDetectorConfig"] = root.GetProperty("RegimeDetectorConfig"),
+        });
+
+        Assert.IsType<DonchianBreakoutStrategy>(strategy);
+        var trailingStop = GetParams<DonchianParams>(strategy).TrailingStopConfig;
+        Assert.Equal(3.5, trailingStop.AtrMultiplier);
+        Assert.Equal(20, trailingStop.AtrPeriod);
+    }
+
+    [Fact]
+    public void Create_WithJsonElementObjectModuleParams_DeserializesCorrectly()
+    {
+        // Simulate API path: JsonElement with ValueKind.Object (camelCase keys)
+        using var doc = JsonDocument.Parse("""
+        {
+            "TrailingStopConfig": {"variant":0,"atrMultiplier":3.5,"atrPeriod":20,"donchianPeriod":30}
+        }
+        """);
+        var root = doc.RootElement;
+
+        var strategy = _factory.Create("DonchianBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
+        {
+            ["TrailingStopConfig"] = root.GetProperty("TrailingStopConfig"),
+        });
+
+        Assert.IsType<DonchianBreakoutStrategy>(strategy);
+        var trailingStop = GetParams<DonchianParams>(strategy).TrailingStopConfig;
+        Assert.Equal(3.5, trailingStop.AtrMultiplier);
+        Assert.Equal(30, trailingStop.DonchianPeriod);
+    }
+
+    [Fact]
     public void Create_WithModuleSlot_CreatesModuleInstance()
     {
         var builder = new SpaceDescriptorBuilder(
@@ -116,5 +187,12 @@ public class OptimizationStrategyFactoryTests
         var strategy = factory.Create("WithModule", combination);
         Assert.NotNull(strategy);
         Assert.IsType<StrategyWithModule>(strategy);
+    }
+
+    private static T GetParams<T>(IInt64BarStrategy strategy)
+    {
+        var prop = strategy.GetType().GetProperty("Params", BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException("Params property not found.");
+        return (T)prop.GetValue(strategy)!;
     }
 }
