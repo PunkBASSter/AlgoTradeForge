@@ -5,16 +5,32 @@ using Microsoft.Extensions.Options;
 namespace AlgoTradeForge.Infrastructure.Persistence;
 
 public sealed class SqliteThresholdProfileRepository(
-    IOptions<RunStorageOptions> options) : IThresholdProfileRepository
+    IOptions<RunStorageOptions> options) : IThresholdProfileRepository, IDisposable
 {
     private string ConnectionString => $"Data Source={options.Value.DatabasePath}";
+    private readonly SemaphoreSlim _initLock = new(1, 1);
     private bool _initialized;
 
-    private async Task EnsureInitializedAsync()
+    public void Dispose() => _initLock.Dispose();
+
+    private async Task EnsureInitializedAsync(CancellationToken ct = default)
     {
-        if (_initialized) return;
-        await SqliteDbInitializer.EnsureCreatedAsync(ConnectionString);
-        _initialized = true;
+        if (Volatile.Read(ref _initialized))
+            return;
+
+        await _initLock.WaitAsync(ct);
+        try
+        {
+            if (!_initialized)
+            {
+                await SqliteDbInitializer.EnsureCreatedAsync(ConnectionString);
+                _initialized = true;
+            }
+        }
+        finally
+        {
+            _initLock.Release();
+        }
     }
 
     public async Task<IReadOnlyList<ThresholdProfileRecord>> ListAsync(CancellationToken ct = default)

@@ -6,6 +6,9 @@ internal static class SqliteDbInitializer
 {
     private const int CurrentVersion = 16;
 
+    private static readonly SemaphoreSlim _orphanCleanupLock = new(1, 1);
+    private static bool _orphanCleanupDone;
+
     private const string Schema = """
         PRAGMA journal_mode=WAL;
 
@@ -366,22 +369,47 @@ internal static class SqliteDbInitializer
             await SetVersionAsync(connection, 16);
         }
 
-        // Mark any orphaned in-progress runs as failed (server crashed during execution)
-        await using var orphanCmd = connection.CreateCommand();
-        orphanCmd.CommandText = """
-            UPDATE optimization_runs
-            SET completed_at = started_at, error_message = 'Server restarted during execution', status = 'Failed'
-            WHERE status = 'InProgress'
-            """;
-        await orphanCmd.ExecuteNonQueryAsync();
+        await CleanupOrphanedRunsOnceAsync(connection);
+    }
 
-        await using var orphanValCmd = connection.CreateCommand();
-        orphanValCmd.CommandText = """
-            UPDATE validation_runs
-            SET completed_at = started_at, error_message = 'Server restarted during execution', status = 'Failed'
-            WHERE status = 'InProgress'
-            """;
-        await orphanValCmd.ExecuteNonQueryAsync();
+    /// <summary>
+    /// Marks orphaned in-progress runs as failed. Guarded by a static flag so it
+    /// runs exactly once per process, even though multiple repositories each call
+    /// <see cref="EnsureCreatedAsync"/> independently with their own init flags.
+    /// </summary>
+    private static async Task CleanupOrphanedRunsOnceAsync(SqliteConnection connection)
+    {
+        if (Volatile.Read(ref _orphanCleanupDone))
+            return;
+
+        await _orphanCleanupLock.WaitAsync();
+        try
+        {
+            if (_orphanCleanupDone)
+                return;
+
+            await using var orphanCmd = connection.CreateCommand();
+            orphanCmd.CommandText = """
+                UPDATE optimization_runs
+                SET completed_at = started_at, error_message = 'Server restarted during execution', status = 'Failed'
+                WHERE status = 'InProgress'
+                """;
+            await orphanCmd.ExecuteNonQueryAsync();
+
+            await using var orphanValCmd = connection.CreateCommand();
+            orphanValCmd.CommandText = """
+                UPDATE validation_runs
+                SET completed_at = started_at, error_message = 'Server restarted during execution', status = 'Failed'
+                WHERE status = 'InProgress'
+                """;
+            await orphanValCmd.ExecuteNonQueryAsync();
+
+            _orphanCleanupDone = true;
+        }
+        finally
+        {
+            _orphanCleanupLock.Release();
+        }
     }
 
     private static async Task<int> GetVersionAsync(SqliteConnection connection)
