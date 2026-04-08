@@ -40,7 +40,8 @@ public sealed class ValidationPipeline
         Guid validationRunId,
         Action<int, int>? onProgress,
         CancellationToken ct,
-        long totalCombinations = 0)
+        long totalCombinations = 0,
+        IReadOnlyDictionary<int, string>? subscriptionGroupMap = null)
     {
         var allIndices = Enumerable.Range(0, trials.Count).ToList();
         var context = new ValidationContext
@@ -50,6 +51,7 @@ public sealed class ValidationPipeline
             Profile = profile,
             AllCandidateIndices = allIndices,
             TotalCombinations = totalCombinations,
+            SubscriptionGroupByTrialIndex = subscriptionGroupMap,
         };
 
         var stageResults = new List<StageResultRecord>(_stages.Count);

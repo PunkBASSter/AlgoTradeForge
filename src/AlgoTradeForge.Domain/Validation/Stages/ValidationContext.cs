@@ -12,4 +12,10 @@ public sealed class ValidationContext
     /// Used by Stage 0 (PreFlight) for MinBTL calculation.
     /// </summary>
     public long TotalCombinations { get; init; }
+
+    /// <summary>
+    /// Maps trial index → subscription group key (e.g., "BTCUSDT:binance:1h").
+    /// Null when single-subscription optimization (stages skip partitioning).
+    /// </summary>
+    public IReadOnlyDictionary<int, string>? SubscriptionGroupByTrialIndex { get; init; }
 }

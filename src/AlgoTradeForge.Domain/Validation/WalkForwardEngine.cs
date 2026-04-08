@@ -44,7 +44,8 @@ public static class WalkForwardEngine
     /// Windows are split by timestamp range, supporting per-trial variable-length data.
     /// </summary>
     public static WfoResult RunWfo(SimulationCache cache, WfoConfig config,
-        double initialEquity, CancellationToken ct = default)
+        double initialEquity, CancellationToken ct = default,
+        HashSet<int>? allowedTrialIndices = null)
     {
         var windowCount = config.WindowCount;
         var totalDuration = cache.MaxTimestamp - cache.MinTimestamp;
@@ -109,6 +110,9 @@ public static class WalkForwardEngine
 
             for (var t = 0; t < cache.TrialCount; t++)
             {
+                if (allowedTrialIndices is not null && !allowedTrialIndices.Contains(t))
+                    continue;
+
                 var (isStart, isLen) = isWindows[cache.GetTimelineIndex(t)];
                 if (isLen < 2) continue;
 
@@ -202,7 +206,8 @@ public static class WalkForwardEngine
     /// Run a Walk-Forward Matrix: grid of WFOs across period counts × OOS percentages.
     /// </summary>
     public static WfmResult RunWfm(SimulationCache cache, WfmConfig config,
-        double initialEquity, CancellationToken ct = default)
+        double initialEquity, CancellationToken ct = default,
+        HashSet<int>? allowedTrialIndices = null)
     {
         var periodCounts = config.PeriodCounts;
         var oosPcts = config.OosPcts;
@@ -229,7 +234,7 @@ public static class WalkForwardEngine
                 AnnualizationFactor = config.AnnualizationFactor,
             };
 
-            grid[pi][oi] = RunWfo(cache, wfoConfig, initialEquity, ct);
+            grid[pi][oi] = RunWfo(cache, wfoConfig, initialEquity, ct, allowedTrialIndices);
         });
 
         // Build pass/fail boolean grid

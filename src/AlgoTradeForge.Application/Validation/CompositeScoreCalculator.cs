@@ -153,6 +153,8 @@ public static class CompositeScoreCalculator
             scores.Add(MetricNormalizer.Normalize(ret, floor: 0.3, excellent: 1.0));
         if (TryGetMedianMetric(stageMap, 3, "primaryClusterConcentration", out var cc))
             scores.Add(MetricNormalizer.Normalize(cc, floor: 0.3, excellent: 0.9));
+        if (TryGetMedianMetric(stageMap, 3, "crossSubscriptionStability", out var css))
+            scores.Add(MetricNormalizer.Normalize(css, floor: 0.3, excellent: 1.0));
         return scores.Count > 0 ? scores.Average() : 0.0;
     }
 

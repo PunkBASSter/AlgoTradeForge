@@ -59,6 +59,12 @@ public sealed record ValidationThresholdProfile
         public double MinClusterConcentration { get; init; } = 0.50;
         public int SensitivityIterations { get; init; } = 500;
         public double SensitivityRange { get; init; } = 0.10;
+
+        /// <summary>
+        /// Minimum cross-subscription stability score for multi-subscription optimizations.
+        /// Ignored when only one subscription group exists.
+        /// </summary>
+        public double MinCrossSubscriptionStability { get; init; } = 0.50;
     }
 
     public sealed record Stage4WalkForwardOptimizationThresholds

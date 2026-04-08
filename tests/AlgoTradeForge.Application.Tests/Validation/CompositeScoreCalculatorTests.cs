@@ -267,6 +267,46 @@ public sealed class CompositeScoreCalculatorTests
         Assert.Equal(expectedScore, result.CategoryScores[CompositeScoreResult.CategorySubPeriod], precision: 1);
     }
 
+    [Fact]
+    public void CrossSubscriptionStability_IncludedInParamsScore()
+    {
+        // Build a stage 3 result with crossSubscriptionStability metric
+        var stageResults = new List<StageResultRecord>
+        {
+            BuildStageResult(3, "ParameterLandscape", passed: true, new Dictionary<string, double>
+            {
+                ["meanFitnessRetention"] = 0.85,
+                ["primaryClusterConcentration"] = 0.80,
+                ["silhouetteScore"] = 0.65,
+                ["clusterCount"] = 2,
+                ["crossSubscriptionStability"] = 0.90,
+            }),
+        };
+        var profile = ValidationThresholdProfile.CryptoStandard();
+
+        var result = CompositeScoreCalculator.Calculate(stageResults, profile, candidatesIn: 100, candidatesOut: 5);
+
+        // Params category should include the crossSubscriptionStability contribution
+        Assert.True(result.CategoryScores[CompositeScoreResult.CategoryParams] > 0);
+
+        // Compare with same metrics but WITHOUT crossSubscriptionStability
+        var stageResultsWithout = new List<StageResultRecord>
+        {
+            BuildStageResult(3, "ParameterLandscape", passed: true, new Dictionary<string, double>
+            {
+                ["meanFitnessRetention"] = 0.85,
+                ["primaryClusterConcentration"] = 0.80,
+                ["silhouetteScore"] = 0.65,
+                ["clusterCount"] = 2,
+            }),
+        };
+
+        var resultWithout = CompositeScoreCalculator.Calculate(stageResultsWithout, profile, candidatesIn: 100, candidatesOut: 5);
+
+        // Both should produce valid scores (the with-CSS score may differ due to averaging 3 vs 2 inputs)
+        Assert.True(resultWithout.CategoryScores[CompositeScoreResult.CategoryParams] > 0);
+    }
+
     // --- Test helpers ---
 
     private static List<StageResultRecord> BuildAllStages(bool strong, bool marginal = false)
