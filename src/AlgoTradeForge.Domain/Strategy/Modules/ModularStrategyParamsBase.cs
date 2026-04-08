@@ -25,7 +25,7 @@ public class ModularStrategyParamsBase : StrategyParamsBase
     public MoneyManagementParams MoneyManagement { get; init; } = new();
     public TradeRegistryParams TradeRegistry { get; init; } = new();
     public TrailingStopParams? TrailingStop { get; init; }
-    public ExitParams? Exit { get; init; }
+    public TimeBasedExitParams? Exit { get; init; }
     public RegimeDetectorParams? RegimeDetector { get; init; }
 
     public Dictionary<string, int> FilterWeights { get; init; } = [];
