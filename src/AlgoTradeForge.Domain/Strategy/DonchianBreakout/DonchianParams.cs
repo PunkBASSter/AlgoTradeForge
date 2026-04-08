@@ -1,6 +1,8 @@
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Strategy.Modules;
+using AlgoTradeForge.Domain.Strategy.Modules.Exit;
 using AlgoTradeForge.Domain.Strategy.Modules.Regime;
+using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Strategy.Modules.TrailingStop;
 
 namespace AlgoTradeForge.Domain.Strategy.DonchianBreakout;
@@ -19,6 +21,8 @@ public sealed class DonchianParams : ModularStrategyParamsBase
     [Optimizable(Min = 1.0, Max = 5.0, Step = 0.5)]
     public double AtrStopMultiplier { get; init; } = 2.0;
 
+    public new TradeRegistryParams TradeRegistry { get; init; } = new() { MaxConcurrentGroups = 1 };
+    public new TimeBasedExitParams Exit { get; init; } = new();
     public TrailingStopParams TrailingStopConfig { get; init; } = new();
     public RegimeDetectorParams RegimeDetectorConfig { get; init; } = new();
 }

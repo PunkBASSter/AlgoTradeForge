@@ -56,10 +56,17 @@ public sealed class DonchianBreakoutStrategy(
         var regimeFilter = new RegimeFilterModule(Context, MarketRegime.Trending);
         AddFilter(regimeFilter);
 
-        // Exit rules: regime change
+        // Exit rules
         _regimeChangeExit = new RegimeChangeExitRule();
         var exitModule = new ExitModule();
         exitModule.AddRule(_regimeChangeExit);
+
+        if (Params.Exit is { MaxHoldBars: > 0 } exitParams)
+        {
+            var intervalMs = (long)DataSubscriptions[0].TimeFrame.TotalMilliseconds;
+            exitModule.AddRule(new TimeBasedExitRule(exitParams.MaxHoldBars, intervalMs));
+        }
+
         SetExit(exitModule);
     }
 

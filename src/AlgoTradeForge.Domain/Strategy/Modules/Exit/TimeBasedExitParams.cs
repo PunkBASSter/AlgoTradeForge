@@ -2,7 +2,7 @@ using AlgoTradeForge.Domain.Optimization.Attributes;
 
 namespace AlgoTradeForge.Domain.Strategy.Modules.Exit;
 
-public sealed class ExitParams : ModuleParamsBase
+public sealed class TimeBasedExitParams : ModuleParamsBase
 {
     /// <summary>
     /// Maximum bars to hold a position before forcing exit. 0 = disabled.
