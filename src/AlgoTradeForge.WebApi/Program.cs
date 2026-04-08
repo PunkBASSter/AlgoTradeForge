@@ -16,6 +16,7 @@ using AlgoTradeForge.Infrastructure.History;
 using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Plugins;
 using AlgoTradeForge.WebApi.Endpoints;
+using AlgoTradeForge.WebApi.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -117,6 +118,9 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Silently handle client-disconnect cancellations before DeveloperExceptionPage treats them as errors
+app.UseMiddleware<ClientDisconnectMiddleware>();
 
 // Configure HTTP pipeline
 if (app.Environment.IsDevelopment())
