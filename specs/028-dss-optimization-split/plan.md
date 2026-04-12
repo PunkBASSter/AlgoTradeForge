@@ -28,7 +28,7 @@ Split optimization execution so each data subscription set (DSS) runs as an inde
 | I. Strategy-as-Code | Pass | No strategy interface changes. Strategies are unaware of DSS grouping. |
 | II. Test-First | Pass | Tests will be written for new group commands, handlers, and repositories. |
 | III. Data Integrity | Pass | Each DSS run maintains its own data provenance. Group is a logical grouping only. |
-| IV. Observability | Pass | Per-run progress tracking preserved; group status derived from children. Structured logging for group lifecycle events. |
+| IV. Observability | Pass | Per-run progress tracking preserved; group status stored and updated per child completion. Structured logging for group lifecycle events (T021). |
 | V. Separation of Concerns | Pass | Frontend: display + workflow. Backend: orchestration + persistence. No trading logic in frontend. Long-running ops run in background tasks. |
 | VI. Simplicity & YAGNI | Pass | Group status stored and updated per child completion. Shared Channel<T> work queue reuses existing patterns. No speculative features. |
 
