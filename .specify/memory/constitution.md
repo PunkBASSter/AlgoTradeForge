@@ -1,24 +1,35 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.7.3 → 1.8.0
-Modified principles: None
-Added sections: None
+Version change: 1.8.0 → 1.8.1
+Modified principles: None (all 6 unchanged)
+Added sections:
+  - Frontend > Frontend Test Stack (Vitest + Testing Library + jsdom)
+  - Backend > Strategy Hosting > Modular Strategy Framework
+  - HistoryLoader architecture note
 Removed sections: None
 Modified sections:
-  - Backend > Code Style: Added "Indicator buffer memory (ring buffer)"
-    convention documenting bounded indicator buffers via RingBuffer<T>,
-    the CapacityLimit tri-state (null/0/N), ApplyBufferCapacity() call
-    requirement, Count semantics (total appended vs retained), and
-    Set() vs Revise() mutation contracts (silent no-op vs throw on
-    evicted indices).
-Trigger: Branch 027-strategy-module-framework — IndicatorBase<T> base
-  class extraction + bounded buffer support for memory savings in long
-  backtests.
+  - Frontend > Framework: Next.js version floor 15+ → 16+
+  - Frontend > Code Organization: Added contexts/, components/layout/,
+    lib/stores/, lib/services/, lib/events/, lib/utils/
+  - Principle I (Strategy-as-Code): Added multi-DataSubscription note
+    for cross-asset analysis
+  - Backend > Solution Layout: Added HistoryLoader subsystem (4 src +
+    1 test projects), WebApi.Tests, WebApi.PlaywrightTests, Validation/
+    across Domain/Application/Infrastructure, new Application dirs
+    (Debug, Indicators, Live, Persistence), Infrastructure dirs (IO,
+    Live, Optimization, Repositories), WebApi Middleware, expanded
+    Strategy/Modules/ with 10 module categories, frontend/ root entry
+  - Backend > Code Organization conventions: Added HistoryLoader
+    reference pattern (full clean arch)
+  - Persistence table: Updated from aspirational (PostgreSQL,
+    TimescaleDB, Redis) to current reality (SQLite, CSV, in-memory
+    cache) with migration target note
+Trigger: Periodic validate-and-refresh (speckit.constitution)
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ compatible (no indicator refs)
-  - .specify/templates/spec-template.md ✅ compatible (no indicator refs)
-  - .specify/templates/tasks-template.md ✅ compatible (no indicator refs)
+  - .specify/templates/plan-template.md ✅ compatible (dynamic gates)
+  - .specify/templates/spec-template.md ✅ compatible (no hardcoded refs)
+  - .specify/templates/tasks-template.md ✅ compatible (no hardcoded refs)
 Follow-up TODOs: None
 -->
 
@@ -36,6 +47,7 @@ well-defined strategy interface. Strategies:
 
 - MUST be self-contained compilation units with no external runtime dependencies beyond the strategy host SDK
 - MUST declare their required indicators, parameters, and data dependencies explicitly
+- MAY declare multiple `DataSubscription` objects for cross-asset analysis; each subscription specifies an independent asset+interval data feed
 - MUST be stateless with respect to execution between bars; all order submission, position tracking, and fill observation MUST flow through the host-provided `IOrderContext`
 - MAY maintain internal analytical state between bars (e.g., indicator buffers, bar history windows, derived signals) for decision-making purposes only; analytical state MUST NOT influence execution except through `IOrderContext` calls
 - MUST NOT perform direct I/O; all market data and order execution flows through the host
@@ -121,7 +133,7 @@ unnecessary abstraction is a potential hiding place for bugs.
 
 ### Frontend (Next.js + TypeScript + Tailwind)
 
-**Framework**: Next.js 15+ with App Router
+**Framework**: Next.js 16+ with App Router
 
 - MUST use TypeScript strict mode with no `any` types in production code
 - MUST use Server Components by default; Client Components only when interactivity required
@@ -153,8 +165,14 @@ frontend/
 ├── app/                    # Next.js App Router pages and layouts
 ├── components/
 │   ├── ui/                 # Reusable UI primitives
-│   └── features/           # Feature-specific composite components
-├── lib/                    # Utilities, API clients, helpers
+│   ├── features/           # Feature-specific composite components
+│   └── layout/             # Layout components (navbar, sidebar)
+├── contexts/               # React Context providers
+├── lib/
+│   ├── services/           # API clients
+│   ├── stores/             # Zustand stores
+│   ├── events/             # Event parsing utilities
+│   └── utils/              # Formatting and helper utilities
 ├── hooks/                  # Custom React hooks
 └── types/                  # TypeScript type definitions
 ```
@@ -306,11 +324,19 @@ frontend/
 - MUST enforce memory and CPU limits per strategy execution
 - MUST capture compilation errors with line/column information for user feedback
 
+**Modular Strategy Framework**: Strategies MAY extend `ModularStrategyBase` to
+compose behavior from pluggable modules (categories: Exit, Filter,
+MoneyManagement, CrossAsset, TrailingStop, Regime, Signal, Price, StateStore,
+TradeRegistry). Each module implements `IStrategyModule<TParams>` with its own
+`[Optimizable]` parameters. The optimization and parameter scaling
+infrastructure handles module sub-parameters automatically.
+
 **Solution Layout** (repository root):
 
 ```
 AlgoTradeForge/
 ├── AlgoTradeForge.slnx         # Solution file (XML format)
+├── frontend/                   # Next.js frontend application
 ├── src/
 │   ├── AlgoTradeForge.Domain/          # Domain models, interfaces, business logic
 │   │   ├── Assets/                     # Asset hierarchy + settlement interfaces
@@ -327,23 +353,48 @@ AlgoTradeForge/
 │   │   ├── Reporting/                  # Performance metrics
 │   │   ├── Strategy/                   # Strategy interfaces and base types
 │   │   │   └── Modules/              # Pluggable strategy modules
-│   │   └── Trading/                    # Orders, fills, positions, settlement
+│   │   │       ├── CrossAsset/       # Cross-asset correlation modules
+│   │   │       ├── Exit/             # Exit rule implementations
+│   │   │       ├── Filter/           # ATR volatility, regime filters
+│   │   │       ├── MoneyManagement/  # Position sizing (SizingMethod)
+│   │   │       ├── Price/            # Price level modules
+│   │   │       ├── Regime/           # Regime detection
+│   │   │       ├── Signal/           # Signal generation
+│   │   │       ├── StateStore/       # State persistence modules
+│   │   │       ├── TradeRegistry/    # Trade tracking
+│   │   │       └── TrailingStop/     # Trailing stop implementations
+│   │   ├── Trading/                    # Orders, fills, positions, settlement
+│   │   └── Validation/                # Walk-forward engine, stages, scoring
+│   │       ├── Results/               # WFO/WFM results, heatmaps, PBO
+│   │       ├── Scoring/              # CompositeScoreResult, MetricNormalizer
+│   │       ├── Stages/               # PreFlight, BasicProfitability, WFO, etc.
+│   │       └── Statistics/           # MonteCarlo, PBO, ClusterAnalyzer, etc.
 │   ├── AlgoTradeForge.Application/     # Use cases (CQRS commands/queries)
 │   │   ├── Abstractions/              # ICommand, IQuery, handler interfaces
 │   │   ├── Backtests/                 # RunBacktest command + handler + DTOs
 │   │   ├── CandleIngestion/           # IInt64BarLoader interface
+│   │   ├── Debug/                     # Debug session handlers
 │   │   ├── Events/                    # EventBus impl, sinks, post-run pipeline
+│   │   ├── Indicators/               # Indicator query handlers
 │   │   ├── IO/                        # IFileStorage
+│   │   ├── Live/                      # Live trading handlers
 │   │   ├── Optimization/             # Optimization orchestration
+│   │   ├── Persistence/              # Repository records and interfaces
 │   │   ├── Progress/                  # RunProgressCache, cancellation registry
 │   │   ├── Repositories/             # Repository interfaces
-│   │   └── Strategies/               # Strategy listing queries
+│   │   ├── Strategies/               # Strategy listing queries
+│   │   └── Validation/               # WFO command handlers, composite scoring
 │   ├── AlgoTradeForge.Infrastructure/  # Data access, external services
 │   │   ├── CandleIngestion/           # CsvInt64BarLoader (IInt64BarLoader impl)
 │   │   ├── Events/                    # Event infrastructure
 │   │   ├── History/                   # CsvDataSource, HistoryRepository
+│   │   ├── IO/                        # File storage implementation
+│   │   ├── Live/                      # Binance adapter, LiveOrderContext
+│   │   ├── Optimization/             # Optimization infrastructure
 │   │   ├── Persistence/              # SQLite repositories
-│   │   └── Plugins/                  # Plugin loader
+│   │   ├── Plugins/                  # Plugin loader
+│   │   ├── Repositories/            # Repository implementations
+│   │   └── Validation/              # SQLite validation/threshold repos
 │   ├── AlgoTradeForge.CandleIngestor/ # Worker service (see note below)
 │   │   ├── BinanceAdapter.cs          # Binance API adapter
 │   │   ├── CsvCandleWriter.cs         # CSV partition writer
@@ -351,9 +402,14 @@ AlgoTradeForge/
 │   │   ├── IngestionWorker.cs         # BackgroundService with PeriodicTimer
 │   │   ├── RateLimiter.cs             # Sliding-window rate limiter
 │   │   └── CandleIngestorOptions.cs   # Configuration records
+│   ├── AlgoTradeForge.HistoryLoader.Domain/       # HistoryLoader domain models
+│   ├── AlgoTradeForge.HistoryLoader.Application/  # HistoryLoader use cases
+│   ├── AlgoTradeForge.HistoryLoader.Infrastructure/ # HistoryLoader data access
+│   ├── AlgoTradeForge.HistoryLoader.WebApi/       # HistoryLoader ASP.NET host
 │   └── AlgoTradeForge.WebApi/         # ASP.NET Core host, minimal API endpoints
 │       ├── Contracts/                 # Request/response models
-│       └── Endpoints/                 # Endpoint definitions
+│       ├── Endpoints/                 # Endpoint definitions
+│       └── Middleware/                # Request pipeline middleware
 ├── tests/
 │   ├── AlgoTradeForge.Domain.Tests/   # Domain unit tests (xUnit + NSubstitute)
 │   │   ├── Engine/                    # BacktestEngine, BarMatcher, OrderValidator
@@ -368,9 +424,12 @@ AlgoTradeForge/
 │   │   └── TestUtilities/             # Shared test data factories
 │   ├── AlgoTradeForge.Application.Tests/ # Application layer tests
 │   │   └── TestUtilities/
-│   └── AlgoTradeForge.Infrastructure.Tests/ # Infrastructure + CandleIngestor tests
-│       └── CandleIngestion/           # CsvInt64BarLoader, CsvCandleWriter,
-│                                      # BinanceAdapter tests
+│   ├── AlgoTradeForge.Infrastructure.Tests/ # Infrastructure + CandleIngestor tests
+│   │   └── CandleIngestion/           # CsvInt64BarLoader, CsvCandleWriter,
+│   │                                  # BinanceAdapter tests
+│   ├── AlgoTradeForge.HistoryLoader.Tests/  # HistoryLoader tests
+│   ├── AlgoTradeForge.WebApi.Tests/         # WebApi integration tests
+│   └── AlgoTradeForge.WebApi.PlaywrightTests/ # E2E browser tests
 ├── docs/                              # Design documents and requirements
 └── specs/                             # Feature specifications and checklists
 ```
@@ -385,6 +444,15 @@ AlgoTradeForge/
 > exchange adapters, writers, or ingestion logic MUST be added here, not in
 > the Infrastructure project.
 
+> **HistoryLoader architecture note**: `AlgoTradeForge.HistoryLoader.*` is a
+> separate subsystem following full clean architecture (Domain, Application,
+> Infrastructure, WebApi). It runs as an independent ASP.NET Core host for
+> scheduled and on-demand historical data collection from exchange APIs
+> (klines, funding rates, open interest, liquidations, etc.). Unlike
+> CandleIngestor (legacy simple worker), HistoryLoader supports multiple
+> exchanges, feed types, rate limiting, backfill orchestration, and
+> configuration hot-reload. Test project: `AlgoTradeForge.HistoryLoader.Tests`.
+
 **Code Organization conventions**:
 - Each project uses namespace `AlgoTradeForge.<Layer>`
 - Domain project exposes internals to its test project via `InternalsVisibleTo`
@@ -392,6 +460,8 @@ AlgoTradeForge/
 - Application references Domain; Infrastructure references Application;
   WebApi references Application, Domain, and Infrastructure;
   CandleIngestor references Application only
+- HistoryLoader projects follow independent clean architecture layering:
+  HistoryLoader.WebApi → Infrastructure → Application → Domain
 - Test projects mirror the source project folder structure
 
 ### Background Jobs
@@ -417,12 +487,16 @@ Background jobs fall into two categories:
 
 | Data Type | Storage | Retention | Access Pattern |
 |-----------|---------|-----------|----------------|
-| Price Data | TimescaleDB / ClickHouse | Indefinite | Time-series queries, bulk reads |
-| Backtest Results | PostgreSQL + blob storage | 90 days default | Random access by ID |
-| Optimization Results | PostgreSQL + blob storage | 90 days default | Filtered queries, comparisons |
-| Trade Events | PostgreSQL | Indefinite | Audit queries, reporting |
-| Debug Events | Redis / temp tables | 24-72 hours | Recent access, auto-expiry |
-| User Sessions | Redis | Session duration | Key-value lookup |
+| Price Data | CSV files (monthly partitions) | Indefinite | Sequential reads via CsvDataSource |
+| Backtest Results | SQLite + file storage | 90 days default | Random access by ID |
+| Optimization Results | SQLite + file storage | 90 days default | Filtered queries, comparisons |
+| Validation Results | SQLite | Indefinite | Filtered queries, reporting |
+| Trade Events | SQLite | Indefinite | Audit queries, reporting |
+| Run Progress | In-memory (IDistributedCache) | Run duration | Key-value lookup |
+
+> **Migration targets**: Current persistence uses SQLite for simplicity.
+> Intended migration path: PostgreSQL for relational data, TimescaleDB or
+> ClickHouse for time-series data, Redis for caching and sessions.
 
 - MUST use migrations for all schema changes (EF Core Migrations or Flyway)
 - MUST NOT use ORM lazy loading; all data access explicit and eager
@@ -466,6 +540,12 @@ Background jobs fall into two categories:
 - MUST use standard xUnit assertions (`Assert.Equal`, `Assert.Null`, etc.)
 - MUST NOT use FluentAssertions or other assertion libraries
 
+### Frontend Test Stack
+
+- MUST use **Vitest** as the test runner
+- MUST use **@testing-library/react** with **jsdom** environment for component tests
+- Store and utility tests MUST be colocated with source files
+
 ### CI/CD Pipeline
 
 1. **Build**: Compile all projects, fail on warnings
@@ -502,4 +582,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.8.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-04-02
+**Version**: 1.8.1 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-04-12
