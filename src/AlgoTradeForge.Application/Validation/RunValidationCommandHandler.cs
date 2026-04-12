@@ -140,6 +140,7 @@ public sealed class RunValidationCommandHandler(
             }
 
             var trialSummaries = SimulationCacheBuilder.BuildTrialSummaries(trials);
+            var subscriptionGroupMap = SimulationCacheBuilder.BuildSubscriptionGroupMap(trials);
 
             // Run pipeline
             var pipeline = new ValidationPipeline();
@@ -148,7 +149,8 @@ public sealed class RunValidationCommandHandler(
                 (current, total) =>
                     _ = progressCache.SetProgressAsync(validationId, current, total, CancellationToken.None),
                 ct,
-                totalCombinations);
+                totalCombinations,
+                subscriptionGroupMap);
 
             sw.Stop();
 

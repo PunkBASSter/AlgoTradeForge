@@ -8,7 +8,7 @@ public sealed record BacktestRunRecord
     public required string StrategyName { get; init; }
     public required string StrategyVersion { get; init; }
     public required IReadOnlyDictionary<string, object> Parameters { get; init; }
-    public required DataSubscriptionDto DataSubscription { get; init; }
+    public required IReadOnlyList<DataSubscriptionDto> DataSubscriptions { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public required DateTimeOffset StartedAt { get; init; }
     public required DateTimeOffset CompletedAt { get; init; }

@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Application.Debug;
 
 public sealed record StartDebugSessionCommand : ICommand<DebugSessionDto>, IBacktestSetupCommand
 {
-    public required DataSubscriptionDto DataSubscription { get; init; }
+    public required IReadOnlyList<DataSubscriptionDto> DataSubscriptions { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public required string StrategyName { get; init; }
     public bool UseDetailedExecutionLogic { get; init; }

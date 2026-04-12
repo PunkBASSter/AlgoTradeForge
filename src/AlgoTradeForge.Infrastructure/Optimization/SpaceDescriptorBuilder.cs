@@ -76,6 +76,7 @@ public sealed class SpaceDescriptorBuilder : IOptimizationSpaceProvider
         foreach (var prop in descriptor.ParamsType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
             if (prop.Name == nameof(StrategyParamsBase.DataSubscriptions)) continue;
+            if (!prop.CanWrite) continue;
             var value = prop.GetValue(instance);
             if (value is not null)
                 defaults[prop.Name] = value;

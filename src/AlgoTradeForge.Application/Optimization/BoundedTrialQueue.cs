@@ -2,7 +2,6 @@ using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Reporting;
-using AlgoTradeForge.Domain.Strategy;
 using static AlgoTradeForge.Domain.Reporting.MetricNames;
 
 namespace AlgoTradeForge.Application.Optimization;
@@ -94,27 +93,22 @@ public sealed class BoundedTrialQueue
     internal static string BuildTrialKey(BacktestRunRecord record)
     {
         var sb = new System.Text.StringBuilder();
-        sb.Append(record.DataSubscription.AssetName)
-          .Append(':').Append(record.DataSubscription.Exchange)
-          .Append(':').Append(record.DataSubscription.TimeFrame)
-          .Append('|');
+        foreach (var sub in record.DataSubscriptions)
+            sb.Append(sub.AssetName)
+              .Append(':').Append(sub.Exchange)
+              .Append(':').Append(sub.TimeFrame)
+              .Append('|');
 
         var first = true;
         foreach (var key in record.Parameters.Keys
-            .Where(k => !IsDataSubscriptionParam(record.Parameters[k]))
+            .Where(k => k != "DataSubscriptions")
             .OrderBy(k => k, StringComparer.Ordinal))
         {
             if (!first) sb.Append('|');
             first = false;
             sb.Append(key).Append('=');
-            AppendValue(sb, record.Parameters[key]);
+            ParameterKeyBuilder.AppendValue(sb, record.Parameters[key]);
         }
         return sb.ToString();
     }
-
-    private static bool IsDataSubscriptionParam(object value) =>
-        value is DataSubscription or DataSubscriptionDto;
-
-    private static void AppendValue(System.Text.StringBuilder sb, object value) =>
-        ParameterKeyBuilder.AppendValue(sb, value);
 }

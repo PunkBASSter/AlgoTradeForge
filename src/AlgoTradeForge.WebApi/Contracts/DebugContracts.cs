@@ -2,7 +2,7 @@ namespace AlgoTradeForge.WebApi.Contracts;
 
 public sealed record StartDebugSessionRequest
 {
-    public required DataSubscriptionInput DataSubscription { get; init; }
+    public required List<DataSubscriptionInput> DataSubscriptions { get; init; }
     public required BacktestSettingsInput BacktestSettings { get; init; }
     public required string StrategyName { get; init; }
     public Dictionary<string, object>? StrategyParameters { get; init; }

@@ -12,10 +12,12 @@ using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Infrastructure;
 using AlgoTradeForge.Infrastructure.CandleIngestion;
+using AlgoTradeForge.WebApi;
 using AlgoTradeForge.Infrastructure.History;
 using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Plugins;
 using AlgoTradeForge.WebApi.Endpoints;
+using AlgoTradeForge.WebApi.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -98,6 +100,7 @@ foreach (var asm in pluginAssemblies)
 // Register optimization infrastructure (domain + plugin assemblies)
 Assembly[] strategyAssemblies = [typeof(AlgoTradeForge.Domain.Strategy.StrategyBase<>).Assembly, .. pluginAssemblies];
 builder.Services.AddInfrastructure(strategyAssemblies);
+builder.Services.AddHostedService<SqliteIndexMaintenanceService>();
 
 builder.Services.AddSingleton<IAssetRepository, FileSystemAssetRepository>();
 
@@ -117,6 +120,9 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Silently handle client-disconnect cancellations before DeveloperExceptionPage treats them as errors
+app.UseMiddleware<ClientDisconnectMiddleware>();
 
 // Configure HTTP pipeline
 if (app.Environment.IsDevelopment())

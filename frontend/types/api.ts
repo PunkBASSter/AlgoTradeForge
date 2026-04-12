@@ -67,7 +67,7 @@ export interface BacktestRun {
   strategyName: string;
   strategyVersion: string;
   parameters: Record<string, unknown>;
-  dataSubscription: DataSubscriptionResponse;
+  dataSubscriptions: DataSubscriptionResponse[];
   backtestSettings: BacktestSettingsResponse;
   startedAt: string;
   completedAt: string;
@@ -96,12 +96,13 @@ export interface OptimizationRun {
   filteredTrials: number;
   failedTrials: number;
   sortBy: string;
-  dataSubscription: DataSubscriptionResponse;
+  dataSubscriptions: DataSubscriptionResponse[];
   backtestSettings: BacktestSettingsResponse;
   maxParallelism: number;
   optimizationMethod?: string;
   generationsCompleted?: number;
   inputJson?: string;
+  trialCount: number;
   trials: BacktestRun[];
   failedTrialDetails: FailedTrialDetail[];
   status: string;
@@ -252,7 +253,7 @@ export interface BacktestSettingsInput {
 }
 
 export interface RunBacktestRequest {
-  dataSubscription: DataSubscriptionInput;
+  dataSubscriptions: DataSubscriptionInput[];
   backtestSettings: BacktestSettingsInput;
   strategyName: string;
   strategyParameters?: Record<string, unknown>;
@@ -278,8 +279,7 @@ export interface RunOptimizationRequest {
   backtestSettings: BacktestSettingsInput;
   optimizationSettings?: OptimizationSettingsInput;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
-  dataSubscriptions?: DataSubscription[];
-  subscriptionAxis?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[][];
 }
 
 export type OptimizationAxisOverride =
@@ -320,15 +320,13 @@ export interface RunGeneticOptimizationRequest {
   optimizationSettings?: OptimizationSettingsInput;
   geneticSettings?: GeneticSettingsInput;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
-  dataSubscriptions?: DataSubscription[];
-  subscriptionAxis?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[][];
 }
 
 export interface EvaluateOptimizationRequest {
   strategyName: string;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
-  dataSubscriptions?: DataSubscription[];
-  subscriptionAxis?: DataSubscription[];
+  subscriptionAxis?: DataSubscription[][];
   optimizationSettings?: OptimizationSettingsInput;
   mode?: "BruteForce" | "Genetic";
   geneticSettings?: GeneticSettingsInput;
@@ -445,7 +443,7 @@ export interface LiveLastBar {
 // ---------------------------------------------------------------------------
 
 export interface StartDebugSessionRequest {
-  dataSubscription: DataSubscriptionInput;
+  dataSubscriptions: DataSubscriptionInput[];
   backtestSettings: BacktestSettingsInput;
   strategyName: string;
   strategyParameters?: Record<string, unknown>;

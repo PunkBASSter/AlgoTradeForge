@@ -66,11 +66,10 @@ public class RunGeneticOptimizationCommandHandlerTests
             StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
         },
-        DataSubscriptions =
+        SubscriptionAxis =
         [
-            new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }
+            [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }]
         ],
-        SubscriptionAxis = null,
         Axes = new Dictionary<string, OptimizationAxisOverride>
         {
             ["Period"] = new RangeOverride(10, 20, 5)
@@ -115,7 +114,7 @@ public class RunGeneticOptimizationCommandHandlerTests
     {
         SetupStandardMocks();
         var handler = CreateHandler();
-        var command = CreateCommand() with { DataSubscriptions = [], SubscriptionAxis = [] };
+        var command = CreateCommand() with { SubscriptionAxis = new List<List<DataSubscriptionDto>>() };
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => handler.HandleAsync(command, TestContext.Current.CancellationToken));

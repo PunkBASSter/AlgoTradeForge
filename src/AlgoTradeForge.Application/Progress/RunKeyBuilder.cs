@@ -10,13 +10,13 @@ public static class RunKeyBuilder
 {
     public static string Build(RunBacktestCommand cmd)
     {
-        var sub = cmd.DataSubscription;
         var settings = cmd.BacktestSettings;
         var sb = new StringBuilder();
         sb.Append(cmd.StrategyName).Append('|');
-        sb.Append(sub.AssetName).Append('|');
-        sb.Append(sub.Exchange).Append('|');
-        sb.Append(!string.IsNullOrEmpty(sub.TimeFrame) ? sub.TimeFrame : "default").Append('|');
+        foreach (var sub in cmd.DataSubscriptions.OrderBy(s => s.AssetName).ThenBy(s => s.Exchange))
+            sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':')
+              .Append(!string.IsNullOrEmpty(sub.TimeFrame) ? sub.TimeFrame : "default").Append(',');
+        sb.Append('|');
         sb.Append(settings.StartTime.ToUniversalTime().ToString("O")).Append('|');
         sb.Append(settings.EndTime.ToUniversalTime().ToString("O")).Append('|');
         sb.Append(settings.InitialCash).Append('|');
@@ -45,26 +45,21 @@ public static class RunKeyBuilder
         sb.Append(cmd.MaxDegreeOfParallelism).Append('|');
         sb.Append(cmd.MaxCombinations);
 
-        if (cmd.DataSubscriptions is { Count: > 0 })
-        {
-            sb.Append('|');
-            var sorted = cmd.DataSubscriptions
-                .OrderBy(d => d.AssetName)
-                .ThenBy(d => d.Exchange)
-                .ThenBy(d => d.TimeFrame);
-            foreach (var sub in sorted)
-                sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
-        }
-
         if (cmd.SubscriptionAxis is { Count: > 0 })
         {
             sb.Append("|axis:");
-            var sortedAxis = cmd.SubscriptionAxis
-                .OrderBy(d => d.AssetName)
-                .ThenBy(d => d.Exchange)
-                .ThenBy(d => d.TimeFrame);
-            foreach (var sub in sortedAxis)
-                sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
+            var sortedGroups = cmd.SubscriptionAxis
+                .Select(g => g.OrderBy(d => d.AssetName).ThenBy(d => d.Exchange).ThenBy(d => d.TimeFrame).ToList())
+                .OrderBy(g => g[0].AssetName)
+                .ThenBy(g => g[0].Exchange)
+                .ThenBy(g => g[0].TimeFrame);
+            foreach (var sortedGroup in sortedGroups)
+            {
+                sb.Append('[');
+                foreach (var sub in sortedGroup)
+                    sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
+                sb.Append(']');
+            }
         }
 
         if (cmd.Axes is { Count: > 0 })

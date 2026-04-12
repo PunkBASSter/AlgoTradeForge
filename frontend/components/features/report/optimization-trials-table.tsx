@@ -1,16 +1,19 @@
 "use client";
 
-// T047 - OptimizationTrialsTable component
+// T047 - OptimizationTrialsTable component (infinite scroll)
 
-import { useState, useMemo } from "react";
+import { useMemo, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Table, type Column } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
+import { useInfiniteOptimizationTrials } from "@/hooks/use-optimizations";
 import { formatNumber, formatPercent } from "@/lib/utils/format";
 import type { BacktestRun, StartDebugSessionRequest } from "@/types/api";
 import { SESSION_KEYS } from "@/lib/constants";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const INTERNAL_PARAM_KEYS = new Set(["DataSubscriptions"]);
+const CHUNK_SIZE = 1000;
 
 /** Convert shorthand timeframe (e.g. "1h", "15m", "1d") to .NET TimeSpan format ("01:00:00"). */
 function toTimeSpan(tf: string): string {
@@ -27,14 +30,79 @@ function toTimeSpan(tf: string): string {
 }
 
 interface OptimizationTrialsTableProps {
-  trials: BacktestRun[];
+  optimizationId: string;
 }
 
 export function OptimizationTrialsTable({
-  trials,
+  optimizationId,
 }: OptimizationTrialsTableProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteOptimizationTrials(optimizationId, { limit: CHUNK_SIZE });
+
+  // Flatten all loaded pages into a single array
+  const trials = useMemo(
+    () => data?.pages.flatMap((p) => p.items) ?? [],
+    [data],
+  );
+
+  // Keep mutable refs so the observer callback always reads fresh state
+  const fetchRef = useRef(fetchNextPage);
+  fetchRef.current = fetchNextPage;
+  const hasNextRef = useRef(hasNextPage);
+  hasNextRef.current = hasNextPage;
+  const fetchingRef = useRef(isFetchingNextPage);
+  fetchingRef.current = isFetchingNextPage;
+
+  const sentinelNodeRef = useRef<HTMLDivElement | null>(null);
+
+  // Callback ref — attaches the IntersectionObserver when the sentinel mounts.
+  // rootMargin bottom = 100% of viewport height → triggers when the sentinel is
+  // one full screen away, giving the network time to respond before the user
+  // actually reaches the end.
+  const sentinelRef = useCallback((node: HTMLDivElement | null) => {
+    sentinelNodeRef.current = node;
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+    if (!node) return;
+
+    observerRef.current = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasNextRef.current && !fetchingRef.current) {
+          fetchRef.current();
+        }
+      },
+      { rootMargin: "0px 0px 800px 0px" },
+    );
+    observerRef.current.observe(node);
+  }, []);
+
+  // Catch-up: when a fetch completes, check if the sentinel is already visible.
+  // Handles rapid scrolling where the observer fired during a fetch and was
+  // rejected — without this, loading stalls at the bottom.
+  useEffect(() => {
+    if (isFetchingNextPage || !hasNextPage) return;
+    const el = sentinelNodeRef.current;
+    if (!el) return;
+
+    const rect = el.getBoundingClientRect();
+    if (rect.top <= window.innerHeight) {
+      fetchNextPage();
+    }
+  }, [isFetchingNextPage, hasNextPage, fetchNextPage]);
+
   const columns = useMemo<Column<BacktestRun>[]>(
     () => [
       {
@@ -49,9 +117,9 @@ export function OptimizationTrialsTable({
       },
       { key: "strategyVersion", header: "Version" },
       { key: "id", header: "Run ID", render: (v) => String(v).substring(0, 8) },
-      { key: "dataSubscription.assetName", header: "Asset", render: (_v, row) => row.dataSubscription.assetName },
-      { key: "dataSubscription.exchange", header: "Exchange", render: (_v, row) => row.dataSubscription.exchange },
-      { key: "dataSubscription.timeFrame", header: "TF", render: (_v, row) => row.dataSubscription.timeFrame },
+      { key: "dataSubscriptions.asset", header: "Asset", render: (_v, row) => row.dataSubscriptions[0]?.assetName },
+      { key: "dataSubscriptions.exchange", header: "Exchange", render: (_v, row) => row.dataSubscriptions[0]?.exchange },
+      { key: "dataSubscriptions.tf", header: "TF", render: (_v, row) => row.dataSubscriptions[0]?.timeFrame },
       {
         key: "fitness",
         header: "Fitness",
@@ -100,11 +168,11 @@ export function OptimizationTrialsTable({
             onClick={(e) => {
               e.stopPropagation();
               const config: StartDebugSessionRequest = {
-                dataSubscription: {
-                  assetName: row.dataSubscription.assetName,
-                  exchange: row.dataSubscription.exchange,
-                  timeFrame: toTimeSpan(row.dataSubscription.timeFrame),
-                },
+                dataSubscriptions: [{
+                  assetName: row.dataSubscriptions[0]?.assetName ?? "",
+                  exchange: row.dataSubscriptions[0]?.exchange ?? "",
+                  timeFrame: toTimeSpan(row.dataSubscriptions[0]?.timeFrame ?? ""),
+                }],
                 backtestSettings: {
                   initialCash: row.backtestSettings.initialCash,
                   startTime: row.backtestSettings.startTime,
@@ -163,79 +231,57 @@ export function OptimizationTrialsTable({
     [toast],
   );
 
-  const [assetFilter, setAssetFilter] = useState("");
-  const [exchangeFilter, setExchangeFilter] = useState("");
-  const [timeFrameFilter, setTimeFrameFilter] = useState("");
+  if (isLoading) {
+    return <Skeleton variant="rect" height="400px" />;
+  }
 
-  const filtered = useMemo(() => {
-    let result = trials;
-    if (assetFilter) {
-      const lower = assetFilter.toLowerCase();
-      result = result.filter((t) =>
-        t.dataSubscription.assetName.toLowerCase().includes(lower),
-      );
-    }
-    if (exchangeFilter) {
-      const lower = exchangeFilter.toLowerCase();
-      result = result.filter((t) =>
-        t.dataSubscription.exchange.toLowerCase().includes(lower),
-      );
-    }
-    if (timeFrameFilter) {
-      const lower = timeFrameFilter.toLowerCase();
-      result = result.filter((t) =>
-        t.dataSubscription.timeFrame.toLowerCase().includes(lower),
-      );
-    }
-    return result;
-  }, [trials, assetFilter, exchangeFilter, timeFrameFilter]);
+  const totalCount = data?.pages[0]?.totalCount ?? 0;
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
-          <label htmlFor="trial-filter-asset" className="text-xs text-text-muted">Asset</label>
-          <input
-            id="trial-filter-asset"
-            type="text"
-            placeholder="e.g. BTCUSDT"
-            value={assetFilter}
-            onChange={(e) => setAssetFilter(e.target.value)}
-            className="w-32 px-2 py-1.5 text-sm bg-bg-surface border border-border-default rounded text-text-primary placeholder:text-text-muted"
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="trial-filter-exchange" className="text-xs text-text-muted">Exchange</label>
-          <input
-            id="trial-filter-exchange"
-            type="text"
-            placeholder="e.g. Binance"
-            value={exchangeFilter}
-            onChange={(e) => setExchangeFilter(e.target.value)}
-            className="w-28 px-2 py-1.5 text-sm bg-bg-surface border border-border-default rounded text-text-primary placeholder:text-text-muted"
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="trial-filter-timeframe" className="text-xs text-text-muted">Timeframe</label>
-          <input
-            id="trial-filter-timeframe"
-            type="text"
-            placeholder="e.g. 00:15:00"
-            value={timeFrameFilter}
-            onChange={(e) => setTimeFrameFilter(e.target.value)}
-            className="w-28 px-2 py-1.5 text-sm bg-bg-surface border border-border-default rounded text-text-primary placeholder:text-text-muted"
-          />
-        </div>
-      </div>
-
+    <div className="space-y-2">
       <Table<BacktestRun>
         columns={columns}
-        data={filtered}
+        data={trials}
         rowKey="id"
         onRowClick={(row) => router.push(`/report/backtest/${row.id}`)}
         emptyMessage="No trials found"
         testId="trials-table"
       />
+      {/* Sentinel — observed with rootMargin so loading triggers ~800px before the end */}
+      <div ref={sentinelRef} aria-hidden style={{ height: 1 }} />
+      {isFetchingNextPage && (
+        <div className="flex justify-center py-3">
+          <span className="text-sm text-text-muted animate-pulse">Loading more trials...</span>
+        </div>
+      )}
+      {isError && !isFetchingNextPage && (
+        <div className="flex items-center justify-between px-4 py-3 rounded-md border border-accent-red bg-red-900/10">
+          <span className="text-sm text-accent-red">
+            Failed to load more trials{error?.message ? `: ${error.message}` : ""}
+          </span>
+          <button
+            onClick={() => fetchNextPage()}
+            className="px-3 py-1 text-sm rounded border border-border-default bg-bg-surface hover:bg-bg-hover text-text-primary transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {hasNextPage && !isFetchingNextPage && !isError && (
+        <div className="flex justify-center py-2">
+          <button
+            onClick={() => fetchNextPage()}
+            className="px-4 py-1.5 text-sm rounded border border-border-default bg-bg-surface hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
+          >
+            Load more trials
+          </button>
+        </div>
+      )}
+      {totalCount > 0 && (
+        <div className="text-xs text-text-muted text-right">
+          Showing {trials.length} of {totalCount.toLocaleString()}
+        </div>
+      )}
     </div>
   );
 }

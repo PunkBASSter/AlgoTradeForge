@@ -59,7 +59,7 @@ public class RunBacktestCommandHandlerTests
 
     private static RunBacktestCommand CreateCommand() => new()
     {
-        DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
+        DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }],
         BacktestSettings = new BacktestSettingsDto
         {
             InitialCash = 10_000m,

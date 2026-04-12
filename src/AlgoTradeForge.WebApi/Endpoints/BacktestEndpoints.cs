@@ -79,14 +79,17 @@ public static class BacktestEndpoints
         ICommandHandler<RunBacktestCommand, BacktestSubmissionDto> handler,
         CancellationToken ct)
     {
+        if (request.DataSubscriptions is not { Count: > 0 })
+            return Results.BadRequest("At least one data subscription is required.");
+
         var command = new RunBacktestCommand
         {
-            DataSubscription = new DataSubscriptionDto
+            DataSubscriptions = request.DataSubscriptions.Select(s => new DataSubscriptionDto
             {
-                AssetName = request.DataSubscription.AssetName,
-                Exchange = request.DataSubscription.Exchange,
-                TimeFrame = request.DataSubscription.TimeFrame ?? "",
-            },
+                AssetName = s.AssetName,
+                Exchange = s.Exchange,
+                TimeFrame = s.TimeFrame ?? "",
+            }).ToList(),
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = request.BacktestSettings.InitialCash,
@@ -239,7 +242,7 @@ public static class BacktestEndpoints
         StrategyName = r.StrategyName,
         StrategyVersion = r.StrategyVersion,
         Parameters = new Dictionary<string, object>(r.Parameters),
-        DataSubscription = r.DataSubscription,
+        DataSubscriptions = r.DataSubscriptions,
         BacktestSettings = r.BacktestSettings,
         StartedAt = r.StartedAt,
         CompletedAt = r.CompletedAt,

@@ -49,6 +49,7 @@ public sealed class DeltaZigZagTrend : Int64IndicatorBase
             ["BreakoutHigh"] = _breakoutHigh,
             ["BreakoutLow"] = _breakoutLow,
         };
+        ApplyBufferCapacity();
     }
 
     public override IReadOnlyDictionary<string, IndicatorBuffer<long>> Buffers => _buffers;

@@ -3,10 +3,16 @@
 ## Launch optimized but not overtrained Delta ZigZag Breakout to live on multiple (30+) assets: crypto, stocks, maybe FX, maybe FUT.
 
 ## QA
+- ModularStrategyBase cleanup required (e.g. from trailing stop, regime?), leaving only necessary things.
+- Refactor existing ZigZagTrendBreakout with using the modules
+- Debug Donchian Strategy
+- Pass validation at least somehow - know the metrics and what went wrong
 - Debug and fix trend zigzag
-- Add optimization Re-run button to expose the all same settings
 - Add preview/quick popup for optimization run
 - Estimate the data volume on the current runs, evaluate DB performance and further performance capacity
+
+## Data
+- Research on the collected data if liquidation streams and open interest of futures - estimate opportunities potential?
 
 ## Overfitting control
 @overfitting-detection-requirements.md

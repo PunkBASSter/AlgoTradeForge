@@ -30,85 +30,88 @@ public sealed class OptimizationSetupHelper(
     public IOptimizationSpaceProvider SpaceProvider => spaceProvider;
 
     /// <summary>
-    /// Routes DataSubscription/SubscriptionAxis DTOs into fixed vs axis lists.
-    /// Pure routing logic — no I/O. Used by both the execution path and the evaluate query.
+    /// Resolves subscription axis groups into domain objects and pre-loads all market data.
+    /// Each group is a list of subscriptions that will be used together in a single trial.
     /// </summary>
-    public static (List<T> Fixed, List<T> Axis) RouteSubscriptions<T>(
-        List<T>? dataSubs, List<T>? axisSubs)
-    {
-        var hasDataSubs = dataSubs is { Count: > 0 };
-        var hasAxisSubs = axisSubs is { Count: > 0 };
-
-        if (hasAxisSubs)
-            return (dataSubs ?? [], axisSubs!);
-
-        if (hasDataSubs && dataSubs!.Count > 1)
-            return ([], dataSubs);
-
-        return (dataSubs ?? [], []);
-    }
-
-    /// <summary>
-    /// Routes DataSubscription/SubscriptionAxis DTOs into resolved fixed and axis subscription lists,
-    /// pre-loading data into the cache. Encapsulates the shared routing logic between brute-force
-    /// and genetic optimization handlers.
-    /// </summary>
-    public async Task<(List<DataSubscription> FixedSubscriptions,
-        List<DataSubscription> AxisSubscriptions,
+    public async Task<(List<List<DataSubscription>> AxisSubscriptionGroups,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> DataCache)>
         ResolveSubscriptionsAsync(
-            List<DataSubscriptionDto>? dataSubs,
-            List<DataSubscriptionDto>? axisSubs,
+            List<List<DataSubscriptionDto>>? axisGroups,
             DateOnly fromDate, DateOnly toDate,
             CancellationToken ct)
     {
-        var hasDataSubs = dataSubs is { Count: > 0 };
-        var hasAxisSubs = axisSubs is { Count: > 0 };
+        if (axisGroups is not { Count: > 0 })
+            throw new ArgumentException("At least one SubscriptionAxis group must be provided.");
 
-        if (!hasDataSubs && !hasAxisSubs)
-            throw new ArgumentException("At least one DataSubscription or SubscriptionAxis entry must be provided.");
-
-        var (fixedDtos, axisDtos) = RouteSubscriptions(dataSubs, axisSubs);
-
-        var fixedSubscriptions = new List<DataSubscription>();
-        var axisSubscriptions = new List<DataSubscription>();
+        var axisSubscriptionGroups = new List<List<DataSubscription>>();
         var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
 
-        foreach (var sub in fixedDtos)
-            await ResolveAndCacheAsync(sub, fixedSubscriptions, dataCache, fromDate, toDate, ct);
-        foreach (var sub in axisDtos)
-            await ResolveAndCacheAsync(sub, axisSubscriptions, dataCache, fromDate, toDate, ct);
+        foreach (var dtoGroup in axisGroups)
+        {
+            var resolvedGroup = new List<DataSubscription>();
+            foreach (var sub in dtoGroup)
+                await ResolveAndCacheAsync(sub, resolvedGroup, dataCache, fromDate, toDate, ct);
+            axisSubscriptionGroups.Add(resolvedGroup);
+        }
 
-        return (fixedSubscriptions, axisSubscriptions, dataCache);
+        return (axisSubscriptionGroups, dataCache);
     }
 
     /// <summary>
-    /// Appends axis subscriptions as a discrete axis and filters out empty axes.
+    /// Validates that every subscription group has exactly <paramref name="requiredSubscriptionCount"/> items.
+    /// </summary>
+    public static void ValidateSubscriptionCounts(
+        string strategyName,
+        int requiredSubscriptionCount,
+        List<List<DataSubscription>> axisSubscriptionGroups)
+    {
+        for (var i = 0; i < axisSubscriptionGroups.Count; i++)
+        {
+            if (axisSubscriptionGroups[i].Count != requiredSubscriptionCount)
+                throw new ArgumentException(
+                    $"Strategy '{strategyName}' requires exactly {requiredSubscriptionCount} " +
+                    $"subscription(s) per group, but group {i + 1} has {axisSubscriptionGroups[i].Count}.");
+        }
+    }
+
+    /// <summary>
+    /// Extracts RequiredSubscriptionCount from a strategy params type.
+    /// </summary>
+    public static int GetRequiredSubscriptionCount(Type paramsType)
+    {
+        if (Activator.CreateInstance(paramsType) is StrategyParamsBase instance)
+            return instance.RequiredSubscriptionCount;
+        return 1;
+    }
+
+    /// <summary>
+    /// Appends axis subscription groups as a discrete axis and filters out empty axes.
+    /// Each group is a <c>List&lt;DataSubscription&gt;</c> that becomes one axis value.
     /// </summary>
     public static List<ResolvedAxis> AppendSubscriptionAxisAndFilter(
         IReadOnlyList<ResolvedAxis> resolvedAxes,
-        List<DataSubscription> axisSubscriptions)
+        List<List<DataSubscription>> axisSubscriptionGroups)
     {
-        return AppendSubscriptionAxisAndFilter(resolvedAxes, axisSubscriptions.Count,
-            axisSubscriptions.Cast<object>().ToList());
+        return AppendSubscriptionAxisAndFilter(resolvedAxes, axisSubscriptionGroups.Count,
+            axisSubscriptionGroups.Cast<object>().ToList());
     }
 
     /// <summary>
-    /// Count-only overload: appends a placeholder subscription axis with the given count
+    /// Count-only overload: appends a placeholder subscription axis with the given group count
     /// and filters out empty axes. Used by the evaluate path where actual subscriptions
     /// are not loaded.
     /// </summary>
     public static List<ResolvedAxis> AppendSubscriptionAxisAndFilter(
         IReadOnlyList<ResolvedAxis> resolvedAxes,
-        int subscriptionAxisCount,
+        int groupCount,
         List<object>? axisValues = null)
     {
         var allAxes = new List<ResolvedAxis>(resolvedAxes);
 
-        if (subscriptionAxisCount > 0)
+        if (groupCount > 0)
         {
             var values = axisValues
-                ?? Enumerable.Range(0, subscriptionAxisCount).Select(i => (object)i).ToList();
+                ?? Enumerable.Range(0, groupCount).Select(i => (object)i).ToList();
             allAxes.Add(new ResolvedDiscreteAxis("DataSubscriptions", values));
         }
 
@@ -152,7 +155,6 @@ public sealed class OptimizationSetupHelper(
         BacktestSettingsDto settings,
         ParameterCombination combination,
         IOptimizationStrategyFactory factory,
-        List<DataSubscription> fixedSubscriptions,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
         Guid optimizationRunId,
         DateTimeOffset startedAt,
@@ -161,16 +163,11 @@ public sealed class OptimizationSetupHelper(
     {
         var trialWatch = Stopwatch.StartNew();
 
-        // 1. Determine trial subscriptions first to find the correct asset
-        var trialSubscriptions = new List<DataSubscription>(fixedSubscriptions);
-        if (combination.Values.TryGetValue("DataSubscriptions", out var subObj) &&
-            subObj is DataSubscription dataSub)
-        {
-            trialSubscriptions.Add(dataSub);
-        }
-
-        if (trialSubscriptions.Count == 0)
-            throw new InvalidOperationException("Trial has no data subscriptions — this indicates a bug in subscription resolution.");
+        // 1. Extract trial subscriptions from the combination's axis group
+        var trialSubscriptions = combination.Values.TryGetValue("DataSubscriptions", out var subObj)
+            && subObj is List<DataSubscription> group
+            ? group
+            : throw new InvalidOperationException("Trial has no data subscriptions — this indicates a bug in subscription resolution.");
 
         // 2. Scale QuoteAsset params using this trial's actual asset
         var trialAsset = trialSubscriptions[0].Asset;
@@ -219,19 +216,19 @@ public sealed class OptimizationSetupHelper(
         var tradePnl = MetricsScaler.ScaleTradePnl(trades, scale);
         trialWatch.Stop();
 
-        var trialPrimarySub = strategy.DataSubscriptions[0];
         return new BacktestRunRecord
         {
             Id = Guid.NewGuid(),
             StrategyName = strategyName,
             StrategyVersion = strategy.Version,
             Parameters = combination.Values, // Store original unscaled values
-            DataSubscription = new DataSubscriptionDto
-            {
-                AssetName = AssetLookupName.From(trialPrimarySub.Asset),
-                Exchange = trialPrimarySub.Asset.Exchange,
-                TimeFrame = TimeFrameFormatter.Format(trialPrimarySub.TimeFrame),
-            },
+            DataSubscriptions = strategy.DataSubscriptions
+                .Select(s => new DataSubscriptionDto
+                {
+                    AssetName = AssetLookupName.From(s.Asset),
+                    Exchange = s.Asset.Exchange,
+                    TimeFrame = TimeFrameFormatter.Format(s.TimeFrame),
+                }).ToList(),
             BacktestSettings = settings,
             StartedAt = startedAt,
             CompletedAt = DateTimeOffset.UtcNow,
@@ -249,7 +246,7 @@ public sealed class OptimizationSetupHelper(
     public async Task SaveErrorOptimizationAsync(
         string strategyName,
         BacktestSettingsDto backtestSettings,
-        DataSubscriptionDto primarySub,
+        IReadOnlyList<DataSubscriptionDto> subscriptions,
         string sortBy,
         int maxParallelism,
         Guid optimizationRunId,
@@ -277,7 +274,7 @@ public sealed class OptimizationSetupHelper(
                 DurationMs = (long)(completedAt - startedAt).TotalMilliseconds,
                 TotalCombinations = estimatedCount,
                 SortBy = sortBy,
-                DataSubscription = primarySub,
+                DataSubscriptions = subscriptions,
                 BacktestSettings = backtestSettings,
                 MaxParallelism = maxParallelism,
                 Trials = topTrials.DeduplicateAndDrainSorted(),
@@ -298,21 +295,17 @@ public sealed class OptimizationSetupHelper(
         }
     }
 
-    public static DataSubscriptionDto GetPrimarySubscriptionDto(
-        List<DataSubscriptionDto>? fixedSubs, List<DataSubscriptionDto>? axisSubs)
+    public static IReadOnlyList<DataSubscriptionDto> GetSubscriptionDtos(
+        List<List<DataSubscriptionDto>>? axisGroups)
     {
-        if (fixedSubs is { Count: > 0 })
-        {
-            var primary = fixedSubs[0];
-            if (axisSubs is { Count: > 0 })
-                return primary with { AssetName = $"{primary.AssetName} (+{axisSubs.Count} more)" };
-            return primary;
-        }
+        if (axisGroups is not { Count: > 0 })
+            return [];
 
-        var first = axisSubs![0];
-        if (axisSubs.Count > 1)
-            return first with { AssetName = $"{first.AssetName} (+{axisSubs.Count - 1} more)" };
-        return first;
+        var firstGroup = axisGroups[0];
+        var groupLabel = string.Join("+", firstGroup.Select(s => s.AssetName));
+        if (axisGroups.Count > 1)
+            return [firstGroup[0] with { AssetName = $"{groupLabel} (+{axisGroups.Count - 1} more)" }];
+        return [firstGroup[0] with { AssetName = groupLabel }];
     }
 
     public static string CacheKey(Asset asset, TimeSpan timeFrame) =>

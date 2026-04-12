@@ -117,9 +117,9 @@ export function SessionConfigEditor({
     const text = editorViewRef.current.state.doc.toString();
     try {
       const config = JSON.parse(text) as StartDebugSessionRequest;
-      if (!config.dataSubscription?.assetName || !config.strategyName || !config.dataSubscription?.exchange) {
+      if (!config.dataSubscriptions?.[0]?.assetName || !config.strategyName || !config.dataSubscriptions?.[0]?.exchange) {
         setValidationError(
-          "Missing required fields: dataSubscription.assetName, strategyName, dataSubscription.exchange"
+          "Missing required fields: dataSubscriptions[0].assetName, strategyName, dataSubscriptions[0].exchange"
         );
         return;
       }

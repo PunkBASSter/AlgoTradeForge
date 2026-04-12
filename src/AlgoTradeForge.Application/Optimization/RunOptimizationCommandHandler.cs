@@ -8,7 +8,6 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Optimization.Space;
-using AlgoTradeForge.Domain.Strategy;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using static AlgoTradeForge.Domain.Reporting.MetricNames;
@@ -55,13 +54,17 @@ public sealed class RunOptimizationCommandHandler(
         var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
         var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
 
-        var (fixedSubscriptions, axisSubscriptions, dataCache) =
+        var (axisSubscriptionGroups, dataCache) =
             await helper.ResolveSubscriptionsAsync(
-                command.DataSubscriptions, command.SubscriptionAxis, fromDate, toDate, ct);
+                command.SubscriptionAxis, fromDate, toDate, ct);
+
+        var reqSubs = OptimizationSetupHelper.GetRequiredSubscriptionCount(descriptor.ParamsType);
+        OptimizationSetupHelper.ValidateSubscriptionCounts(
+            command.StrategyName, reqSubs, axisSubscriptionGroups);
 
         var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes);
         var activeAxes = OptimizationSetupHelper.AppendSubscriptionAxisAndFilter(
-            resolvedAxes, axisSubscriptions);
+            resolvedAxes, axisSubscriptionGroups);
 
         var estimatedCount = cartesianGenerator.EstimateCount(activeAxes);
         if (estimatedCount > command.MaxCombinations)
@@ -75,8 +78,8 @@ public sealed class RunOptimizationCommandHandler(
         await progressCache.SetRunKeyAsync(runKey, optimizationRunId, ct);
 
         // 4. Insert placeholder row so the run is visible in the list immediately
-        var optPrimarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
-            command.DataSubscriptions, command.SubscriptionAxis);
+        var optPrimarySub = OptimizationSetupHelper.GetSubscriptionDtos(
+            command.SubscriptionAxis);
         var maxParallelism = command.MaxDegreeOfParallelism > 0
             ? command.MaxDegreeOfParallelism
             : Environment.ProcessorCount;
@@ -90,7 +93,7 @@ public sealed class RunOptimizationCommandHandler(
             DurationMs = 0,
             TotalCombinations = estimatedCount,
             SortBy = Fitness,
-            DataSubscription = optPrimarySub,
+            DataSubscriptions = optPrimarySub,
             BacktestSettings = command.BacktestSettings,
             MaxParallelism = maxParallelism,
             Trials = [],
@@ -103,7 +106,7 @@ public sealed class RunOptimizationCommandHandler(
         var normalizer = NormalizingEnumerable.TryCreateNormalizer(descriptor.ParamsType);
         _ = Task.Factory.StartNew(
             () => RunOptimizationAsync(
-                command, fixedSubscriptions, dataCache, activeAxes,
+                command, dataCache, activeAxes,
                 estimatedCount, optimizationRunId, runKey, startedAt,
                 strategyFactory, normalizer),
             CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
@@ -118,7 +121,6 @@ public sealed class RunOptimizationCommandHandler(
 
     private async Task RunOptimizationAsync(
         RunOptimizationCommand command,
-        List<DataSubscription> fixedSubscriptions,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
         List<ResolvedAxis> activeAxes,
         long estimatedCount,
@@ -146,8 +148,8 @@ public sealed class RunOptimizationCommandHandler(
         var maxParallelism = command.MaxDegreeOfParallelism > 0
             ? command.MaxDegreeOfParallelism
             : Environment.ProcessorCount;
-        var optPrimarySub = OptimizationSetupHelper.GetPrimarySubscriptionDto(
-            command.DataSubscriptions, command.SubscriptionAxis);
+        var optPrimarySub = OptimizationSetupHelper.GetSubscriptionDtos(
+            command.SubscriptionAxis);
 
         try
         {
@@ -198,7 +200,7 @@ public sealed class RunOptimizationCommandHandler(
                                 {
                                     var record = helper.ExecuteTrial(
                                         command.StrategyName, command.BacktestSettings,
-                                        combination, factory, fixedSubscriptions, dataCache,
+                                        combination, factory, dataCache,
                                         optimizationRunId, startedAt, ref strategyVersion, trialCts.Token);
                                     record = record with { FitnessScore = fitnessFunc.Evaluate(record.Metrics) };
                                     if (filter.Passes(record.Metrics))
@@ -265,7 +267,7 @@ public sealed class RunOptimizationCommandHandler(
                 DurationMs = (long)stopwatch.Elapsed.TotalMilliseconds,
                 TotalCombinations = estimatedCount,
                 SortBy = Fitness,
-                DataSubscription = optPrimarySub,
+                DataSubscriptions = optPrimarySub,
                 BacktestSettings = command.BacktestSettings,
                 MaxParallelism = maxParallelism,
                 Trials = trials,

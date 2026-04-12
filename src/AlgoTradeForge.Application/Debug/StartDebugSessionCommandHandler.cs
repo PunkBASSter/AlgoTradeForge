@@ -18,7 +18,7 @@ public sealed class StartDebugSessionCommandHandler(
 {
     public async Task<DebugSessionDto> HandleAsync(StartDebugSessionCommand command, CancellationToken ct = default)
     {
-        var session = sessionStore.Create(command.DataSubscription.AssetName, command.StrategyName);
+        var session = sessionStore.Create(command.DataSubscriptions[0].AssetName, command.StrategyName);
         string? resolvedAssetName = null;
 
         IRunSink? sink = null;
@@ -31,7 +31,7 @@ public sealed class StartDebugSessionCommandHandler(
                 capturedIdentity = new RunIdentity
                 {
                     StrategyName = command.StrategyName,
-                    AssetName = command.DataSubscription.AssetName,
+                    AssetName = command.DataSubscriptions[0].AssetName,
                     StartTime = command.BacktestSettings.StartTime,
                     EndTime = command.BacktestSettings.EndTime,
                     InitialCash = options.InitialCash,

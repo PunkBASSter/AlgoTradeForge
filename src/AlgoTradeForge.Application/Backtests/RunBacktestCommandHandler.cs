@@ -92,7 +92,7 @@ public sealed class RunBacktestCommandHandler(
             {
                 StrategyName = command.StrategyName,
                 StrategyVersion = setup.Strategy.Version,
-                AssetName = command.DataSubscription.AssetName,
+                AssetName = command.DataSubscriptions[0].AssetName,
                 StartTime = command.BacktestSettings.StartTime,
                 EndTime = command.BacktestSettings.EndTime,
                 InitialCash = setup.Options.InitialCash,
@@ -141,7 +141,6 @@ public sealed class RunBacktestCommandHandler(
             var fitnessScore = fitnessFunc.Evaluate(scaledMetrics);
 
             var completedAt = DateTimeOffset.UtcNow;
-            var primarySub = setup.Strategy.DataSubscriptions[0];
 
             var equityCurve = MetricsScaler.ScaleEquityCurve(result.EquityCurve, setup.Scale);
             var tradePnl = MetricsScaler.ScaleTradePnl(trades, setup.Scale);
@@ -153,12 +152,13 @@ public sealed class RunBacktestCommandHandler(
                 StrategyVersion = setup.Strategy.Version,
                 Parameters = command.StrategyParameters?.AsReadOnly()
                     ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-                DataSubscription = new DataSubscriptionDto
-                {
-                    AssetName = AssetLookupName.From(primarySub.Asset),
-                    Exchange = primarySub.Asset.Exchange,
-                    TimeFrame = TimeFrameFormatter.Format(primarySub.TimeFrame),
-                },
+                DataSubscriptions = setup.Strategy.DataSubscriptions
+                    .Select(s => new DataSubscriptionDto
+                    {
+                        AssetName = AssetLookupName.From(s.Asset),
+                        Exchange = s.Asset.Exchange,
+                        TimeFrame = TimeFrameFormatter.Format(s.TimeFrame),
+                    }).ToList(),
                 BacktestSettings = command.BacktestSettings,
                 StartedAt = startedAt,
                 CompletedAt = completedAt,
@@ -209,12 +209,13 @@ public sealed class RunBacktestCommandHandler(
                 StrategyVersion = setup.Strategy.Version,
                 Parameters = command.StrategyParameters?.AsReadOnly()
                     ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-                DataSubscription = new DataSubscriptionDto
-                {
-                    AssetName = AssetLookupName.From(primarySub.Asset),
-                    Exchange = primarySub.Asset.Exchange,
-                    TimeFrame = TimeFrameFormatter.Format(primarySub.TimeFrame),
-                },
+                DataSubscriptions = setup.Strategy.DataSubscriptions
+                    .Select(s => new DataSubscriptionDto
+                    {
+                        AssetName = AssetLookupName.From(s.Asset),
+                        Exchange = s.Asset.Exchange,
+                        TimeFrame = TimeFrameFormatter.Format(s.TimeFrame),
+                    }).ToList(),
                 BacktestSettings = command.BacktestSettings,
                 StartedAt = startedAt,
                 CompletedAt = completedAt,

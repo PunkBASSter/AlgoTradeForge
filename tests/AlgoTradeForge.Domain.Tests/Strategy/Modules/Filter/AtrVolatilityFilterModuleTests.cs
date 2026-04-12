@@ -48,15 +48,15 @@ public sealed class AtrVolatilityFilterModuleTests
     }
 
     [Fact]
-    public void IsAllowed_BeforeInitialize_ReturnsFalse()
+    public void Evaluate_BeforeInitialize_ReturnsFalse()
     {
         var module = new AtrVolatilityFilterModule(DefaultParams);
 
-        Assert.False(module.IsAllowed(TestBars.Flat(), OrderSide.Buy));
+        Assert.Equal(0, module.Evaluate(TestBars.Flat(), OrderSide.Buy));
     }
 
     [Fact]
-    public void IsAllowed_BeforeWarmup_ReturnsFalse()
+    public void Evaluate_BeforeWarmup_ReturnsFalse()
     {
         var module = CreateModule();
         var bars = new List<Int64Bar>
@@ -67,11 +67,11 @@ public sealed class AtrVolatilityFilterModuleTests
         var series = TestBars.CreateSeries(bars.ToArray());
         module.ComputeIndicator(series);
 
-        Assert.False(module.IsAllowed(bars[^1], OrderSide.Buy));
+        Assert.Equal(0, module.Evaluate(bars[^1], OrderSide.Buy));
     }
 
     [Fact]
-    public void IsAllowed_AtrWithinRange_ReturnsTrue()
+    public void Evaluate_AtrWithinRange_ReturnsTrue()
     {
         var module = CreateModule(new AtrVolatilityFilterParams
         {
@@ -84,11 +84,11 @@ public sealed class AtrVolatilityFilterModuleTests
         var series = TestBars.CreateSeries(bars.ToArray());
         module.ComputeIndicator(series);
 
-        Assert.True(module.IsAllowed(bars[^1], OrderSide.Buy));
+        Assert.Equal(100, module.Evaluate(bars[^1], OrderSide.Buy));
     }
 
     [Fact]
-    public void IsAllowed_AtrBelowMin_ReturnsFalse()
+    public void Evaluate_AtrBelowMin_ReturnsFalse()
     {
         var module = CreateModule(new AtrVolatilityFilterParams
         {
@@ -101,11 +101,11 @@ public sealed class AtrVolatilityFilterModuleTests
         var series = TestBars.CreateSeries(bars.ToArray());
         module.ComputeIndicator(series);
 
-        Assert.False(module.IsAllowed(bars[^1], OrderSide.Buy));
+        Assert.Equal(0, module.Evaluate(bars[^1], OrderSide.Buy));
     }
 
     [Fact]
-    public void IsAllowed_AtrAboveMax_ReturnsFalse()
+    public void Evaluate_AtrAboveMax_ReturnsFalse()
     {
         var module = CreateModule(new AtrVolatilityFilterParams
         {
@@ -118,11 +118,11 @@ public sealed class AtrVolatilityFilterModuleTests
         var series = TestBars.CreateSeries(bars.ToArray());
         module.ComputeIndicator(series);
 
-        Assert.False(module.IsAllowed(bars[^1], OrderSide.Buy));
+        Assert.Equal(0, module.Evaluate(bars[^1], OrderSide.Buy));
     }
 
     [Fact]
-    public void IsAllowed_MaxAtrZero_NoUpperLimit()
+    public void Evaluate_MaxAtrZero_NoUpperLimit()
     {
         var module = CreateModule(new AtrVolatilityFilterParams
         {
@@ -135,11 +135,11 @@ public sealed class AtrVolatilityFilterModuleTests
         var series = TestBars.CreateSeries(bars.ToArray());
         module.ComputeIndicator(series);
 
-        Assert.True(module.IsAllowed(bars[^1], OrderSide.Buy));
+        Assert.Equal(100, module.Evaluate(bars[^1], OrderSide.Buy));
     }
 
     [Fact]
-    public void IsAllowed_MinAtrZero_NoLowerLimit()
+    public void Evaluate_MinAtrZero_NoLowerLimit()
     {
         var module = CreateModule(new AtrVolatilityFilterParams
         {
@@ -152,19 +152,19 @@ public sealed class AtrVolatilityFilterModuleTests
         var series = TestBars.CreateSeries(bars.ToArray());
         module.ComputeIndicator(series);
 
-        Assert.True(module.IsAllowed(bars[^1], OrderSide.Buy));
+        Assert.Equal(100, module.Evaluate(bars[^1], OrderSide.Buy));
     }
 
     [Fact]
-    public void IsAllowed_DirectionAgnostic_SameResultForLongAndShort()
+    public void Evaluate_DirectionAgnostic_SameResultForLongAndShort()
     {
         var module = CreateModule();
         var bars = CreateBarsWithKnownAtr(4, range: 30);
         var series = TestBars.CreateSeries(bars.ToArray());
         module.ComputeIndicator(series);
 
-        var longResult = module.IsAllowed(bars[^1], OrderSide.Buy);
-        var shortResult = module.IsAllowed(bars[^1], OrderSide.Sell);
+        var longResult = module.Evaluate(bars[^1], OrderSide.Buy);
+        var shortResult = module.Evaluate(bars[^1], OrderSide.Sell);
 
         Assert.Equal(longResult, shortResult);
     }
@@ -186,7 +186,7 @@ public sealed class AtrVolatilityFilterModuleTests
         var series = TestBars.CreateSeries(bars.ToArray());
         module.ComputeIndicator(series);
 
-        Assert.True(module.IsAllowed(bars[^1], OrderSide.Buy));
+        Assert.Equal(100, module.Evaluate(bars[^1], OrderSide.Buy));
     }
 
     [Fact]

@@ -91,7 +91,7 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
 
         for (var t = 0; t < trials.Count; t++)
         {
-            var key = (trials[t].DataSubscription, trials[t].EquityCurve.Count);
+            var key = (trials[t].DataSubscriptions[0], trials[t].EquityCurve.Count);
             if (!timelineKeys.TryGetValue(key, out var tlIdx))
             {
                 tlIdx = timelines.Count;

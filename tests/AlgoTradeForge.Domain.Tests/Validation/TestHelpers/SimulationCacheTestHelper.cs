@@ -19,4 +19,19 @@ internal static class SimulationCacheTestHelper
             trials[t] = new TrialData(0, pnlMatrix[t]);
         return new SimulationCache([timestamps], trials);
     }
+
+    /// <summary>
+    /// Creates a SimulationCache with multiple timelines (one per subscription group).
+    /// Each trial is assigned to a specific timeline via <paramref name="timelineAssignments"/>.
+    /// </summary>
+    internal static SimulationCache CreateMultiTimeline(
+        long[][] timelines,
+        double[][] pnlMatrix,
+        int[] timelineAssignments)
+    {
+        var trials = new TrialData[pnlMatrix.Length];
+        for (var t = 0; t < pnlMatrix.Length; t++)
+            trials[t] = new TrialData(timelineAssignments[t], pnlMatrix[t]);
+        return new SimulationCache(timelines, trials);
+    }
 }

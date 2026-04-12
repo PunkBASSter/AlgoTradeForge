@@ -26,12 +26,13 @@ public sealed record OptimizationRunRecord
     public required long DurationMs { get; init; }
     public required long TotalCombinations { get; init; }
     public required string SortBy { get; init; }
-    public required DataSubscriptionDto DataSubscription { get; init; }
+    public required IReadOnlyList<DataSubscriptionDto> DataSubscriptions { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public required int MaxParallelism { get; init; }
     public long FilteredTrials { get; init; }
     public long FailedTrials { get; init; }
     public long DedupSkipped { get; init; }
+    public int TrialCount { get; init; }
     public required IReadOnlyList<BacktestRunRecord> Trials { get; init; }
     public IReadOnlyList<FailedTrialRecord> FailedTrialDetails { get; init; } = [];
     public string? InputJson { get; init; }

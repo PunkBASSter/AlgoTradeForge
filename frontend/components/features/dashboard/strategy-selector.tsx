@@ -26,9 +26,11 @@ export function StrategySelector({ selected }: StrategySelectorProps) {
   // Derive mode from current URL
   const mode = pathname.endsWith("/optimization")
     ? "optimization"
-    : pathname.endsWith("/live")
-      ? "live"
-      : "backtest";
+    : pathname.endsWith("/validation")
+      ? "validation"
+      : pathname.endsWith("/live")
+        ? "live"
+        : "backtest";
 
   return (
     <div className="space-y-1">

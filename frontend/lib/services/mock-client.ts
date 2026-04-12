@@ -97,13 +97,13 @@ export const mockClient: typeof import("./api-client").apiClient & {
       );
     }
     if (params?.assetName) {
-      filtered = filtered.filter((b) => b.dataSubscription.assetName === params.assetName);
+      filtered = filtered.filter((b) => b.dataSubscriptions[0]?.assetName === params.assetName);
     }
     if (params?.exchange) {
-      filtered = filtered.filter((b) => b.dataSubscription.exchange === params.exchange);
+      filtered = filtered.filter((b) => b.dataSubscriptions[0]?.exchange === params.exchange);
     }
     if (params?.timeFrame) {
-      filtered = filtered.filter((b) => b.dataSubscription.timeFrame === params.timeFrame);
+      filtered = filtered.filter((b) => b.dataSubscriptions[0]?.timeFrame === params.timeFrame);
     }
     if (params?.standaloneOnly) {
       filtered = filtered.filter((b) => b.runMode === "standalone");
@@ -180,13 +180,13 @@ export const mockClient: typeof import("./api-client").apiClient & {
       );
     }
     if (params?.assetName) {
-      filtered = filtered.filter((o) => o.dataSubscription.assetName === params.assetName);
+      filtered = filtered.filter((o) => o.dataSubscriptions[0]?.assetName === params.assetName);
     }
     if (params?.exchange) {
-      filtered = filtered.filter((o) => o.dataSubscription.exchange === params.exchange);
+      filtered = filtered.filter((o) => o.dataSubscriptions[0]?.exchange === params.exchange);
     }
     if (params?.timeFrame) {
-      filtered = filtered.filter((o) => o.dataSubscription.timeFrame === params.timeFrame);
+      filtered = filtered.filter((o) => o.dataSubscriptions[0]?.timeFrame === params.timeFrame);
     }
 
     const offset = params?.offset ?? 0;
@@ -209,6 +209,27 @@ export const mockClient: typeof import("./api-client").apiClient & {
       throw new Error(`API error 404: Optimization ${id} not found`);
     }
     return found;
+  },
+
+  async getOptimizationTrials(
+    id: string,
+    params?: { limit?: number; offset?: number; sortBy?: string },
+  ): Promise<PagedResponse<BacktestRun>> {
+    await delay();
+    const found = optimizations.items.find((o) => o.id === id);
+    if (!found) {
+      throw new Error(`API error 404: Optimization ${id} not found`);
+    }
+    const limit = params?.limit ?? 100;
+    const offset = params?.offset ?? 0;
+    const trials = found.trials.slice(offset, offset + limit);
+    return {
+      items: trials,
+      totalCount: found.trials.length,
+      limit,
+      offset,
+      hasMore: offset + trials.length < found.trials.length,
+    };
   },
 
   async runOptimization(
@@ -246,7 +267,7 @@ export const mockClient: typeof import("./api-client").apiClient & {
   async getOptimizationStatus(id: string): Promise<OptimizationStatus> {
     await delay();
     const found = optimizations.items.find((o) => o.id === id);
-    return { id, completedCombinations: found?.totalCombinations ?? 0, totalCombinations: found?.totalCombinations ?? 0, result: found };
+    return { id, completedCombinations: found?.totalCombinations ?? 0, totalCombinations: found?.totalCombinations ?? 0, result: found, status: found?.status ?? "Completed" };
   },
 
   async cancelOptimization(id: string): Promise<{ id: string; status: string }> {
@@ -330,7 +351,7 @@ export const mockClient: typeof import("./api-client").apiClient & {
     await delay();
     return {
       sessionId: "mock-debug-session-001",
-      assetName: req.dataSubscription.assetName,
+      assetName: req.dataSubscriptions[0]?.assetName ?? "",
       strategyName: req.strategyName,
       createdAt: new Date().toISOString(),
     };

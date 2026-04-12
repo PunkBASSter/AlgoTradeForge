@@ -105,7 +105,7 @@ export default function DebugPage() {
     sessionStorage.removeItem(SESSION_KEYS.DEBUG_CONFIG);
     try {
       const config = JSON.parse(stored) as StartDebugSessionRequest;
-      if (config.strategyName && config.dataSubscription) return config;
+      if (config.strategyName && config.dataSubscriptions) return config;
     } catch { /* invalid JSON */ }
     return null;
   });

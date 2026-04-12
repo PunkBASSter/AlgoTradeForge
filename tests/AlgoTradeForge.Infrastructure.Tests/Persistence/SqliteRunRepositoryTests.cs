@@ -62,7 +62,7 @@ public class SqliteRunRepositoryTests : IDisposable
             StrategyName = strategyName,
             StrategyVersion = "1.0.0",
             Parameters = new Dictionary<string, object> { ["Quantity"] = 1.5m },
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10000m,
@@ -135,9 +135,9 @@ public class SqliteRunRepositoryTests : IDisposable
         Assert.Equal(1.5m, loaded.Parameters["Quantity"]);
 
         // Data subscription fields
-        Assert.Equal("BTCUSDT", loaded.DataSubscription.AssetName);
-        Assert.Equal("Binance", loaded.DataSubscription.Exchange);
-        Assert.Equal("1h", loaded.DataSubscription.TimeFrame);
+        Assert.Equal("BTCUSDT", loaded.DataSubscriptions[0].AssetName);
+        Assert.Equal("Binance", loaded.DataSubscriptions[0].Exchange);
+        Assert.Equal("1h", loaded.DataSubscriptions[0].TimeFrame);
     }
 
     // ── GetById returns null for non-existent ──────────────────────────
@@ -172,12 +172,12 @@ public class SqliteRunRepositoryTests : IDisposable
         var r1 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
         };
         var r2 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            DataSubscription = new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "4h" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "4h" }],
         };
 
         await _repo.SaveAsync(r1, TestContext.Current.CancellationToken);
@@ -185,7 +185,7 @@ public class SqliteRunRepositoryTests : IDisposable
 
         var results = await _repo.QueryAsync(new BacktestRunQuery { AssetName = "BTCUSDT" }, TestContext.Current.CancellationToken);
         Assert.Single(results.Items);
-        Assert.Equal("BTCUSDT", results.Items[0].DataSubscription.AssetName);
+        Assert.Equal("BTCUSDT", results.Items[0].DataSubscriptions[0].AssetName);
     }
 
     // ── Query by timeframe ─────────────────────────────────────────────
@@ -196,12 +196,12 @@ public class SqliteRunRepositoryTests : IDisposable
         var r1 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
         };
         var r2 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "4h" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "4h" }],
         };
 
         await _repo.SaveAsync(r1, TestContext.Current.CancellationToken);
@@ -209,7 +209,7 @@ public class SqliteRunRepositoryTests : IDisposable
 
         var results = await _repo.QueryAsync(new BacktestRunQuery { TimeFrame = "4h" }, TestContext.Current.CancellationToken);
         Assert.Single(results.Items);
-        Assert.Equal("4h", results.Items[0].DataSubscription.TimeFrame);
+        Assert.Equal("4h", results.Items[0].DataSubscriptions[0].TimeFrame);
     }
 
     // ── Query by date range ────────────────────────────────────────────
@@ -317,7 +317,7 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 60000,
             TotalCombinations = 2,
             SortBy = "SharpeRatio",
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10000m,
@@ -343,13 +343,14 @@ public class SqliteRunRepositoryTests : IDisposable
         Assert.Equal("SharpeRatio", loaded.SortBy);
         Assert.Equal(10000m, loaded.BacktestSettings.InitialCash);
         Assert.Equal(4, loaded.MaxParallelism);
-        Assert.Equal(2, loaded.Trials.Count);
+        Assert.Equal(2, loaded.TrialCount);
+        Assert.Empty(loaded.Trials); // Trials loaded separately via GetOptimizationTrialsAsync
         Assert.Equal(OptimizationRunStatus.Completed, loaded.Status);
 
         // Verify optimization data subscription fields
-        Assert.Equal("BTCUSDT", loaded.DataSubscription.AssetName);
-        Assert.Equal("Binance", loaded.DataSubscription.Exchange);
-        Assert.Equal("1h", loaded.DataSubscription.TimeFrame);
+        Assert.Equal("BTCUSDT", loaded.DataSubscriptions[0].AssetName);
+        Assert.Equal("Binance", loaded.DataSubscriptions[0].Exchange);
+        Assert.Equal("1h", loaded.DataSubscriptions[0].TimeFrame);
     }
 
     // ── Get optimization by ID with all trials ─────────────────────────
@@ -382,7 +383,7 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 100,
             TotalCombinations = 1,
             SortBy = "SharpeRatio",
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10000m,
@@ -433,7 +434,7 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 100,
             TotalCombinations = 1,
             SortBy = "SharpeRatio",
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10000m,
@@ -554,7 +555,7 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 60000,
             TotalCombinations = 1,
             SortBy = "SharpeRatio",
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10000m,
@@ -726,7 +727,7 @@ public class SqliteRunRepositoryTests : IDisposable
                 DurationMs = 1000,
                 TotalCombinations = 1,
                 SortBy = "SharpeRatio",
-                DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+                DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
                 BacktestSettings = new BacktestSettingsDto
                 {
                     InitialCash = 10000m,
@@ -860,7 +861,7 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 100,
             TotalCombinations = 3,
             SortBy = MetricNames.Fitness,
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10000m,
@@ -875,13 +876,13 @@ public class SqliteRunRepositoryTests : IDisposable
         await _repo.InsertOptimizationPlaceholderAsync(optRecord, TestContext.Current.CancellationToken);
         await _repo.SaveOptimizationAsync(optRecord, TestContext.Current.CancellationToken);
 
-        var loaded = await _repo.GetOptimizationByIdAsync(optId, TestContext.Current.CancellationToken);
+        var paged = await _repo.GetOptimizationTrialsAsync(optId, ct: TestContext.Current.CancellationToken);
 
-        Assert.NotNull(loaded);
-        Assert.Equal(3, loaded.Trials.Count);
+        Assert.Equal(3, paged.TotalCount);
+        Assert.Equal(3, paged.Items.Count);
         // Should be sorted descending by fitness_score
-        Assert.Equal(0.9, loaded.Trials[0].FitnessScore!.Value, precision: 10);
-        Assert.Equal(0.7, loaded.Trials[1].FitnessScore!.Value, precision: 10);
-        Assert.Equal(0.5, loaded.Trials[2].FitnessScore!.Value, precision: 10);
+        Assert.Equal(0.9, paged.Items[0].FitnessScore!.Value, precision: 10);
+        Assert.Equal(0.7, paged.Items[1].FitnessScore!.Value, precision: 10);
+        Assert.Equal(0.5, paged.Items[2].FitnessScore!.Value, precision: 10);
     }
 }

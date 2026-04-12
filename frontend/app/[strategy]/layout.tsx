@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { StrategySelector } from "@/components/features/dashboard/strategy-selector";
@@ -29,23 +29,26 @@ function useSidebarCollapsed() {
 
 export default function StrategyLayout({
   children,
-  params,
 }: {
   children: React.ReactNode;
-  params: Promise<{ strategy: string }>;
 }) {
-  const { strategy } = use(params);
+  const pathname = usePathname();
+  const strategy = pathname.split("/").filter(Boolean)[0] ?? "all";
   const selected = strategy === "all" ? null : strategy;
   const { collapsed, toggle } = useSidebarCollapsed();
   const { open, setOpen, initialContent } = useRunNew();
-  const pathname = usePathname();
   const queryClient = useQueryClient();
 
   const mode = pathname.endsWith("/optimization")
     ? "optimization"
-    : pathname.endsWith("/live")
-      ? "live"
-      : "backtest";
+    : pathname.endsWith("/validation")
+      ? "validation"
+      : pathname.endsWith("/live")
+        ? "live"
+        : "backtest";
+
+  // RunNewPanel doesn't support "validation" mode; fall back to backtest
+  const runNewMode = mode === "validation" ? "backtest" : mode;
 
   const handleRunNewSuccess = () => {
     queryClient.invalidateQueries({ queryKey: ["backtests"] });
@@ -114,7 +117,7 @@ export default function StrategyLayout({
       <RunNewPanel
         open={open}
         onClose={() => setOpen(false)}
-        mode={mode}
+        mode={runNewMode}
         selectedStrategy={selected}
         onSuccess={handleRunNewSuccess}
         initialContent={initialContent}

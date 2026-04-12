@@ -5,7 +5,7 @@ namespace AlgoTradeForge.Application.Backtests;
 
 public sealed record RunBacktestCommand : ICommand<BacktestSubmissionDto>, IBacktestSetupCommand
 {
-    public required DataSubscriptionDto DataSubscription { get; init; }
+    public required IReadOnlyList<DataSubscriptionDto> DataSubscriptions { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public required string StrategyName { get; init; }
     public bool UseDetailedExecutionLogic { get; init; }

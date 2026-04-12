@@ -86,10 +86,11 @@ export function RunProgress({ runId, mode, onComplete }: RunProgressProps) {
 
   const derivedStatus = getDerivedStatus();
 
-  // Notify parent on completion (once only)
+  // Notify parent when run reaches any terminal state (completed, failed, cancelled)
   const hasNotifiedRef = useRef(false);
   useEffect(() => {
-    if (derivedStatus === "Completed" && onComplete && !hasNotifiedRef.current) {
+    const isTerminal = derivedStatus === "Completed" || derivedStatus === "Failed" || derivedStatus === "Cancelled";
+    if (isTerminal && onComplete && !hasNotifiedRef.current) {
       hasNotifiedRef.current = true;
       onComplete();
     }

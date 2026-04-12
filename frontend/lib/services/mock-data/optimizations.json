@@ -11,13 +11,15 @@
       "filteredTrials": 12,
       "failedTrials": 0,
       "sortBy": "sharpeRatio",
+      "status": "Completed",
+      "trialCount": 36,
       "maxParallelism": 4,
       "failedTrialDetails": [],
-      "dataSubscription": {
+      "dataSubscriptions": [{
         "assetName": "BTCUSDT",
         "exchange": "Binance",
         "timeFrame": "01:00:00"
-      },
+      }],
       "backtestSettings": {
         "initialCash": 10000,
         "commissionPerTrade": 0.001,
@@ -55,11 +57,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-001",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "BTCUSDT",
             "exchange": "Binance",
             "timeFrame": "01:00:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -97,11 +99,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-001",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "BTCUSDT",
             "exchange": "Binance",
             "timeFrame": "01:00:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -139,11 +141,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-001",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "BTCUSDT",
             "exchange": "Binance",
             "timeFrame": "01:00:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -181,11 +183,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-001",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "BTCUSDT",
             "exchange": "Binance",
             "timeFrame": "01:00:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -223,11 +225,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-001",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "BTCUSDT",
             "exchange": "Binance",
             "timeFrame": "01:00:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -249,6 +251,8 @@
       "filteredTrials": 8,
       "failedTrials": 2,
       "sortBy": "netProfit",
+      "status": "Completed",
+      "trialCount": 62,
       "maxParallelism": 8,
       "failedTrialDetails": [
         {
@@ -263,11 +267,11 @@
           "occurrenceCount": 2
         }
       ],
-      "dataSubscription": {
+      "dataSubscriptions": [{
         "assetName": "ETHUSDT",
         "exchange": "Binance",
         "timeFrame": "01:00:00"
-      },
+      }],
       "backtestSettings": {
         "initialCash": 10000,
         "commissionPerTrade": 0.001,
@@ -306,11 +310,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-002",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "ETHUSDT",
             "exchange": "Binance",
             "timeFrame": "01:00:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -349,11 +353,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-002",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "ETHUSDT",
             "exchange": "Binance",
             "timeFrame": "01:00:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -392,11 +396,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-002",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "ETHUSDT",
             "exchange": "Binance",
             "timeFrame": "01:00:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -435,11 +439,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-002",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "ETHUSDT",
             "exchange": "Binance",
             "timeFrame": "01:00:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -461,13 +465,15 @@
       "filteredTrials": 25,
       "failedTrials": 0,
       "sortBy": "profitFactor",
+      "status": "Completed",
+      "trialCount": 95,
       "maxParallelism": 6,
       "failedTrialDetails": [],
-      "dataSubscription": {
+      "dataSubscriptions": [{
         "assetName": "SOLUSDT",
         "exchange": "Binance",
         "timeFrame": "00:15:00"
-      },
+      }],
       "backtestSettings": {
         "initialCash": 10000,
         "commissionPerTrade": 0.001,
@@ -506,11 +512,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-003",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "SOLUSDT",
             "exchange": "Binance",
             "timeFrame": "00:15:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -549,11 +555,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-003",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "SOLUSDT",
             "exchange": "Binance",
             "timeFrame": "00:15:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -592,11 +598,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-003",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "SOLUSDT",
             "exchange": "Binance",
             "timeFrame": "00:15:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -635,11 +641,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-003",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "SOLUSDT",
             "exchange": "Binance",
             "timeFrame": "00:15:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -678,11 +684,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-003",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "SOLUSDT",
             "exchange": "Binance",
             "timeFrame": "00:15:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,
@@ -721,11 +727,11 @@
           "hasCandleData": false,
           "runMode": "optimization",
           "optimizationRunId": "opt-003",
-          "dataSubscription": {
+          "dataSubscriptions": [{
             "assetName": "SOLUSDT",
             "exchange": "Binance",
             "timeFrame": "00:15:00"
-          },
+          }],
           "backtestSettings": {
             "initialCash": 10000,
             "commissionPerTrade": 0.001,

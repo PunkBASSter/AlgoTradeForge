@@ -12,6 +12,11 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
 {
     private readonly SpaceDescriptorBuilder _descriptorBuilder;
 
+    private static readonly JsonSerializerOptions CaseInsensitiveJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     public OptimizationStrategyFactory(SpaceDescriptorBuilder descriptorBuilder)
     {
         _descriptorBuilder = descriptorBuilder;
@@ -136,6 +141,11 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
             return Enum.ToObject(targetType, Convert.ToInt32(value));
         }
 
+        // String containing JSON for complex types (e.g., from DB round-trip via GetRawText)
+        if (value is string jsonString && !targetType.IsPrimitive && !targetType.IsEnum)
+            return JsonSerializer.Deserialize(jsonString, targetType, CaseInsensitiveJsonOptions)
+                ?? throw new ArgumentException($"Cannot deserialize '{jsonString}' as {targetType.Name}.");
+
         return Convert.ChangeType(value, targetType);
     }
 
@@ -156,7 +166,14 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
                 : Enum.ToObject(targetType, element.GetInt32());
         }
 
-        return element.Deserialize(targetType)!;
+        // String containing embedded JSON (e.g., from double-serialized API input)
+        if (element.ValueKind == JsonValueKind.String)
+            return JsonSerializer.Deserialize(element.GetString()!, targetType, CaseInsensitiveJsonOptions)
+                ?? throw new ArgumentException($"Cannot deserialize JSON string as {targetType.Name}.");
+
+        // Object/array with potentially camelCase keys
+        return element.Deserialize(targetType, CaseInsensitiveJsonOptions)
+            ?? throw new ArgumentException($"Cannot deserialize JSON element as {targetType.Name}.");
     }
 
     private static IInt64BarStrategy CreateStrategyInstance(Type strategyType, object paramsInstance, IIndicatorFactory indicatorFactory)

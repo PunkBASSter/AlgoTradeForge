@@ -33,9 +33,10 @@ public sealed class TemplateRoundTripTests
 
         Assert.NotNull(request);
         Assert.Equal("BuyAndHold", request.StrategyName);
-        Assert.NotNull(request.DataSubscription);
-        Assert.Equal("BTCUSDT", request.DataSubscription.AssetName);
-        Assert.Equal("Binance", request.DataSubscription.Exchange);
+        Assert.NotNull(request.DataSubscriptions);
+        Assert.NotEmpty(request.DataSubscriptions);
+        Assert.Equal("BTCUSDT", request.DataSubscriptions[0].AssetName);
+        Assert.Equal("Binance", request.DataSubscriptions[0].Exchange);
         Assert.NotNull(request.BacktestSettings);
         Assert.True(request.BacktestSettings.InitialCash > 0, "InitialCash should be positive");
     }
@@ -55,8 +56,8 @@ public sealed class TemplateRoundTripTests
         Assert.True(request.BacktestSettings.InitialCash > 0, "InitialCash should be positive");
         Assert.NotNull(request.SubscriptionAxis);
         Assert.NotEmpty(request.SubscriptionAxis);
-        Assert.Equal("BTCUSDT", request.SubscriptionAxis[0].AssetName);
-        Assert.Equal("Binance", request.SubscriptionAxis[0].Exchange);
+        Assert.Equal("BTCUSDT", request.SubscriptionAxis[0][0].AssetName);
+        Assert.Equal("Binance", request.SubscriptionAxis[0][0].Exchange);
         Assert.NotNull(request.OptimizationSettings.FitnessWeights);
         Assert.Equal(0.5, request.OptimizationSettings.FitnessWeights.SharpeWeight);
         Assert.Equal(0.2, request.OptimizationSettings.FitnessWeights.SortinoWeight);
@@ -93,8 +94,9 @@ public sealed class TemplateRoundTripTests
 
         Assert.NotNull(request);
         Assert.Equal("BuyAndHold", request.StrategyName);
-        Assert.NotNull(request.DataSubscription);
-        Assert.Equal("BTCUSDT", request.DataSubscription.AssetName);
+        Assert.NotNull(request.DataSubscriptions);
+        Assert.NotEmpty(request.DataSubscriptions);
+        Assert.Equal("BTCUSDT", request.DataSubscriptions[0].AssetName);
         Assert.NotNull(request.BacktestSettings);
         Assert.True(request.BacktestSettings.InitialCash > 0, "InitialCash should be positive");
     }
@@ -114,7 +116,7 @@ public sealed class TemplateRoundTripTests
         Assert.True(request.BacktestSettings.InitialCash > 0, "InitialCash should be positive");
         Assert.NotNull(request.SubscriptionAxis);
         Assert.NotEmpty(request.SubscriptionAxis);
-        Assert.Equal("BTCUSDT", request.SubscriptionAxis[0].AssetName);
+        Assert.Equal("BTCUSDT", request.SubscriptionAxis[0][0].AssetName);
         Assert.NotNull(request.GeneticSettings);
         Assert.Equal(2, request.GeneticSettings.EliteCount);
         Assert.Equal(0.85, request.GeneticSettings.CrossoverRate);

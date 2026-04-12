@@ -25,7 +25,7 @@ public static class SimulationCacheBuilder
         {
             var bars = trial.EquityCurve.Count;
             totalBars += bars;
-            if (seen.Add((trial.DataSubscription, bars)))
+            if (seen.Add((trial.DataSubscriptions[0], bars)))
                 uniqueTimelineBars += bars;
         }
 
@@ -49,7 +49,7 @@ public static class SimulationCacheBuilder
 
         for (var t = 0; t < trials.Count; t++)
         {
-            var key = (trials[t].DataSubscription, trials[t].EquityCurve.Count);
+            var key = (trials[t].DataSubscriptions[0], trials[t].EquityCurve.Count);
             if (!timelineKeys.TryGetValue(key, out var tlIdx))
             {
                 // First trial for this (subscription, barCount) — extract timestamps as the timeline
@@ -93,5 +93,26 @@ public static class SimulationCacheBuilder
         }
 
         return summaries;
+    }
+
+    /// <summary>
+    /// Builds a trial-index-to-subscription-group-key mapping.
+    /// Returns null if all trials share the same subscription (single-subscription optimization).
+    /// </summary>
+    public static IReadOnlyDictionary<int, string>? BuildSubscriptionGroupMap(
+        IReadOnlyList<BacktestRunRecord> trials)
+    {
+        if (trials.Count == 0) return null;
+
+        var map = new Dictionary<int, string>(trials.Count);
+        for (var i = 0; i < trials.Count; i++)
+        {
+            var subs = trials[i].DataSubscriptions
+                .OrderBy(s => s.AssetName).ThenBy(s => s.Exchange).ThenBy(s => s.TimeFrame);
+            map[i] = string.Join(",", subs.Select(s => $"{s.AssetName}:{s.Exchange}:{s.TimeFrame}"));
+        }
+
+        var distinctGroups = new HashSet<string>(map.Values);
+        return distinctGroups.Count <= 1 ? null : map;
     }
 }

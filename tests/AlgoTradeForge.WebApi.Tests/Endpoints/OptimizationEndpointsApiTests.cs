@@ -25,14 +25,14 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
             MaxDegreeOfParallelism = 1,
             MinTradeCount = null,
         },
-        DataSubscriptions =
+        SubscriptionAxis =
         [
-            new DataSubscriptionDto
+            [new DataSubscriptionDto
             {
                 AssetName = "BTCUSDT",
                 Exchange = "Binance",
                 TimeFrame = "01:00:00",
-            }
+            }]
         ],
         OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
         {
@@ -64,7 +64,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
 
         Assert.NotNull(status.Result);
         Assert.Equal(submission.Id, status.Result.Id);
-        Assert.NotEmpty(status.Result.Trials);
+        Assert.True(status.Result.TrialCount > 0);
     }
 
     [Fact]
@@ -80,7 +80,14 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         var body = await response.Content.ReadFromJsonAsync<OptimizationRunResponse>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(body);
         Assert.Equal(submission.Id, body.Id);
-        Assert.NotEmpty(body.Trials);
+        Assert.True(body.TrialCount > 0);
+
+        // Trials are now loaded via the separate paginated endpoint
+        var trialsResponse = await Client.GetAsync($"/api/optimizations/{submission.Id}/trials", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, trialsResponse.StatusCode);
+        var trialsPage = await trialsResponse.Content.ReadFromJsonAsync<PagedResponse<BacktestRunResponse>>(Json, TestContext.Current.CancellationToken);
+        Assert.NotNull(trialsPage);
+        Assert.NotEmpty(trialsPage.Items);
     }
 
     [Fact]
@@ -112,14 +119,14 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
                 StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
                 EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
             },
-            DataSubscriptions =
+            SubscriptionAxis =
             [
-                new DataSubscriptionDto
+                [new DataSubscriptionDto
                 {
                     AssetName = "BTCUSDT",
                     Exchange = "Binance",
                     TimeFrame = "01:00:00",
-                }
+                }]
             ],
         };
 
@@ -140,14 +147,14 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
                 StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
                 EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
             },
-            DataSubscriptions =
+            SubscriptionAxis =
             [
-                new DataSubscriptionDto
+                [new DataSubscriptionDto
                 {
                     AssetName = "FAKEUSDT",
                     Exchange = "FakeExchange",
                     TimeFrame = "01:00:00",
-                }
+                }]
             ],
         };
 
@@ -195,12 +202,12 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
             },
             SubscriptionAxis =
             [
-                new DataSubscriptionDto
+                [new DataSubscriptionDto
                 {
                     AssetName = "BTCUSDT",
                     Exchange = "Binance",
                     TimeFrame = "01:00:00",
-                }
+                }]
             ],
             OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
             {
@@ -234,14 +241,14 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
             {
                 MaxDegreeOfParallelism = 1,
             },
-            DataSubscriptions =
+            SubscriptionAxis =
             [
-                new DataSubscriptionDto
+                [new DataSubscriptionDto
                 {
                     AssetName = "BTCUSDT",
                     Exchange = "Binance",
                     TimeFrame = "01:00:00",
-                }
+                }]
             ],
             OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
             {

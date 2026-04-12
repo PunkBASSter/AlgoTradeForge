@@ -47,11 +47,11 @@ public sealed class RunKeyBuilderTests
     {
         var cmdEmpty = MakeBacktestCommand() with
         {
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "" }
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "" }]
         };
         var cmdDefault = MakeBacktestCommand() with
         {
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "default" }
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "default" }]
         };
 
         Assert.Equal(RunKeyBuilder.Build(cmdEmpty), RunKeyBuilder.Build(cmdDefault));
@@ -93,6 +93,18 @@ public sealed class RunKeyBuilderTests
 
         Assert.Equal(64, key.Length);
         Assert.Matches("^[0-9a-f]{64}$", key);
+    }
+
+    [Fact]
+    public void Build_Optimization_SubscriptionGroupOrderIndependence()
+    {
+        var btc = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1:00:00" };
+        var eth = new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "1:00:00" };
+
+        var cmd1 = MakeOptimizationCommand() with { SubscriptionAxis = [[btc], [eth]] };
+        var cmd2 = MakeOptimizationCommand() with { SubscriptionAxis = [[eth], [btc]] };
+
+        Assert.Equal(RunKeyBuilder.Build(cmd1), RunKeyBuilder.Build(cmd2));
     }
 
     // -----------------------------------------------------------------------
@@ -162,7 +174,7 @@ public sealed class RunKeyBuilderTests
 
     private static RunBacktestCommand MakeBacktestCommand() => new()
     {
-        DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" },
+        DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }],
         BacktestSettings = new BacktestSettingsDto
         {
             InitialCash = 10000m,
@@ -193,9 +205,9 @@ public sealed class RunKeyBuilderTests
             StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             EndTime = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero),
         },
-        DataSubscriptions =
+        SubscriptionAxis =
         [
-            new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1:00:00" }
+            [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1:00:00" }]
         ]
     };
 }

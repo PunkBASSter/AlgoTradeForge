@@ -17,7 +17,7 @@ public sealed class BoundedTrialQueueTests
             StrategyName = "Test",
             StrategyVersion = "1",
             Parameters = new Dictionary<string, object> { ["sharpe"] = sharpe },
-            DataSubscription = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" },
+            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10_000m,
