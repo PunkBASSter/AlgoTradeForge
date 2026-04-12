@@ -12,6 +12,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-10
 - Flat monthly-partitioned CSV files + `feeds.json` schema files per asset directory (019-history-loader)
 - C# 14 / .NET 10 + Existing AlgoTradeForge solution (Domain, Application, Infrastructure, WebApi). No new NuGet packages. (027-strategy-module-framework)
 - N/A — all new types are in-memory domain objects. No persistence changes. (027-strategy-module-framework)
+- C# 14 / .NET 10 (backend), TypeScript 5.x strict (frontend) + ASP.NET Core minimal APIs, System.Threading, TanStack Query, Next.js 16, CodeMirror 6 (028-dss-optimization-split)
+- SQLite via SqliteRunRepository (existing) + new tables for groups (028-dss-optimization-split)
 
 - C# 14 / .NET 10 + `Microsoft.Extensions.Hosting` (BackgroundService), `System.Text.Json` (Binance API parsing), `Serilog` (structured logging) (002-candle-ingestor)
 
@@ -96,10 +98,9 @@ All monetary/price values in the Domain layer use `long` (Int64). When convertin
 - **Indicator buffer memory (ring buffer)**: Indicators deriving from `IndicatorBase<T>` (`Int64IndicatorBase`, `DoubleIndicatorBase`) MUST call `ApplyBufferCapacity()` at end of constructor after populating `Buffers`. This bounds each `IndicatorBuffer<T>` to a `RingBuffer<T>`. `CapacityLimit`: `null` = auto `Max(MinimumHistory*2, 256)`, `0` = unbounded, `N` = fixed. `Count` reports total appended (not retained). `Set()` is a silent no-op on evicted indices; `Revise()` throws — if an indicator relocates pivots, capacity MUST cover its revision window. `SetCapacity()` MUST be called before any data is appended.
 
 ## Recent Changes
+- 028-dss-optimization-split: Added C# 14 / .NET 10 (backend), TypeScript 5.x strict (frontend) + ASP.NET Core minimal APIs, System.Threading, TanStack Query, Next.js 16, CodeMirror 6
 - 027-strategy-module-framework: Added C# 14 / .NET 10 + Existing AlgoTradeForge solution (Domain, Application, Infrastructure, WebApi). No new NuGet packages.
 - 019-history-loader: Added C# 14 / .NET 10 + ASP.NET Core (minimal APIs), `Microsoft.Extensions.Hosting` (BackgroundService), `System.Text.Json`, `Serilog`, `HttpClient`
-- 018-extra-data-feeds: Asset type hierarchy (CryptoAsset, EquityAsset, FutureAsset, CryptoPerpetualAsset), settlement system (ISettlementCalculator → CashAndCarry/Margin), aux data feeds (FeedSeries, IFeedContext, BacktestFeedContext, auto-apply), order validation (IOrderValidator), event bus (IEventBus/IEventBusReceiver)
-- 009-long-running-ops: Added C# 14 / .NET 10 + ASP.NET Core (minimal APIs), System.Threading (Task.Run, Interlocked, CancellationTokenSource), IDistributedCache for progress tracking
 
 
 <!-- MANUAL ADDITIONS START -->

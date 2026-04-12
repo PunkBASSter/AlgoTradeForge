@@ -76,7 +76,7 @@ A new tab is available within an optimization group that shows all trials from a
 
 ### User Story 5 - DSS Editor in Optimization and Backtest Creation (Priority: P5)
 
-In the "+New Optimization" form, a separate, collapsible JSON editor for data subscriptions appears above the existing parameters JSON editor. This DSS editor allows the user to define the list of data subscription sets for the optimization. Similarly, the "+New Backtest" form (non-debug mode) provides an option to select data subscriptions, enabling the user to run the same backtest parameters across multiple selected DSS.
+In the "+New Optimization" form, a collapsible visual DSS builder appears above the existing parameters JSON editor. This builder provides a table/form where the user adds rows with AssetName, Exchange, and TimeFrame fields to define the list of data subscription sets. The builder auto-populates the `subscriptionAxis` field in the main JSON editor. Similarly, the "+New Backtest" form (non-debug mode) provides an option to select data subscriptions, enabling the user to run the same backtest parameters across multiple selected DSS.
 
 **Why this priority**: The DSS editor is the input mechanism that makes per-DSS optimization possible from the UI. Without it, users would have to manually construct the request. The backtest DSS support complements it for ad-hoc multi-asset backtesting.
 
@@ -84,8 +84,8 @@ In the "+New Optimization" form, a separate, collapsible JSON editor for data su
 
 **Acceptance Scenarios**:
 
-1. **Given** the user opens the "+New Optimization" form, **When** the form loads, **Then** a collapsible JSON editor for data subscriptions appears above the parameters JSON editor, pre-collapsed by default.
-2. **Given** the DSS editor is expanded, **When** the user enters a list of data subscription sets, **Then** each entry contains AssetName, Exchange, and TimeFrame fields.
+1. **Given** the user opens the "+New Optimization" form, **When** the form loads, **Then** a collapsible visual DSS builder appears above the parameters JSON editor, pre-collapsed by default.
+2. **Given** the DSS builder is expanded, **When** the user adds rows, **Then** each row contains AssetName, Exchange, and TimeFrame fields, and the `subscriptionAxis` field in the main JSON editor is automatically populated.
 3. **Given** the user opens the "+New Backtest" form (non-debug mode), **When** the form loads, **Then** a DSS selector is available allowing the user to specify one or more data subscription sets to run the backtest against.
 4. **Given** the user has entered parameters and selected 3 DSS in the backtest form, **When** they click "Start", **Then** the system launches 3 separate backtests (one per DSS) with identical parameters.
 
@@ -101,7 +101,7 @@ Validation can be launched per optimization DSS group. Each validation run refer
 
 **Acceptance Scenarios**:
 
-1. **Given** a completed optimization group with 3 DSS (each with top N trials kept), **When** the user launches validation for the group, **Then** the system creates validation runs per DSS, each validating the top N trials (matching `MaxTrialsToKeep`), all referencing the source optimization group.
+1. **Given** a completed optimization group with 3 DSS, **When** the user launches validation for the group, **Then** the system creates validation runs per DSS, each validating the top N trials by fitness (capped at `MaxTrialsToValidate`, default 100), all referencing the source optimization group.
 2. **Given** the validations tab, **When** it loads, **Then** each validation entry shows a 1-to-1 reference to its source optimization DSS group.
 3. **Given** a completed validation group, **When** the user navigates to the cross-DSS validation tab, **Then** a combined table shows all validation trials from all DSS, with the same capabilities as the cross-DSS optimization tab (sortable metrics, Params column, clickable trial IDs).
 4. **Given** a validation group, **When** the user sorts the cross-DSS validation table by a metric, **Then** all validation trials re-sort across DSS boundaries, the same as the optimization cross-DSS tab.
@@ -130,9 +130,9 @@ Validation can be launched per optimization DSS group. Each validation run refer
 - **FR-006**: The optimization trials table and backtest table MUST support sorting by all metric columns.
 - **FR-007**: Each trial ID in the trials table MUST be clickable, opening a backtest launch side panel with the trial's strategy, DSS, and parameters pre-populated in the JSON editor.
 - **FR-008**: System MUST provide a cross-DSS tab within an optimization group, displaying a combined table of all trials from all DSS runs, initially grouped by DSS, sortable by any metric.
-- **FR-009**: The "+New Optimization" form MUST include a separate, collapsible JSON editor for data subscriptions, positioned above the parameters JSON editor.
+- **FR-009**: The "+New Optimization" form MUST include a collapsible visual DSS builder (table/form for adding asset/exchange/timeframe rows) positioned above the parameters JSON editor, which auto-populates the `subscriptionAxis` field in the main JSON editor.
 - **FR-010**: The "+New Backtest" form (non-debug mode) MUST provide an option to select data subscription sets, launching one backtest per selected DSS with identical parameters.
-- **FR-011**: Validation MUST be launchable per optimization DSS group, with each validation referencing the source optimization group. Validation MUST run the top N trials per DSS, where N equals the optimization's `MaxTrialsToKeep` setting.
+- **FR-011**: Validation MUST be launchable per optimization DSS group, with each validation referencing the source optimization group. Validation MUST run the top N trials per DSS by fitness, where N is capped at a configurable `MaxTrialsToValidate` (default 100).
 - **FR-012**: The validations tab MUST show a 1-to-1 reference between each validation entry and its source optimization DSS group.
 - **FR-013**: System MUST provide a cross-DSS validation tab with the same combined table capabilities as the cross-DSS optimization tab (sortable metrics, Params column, clickable trial IDs).
 - **FR-014**: System MUST drop existing optimization data from the database rather than performing data migrations when changing the persistence schema.
@@ -156,7 +156,7 @@ Validation can be launched per optimization DSS group. Each validation run refer
 - Q: How is the parallelism budget scoped across DSS runs within a group? → A: Shared — all DSS runs share one `MaxDegreeOfParallelism` pool (e.g., 4 total concurrent backtests across all DSS runs, not 4 per DSS).
 - Q: How should optimization groups appear in the optimization list? → A: Groups as primary rows, expandable/collapsible to reveal individual DSS runs nested within.
 - Q: What is the group aggregate status when DSS runs have mixed states? → A: Composite — "Completed" (all done), "PartiallyCompleted" (mixed success/failure), "Failed" (all failed). "InProgress" while any run is still executing.
-- Q: Which trials from each DSS run get validated? → A: Top N trials per DSS run, where N matches the optimization's `MaxTrialsToKeep` setting.
+- Q: Which trials from each DSS run get validated? → A: Top N trials per DSS run by fitness, capped at `MaxTrialsToValidate` (default 100) to prevent excessive validation runtime.
 - Q: How should DSS runs within a group be scheduled across the shared parallelism pool? → A: Round-robin interleaved, ordered by the DSS list position as specified in the optimization launch options. All DSS runs make concurrent progress.
 
 ## Assumptions
@@ -167,9 +167,10 @@ Validation can be launched per optimization DSS group. Each validation run refer
 - `MaxDegreeOfParallelism` is a shared budget across all DSS runs within a group. If set to 4, at most 4 backtests execute concurrently across all DSS runs combined, not 4 per DSS run.
 - DSS runs are scheduled round-robin across the shared parallelism pool, ordered by the DSS list position as provided in the optimization launch options. This ensures all DSS runs make concurrent progress rather than executing sequentially.
 - The Params column CSV format uses the pattern `Key:Value` with comma-space separation (e.g., `Period:20, Threshold:1.5`).
-- The collapsible DSS editor in the optimization form is pre-collapsed by default to save screen space for users who are only modifying parameters.
+- The collapsible DSS builder in the optimization form is pre-collapsed by default to save screen space for users who are only modifying parameters. It provides a visual row-based interface (not raw JSON) that auto-populates `subscriptionAxis` in the main JSON editor. Power users can edit the JSON directly.
 - "Sortable by all metric columns" refers to the existing metric columns (Fitness, Sharpe, Sortino, Profit Factor, Max Drawdown, Win Rate, Trades, Net Profit) plus the new Params column is not sortable (it is a display-only string).
 - The side panel for launching a backtest from a trial reuses the existing backtest creation form/components, pre-filled with the trial's data.
+- Validation defaults to the top 100 trials per DSS by fitness. The user can override this via `MaxTrialsToValidate` in the validation request to prevent excessive runtime from the 8-stage validation pipeline.
 
 ## Success Criteria *(mandatory)*
 
