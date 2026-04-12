@@ -86,6 +86,7 @@ public sealed record OptimizationRunResponse
     public required IReadOnlyList<DataSubscriptionDto> DataSubscriptions { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public required int MaxParallelism { get; init; }
+    public int TrialCount { get; init; }
     public required List<BacktestRunResponse> Trials { get; init; }
     public List<FailedTrialResponse> FailedTrialDetails { get; init; } = [];
     public string? OptimizationMethod { get; init; }

@@ -46,6 +46,7 @@ public static class DependencyInjection
         services.AddScoped<IQueryHandler<GetBacktestStatusQuery, BacktestStatusDto?>, GetBacktestStatusQueryHandler>();
         services.AddScoped<IQueryHandler<ListBacktestRunsQuery, PagedResult<BacktestRunRecord>>, ListBacktestRunsQueryHandler>();
         services.AddScoped<IQueryHandler<GetOptimizationByIdQuery, OptimizationRunRecord?>, GetOptimizationByIdQueryHandler>();
+        services.AddScoped<IQueryHandler<GetOptimizationTrialsQuery, PagedResult<BacktestRunRecord>>, GetOptimizationTrialsQueryHandler>();
         services.AddScoped<IQueryHandler<GetOptimizationStatusQuery, OptimizationStatusDto?>, GetOptimizationStatusQueryHandler>();
         services.AddScoped<IQueryHandler<ListOptimizationRunsQuery, PagedResult<OptimizationRunRecord>>, ListOptimizationRunsQueryHandler>();
         services.AddScoped<IQueryHandler<EvaluateOptimizationQuery, OptimizationEvaluationDto>, EvaluateOptimizationQueryHandler>();

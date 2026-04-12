@@ -245,6 +245,20 @@ export const apiClient = {
     );
   },
 
+  getOptimizationTrials(
+    id: string,
+    params?: { limit?: number; offset?: number; sortBy?: string },
+  ): Promise<PagedResponse<BacktestRun>> {
+    const qs = buildQueryString({
+      limit: params?.limit,
+      offset: params?.offset,
+      sortBy: params?.sortBy,
+    });
+    return request<PagedResponse<BacktestRun>>(
+      `/api/optimizations/${encodeURIComponent(id)}/trials${qs}`,
+    );
+  },
+
   runOptimization(
     req: RunOptimizationRequest,
   ): Promise<OptimizationSubmission> {

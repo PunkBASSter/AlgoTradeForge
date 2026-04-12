@@ -12,6 +12,7 @@ using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Infrastructure;
 using AlgoTradeForge.Infrastructure.CandleIngestion;
+using AlgoTradeForge.WebApi;
 using AlgoTradeForge.Infrastructure.History;
 using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Plugins;
@@ -99,6 +100,7 @@ foreach (var asm in pluginAssemblies)
 // Register optimization infrastructure (domain + plugin assemblies)
 Assembly[] strategyAssemblies = [typeof(AlgoTradeForge.Domain.Strategy.StrategyBase<>).Assembly, .. pluginAssemblies];
 builder.Services.AddInfrastructure(strategyAssemblies);
+builder.Services.AddHostedService<SqliteIndexMaintenanceService>();
 
 builder.Services.AddSingleton<IAssetRepository, FileSystemAssetRepository>();
 

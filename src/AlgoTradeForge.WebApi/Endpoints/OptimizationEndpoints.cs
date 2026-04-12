@@ -50,10 +50,16 @@ public static class OptimizationEndpoints
 
         group.MapGet("/{id:guid}", GetOptimization)
             .WithName("GetOptimization")
-            .WithSummary("Get an optimization run with all trials")
+            .WithSummary("Get optimization run metadata (trials loaded separately)")
             .WithOpenApi()
             .Produces<OptimizationRunResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{id:guid}/trials", GetOptimizationTrials)
+            .WithName("GetOptimizationTrials")
+            .WithSummary("List trials for an optimization with pagination")
+            .WithOpenApi()
+            .Produces<PagedResponse<BacktestRunResponse>>(StatusCodes.Status200OK);
 
         group.MapGet("/{id:guid}/status", GetOptimizationStatus)
             .WithName("GetOptimizationStatus")
@@ -316,6 +322,22 @@ public static class OptimizationEndpoints
         return Results.Ok(MapToResponse(record));
     }
 
+    private static async Task<IResult> GetOptimizationTrials(
+        Guid id,
+        IQueryHandler<GetOptimizationTrialsQuery, PagedResult<BacktestRunRecord>> handler,
+        int limit = 50,
+        int offset = 0,
+        string? sortBy = null,
+        CancellationToken ct = default)
+    {
+        var paged = await handler.HandleAsync(
+            new GetOptimizationTrialsQuery(id, limit, offset, sortBy), ct);
+        var items = paged.Items.Select(MapTrialToResponse).ToList();
+        return Results.Ok(new PagedResponse<BacktestRunResponse>(
+            items, paged.TotalCount, limit, offset,
+            offset + items.Count < paged.TotalCount));
+    }
+
     private static async Task<IResult> DeleteOptimization(
         Guid id,
         ICommandHandler<DeleteOptimizationCommand, bool> handler,
@@ -344,6 +366,7 @@ public static class OptimizationEndpoints
         DataSubscriptions = r.DataSubscriptions,
         BacktestSettings = r.BacktestSettings,
         MaxParallelism = r.MaxParallelism,
+        TrialCount = r.TrialCount,
         Trials = r.Trials.Select(MapTrialToResponse).ToList(),
         OptimizationMethod = r.OptimizationMethod,
         GenerationsCompleted = r.GenerationsCompleted,

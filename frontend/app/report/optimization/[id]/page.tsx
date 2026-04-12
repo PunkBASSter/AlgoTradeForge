@@ -213,7 +213,7 @@ export default function OptimizationReportPage({
             <>
               <StatItem
                 label="Kept Trials"
-                value={formatNumber(optimization.trials.length, 0)}
+                value={formatNumber(optimization.trialCount, 0)}
               />
               <StatItem
                 label="Filtered"
@@ -279,9 +279,9 @@ export default function OptimizationReportPage({
       {!isInProgress && (
         <div className="space-y-2">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
-            Trials ({optimization.trials.length})
+            Trials ({formatNumber(optimization.trialCount, 0)})
           </h2>
-          <OptimizationTrialsTable trials={optimization.trials} />
+          <OptimizationTrialsTable optimizationId={id} />
         </div>
       )}
 

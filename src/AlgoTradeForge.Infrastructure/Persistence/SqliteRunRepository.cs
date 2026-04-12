@@ -403,17 +403,30 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             record = ReadOptimizationRun(reader);
         }
 
-        // Load child trials sorted by the optimization's sort metric
         var trials = new List<BacktestRunRecord>();
-        await using (var trialCmd = conn.CreateCommand())
+        int trialCount;
+
+        if (includeEquityCurves)
         {
+            // Validation path: load all trials with equity curves
+            await using var trialCmd = conn.CreateCommand();
             var orderClause = GetTrialOrderByClause(record.SortBy);
             trialCmd.CommandText = $"SELECT * FROM backtest_runs WHERE optimization_run_id = $optId{orderClause}";
             trialCmd.Parameters.AddWithValue("$optId", id.ToString());
 
             await using var trialReader = await trialCmd.ExecuteReaderAsync(ct);
             while (await trialReader.ReadAsync(ct))
-                trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: includeEquityCurves));
+                trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: true));
+
+            trialCount = trials.Count;
+        }
+        else
+        {
+            // Detail view path: count only, trials loaded via GetOptimizationTrialsAsync
+            await using var countCmd = conn.CreateCommand();
+            countCmd.CommandText = "SELECT COUNT(*) FROM backtest_runs WHERE optimization_run_id = $optId";
+            countCmd.Parameters.AddWithValue("$optId", id.ToString());
+            trialCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync(ct));
         }
 
         // Load failed trial details
@@ -432,7 +445,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 failedDetails.Add(ReadFailedTrial(failedReader));
         }
 
-        return record with { Trials = trials, FailedTrialDetails = failedDetails };
+        return record with { TrialCount = trialCount, Trials = trials, FailedTrialDetails = failedDetails };
     }
 
     private static FailedTrialRecord ReadFailedTrial(DbDataReader reader) => new()
@@ -445,6 +458,37 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         SampleParameters = DeserializeParameters(reader.GetString(reader.GetOrdinal("sample_parameters_json"))),
         OccurrenceCount = reader.GetInt64(reader.GetOrdinal("occurrence_count")),
     };
+
+    // ── Paginated optimization trials ────────────────────────────────────
+
+    public async Task<PagedResult<BacktestRunRecord>> GetOptimizationTrialsAsync(
+        Guid optimizationId, int limit = 50, int offset = 0,
+        string? sortBy = null, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
+
+        var idStr = optimizationId.ToString();
+
+        await using var countCmd = conn.CreateCommand();
+        countCmd.CommandText = "SELECT COUNT(*) FROM backtest_runs WHERE optimization_run_id = $optId";
+        countCmd.Parameters.AddWithValue("$optId", idStr);
+        var totalCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync(ct));
+
+        var orderClause = GetTrialOrderByClause(sortBy ?? MetricNames.Fitness);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT {BacktestListColumns} FROM backtest_runs WHERE optimization_run_id = $optId{orderClause} LIMIT $limit OFFSET $offset";
+        cmd.Parameters.AddWithValue("$optId", idStr);
+        cmd.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 1000));
+        cmd.Parameters.AddWithValue("$offset", Math.Max(offset, 0));
+
+        var results = new List<BacktestRunRecord>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            results.Add(ReadBacktestRunCore(reader, includeEquityCurve: false));
+
+        return new PagedResult<BacktestRunRecord>(results, totalCount);
+    }
 
     // ── Query optimizations ────────────────────────────────────────────
 

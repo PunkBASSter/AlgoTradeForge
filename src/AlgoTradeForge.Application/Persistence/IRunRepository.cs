@@ -11,6 +11,9 @@ public interface IRunRepository
     Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, CancellationToken ct = default);
     Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, bool includeEquityCurves, CancellationToken ct = default);
     Task<PagedResult<OptimizationRunRecord>> QueryOptimizationsAsync(OptimizationRunQuery query, CancellationToken ct = default);
+    Task<PagedResult<BacktestRunRecord>> GetOptimizationTrialsAsync(
+        Guid optimizationId, int limit = 50, int offset = 0,
+        string? sortBy = null, CancellationToken ct = default);
     Task<bool> DeleteOptimizationAsync(Guid id, CancellationToken ct = default);
 
     Task<bool> DeleteBacktestAsync(Guid id, CancellationToken ct = default);

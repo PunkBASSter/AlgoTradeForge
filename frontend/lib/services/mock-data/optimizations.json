@@ -11,6 +11,8 @@
       "filteredTrials": 12,
       "failedTrials": 0,
       "sortBy": "sharpeRatio",
+      "status": "Completed",
+      "trialCount": 36,
       "maxParallelism": 4,
       "failedTrialDetails": [],
       "dataSubscriptions": [{
@@ -249,6 +251,8 @@
       "filteredTrials": 8,
       "failedTrials": 2,
       "sortBy": "netProfit",
+      "status": "Completed",
+      "trialCount": 62,
       "maxParallelism": 8,
       "failedTrialDetails": [
         {
@@ -461,6 +465,8 @@
       "filteredTrials": 25,
       "failedTrials": 0,
       "sortBy": "profitFactor",
+      "status": "Completed",
+      "trialCount": 95,
       "maxParallelism": 6,
       "failedTrialDetails": [],
       "dataSubscriptions": [{

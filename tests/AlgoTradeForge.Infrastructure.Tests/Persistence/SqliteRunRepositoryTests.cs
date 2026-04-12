@@ -343,7 +343,8 @@ public class SqliteRunRepositoryTests : IDisposable
         Assert.Equal("SharpeRatio", loaded.SortBy);
         Assert.Equal(10000m, loaded.BacktestSettings.InitialCash);
         Assert.Equal(4, loaded.MaxParallelism);
-        Assert.Equal(2, loaded.Trials.Count);
+        Assert.Equal(2, loaded.TrialCount);
+        Assert.Empty(loaded.Trials); // Trials loaded separately via GetOptimizationTrialsAsync
         Assert.Equal(OptimizationRunStatus.Completed, loaded.Status);
 
         // Verify optimization data subscription fields
@@ -875,13 +876,13 @@ public class SqliteRunRepositoryTests : IDisposable
         await _repo.InsertOptimizationPlaceholderAsync(optRecord, TestContext.Current.CancellationToken);
         await _repo.SaveOptimizationAsync(optRecord, TestContext.Current.CancellationToken);
 
-        var loaded = await _repo.GetOptimizationByIdAsync(optId, TestContext.Current.CancellationToken);
+        var paged = await _repo.GetOptimizationTrialsAsync(optId, ct: TestContext.Current.CancellationToken);
 
-        Assert.NotNull(loaded);
-        Assert.Equal(3, loaded.Trials.Count);
+        Assert.Equal(3, paged.TotalCount);
+        Assert.Equal(3, paged.Items.Count);
         // Should be sorted descending by fitness_score
-        Assert.Equal(0.9, loaded.Trials[0].FitnessScore!.Value, precision: 10);
-        Assert.Equal(0.7, loaded.Trials[1].FitnessScore!.Value, precision: 10);
-        Assert.Equal(0.5, loaded.Trials[2].FitnessScore!.Value, precision: 10);
+        Assert.Equal(0.9, paged.Items[0].FitnessScore!.Value, precision: 10);
+        Assert.Equal(0.7, paged.Items[1].FitnessScore!.Value, precision: 10);
+        Assert.Equal(0.5, paged.Items[2].FitnessScore!.Value, precision: 10);
     }
 }

@@ -102,6 +102,7 @@ export interface OptimizationRun {
   optimizationMethod?: string;
   generationsCompleted?: number;
   inputJson?: string;
+  trialCount: number;
   trials: BacktestRun[];
   failedTrialDetails: FailedTrialDetail[];
   status: string;

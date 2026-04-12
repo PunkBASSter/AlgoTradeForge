@@ -64,7 +64,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
 
         Assert.NotNull(status.Result);
         Assert.Equal(submission.Id, status.Result.Id);
-        Assert.NotEmpty(status.Result.Trials);
+        Assert.True(status.Result.TrialCount > 0);
     }
 
     [Fact]
@@ -80,7 +80,14 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
         var body = await response.Content.ReadFromJsonAsync<OptimizationRunResponse>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(body);
         Assert.Equal(submission.Id, body.Id);
-        Assert.NotEmpty(body.Trials);
+        Assert.True(body.TrialCount > 0);
+
+        // Trials are now loaded via the separate paginated endpoint
+        var trialsResponse = await Client.GetAsync($"/api/optimizations/{submission.Id}/trials", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, trialsResponse.StatusCode);
+        var trialsPage = await trialsResponse.Content.ReadFromJsonAsync<PagedResponse<BacktestRunResponse>>(Json, TestContext.Current.CancellationToken);
+        Assert.NotNull(trialsPage);
+        Assert.NotEmpty(trialsPage.Items);
     }
 
     [Fact]

@@ -211,6 +211,27 @@ export const mockClient: typeof import("./api-client").apiClient & {
     return found;
   },
 
+  async getOptimizationTrials(
+    id: string,
+    params?: { limit?: number; offset?: number; sortBy?: string },
+  ): Promise<PagedResponse<BacktestRun>> {
+    await delay();
+    const found = optimizations.items.find((o) => o.id === id);
+    if (!found) {
+      throw new Error(`API error 404: Optimization ${id} not found`);
+    }
+    const limit = params?.limit ?? 100;
+    const offset = params?.offset ?? 0;
+    const trials = found.trials.slice(offset, offset + limit);
+    return {
+      items: trials,
+      totalCount: found.trials.length,
+      limit,
+      offset,
+      hasMore: offset + trials.length < found.trials.length,
+    };
+  },
+
   async runOptimization(
     _req: RunOptimizationRequest,
   ): Promise<OptimizationSubmission> {
@@ -246,7 +267,7 @@ export const mockClient: typeof import("./api-client").apiClient & {
   async getOptimizationStatus(id: string): Promise<OptimizationStatus> {
     await delay();
     const found = optimizations.items.find((o) => o.id === id);
-    return { id, completedCombinations: found?.totalCombinations ?? 0, totalCombinations: found?.totalCombinations ?? 0, result: found };
+    return { id, completedCombinations: found?.totalCombinations ?? 0, totalCombinations: found?.totalCombinations ?? 0, result: found, status: found?.status ?? "Completed" };
   },
 
   async cancelOptimization(id: string): Promise<{ id: string; status: string }> {

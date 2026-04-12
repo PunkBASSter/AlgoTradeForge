@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 16;
+    private const int CurrentVersion = 17;
 
     private static readonly SemaphoreSlim _orphanCleanupLock = new(1, 1);
     private static bool _orphanCleanupDone;
@@ -79,6 +79,7 @@ internal static class SqliteDbInitializer
         CREATE INDEX IF NOT EXISTS ix_br_opt_id ON backtest_runs(optimization_run_id);
         CREATE INDEX IF NOT EXISTS ix_br_asset ON backtest_runs(asset_name, exchange, timeframe);
         CREATE INDEX IF NOT EXISTS ix_opr_asset ON optimization_runs(asset_name, exchange, timeframe);
+        -- ix_br_opt_fitness created asynchronously by SqliteIndexMaintenanceService
 
         CREATE TABLE IF NOT EXISTS optimization_failed_trials (
             id                     TEXT    NOT NULL PRIMARY KEY,
@@ -237,6 +238,10 @@ internal static class SqliteDbInitializer
         ALTER TABLE optimization_runs ADD COLUMN subscriptions_json TEXT NULL;
         """;
 
+    private const string MigrationV17 = """
+        CREATE INDEX IF NOT EXISTS ix_br_opt_fitness ON backtest_runs(optimization_run_id, fitness_score DESC);
+        """;
+
     public static async Task EnsureCreatedAsync(string connectionString)
     {
         await using var connection = new SqliteConnection(connectionString);
@@ -367,6 +372,13 @@ internal static class SqliteDbInitializer
             migrateCmd.CommandText = MigrationV16;
             await migrateCmd.ExecuteNonQueryAsync();
             await SetVersionAsync(connection, 16);
+        }
+
+        if (currentVersion < 17)
+        {
+            // Index created asynchronously by SqliteIndexMaintenanceService
+            // to avoid blocking startup on large databases.
+            await SetVersionAsync(connection, 17);
         }
 
         await CleanupOrphanedRunsOnceAsync(connection);
