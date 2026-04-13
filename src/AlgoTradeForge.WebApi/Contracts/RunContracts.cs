@@ -23,6 +23,7 @@ public sealed record BacktestRunResponse
     public Guid? OptimizationRunId { get; init; }
     public string? ErrorMessage { get; init; }
     public string? ErrorStackTrace { get; init; }
+    public string? Params { get; init; }
 }
 
 public sealed record EquityPointResponse(long TimestampMs, double Value);

@@ -126,6 +126,17 @@ public sealed class OptimizationSetupHelper(
             .ToList();
     }
 
+    public static List<ResolvedAxis> FilterEmptyAxes(IReadOnlyList<ResolvedAxis> resolvedAxes) =>
+        resolvedAxes
+            .Where(a => a switch
+            {
+                ResolvedNumericAxis n => n.Values.Count > 0,
+                ResolvedDiscreteAxis d => d.Values.Count > 0,
+                ResolvedModuleSlotAxis m => m.Variants.Count > 0,
+                _ => true
+            })
+            .ToList();
+
     public async Task ResolveAndCacheAsync(
         DataSubscriptionDto sub,
         List<DataSubscription> target,

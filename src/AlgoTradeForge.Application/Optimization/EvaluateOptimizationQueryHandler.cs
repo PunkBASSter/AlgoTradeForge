@@ -21,12 +21,13 @@ public sealed class EvaluateOptimizationQueryHandler(
         // 2. Resolve parameter axes (pure computation, no scaling needed for counting)
         var resolvedAxes = axisResolver.Resolve(descriptor, query.Axes);
 
-        // 3. Build active axes with subscription axis count
-        var groupCount = query.SubscriptionAxis?.Count ?? 0;
-        var activeAxes = OptimizationSetupHelper.AppendSubscriptionAxisAndFilter(
-            resolvedAxes, groupCount);
+        // 3. Build active axes — per-DSS group mode excludes subscription axis
+        var dssCount = query.SubscriptionAxis?.Count ?? 0;
+        var activeAxes = dssCount > 0
+            ? OptimizationSetupHelper.FilterEmptyAxes(resolvedAxes)
+            : OptimizationSetupHelper.AppendSubscriptionAxisAndFilter(resolvedAxes, 0);
 
-        // 4. Count combinations
+        // 4. Count combinations (per-run, not multiplied by DSS count)
         var totalCombinations = cartesianGenerator.EstimateCount(activeAxes);
 
         // 5. Compute unique combinations after normalization (if strategy supports it)
@@ -73,6 +74,7 @@ public sealed class EvaluateOptimizationQueryHandler(
             ExceedsMaxCombinations = !isGenetic && effectiveCount > query.MaxCombinations,
             MaxCombinations = query.MaxCombinations,
             EffectiveDimensions = effectiveDimensions,
+            DssCount = dssCount,
             GeneticConfig = geneticConfigDto,
         };
 

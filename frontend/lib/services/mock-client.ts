@@ -27,7 +27,24 @@ import type {
   StrategyDescriptor,
 } from "@/types/api";
 
-import type { BacktestListParams, OptimizationListParams } from "./api-client";
+import type {
+  BacktestListParams,
+  OptimizationListParams,
+  OptimizationGroupListParams,
+  ValidationGroupListParams,
+} from "./api-client";
+import type {
+  OptimizationGroupSummary,
+  OptimizationGroupDetail,
+  OptimizationGroupStatus,
+} from "@/types/optimization-group";
+import type {
+  ValidationGroupSummary,
+  ValidationGroupDetail,
+  ValidationGroupStatus,
+  ValidationGroupSubmission,
+  RunGroupValidationRequest,
+} from "@/types/validation-group";
 
 import strategiesData from "./mock-data/strategies.json";
 
@@ -279,6 +296,61 @@ export const mockClient: typeof import("./api-client").apiClient & {
     await delay();
   },
 
+  // --- Optimization groups (stubs) ---
+
+  async getOptimizationGroups(
+    _params?: OptimizationGroupListParams,
+  ): Promise<PagedResponse<OptimizationGroupSummary>> {
+    await delay();
+    return { items: [], totalCount: 0, limit: 50, offset: 0, hasMore: false };
+  },
+
+  async getOptimizationGroup(_groupId: string): Promise<OptimizationGroupDetail> {
+    await delay();
+    return {
+      id: "mock-opt-group-001",
+      strategyName: "MockStrategy",
+      strategyVersion: "1.0",
+      optimizationMethod: "BruteForce",
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      totalRuns: 2,
+      completedRuns: 2,
+      failedRuns: 0,
+      status: "Completed",
+      subscriptions: [
+        [{ assetName: "BTCUSDT", exchange: "Binance", timeFrame: "01:00:00" }],
+        [{ assetName: "ETHUSDT", exchange: "Binance", timeFrame: "01:00:00" }],
+      ],
+      maxParallelism: 4,
+      runs: [],
+    };
+  },
+
+  async getOptimizationGroupStatus(_groupId: string): Promise<OptimizationGroupStatus> {
+    await delay();
+    return { id: "mock-opt-group-001", status: "Completed", runs: [] };
+  },
+
+  async getOptimizationGroupTrials(
+    _groupId: string,
+    params?: { limit?: number; offset?: number; sortBy?: string },
+  ): Promise<PagedResponse<BacktestRun>> {
+    await delay();
+    const limit = params?.limit ?? 100;
+    const offset = params?.offset ?? 0;
+    return { items: [], totalCount: 0, limit, offset, hasMore: false };
+  },
+
+  async cancelOptimizationGroup(groupId: string): Promise<{ id: string; status: string }> {
+    await delay();
+    return { id: groupId, status: "Cancelled" };
+  },
+
+  async deleteOptimizationGroup(_groupId: string): Promise<void> {
+    await delay();
+  },
+
   // --- Live sessions ---
 
   async getLiveSessions(): Promise<LiveSessionListResponse> {
@@ -450,6 +522,49 @@ export const mockClient: typeof import("./api-client").apiClient & {
   },
 
   async deleteValidation(_id: string): Promise<void> {
+    await delay();
+  },
+
+  // --- Validation groups (stubs) ---
+
+  async getValidationGroups(
+    _params?: ValidationGroupListParams,
+  ): Promise<PagedResponse<ValidationGroupSummary>> {
+    await delay();
+    return { items: [], totalCount: 0, limit: 50, offset: 0, hasMore: false };
+  },
+
+  async getValidationGroup(_groupId: string): Promise<ValidationGroupDetail> {
+    await delay();
+    return {
+      id: "mock-val-group-001",
+      optimizationGroupId: "mock-opt-group-001",
+      strategyName: "MockStrategy",
+      thresholdProfileName: "Crypto-Standard",
+      status: "Completed",
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      totalRuns: 2,
+      runs: [],
+    };
+  },
+
+  async getValidationGroupStatus(_groupId: string): Promise<ValidationGroupStatus> {
+    await delay();
+    return { id: "mock-val-group-001", status: "Completed", runs: [] };
+  },
+
+  async runGroupValidation(_req: RunGroupValidationRequest): Promise<ValidationGroupSubmission> {
+    await delay();
+    return { id: "mock-val-group-new", totalRuns: 2 };
+  },
+
+  async cancelValidationGroup(groupId: string): Promise<{ id: string; status: string }> {
+    await delay();
+    return { id: groupId, status: "Cancelled" };
+  },
+
+  async deleteValidationGroup(_groupId: string): Promise<void> {
     await delay();
   },
 

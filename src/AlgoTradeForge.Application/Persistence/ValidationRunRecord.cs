@@ -29,6 +29,7 @@ public sealed record ValidationRunRecord
     public string? RejectionsJson { get; init; }
     public int InvocationCount { get; init; } = 1;
     public string? ErrorMessage { get; init; }
+    public Guid? ValidationGroupId { get; init; }
     public IReadOnlyList<StageResultRecord> StageResults { get; init; } = [];
 }
 

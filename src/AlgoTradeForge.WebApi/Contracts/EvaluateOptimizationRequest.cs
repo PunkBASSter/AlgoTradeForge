@@ -25,6 +25,7 @@ public sealed record OptimizationEvaluationResponse
     public bool ExceedsMaxCombinations { get; init; }
     public long MaxCombinations { get; init; }
     public int EffectiveDimensions { get; init; }
+    public int DataSubscriptionSetsCount { get; init; }
     public ResolvedGeneticConfigResponse? GeneticConfig { get; init; }
 }
 

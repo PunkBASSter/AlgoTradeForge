@@ -41,4 +41,6 @@ public sealed record OptimizationRunRecord
     public string? OptimizationMethod { get; init; }
     public int? GenerationsCompleted { get; init; }
     public string Status { get; init; } = OptimizationRunStatus.Completed;
+    public Guid? GroupId { get; init; }
+    public int DssIndex { get; init; }
 }

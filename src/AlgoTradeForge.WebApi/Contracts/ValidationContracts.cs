@@ -2,8 +2,10 @@ namespace AlgoTradeForge.WebApi.Contracts;
 
 public sealed record RunValidationRequest
 {
-    public required Guid OptimizationRunId { get; init; }
+    public Guid? OptimizationRunId { get; init; }
+    public Guid? OptimizationGroupId { get; init; }
     public string ThresholdProfileName { get; init; } = "Crypto-Standard";
+    public int MaxTrialsToValidate { get; init; } = 100;
 }
 
 public sealed record ValidationSubmissionResponse

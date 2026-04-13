@@ -19,12 +19,12 @@
 
 **Purpose**: Schema changes, drop existing data, new tables
 
-- [ ] T001 Add `optimization_groups` table to schema in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteDbInitializer.cs` — includes `status TEXT NOT NULL DEFAULT 'InProgress'`, `subscriptions_json`, `backtest_settings_json`, `optimization_settings_json`, `fitness_config_json`, `max_parallelism`
-- [ ] T002 Add `validation_groups` table to schema in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteDbInitializer.cs` — includes `status`, `optimization_group_id` FK, `threshold_profile_name`
-- [ ] T003 Add `group_id TEXT NOT NULL` FK and `dss_index INTEGER NOT NULL` columns to `optimization_runs` table in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteDbInitializer.cs`
-- [ ] T004 Add `validation_group_id TEXT NOT NULL` FK column to `validation_runs` table in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteDbInitializer.cs`
-- [ ] T005 Add denormalized metric columns (`sharpe_ratio`, `sortino_ratio`, `profit_factor`, `max_drawdown_pct`, `win_rate_pct`, `total_trades`, `net_profit`, `annualized_return_pct`) to `backtest_runs` table in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteDbInitializer.cs`
-- [ ] T006 Bump schema version to drop existing optimization/validation data (FR-014) and recreate all tables cleanly in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteDbInitializer.cs`
+- [x] T001 Add `optimization_groups` table to schema in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteDbInitializer.cs` — includes `status TEXT NOT NULL DEFAULT 'InProgress'`, `subscriptions_json`, `backtest_settings_json`, `optimization_settings_json`, `fitness_config_json`, `max_parallelism`
+- [x] T002 Add `validation_groups` table to schema in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteDbInitializer.cs` — includes `status`, `optimization_group_id` FK, `threshold_profile_name`
+- [x] T003 Add `group_id TEXT NOT NULL` FK and `dss_index INTEGER NOT NULL` columns to `optimization_runs` table in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteDbInitializer.cs`
+- [x] T004 Add `validation_group_id TEXT NOT NULL` FK column to `validation_runs` table in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteDbInitializer.cs`
+- [x] T005 Add denormalized metric columns (`sharpe_ratio`, `sortino_ratio`, `profit_factor`, `max_drawdown_pct`, `win_rate_pct`, `total_trades`, `net_profit`, `annualized_return_pct`) to `backtest_runs` table in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteDbInitializer.cs`
+- [x] T006 Bump schema version to drop existing optimization/validation data (FR-014) and recreate all tables cleanly in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteDbInitializer.cs`
 
 ---
 
@@ -34,21 +34,21 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T007 [P] Create `OptimizationGroupRecord` in `src/AlgoTradeForge.Application/Persistence/OptimizationGroupRecord.cs` — fields per data-model.md: Id, StrategyName, StrategyVersion, OptimizationMethod, StartedAt, CompletedAt, TotalRuns, Status, InputJson, SubscriptionsJson, BacktestSettingsJson, OptimizationSettingsJson, FitnessConfigJson, MaxParallelism
-- [ ] T008 [P] Create `ValidationGroupRecord` in `src/AlgoTradeForge.Application/Persistence/ValidationGroupRecord.cs` — fields: Id, OptimizationGroupId, StrategyName, ThresholdProfileName, ThresholdProfileJson, StartedAt, CompletedAt, TotalRuns, Status
-- [ ] T009 [P] Create `GroupStatusCalculator` in `src/AlgoTradeForge.Application/Optimization/GroupStatusCalculator.cs` — static method that takes child run statuses and returns group status (InProgress/Completed/PartiallyCompleted/Failed/Cancelled) per derivation rules in data-model.md
-- [ ] T010 [P] Test `GroupStatusCalculator` in `tests/AlgoTradeForge.Application.Tests/Optimization/GroupStatusCalculatorTests.cs` — test all 5 status combinations: all completed, mixed, all failed, all cancelled, any in-progress
-- [ ] T011 Extend `RunKeyBuilder` with `BuildGroupKey()` method in `src/AlgoTradeForge.Application/Progress/RunKeyBuilder.cs` — hash of strategy + backtest settings + DSS list + axes + optimization method for group-level dedup
-- [ ] T012 Add group CRUD methods to `IRunRepository` in `src/AlgoTradeForge.Application/Repositories/IRunRepository.cs` — InsertOptimizationGroupAsync, GetOptimizationGroupByIdAsync, QueryOptimizationGroupsAsync, UpdateOptimizationGroupStatusAsync, DeleteOptimizationGroupAsync, GetOptimizationGroupTrialsAsync (cross-DSS sorted query)
-- [ ] T013 Add validation group CRUD methods to `IValidationRepository` in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteValidationRepository.cs` (implements existing `IValidationRepository` interface) — InsertValidationGroupAsync, GetValidationGroupByIdAsync, QueryValidationGroupsAsync, UpdateValidationGroupStatusAsync, DeleteValidationGroupAsync
-- [ ] T014 Implement optimization group repository methods in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteRunRepository.cs` — INSERT, SELECT with JOIN for child runs, UPDATE status, DELETE cascade, cross-DSS trials query using denormalized metric columns for ORDER BY
-- [ ] T015 Implement validation group repository methods in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteValidationRepository.cs` — same patterns as optimization group repository
+- [x] T007 [P] Create `OptimizationGroupRecord` in `src/AlgoTradeForge.Application/Persistence/OptimizationGroupRecord.cs` — fields per data-model.md: Id, StrategyName, StrategyVersion, OptimizationMethod, StartedAt, CompletedAt, TotalRuns, Status, InputJson, SubscriptionsJson, BacktestSettingsJson, OptimizationSettingsJson, FitnessConfigJson, MaxParallelism
+- [x] T008 [P] Create `ValidationGroupRecord` in `src/AlgoTradeForge.Application/Persistence/ValidationGroupRecord.cs` — fields: Id, OptimizationGroupId, StrategyName, ThresholdProfileName, ThresholdProfileJson, StartedAt, CompletedAt, TotalRuns, Status
+- [x] T009 [P] Create `GroupStatusCalculator` in `src/AlgoTradeForge.Application/Optimization/GroupStatusCalculator.cs` — static method that takes child run statuses and returns group status (InProgress/Completed/PartiallyCompleted/Failed/Cancelled) per derivation rules in data-model.md
+- [x] T010 [P] Test `GroupStatusCalculator` in `tests/AlgoTradeForge.Application.Tests/Optimization/GroupStatusCalculatorTests.cs` — test all 5 status combinations: all completed, mixed, all failed, all cancelled, any in-progress
+- [x] T011 Extend `RunKeyBuilder` with `BuildGroupKey()` method in `src/AlgoTradeForge.Application/Progress/RunKeyBuilder.cs` — hash of strategy + backtest settings + DSS list + axes + optimization method for group-level dedup
+- [x] T012 Add group CRUD methods to `IRunRepository` in `src/AlgoTradeForge.Application/Repositories/IRunRepository.cs` — InsertOptimizationGroupAsync, GetOptimizationGroupByIdAsync, QueryOptimizationGroupsAsync, UpdateOptimizationGroupStatusAsync, DeleteOptimizationGroupAsync, GetOptimizationGroupTrialsAsync (cross-DSS sorted query)
+- [x] T013 Add validation group CRUD methods to `IValidationRepository` in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteValidationRepository.cs` (implements existing `IValidationRepository` interface) — InsertValidationGroupAsync, GetValidationGroupByIdAsync, QueryValidationGroupsAsync, UpdateValidationGroupStatusAsync, DeleteValidationGroupAsync
+- [x] T014 Implement optimization group repository methods in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteRunRepository.cs` — INSERT, SELECT with JOIN for child runs, UPDATE status, DELETE cascade, cross-DSS trials query using denormalized metric columns for ORDER BY
+- [x] T015 Implement validation group repository methods in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteValidationRepository.cs` — same patterns as optimization group repository
 - [ ] T016 [P] Test optimization group repository in `tests/AlgoTradeForge.Infrastructure.Tests/Persistence/SqliteRunRepository_GroupTests.cs` — insert group, insert child runs, query groups, cross-DSS trials sort, cascade delete
 - [ ] T017 [P] Test validation group repository in `tests/AlgoTradeForge.Infrastructure.Tests/Persistence/SqliteValidationRepository_GroupTests.cs` — insert group, insert child runs, query groups, cascade delete
-- [ ] T018 Populate denormalized metric columns at trial write time — modify `SaveOptimizationAsync` in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteRunRepository.cs` to write `sharpe_ratio`, `sortino_ratio`, etc. from `PerformanceMetrics` alongside existing `fitness_score`
-- [ ] T019 [P] Create `OptimizationGroupContracts` in `src/AlgoTradeForge.WebApi/Contracts/OptimizationGroupContracts.cs` — DTOs: OptimizationGroupSubmissionResponse, OptimizationGroupSummaryResponse, OptimizationGroupDetailResponse, OptimizationGroupStatusResponse, GroupRunSummary
-- [ ] T020 [P] Create `ValidationGroupContracts` in `src/AlgoTradeForge.WebApi/Contracts/ValidationGroupContracts.cs` — DTOs: RunGroupValidationRequest (with maxTrialsToValidate field, default 100), ValidationGroupSubmissionResponse, ValidationGroupDetailResponse, ValidationGroupStatusResponse
-- [ ] T021 Add Serilog structured logging for group lifecycle events in `src/AlgoTradeForge.Application/Optimization/RunGroupOptimizationCommandHandler.cs` — log group created (with groupId, strategyName, dssCount), child run started, child run completed/failed (with runId, dssIndex, duration), group status transition (with groupId, oldStatus, newStatus)
+- [x] T018 Populate denormalized metric columns at trial write time — modify `SaveOptimizationAsync` in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteRunRepository.cs` to write `sharpe_ratio`, `sortino_ratio`, etc. from `PerformanceMetrics` alongside existing `fitness_score`
+- [x] T019 [P] Create `OptimizationGroupContracts` in `src/AlgoTradeForge.WebApi/Contracts/OptimizationGroupContracts.cs` — DTOs: OptimizationGroupSubmissionResponse, OptimizationGroupSummaryResponse, OptimizationGroupDetailResponse, OptimizationGroupStatusResponse, GroupRunSummary
+- [x] T020 [P] Create `ValidationGroupContracts` in `src/AlgoTradeForge.WebApi/Contracts/ValidationGroupContracts.cs` — DTOs: RunGroupValidationRequest (with maxTrialsToValidate field, default 100), ValidationGroupSubmissionResponse, ValidationGroupDetailResponse, ValidationGroupStatusResponse
+- [x] T021 Add Serilog structured logging for group lifecycle events in `src/AlgoTradeForge.Application/Optimization/RunGroupOptimizationCommandHandler.cs` — log group created (with groupId, strategyName, dssCount), child run started, child run completed/failed (with runId, dssIndex, duration), group status transition (with groupId, oldStatus, newStatus)
 
 **Checkpoint**: Foundation ready — data layer, records, repositories, DTOs, logging all in place
 
@@ -68,13 +68,13 @@
 
 ### Implementation for US1
 
-- [ ] T025 [US1] Create `RunGroupOptimizationCommand` in `src/AlgoTradeForge.Application/Optimization/RunGroupOptimizationCommand.cs` — single command with `OptimizationMethod` (BruteForce/Genetic), StrategyName, Axes, SubscriptionAxis (List<List<DataSubscriptionDto>>), BacktestSettings, MaxDegreeOfParallelism, MaxCombinations, MaxTrialsToKeep, trial filters, FitnessConfig, GeneticSettings (optional), InputJson
-- [ ] T026 [US1] Create `RunGroupOptimizationCommandHandler` — brute-force Channel orchestration in `src/AlgoTradeForge.Application/Optimization/RunGroupOptimizationCommandHandler.cs`: (1) compute group RunKey via BuildGroupKey, check dedup, (2) resolve subscriptions + load data caches per DSS, (3) resolve axes WITHOUT AppendSubscriptionAxis, (4) insert group + N child run placeholders, (5) create bounded Channel<(int DssIndex, ParameterCombination)>, (6) spawn maxParallelism LongRunning consumer tasks pulling from channel + calling helper.ExecuteTrial with DssIndex-specific data, (7) producer round-robin enqueues combos across DSS, (8) per-DSS BoundedTrialQueue + progress counters indexed by DssIndex, (9) on each DSS exhaustion: save per-run results + update group status via GroupStatusCalculator
-- [ ] T027 [US1] Add genetic mode to `RunGroupOptimizationCommandHandler` in `src/AlgoTradeForge.Application/Optimization/RunGroupOptimizationCommandHandler.cs` — per-DSS GA loops push evaluation work items into the shared Channel with ManualResetEventSlim for generation sync; evolution (selection, crossover, mutation) happens per-DSS between generations; consumer tasks are shared with brute-force path
-- [ ] T028 [US1] Modify `OptimizationSetupHelper` in `src/AlgoTradeForge.Application/Optimization/OptimizationSetupHelper.cs` — remove or bypass `AppendSubscriptionAxisAndFilter` when DSS is handled by group handler; keep method for backward compat but group handler calls axis resolution without subscription axis append
-- [ ] T029 [US1] Modify `POST /api/optimizations` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — when subscriptionAxis has >0 entries, dispatch to RunGroupOptimizationCommand; return OptimizationGroupSubmissionResponse with groupId + per-run details
-- [ ] T030 [US1] Modify `POST /api/optimizations/genetic` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — same group dispatch pattern for genetic mode
-- [ ] T031 [US1] Modify `POST /api/optimizations/evaluate` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — return per-run combination count (not multiplied by DSS count) + `dssCount` field
+- [x] T025 [US1] Create `RunGroupOptimizationCommand` in `src/AlgoTradeForge.Application/Optimization/RunGroupOptimizationCommand.cs` — single command with `OptimizationMethod` (BruteForce/Genetic), StrategyName, Axes, SubscriptionAxis (List<List<DataSubscriptionDto>>), BacktestSettings, MaxDegreeOfParallelism, MaxCombinations, MaxTrialsToKeep, trial filters, FitnessConfig, GeneticSettings (optional), InputJson
+- [x] T026 [US1] Create `RunGroupOptimizationCommandHandler` — brute-force Channel orchestration in `src/AlgoTradeForge.Application/Optimization/RunGroupOptimizationCommandHandler.cs`: (1) compute group RunKey via BuildGroupKey, check dedup, (2) resolve subscriptions + load data caches per DSS, (3) resolve axes WITHOUT AppendSubscriptionAxis, (4) insert group + N child run placeholders, (5) create bounded Channel<(int DssIndex, ParameterCombination)>, (6) spawn maxParallelism LongRunning consumer tasks pulling from channel + calling helper.ExecuteTrial with DssIndex-specific data, (7) producer round-robin enqueues combos across DSS, (8) per-DSS BoundedTrialQueue + progress counters indexed by DssIndex, (9) on each DSS exhaustion: save per-run results + update group status via GroupStatusCalculator
+- [x] T027 [US1] Add genetic mode to `RunGroupOptimizationCommandHandler` in `src/AlgoTradeForge.Application/Optimization/RunGroupOptimizationCommandHandler.cs` — per-DSS GA loops push evaluation work items into the shared Channel with ManualResetEventSlim for generation sync; evolution (selection, crossover, mutation) happens per-DSS between generations; consumer tasks are shared with brute-force path
+- [x] T028 [US1] Modify `OptimizationSetupHelper` in `src/AlgoTradeForge.Application/Optimization/OptimizationSetupHelper.cs` — remove or bypass `AppendSubscriptionAxisAndFilter` when DSS is handled by group handler; keep method for backward compat but group handler calls axis resolution without subscription axis append
+- [x] T029 [US1] Modify `POST /api/optimizations` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — when subscriptionAxis has >0 entries, dispatch to RunGroupOptimizationCommand; return OptimizationGroupSubmissionResponse with groupId + per-run details
+- [x] T030 [US1] Modify `POST /api/optimizations/genetic` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — same group dispatch pattern for genetic mode
+- [x] T031 [US1] Modify `POST /api/optimizations/evaluate` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — return per-run combination count (not multiplied by DSS count) + `dssCount` field
 - [ ] T032 [P] [US1] Test optimization group endpoints in `tests/AlgoTradeForge.WebApi.Tests/OptimizationEndpointGroupTests.cs` — POST creates group, response contains groupId + runs array, evaluate returns dssCount
 
 **Checkpoint**: Per-DSS optimization launches independently. Results per DSS are saved immediately. Group status tracked.
@@ -93,15 +93,15 @@
 
 ### Implementation for US2
 
-- [ ] T034 [US2] Add group list endpoint: modify `GET /api/optimizations` in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` to return OptimizationGroupSummaryResponse items (groups with status, totalRuns, completedRuns, failedRuns, subscriptions array)
-- [ ] T035 [US2] Add `GET /api/optimizations/groups/{groupId}` detail endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — returns group detail with nested child run summaries
-- [ ] T036 [US2] Add `GET /api/optimizations/groups/{groupId}/status` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — returns per-run progress (processed/total) from RunProgressCache
-- [ ] T037 [US2] Add `POST /api/optimizations/groups/{groupId}/cancel` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — cancel all in-progress runs via CancellationRegistry, preserve completed
-- [ ] T038 [US2] Add `DELETE /api/optimizations/groups/{groupId}` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — cascade delete group + all child runs + trials + failed trials
-- [ ] T039 [P] [US2] Add optimization group TypeScript types in `frontend/types/optimization.ts` — OptimizationGroup, OptimizationGroupSummary, OptimizationGroupDetail, OptimizationGroupStatus, GroupRunSummary
-- [ ] T040 [P] [US2] Add group hooks in `frontend/hooks/use-optimizations.ts` — useOptimizationGroups (list query), useOptimizationGroupDetail (by groupId), useOptimizationGroupStatus (polling), useCancelOptimizationGroup, useDeleteOptimizationGroup
-- [ ] T041 [US2] Create `optimization-groups-table.tsx` in `frontend/components/features/optimization/optimization-groups-table.tsx` — expandable group rows with: strategy, method, status, totalRuns, completedRuns, startedAt, subscriptions summary; expanded state shows nested DSS run rows with individual status, trial count, duration
-- [ ] T042 [US2] Modify optimization list page `frontend/app/[strategy]/optimization/page.tsx` to use optimization-groups-table instead of RunsTable; pass DashboardContent mode awareness
+- [x] T034 [US2] Add group list endpoint: modify `GET /api/optimizations` in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` to return OptimizationGroupSummaryResponse items (groups with status, totalRuns, completedRuns, failedRuns, subscriptions array)
+- [x] T035 [US2] Add `GET /api/optimizations/groups/{groupId}` detail endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — returns group detail with nested child run summaries
+- [x] T036 [US2] Add `GET /api/optimizations/groups/{groupId}/status` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — returns per-run progress (processed/total) from RunProgressCache
+- [x] T037 [US2] Add `POST /api/optimizations/groups/{groupId}/cancel` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — cancel all in-progress runs via CancellationRegistry, preserve completed
+- [x] T038 [US2] Add `DELETE /api/optimizations/groups/{groupId}` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — cascade delete group + all child runs + trials + failed trials
+- [x] T039 [P] [US2] Add optimization group TypeScript types in `frontend/types/optimization.ts` — OptimizationGroup, OptimizationGroupSummary, OptimizationGroupDetail, OptimizationGroupStatus, GroupRunSummary
+- [x] T040 [P] [US2] Add group hooks in `frontend/hooks/use-optimizations.ts` — useOptimizationGroups (list query), useOptimizationGroupDetail (by groupId), useOptimizationGroupStatus (polling), useCancelOptimizationGroup, useDeleteOptimizationGroup
+- [x] T041 [US2] Create `optimization-groups-table.tsx` in `frontend/components/features/optimization/optimization-groups-table.tsx` — expandable group rows with: strategy, method, status, totalRuns, completedRuns, startedAt, subscriptions summary; expanded state shows nested DSS run rows with individual status, trial count, duration
+- [x] T042 [US2] Modify optimization list page `frontend/app/[strategy]/optimization/page.tsx` to use optimization-groups-table instead of RunsTable; pass DashboardContent mode awareness
 
 **Checkpoint**: Optimization list shows expandable group rows with nested DSS runs.
 
@@ -119,13 +119,13 @@
 
 ### Implementation for US3
 
-- [ ] T044 [US3] Add `params` field to trial response DTOs — modify backtest run mapping in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteRunRepository.cs` to compute CSV params string from `parameters_json` (filter out DataSubscriptions key, format `Key:Value` pairs, ModuleSlot:VariantTypeKey for modules)
-- [ ] T045 [US3] Add `params` field to trial response contract in `src/AlgoTradeForge.WebApi/Contracts/OptimizationContracts.cs` (existing optimization trial response model)
-- [ ] T046 [US3] Modify `GET /api/optimizations/{id}/trials` in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` to support sortBy parameter using denormalized metric columns (sharpe_ratio, sortino_ratio, profit_factor, etc.) and include params field in response
-- [ ] T047 [US3] Add sortBy support to `GET /api/backtests` list endpoint in `src/AlgoTradeForge.WebApi/Endpoints/BacktestEndpoints.cs` — use same denormalized metric columns for backtest table sorting (FR-006)
-- [ ] T048 [US3] Modify `optimization-trials-table.tsx` in `frontend/components/features/report/optimization-trials-table.tsx` — add Params column as last column, make all metric column headers clickable for sort (asc/desc toggle), pass sortBy to useInfiniteOptimizationTrials hook
-- [ ] T049 [US3] Create `trial-backtest-panel.tsx` in `frontend/components/features/report/trial-backtest-panel.tsx` — on trial ID click: construct RunBacktestRequest from trial parameters + DSS, call openWithContent() from RunNewContext to open RunNewPanel pre-populated with the trial's data
-- [ ] T050 [US3] Wire clickable trial IDs in `optimization-trials-table.tsx` — each trial ID renders as a link/button that triggers trial-backtest-panel with the trial's parametersJson and DSS data
+- [x] T044 [US3] Add `params` field to trial response DTOs — modify backtest run mapping in `src/AlgoTradeForge.Infrastructure/Persistence/SqliteRunRepository.cs` to compute CSV params string from `parameters_json` (filter out DataSubscriptions key, format `Key:Value` pairs, ModuleSlot:VariantTypeKey for modules)
+- [x] T045 [US3] Add `params` field to trial response contract in `src/AlgoTradeForge.WebApi/Contracts/OptimizationContracts.cs` (existing optimization trial response model)
+- [x] T046 [US3] Modify `GET /api/optimizations/{id}/trials` in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` to support sortBy parameter using denormalized metric columns (sharpe_ratio, sortino_ratio, profit_factor, etc.) and include params field in response
+- [x] T047 [US3] Add sortBy support to `GET /api/backtests` list endpoint in `src/AlgoTradeForge.WebApi/Endpoints/BacktestEndpoints.cs` — use same denormalized metric columns for backtest table sorting (FR-006)
+- [x] T048 [US3] Modify `optimization-trials-table.tsx` in `frontend/components/features/report/optimization-trials-table.tsx` — add Params column as last column, make all metric column headers clickable for sort (asc/desc toggle), pass sortBy to useInfiniteOptimizationTrials hook
+- [x] T049 [US3] Create `trial-backtest-panel.tsx` in `frontend/components/features/report/trial-backtest-panel.tsx` — on trial ID click: construct RunBacktestRequest from trial parameters + DSS, call openWithContent() from RunNewContext to open RunNewPanel pre-populated with the trial's data
+- [x] T050 [US3] Wire clickable trial IDs in `optimization-trials-table.tsx` — each trial ID renders as a link/button that triggers trial-backtest-panel with the trial's parametersJson and DSS data
 
 **Checkpoint**: Trial tables have Params column, sortable metrics, clickable trial IDs opening pre-populated backtest panel.
 
@@ -143,11 +143,11 @@
 
 ### Implementation for US4
 
-- [ ] T052 [US4] Add `GET /api/optimizations/groups/{groupId}/trials` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — paginated cross-DSS trials with sortBy using denormalized columns, includes runId + dss per trial
-- [ ] T053 [P] [US4] Add cross-DSS trials hook in `frontend/hooks/use-optimizations.ts` — useOptimizationGroupTrials(groupId, { sortBy, limit, offset }) with infinite scroll
-- [ ] T054 [US4] Create `cross-dss-trials-table.tsx` in `frontend/components/features/report/cross-dss-trials-table.tsx` — combined table with DSS column, all metric columns sortable, Params column, clickable trial IDs (reuse trial-backtest-panel from US3), initial grouping by DSS with sort breaking grouping
-- [ ] T055 [US4] Create `optimization-group-page.tsx` in `frontend/components/features/report/optimization-group-page.tsx` — tabbed layout: "Per-DSS Runs" tab (child run list with drill-down) + "Cross-DSS" tab (cross-dss-trials-table), group header with status/metadata
-- [ ] T056 [US4] Create group report route `frontend/app/report/optimization-group/[groupId]/page.tsx` — server component loading optimization-group-page
+- [x] T052 [US4] Add `GET /api/optimizations/groups/{groupId}/trials` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/OptimizationEndpoints.cs` — paginated cross-DSS trials with sortBy using denormalized columns, includes runId + dss per trial
+- [x] T053 [P] [US4] Add cross-DSS trials hook in `frontend/hooks/use-optimizations.ts` — useOptimizationGroupTrials(groupId, { sortBy, limit, offset }) with infinite scroll
+- [x] T054 [US4] Create `cross-dss-trials-table.tsx` in `frontend/components/features/report/cross-dss-trials-table.tsx` — combined table with DSS column, all metric columns sortable, Params column, clickable trial IDs (reuse trial-backtest-panel from US3), initial grouping by DSS with sort breaking grouping
+- [x] T055 [US4] Create `optimization-group-page.tsx` in `frontend/components/features/report/optimization-group-page.tsx` — tabbed layout: "Per-DSS Runs" tab (child run list with drill-down) + "Cross-DSS" tab (cross-dss-trials-table), group header with status/metadata
+- [x] T056 [US4] Create group report route `frontend/app/report/optimization-group/[groupId]/page.tsx` — server component loading optimization-group-page
 
 **Checkpoint**: Cross-DSS comparison table works, sortable across all DSS.
 
@@ -161,7 +161,7 @@
 
 ### Implementation for US5
 
-- [ ] T057 [P] [US5] Create `dss-builder.tsx` in `frontend/components/features/dashboard/dss-builder.tsx` — collapsible section with table: each row has AssetName (text input), Exchange (text input), TimeFrame (text input), remove button. Add-row button. On change: serializes rows into `subscriptionAxis` format (List<List<DataSubscriptionDto>>), calls onChange callback
+- [x] T057 [P] [US5] Create `dss-builder.tsx` in `frontend/components/features/dashboard/dss-builder.tsx` — collapsible section with table: each row has AssetName (text input), Exchange (text input), TimeFrame (text input), remove button. Add-row button. On change: serializes rows into `subscriptionAxis` format (List<List<DataSubscriptionDto>>), calls onChange callback
 - [ ] T058 [US5] Integrate DSS builder into `run-new-panel.tsx` in `frontend/components/features/dashboard/run-new-panel.tsx` — render DssBuilder above CodeMirror editor (collapsible, pre-collapsed). On builder change: parse current editor JSON, update subscriptionAxis field, set editor content. On editor change: sync builder state from subscriptionAxis field (bidirectional sync)
 - [ ] T059 [US5] Add multi-DSS backtest support — when mode is "backtest" and subscriptionAxis has >1 entry, modify submit handler in `run-new-panel.tsx` to launch N separate backtest requests (one per DSS) via api-client.runBacktest(), showing N submission confirmations
 
@@ -181,17 +181,17 @@
 
 ### Implementation for US6
 
-- [ ] T061 [US6] Create `RunGroupValidationCommand` in `src/AlgoTradeForge.Application/Validation/RunGroupValidationCommand.cs` — fields: OptimizationGroupId, ThresholdProfileName, MaxTrialsToValidate (default 100)
-- [ ] T062 [US6] Create `RunGroupValidationCommandHandler` in `src/AlgoTradeForge.Application/Validation/RunGroupValidationCommandHandler.cs` — (1) load optimization group + child runs, (2) validate all or some child runs are Completed, (3) insert validation group placeholder, (4) for each completed DSS run: select top N trials by fitness (capped at MaxTrialsToValidate), create validation run referencing both validation_group_id and optimization_run_id, (5) launch per-DSS validation pipelines (can reuse existing RunValidationCommandHandler internally or call pipeline directly), (6) update validation group status on each child completion
-- [ ] T063 [US6] Modify `POST /api/validations` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/ValidationEndpoints.cs` — accept optimizationGroupId + thresholdProfileName + maxTrialsToValidate, dispatch to RunGroupValidationCommand, return ValidationGroupSubmissionResponse
-- [ ] T064 [US6] Modify `GET /api/validations` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/ValidationEndpoints.cs` to return validation groups (ValidationGroupSummaryResponse items)
-- [ ] T065 [US6] Add validation group sub-routes in `src/AlgoTradeForge.WebApi/Endpoints/ValidationEndpoints.cs` — GET groups/{groupId}, GET groups/{groupId}/status, GET groups/{groupId}/trials, POST groups/{groupId}/cancel, DELETE groups/{groupId}
+- [x] T061 [US6] Create `RunGroupValidationCommand` in `src/AlgoTradeForge.Application/Validation/RunGroupValidationCommand.cs` — fields: OptimizationGroupId, ThresholdProfileName, MaxTrialsToValidate (default 100)
+- [x] T062 [US6] Create `RunGroupValidationCommandHandler` in `src/AlgoTradeForge.Application/Validation/RunGroupValidationCommandHandler.cs` — (1) load optimization group + child runs, (2) validate all or some child runs are Completed, (3) insert validation group placeholder, (4) for each completed DSS run: select top N trials by fitness (capped at MaxTrialsToValidate), create validation run referencing both validation_group_id and optimization_run_id, (5) launch per-DSS validation pipelines (can reuse existing RunValidationCommandHandler internally or call pipeline directly), (6) update validation group status on each child completion
+- [x] T063 [US6] Modify `POST /api/validations` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/ValidationEndpoints.cs` — accept optimizationGroupId + thresholdProfileName + maxTrialsToValidate, dispatch to RunGroupValidationCommand, return ValidationGroupSubmissionResponse
+- [x] T064 [US6] Modify `GET /api/validations` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/ValidationEndpoints.cs` to return validation groups (ValidationGroupSummaryResponse items)
+- [x] T065 [US6] Add validation group sub-routes in `src/AlgoTradeForge.WebApi/Endpoints/ValidationEndpoints.cs` — GET groups/{groupId}, GET groups/{groupId}/status, GET groups/{groupId}/trials, POST groups/{groupId}/cancel, DELETE groups/{groupId}
 - [ ] T066 [P] [US6] Test validation group endpoints in `tests/AlgoTradeForge.WebApi.Tests/ValidationEndpointGroupTests.cs`
-- [ ] T067 [P] [US6] Add validation group TypeScript types in `frontend/types/validation.ts` — ValidationGroup, ValidationGroupSummary, ValidationGroupDetail, RunGroupValidationRequest (with maxTrialsToValidate)
-- [ ] T068 [P] [US6] Add validation group hooks in `frontend/hooks/use-validations.ts` — useValidationGroups, useValidationGroupDetail, useValidationGroupStatus, useRunGroupValidation, useCancelValidationGroup, useDeleteValidationGroup
-- [ ] T069 [US6] Create `validation-group-page.tsx` in `frontend/components/features/report/validation-group-page.tsx` — tabbed layout: "Per-DSS Runs" tab (child validation list with verdict badges, link to source optimization group) + "Cross-DSS" tab (cross-DSS validation trials table with verdict/score columns)
-- [ ] T070 [US6] Create validation group report route `frontend/app/report/validation-group/[groupId]/page.tsx`
-- [ ] T071 [US6] Modify validation launch in `frontend/components/features/report/optimization-group-page.tsx` — "Run Validation" button on group page opens dialog dispatching RunGroupValidationRequest with optimizationGroupId
+- [x] T067 [P] [US6] Add validation group TypeScript types in `frontend/types/validation.ts` — ValidationGroup, ValidationGroupSummary, ValidationGroupDetail, RunGroupValidationRequest (with maxTrialsToValidate)
+- [x] T068 [P] [US6] Add validation group hooks in `frontend/hooks/use-validations.ts` — useValidationGroups, useValidationGroupDetail, useValidationGroupStatus, useRunGroupValidation, useCancelValidationGroup, useDeleteValidationGroup
+- [x] T069 [US6] Create `validation-group-page.tsx` in `frontend/components/features/report/validation-group-page.tsx` — tabbed layout: "Per-DSS Runs" tab (child validation list with verdict badges, link to source optimization group) + "Cross-DSS" tab (cross-DSS validation trials table with verdict/score columns)
+- [x] T070 [US6] Create validation group report route `frontend/app/report/validation-group/[groupId]/page.tsx`
+- [x] T071 [US6] Modify validation launch in `frontend/components/features/report/optimization-group-page.tsx` — "Run Validation" button on group page opens dialog dispatching RunGroupValidationRequest with optimizationGroupId
 
 **Checkpoint**: Validation works per-DSS group with cross-DSS comparison.
 
@@ -201,9 +201,9 @@
 
 **Purpose**: Final integration, cleanup, end-to-end validation
 
-- [ ] T072 [P] Wire navigation: optimization group list rows link to `/report/optimization-group/{groupId}`, validation group list links to `/report/validation-group/{groupId}` across `frontend/components/`
-- [ ] T073 [P] Add RunProgress polling for group status — integrate useOptimizationGroupStatus into optimization-group-page.tsx with 2-second polling while status is InProgress
-- [ ] T074 [P] Add re-run support for groups — "Re-run" button on optimization-group-page reads inputJson, stores in sessionStorage, navigates to optimization page (same pattern as existing re-run in RunNewPanel)
+- [x] T072 [P] Wire navigation: optimization group list rows link to `/report/optimization-group/{groupId}`, validation group list links to `/report/validation-group/{groupId}` across `frontend/components/`
+- [x] T073 [P] Add RunProgress polling for group status — integrate useOptimizationGroupStatus into optimization-group-page.tsx with 2-second polling while status is InProgress
+- [x] T074 [P] Add re-run support for groups — "Re-run" button on optimization-group-page reads inputJson, stores in sessionStorage, navigates to optimization page (same pattern as existing re-run in RunNewPanel)
 - [ ] T075 Benchmark cross-DSS trial sorting with 10K+ rows per DSS run in `tests/AlgoTradeForge.Infrastructure.Tests/Persistence/SqliteRunRepository_GroupTests.cs` — verify sort completes in <1 second on SQLite (SC-003)
 - [ ] T076 Run quickstart.md validation — launch backend, launch frontend, execute API quick test from quickstart.md, verify end-to-end flow
 

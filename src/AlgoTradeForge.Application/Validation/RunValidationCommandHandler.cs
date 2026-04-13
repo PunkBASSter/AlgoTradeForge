@@ -75,6 +75,7 @@ public sealed class RunValidationCommandHandler(
             ThresholdProfileJson = JsonSerializer.Serialize(profile, JsonOptions),
             CandidatesIn = trialsWithCurves.Count,
             InvocationCount = invocationCount,
+            ValidationGroupId = command.ValidationGroupId,
         };
         await validationRepository.InsertPlaceholderAsync(placeholder, ct);
 

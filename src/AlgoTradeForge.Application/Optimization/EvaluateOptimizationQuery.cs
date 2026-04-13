@@ -26,6 +26,7 @@ public sealed record OptimizationEvaluationDto
     public bool ExceedsMaxCombinations { get; init; }
     public long MaxCombinations { get; init; }
     public int EffectiveDimensions { get; init; }
+    public int DssCount { get; init; }
     public ResolvedGeneticConfigDto? GeneticConfig { get; init; }
 }
 

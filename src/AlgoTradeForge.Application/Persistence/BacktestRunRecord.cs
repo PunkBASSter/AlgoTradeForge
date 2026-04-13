@@ -23,6 +23,7 @@ public sealed record BacktestRunRecord
     public double? FitnessScore { get; init; }
     public string? ErrorMessage { get; init; }
     public string? ErrorStackTrace { get; init; }
+    public string? Params { get; init; }
 }
 
 public sealed record EquityPoint(long TimestampMs, double Value);

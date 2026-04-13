@@ -22,6 +22,7 @@ public static class DependencyInjection
         services.AddSingleton<OptimizationSetupHelper>();
         services.AddSingleton<ICommandHandler<RunOptimizationCommand, OptimizationSubmissionDto>, RunOptimizationCommandHandler>();
         services.AddSingleton<ICommandHandler<RunGeneticOptimizationCommand, OptimizationSubmissionDto>, RunGeneticOptimizationCommandHandler>();
+        services.AddSingleton<ICommandHandler<RunGroupOptimizationCommand, OptimizationGroupSubmissionDto>, RunGroupOptimizationCommandHandler>();
         services.AddSingleton<OptimizationAxisResolver>();
 
         // Progress tracking
@@ -56,12 +57,24 @@ public static class DependencyInjection
         services.AddScoped<ICommandHandler<DeleteBacktestCommand, bool>, DeleteBacktestCommandHandler>();
         services.AddScoped<ICommandHandler<CancelRunCommand, bool>, CancelRunCommandHandler>();
 
+        // Optimization group handlers
+        services.AddScoped<IQueryHandler<GetOptimizationGroupByIdQuery, OptimizationGroupRecord?>, GetOptimizationGroupByIdQueryHandler>();
+        services.AddScoped<IQueryHandler<GetOptimizationGroupTrialsQuery, PagedResult<BacktestRunRecord>>, GetOptimizationGroupTrialsQueryHandler>();
+        services.AddScoped<IQueryHandler<GetOptimizationGroupStatusQuery, OptimizationGroupStatusDto?>, GetOptimizationGroupStatusQueryHandler>();
+        services.AddScoped<ICommandHandler<CancelOptimizationGroupCommand, bool>, CancelOptimizationGroupCommandHandler>();
+        services.AddScoped<ICommandHandler<DeleteOptimizationGroupCommand, bool>, DeleteOptimizationGroupCommandHandler>();
+
         // Validation
         services.AddSingleton<ICommandHandler<RunValidationCommand, ValidationSubmissionDto>, RunValidationCommandHandler>();
+        services.AddSingleton<ICommandHandler<RunGroupValidationCommand, ValidationGroupSubmissionDto>, RunGroupValidationCommandHandler>();
         services.AddScoped<IQueryHandler<GetValidationByIdQuery, ValidationRunRecord?>, GetValidationByIdQueryHandler>();
         services.AddScoped<IQueryHandler<GetValidationStatusQuery, ValidationStatusDto?>, GetValidationStatusQueryHandler>();
         services.AddScoped<IQueryHandler<GetValidationEquityQuery, ValidationEquityDto?>, GetValidationEquityQueryHandler>();
         services.AddScoped<IQueryHandler<ListValidationsQuery, PagedResult<ValidationRunRecord>>, ListValidationsQueryHandler>();
+        services.AddScoped<IQueryHandler<GetValidationGroupByIdQuery, ValidationGroupRecord?>, GetValidationGroupByIdQueryHandler>();
+        services.AddScoped<IQueryHandler<GetValidationGroupStatusQuery, ValidationGroupStatusDto?>, GetValidationGroupStatusQueryHandler>();
+        services.AddScoped<ICommandHandler<CancelValidationGroupCommand, bool>, CancelValidationGroupCommandHandler>();
+        services.AddScoped<ICommandHandler<DeleteValidationGroupCommand, bool>, DeleteValidationGroupCommandHandler>();
 
         // Debug session management
         services.AddSingleton<IDebugSessionStore, InMemoryDebugSessionStore>();

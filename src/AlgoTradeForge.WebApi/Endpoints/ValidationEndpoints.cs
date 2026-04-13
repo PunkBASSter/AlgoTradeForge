@@ -1,5 +1,7 @@
 using System.Text.Json;
+using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Validation;
@@ -68,6 +70,42 @@ public static class ValidationEndpoints
             .WithOpenApi()
             .Produces(StatusCodes.Status200OK, contentType: "text/html")
             .Produces(StatusCodes.Status404NotFound);
+
+        // Validation group sub-routes
+        group.MapPost("/groups", RunGroupValidation)
+            .WithName("RunGroupValidation")
+            .WithSummary("Submit a per-DSS group validation for background execution")
+            .WithOpenApi()
+            .Produces<ValidationGroupSubmissionResponse>(StatusCodes.Status202Accepted)
+            .Produces(StatusCodes.Status400BadRequest);
+
+        group.MapGet("/groups/{groupId:guid}", GetValidationGroup)
+            .WithName("GetValidationGroup")
+            .WithSummary("Get validation group detail with child validation runs")
+            .WithOpenApi()
+            .Produces<ValidationGroupDetailResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/groups/{groupId:guid}/status", GetValidationGroupStatus)
+            .WithName("GetValidationGroupStatus")
+            .WithSummary("Poll validation group progress")
+            .WithOpenApi()
+            .Produces<ValidationGroupStatusResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPost("/groups/{groupId:guid}/cancel", CancelValidationGroup)
+            .WithName("CancelValidationGroup")
+            .WithSummary("Cancel all in-progress validation runs in the group")
+            .WithOpenApi()
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status404NotFound);
+
+        group.MapDelete("/groups/{groupId:guid}", DeleteValidationGroup)
+            .WithName("DeleteValidationGroup")
+            .WithSummary("Delete validation group and all related data")
+            .WithOpenApi()
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> ListValidations(
@@ -101,11 +139,47 @@ public static class ValidationEndpoints
     private static async Task<IResult> RunValidation(
         RunValidationRequest request,
         ICommandHandler<RunValidationCommand, ValidationSubmissionDto> handler,
+        ICommandHandler<RunGroupValidationCommand, ValidationGroupSubmissionDto> groupHandler,
         CancellationToken ct)
     {
+        // Dispatch to group handler when optimizationGroupId is present
+        if (request.OptimizationGroupId is not null)
+        {
+            var groupCommand = new RunGroupValidationCommand
+            {
+                OptimizationGroupId = request.OptimizationGroupId.Value,
+                ThresholdProfileName = request.ThresholdProfileName,
+                MaxTrialsToValidate = request.MaxTrialsToValidate,
+            };
+
+            try
+            {
+                var groupSubmission = await groupHandler.HandleAsync(groupCommand, CancellationToken.None);
+                var groupResponse = new ValidationGroupSubmissionResponse
+                {
+                    GroupId = groupSubmission.GroupId,
+                    Runs = groupSubmission.Runs.Select(r => new ValidationGroupRunSubmission
+                    {
+                        Id = r.Id,
+                        OptimizationRunId = r.OptimizationRunId,
+                        CandidateCount = r.CandidateCount,
+                    }).ToList(),
+                };
+                return Results.Accepted($"/api/validations/groups/{groupSubmission.GroupId}/status", groupResponse);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        }
+
+        // Single-run path (backward compat)
+        if (request.OptimizationRunId is null)
+            return Results.BadRequest(new { error = "Either optimizationRunId or optimizationGroupId must be provided." });
+
         var command = new RunValidationCommand
         {
-            OptimizationRunId = request.OptimizationRunId,
+            OptimizationRunId = request.OptimizationRunId.Value,
             ThresholdProfileName = request.ThresholdProfileName,
         };
 
@@ -291,4 +365,147 @@ public static class ValidationEndpoints
         return JsonSerializer.Deserialize<Dictionary<string, double>>(json, CamelCase)
             ?? new Dictionary<string, double>();
     }
+
+    // ── Validation group endpoint handlers ───────────────────────────────
+
+    private static async Task<IResult> RunGroupValidation(
+        RunGroupValidationRequest request,
+        ICommandHandler<RunGroupValidationCommand, ValidationGroupSubmissionDto> groupHandler,
+        CancellationToken ct)
+    {
+        var command = new RunGroupValidationCommand
+        {
+            OptimizationGroupId = request.OptimizationGroupId,
+            ThresholdProfileName = request.ThresholdProfileName,
+            MaxTrialsToValidate = request.MaxTrialsToValidate,
+        };
+
+        try
+        {
+            var submission = await groupHandler.HandleAsync(command, CancellationToken.None);
+            var response = new ValidationGroupSubmissionResponse
+            {
+                GroupId = submission.GroupId,
+                Runs = submission.Runs.Select(r => new ValidationGroupRunSubmission
+                {
+                    Id = r.Id,
+                    OptimizationRunId = r.OptimizationRunId,
+                    CandidateCount = r.CandidateCount,
+                }).ToList(),
+            };
+            return Results.Accepted($"/api/validations/groups/{submission.GroupId}/status", response);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> GetValidationGroup(
+        Guid groupId,
+        IQueryHandler<GetValidationGroupByIdQuery, ValidationGroupRecord?> handler,
+        IQueryHandler<GetOptimizationGroupByIdQuery, OptimizationGroupRecord?> optGroupHandler,
+        CancellationToken ct)
+    {
+        var group = await handler.HandleAsync(new GetValidationGroupByIdQuery(groupId), ct);
+        if (group is null)
+            return Results.NotFound(new { error = $"Validation group '{groupId}' not found." });
+
+        // Load DSS info from the linked optimization group's child runs
+        Dictionary<Guid, IReadOnlyList<DataSubscriptionDto>>? optRunDssLookup = null;
+        var optGroup = await optGroupHandler.HandleAsync(
+            new GetOptimizationGroupByIdQuery(group.OptimizationGroupId), ct);
+        if (optGroup is not null)
+        {
+            optRunDssLookup = optGroup.Runs.ToDictionary(r => r.Id, r => r.DataSubscriptions);
+        }
+
+        return Results.Ok(MapValidationGroupToResponse(group, optRunDssLookup));
+    }
+
+    private static async Task<IResult> GetValidationGroupStatus(
+        Guid groupId,
+        IQueryHandler<GetValidationGroupStatusQuery, ValidationGroupStatusDto?> handler,
+        CancellationToken ct)
+    {
+        var dto = await handler.HandleAsync(new GetValidationGroupStatusQuery(groupId), ct);
+        if (dto is null)
+            return Results.NotFound(new { error = $"Validation group '{groupId}' not found." });
+
+        return Results.Ok(new ValidationGroupStatusResponse
+        {
+            Id = dto.Id,
+            Status = dto.Status,
+            Runs = dto.Runs.Select(r => new GroupRunStatusResponse
+            {
+                Id = r.Id,
+                Status = r.Status,
+                Processed = r.Processed,
+                Total = r.Total,
+            }).ToList(),
+        });
+    }
+
+    private static async Task<IResult> CancelValidationGroup(
+        Guid groupId,
+        ICommandHandler<CancelValidationGroupCommand, bool> handler,
+        CancellationToken ct)
+    {
+        var found = await handler.HandleAsync(new CancelValidationGroupCommand(groupId), ct);
+        if (!found)
+            return Results.NotFound(new { error = $"Validation group '{groupId}' not found." });
+
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> DeleteValidationGroup(
+        Guid groupId,
+        ICommandHandler<DeleteValidationGroupCommand, bool> handler,
+        CancellationToken ct)
+    {
+        var deleted = await handler.HandleAsync(new DeleteValidationGroupCommand(groupId), ct);
+        if (!deleted)
+            return Results.NotFound(new { error = $"Validation group '{groupId}' not found." });
+
+        return Results.NoContent();
+    }
+
+    private static ValidationGroupDetailResponse MapValidationGroupToResponse(
+        ValidationGroupRecord group,
+        Dictionary<Guid, IReadOnlyList<DataSubscriptionDto>>? optRunDssLookup) => new()
+    {
+        Id = group.Id,
+        OptimizationGroupId = group.OptimizationGroupId,
+        StrategyName = group.StrategyName,
+        ThresholdProfileName = group.ThresholdProfileName,
+        Status = group.Status,
+        StartedAt = group.StartedAt,
+        CompletedAt = group.CompletedAt,
+        TotalRuns = group.TotalRuns,
+        Runs = group.Runs.Select(r =>
+        {
+            // Look up DSS from the linked optimization run
+            var dss = optRunDssLookup is not null
+                && optRunDssLookup.TryGetValue(r.OptimizationRunId, out var subs)
+                ? subs.Select(d => new DataSubscriptionInput
+                {
+                    AssetName = d.AssetName,
+                    Exchange = d.Exchange,
+                    TimeFrame = d.TimeFrame,
+                }).ToList()
+                : [];
+
+            return new ValidationGroupRunDetailResponse
+            {
+                Id = r.Id,
+                OptimizationRunId = r.OptimizationRunId,
+                Dss = dss,
+                Status = r.Status,
+                CandidatesIn = r.CandidatesIn,
+                CandidatesOut = r.CandidatesOut,
+                CompositeScore = r.CompositeScore,
+                Verdict = r.Verdict,
+            };
+        }).ToList(),
+    };
 }

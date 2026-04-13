@@ -6,6 +6,7 @@ public sealed record RunValidationCommand : ICommand<ValidationSubmissionDto>
 {
     public required Guid OptimizationRunId { get; init; }
     public string ThresholdProfileName { get; init; } = "Crypto-Standard";
+    public Guid? ValidationGroupId { get; init; }
 }
 
 public sealed record ValidationSubmissionDto(Guid Id, int CandidateCount);

@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 17;
+    private const int CurrentVersion = 18;
 
     private static readonly SemaphoreSlim _orphanCleanupLock = new(1, 1);
     private static bool _orphanCleanupDone;
@@ -14,6 +14,23 @@ internal static class SqliteDbInitializer
 
         CREATE TABLE IF NOT EXISTS schema_version (
             version INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS optimization_groups (
+            id                          TEXT    NOT NULL PRIMARY KEY,
+            strategy_name               TEXT    NOT NULL,
+            strategy_version            TEXT    NULL,
+            optimization_method         TEXT    NOT NULL,
+            started_at                  TEXT    NOT NULL,
+            completed_at                TEXT    NULL,
+            total_runs                  INTEGER NOT NULL,
+            status                      TEXT    NOT NULL DEFAULT 'InProgress',
+            input_json                  TEXT    NULL,
+            subscriptions_json          TEXT    NOT NULL,
+            backtest_settings_json      TEXT    NOT NULL,
+            optimization_settings_json  TEXT    NULL,
+            fitness_config_json         TEXT    NULL,
+            max_parallelism             INTEGER NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS optimization_runs (
@@ -42,7 +59,9 @@ internal static class SqliteDbInitializer
             input_json          TEXT    NULL,
             error_message       TEXT    NULL,
             status              TEXT    NOT NULL DEFAULT 'Completed',
-            subscriptions_json  TEXT    NULL
+            subscriptions_json  TEXT    NULL,
+            group_id            TEXT    NULL REFERENCES optimization_groups(id),
+            dss_index           INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS backtest_runs (
@@ -71,7 +90,15 @@ internal static class SqliteDbInitializer
             error_message       TEXT    NULL,
             error_stack_trace   TEXT    NULL,
             fitness_score       REAL    NULL,
-            subscriptions_json  TEXT    NULL
+            subscriptions_json  TEXT    NULL,
+            sharpe_ratio        REAL    NULL,
+            sortino_ratio       REAL    NULL,
+            profit_factor       REAL    NULL,
+            max_drawdown_pct    REAL    NULL,
+            win_rate_pct        REAL    NULL,
+            total_trades        INTEGER NULL,
+            net_profit          REAL    NULL,
+            annualized_return_pct REAL  NULL
         );
 
         CREATE INDEX IF NOT EXISTS ix_br_strategy ON backtest_runs(strategy_name);
@@ -79,6 +106,7 @@ internal static class SqliteDbInitializer
         CREATE INDEX IF NOT EXISTS ix_br_opt_id ON backtest_runs(optimization_run_id);
         CREATE INDEX IF NOT EXISTS ix_br_asset ON backtest_runs(asset_name, exchange, timeframe);
         CREATE INDEX IF NOT EXISTS ix_opr_asset ON optimization_runs(asset_name, exchange, timeframe);
+        CREATE INDEX IF NOT EXISTS ix_or_group_id ON optimization_runs(group_id);
         -- ix_br_opt_fitness created asynchronously by SqliteIndexMaintenanceService
 
         CREATE TABLE IF NOT EXISTS optimization_failed_trials (
@@ -91,6 +119,19 @@ internal static class SqliteDbInitializer
             occurrence_count       INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS ix_oft_opt_id ON optimization_failed_trials(optimization_run_id);
+
+        CREATE TABLE IF NOT EXISTS validation_groups (
+            id                      TEXT    NOT NULL PRIMARY KEY,
+            optimization_group_id   TEXT    NOT NULL REFERENCES optimization_groups(id),
+            strategy_name           TEXT    NOT NULL,
+            threshold_profile_name  TEXT    NOT NULL,
+            threshold_profile_json  TEXT    NULL,
+            started_at              TEXT    NOT NULL,
+            completed_at            TEXT    NULL,
+            total_runs              INTEGER NOT NULL,
+            status                  TEXT    NOT NULL DEFAULT 'InProgress'
+        );
+        CREATE INDEX IF NOT EXISTS ix_vg_opt_group_id ON validation_groups(optimization_group_id);
 
         CREATE TABLE IF NOT EXISTS validation_runs (
             id                      TEXT    NOT NULL PRIMARY KEY,
@@ -111,9 +152,11 @@ internal static class SqliteDbInitializer
             invocation_count        INTEGER NOT NULL DEFAULT 1,
             error_message           TEXT    NULL,
             category_scores_json    TEXT    NULL,
-            rejections_json         TEXT    NULL
+            rejections_json         TEXT    NULL,
+            validation_group_id     TEXT    NULL REFERENCES validation_groups(id)
         );
         CREATE INDEX IF NOT EXISTS ix_validation_runs_opt_id ON validation_runs(optimization_run_id);
+        CREATE INDEX IF NOT EXISTS ix_vr_validation_group_id ON validation_runs(validation_group_id);
 
         CREATE TABLE IF NOT EXISTS validation_stage_results (
             id                      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -240,6 +283,19 @@ internal static class SqliteDbInitializer
 
     private const string MigrationV17 = """
         CREATE INDEX IF NOT EXISTS ix_br_opt_fitness ON backtest_runs(optimization_run_id, fitness_score DESC);
+        """;
+
+    // V18: Per-DSS optimization split — drops all optimization/validation data (FR-014)
+    // and recreates tables with new group structure + denormalized metrics.
+    private const string MigrationV18 = """
+        DROP TABLE IF EXISTS validation_stage_results;
+        DROP TABLE IF EXISTS validation_runs;
+        DROP TABLE IF EXISTS validation_groups;
+        DROP TABLE IF EXISTS simulation_cache_metadata;
+        DROP TABLE IF EXISTS optimization_failed_trials;
+        DROP TABLE IF EXISTS backtest_runs;
+        DROP TABLE IF EXISTS optimization_runs;
+        DROP TABLE IF EXISTS optimization_groups;
         """;
 
     public static async Task EnsureCreatedAsync(string connectionString)
@@ -381,6 +437,21 @@ internal static class SqliteDbInitializer
             await SetVersionAsync(connection, 17);
         }
 
+        if (currentVersion < 18)
+        {
+            // Per-DSS optimization split: drop all optimization/validation data,
+            // then re-run the base Schema to recreate tables with new structure.
+            await using var dropCmd = connection.CreateCommand();
+            dropCmd.CommandText = MigrationV18;
+            await dropCmd.ExecuteNonQueryAsync();
+
+            await using var recreateCmd = connection.CreateCommand();
+            recreateCmd.CommandText = Schema;
+            await recreateCmd.ExecuteNonQueryAsync();
+
+            await SetVersionAsync(connection, 18);
+        }
+
         await CleanupOrphanedRunsOnceAsync(connection);
     }
 
@@ -416,6 +487,20 @@ internal static class SqliteDbInitializer
                 """;
             await orphanValCmd.ExecuteNonQueryAsync();
 
+            await using var orphanOptGroupCmd = connection.CreateCommand();
+            orphanOptGroupCmd.CommandText = """
+                UPDATE optimization_groups SET status = 'Failed', completed_at = started_at
+                WHERE status = 'InProgress'
+                """;
+            await orphanOptGroupCmd.ExecuteNonQueryAsync();
+
+            await using var orphanValGroupCmd = connection.CreateCommand();
+            orphanValGroupCmd.CommandText = """
+                UPDATE validation_groups SET status = 'Failed', completed_at = started_at
+                WHERE status = 'InProgress'
+                """;
+            await orphanValGroupCmd.ExecuteNonQueryAsync();
+
             _orphanCleanupDone = true;
         }
         finally
@@ -432,16 +517,26 @@ internal static class SqliteDbInitializer
         return result is not null ? Convert.ToInt32(result) : 0;
     }
 
+    private static readonly System.Text.RegularExpressions.Regex SafeIdentifier =
+        new(@"^[a-zA-Z_][a-zA-Z0-9_]*$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
     private static async Task AddColumnIfNotExistsAsync(
         SqliteConnection connection, string table, string column, string definition)
     {
+        if (!SafeIdentifier.IsMatch(table))
+            throw new ArgumentException($"Invalid table identifier: {table}", nameof(table));
+        if (!SafeIdentifier.IsMatch(column))
+            throw new ArgumentException($"Invalid column identifier: {column}", nameof(column));
+
         await using var checkCmd = connection.CreateCommand();
-        checkCmd.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'";
+        checkCmd.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = $col";
+        checkCmd.Parameters.AddWithValue("$col", column);
         var exists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
         if (exists) return;
 
+        // table/column are validated against SafeIdentifier above; definition is always a hardcoded literal.
         await using var alterCmd = connection.CreateCommand();
-        alterCmd.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition}";
+        alterCmd.CommandText = $"ALTER TABLE [{table}] ADD COLUMN [{column}] {definition}";
         await alterCmd.ExecuteNonQueryAsync();
     }
 

@@ -36,6 +36,18 @@ import type {
   RunValidationRequest,
 } from "@/types/validation";
 import type { ThresholdProfileResponse } from "@/types/threshold-profile";
+import type {
+  OptimizationGroupSummary,
+  OptimizationGroupDetail,
+  OptimizationGroupStatus,
+} from "@/types/optimization-group";
+import type {
+  ValidationGroupSummary,
+  ValidationGroupDetail,
+  ValidationGroupStatus,
+  ValidationGroupSubmission,
+  RunGroupValidationRequest,
+} from "@/types/validation-group";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -65,6 +77,22 @@ export interface OptimizationListParams {
   assetName?: string;
   exchange?: string;
   timeFrame?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface OptimizationGroupListParams {
+  strategyName?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ValidationGroupListParams {
+  strategyName?: string;
   from?: string;
   to?: string;
   limit?: number;
@@ -309,6 +337,57 @@ export const apiClient = {
     );
   },
 
+  // --- Optimization groups ---
+
+  getOptimizationGroups(
+    params?: OptimizationGroupListParams,
+  ): Promise<PagedResponse<OptimizationGroupSummary>> {
+    const qs = buildQueryString({ ...params });
+    return request<PagedResponse<OptimizationGroupSummary>>(
+      `/api/optimizations/groups${qs}`,
+    );
+  },
+
+  getOptimizationGroup(groupId: string): Promise<OptimizationGroupDetail> {
+    return request<OptimizationGroupDetail>(
+      `/api/optimizations/groups/${encodeURIComponent(groupId)}`,
+    );
+  },
+
+  getOptimizationGroupStatus(groupId: string): Promise<OptimizationGroupStatus> {
+    return request<OptimizationGroupStatus>(
+      `/api/optimizations/groups/${encodeURIComponent(groupId)}/status`,
+    );
+  },
+
+  getOptimizationGroupTrials(
+    groupId: string,
+    params?: { limit?: number; offset?: number; sortBy?: string },
+  ): Promise<PagedResponse<BacktestRun>> {
+    const qs = buildQueryString({
+      limit: params?.limit,
+      offset: params?.offset,
+      sortBy: params?.sortBy,
+    });
+    return request<PagedResponse<BacktestRun>>(
+      `/api/optimizations/groups/${encodeURIComponent(groupId)}/trials${qs}`,
+    );
+  },
+
+  cancelOptimizationGroup(groupId: string): Promise<{ id: string; status: string }> {
+    return request<{ id: string; status: string }>(
+      `/api/optimizations/groups/${encodeURIComponent(groupId)}/cancel`,
+      { method: "POST" },
+    );
+  },
+
+  async deleteOptimizationGroup(groupId: string): Promise<void> {
+    await requestVoid(
+      `/api/optimizations/groups/${encodeURIComponent(groupId)}`,
+      { method: "DELETE" },
+    );
+  },
+
   // --- Live sessions ---
 
   getLiveSessions(): Promise<LiveSessionListResponse> {
@@ -385,6 +464,51 @@ export const apiClient = {
   async deleteValidation(id: string): Promise<void> {
     await requestVoid(
       `/api/validations/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  // --- Validation groups ---
+
+  getValidationGroups(
+    params?: ValidationGroupListParams,
+  ): Promise<PagedResponse<ValidationGroupSummary>> {
+    const qs = buildQueryString({ ...params });
+    return request<PagedResponse<ValidationGroupSummary>>(
+      `/api/validations/groups${qs}`,
+    );
+  },
+
+  getValidationGroup(groupId: string): Promise<ValidationGroupDetail> {
+    return request<ValidationGroupDetail>(
+      `/api/validations/groups/${encodeURIComponent(groupId)}`,
+    );
+  },
+
+  getValidationGroupStatus(groupId: string): Promise<ValidationGroupStatus> {
+    return request<ValidationGroupStatus>(
+      `/api/validations/groups/${encodeURIComponent(groupId)}/status`,
+    );
+  },
+
+  runGroupValidation(req: RunGroupValidationRequest): Promise<ValidationGroupSubmission> {
+    return request<ValidationGroupSubmission>("/api/validations/groups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    });
+  },
+
+  cancelValidationGroup(groupId: string): Promise<{ id: string; status: string }> {
+    return request<{ id: string; status: string }>(
+      `/api/validations/groups/${encodeURIComponent(groupId)}/cancel`,
+      { method: "POST" },
+    );
+  },
+
+  async deleteValidationGroup(groupId: string): Promise<void> {
+    await requestVoid(
+      `/api/validations/groups/${encodeURIComponent(groupId)}`,
       { method: "DELETE" },
     );
   },
