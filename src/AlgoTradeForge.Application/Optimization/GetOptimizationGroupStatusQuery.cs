@@ -40,7 +40,8 @@ public sealed class GetOptimizationGroupStatusQueryHandler(
             {
                 Id = run.Id,
                 Status = run.Status,
-                Processed = progress?.Processed ?? run.TotalCombinations,
+                Processed = progress?.Processed
+                    ?? (run.Status == OptimizationRunStatus.Enqueued ? 0 : run.TotalCombinations),
                 Total = progress?.Total ?? run.TotalCombinations,
             });
         }

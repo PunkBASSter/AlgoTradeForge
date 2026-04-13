@@ -281,7 +281,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 $sortBy, $dataStart, $dataEnd,
                 $cash, $commission, $slippage, $maxParallelism,
                 $asset, $exchange, $tf, 0, 0,
-                $optMethod, NULL, $inputJson, NULL, 'InProgress',
+                $optMethod, NULL, $inputJson, NULL, $status,
                 $subscriptionsJson, $groupId, $dssIndex
             )
             """;
@@ -303,6 +303,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         cmd.Parameters.AddWithValue("$tf", record.DataSubscriptions[0].TimeFrame);
         cmd.Parameters.AddWithValue("$optMethod", (object?)record.OptimizationMethod ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$inputJson", (object?)record.InputJson ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$status", record.Status);
         cmd.Parameters.AddWithValue("$subscriptionsJson",
             JsonSerializer.Serialize(record.DataSubscriptions, JsonOptions));
         cmd.Parameters.AddWithValue("$groupId",
@@ -566,7 +567,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         // Fetch page — pin in-progress runs at top, then sort by start time
         var sb = new StringBuilder("SELECT * FROM optimization_runs opr");
         sb.Append(whereClause);
-        sb.Append(" ORDER BY CASE WHEN opr.status = 'InProgress' THEN 0 ELSE 1 END, opr.started_at DESC");
+        sb.Append(" ORDER BY CASE WHEN opr.status IN ('InProgress', 'Enqueued') THEN 0 ELSE 1 END, opr.started_at DESC");
         sb.Append(" LIMIT $limit OFFSET $offset");
 
         await using var cmd = conn.CreateCommand();
@@ -845,6 +846,12 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 ? null
                 : reader.GetInt32(reader.GetOrdinal("generations_completed")),
             Status = reader.GetString(reader.GetOrdinal("status")),
+            GroupId = TryGetOrdinal(reader, "group_id") is int gOrd && !reader.IsDBNull(gOrd)
+                ? Guid.Parse(reader.GetString(gOrd))
+                : null,
+            DssIndex = TryGetOrdinal(reader, "dss_index") is int dOrd && !reader.IsDBNull(dOrd)
+                ? reader.GetInt32(dOrd)
+                : 0,
             Trials = [], // loaded separately
         };
     }
@@ -1077,6 +1084,24 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             results.Add(ReadOptimizationGroup(reader));
 
         return new PagedResult<OptimizationGroupRecord>(results, totalCount);
+    }
+
+    public async Task UpdateOptimizationRunStatusAsync(
+        Guid runId, string status, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            UPDATE optimization_runs
+            SET status = $status
+            WHERE id = $id
+            """;
+        cmd.Parameters.AddWithValue("$id", runId.ToString());
+        cmd.Parameters.AddWithValue("$status", status);
+
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     public async Task UpdateOptimizationGroupStatusAsync(

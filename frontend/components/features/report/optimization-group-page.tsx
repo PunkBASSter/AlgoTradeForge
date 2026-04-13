@@ -8,6 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useOptimizationGroupDetail,
   useDeleteOptimizationGroup,
+  useCancelOptimizationGroup,
 } from "@/hooks/use-optimization-groups";
 import { useRunGroupValidation } from "@/hooks/use-validation-groups";
 import { CrossDssTrialsTable } from "@/components/features/report/cross-dss-trials-table";
@@ -30,6 +31,7 @@ function StatusBadge({ status }: { status: string }) {
     switch (status) {
       case "Completed": return "bg-green-900/30 text-green-400 border-green-700";
       case "InProgress": return "bg-blue-900/30 text-blue-400 border-blue-700";
+      case "Enqueued": return "bg-neutral-800 text-gray-400 border-gray-600";
       case "Failed": return "bg-red-900/30 text-red-400 border-red-700";
       case "Cancelled": return "bg-yellow-900/30 text-yellow-400 border-yellow-700";
       default: return "bg-bg-surface text-text-muted border-border-default";
@@ -127,6 +129,7 @@ export function OptimizationGroupPage({ groupId }: OptimizationGroupPageProps) {
   } = useOptimizationGroupDetail(groupId);
 
   const deleteMutation = useDeleteOptimizationGroup();
+  const cancelMutation = useCancelOptimizationGroup();
   const runGroupValidation = useRunGroupValidation();
 
   const isCompleted = group?.status === "Completed";
@@ -193,36 +196,47 @@ export function OptimizationGroupPage({ groupId }: OptimizationGroupPageProps) {
             {methodLabel} -- {group.totalRuns} DSS runs
           </p>
         </div>
-        {!isInProgress && (
-          <div className="flex items-center gap-2">
-            {group.inputJson && (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  sessionStorage.setItem("rerun-optimization-config", group.inputJson!);
-                  router.push(`/${group.strategyName}/optimization`);
-                }}
-              >
-                Re-run
-              </Button>
-            )}
-            {isCompleted && (
-              <Button
-                variant="primary"
-                onClick={() => setValidationDialogOpen(true)}
-              >
-                Run Validation
-              </Button>
-            )}
+        <div className="flex items-center gap-2">
+          {isInProgress && (
             <Button
               variant="danger"
-              onClick={handleDelete}
-              loading={deleteMutation.isPending}
+              onClick={() => cancelMutation.mutate(groupId)}
+              loading={cancelMutation.isPending}
             >
-              Delete
+              Cancel Group
             </Button>
-          </div>
-        )}
+          )}
+          {!isInProgress && (
+            <>
+              {group.inputJson && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    sessionStorage.setItem("rerun-optimization-config", group.inputJson!);
+                    router.push(`/${group.strategyName}/optimization`);
+                  }}
+                >
+                  Re-run
+                </Button>
+              )}
+              {isCompleted && (
+                <Button
+                  variant="primary"
+                  onClick={() => setValidationDialogOpen(true)}
+                >
+                  Run Validation
+                </Button>
+              )}
+              <Button
+                variant="danger"
+                onClick={handleDelete}
+                loading={deleteMutation.isPending}
+              >
+                Delete
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Group metadata */}

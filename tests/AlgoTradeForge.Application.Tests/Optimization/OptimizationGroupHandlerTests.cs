@@ -194,7 +194,7 @@ public class OptimizationGroupHandlerTests
     }
 
     [Fact]
-    public async Task Cancel_CancelsInProgressRuns_SkipsCompleted()
+    public async Task Cancel_CancelsViaGroupId()
     {
         var group = MakeGroup("InProgress",
             MakeRun(RunId1, "InProgress"),
@@ -206,8 +206,8 @@ public class OptimizationGroupHandlerTests
         var result = await handler.HandleAsync(new CancelOptimizationGroupCommand(GroupId), TestContext.Current.CancellationToken);
 
         Assert.True(result);
-        _cancellationRegistry.Received(1).TryCancel(RunId1);
-        _cancellationRegistry.DidNotReceive().TryCancel(RunId2);
+        // Group-level CTS cancellation cascades to all linked per-DSS tokens
+        _cancellationRegistry.Received(1).TryCancel(GroupId);
     }
 
     // ── DeleteOptimizationGroupCommand ──────────────────────────

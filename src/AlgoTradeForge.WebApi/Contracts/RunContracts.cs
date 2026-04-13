@@ -95,4 +95,5 @@ public sealed record OptimizationRunResponse
     public string? InputJson { get; init; }
     public required string Status { get; init; }
     public string? ErrorMessage { get; init; }
+    public Guid? GroupId { get; init; }
 }

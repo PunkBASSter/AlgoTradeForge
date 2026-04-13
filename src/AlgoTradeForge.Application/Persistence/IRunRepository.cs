@@ -26,6 +26,8 @@ public interface IRunRepository
     Task<OptimizationGroupRecord?> GetOptimizationGroupByIdAsync(Guid id, CancellationToken ct = default);
     Task<PagedResult<OptimizationGroupRecord>> QueryOptimizationGroupsAsync(
         OptimizationGroupQuery query, CancellationToken ct = default);
+    Task UpdateOptimizationRunStatusAsync(
+        Guid runId, string status, CancellationToken ct = default);
     Task UpdateOptimizationGroupStatusAsync(
         Guid groupId, string status, DateTimeOffset? completedAt, CancellationToken ct = default);
     Task<bool> DeleteOptimizationGroupAsync(Guid id, CancellationToken ct = default);

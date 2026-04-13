@@ -107,6 +107,7 @@ export interface OptimizationRun {
   failedTrialDetails: FailedTrialDetail[];
   status: string;
   errorMessage?: string;
+  groupId?: string;
 }
 
 export interface FailedTrialDetail {
@@ -187,7 +188,8 @@ export type RunStatusType =
   | "Running"
   | "Completed"
   | "Failed"
-  | "Cancelled";
+  | "Cancelled"
+  | "Enqueued";
 
 export interface BacktestSubmission {
   id: string;
@@ -230,6 +232,7 @@ export function deriveOptimizationStatus(data: OptimizationStatus): RunStatusTyp
   if (data.status === "Completed") return "Completed";
   if (data.status === "Cancelled") return "Cancelled";
   if (data.status === "Failed") return "Failed";
+  if (data.status === "Enqueued") return "Enqueued";
   if (data.completedCombinations === 0) return "Pending";
   return "Running";
 }

@@ -450,6 +450,7 @@ public static class OptimizationEndpoints
         InputJson = r.InputJson,
         Status = r.Status,
         ErrorMessage = r.ErrorMessage,
+        GroupId = r.GroupId,
         FailedTrialDetails = r.FailedTrialDetails.Select(f => new FailedTrialResponse
         {
             ExceptionType = f.ExceptionType,

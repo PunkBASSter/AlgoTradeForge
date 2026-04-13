@@ -153,7 +153,7 @@ export function RunProgress({ runId, mode, onComplete }: RunProgressProps) {
         </div>
       </div>
 
-      {(derivedStatus === "Running" || derivedStatus === "Pending") && (
+      {(derivedStatus === "Running" || derivedStatus === "Pending" || derivedStatus === "Enqueued") && (
         <>
           <ProgressBar processed={processed} total={total} />
           <button

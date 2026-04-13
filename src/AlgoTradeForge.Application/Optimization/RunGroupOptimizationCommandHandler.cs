@@ -181,7 +181,7 @@ public sealed class RunGroupOptimizationCommandHandler(
                 Trials = [],
                 OptimizationMethod = "BruteForce",
                 InputJson = command.InputJson,
-                Status = OptimizationRunStatus.InProgress,
+                Status = OptimizationRunStatus.Enqueued,
                 GroupId = groupId,
                 DssIndex = dssIdx,
             }, ct);
@@ -194,9 +194,8 @@ public sealed class RunGroupOptimizationCommandHandler(
             });
         }
 
-        // 9. Set progress for each child run
-        for (var dssIdx = 0; dssIdx < dssCount; dssIdx++)
-            await progressCache.SetProgressAsync(childRunIds[dssIdx], 0, estimatedCountPerDss, ct);
+        // 9. Progress for each child run is set when it starts executing (not upfront)
+        //    so enqueued runs correctly fall through to DB status check.
 
         // 10. Update group progress with real total (replaces the placeholder from the lock)
         await progressCache.SetProgressAsync(groupId, 0, estimatedCountPerDss * dssCount, ct);
@@ -243,9 +242,9 @@ public sealed class RunGroupOptimizationCommandHandler(
         IOptimizationStrategyFactory factory,
         IParameterNormalizer? normalizer)
     {
-        using var cts = new CancellationTokenSource(timeoutOptions.Value.OptimizationTimeout);
-        cancellationRegistry.Register(groupId, cts);
-        var ct = cts.Token;
+        using var groupCts = new CancellationTokenSource(timeoutOptions.Value.OptimizationTimeout);
+        cancellationRegistry.Register(groupId, groupCts);
+        var groupCt = groupCts.Token;
 
         var dssCount = allDssSubscriptions.Count;
         var maxParallelism = command.MaxDegreeOfParallelism > 0
@@ -255,26 +254,14 @@ public sealed class RunGroupOptimizationCommandHandler(
         if (command.MaxTrialsToKeep < 1)
             throw new ArgumentException("MaxTrialsToKeep must be at least 1.");
 
-        // Per-DSS tracking
         var filter = new TrialFilter(command);
         var fitnessConfig = command.FitnessConfig ?? FitnessConfig.Default;
         var fitnessFunc = new CompositeFitnessFunction(fitnessConfig);
 
-        var perDssTopTrials = new BoundedTrialQueue[dssCount];
-        var perDssFailedTrials = new FailedTrialCollector[dssCount];
-        var perDssFilteredOut = new long[dssCount];
-        var perDssFailedCount = new long[dssCount];
-        var perDssProcessed = new long[dssCount];
-        var perDssStrategyVersion = new string?[dssCount];
-
         // Per-DSS data cache: each DSS only needs its own subscriptions from the shared cache
         var perDssDataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>[dssCount];
-
         for (var dssIdx = 0; dssIdx < dssCount; dssIdx++)
         {
-            perDssTopTrials[dssIdx] = new BoundedTrialQueue(command.MaxTrialsToKeep, fitnessFunc);
-            perDssFailedTrials[dssIdx] = new FailedTrialCollector(capacity: 100);
-
             var dssCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
             foreach (var sub in allDssSubscriptions[dssIdx])
             {
@@ -302,225 +289,170 @@ public sealed class RunGroupOptimizationCommandHandler(
         var trialTimeout = timeoutOptions.Value.BacktestTimeout;
         var progressInterval = (long)Math.Clamp(estimatedCountPerDss / 10_000.0, 100, 10_000);
 
+        // Track per-DSS results (allocated once, populated sequentially)
+        var perDssTopTrials = new BoundedTrialQueue[dssCount];
+        var perDssFailedTrials = new FailedTrialCollector[dssCount];
+        var perDssFilteredOut = new long[dssCount];
+        var perDssFailedCount = new long[dssCount];
+        var perDssProcessed = new long[dssCount];
+        var perDssStrategyVersion = new string?[dssCount];
+
+        for (var dssIdx = 0; dssIdx < dssCount; dssIdx++)
+        {
+            perDssTopTrials[dssIdx] = new BoundedTrialQueue(command.MaxTrialsToKeep, fitnessFunc);
+            perDssFailedTrials[dssIdx] = new FailedTrialCollector(capacity: 100);
+        }
+
+        var childStatuses = new List<string>(dssCount);
+        var overallStopwatch = Stopwatch.StartNew();
+
         try
         {
-            var stopwatch = Stopwatch.StartNew();
-
-            // Create bounded channel for work items
-            var channel = Channel.CreateBounded<(int DssIndex, ParameterCombination Combo)>(
-                new BoundedChannelOptions(maxParallelism * 2)
-                {
-                    FullMode = BoundedChannelFullMode.Wait,
-                    SingleWriter = true,
-                    SingleReader = false,
-                });
-
-            // Spawn consumer tasks
-            var consumers = new Task[maxParallelism];
-            for (var c = 0; c < maxParallelism; c++)
+            // ── Sequential DSS loop: run each DSS to completion before starting the next ──
+            for (var dssIdx = 0; dssIdx < dssCount; dssIdx++)
             {
-                consumers[c] = Task.Factory.StartNew(() =>
-                {
-                    var trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    try
-                    {
-                        while (channel.Reader.TryRead(out var item)
-                            || WaitForRead(channel.Reader, ct, out item))
-                        {
-                            ct.ThrowIfCancellationRequested();
-                            var (dssIdx, combination) = item;
+                groupCt.ThrowIfCancellationRequested();
 
-                            // Inject this DSS's subscriptions into the combination
-                            var mutableValues = new Dictionary<string, object>(combination.Values)
-                            {
-                                ["DataSubscriptions"] = allDssSubscriptions[dssIdx]
-                            };
-                            var combinationWithSubs = new ParameterCombination(mutableValues);
+                var childRunId = childRunIds[dssIdx];
+                var dssStopwatch = Stopwatch.StartNew();
 
-                            if (!trialCts.TryReset())
-                            {
-                                trialCts.Dispose();
-                                trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                            }
-                            trialCts.CancelAfter(trialTimeout);
+                // Transition this child run: Enqueued → InProgress
+                await repository.UpdateOptimizationRunStatusAsync(
+                    childRunId, OptimizationRunStatus.InProgress, CancellationToken.None);
+                await progressCache.SetProgressAsync(childRunId, 0, estimatedCountPerDss, CancellationToken.None);
 
-                            try
-                            {
-                                var record = helper.ExecuteTrial(
-                                    command.StrategyName, command.BacktestSettings,
-                                    combinationWithSubs, factory, perDssDataCache[dssIdx],
-                                    childRunIds[dssIdx], startedAt,
-                                    ref perDssStrategyVersion[dssIdx], trialCts.Token);
-                                record = record with { FitnessScore = fitnessFunc.Evaluate(record.Metrics) };
+                // Per-DSS CTS linked to group — cancelling either stops this DSS
+                using var dssCts = CancellationTokenSource.CreateLinkedTokenSource(groupCt);
+                cancellationRegistry.Register(childRunId, dssCts);
+                var dssCt = dssCts.Token;
 
-                                if (filter.Passes(record.Metrics))
-                                    perDssTopTrials[dssIdx].TryAdd(record);
-                                else
-                                    Interlocked.Increment(ref perDssFilteredOut[dssIdx]);
-                            }
-                            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                            {
-                                Interlocked.Increment(ref perDssFailedCount[dssIdx]);
-                                perDssFailedTrials[dssIdx].RecordTimeout(combination.Values, trialTimeout);
-                                logger.LogWarning(
-                                    "Group {GroupId} DSS[{DssIndex}]: trial timed out after {Timeout}",
-                                    groupId, dssIdx, trialTimeout);
-                            }
-                            catch (OperationCanceledException)
-                            {
-                                throw;
-                            }
-                            catch (Exception ex)
-                            {
-                                Interlocked.Increment(ref perDssFailedCount[dssIdx]);
-                                perDssFailedTrials[dssIdx].Record(
-                                    combination.Values,
-                                    ex.GetType().FullName ?? ex.GetType().Name,
-                                    ex.Message,
-                                    ex.StackTrace ?? string.Empty);
-                                logger.LogWarning(ex,
-                                    "Group {GroupId} DSS[{DssIndex}]: trial failed", groupId, dssIdx);
-                            }
-
-                            var count = Interlocked.Increment(ref perDssProcessed[dssIdx]);
-                            if (count % progressInterval == 0)
-                                _ = progressCache.SetProgressAsync(
-                                    childRunIds[dssIdx], count, estimatedCountPerDss, CancellationToken.None);
-                        }
-                    }
-                    finally
-                    {
-                        trialCts.Dispose();
-                    }
-                }, ct, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-            }
-
-            // Producer: round-robin enqueue across DSS groups
-            var producerTask = Task.Factory.StartNew(async () =>
-            {
                 try
                 {
-                    // Create per-DSS combination enumerators
-                    var enumerators = new IEnumerator<ParameterCombination>[dssCount];
-                    var dssActive = new bool[dssCount];
-                    var activeDssCount = dssCount;
+                    await RunSingleDssBruteForceAsync(
+                        command, dssIdx, dssCt,
+                        activeAxes, normalizer, factory,
+                        allDssSubscriptions, perDssDataCache[dssIdx],
+                        childRunId, startedAt,
+                        perDssTopTrials[dssIdx], perDssFailedTrials[dssIdx],
+                        perDssFilteredOut, perDssFailedCount,
+                        perDssProcessed, perDssStrategyVersion,
+                        filter, fitnessFunc,
+                        estimatedCountPerDss, maxParallelism, trialTimeout, progressInterval,
+                        groupId);
 
-                    for (var dssIdx = 0; dssIdx < dssCount; dssIdx++)
+                    dssStopwatch.Stop();
+
+                    // Final progress flush
+                    var processed = Interlocked.Read(ref perDssProcessed[dssIdx]);
+                    await progressCache.SetProgressAsync(childRunId, processed, estimatedCountPerDss, CancellationToken.None);
+
+                    // Save completed results
+                    var trials = perDssTopTrials[dssIdx].DeduplicateAndDrainSorted();
+                    var failedTrialDetails = perDssFailedTrials[dssIdx].Drain(childRunId);
+
+                    var record = new OptimizationRunRecord
                     {
-                        IEnumerable<ParameterCombination> combinations = cartesianGenerator.Enumerate(activeAxes);
-                        if (normalizer is not null)
-                        {
-                            var normEnumerable = new NormalizingEnumerable(combinations, normalizer);
-                            combinations = normEnumerable.Enumerate();
-                        }
-                        enumerators[dssIdx] = combinations.GetEnumerator();
-                        dssActive[dssIdx] = true;
-                    }
+                        Id = childRunId,
+                        StrategyName = command.StrategyName,
+                        StrategyVersion = perDssStrategyVersion[dssIdx] ?? "0",
+                        StartedAt = startedAt,
+                        CompletedAt = DateTimeOffset.UtcNow,
+                        DurationMs = dssStopwatch.ElapsedMilliseconds,
+                        TotalCombinations = estimatedCountPerDss,
+                        SortBy = Fitness,
+                        DataSubscriptions = perDssPrimarySub[dssIdx],
+                        BacktestSettings = command.BacktestSettings,
+                        MaxParallelism = maxParallelism,
+                        Trials = trials,
+                        FailedTrialDetails = failedTrialDetails,
+                        FilteredTrials = Interlocked.Read(ref perDssFilteredOut[dssIdx]),
+                        FailedTrials = Interlocked.Read(ref perDssFailedCount[dssIdx]),
+                        OptimizationMethod = "BruteForce",
+                        GroupId = groupId,
+                        DssIndex = dssIdx,
+                    };
 
-                    try
-                    {
-                        while (activeDssCount > 0)
-                        {
-                            ct.ThrowIfCancellationRequested();
+                    await helper.SaveOptimizationAsync(record);
+                    childStatuses.Add(OptimizationRunStatus.Completed);
 
-                            for (var dssIdx = 0; dssIdx < dssCount; dssIdx++)
-                            {
-                                if (!dssActive[dssIdx]) continue;
+                    logger.LogInformation(
+                        "Group {GroupId} DSS[{DssIndex}] run {RunId}: {Processed} executed, {Kept} kept, {Filtered} filtered, {Failed} failed in {Duration}ms",
+                        groupId, dssIdx, childRunId, processed, trials.Count,
+                        Interlocked.Read(ref perDssFilteredOut[dssIdx]),
+                        Interlocked.Read(ref perDssFailedCount[dssIdx]),
+                        dssStopwatch.ElapsedMilliseconds);
+                }
+                catch (OperationCanceledException) when (!groupCt.IsCancellationRequested)
+                {
+                    // Individual DSS was cancelled (not the group) — save partial results, continue to next
+                    dssStopwatch.Stop();
+                    logger.LogInformation(
+                        "Group {GroupId} DSS[{DssIndex}] run {RunId} was cancelled individually",
+                        groupId, dssIdx, childRunId);
 
-                                if (enumerators[dssIdx].MoveNext())
-                                {
-                                    var combo = enumerators[dssIdx].Current;
-                                    await channel.Writer.WriteAsync((dssIdx, combo), ct);
-                                }
-                                else
-                                {
-                                    dssActive[dssIdx] = false;
-                                    activeDssCount--;
-                                }
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        for (var dssIdx = 0; dssIdx < dssCount; dssIdx++)
-                            enumerators[dssIdx].Dispose();
-                    }
+                    await SaveSingleDssError(
+                        command, dssIdx, childRunId, perDssPrimarySub[dssIdx],
+                        startedAt, estimatedCountPerDss, maxParallelism,
+                        perDssTopTrials[dssIdx], perDssFailedTrials[dssIdx],
+                        perDssFilteredOut, perDssFailedCount,
+                        OptimizationRunStatus.CancelledMessage, groupId);
+
+                    childStatuses.Add(OptimizationRunStatus.Cancelled);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Group-level cancellation — re-throw to outer handler
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // DSS failed — save error, continue to next
+                    dssStopwatch.Stop();
+                    logger.LogError(ex,
+                        "Group {GroupId} DSS[{DssIndex}] run {RunId} failed",
+                        groupId, dssIdx, childRunId);
+
+                    await SaveSingleDssError(
+                        command, dssIdx, childRunId, perDssPrimarySub[dssIdx],
+                        startedAt, estimatedCountPerDss, maxParallelism,
+                        perDssTopTrials[dssIdx], perDssFailedTrials[dssIdx],
+                        perDssFilteredOut, perDssFailedCount,
+                        ex.Message, groupId, ex.StackTrace);
+
+                    childStatuses.Add(OptimizationRunStatus.Failed);
                 }
                 finally
                 {
-                    channel.Writer.Complete();
+                    cancellationRegistry.Remove(childRunId);
                 }
-            }, ct, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
-
-            // Wait for producer and all consumers to finish
-            await producerTask;
-            await Task.WhenAll(consumers);
-
-            stopwatch.Stop();
-
-            // Save results for each DSS child run
-            var childStatuses = new List<string>(dssCount);
-            for (var dssIdx = 0; dssIdx < dssCount; dssIdx++)
-            {
-                var childRunId = childRunIds[dssIdx];
-                var processed = Interlocked.Read(ref perDssProcessed[dssIdx]);
-                var filteredOut = Interlocked.Read(ref perDssFilteredOut[dssIdx]);
-                var failedCount = Interlocked.Read(ref perDssFailedCount[dssIdx]);
-
-                // Final progress flush
-                await progressCache.SetProgressAsync(childRunId, processed, estimatedCountPerDss, ct);
-
-                var trials = perDssTopTrials[dssIdx].DeduplicateAndDrainSorted();
-                var failedTrialDetails = perDssFailedTrials[dssIdx].Drain(childRunId);
-
-                var record = new OptimizationRunRecord
-                {
-                    Id = childRunId,
-                    StrategyName = command.StrategyName,
-                    StrategyVersion = perDssStrategyVersion[dssIdx] ?? "0",
-                    StartedAt = startedAt,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    DurationMs = (long)stopwatch.Elapsed.TotalMilliseconds,
-                    TotalCombinations = estimatedCountPerDss,
-                    SortBy = Fitness,
-                    DataSubscriptions = perDssPrimarySub[dssIdx],
-                    BacktestSettings = command.BacktestSettings,
-                    MaxParallelism = maxParallelism,
-                    Trials = trials,
-                    FailedTrialDetails = failedTrialDetails,
-                    FilteredTrials = filteredOut,
-                    FailedTrials = failedCount,
-                    OptimizationMethod = "BruteForce",
-                    GroupId = groupId,
-                    DssIndex = dssIdx,
-                };
-
-                await helper.SaveOptimizationAsync(record);
-                childStatuses.Add(OptimizationRunStatus.Completed);
-
-                logger.LogInformation(
-                    "Group {GroupId} DSS[{DssIndex}] run {RunId}: {Processed} executed, {Kept} kept, {Filtered} filtered, {Failed} failed in {Duration}ms",
-                    groupId, dssIdx, childRunId, processed, trials.Count, filteredOut, failedCount,
-                    stopwatch.ElapsedMilliseconds);
             }
 
-            // Update group status
+            overallStopwatch.Stop();
+
+            // Update group status from collected child statuses
             var groupStatus = GroupStatusCalculator.Compute(childStatuses);
             await repository.UpdateOptimizationGroupStatusAsync(
-                groupId, groupStatus, DateTimeOffset.UtcNow, ct);
+                groupId, groupStatus, DateTimeOffset.UtcNow, CancellationToken.None);
 
             logger.LogInformation(
                 "Group optimization {GroupId} completed with status {Status}: {DssCount} DSS runs in {Duration}ms",
-                groupId, groupStatus, dssCount, stopwatch.ElapsedMilliseconds);
+                groupId, groupStatus, dssCount, overallStopwatch.ElapsedMilliseconds);
         }
         catch (OperationCanceledException)
         {
             logger.LogInformation("Group optimization {GroupId} was cancelled", groupId);
-            await SaveErrorForAllChildRuns(
-                command, childRunIds, allDssSubscriptions, perDssPrimarySub,
-                groupId, startedAt, estimatedCountPerDss, maxParallelism,
-                perDssTopTrials, perDssFailedTrials, perDssFilteredOut, perDssFailedCount,
-                OptimizationRunStatus.CancelledMessage);
+
+            // Mark remaining enqueued runs as cancelled
+            for (var dssIdx = childStatuses.Count; dssIdx < dssCount; dssIdx++)
+            {
+                var childRunId = childRunIds[dssIdx];
+                await SaveSingleDssError(
+                    command, dssIdx, childRunId, perDssPrimarySub[dssIdx],
+                    startedAt, estimatedCountPerDss, maxParallelism,
+                    perDssTopTrials[dssIdx], perDssFailedTrials[dssIdx],
+                    perDssFilteredOut, perDssFailedCount,
+                    OptimizationRunStatus.CancelledMessage, groupId);
+            }
 
             await repository.UpdateOptimizationGroupStatusAsync(
                 groupId, OptimizationGroupStatus.Cancelled, DateTimeOffset.UtcNow, CancellationToken.None);
@@ -528,18 +460,24 @@ public sealed class RunGroupOptimizationCommandHandler(
         catch (Exception ex)
         {
             logger.LogError(ex, "Group optimization {GroupId} failed", groupId);
-            await SaveErrorForAllChildRuns(
-                command, childRunIds, allDssSubscriptions, perDssPrimarySub,
-                groupId, startedAt, estimatedCountPerDss, maxParallelism,
-                perDssTopTrials, perDssFailedTrials, perDssFilteredOut, perDssFailedCount,
-                ex.Message, ex.StackTrace);
+
+            // Mark remaining enqueued runs as failed
+            for (var dssIdx = childStatuses.Count; dssIdx < dssCount; dssIdx++)
+            {
+                var childRunId = childRunIds[dssIdx];
+                await SaveSingleDssError(
+                    command, dssIdx, childRunId, perDssPrimarySub[dssIdx],
+                    startedAt, estimatedCountPerDss, maxParallelism,
+                    perDssTopTrials[dssIdx], perDssFailedTrials[dssIdx],
+                    perDssFilteredOut, perDssFailedCount,
+                    ex.Message, groupId, ex.StackTrace);
+            }
 
             await repository.UpdateOptimizationGroupStatusAsync(
                 groupId, OptimizationGroupStatus.Failed, DateTimeOffset.UtcNow, CancellationToken.None);
         }
         finally
         {
-            // Clean up progress for all child runs
             for (var dssIdx = 0; dssIdx < dssCount; dssIdx++)
                 await progressCache.RemoveProgressAsync(childRunIds[dssIdx]);
 
@@ -549,49 +487,186 @@ public sealed class RunGroupOptimizationCommandHandler(
         }
     }
 
-    private async Task SaveErrorForAllChildRuns(
+    /// <summary>Run the producer-consumer pipeline for a single DSS index.</summary>
+    private async Task RunSingleDssBruteForceAsync(
         RunGroupOptimizationCommand command,
-        Guid[] childRunIds,
+        int dssIdx,
+        CancellationToken ct,
+        List<ResolvedAxis> activeAxes,
+        IParameterNormalizer? normalizer,
+        IOptimizationStrategyFactory factory,
         List<List<DataSubscription>> allDssSubscriptions,
-        IReadOnlyList<DataSubscriptionDto>[] perDssPrimarySub,
-        Guid groupId,
+        Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dssDataCache,
+        Guid childRunId,
         DateTimeOffset startedAt,
+        BoundedTrialQueue topTrials,
+        FailedTrialCollector failedTrials,
+        long[] filteredOutArr,
+        long[] failedCountArr,
+        long[] processedArr,
+        string?[] strategyVersionArr,
+        TrialFilter filter,
+        CompositeFitnessFunction fitnessFunc,
         long estimatedCountPerDss,
         int maxParallelism,
-        BoundedTrialQueue[] perDssTopTrials,
-        FailedTrialCollector[] perDssFailedTrials,
-        long[] perDssFilteredOut,
-        long[] perDssFailedCount,
-        string errorMessage,
-        string? errorStackTrace = null)
+        TimeSpan trialTimeout,
+        long progressInterval,
+        Guid groupId)
     {
-        for (var dssIdx = 0; dssIdx < childRunIds.Length; dssIdx++)
+        var channel = Channel.CreateBounded<ParameterCombination>(
+            new BoundedChannelOptions(maxParallelism * 2)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleWriter = true,
+                SingleReader = false,
+            });
+
+        // Spawn consumer tasks
+        var consumers = new Task[maxParallelism];
+        for (var c = 0; c < maxParallelism; c++)
+        {
+            consumers[c] = Task.Factory.StartNew(() =>
+            {
+                var trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                try
+                {
+                    while (channel.Reader.TryRead(out var combo)
+                        || WaitForRead(channel.Reader, ct, out combo))
+                    {
+                        ct.ThrowIfCancellationRequested();
+
+                        var mutableValues = new Dictionary<string, object>(combo.Values)
+                        {
+                            ["DataSubscriptions"] = allDssSubscriptions[dssIdx]
+                        };
+                        var combinationWithSubs = new ParameterCombination(mutableValues);
+
+                        if (!trialCts.TryReset())
+                        {
+                            trialCts.Dispose();
+                            trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                        }
+                        trialCts.CancelAfter(trialTimeout);
+
+                        try
+                        {
+                            var record = helper.ExecuteTrial(
+                                command.StrategyName, command.BacktestSettings,
+                                combinationWithSubs, factory, dssDataCache,
+                                childRunId, startedAt,
+                                ref strategyVersionArr[dssIdx], trialCts.Token);
+                            record = record with { FitnessScore = fitnessFunc.Evaluate(record.Metrics) };
+
+                            if (filter.Passes(record.Metrics))
+                                topTrials.TryAdd(record);
+                            else
+                                Interlocked.Increment(ref filteredOutArr[dssIdx]);
+                        }
+                        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                        {
+                            Interlocked.Increment(ref failedCountArr[dssIdx]);
+                            failedTrials.RecordTimeout(combo.Values, trialTimeout);
+                            logger.LogWarning(
+                                "Group {GroupId} DSS[{DssIndex}]: trial timed out after {Timeout}",
+                                groupId, dssIdx, trialTimeout);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            Interlocked.Increment(ref failedCountArr[dssIdx]);
+                            failedTrials.Record(
+                                combo.Values,
+                                ex.GetType().FullName ?? ex.GetType().Name,
+                                ex.Message,
+                                ex.StackTrace ?? string.Empty);
+                            logger.LogWarning(ex,
+                                "Group {GroupId} DSS[{DssIndex}]: trial failed", groupId, dssIdx);
+                        }
+
+                        var count = Interlocked.Increment(ref processedArr[dssIdx]);
+                        if (count % progressInterval == 0)
+                            _ = progressCache.SetProgressAsync(
+                                childRunId, count, estimatedCountPerDss, CancellationToken.None);
+                    }
+                }
+                finally
+                {
+                    trialCts.Dispose();
+                }
+            }, ct, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        }
+
+        // Producer: enumerate combinations for this single DSS
+        var producerTask = Task.Factory.StartNew(async () =>
         {
             try
             {
-                await helper.SaveErrorOptimizationAsync(
-                    command.StrategyName, command.BacktestSettings, perDssPrimarySub[dssIdx],
-                    Fitness, maxParallelism,
-                    childRunIds[dssIdx], startedAt, estimatedCountPerDss,
-                    perDssTopTrials[dssIdx], perDssFailedTrials[dssIdx],
-                    Interlocked.Read(ref perDssFilteredOut[dssIdx]),
-                    Interlocked.Read(ref perDssFailedCount[dssIdx]),
-                    errorMessage, errorStackTrace,
-                    optimizationMethod: "BruteForce");
+                IEnumerable<ParameterCombination> combinations = cartesianGenerator.Enumerate(activeAxes);
+                if (normalizer is not null)
+                {
+                    var normEnumerable = new NormalizingEnumerable(combinations, normalizer);
+                    combinations = normEnumerable.Enumerate();
+                }
+
+                foreach (var combo in combinations)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    await channel.Writer.WriteAsync(combo, ct);
+                }
             }
-            catch (Exception ex)
+            finally
             {
-                logger.LogWarning(ex,
-                    "Failed to persist error record for group {GroupId} child run {RunId}",
-                    groupId, childRunIds[dssIdx]);
+                channel.Writer.Complete();
             }
+        }, ct, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+
+        await producerTask;
+        await Task.WhenAll(consumers);
+    }
+
+    private async Task SaveSingleDssError(
+        RunGroupOptimizationCommand command,
+        int dssIdx,
+        Guid childRunId,
+        IReadOnlyList<DataSubscriptionDto> dssSubs,
+        DateTimeOffset startedAt,
+        long estimatedCountPerDss,
+        int maxParallelism,
+        BoundedTrialQueue topTrials,
+        FailedTrialCollector failedTrials,
+        long[] filteredOutArr,
+        long[] failedCountArr,
+        string errorMessage,
+        Guid groupId,
+        string? errorStackTrace = null)
+    {
+        try
+        {
+            await helper.SaveErrorOptimizationAsync(
+                command.StrategyName, command.BacktestSettings, dssSubs,
+                Fitness, maxParallelism,
+                childRunId, startedAt, estimatedCountPerDss,
+                topTrials, failedTrials,
+                Interlocked.Read(ref filteredOutArr[dssIdx]),
+                Interlocked.Read(ref failedCountArr[dssIdx]),
+                errorMessage, errorStackTrace,
+                optimizationMethod: "BruteForce");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Failed to persist error record for group child run {RunId}",
+                childRunId);
         }
     }
 
     private static bool WaitForRead(
-        ChannelReader<(int DssIndex, ParameterCombination Combo)> reader,
+        ChannelReader<ParameterCombination> reader,
         CancellationToken ct,
-        out (int DssIndex, ParameterCombination Combo) item)
+        out ParameterCombination item)
     {
         // Synchronous wait suitable for LongRunning tasks
         try
@@ -599,11 +674,10 @@ public sealed class RunGroupOptimizationCommandHandler(
             var task = reader.WaitToReadAsync(ct).AsTask();
             task.Wait(ct);
             if (task.Result)
-                return reader.TryRead(out item);
+                return reader.TryRead(out item!);
         }
         catch (OperationCanceledException)
         {
-            // Propagate cancellation
             throw;
         }
         catch (AggregateException ae) when (ae.InnerException is OperationCanceledException oce)
@@ -615,7 +689,7 @@ public sealed class RunGroupOptimizationCommandHandler(
             // Channel completed or other error
         }
 
-        item = default;
+        item = default!;
         return false;
     }
 }

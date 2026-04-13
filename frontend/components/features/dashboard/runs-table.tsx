@@ -72,6 +72,7 @@ const optimizationColumns: Column<OptimizationRun>[] = [
     key: "status",
     header: "Status",
     render: (_v, row) => {
+      if (row.status === "Enqueued") return <span className="text-gray-400">Enqueued</span>;
       if (row.status === "InProgress") return <span className="text-blue-400">In Progress</span>;
       if (row.status === "Failed") return <span className="text-red-400">Failed</span>;
       if (row.status === "Cancelled") return <span className="text-yellow-400">Cancelled</span>;
@@ -81,7 +82,26 @@ const optimizationColumns: Column<OptimizationRun>[] = [
   {
     key: "durationMs",
     header: "Duration",
-    render: (v, row) => row.status === "InProgress" ? "—" : `${(Number(v) / 1000).toFixed(1)}s`,
+    render: (v, row) => row.status === "InProgress" || row.status === "Enqueued"
+      ? "\u2014"
+      : `${(Number(v) / 1000).toFixed(1)}s`,
+  },
+  {
+    key: "groupId",
+    header: "Group",
+    render: (_v, row) => row.groupId
+      ? (
+        <span
+          className="text-accent-blue hover:underline cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            window.location.href = `/report/optimization-group/${row.groupId}`;
+          }}
+        >
+          {row.groupId.substring(0, 8)}
+        </span>
+      )
+      : "\u2014",
   },
 ];
 

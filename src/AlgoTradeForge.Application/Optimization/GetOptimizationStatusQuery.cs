@@ -34,10 +34,11 @@ public sealed class GetOptimizationStatusQueryHandler(
         var record = await repository.GetOptimizationByIdAsync(query.Id, ct);
         if (record is not null)
         {
+            var isEnqueued = record.Status == OptimizationRunStatus.Enqueued;
             return new OptimizationStatusDto
             {
                 Id = query.Id,
-                CompletedCombinations = record.TotalCombinations,
+                CompletedCombinations = isEnqueued ? 0 : record.TotalCombinations,
                 TotalCombinations = record.TotalCombinations,
                 Result = record,
             };
