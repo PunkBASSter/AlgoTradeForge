@@ -483,7 +483,7 @@ internal static class SqliteDbInitializer
             orphanValCmd.CommandText = """
                 UPDATE validation_runs
                 SET completed_at = started_at, error_message = 'Server restarted during execution', status = 'Failed'
-                WHERE status = 'InProgress'
+                WHERE status IN ('InProgress', 'Enqueued')
                 """;
             await orphanValCmd.ExecuteNonQueryAsync();
 

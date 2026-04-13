@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useValidationGroupDetail, useDeleteValidationGroup } from "@/hooks/use-validations";
+import { useValidationGroupDetail, useDeleteValidationGroup, useCancelValidationGroup } from "@/hooks/use-validations";
 
 interface ValidationGroupPageProps {
   groupId: string;
@@ -14,7 +14,9 @@ export function ValidationGroupPage({ groupId }: ValidationGroupPageProps) {
   const [activeTab, setActiveTab] = useState<Tab>("per-dss");
   const { data: group, isLoading } = useValidationGroupDetail(groupId);
   const deleteGroup = useDeleteValidationGroup();
+  const cancelGroup = useCancelValidationGroup();
   const router = useRouter();
+  const isInProgress = group?.status === "InProgress";
 
   if (isLoading) {
     return <div className="p-6 text-text-muted">Loading validation group...</div>;
@@ -44,16 +46,27 @@ export function ValidationGroupPage({ groupId }: ValidationGroupPageProps) {
           >
             Source Optimization
           </a>
-          <button
-            onClick={() => {
-              deleteGroup.mutate(groupId, {
-                onSuccess: () => router.push("/"),
-              });
-            }}
-            className="rounded bg-red-900/30 px-3 py-1.5 text-sm text-red-400 hover:bg-red-900/50 border border-red-700"
-          >
-            Delete
-          </button>
+          {isInProgress && (
+            <button
+              onClick={() => cancelGroup.mutate(groupId)}
+              disabled={cancelGroup.isPending}
+              className="rounded bg-red-900/30 px-3 py-1.5 text-sm text-red-400 hover:bg-red-900/50 border border-red-700 disabled:opacity-50"
+            >
+              {cancelGroup.isPending ? "Cancelling..." : "Cancel Group"}
+            </button>
+          )}
+          {!isInProgress && (
+            <button
+              onClick={() => {
+                deleteGroup.mutate(groupId, {
+                  onSuccess: () => router.push("/"),
+                });
+              }}
+              className="rounded bg-red-900/30 px-3 py-1.5 text-sm text-red-400 hover:bg-red-900/50 border border-red-700"
+            >
+              Delete
+            </button>
+          )}
         </div>
       </div>
 
@@ -136,6 +149,7 @@ function StatusBadge({ status }: { status: string }) {
     switch (status) {
       case "Completed": return "bg-green-900/30 text-green-400 border-green-700";
       case "InProgress": return "bg-blue-900/30 text-blue-400 border-blue-700";
+      case "Enqueued": return "bg-neutral-800 text-gray-400 border-gray-600";
       case "PartiallyCompleted": return "bg-yellow-900/30 text-yellow-400 border-yellow-700";
       case "Failed": return "bg-red-900/30 text-red-400 border-red-700";
       case "Cancelled": return "bg-yellow-900/30 text-yellow-400 border-yellow-700";

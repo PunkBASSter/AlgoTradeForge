@@ -468,6 +468,24 @@ public sealed class SqliteValidationRepository : IValidationRepository, IDisposa
         return new PagedResult<ValidationGroupRecord>(results, totalCount);
     }
 
+    public async Task UpdateValidationRunStatusAsync(
+        Guid runId, string status, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync(ct);
+        await using var conn = await CreateConnectionAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            UPDATE validation_runs
+            SET status = $status
+            WHERE id = $id
+            """;
+        cmd.Parameters.AddWithValue("$id", runId.ToString());
+        cmd.Parameters.AddWithValue("$status", status);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task UpdateValidationGroupStatusAsync(
         Guid groupId, string status, DateTimeOffset? completedAt, CancellationToken ct = default)
     {

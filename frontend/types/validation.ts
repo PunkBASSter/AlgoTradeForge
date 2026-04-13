@@ -120,6 +120,7 @@ export function deriveValidationStatus(data: ValidationStatus): RunStatusType {
   if (data.status === "Completed") return "Completed";
   if (data.status === "Cancelled") return "Cancelled";
   if (data.status === "Failed") return "Failed";
+  if (data.status === "Enqueued") return "Enqueued";
   if (data.currentStage === 0) return "Pending";
   return "Running";
 }

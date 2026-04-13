@@ -10,6 +10,8 @@ public interface IValidationRepository
     Task<PagedResult<ValidationRunRecord>> QueryAsync(ValidationRunQuery query, CancellationToken ct = default);
     Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
 
+    Task UpdateValidationRunStatusAsync(Guid runId, string status, CancellationToken ct = default);
+
     // Validation group operations
     Task InsertValidationGroupAsync(ValidationGroupRecord record, CancellationToken ct = default);
     Task<ValidationGroupRecord?> GetValidationGroupByIdAsync(Guid id, CancellationToken ct = default);

@@ -16,11 +16,8 @@ public sealed class CancelValidationGroupCommandHandler(
         if (group is null)
             return false;
 
-        foreach (var run in group.Runs)
-        {
-            if (run.Status == ValidationRunStatus.InProgress)
-                cancellationRegistry.TryCancel(run.Id);
-        }
+        // Cancel via group ID — the group-level CTS cascades to all linked per-run tokens
+        cancellationRegistry.TryCancel(command.GroupId);
 
         return true;
     }

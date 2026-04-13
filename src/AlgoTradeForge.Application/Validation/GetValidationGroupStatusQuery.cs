@@ -40,7 +40,8 @@ public sealed class GetValidationGroupStatusQueryHandler(
             {
                 Id = run.Id,
                 Status = run.Status,
-                Processed = progress?.Processed ?? (run.Status == ValidationRunStatus.InProgress ? 0 : 1),
+                Processed = progress?.Processed
+                    ?? (run.Status is ValidationRunStatus.Enqueued or ValidationRunStatus.InProgress ? 0 : 1),
                 Total = progress?.Total ?? 1,
             });
         }

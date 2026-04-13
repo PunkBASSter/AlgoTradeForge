@@ -176,7 +176,7 @@ public class ValidationGroupHandlerTests
     }
 
     [Fact]
-    public async Task Cancel_CancelsInProgressRuns_SkipsCompleted()
+    public async Task Cancel_CancelsViaGroupId()
     {
         var group = MakeGroup("InProgress",
             MakeRun(RunId1, OptRunId1, "InProgress"),
@@ -188,8 +188,8 @@ public class ValidationGroupHandlerTests
         var result = await handler.HandleAsync(new CancelValidationGroupCommand(GroupId), TestContext.Current.CancellationToken);
 
         Assert.True(result);
-        _cancellationRegistry.Received(1).TryCancel(RunId1);
-        _cancellationRegistry.DidNotReceive().TryCancel(RunId2);
+        // Group-level CTS cancellation cascades to all linked per-run tokens
+        _cancellationRegistry.Received(1).TryCancel(GroupId);
     }
 
     // ── DeleteValidationGroupCommand ────────────────────────────
