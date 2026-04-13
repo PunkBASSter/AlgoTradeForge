@@ -30,6 +30,12 @@ public sealed class DeltaZigZag : Int64IndicatorBase
         ApplyBufferCapacity();
     }
 
+    /// <summary>
+    /// Zigzag pivot revision window is data-dependent (a trend can extend
+    /// the entire series without reversal), so the buffer must be unbounded.
+    /// </summary>
+    public override int? CapacityLimit => 0;
+
     public override IReadOnlyDictionary<string, IndicatorBuffer<long>> Buffers => _buffers;
 
     public override void Compute(IReadOnlyList<Int64Bar> series)

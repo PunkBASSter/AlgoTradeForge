@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
-using System.Threading.Channels;
+using System.Collections.Concurrent;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
@@ -487,7 +487,7 @@ public sealed class RunGroupOptimizationCommandHandler(
         }
     }
 
-    /// <summary>Run the producer-consumer pipeline for a single DSS index.</summary>
+    /// <summary>Run partitioned parallel brute-force for a single DSS index.</summary>
     private async Task RunSingleDssBruteForceAsync(
         RunGroupOptimizationCommand command,
         int dssIdx,
@@ -513,118 +513,128 @@ public sealed class RunGroupOptimizationCommandHandler(
         long progressInterval,
         Guid groupId)
     {
-        var channel = Channel.CreateBounded<ParameterCombination>(
-            new BoundedChannelOptions(maxParallelism * 2)
-            {
-                FullMode = BoundedChannelFullMode.Wait,
-                SingleWriter = true,
-                SingleReader = false,
-            });
-
-        // Spawn consumer tasks
-        var consumers = new Task[maxParallelism];
-        for (var c = 0; c < maxParallelism; c++)
+        IEnumerable<ParameterCombination> combinations = cartesianGenerator.Enumerate(activeAxes);
+        if (normalizer is not null)
         {
-            consumers[c] = Task.Factory.StartNew(() =>
+            var normEnumerable = new NormalizingEnumerable(combinations, normalizer);
+            combinations = normEnumerable.Enumerate();
+        }
+
+        var partitions = Partitioner.Create(combinations, EnumerablePartitionerOptions.NoBuffering)
+            .GetPartitions(maxParallelism);
+        var tasks = new Task[partitions.Count];
+        var workerItemCounts = new long[partitions.Count];
+        for (var p = 0; p < partitions.Count; p++)
+        {
+            var workerId = p;
+            var partition = partitions[p];
+            tasks[p] = Task.Factory.StartNew(() =>
             {
-                var trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                long localCount = 0;
+                string exitReason = "enumeration-complete";
                 try
                 {
-                    while (channel.Reader.TryRead(out var combo)
-                        || WaitForRead(channel.Reader, ct, out combo))
+                    using (partition)
                     {
-                        ct.ThrowIfCancellationRequested();
-
-                        var mutableValues = new Dictionary<string, object>(combo.Values)
-                        {
-                            ["DataSubscriptions"] = allDssSubscriptions[dssIdx]
-                        };
-                        var combinationWithSubs = new ParameterCombination(mutableValues);
-
-                        if (!trialCts.TryReset())
-                        {
-                            trialCts.Dispose();
-                            trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                        }
-                        trialCts.CancelAfter(trialTimeout);
-
+                        var trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                         try
                         {
-                            var record = helper.ExecuteTrial(
-                                command.StrategyName, command.BacktestSettings,
-                                combinationWithSubs, factory, dssDataCache,
-                                childRunId, startedAt,
-                                ref strategyVersionArr[dssIdx], trialCts.Token);
-                            record = record with { FitnessScore = fitnessFunc.Evaluate(record.Metrics) };
+                            while (partition.MoveNext())
+                            {
+                                ct.ThrowIfCancellationRequested();
+                                var combo = partition.Current;
 
-                            if (filter.Passes(record.Metrics))
-                                topTrials.TryAdd(record);
-                            else
-                                Interlocked.Increment(ref filteredOutArr[dssIdx]);
-                        }
-                        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                        {
-                            Interlocked.Increment(ref failedCountArr[dssIdx]);
-                            failedTrials.RecordTimeout(combo.Values, trialTimeout);
-                            logger.LogWarning(
-                                "Group {GroupId} DSS[{DssIndex}]: trial timed out after {Timeout}",
-                                groupId, dssIdx, trialTimeout);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            throw;
-                        }
-                        catch (Exception ex)
-                        {
-                            Interlocked.Increment(ref failedCountArr[dssIdx]);
-                            failedTrials.Record(
-                                combo.Values,
-                                ex.GetType().FullName ?? ex.GetType().Name,
-                                ex.Message,
-                                ex.StackTrace ?? string.Empty);
-                            logger.LogWarning(ex,
-                                "Group {GroupId} DSS[{DssIndex}]: trial failed", groupId, dssIdx);
-                        }
+                                var mutableValues = new Dictionary<string, object>(combo.Values)
+                                {
+                                    ["DataSubscriptions"] = allDssSubscriptions[dssIdx]
+                                };
+                                var combinationWithSubs = new ParameterCombination(mutableValues);
 
-                        var count = Interlocked.Increment(ref processedArr[dssIdx]);
-                        if (count % progressInterval == 0)
-                            _ = progressCache.SetProgressAsync(
-                                childRunId, count, estimatedCountPerDss, CancellationToken.None);
+                                if (!trialCts.TryReset())
+                                {
+                                    trialCts.Dispose();
+                                    trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                                }
+                                trialCts.CancelAfter(trialTimeout);
+
+                                try
+                                {
+                                    var record = helper.ExecuteTrial(
+                                        command.StrategyName, command.BacktestSettings,
+                                        combinationWithSubs, factory, dssDataCache,
+                                        childRunId, startedAt,
+                                        ref strategyVersionArr[dssIdx], trialCts.Token);
+                                    record = record with { FitnessScore = fitnessFunc.Evaluate(record.Metrics) };
+
+                                    if (filter.Passes(record.Metrics))
+                                        topTrials.TryAdd(record);
+                                    else
+                                        Interlocked.Increment(ref filteredOutArr[dssIdx]);
+                                }
+                                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                                {
+                                    Interlocked.Increment(ref failedCountArr[dssIdx]);
+                                    failedTrials.RecordTimeout(combo.Values, trialTimeout);
+                                    logger.LogWarning(
+                                        "Group {GroupId} DSS[{DssIndex}]: trial timed out after {Timeout}",
+                                        groupId, dssIdx, trialTimeout);
+                                }
+                                catch (OperationCanceledException)
+                                {
+                                    exitReason = "cancelled";
+                                    throw;
+                                }
+                                catch (Exception ex)
+                                {
+                                    Interlocked.Increment(ref failedCountArr[dssIdx]);
+                                    failedTrials.Record(
+                                        combo.Values,
+                                        ex.GetType().FullName ?? ex.GetType().Name,
+                                        ex.Message,
+                                        ex.StackTrace ?? string.Empty);
+                                    logger.LogWarning(ex,
+                                        "Group {GroupId} DSS[{DssIndex}]: trial failed", groupId, dssIdx);
+                                }
+
+                                localCount++;
+                                var count = Interlocked.Increment(ref processedArr[dssIdx]);
+                                if (count % progressInterval == 0)
+                                    _ = progressCache.SetProgressAsync(
+                                        childRunId, count, estimatedCountPerDss, CancellationToken.None);
+                            }
+                        }
+                        finally
+                        {
+                            trialCts.Dispose();
+                        }
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    exitReason = "cancelled";
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    exitReason = $"exception: {ex.GetType().Name}: {ex.Message}";
+                    throw;
                 }
                 finally
                 {
-                    trialCts.Dispose();
+                    workerItemCounts[workerId] = localCount;
+                    logger.LogInformation(
+                        "Group {GroupId} DSS[{DssIndex}] worker {WorkerId}/{Total} exited: {Reason}, processed {Count} items",
+                        groupId, dssIdx, workerId, maxParallelism, exitReason, localCount);
                 }
             }, ct, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
-        // Producer: enumerate combinations for this single DSS
-        var producerTask = Task.Factory.StartNew(async () =>
-        {
-            try
-            {
-                IEnumerable<ParameterCombination> combinations = cartesianGenerator.Enumerate(activeAxes);
-                if (normalizer is not null)
-                {
-                    var normEnumerable = new NormalizingEnumerable(combinations, normalizer);
-                    combinations = normEnumerable.Enumerate();
-                }
+        await Task.WhenAll(tasks);
 
-                foreach (var combo in combinations)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    await channel.Writer.WriteAsync(combo, ct);
-                }
-            }
-            finally
-            {
-                channel.Writer.Complete();
-            }
-        }, ct, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
-
-        await producerTask;
-        await Task.WhenAll(consumers);
+        var totalProcessedByWorkers = workerItemCounts.Sum();
+        logger.LogInformation(
+            "Group {GroupId} DSS[{DssIndex}]: all {WorkerCount} workers completed. Total items: {Total} (expected {Expected})",
+            groupId, dssIdx, maxParallelism, totalProcessedByWorkers, estimatedCountPerDss);
     }
 
     private async Task SaveSingleDssError(
@@ -661,35 +671,5 @@ public sealed class RunGroupOptimizationCommandHandler(
                 "Failed to persist error record for group child run {RunId}",
                 childRunId);
         }
-    }
-
-    private static bool WaitForRead(
-        ChannelReader<ParameterCombination> reader,
-        CancellationToken ct,
-        out ParameterCombination item)
-    {
-        // Synchronous wait suitable for LongRunning tasks
-        try
-        {
-            var task = reader.WaitToReadAsync(ct).AsTask();
-            task.Wait(ct);
-            if (task.Result)
-                return reader.TryRead(out item!);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (AggregateException ae) when (ae.InnerException is OperationCanceledException oce)
-        {
-            throw oce;
-        }
-        catch
-        {
-            // Channel completed or other error
-        }
-
-        item = default!;
-        return false;
     }
 }

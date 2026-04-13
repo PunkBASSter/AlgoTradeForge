@@ -52,6 +52,9 @@ public sealed class DeltaZigZagTrend : Int64IndicatorBase
         ApplyBufferCapacity();
     }
 
+    /// <inheritdoc cref="DeltaZigZag.CapacityLimit"/>
+    public override int? CapacityLimit => 0;
+
     public override IReadOnlyDictionary<string, IndicatorBuffer<long>> Buffers => _buffers;
 
     public override void Compute(IReadOnlyList<Int64Bar> series)
