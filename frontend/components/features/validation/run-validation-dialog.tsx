@@ -9,11 +9,15 @@ const FALLBACK_PROFILES: { value: string; label: string }[] = [
   { value: "Crypto-Conservative", label: "Crypto-Conservative" },
 ];
 
+type ValidationScope = "single" | "group";
+
 interface RunValidationDialogProps {
   open: boolean;
   onClose: () => void;
-  onSubmit: (profileName: string) => void;
+  onSubmit: (profileName: string, scope: ValidationScope) => void;
   loading?: boolean;
+  /** When present, shows a scope selector (This DSS / All DSS). */
+  groupId?: string;
 }
 
 export function RunValidationDialog({
@@ -21,8 +25,10 @@ export function RunValidationDialog({
   onClose,
   onSubmit,
   loading = false,
+  groupId,
 }: RunValidationDialogProps) {
   const [selectedProfile, setSelectedProfile] = useState("Crypto-Standard");
+  const [scope, setScope] = useState<ValidationScope>("single");
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
@@ -34,7 +40,10 @@ export function RunValidationDialog({
 
   // Reset selection when dialog opens
   useEffect(() => {
-    if (open) setSelectedProfile("Crypto-Standard");
+    if (open) {
+      setSelectedProfile("Crypto-Standard");
+      setScope("single");
+    }
   }, [open]);
 
   useEffect(() => {
@@ -109,6 +118,40 @@ export function RunValidationDialog({
 
         {/* Body */}
         <div className="px-5 py-4 space-y-4">
+          {groupId && (
+            <div className="space-y-1.5">
+              <span className="block text-sm font-medium text-text-secondary">
+                Validation Scope
+              </span>
+              <div className="flex flex-col gap-1.5">
+                <label className="flex items-center gap-2 text-sm text-text-primary cursor-pointer">
+                  <input
+                    type="radio"
+                    name="validation-scope"
+                    value="single"
+                    checked={scope === "single"}
+                    onChange={() => setScope("single")}
+                    disabled={loading}
+                    className="accent-accent-blue"
+                  />
+                  This DSS only
+                </label>
+                <label className="flex items-center gap-2 text-sm text-text-primary cursor-pointer">
+                  <input
+                    type="radio"
+                    name="validation-scope"
+                    value="group"
+                    checked={scope === "group"}
+                    onChange={() => setScope("group")}
+                    disabled={loading}
+                    className="accent-accent-blue"
+                  />
+                  All DSS (entire group)
+                </label>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <label
               htmlFor="threshold-profile"
@@ -152,7 +195,7 @@ export function RunValidationDialog({
           <Button
             variant="primary"
             loading={loading}
-            onClick={() => onSubmit(selectedProfile)}
+            onClick={() => onSubmit(selectedProfile, groupId ? scope : "single")}
           >
             Start Validation
           </Button>

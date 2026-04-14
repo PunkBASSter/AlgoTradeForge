@@ -246,7 +246,7 @@ public sealed class OptimizationSetupHelper(
             DurationMs = (long)trialWatch.Elapsed.TotalMilliseconds,
             TotalBars = result.TotalBarsProcessed,
             Metrics = scaledMetrics,
-            EquityCurve = MetricsScaler.ScaleEquityCurve(result.EquityCurve, scale),
+            EquityCurve = [], // Equity curve not persisted for optimization trials — trade P&L is sufficient
             TradePnl = tradePnl,
             RunFolderPath = null,
             RunMode = RunModes.Backtest,

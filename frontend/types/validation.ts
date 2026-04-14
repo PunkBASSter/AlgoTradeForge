@@ -131,7 +131,8 @@ export interface ValidationSubmission {
 }
 
 export interface RunValidationRequest {
-  optimizationRunId: string;
+  optimizationRunId?: string;
+  optimizationGroupId?: string;
   thresholdProfileName?: string;
 }
 

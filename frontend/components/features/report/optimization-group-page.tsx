@@ -135,13 +135,18 @@ export function OptimizationGroupPage({ groupId }: OptimizationGroupPageProps) {
   const isCompleted = group?.status === "Completed";
   const isInProgress = group?.status === "InProgress";
 
-  const handleRunValidation = (profileName: string) => {
+  const handleRunValidation = (profileName: string, _scope: "single" | "group") => {
     runGroupValidation.mutate(
       { optimizationGroupId: groupId, thresholdProfileName: profileName },
       {
         onSuccess: (data) => {
           setValidationDialogOpen(false);
-          router.push(`/report/validation/${data.id}`);
+          const gid = (data as unknown as { groupId?: string }).groupId;
+          if (gid) {
+            router.push(`/report/validation-group/${gid}`);
+          } else {
+            router.push(`/report/validation/${data.id}`);
+          }
         },
       },
     );

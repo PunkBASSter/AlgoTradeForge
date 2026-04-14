@@ -94,16 +94,34 @@ export default function OptimizationReportPage({
   const runValidation = useRunValidation();
   const [validationDialogOpen, setValidationDialogOpen] = React.useState(false);
 
-  const handleRunValidation = (profileName: string) => {
-    runValidation.mutate(
-      { optimizationRunId: id, thresholdProfileName: profileName },
-      {
-        onSuccess: (data) => {
-          setValidationDialogOpen(false);
-          router.push(`/report/validation/${data.id}`);
+  const handleRunValidation = (profileName: string, scope: "single" | "group") => {
+    if (scope === "group" && optimization?.groupId) {
+      runValidation.mutate(
+        { optimizationGroupId: optimization.groupId, thresholdProfileName: profileName },
+        {
+          onSuccess: (data) => {
+            setValidationDialogOpen(false);
+            // Group validation returns groupId in the response
+            const groupId = (data as unknown as { groupId?: string }).groupId;
+            if (groupId) {
+              router.push(`/report/validation-group/${groupId}`);
+            } else {
+              router.push(`/report/validation/${data.id}`);
+            }
+          },
         },
-      },
-    );
+      );
+    } else {
+      runValidation.mutate(
+        { optimizationRunId: id, thresholdProfileName: profileName },
+        {
+          onSuccess: (data) => {
+            setValidationDialogOpen(false);
+            router.push(`/report/validation/${data.id}`);
+          },
+        },
+      );
+    }
   };
 
   const handleRerun = () => {
@@ -291,6 +309,7 @@ export default function OptimizationReportPage({
         onClose={() => setValidationDialogOpen(false)}
         onSubmit={handleRunValidation}
         loading={runValidation.isPending}
+        groupId={optimization.groupId}
       />
     </div>
   );

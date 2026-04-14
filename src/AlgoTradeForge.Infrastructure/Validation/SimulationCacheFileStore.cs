@@ -72,15 +72,19 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
 
     /// <summary>
     /// Writes trial data directly to binary format, computing P&amp;L deltas on the fly.
-    /// Groups trials by <see cref="DataSubscriptionDto"/> for timeline deduplication.
+    /// Falls back to trade P&amp;L when equity curves are empty.
     /// </summary>
     public void WriteDirect(IReadOnlyList<BacktestRunRecord> trials, string filePath)
     {
         if (trials.Count == 0)
             throw new ArgumentException("No trials provided.", nameof(trials));
 
+        // Use trade P&L path when equity curves are not available
         if (trials[0].EquityCurve.Count == 0)
-            throw new ArgumentException("Trial 0 has an empty equity curve.");
+        {
+            WriteDirectFromTradePnl(trials, filePath);
+            return;
+        }
 
         Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
 
@@ -134,6 +138,40 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
                 for (var i = 1; i < curve.Count; i++)
                     writer.Write(curve[i].Value - curve[i - 1].Value);
             }
+        }
+    }
+
+    /// <summary>
+    /// Writes trial data from trade P&L when equity curves are not available.
+    /// Each trial gets its own timeline (trade timestamps).
+    /// </summary>
+    private void WriteDirectFromTradePnl(IReadOnlyList<BacktestRunRecord> trials, string filePath)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+
+        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
+        using var writer = new BinaryWriter(fs);
+
+        writer.Write(FormatVersion);
+
+        // Each trial gets its own timeline
+        writer.Write(trials.Count); // timelineCount = trialCount
+        for (var t = 0; t < trials.Count; t++)
+        {
+            var trades = trials[t].TradePnl;
+            writer.Write(trades.Count);
+            for (var i = 0; i < trades.Count; i++)
+                writer.Write(trades[i].TimestampMs);
+        }
+
+        writer.Write(trials.Count);
+        for (var t = 0; t < trials.Count; t++)
+        {
+            writer.Write(t); // timelineIndex = trial index
+
+            var trades = trials[t].TradePnl;
+            for (var i = 0; i < trades.Count; i++)
+                writer.Write(trades[i].Pnl);
         }
     }
 

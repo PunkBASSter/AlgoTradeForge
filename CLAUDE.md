@@ -63,11 +63,13 @@ tests/
 
 ## Commands
 
+**CRITICAL: Only ONE dotnet process at a time. Never run build, test, or run commands in parallel. Wait for each to finish before starting the next.**
+
 ```bash
 # Build
 dotnet build AlgoTradeForge.slnx
 
-# Test
+# Test (run sequentially, never in parallel)
 dotnet test tests/AlgoTradeForge.Domain.Tests/
 dotnet test tests/AlgoTradeForge.Application.Tests/
 

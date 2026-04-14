@@ -266,22 +266,22 @@ public sealed class RunGroupValidationCommandHandler(
         DateTimeOffset startedAt,
         CancellationToken ct)
     {
-        // Load optimization run with equity curves
+        // Load trials with trade P&L (no equity curves needed)
         var optimization = await runRepository.GetOptimizationByIdAsync(
-            optimizationRun.Id, includeEquityCurves: true, ct)
+            optimizationRun.Id, includeEquityCurves: false, includeTrials: true, ct)
             ?? throw new InvalidOperationException(
                 $"Optimization run '{optimizationRun.Id}' vanished during validation.");
 
         var trialsWithCurves = optimization.Trials
-            .Where(t => t.EquityCurve.Count > 0)
+            .Where(t => t.TradePnl.Count > 0)
             .ToList();
 
         if (trialsWithCurves.Count == 0)
         {
             logger.LogWarning(
-                "Validation {RunId}: no trials with equity curves for optimization {OptId}",
+                "Validation {RunId}: no trials with trade P&L for optimization {OptId}",
                 validationId, optimizationRun.Id);
-            throw new InvalidOperationException("No trials with equity curves found.");
+            throw new InvalidOperationException("No trials with trade P&L found.");
         }
 
         var invocationCount = await validationRepository.CountByOptimizationIdAsync(optimizationRun.Id, ct);

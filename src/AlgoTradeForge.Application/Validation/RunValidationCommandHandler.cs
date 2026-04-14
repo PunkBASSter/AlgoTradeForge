@@ -26,24 +26,15 @@ public sealed class RunValidationCommandHandler(
 
     public async Task<ValidationSubmissionDto> HandleAsync(RunValidationCommand command, CancellationToken ct = default)
     {
-        // 1. Load the optimization run (with equity curves for simulation cache)
-        var optimization = await runRepository.GetOptimizationByIdAsync(command.OptimizationRunId, includeEquityCurves: true, ct)
+        // 1. Load optimization header only (no trials) — fast
+        var optimization = await runRepository.GetOptimizationByIdAsync(command.OptimizationRunId, ct)
             ?? throw new ArgumentException($"Optimization run '{command.OptimizationRunId}' not found.");
 
         if (optimization.Status != OptimizationRunStatus.Completed)
             throw new ArgumentException(
                 $"Optimization run '{command.OptimizationRunId}' has status '{optimization.Status}', expected 'Completed'.");
 
-        // 2. Validate trials have equity curves
-        var trialsWithCurves = optimization.Trials
-            .Where(t => t.EquityCurve.Count > 0)
-            .ToList();
-
-        if (trialsWithCurves.Count == 0)
-            throw new ArgumentException(
-                "No trials with equity curves found. Re-run the optimization with equity curve retention enabled.");
-
-        // 3. Resolve threshold profile (check repository for custom profiles, fall back to built-in)
+        // 2. Resolve threshold profile (check repository for custom profiles, fall back to built-in)
         ValidationThresholdProfile profile;
         var customRecord = await thresholdProfileRepository.GetByNameAsync(command.ThresholdProfileName, ct);
         if (customRecord is not null)
@@ -57,10 +48,10 @@ public sealed class RunValidationCommandHandler(
             profile = ValidationThresholdProfile.GetByName(command.ThresholdProfileName);
         }
 
-        // 4. Compute invocation count
+        // 3. Compute invocation count
         var invocationCount = await validationRepository.CountByOptimizationIdAsync(command.OptimizationRunId, ct) + 1;
 
-        // 5. Insert placeholder
+        // 4. Insert placeholder — use trial count from optimization record
         var validationId = Guid.NewGuid();
         var startedAt = DateTimeOffset.UtcNow;
         var placeholder = new ValidationRunRecord
@@ -73,35 +64,33 @@ public sealed class RunValidationCommandHandler(
             Status = ValidationRunStatus.InProgress,
             ThresholdProfileName = command.ThresholdProfileName,
             ThresholdProfileJson = JsonSerializer.Serialize(profile, JsonOptions),
-            CandidatesIn = trialsWithCurves.Count,
+            CandidatesIn = optimization.TrialCount,
             InvocationCount = invocationCount,
             ValidationGroupId = command.ValidationGroupId,
         };
         await validationRepository.InsertPlaceholderAsync(placeholder, ct);
 
-        // 6. Store progress (stage 0 of 8)
+        // 5. Store progress (stage 0 of 8)
         await progressCache.SetProgressAsync(validationId, 0, ValidationPipeline.StageCount, ct);
 
-        // 7. Launch background task
+        // 6. Launch background task — trial loading happens here, not in the request path
         _ = Task.Factory.StartNew(
             () => RunValidationAsync(
-                validationId, trialsWithCurves, profile, command.ThresholdProfileName,
+                validationId, command.OptimizationRunId, profile, command.ThresholdProfileName,
                 optimization.StrategyName, optimization.StrategyVersion,
-                command.OptimizationRunId, startedAt, invocationCount,
-                optimization.TotalCombinations),
+                startedAt, invocationCount, optimization.TotalCombinations),
             CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-        return new ValidationSubmissionDto(validationId, trialsWithCurves.Count);
+        return new ValidationSubmissionDto(validationId, optimization.TrialCount);
     }
 
     private async Task RunValidationAsync(
         Guid validationId,
-        List<BacktestRunRecord> trials,
+        Guid optimizationRunId,
         ValidationThresholdProfile profile,
         string profileName,
         string strategyName,
         string strategyVersion,
-        Guid optimizationRunId,
         DateTimeOffset startedAt,
         int invocationCount,
         long totalCombinations)
@@ -117,6 +106,20 @@ public sealed class RunValidationCommandHandler(
         {
             var sw = Stopwatch.StartNew();
 
+            // Load trials with trade P&L (no equity curves needed)
+            var optimization = await runRepository.GetOptimizationByIdAsync(
+                optimizationRunId, includeEquityCurves: false, includeTrials: true, ct)
+                ?? throw new InvalidOperationException(
+                    $"Optimization run '{optimizationRunId}' vanished during validation.");
+
+            var trials = optimization.Trials
+                .Where(t => t.TradePnl.Count > 0)
+                .ToList();
+
+            if (trials.Count == 0)
+                throw new InvalidOperationException(
+                    "No trials with trade P&L found. Re-run the optimization.");
+
             // Build simulation cache (with spillover to disk if too large)
             var estimatedSize = SimulationCacheBuilder.EstimateSize(trials);
             SimulationCache cache;
@@ -129,7 +132,6 @@ public sealed class RunValidationCommandHandler(
                     estimatedSize / (1024.0 * 1024.0),
                     options.SpilloverThresholdBytes / (1024.0 * 1024.0));
 
-                // Write directly from trials to binary, then load once
                 var filePath = Path.Combine(options.CacheDirectory, $"cache_{validationId:N}.bin");
                 cacheFileStore.WriteDirect(trials, filePath);
                 cache = cacheFileStore.Read(filePath);
@@ -194,13 +196,13 @@ public sealed class RunValidationCommandHandler(
         {
             logger.LogInformation("Validation {RunId} was cancelled", validationId);
             await SaveErrorAsync(validationId, optimizationRunId, strategyName, strategyVersion,
-                profileName, thresholdProfileJson, startedAt, trials.Count, invocationCount, "Run was cancelled by user.");
+                profileName, thresholdProfileJson, startedAt, 0, invocationCount, "Run was cancelled by user.");
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Validation {RunId} failed", validationId);
             await SaveErrorAsync(validationId, optimizationRunId, strategyName, strategyVersion,
-                profileName, thresholdProfileJson, startedAt, trials.Count, invocationCount, ex.Message);
+                profileName, thresholdProfileJson, startedAt, 0, invocationCount, ex.Message);
         }
         finally
         {

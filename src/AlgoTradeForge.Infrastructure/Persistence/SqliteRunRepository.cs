@@ -405,7 +405,16 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
     public Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, CancellationToken ct = default)
         => GetOptimizationByIdAsync(id, includeEquityCurves: false, ct);
 
-    public async Task<OptimizationRunRecord?> GetOptimizationByIdAsync(Guid id, bool includeEquityCurves, CancellationToken ct = default)
+    public async Task<OptimizationRunRecord?> GetOptimizationByIdAsync(
+        Guid id, bool includeEquityCurves, CancellationToken ct = default)
+        => await GetOptimizationByIdCoreAsync(id, includeEquityCurves, includeTrials: includeEquityCurves, ct);
+
+    public async Task<OptimizationRunRecord?> GetOptimizationByIdAsync(
+        Guid id, bool includeEquityCurves, bool includeTrials, CancellationToken ct = default)
+        => await GetOptimizationByIdCoreAsync(id, includeEquityCurves, includeTrials, ct);
+
+    private async Task<OptimizationRunRecord?> GetOptimizationByIdCoreAsync(
+        Guid id, bool includeEquityCurves, bool includeTrials, CancellationToken ct = default)
     {
         await EnsureInitializedAsync(ct);
         await using var conn = await CreateConnectionAsync(ct);
@@ -429,7 +438,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
 
         if (includeEquityCurves)
         {
-            // Validation path: load all trials with equity curves
+            // Full load: trials with equity curves + trade P&L (standalone backtest export)
             await using var trialCmd = conn.CreateCommand();
             var orderClause = GetTrialOrderByClause(record.SortBy);
             trialCmd.CommandText = $"SELECT * FROM backtest_runs WHERE optimization_run_id = $optId{orderClause}";
@@ -438,6 +447,20 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             await using var trialReader = await trialCmd.ExecuteReaderAsync(ct);
             while (await trialReader.ReadAsync(ct))
                 trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: true));
+
+            trialCount = trials.Count;
+        }
+        else if (includeTrials)
+        {
+            // Validation path: load trials WITHOUT equity curves (trade P&L is always loaded)
+            await using var trialCmd = conn.CreateCommand();
+            var orderClause = GetTrialOrderByClause(record.SortBy);
+            trialCmd.CommandText = $"SELECT * FROM backtest_runs WHERE optimization_run_id = $optId{orderClause}";
+            trialCmd.Parameters.AddWithValue("$optId", id.ToString());
+
+            await using var trialReader = await trialCmd.ExecuteReaderAsync(ct);
+            while (await trialReader.ReadAsync(ct))
+                trials.Add(ReadBacktestRunCore(trialReader, includeEquityCurve: false));
 
             trialCount = trials.Count;
         }
@@ -744,8 +767,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             EquityCurve = includeEquityCurve
                 ? DeserializeEquityCurve(reader.GetString(reader.GetOrdinal("equity_curve_json")))
                 : [],
-            TradePnl = includeEquityCurve
-                ? DeserializeTradePnl(reader.GetString(reader.GetOrdinal("trade_pnl_json")))
+            TradePnl = TryGetOrdinal(reader, "trade_pnl_json") is int tradePnlOrd && !reader.IsDBNull(tradePnlOrd)
+                ? DeserializeTradePnl(reader.GetString(tradePnlOrd))
                 : [],
             RunFolderPath = reader.IsDBNull(reader.GetOrdinal("run_folder_path"))
                 ? null
