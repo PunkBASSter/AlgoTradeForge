@@ -1,12 +1,9 @@
-using System.Diagnostics;
 using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
-using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Domain.Validation;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Application.Validation;
 
@@ -14,10 +11,7 @@ public sealed class RunGroupValidationCommandHandler(
     IRunRepository runRepository,
     IValidationRepository validationRepository,
     IThresholdProfileRepository thresholdProfileRepository,
-    RunProgressCache progressCache,
-    IRunCancellationRegistry cancellationRegistry,
-    ISimulationCacheFileStore cacheFileStore,
-    IOptions<SimulationCacheOptions> cacheOptions,
+    ComputeTaskQueue queue,
     ILogger<RunGroupValidationCommandHandler> logger) : ICommandHandler<RunGroupValidationCommand, ValidationGroupSubmissionDto>
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -111,17 +105,40 @@ public sealed class RunGroupValidationCommandHandler(
             });
         }
 
-        // 6. Launch ONE background task for sequential execution
-        _ = Task.Factory.StartNew(
-            () => RunGroupSequentialAsync(
-                groupId, completedRuns, childValidationIds,
-                profile, command.ThresholdProfileName, thresholdProfileJson,
-                optimizationGroup.StrategyName, startedAt),
-            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        // 6. Enqueue compute tasks (one per DSS validation)
+        var computeTasks = new List<ComputeTask>(completedRuns.Count);
+        for (var i = 0; i < completedRuns.Count; i++)
+        {
+            var optimizationRun = completedRuns[i];
+            var dssLabel = string.Join(", ", optimizationRun.DataSubscriptions
+                .Select(s => $"{s.AssetName}/{s.Exchange}/{s.TimeFrame}"));
+
+            computeTasks.Add(new ComputeTask
+            {
+                JobId = groupId,
+                Type = ComputeTaskType.Validation,
+                DssIndex = optimizationRun.DssIndex,
+                RunId = childValidationIds[i],
+                DssLabel = dssLabel,
+                ExecutionContext = new ValidationExecutionContext
+                {
+                    OptimizationRunId = optimizationRun.Id,
+                    StrategyName = optimizationGroup.StrategyName,
+                    ThresholdProfileName = command.ThresholdProfileName,
+                    ThresholdProfileJson = thresholdProfileJson,
+                    Profile = profile,
+                    StartedAt = startedAt,
+                    ValidationGroupId = groupId,
+                },
+            });
+        }
+
+        queue.EnqueueRange(computeTasks);
+        queue.RegisterJob(groupId, computeTasks.Count, isOptimizationJob: false);
 
         logger.LogInformation(
-            "Validation group {GroupId} created with {RunCount} child validation runs (enqueued) for optimization group {OptGroupId}",
-            groupId, childRuns.Count, command.OptimizationGroupId);
+            "Validation group {GroupId} created with {TaskCount} tasks enqueued for optimization group {OptGroupId}",
+            groupId, computeTasks.Count, command.OptimizationGroupId);
 
         return new ValidationGroupSubmissionDto
         {
@@ -130,278 +147,4 @@ public sealed class RunGroupValidationCommandHandler(
         };
     }
 
-    private async Task RunGroupSequentialAsync(
-        Guid groupId,
-        List<OptimizationRunRecord> completedOptRuns,
-        Guid[] childValidationIds,
-        ValidationThresholdProfile profile,
-        string profileName,
-        string thresholdProfileJson,
-        string strategyName,
-        DateTimeOffset startedAt)
-    {
-        using var groupCts = new CancellationTokenSource(TimeSpan.FromHours(2));
-        cancellationRegistry.Register(groupId, groupCts);
-        var groupCt = groupCts.Token;
-
-        var childStatuses = new List<string>(completedOptRuns.Count);
-
-        try
-        {
-            for (var i = 0; i < completedOptRuns.Count; i++)
-            {
-                groupCt.ThrowIfCancellationRequested();
-
-                var optimizationRun = completedOptRuns[i];
-                var validationId = childValidationIds[i];
-
-                // Transition: Enqueued → InProgress
-                await validationRepository.UpdateValidationRunStatusAsync(
-                    validationId, ValidationRunStatus.InProgress, CancellationToken.None);
-                await progressCache.SetProgressAsync(
-                    validationId, 0, ValidationPipeline.StageCount, CancellationToken.None);
-
-                // Per-run CTS linked to group
-                using var runCts = CancellationTokenSource.CreateLinkedTokenSource(groupCt);
-                cancellationRegistry.Register(validationId, runCts);
-
-                try
-                {
-                    await RunSingleValidationAsync(
-                        validationId, optimizationRun, profile, profileName,
-                        thresholdProfileJson, strategyName, startedAt, runCts.Token);
-
-                    childStatuses.Add(ValidationRunStatus.Completed);
-                }
-                catch (OperationCanceledException) when (!groupCt.IsCancellationRequested)
-                {
-                    // Individual run cancelled — save and continue
-                    logger.LogInformation(
-                        "Validation group {GroupId}: run {RunId} was cancelled individually",
-                        groupId, validationId);
-
-                    await SaveErrorAsync(validationId, optimizationRun, strategyName,
-                        profileName, thresholdProfileJson, startedAt,
-                        "Run was cancelled by user.");
-
-                    childStatuses.Add(ValidationRunStatus.Cancelled);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Group-level cancellation — re-throw
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    // Run failed — save error, continue to next
-                    logger.LogError(ex,
-                        "Validation group {GroupId}: run {RunId} failed",
-                        groupId, validationId);
-
-                    await SaveErrorAsync(validationId, optimizationRun, strategyName,
-                        profileName, thresholdProfileJson, startedAt,
-                        ex.Message);
-
-                    childStatuses.Add(ValidationRunStatus.Failed);
-                }
-                finally
-                {
-                    await progressCache.RemoveProgressAsync(validationId);
-                    cancellationRegistry.Remove(validationId);
-                }
-            }
-
-            // All children processed
-            var groupStatus = GroupStatusCalculator.Compute(childStatuses);
-            await validationRepository.UpdateValidationGroupStatusAsync(
-                groupId, groupStatus, DateTimeOffset.UtcNow, CancellationToken.None);
-
-            logger.LogInformation(
-                "Validation group {GroupId} completed with status {Status}",
-                groupId, groupStatus);
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogInformation("Validation group {GroupId} was cancelled", groupId);
-
-            // Mark remaining enqueued runs as cancelled
-            for (var i = childStatuses.Count; i < completedOptRuns.Count; i++)
-            {
-                await SaveErrorAsync(childValidationIds[i], completedOptRuns[i], strategyName,
-                    profileName, thresholdProfileJson, startedAt,
-                    "Run was cancelled by user.");
-            }
-
-            await validationRepository.UpdateValidationGroupStatusAsync(
-                groupId, ValidationGroupStatus.Cancelled, DateTimeOffset.UtcNow, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Validation group {GroupId} failed", groupId);
-
-            for (var i = childStatuses.Count; i < completedOptRuns.Count; i++)
-            {
-                await SaveErrorAsync(childValidationIds[i], completedOptRuns[i], strategyName,
-                    profileName, thresholdProfileJson, startedAt,
-                    ex.Message);
-            }
-
-            await validationRepository.UpdateValidationGroupStatusAsync(
-                groupId, ValidationGroupStatus.Failed, DateTimeOffset.UtcNow, CancellationToken.None);
-        }
-        finally
-        {
-            cancellationRegistry.Remove(groupId);
-        }
-    }
-
-    /// <summary>Run the validation pipeline for a single optimization run (inline).</summary>
-    private async Task RunSingleValidationAsync(
-        Guid validationId,
-        OptimizationRunRecord optimizationRun,
-        ValidationThresholdProfile profile,
-        string profileName,
-        string thresholdProfileJson,
-        string strategyName,
-        DateTimeOffset startedAt,
-        CancellationToken ct)
-    {
-        // Load trials with trade P&L (no equity curves needed)
-        var optimization = await runRepository.GetOptimizationByIdAsync(
-            optimizationRun.Id, includeEquityCurves: false, includeTrials: true, ct)
-            ?? throw new InvalidOperationException(
-                $"Optimization run '{optimizationRun.Id}' vanished during validation.");
-
-        var trialsWithCurves = optimization.Trials
-            .Where(t => t.TradePnl.Count > 0)
-            .ToList();
-
-        if (trialsWithCurves.Count == 0)
-        {
-            logger.LogWarning(
-                "Validation {RunId}: no trials with trade P&L for optimization {OptId}",
-                validationId, optimizationRun.Id);
-            throw new InvalidOperationException("No trials with trade P&L found.");
-        }
-
-        var invocationCount = await validationRepository.CountByOptimizationIdAsync(optimizationRun.Id, ct);
-
-        var sw = Stopwatch.StartNew();
-
-        // Build simulation cache (with spillover to disk if too large)
-        var estimatedSize = SimulationCacheBuilder.EstimateSize(trialsWithCurves);
-        SimulationCache cache;
-        using var cacheFileHandle = BuildSimulationCache(
-            trialsWithCurves, validationId, out cache);
-
-        var trialSummaries = SimulationCacheBuilder.BuildTrialSummaries(trialsWithCurves);
-        var subscriptionGroupMap = SimulationCacheBuilder.BuildSubscriptionGroupMap(trialsWithCurves);
-
-        // Run pipeline
-        var pipeline = new ValidationPipeline();
-        var (stageResults, survivors) = pipeline.Execute(
-            cache, trialSummaries, profile, validationId,
-            (current, total) =>
-                _ = progressCache.SetProgressAsync(validationId, current, total, CancellationToken.None),
-            ct,
-            optimization.TotalCombinations,
-            subscriptionGroupMap);
-
-        sw.Stop();
-
-        // Compute composite score and verdict
-        var candidatesOut = survivors.Count;
-        var scoreResult = CompositeScoreCalculator.Calculate(
-            stageResults, profile, trialsWithCurves.Count, candidatesOut);
-
-        // Save completed record
-        var record = new ValidationRunRecord
-        {
-            Id = validationId,
-            OptimizationRunId = optimizationRun.Id,
-            StrategyName = strategyName,
-            StrategyVersion = optimization.StrategyVersion,
-            StartedAt = startedAt,
-            CompletedAt = DateTimeOffset.UtcNow,
-            DurationMs = sw.ElapsedMilliseconds,
-            Status = ValidationRunStatus.Completed,
-            ThresholdProfileName = profileName,
-            ThresholdProfileJson = thresholdProfileJson,
-            CandidatesIn = trialsWithCurves.Count,
-            CandidatesOut = candidatesOut,
-            CompositeScore = scoreResult.CompositeScore,
-            Verdict = scoreResult.Verdict,
-            VerdictSummary = scoreResult.VerdictSummary,
-            CategoryScoresJson = JsonSerializer.Serialize(scoreResult.CategoryScores, JsonOptions),
-            RejectionsJson = JsonSerializer.Serialize(scoreResult.Rejections, JsonOptions),
-            InvocationCount = invocationCount,
-            StageResults = stageResults,
-        };
-
-        await validationRepository.SaveAsync(record, ct);
-
-        logger.LogInformation(
-            "Validation {RunId}: {In} candidates -> {Out} survivors, verdict={Verdict} in {Duration}ms",
-            validationId, trialsWithCurves.Count, candidatesOut, scoreResult.Verdict, sw.ElapsedMilliseconds);
-    }
-
-    private IDisposable? BuildSimulationCache(
-        List<BacktestRunRecord> trials, Guid validationId, out SimulationCache cache)
-    {
-        var estimatedSize = SimulationCacheBuilder.EstimateSize(trials);
-        var options = cacheOptions.Value;
-
-        if (estimatedSize > options.SpilloverThresholdBytes)
-        {
-            logger.LogInformation(
-                "SimulationCache ({Size:F1} MB) exceeds threshold, spilling to disk",
-                estimatedSize / (1024.0 * 1024.0));
-
-            var filePath = Path.Combine(options.CacheDirectory, $"cache_{validationId:N}.bin");
-            cacheFileStore.WriteDirect(trials, filePath);
-            cache = cacheFileStore.Read(filePath);
-            return new CacheFileCleanup(filePath);
-        }
-
-        cache = SimulationCacheBuilder.Build(trials);
-        return null;
-    }
-
-    private async Task SaveErrorAsync(
-        Guid validationId,
-        OptimizationRunRecord optimizationRun,
-        string strategyName,
-        string profileName,
-        string thresholdProfileJson,
-        DateTimeOffset startedAt,
-        string errorMessage)
-    {
-        try
-        {
-            var record = new ValidationRunRecord
-            {
-                Id = validationId,
-                OptimizationRunId = optimizationRun.Id,
-                StrategyName = strategyName,
-                StrategyVersion = optimizationRun.StrategyVersion,
-                StartedAt = startedAt,
-                CompletedAt = DateTimeOffset.UtcNow,
-                DurationMs = (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
-                Status = errorMessage == "Run was cancelled by user."
-                    ? ValidationRunStatus.Cancelled
-                    : ValidationRunStatus.Failed,
-                ThresholdProfileName = profileName,
-                ThresholdProfileJson = thresholdProfileJson,
-                CandidatesIn = 0,
-                InvocationCount = 0,
-                ErrorMessage = errorMessage,
-            };
-            await validationRepository.SaveAsync(record);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex,
-                "Failed to persist error record for validation {RunId}", validationId);
-        }
-    }
 }

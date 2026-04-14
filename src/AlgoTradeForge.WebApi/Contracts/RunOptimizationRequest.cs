@@ -55,6 +55,10 @@ public sealed record RunOptimizationRequest
 
     [JsonConverter(typeof(SubscriptionAxisConverter))]
     public List<List<DataSubscriptionDto>>? SubscriptionAxis { get; init; }
+
+    public bool Validate { get; init; }
+    public string ThresholdProfileName { get; init; } = "Crypto-Standard";
+    public int MaxThreads { get; init; }
 }
 
 public sealed class OptimizationAxesConverter : JsonConverter<Dictionary<string, OptimizationAxisOverride>>

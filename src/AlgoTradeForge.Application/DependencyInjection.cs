@@ -25,6 +25,11 @@ public static class DependencyInjection
         services.AddSingleton<ICommandHandler<RunGroupOptimizationCommand, OptimizationGroupSubmissionDto>, RunGroupOptimizationCommandHandler>();
         services.AddSingleton<OptimizationAxisResolver>();
 
+        // Compute task queue + executors
+        services.AddSingleton<ComputeTaskQueue>();
+        services.AddSingleton<OptimizationTaskExecutor>();
+        services.AddSingleton<ValidationTaskExecutor>();
+
         // Progress tracking
         services.AddSingleton<RunProgressCache>();
         services.AddSingleton<IRunCancellationRegistry, InMemoryRunCancellationRegistry>();

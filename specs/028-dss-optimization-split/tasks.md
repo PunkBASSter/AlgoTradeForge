@@ -89,7 +89,7 @@
 
 ### Tests for US2
 
-- [ ] T033 [P] [US2] Test optimization group management endpoints (list, detail, status, cancel, delete) in `tests/AlgoTradeForge.WebApi.Tests/OptimizationEndpointGroupTests.cs` — verify: GET /api/optimizations returns groups, GET groups/{groupId} returns detail with child runs, status returns per-run progress, cancel preserves completed runs, delete cascades
+- [x] T033 [P] [US2] Test optimization group management endpoints (list, detail, status, cancel, delete) in `tests/AlgoTradeForge.WebApi.Tests/OptimizationEndpointGroupTests.cs` — verify: GET /api/optimizations returns groups, GET groups/{groupId} returns detail with child runs, status returns per-run progress, cancel preserves completed runs, delete cascades
 
 ### Implementation for US2
 
@@ -115,7 +115,7 @@
 
 ### Tests for US3
 
-- [ ] T043 [P] [US3] Test sortBy and params field in trials endpoint in `tests/AlgoTradeForge.WebApi.Tests/OptimizationEndpointGroupTests.cs` — verify: GET /api/optimizations/{id}/trials returns params field, supports sortBy on each denormalized metric column
+- [x] T043 [P] [US3] Test sortBy and params field in trials endpoint in `tests/AlgoTradeForge.WebApi.Tests/OptimizationEndpointGroupTests.cs` — verify: GET /api/optimizations/{id}/trials returns params field, supports sortBy on each denormalized metric column
 
 ### Implementation for US3
 
@@ -139,7 +139,7 @@
 
 ### Tests for US4
 
-- [ ] T051 [P] [US4] Test cross-DSS trials endpoint in `tests/AlgoTradeForge.WebApi.Tests/OptimizationEndpointGroupTests.cs` — verify: GET /api/optimizations/groups/{groupId}/trials returns trials from all child runs with dss field, supports sortBy, pagination works across runs
+- [x] T051 [P] [US4] Test cross-DSS trials endpoint in `tests/AlgoTradeForge.WebApi.Tests/OptimizationEndpointGroupTests.cs` — verify: GET /api/optimizations/groups/{groupId}/trials returns trials from all child runs with dss field, supports sortBy, pagination works across runs
 
 ### Implementation for US4
 
@@ -162,8 +162,8 @@
 ### Implementation for US5
 
 - [x] T057 [P] [US5] Create `dss-builder.tsx` in `frontend/components/features/dashboard/dss-builder.tsx` — collapsible section with table: each row has AssetName (text input), Exchange (text input), TimeFrame (text input), remove button. Add-row button. On change: serializes rows into `subscriptionAxis` format (List<List<DataSubscriptionDto>>), calls onChange callback
-- [ ] T058 [US5] Integrate DSS builder into `run-new-panel.tsx` in `frontend/components/features/dashboard/run-new-panel.tsx` — render DssBuilder above CodeMirror editor (collapsible, pre-collapsed). On builder change: parse current editor JSON, update subscriptionAxis field, set editor content. On editor change: sync builder state from subscriptionAxis field (bidirectional sync)
-- [ ] T059 [US5] Add multi-DSS backtest support — when mode is "backtest" and subscriptionAxis has >1 entry, modify submit handler in `run-new-panel.tsx` to launch N separate backtest requests (one per DSS) via api-client.runBacktest(), showing N submission confirmations
+- [x] T058 [US5] Integrate DSS builder into `run-new-panel.tsx` in `frontend/components/features/dashboard/run-new-panel.tsx` — render DssBuilder above CodeMirror editor (collapsible, pre-collapsed). On builder change: parse current editor JSON, update subscriptionAxis field, set editor content. On editor change: sync builder state from subscriptionAxis field (bidirectional sync)
+- [x] T059 [US5] Add multi-DSS backtest support — when mode is "backtest" and subscriptionAxis has >1 entry, modify submit handler in `run-new-panel.tsx` to launch N separate backtest requests (one per DSS) via api-client.runBacktest(), showing N submission confirmations
 
 **Checkpoint**: DSS builder populates JSON, multi-DSS backtest launches N separate runs.
 
@@ -177,7 +177,7 @@
 
 ### Tests for US6
 
-- [ ] T060 [P] [US6] Test `RunGroupValidationCommandHandler` in `tests/AlgoTradeForge.Application.Tests/Validation/RunGroupValidationCommandHandlerTests.cs` — verify: validation group created, per-DSS validation runs reference source optimization runs, MaxTrialsToValidate cap applied, group status updated
+- [x] T060 [P] [US6] Test `RunGroupValidationCommandHandler` in `tests/AlgoTradeForge.Application.Tests/Validation/RunGroupValidationCommandHandlerTests.cs` — verify: validation group created, per-DSS validation runs reference source optimization runs, MaxTrialsToValidate cap applied, group status updated
 
 ### Implementation for US6
 
@@ -186,7 +186,7 @@
 - [x] T063 [US6] Modify `POST /api/validations` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/ValidationEndpoints.cs` — accept optimizationGroupId + thresholdProfileName + maxTrialsToValidate, dispatch to RunGroupValidationCommand, return ValidationGroupSubmissionResponse
 - [x] T064 [US6] Modify `GET /api/validations` endpoint in `src/AlgoTradeForge.WebApi/Endpoints/ValidationEndpoints.cs` to return validation groups (ValidationGroupSummaryResponse items)
 - [x] T065 [US6] Add validation group sub-routes in `src/AlgoTradeForge.WebApi/Endpoints/ValidationEndpoints.cs` — GET groups/{groupId}, GET groups/{groupId}/status, GET groups/{groupId}/trials, POST groups/{groupId}/cancel, DELETE groups/{groupId}
-- [ ] T066 [P] [US6] Test validation group endpoints in `tests/AlgoTradeForge.WebApi.Tests/ValidationEndpointGroupTests.cs`
+- [x] T066 [P] [US6] Test validation group endpoints in `tests/AlgoTradeForge.WebApi.Tests/ValidationEndpointGroupTests.cs`
 - [x] T067 [P] [US6] Add validation group TypeScript types in `frontend/types/validation.ts` — ValidationGroup, ValidationGroupSummary, ValidationGroupDetail, RunGroupValidationRequest (with maxTrialsToValidate)
 - [x] T068 [P] [US6] Add validation group hooks in `frontend/hooks/use-validations.ts` — useValidationGroups, useValidationGroupDetail, useValidationGroupStatus, useRunGroupValidation, useCancelValidationGroup, useDeleteValidationGroup
 - [x] T069 [US6] Create `validation-group-page.tsx` in `frontend/components/features/report/validation-group-page.tsx` — tabbed layout: "Per-DSS Runs" tab (child validation list with verdict badges, link to source optimization group) + "Cross-DSS" tab (cross-DSS validation trials table with verdict/score columns)
@@ -204,8 +204,8 @@
 - [x] T072 [P] Wire navigation: optimization group list rows link to `/report/optimization-group/{groupId}`, validation group list links to `/report/validation-group/{groupId}` across `frontend/components/`
 - [x] T073 [P] Add RunProgress polling for group status — integrate useOptimizationGroupStatus into optimization-group-page.tsx with 2-second polling while status is InProgress
 - [x] T074 [P] Add re-run support for groups — "Re-run" button on optimization-group-page reads inputJson, stores in sessionStorage, navigates to optimization page (same pattern as existing re-run in RunNewPanel)
-- [ ] T075 Benchmark cross-DSS trial sorting with 10K+ rows per DSS run in `tests/AlgoTradeForge.Infrastructure.Tests/Persistence/SqliteRunRepository_GroupTests.cs` — verify sort completes in <1 second on SQLite (SC-003)
-- [ ] T076 Run quickstart.md validation — launch backend, launch frontend, execute API quick test from quickstart.md, verify end-to-end flow
+- [x] T075 Benchmark cross-DSS trial sorting with 10K+ rows per DSS run in `tests/AlgoTradeForge.Infrastructure.Tests/Persistence/SqliteRunRepository_GroupTests.cs` — verify sort completes in <1 second on SQLite (SC-003)
+- [x] T076 Run quickstart.md validation — launch backend, launch frontend, execute API quick test from quickstart.md, verify end-to-end flow
 
 ---
 

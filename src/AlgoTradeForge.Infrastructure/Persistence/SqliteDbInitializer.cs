@@ -169,6 +169,23 @@ internal static class SqliteDbInitializer
             candidate_verdicts_json TEXT    NULL
         );
         CREATE INDEX IF NOT EXISTS ix_vsr_validation_run_id ON validation_stage_results(validation_run_id);
+
+        CREATE TABLE IF NOT EXISTS simulation_cache_metadata (
+            optimization_run_id TEXT    NOT NULL PRIMARY KEY REFERENCES optimization_runs(id),
+            bar_count           INTEGER NOT NULL,
+            trial_count         INTEGER NOT NULL,
+            cache_file_path     TEXT    NULL,
+            created_at          TEXT    NOT NULL,
+            size_bytes          INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS threshold_profiles (
+            name            TEXT    NOT NULL PRIMARY KEY,
+            profile_json    TEXT    NOT NULL,
+            is_builtin      INTEGER NOT NULL DEFAULT 0,
+            created_at      TEXT    NOT NULL,
+            updated_at      TEXT    NOT NULL
+        );
         """;
 
     private const string MigrationV3 = """

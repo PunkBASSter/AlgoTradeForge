@@ -53,11 +53,9 @@ public class RunOptimizationCommandHandlerTests
             NullLogger<OptimizationSetupHelper>.Instance);
 
         return new RunOptimizationCommandHandler(
-            _strategyFactory, helper, new OptimizationAxisResolver(),
+            helper, new OptimizationAxisResolver(),
             _cartesianGenerator, _progressCache,
-            _cancellationRegistry,
-            Options.Create(new RunTimeoutOptions()),
-            NullLogger<RunOptimizationCommandHandler>.Instance);
+            new ComputeTaskQueue());
     }
 
     private static RunOptimizationCommand CreateCommand() => new()
@@ -485,21 +483,14 @@ public class RunOptimizationCommandHandlerTests
             }
         };
 
-        // Act
-        await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+        // Act — handler now enqueues to the queue instead of executing directly
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
-        // Wait for background task to complete
-        await Task.Delay(3000, TestContext.Current.CancellationToken);
+        // Assert — handler enqueued task and returned a valid submission
+        Assert.NotEqual(Guid.Empty, result.Id);
+        Assert.True(result.TotalCombinations > 0);
 
-        // Assert — factory received differently-scaled MinThreshold per asset
-        Assert.Equal(2, capturedCombinations.Count);
-
-        var btcTrial = capturedCombinations.SingleOrDefault(c => c.Asset == "BTCUSDT");
-        var solTrial = capturedCombinations.SingleOrDefault(c => c.Asset == "SOLUSDT");
-
-        // BTC: decimalDigits=2, tickSize=0.01 → 100 / 0.01 = 10_000 ticks
-        Assert.Equal(10_000L, btcTrial.MinThreshold);
-        // SOL: decimalDigits=4, tickSize=0.0001 → 100 / 0.0001 = 1_000_000 ticks
-        Assert.Equal(1_000_000L, solTrial.MinThreshold);
+        // Note: Per-trial scaling verification has moved to OptimizationTaskExecutor tests
+        // since execution now happens in the queue consumer, not the handler.
     }
 }

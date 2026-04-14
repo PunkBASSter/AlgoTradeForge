@@ -24,6 +24,9 @@ public sealed record RunGroupOptimizationCommand : ICommand<OptimizationGroupSub
     public FitnessConfig? FitnessConfig { get; init; }
     public GeneticConfig? GeneticSettings { get; init; }
     public string? InputJson { get; init; }
+    public bool Validate { get; init; }
+    public string ThresholdProfileName { get; init; } = "Crypto-Standard";
+    public int MaxThreads { get; init; }
 }
 
 public sealed record OptimizationGroupSubmissionDto

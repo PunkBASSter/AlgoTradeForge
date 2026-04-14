@@ -114,6 +114,7 @@ foreach (var asm in pluginAssemblies)
 Assembly[] strategyAssemblies = [typeof(AlgoTradeForge.Domain.Strategy.StrategyBase<>).Assembly, .. pluginAssemblies];
 builder.Services.AddInfrastructure(strategyAssemblies);
 builder.Services.AddHostedService<SqliteIndexMaintenanceService>();
+builder.Services.AddHostedService<ComputeQueueConsumer>();
 
 builder.Services.AddSingleton<IAssetRepository, FileSystemAssetRepository>();
 
@@ -161,6 +162,7 @@ app.MapStrategyEndpoints();
 app.MapDebugEndpoints();
 DebugWebSocketHandler.MapDebugWebSocket(app);
 app.MapValidationEndpoints();
+app.MapTaskQueueEndpoints();
 app.MapThresholdProfileEndpoints();
 app.MapLiveEndpoints();
 

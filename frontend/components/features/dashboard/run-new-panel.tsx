@@ -17,7 +17,9 @@ import { getClient } from "@/lib/services";
 import { RunProgress } from "@/components/features/dashboard/run-progress";
 import { useAvailableStrategies } from "@/hooks/use-available-strategies";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { DssBuilder } from "@/components/features/dashboard/dss-builder";
 import type {
+  DataSubscription,
   RunBacktestRequest,
   RunOptimizationRequest,
   RunGeneticOptimizationRequest,
@@ -88,6 +90,8 @@ export function RunNewPanel({
   const [evaluation, setEvaluation] = useState<OptimizationEvaluation | null>(null);
   const [evaluating, setEvaluating] = useState(false);
   const evaluationCacheRef = useRef<Map<string, OptimizationEvaluation>>(new Map());
+  const [dssValue, setDssValue] = useState<DataSubscription[][]>([]);
+  const suppressEditorSyncRef = useRef(false);
   const useGeneticRef = useRef(useGenetic);
   useGeneticRef.current = useGenetic;
   const { toast } = useToast();
@@ -112,8 +116,23 @@ export function RunNewPanel({
 
   const isOptimization = mode === "optimization";
 
-  // Handle editor doc changes: check cache, clear or restore evaluation
+  // Handle editor doc changes: check cache, clear or restore evaluation, sync DSS builder
   const handleDocChange = useCallback((text: string) => {
+    // Sync DSS builder from editor (unless the editor change was triggered BY the DSS builder)
+    if (!suppressEditorSyncRef.current) {
+      try {
+        const obj = JSON.parse(text) as Record<string, unknown>;
+        const axis = obj.subscriptionAxis as DataSubscription[][] | undefined;
+        if (axis && Array.isArray(axis)) {
+          setDssValue(axis);
+        } else if (!axis) {
+          setDssValue([]);
+        }
+      } catch {
+        // Invalid JSON — don't update DSS builder
+      }
+    }
+
     if (!isOptimization) return;
     const cacheKey = computeEvalCacheKey(text, useGeneticRef.current);
     if (cacheKey) {
@@ -125,6 +144,30 @@ export function RunNewPanel({
     }
     setEvaluation(null);
   }, [isOptimization]);
+
+  // Handle DSS builder changes: update subscriptionAxis in editor JSON
+  const handleDssChange = useCallback((newAxis: DataSubscription[][]) => {
+    setDssValue(newAxis);
+    const view = editorViewRef.current;
+    if (!view) return;
+
+    try {
+      const obj = JSON.parse(view.state.doc.toString()) as Record<string, unknown>;
+      if (newAxis.length > 0) {
+        obj.subscriptionAxis = newAxis;
+      } else {
+        delete obj.subscriptionAxis;
+      }
+      const newDoc = JSON.stringify(obj, null, 2);
+      suppressEditorSyncRef.current = true;
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: newDoc },
+      });
+      suppressEditorSyncRef.current = false;
+    } catch {
+      // Editor JSON is invalid — can't sync
+    }
+  }, []);
 
   // Create editor once when the slide-over opens
   useEffect(() => {
@@ -415,7 +458,23 @@ export function RunNewPanel({
       } else {
         let runId: string;
         if (mode === "backtest") {
-          const submission = await client.runBacktest(parsed as RunBacktestRequest);
+          // T059: Multi-DSS backtest — launch N separate backtest requests
+          const btReq = parsed as RunBacktestRequest & { subscriptionAxis?: DataSubscription[][] };
+          if (btReq.subscriptionAxis && btReq.subscriptionAxis.length > 1) {
+            const results: string[] = [];
+            for (const dss of btReq.subscriptionAxis) {
+              const perDssReq: RunBacktestRequest = {
+                ...btReq,
+                dataSubscriptions: dss,
+              };
+              const submission = await client.runBacktest(perDssReq);
+              results.push(submission.id);
+            }
+            toast(`${results.length} backtests submitted`, "success");
+            setActiveRunId(results[0]);
+            return;
+          }
+          const submission = await client.runBacktest(btReq as RunBacktestRequest);
           runId = submission.id;
         } else if (useGenetic) {
           const submission = await client.runGeneticOptimization(parsed as RunGeneticOptimizationRequest);
@@ -495,6 +554,11 @@ export function RunNewPanel({
                 onChange={handleToggle}
                 disabled={submitting || evaluating}
               />
+            </div>
+          )}
+          {mode !== "live" && (
+            <div className="shrink-0">
+              <DssBuilder value={dssValue} onChange={handleDssChange} />
             </div>
           )}
           <div

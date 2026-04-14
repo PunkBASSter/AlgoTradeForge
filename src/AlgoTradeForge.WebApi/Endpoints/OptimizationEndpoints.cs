@@ -156,6 +156,9 @@ public static class OptimizationEndpoints
                 MinNetProfit = request.OptimizationSettings.MinNetProfit,
                 FitnessConfig = MapFitnessConfig(request.OptimizationSettings.FitnessWeights),
                 InputJson = inputJson,
+                Validate = request.Validate,
+                ThresholdProfileName = request.ThresholdProfileName,
+                MaxThreads = request.MaxThreads,
             };
 
             return await DispatchGroupOptimization(groupCommand, groupHandler, ct);
