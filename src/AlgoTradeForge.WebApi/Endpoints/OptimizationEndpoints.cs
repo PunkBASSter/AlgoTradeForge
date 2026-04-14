@@ -122,10 +122,12 @@ public static class OptimizationEndpoints
 
     private static async Task<IResult> RunOptimization(
         RunOptimizationRequest request,
-        ICommandHandler<RunOptimizationCommand, OptimizationSubmissionDto> handler,
         ICommandHandler<RunGroupOptimizationCommand, OptimizationGroupSubmissionDto> groupHandler,
         CancellationToken ct)
     {
+        if (request.SubscriptionAxis is not { Count: > 0 })
+            return Results.BadRequest(new { error = "subscriptionAxis is required and must contain at least one group." });
+
         var backtestSettings = new BacktestSettingsDto
         {
             InitialCash = request.BacktestSettings.InitialCash,
@@ -136,40 +138,10 @@ public static class OptimizationEndpoints
         };
         var inputJson = JsonSerializer.Serialize(request, JsonOptions);
 
-        // Dispatch to group handler when DSS is present
-        if (request.SubscriptionAxis is { Count: > 0 })
-        {
-            var groupCommand = new RunGroupOptimizationCommand
-            {
-                StrategyName = request.StrategyName,
-                OptimizationMethod = "BruteForce",
-                Axes = request.OptimizationAxes,
-                SubscriptionAxis = request.SubscriptionAxis,
-                BacktestSettings = backtestSettings,
-                MaxDegreeOfParallelism = request.OptimizationSettings.MaxDegreeOfParallelism,
-                MaxCombinations = request.OptimizationSettings.MaxCombinations,
-                MaxTrialsToKeep = request.OptimizationSettings.MaxTrialsToKeep,
-                MinProfitFactor = request.OptimizationSettings.MinProfitFactor,
-                MaxDrawdownPct = request.OptimizationSettings.MaxDrawdownPct,
-                MinSharpeRatio = request.OptimizationSettings.MinSharpeRatio,
-                MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
-                MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
-                MinTradeCount = request.OptimizationSettings.MinTradeCount,
-                MinNetProfit = request.OptimizationSettings.MinNetProfit,
-                FitnessConfig = MapFitnessConfig(request.OptimizationSettings.FitnessWeights),
-                InputJson = inputJson,
-                Validate = request.Validate,
-                ThresholdProfileName = request.ThresholdProfileName,
-                MaxThreads = request.MaxThreads,
-            };
-
-            return await DispatchGroupOptimization(groupCommand, groupHandler, ct);
-        }
-
-        // Single-run path (no DSS — backward compat)
-        var command = new RunOptimizationCommand
+        var groupCommand = new RunGroupOptimizationCommand
         {
             StrategyName = request.StrategyName,
+            OptimizationMethod = "BruteForce",
             Axes = request.OptimizationAxes,
             SubscriptionAxis = request.SubscriptionAxis,
             BacktestSettings = backtestSettings,
@@ -185,22 +157,12 @@ public static class OptimizationEndpoints
             MinNetProfit = request.OptimizationSettings.MinNetProfit,
             FitnessConfig = MapFitnessConfig(request.OptimizationSettings.FitnessWeights),
             InputJson = inputJson,
+            Validate = request.Validate,
+            ThresholdProfileName = request.ThresholdProfileName,
+            MaxThreads = request.MaxThreads,
         };
 
-        try
-        {
-            var submission = await handler.HandleAsync(command, ct);
-            var response = new OptimizationSubmissionResponse
-            {
-                Id = submission.Id,
-                TotalCombinations = submission.TotalCombinations,
-            };
-            return Results.Accepted($"/api/optimizations/{submission.Id}/status", response);
-        }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
+        return await DispatchGroupOptimization(groupCommand, groupHandler, ct);
     }
 
     private static async Task<IResult> RunGeneticOptimization(

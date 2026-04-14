@@ -20,7 +20,6 @@ public static class DependencyInjection
         services.AddSingleton<BacktestPreparer>();
         services.AddSingleton<ICommandHandler<RunBacktestCommand, BacktestSubmissionDto>, RunBacktestCommandHandler>();
         services.AddSingleton<OptimizationSetupHelper>();
-        services.AddSingleton<ICommandHandler<RunOptimizationCommand, OptimizationSubmissionDto>, RunOptimizationCommandHandler>();
         services.AddSingleton<ICommandHandler<RunGeneticOptimizationCommand, OptimizationSubmissionDto>, RunGeneticOptimizationCommandHandler>();
         services.AddSingleton<ICommandHandler<RunGroupOptimizationCommand, OptimizationGroupSubmissionDto>, RunGroupOptimizationCommandHandler>();
         services.AddSingleton<OptimizationAxisResolver>();
