@@ -101,8 +101,8 @@ All monetary/price values in the Domain layer use `long` (Int64). When convertin
 
 ## Recent Changes
 - 028-dss-optimization-split: Added C# 14 / .NET 10 (backend), TypeScript 5.x strict (frontend) + ASP.NET Core minimal APIs, System.Threading, TanStack Query, Next.js 16, CodeMirror 6
+- 028-dss-optimization-split: Added C# 14 / .NET 10 (backend), TypeScript 5.x strict (frontend) + ASP.NET Core minimal APIs, System.Threading, TanStack Query, Next.js 16, CodeMirror 6
 - 027-strategy-module-framework: Added C# 14 / .NET 10 + Existing AlgoTradeForge solution (Domain, Application, Infrastructure, WebApi). No new NuGet packages.
-- 019-history-loader: Added C# 14 / .NET 10 + ASP.NET Core (minimal APIs), `Microsoft.Extensions.Hosting` (BackgroundService), `System.Text.Json`, `Serilog`, `HttpClient`
 
 
 <!-- MANUAL ADDITIONS START -->
