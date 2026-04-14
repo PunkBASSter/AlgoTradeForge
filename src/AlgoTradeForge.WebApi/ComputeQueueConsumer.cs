@@ -16,6 +16,7 @@ namespace AlgoTradeForge.WebApi;
 public sealed class ComputeQueueConsumer(
     ComputeTaskQueue queue,
     OptimizationTaskExecutor optimizationExecutor,
+    GeneticOptimizationTaskExecutor geneticExecutor,
     ValidationTaskExecutor validationExecutor,
     OptimizationSetupHelper setupHelper,
     RunProgressCache progressCache,
@@ -30,6 +31,9 @@ public sealed class ComputeQueueConsumer(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("ComputeQueueConsumer started — processing tasks sequentially");
+        logger.LogWarning(
+            "Compute queue is ephemeral. Any tasks from a prior application instance were lost. " +
+            "Previously in-progress runs may show stale InProgress status until resubmitted");
 
         try
         {
@@ -110,6 +114,12 @@ public sealed class ComputeQueueConsumer(
 
     private async Task ExecuteOptimizationAsync(ComputeTask task, CancellationToken ct)
     {
+        if (task.ExecutionContext is GeneticExecutionContext geneticCtx)
+        {
+            await ExecuteGeneticOptimizationAsync(task, geneticCtx, ct);
+            return;
+        }
+
         if (task.ExecutionContext is not OptimizationExecutionContext ctx)
             throw new InvalidOperationException($"Task {task.Id} has no OptimizationExecutionContext");
 
@@ -149,6 +159,48 @@ public sealed class ComputeQueueConsumer(
             DssIndex = task.DssIndex,
         };
 
+        FireAndForgetPersist(task.RunId, record, result.Trials.Count);
+    }
+
+    private async Task ExecuteGeneticOptimizationAsync(
+        ComputeTask task, GeneticExecutionContext ctx, CancellationToken ct)
+    {
+        await runRepository.UpdateOptimizationRunStatusAsync(
+            task.RunId, OptimizationRunStatus.InProgress, CancellationToken.None);
+        await progressCache.SetProgressAsync(
+            task.RunId, 0, ctx.GaConfig.MaxEvaluations, CancellationToken.None);
+
+        var result = await geneticExecutor.ExecuteAsync(
+            ctx, task.RunId, task.DssIndex, ct);
+
+        _trialCache[(task.JobId, task.DssIndex)] = result.Trials;
+
+        var record = new OptimizationRunRecord
+        {
+            Id = task.RunId,
+            StrategyName = ctx.StrategyName,
+            StrategyVersion = result.StrategyVersion ?? "0",
+            StartedAt = ctx.StartedAt,
+            CompletedAt = DateTimeOffset.UtcNow,
+            DurationMs = result.DurationMs,
+            TotalCombinations = result.TotalEvaluations,
+            SortBy = Fitness,
+            DataSubscriptions = ctx.SubscriptionDtos,
+            BacktestSettings = ctx.BacktestSettings,
+            MaxParallelism = ctx.MaxParallelism,
+            Trials = result.Trials,
+            FailedTrialDetails = result.FailedTrialDetails,
+            FilteredTrials = result.FilteredTrials,
+            FailedTrials = result.FailedTrials,
+            OptimizationMethod = "Genetic",
+            GenerationsCompleted = result.GenerationsCompleted,
+        };
+
+        FireAndForgetPersist(task.RunId, record, result.Trials.Count);
+    }
+
+    private void FireAndForgetPersist(Guid runId, OptimizationRunRecord record, int trialCount)
+    {
         _ = Task.Run(async () =>
         {
             try
@@ -156,11 +208,11 @@ public sealed class ComputeQueueConsumer(
                 await setupHelper.SaveOptimizationAsync(record);
                 logger.LogInformation(
                     "Persisted optimization results for run {RunId} ({Trials} trials)",
-                    task.RunId, result.Trials.Count);
+                    runId, trialCount);
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Failed to persist optimization results for run {RunId}", task.RunId);
+                logger.LogError(ex, "Failed to persist optimization results for run {RunId}", runId);
             }
         });
     }

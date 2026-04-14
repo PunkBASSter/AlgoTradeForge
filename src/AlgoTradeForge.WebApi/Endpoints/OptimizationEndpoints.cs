@@ -228,7 +228,7 @@ public static class OptimizationEndpoints
             Axes = request.OptimizationAxes,
             SubscriptionAxis = request.SubscriptionAxis,
             BacktestSettings = backtestSettings,
-            MaxDegreeOfParallelism = request.OptimizationSettings.MaxDegreeOfParallelism,
+            MaxDegreeOfParallelism = request.MaxThreads > 0 ? request.MaxThreads : request.OptimizationSettings.MaxDegreeOfParallelism,
             MaxTrialsToKeep = request.OptimizationSettings.MaxTrialsToKeep,
             MinProfitFactor = request.OptimizationSettings.MinProfitFactor,
             MaxDrawdownPct = request.OptimizationSettings.MaxDrawdownPct,
@@ -239,6 +239,8 @@ public static class OptimizationEndpoints
             MinNetProfit = request.OptimizationSettings.MinNetProfit,
             GeneticSettings = MapGeneticSettings(request.GeneticSettings, request.OptimizationSettings.FitnessWeights),
             InputJson = inputJson,
+            Validate = request.Validate,
+            ThresholdProfileName = request.ThresholdProfileName,
         };
 
         try
@@ -248,6 +250,7 @@ public static class OptimizationEndpoints
             {
                 Id = submission.Id,
                 TotalCombinations = submission.TotalCombinations,
+                EnqueuedTasks = submission.EnqueuedTasks,
             };
             return Results.Accepted($"/api/optimizations/{submission.Id}/status", response);
         }

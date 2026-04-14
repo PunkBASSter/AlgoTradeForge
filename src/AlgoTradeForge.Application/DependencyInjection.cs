@@ -28,6 +28,7 @@ public static class DependencyInjection
         // Compute task queue + executors
         services.AddSingleton<ComputeTaskQueue>();
         services.AddSingleton<OptimizationTaskExecutor>();
+        services.AddSingleton<GeneticOptimizationTaskExecutor>();
         services.AddSingleton<ValidationTaskExecutor>();
 
         // Progress tracking

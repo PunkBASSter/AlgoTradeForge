@@ -50,10 +50,9 @@ public class RunGeneticOptimizationCommandHandlerTests
             NullLogger<OptimizationSetupHelper>.Instance);
 
         return new RunGeneticOptimizationCommandHandler(
-            _strategyFactory, helper, new OptimizationAxisResolver(),
+            helper, new OptimizationAxisResolver(),
             _progressCache,
-            _cancellationRegistry,
-            Options.Create(new RunTimeoutOptions()),
+            new ComputeTaskQueue(),
             NullLogger<RunGeneticOptimizationCommandHandler>.Instance);
     }
 

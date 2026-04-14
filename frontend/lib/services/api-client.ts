@@ -37,6 +37,11 @@ import type {
 } from "@/types/validation";
 import type { ThresholdProfileResponse } from "@/types/threshold-profile";
 import type {
+  TaskQueueSnapshot,
+  CancelTaskResponse,
+  PurgeResponse,
+} from "@/types/task-queue";
+import type {
   OptimizationGroupSummary,
   OptimizationGroupDetail,
   OptimizationGroupStatus,
@@ -548,5 +553,22 @@ export const apiClient = {
     const url = new URL(BASE_URL);
     const wsProtocol = url.protocol === "https:" ? "wss:" : "ws:";
     return `${wsProtocol}//${url.host}/api/debug-sessions/${encodeURIComponent(sessionId)}/ws`;
+  },
+
+  // --- Task Queue ---
+
+  getTaskQueue(): Promise<TaskQueueSnapshot> {
+    return request<TaskQueueSnapshot>("/api/queue");
+  },
+
+  cancelTask(taskId: string): Promise<CancelTaskResponse> {
+    return request<CancelTaskResponse>(
+      `/api/queue/${encodeURIComponent(taskId)}/cancel`,
+      { method: "POST" },
+    );
+  },
+
+  purgeQueue(): Promise<PurgeResponse> {
+    return request<PurgeResponse>("/api/queue/purge", { method: "POST" });
   },
 };

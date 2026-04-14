@@ -20,4 +20,6 @@ public sealed record RunGeneticOptimizationCommand : ICommand<OptimizationSubmis
     public decimal? MinNetProfit { get; init; }
     public required GeneticConfig GeneticSettings { get; init; }
     public string? InputJson { get; init; }
+    public bool Validate { get; init; }
+    public string ThresholdProfileName { get; init; } = "Crypto-Standard";
 }

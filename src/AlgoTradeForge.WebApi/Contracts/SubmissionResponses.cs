@@ -10,4 +10,5 @@ public sealed record OptimizationSubmissionResponse
 {
     public required Guid Id { get; init; }
     public required long TotalCombinations { get; init; }
+    public int EnqueuedTasks { get; init; }
 }

@@ -18,6 +18,7 @@ import { RunProgress } from "@/components/features/dashboard/run-progress";
 import { useAvailableStrategies } from "@/hooks/use-available-strategies";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { DssBuilder } from "@/components/features/dashboard/dss-builder";
+import { useThresholdProfiles } from "@/hooks/use-threshold-profiles";
 import type {
   DataSubscription,
   RunBacktestRequest,
@@ -91,6 +92,9 @@ export function RunNewPanel({
   const [evaluating, setEvaluating] = useState(false);
   const evaluationCacheRef = useRef<Map<string, OptimizationEvaluation>>(new Map());
   const [dssValue, setDssValue] = useState<DataSubscription[][]>([]);
+  const [runValidation, setRunValidation] = useState(false);
+  const [thresholdProfile, setThresholdProfile] = useState("Crypto-Standard");
+  const [maxThreads, setMaxThreads] = useState(0);
   const suppressEditorSyncRef = useRef(false);
   const useGeneticRef = useRef(useGenetic);
   useGeneticRef.current = useGenetic;
@@ -99,6 +103,7 @@ export function RunNewPanel({
   const router = useRouter();
 
   const { data: strategies } = useAvailableStrategies();
+  const { data: profiles } = useThresholdProfiles();
 
   const descriptor = useMemo(
     () => strategies?.find((s) => s.name === selectedStrategy) ?? null,
@@ -477,10 +482,22 @@ export function RunNewPanel({
           const submission = await client.runBacktest(btReq as RunBacktestRequest);
           runId = submission.id;
         } else if (useGenetic) {
-          const submission = await client.runGeneticOptimization(parsed as RunGeneticOptimizationRequest);
+          const genReq = parsed as RunGeneticOptimizationRequest;
+          if (runValidation) {
+            genReq.validate = true;
+            genReq.thresholdProfileName = thresholdProfile;
+          }
+          if (maxThreads > 0) genReq.maxThreads = maxThreads;
+          const submission = await client.runGeneticOptimization(genReq);
           runId = submission.id;
         } else {
-          const submission = await client.runOptimization(parsed as RunOptimizationRequest);
+          const optReq = parsed as RunOptimizationRequest;
+          if (runValidation) {
+            optReq.validate = true;
+            optReq.thresholdProfileName = thresholdProfile;
+          }
+          if (maxThreads > 0) optReq.maxThreads = maxThreads;
+          const submission = await client.runOptimization(optReq);
           runId = submission.id;
         }
         toast(`${mode === "backtest" ? "Backtest" : "Optimization"} submitted`, "success");
@@ -554,6 +571,51 @@ export function RunNewPanel({
                 onChange={handleToggle}
                 disabled={submitting || evaluating}
               />
+            </div>
+          )}
+          {isOptimization && (
+            <div className="shrink-0 space-y-2">
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm text-text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={runValidation}
+                    onChange={(e) => setRunValidation(e.target.checked)}
+                    disabled={submitting}
+                    className="rounded border-border-default"
+                  />
+                  Run Validation
+                </label>
+                <label className="flex items-center gap-2 text-sm text-text-secondary">
+                  <span>Max Threads</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={maxThreads}
+                    onChange={(e) => setMaxThreads(Math.max(0, parseInt(e.target.value) || 0))}
+                    disabled={submitting}
+                    className="w-16 rounded border border-border-default bg-bg-surface px-2 py-1 text-sm text-text-primary"
+                    title="0 = use all CPU cores"
+                  />
+                </label>
+              </div>
+              {runValidation && profiles && (
+                <label className="flex items-center gap-2 text-sm text-text-secondary">
+                  <span>Threshold Profile</span>
+                  <select
+                    value={thresholdProfile}
+                    onChange={(e) => setThresholdProfile(e.target.value)}
+                    disabled={submitting}
+                    className="rounded border border-border-default bg-bg-surface px-2 py-1 text-sm text-text-primary"
+                  >
+                    {profiles.map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
           )}
           {mode !== "live" && (

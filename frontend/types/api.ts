@@ -283,6 +283,9 @@ export interface RunOptimizationRequest {
   optimizationSettings?: OptimizationSettingsInput;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
   subscriptionAxis?: DataSubscription[][];
+  validate?: boolean;
+  thresholdProfileName?: string;
+  maxThreads?: number;
 }
 
 export type OptimizationAxisOverride =
@@ -324,6 +327,9 @@ export interface RunGeneticOptimizationRequest {
   geneticSettings?: GeneticSettingsInput;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
   subscriptionAxis?: DataSubscription[][];
+  validate?: boolean;
+  thresholdProfileName?: string;
+  maxThreads?: number;
 }
 
 export interface EvaluateOptimizationRequest {

@@ -575,4 +575,18 @@ export const mockClient: typeof import("./api-client").apiClient & {
       { name: "Crypto-Conservative", isBuiltIn: true, profileJson: "{}" },
     ];
   },
+
+  // --- Task Queue ---
+
+  async getTaskQueue() {
+    return { activeTasks: [], pendingCount: 0, inProgressTask: null };
+  },
+
+  async cancelTask(taskId: string) {
+    return { taskId, status: "Cancelled", cascadeCancelled: [] };
+  },
+
+  async purgeQueue() {
+    return { purgedCount: 0, purgedTaskIds: [] };
+  },
 };
