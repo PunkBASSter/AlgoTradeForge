@@ -12,6 +12,8 @@ namespace AlgoTradeForge.WebApi.Endpoints;
 
 public static class OptimizationEndpoints
 {
+    /// <summary>Set once during <see cref="MapOptimizationEndpoints"/>; safe as-is because
+    /// IsDevelopment() never changes after startup. Used by mapper helpers in Select() delegates.</summary>
     private static bool _isDevelopment;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     public static void MapOptimizationEndpoints(this IEndpointRouteBuilder app)

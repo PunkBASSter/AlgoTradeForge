@@ -1,7 +1,11 @@
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Validation;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
 
@@ -17,10 +21,18 @@ public class RunGroupValidationCommandHandlerTests
     private readonly IRunRepository _runRepo = Substitute.For<IRunRepository>();
     private readonly IValidationRepository _validationRepo = Substitute.For<IValidationRepository>();
     private readonly IThresholdProfileRepository _profileRepo = Substitute.For<IThresholdProfileRepository>();
+    private readonly RunProgressCache _progressCache;
     private readonly ComputeTaskQueue _queue = new();
 
+    public RunGroupValidationCommandHandlerTests()
+    {
+        var distributedCache = new MemoryDistributedCache(
+            Options.Create(new MemoryDistributedCacheOptions()));
+        _progressCache = new RunProgressCache(distributedCache);
+    }
+
     private RunGroupValidationCommandHandler CreateHandler() => new(
-        _runRepo, _validationRepo, _profileRepo, _queue,
+        _runRepo, _validationRepo, _profileRepo, _progressCache, _queue,
         NullLogger<RunGroupValidationCommandHandler>.Instance);
 
     private static OptimizationGroupRecord MakeOptimizationGroup(

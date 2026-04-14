@@ -65,6 +65,9 @@ public sealed class RunValidationCommandHandler(
         };
         await validationRepository.InsertPlaceholderAsync(placeholder, ct);
 
+        // Everything below may fail — mark placeholder as Failed on error.
+        try
+        {
         // 5. Enqueue compute task to the queue
         var thresholdProfileJson = JsonSerializer.Serialize(profile, JsonOptions);
         var dssLabel = string.Join(", ", optimization.DataSubscriptions
@@ -92,6 +95,13 @@ public sealed class RunValidationCommandHandler(
         queue.RegisterJob(validationId, 1, isOptimizationJob: false);
 
         return new ValidationSubmissionDto(validationId, optimization.TrialCount);
+        }
+        catch
+        {
+            await validationRepository.UpdateValidationRunStatusAsync(
+                validationId, ValidationRunStatus.Failed, CancellationToken.None);
+            throw;
+        }
     }
 
 }

@@ -69,6 +69,9 @@ public sealed class RunOptimizationCommandHandler(
         await progressCache.SetProgressAsync(optimizationRunId, 0, estimatedCount, ct);
         await progressCache.SetRunKeyAsync(runKey, optimizationRunId, ct);
 
+        // Everything below runs outside the lock. On failure, clean up the reservation.
+        try
+        {
         // 4. Insert placeholder row so the run is visible in the list immediately
         var optPrimarySub = OptimizationSetupHelper.GetSubscriptionDtos(
             command.SubscriptionAxis);
@@ -134,6 +137,13 @@ public sealed class RunOptimizationCommandHandler(
             Id = optimizationRunId,
             TotalCombinations = estimatedCount,
         };
+        }
+        catch
+        {
+            await progressCache.RemoveProgressAsync(optimizationRunId);
+            await progressCache.RemoveRunKeyAsync(runKey);
+            throw;
+        }
         } // end using (runKey lock)
     }
 

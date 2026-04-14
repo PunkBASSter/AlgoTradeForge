@@ -25,7 +25,11 @@ public sealed class ComputeQueueConsumer(
     IValidationRepository validationRepository,
     ILogger<ComputeQueueConsumer> logger) : BackgroundService
 {
-    // Per-DSS trial cache: (JobId, DssIndex) → trial results from optimization
+    /// <summary>
+    /// Per-DSS trial cache: (JobId, DssIndex) → trial results from optimization.
+    /// Plain Dictionary is safe here: the channel has <c>SingleReader = true</c>,
+    /// so exactly one task executes at a time — no concurrent access to this field.
+    /// </summary>
     private readonly Dictionary<(Guid JobId, int DssIndex), IReadOnlyList<BacktestRunRecord>> _trialCache = new();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -90,7 +94,7 @@ public sealed class ComputeQueueConsumer(
                 catch (Exception ex)
                 {
                     task.Status = ComputeTaskStatus.Failed;
-                    task.ErrorMessage = ex.Message;
+                    task.ErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
                     logger.LogError(ex, "Task {TaskId} failed", task.Id);
                     CascadeCancelValidation(task);
                 }
@@ -114,15 +118,23 @@ public sealed class ComputeQueueConsumer(
 
     private async Task ExecuteOptimizationAsync(ComputeTask task, CancellationToken ct)
     {
-        if (task.ExecutionContext is GeneticExecutionContext geneticCtx)
+        switch (task.ExecutionContext)
         {
-            await ExecuteGeneticOptimizationAsync(task, geneticCtx, ct);
-            return;
+            case GeneticExecutionContext gc:
+                await ExecuteGeneticOptimizationAsync(task, gc, ct);
+                break;
+            case OptimizationExecutionContext oc:
+                await ExecuteBruteForceOptimizationAsync(task, oc, ct);
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"Task {task.Id} has unrecognized execution context: {task.ExecutionContext?.GetType().Name}");
         }
+    }
 
-        if (task.ExecutionContext is not OptimizationExecutionContext ctx)
-            throw new InvalidOperationException($"Task {task.Id} has no OptimizationExecutionContext");
-
+    private async Task ExecuteBruteForceOptimizationAsync(
+        ComputeTask task, OptimizationExecutionContext ctx, CancellationToken ct)
+    {
         // Transition DB: Enqueued → InProgress
         await runRepository.UpdateOptimizationRunStatusAsync(
             task.RunId, OptimizationRunStatus.InProgress, CancellationToken.None);
@@ -242,13 +254,13 @@ public sealed class ComputeQueueConsumer(
         if (failedTask.Type != ComputeTaskType.Optimization)
             return;
 
-        // Cancel paired pending validation tasks for the same DSS
-        if (queue.TryCancelTask(failedTask.Id, out _, out var cascaded))
-        {
-            // TryCancelTask already handled the task itself; cascaded contains validation tasks
-        }
+        // Cancel pending validation tasks paired with this failed/cancelled optimization.
+        // We iterate the snapshot directly instead of calling TryCancelTask (which would
+        // re-cancel the already-terminal optimization task and apply generic error messages).
+        var errorMessage = failedTask.Status == ComputeTaskStatus.Cancelled
+            ? "Optimization was cancelled."
+            : $"Optimization failed: {failedTask.ErrorMessage}";
 
-        // Also explicitly search for pending validation tasks
         var snapshot = queue.GetSnapshot();
         foreach (var pending in snapshot)
         {
@@ -258,9 +270,7 @@ public sealed class ComputeQueueConsumer(
                 && pending.Status == ComputeTaskStatus.Pending)
             {
                 pending.Status = ComputeTaskStatus.Cancelled;
-                pending.ErrorMessage = failedTask.Status == ComputeTaskStatus.Cancelled
-                    ? "Optimization was cancelled."
-                    : $"Optimization failed: {failedTask.ErrorMessage}";
+                pending.ErrorMessage = errorMessage;
 
                 logger.LogInformation(
                     "Cascade-cancelled validation task {TaskId} (DSS[{Dss}]) due to optimization {Status}",
@@ -296,6 +306,9 @@ public sealed class ComputeQueueConsumer(
             {
                 await validationRepository.UpdateValidationGroupStatusAsync(
                     completedTask.JobId, groupStatus, DateTimeOffset.UtcNow, CancellationToken.None);
+                await progressCache.RemoveProgressAsync(completedTask.JobId);
+                if (groupRunKey is not null)
+                    await progressCache.RemoveRunKeyAsync(groupRunKey);
             }
 
             logger.LogInformation("Job {JobId} finalized with status {Status}",

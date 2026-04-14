@@ -233,7 +233,7 @@ public sealed class GeneticOptimizationTaskExecutor(
                             var i = partition.Current;
                             ct.ThrowIfCancellationRequested();
 
-                            if (fitnesses[i] != double.MinValue)
+                            if (Volatile.Read(ref fitnesses[i]) != double.MinValue)
                                 continue;
 
                             string? cacheKey = null;
@@ -241,7 +241,7 @@ public sealed class GeneticOptimizationTaskExecutor(
                             {
                                 if (cache.TryGet(combos[i], out cacheKey, out var cached))
                                 {
-                                    fitnesses[i] = cached.Fitness;
+                                    Volatile.Write(ref fitnesses[i], cached.Fitness);
                                     if (cached.WasFailed)
                                         Interlocked.Increment(ref localFailed);
                                     else if (cached.WasFilteredOut)
@@ -274,8 +274,8 @@ public sealed class GeneticOptimizationTaskExecutor(
                                     runId, startedAt, ref localStrategyVersion, trialCts.Token);
 
                                 var filteredOut = !filter.Passes(record.Metrics);
-                                fitnesses[i] = fitnessFunction.Evaluate(record.Metrics);
-                                record = record with { FitnessScore = fitnesses[i] };
+                                Volatile.Write(ref fitnesses[i], fitnessFunction.Evaluate(record.Metrics));
+                                record = record with { FitnessScore = Volatile.Read(ref fitnesses[i]) };
 
                                 if (!filteredOut)
                                     topTrials.TryAdd(record);

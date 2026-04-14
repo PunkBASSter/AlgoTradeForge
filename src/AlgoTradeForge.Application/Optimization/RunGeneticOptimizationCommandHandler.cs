@@ -75,6 +75,9 @@ public sealed class RunGeneticOptimizationCommandHandler(
 
         await progressCache.SetProgressAsync(runId, 0, gaConfig.MaxEvaluations, ct);
 
+        // Everything below may fail — clean up progress cache reservation on error.
+        try
+        {
         // 5. Insert DB placeholder
         await helper.InsertPlaceholderAsync(new OptimizationRunRecord
         {
@@ -167,6 +170,12 @@ public sealed class RunGeneticOptimizationCommandHandler(
             TotalCombinations = gaConfig.MaxEvaluations,
             EnqueuedTasks = computeTasks.Count,
         };
+        }
+        catch
+        {
+            await progressCache.RemoveProgressAsync(runId);
+            throw;
+        }
     }
 
     private static void ValidateGeneticSettings(GeneticConfig settings)

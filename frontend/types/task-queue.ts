@@ -10,7 +10,7 @@ export interface TaskQueueItem {
   dssIndex: number;
   dssLabel: string;
   runId: string;
-  status: "Pending" | "InProgress";
+  status: "Pending" | "InProgress" | "Completed" | "Failed" | "Cancelled";
   enqueuedAt: string;
   progress: TaskProgressDto | null;
 }

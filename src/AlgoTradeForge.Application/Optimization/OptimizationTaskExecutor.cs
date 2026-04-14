@@ -205,7 +205,7 @@ public sealed class OptimizationTaskExecutor(
                 }
                 finally
                 {
-                    workerItemCounts[workerId] = localCount;
+                    Volatile.Write(ref workerItemCounts[workerId], localCount);
                     logger.LogInformation(
                         "Optimization {RunId} DSS[{DssIndex}] worker {WorkerId}/{Total} exited: {Reason}, processed {Count} items",
                         childRunId, dssIndex, workerId, maxParallelism, exitReason, localCount);

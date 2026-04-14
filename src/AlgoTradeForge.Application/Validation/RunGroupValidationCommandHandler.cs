@@ -2,6 +2,7 @@ using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Domain.Validation;
 using Microsoft.Extensions.Logging;
 
@@ -11,6 +12,7 @@ public sealed class RunGroupValidationCommandHandler(
     IRunRepository runRepository,
     IValidationRepository validationRepository,
     IThresholdProfileRepository thresholdProfileRepository,
+    RunProgressCache progressCache,
     ComputeTaskQueue queue,
     ILogger<RunGroupValidationCommandHandler> logger) : ICommandHandler<RunGroupValidationCommand, ValidationGroupSubmissionDto>
 {
@@ -51,8 +53,38 @@ public sealed class RunGroupValidationCommandHandler(
 
         var thresholdProfileJson = JsonSerializer.Serialize(profile, JsonOptions);
 
-        // 4. Create and insert the validation group record
+        // 4. Dedup check under a narrow lock (matching RunGroupOptimizationCommandHandler pattern)
+        var groupRunKey = $"val-group:{command.OptimizationGroupId}:{command.ThresholdProfileName}";
         var groupId = Guid.NewGuid();
+        using (await progressCache.AcquireRunKeyLockAsync(groupRunKey, ct))
+        {
+            var existingGroupId = await progressCache.TryGetRunIdByKeyAsync(groupRunKey, ct);
+            if (existingGroupId is not null)
+            {
+                var existingProgress = await progressCache.GetProgressAsync(existingGroupId.Value, ct);
+                if (existingProgress is not null)
+                {
+                    logger.LogInformation(
+                        "Group validation dedup hit: existing group {GroupId} for key {RunKey}",
+                        existingGroupId.Value, groupRunKey);
+                    return new ValidationGroupSubmissionDto
+                    {
+                        GroupId = existingGroupId.Value,
+                        Runs = [],
+                    };
+                }
+
+                await progressCache.RemoveRunKeyAsync(groupRunKey, ct);
+            }
+
+            await progressCache.SetProgressAsync(groupId, 0, 0, ct);
+            await progressCache.SetRunKeyAsync(groupRunKey, groupId, ct);
+        }
+
+        // Everything below runs outside the lock. On failure, clean up the reservation.
+        try
+        {
+        // 5. Create and insert the validation group record
         var startedAt = DateTimeOffset.UtcNow;
 
         var groupRecord = new ValidationGroupRecord
@@ -67,7 +99,7 @@ public sealed class RunGroupValidationCommandHandler(
         };
         await validationRepository.InsertValidationGroupAsync(groupRecord, ct);
 
-        // 5. Insert child validation placeholders as Enqueued (no progress cache yet)
+        // 6. Insert child validation placeholders as Enqueued
         var childRuns = new List<ValidationGroupRunDto>(completedRuns.Count);
         var childValidationIds = new Guid[completedRuns.Count];
 
@@ -105,7 +137,7 @@ public sealed class RunGroupValidationCommandHandler(
             });
         }
 
-        // 6. Enqueue compute tasks (one per DSS validation)
+        // 7. Enqueue compute tasks (one per DSS validation)
         var computeTasks = new List<ComputeTask>(completedRuns.Count);
         for (var i = 0; i < completedRuns.Count; i++)
         {
@@ -134,7 +166,7 @@ public sealed class RunGroupValidationCommandHandler(
         }
 
         queue.EnqueueRange(computeTasks);
-        queue.RegisterJob(groupId, computeTasks.Count, isOptimizationJob: false);
+        queue.RegisterJob(groupId, computeTasks.Count, isOptimizationJob: false, groupRunKey);
 
         logger.LogInformation(
             "Validation group {GroupId} created with {TaskCount} tasks enqueued for optimization group {OptGroupId}",
@@ -145,6 +177,13 @@ public sealed class RunGroupValidationCommandHandler(
             GroupId = groupId,
             Runs = childRuns,
         };
+        }
+        catch
+        {
+            await progressCache.RemoveProgressAsync(groupId);
+            await progressCache.RemoveRunKeyAsync(groupRunKey);
+            throw;
+        }
     }
 
 }

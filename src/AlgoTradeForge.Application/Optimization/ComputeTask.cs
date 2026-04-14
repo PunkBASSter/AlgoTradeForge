@@ -8,6 +8,10 @@ public enum ComputeTaskType
 
 public enum ComputeTaskStatus
 {
+    /// <summary>
+    /// Queue-level status: task is waiting in the channel. Distinct from <c>OptimizationRunStatus.Enqueued</c>
+    /// / <c>ValidationRunStatus.Enqueued</c>, which are DB-level statuses for the placeholder row.
+    /// </summary>
     Pending,
     InProgress,
     Completed,

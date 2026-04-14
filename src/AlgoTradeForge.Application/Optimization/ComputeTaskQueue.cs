@@ -6,12 +6,26 @@ namespace AlgoTradeForge.Application.Optimization;
 
 public sealed class ComputeTaskQueue
 {
+    /// <summary>
+    /// Unbounded channel consumed by a single <c>ComputeQueueConsumer</c> instance.
+    /// <c>SingleReader = true</c> enables lock-free fast-path reads; do NOT add a second consumer.
+    /// </summary>
     private readonly Channel<ComputeTask> _channel = Channel.CreateUnbounded<ComputeTask>(
         new UnboundedChannelOptions { SingleReader = true });
 
     private readonly ConcurrentDictionary<Guid, ComputeTask> _tasks = new();
 
-    public ComputeTask? ActiveTask { get; set; }
+    private ComputeTask? _activeTask;
+
+    /// <summary>
+    /// The task currently being executed by the consumer.
+    /// Read from HTTP threads (GetSnapshot), written from the consumer thread — volatile ensures visibility.
+    /// </summary>
+    public ComputeTask? ActiveTask
+    {
+        get => Volatile.Read(ref _activeTask);
+        set => Volatile.Write(ref _activeTask, value);
+    }
 
     public ChannelReader<ComputeTask> Reader => _channel.Reader;
 
@@ -150,6 +164,7 @@ public sealed class ComputeTaskQueue
         public bool IsOptimizationJob { get; } = isOptimizationJob;
         public string? GroupRunKey { get; } = groupRunKey;
         public List<string> ChildStatuses { get; } = new(totalTasks);
+        /// <summary>Mutable field — incremented via <see cref="Interlocked.Increment(ref int)"/>.</summary>
         public int CompletedCount;
     }
 }
