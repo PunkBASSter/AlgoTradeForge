@@ -1,66 +1,84 @@
-using System.Collections.Concurrent;
-using System.Diagnostics;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
-using AlgoTradeForge.Domain;
-using AlgoTradeForge.Domain.History;
-using AlgoTradeForge.Domain.Optimization.Fitness;
+using AlgoTradeForge.Application.Validation;
+using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.Domain.Optimization.Space;
+using AlgoTradeForge.Domain.Validation;
 using Microsoft.Extensions.Logging;
 using static AlgoTradeForge.Domain.Reporting.MetricNames;
-using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Application.Optimization;
 
 public sealed class RunGeneticOptimizationCommandHandler(
-    IOptimizationStrategyFactory strategyFactory,
     OptimizationSetupHelper helper,
     OptimizationAxisResolver axisResolver,
     RunProgressCache progressCache,
-    IRunCancellationRegistry cancellationRegistry,
-    IOptions<RunTimeoutOptions> timeoutOptions,
+    ComputeTaskQueue queue,
     ILogger<RunGeneticOptimizationCommandHandler> logger) : ICommandHandler<RunGeneticOptimizationCommand, OptimizationSubmissionDto>
 {
     public async Task<OptimizationSubmissionDto> HandleAsync(
         RunGeneticOptimizationCommand command, CancellationToken ct = default)
     {
-        // 1. Validation and data loading
+        // 1. Validate strategy descriptor
         var descriptor = helper.SpaceProvider.GetDescriptor(command.StrategyName)
             ?? throw new ArgumentException($"Strategy '{command.StrategyName}' not found.");
 
         var settings = command.BacktestSettings;
-        var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
-        var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
 
-        var (axisSubscriptionGroups, dataCache) =
-            await helper.ResolveSubscriptionsAsync(
-                command.SubscriptionAxis, fromDate, toDate, ct);
+        // 2. Validate subscriptions (data loading deferred to executor)
+        var subscriptionAxis = command.SubscriptionAxis;
+        if (subscriptionAxis is not { Count: > 0 } || subscriptionAxis[0].Count == 0)
+            throw new ArgumentException("At least one data subscription must be provided.");
+        var primarySub = OptimizationSetupHelper.GetSubscriptionDtos(subscriptionAxis);
 
-        var reqSubs = OptimizationSetupHelper.GetRequiredSubscriptionCount(descriptor.ParamsType);
-        OptimizationSetupHelper.ValidateSubscriptionCounts(
-            command.StrategyName, reqSubs, axisSubscriptionGroups);
-
+        // 3. Resolve axes and GA config
         var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes);
-        var activeAxes = OptimizationSetupHelper.AppendSubscriptionAxisAndFilter(
-            resolvedAxes, axisSubscriptionGroups);
+        var activeAxes = resolvedAxes
+            .Where(a => a switch
+            {
+                ResolvedNumericAxis n => n.Values.Count > 0,
+                ResolvedDiscreteAxis d => d.Values.Count > 0,
+                ResolvedModuleSlotAxis m => m.Variants.Count > 0,
+                _ => true
+            })
+            .ToList();
 
-        // 2. Validate and resolve GA config with auto-sizing
+        // Append subscription axis if multi-DSS (currently unsupported for genetic, but keep consistent)
+        if (subscriptionAxis is { Count: > 0 })
+        {
+            var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
+            var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
+            var (axisSubscriptionGroups, _) =
+                await helper.ResolveSubscriptionsAsync(subscriptionAxis, fromDate, toDate, ct);
+            var reqSubs = OptimizationSetupHelper.GetRequiredSubscriptionCount(descriptor.ParamsType);
+            OptimizationSetupHelper.ValidateSubscriptionCounts(
+                command.StrategyName, reqSubs, axisSubscriptionGroups);
+            activeAxes = OptimizationSetupHelper.AppendSubscriptionAxisAndFilter(
+                resolvedAxes, axisSubscriptionGroups);
+        }
+
         ValidateGeneticSettings(command.GeneticSettings);
         var gaConfig = GeneticConfigResolver.Resolve(command.GeneticSettings, activeAxes);
 
-        // 3. Store progress
+        // 4. Create IDs and progress
         var startedAt = DateTimeOffset.UtcNow;
         var runId = Guid.NewGuid();
-        await progressCache.SetProgressAsync(runId, 0, gaConfig.MaxEvaluations, ct);
-
-        // 4. Insert placeholder row so the run is visible in the list immediately
-        var primarySub = OptimizationSetupHelper.GetSubscriptionDtos(
-            command.SubscriptionAxis);
+        var groupId = runId; // Genetic uses runId as jobId (single-DSS)
+        var groupRunKey = RunKeyBuilder.BuildGroupKey(
+            command.StrategyName, settings, "Genetic",
+            command.SubscriptionAxis, command.Axes);
         var maxParallelism = command.MaxDegreeOfParallelism > 0
             ? command.MaxDegreeOfParallelism
             : Environment.ProcessorCount;
+
+        await progressCache.SetProgressAsync(runId, 0, gaConfig.MaxEvaluations, ct);
+
+        // Everything below may fail — clean up progress cache reservation on error.
+        try
+        {
+        // 5. Insert DB placeholder
         await helper.InsertPlaceholderAsync(new OptimizationRunRecord
         {
             Id = runId,
@@ -77,337 +95,87 @@ public sealed class RunGeneticOptimizationCommandHandler(
             Trials = [],
             OptimizationMethod = "Genetic",
             InputJson = command.InputJson,
-            Status = OptimizationRunStatus.InProgress,
+            Status = OptimizationRunStatus.Enqueued,
         }, ct);
 
-        // 5. Launch background task
+        // 6. Build execution context and enqueue
         var normalizer = NormalizingEnumerable.TryCreateNormalizer(descriptor.ParamsType);
-        _ = Task.Factory.StartNew(
-            () => RunGeneticOptimizationAsync(
-                command, dataCache, activeAxes,
-                gaConfig, runId, startedAt, strategyFactory, normalizer),
-            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        var dssLabel = primarySub.Count > 0
+            ? string.Join(", ", primarySub.Select(s => $"{s.AssetName}/{s.Exchange}/{s.TimeFrame}"))
+            : command.StrategyName;
+
+        var geneticCtx = new GeneticExecutionContext
+        {
+            StrategyName = command.StrategyName,
+            BacktestSettings = settings,
+            SubscriptionDtos = primarySub.ToList(),
+            ActiveAxes = activeAxes,
+            GaConfig = gaConfig,
+            MaxParallelism = maxParallelism,
+            MaxTrialsToKeep = command.MaxTrialsToKeep,
+            FilterOptions = command,
+            Normalizer = normalizer,
+            GroupId = groupId,
+            GroupRunKey = groupRunKey,
+            StartedAt = startedAt,
+            InputJson = command.InputJson,
+        };
+
+        var computeTasks = new List<ComputeTask>
+        {
+            new()
+            {
+                JobId = groupId,
+                Type = ComputeTaskType.Optimization,
+                DssIndex = 0,
+                RunId = runId,
+                DssLabel = dssLabel,
+                ExecutionContext = geneticCtx,
+            }
+        };
+
+        // Optionally pair with validation task
+        if (command.Validate)
+        {
+            var valRunId = Guid.NewGuid();
+            computeTasks.Add(new ComputeTask
+            {
+                JobId = groupId,
+                Type = ComputeTaskType.Validation,
+                DssIndex = 0,
+                RunId = valRunId,
+                DssLabel = dssLabel,
+                ExecutionContext = new ValidationExecutionContext
+                {
+                    OptimizationRunId = runId,
+                    StrategyName = command.StrategyName,
+                    ThresholdProfileName = command.ThresholdProfileName,
+                    ThresholdProfileJson = "{}",
+                    Profile = ValidationThresholdProfile.GetByName(command.ThresholdProfileName),
+                    StartedAt = startedAt,
+                },
+            });
+        }
+
+        queue.EnqueueRange(computeTasks);
+        queue.RegisterJob(groupId, computeTasks.Count, isOptimizationJob: true, groupRunKey);
+
+        logger.LogInformation(
+            "Genetic optimization {RunId} enqueued ({Tasks} tasks, {MaxEvals} max evaluations)",
+            runId, computeTasks.Count, gaConfig.MaxEvaluations);
 
         return new OptimizationSubmissionDto
         {
             Id = runId,
             TotalCombinations = gaConfig.MaxEvaluations,
+            EnqueuedTasks = computeTasks.Count,
         };
-    }
-
-    private async Task RunGeneticOptimizationAsync(
-        RunGeneticOptimizationCommand command,
-        Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
-        List<ResolvedAxis> activeAxes,
-        GeneticConfig gaConfig,
-        Guid runId,
-        DateTimeOffset startedAt,
-        IOptimizationStrategyFactory factory,
-        IParameterNormalizer? normalizer)
-    {
-        using var cts = new CancellationTokenSource(timeoutOptions.Value.OptimizationTimeout);
-        cancellationRegistry.Register(runId, cts);
-        var ct = cts.Token;
-
-        var filter = new TrialFilter(command);
-        var fitnessFunction = new CompositeFitnessFunction(gaConfig.Fitness);
-        var topTrials = new BoundedTrialQueue(command.MaxTrialsToKeep, fitnessFunction);
-        var failedTrials = new FailedTrialCollector(capacity: 100);
-        var state = new EvalState();
-        var generationsCompleted = 0;
-
-        var maxParallelism = command.MaxDegreeOfParallelism > 0
-            ? command.MaxDegreeOfParallelism
-            : Environment.ProcessorCount;
-        var primarySub = OptimizationSetupHelper.GetSubscriptionDtos(
-            command.SubscriptionAxis);
-
-        try
-        {
-            var stopwatch = Stopwatch.StartNew();
-            var ga = new GeneticAlgorithm(gaConfig);
-            var rng = new Random();
-            var cache = GeneticFitnessCache.Create(gaConfig);
-            long totalEvals = 0;
-
-            var trialTimeout = timeoutOptions.Value.BacktestTimeout;
-
-            // Create initial population
-            var population = ga.CreateInitialPopulation(activeAxes, rng);
-            var bestFitness = double.MinValue;
-            var stagnation = 0;
-
-            // GA loop
-            for (var gen = 0; gen < gaConfig.MaxGenerations; gen++)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                // Count elites that will be skipped (already have valid fitness)
-                var elitesSkipped = population.Count(c => c.Fitness != double.MinValue);
-                var hitsBefore = cache?.ReadHits() ?? 0;
-
-                // Evaluate all individuals in parallel (elites are skipped)
-                EvaluatePopulation(
-                    population, command.StrategyName, command.BacktestSettings,
-                    factory, dataCache,
-                    fitnessFunction, filter, topTrials, failedTrials,
-                    runId, startedAt, state, cache, normalizer,
-                    maxParallelism, trialTimeout, ct);
-
-                var cacheHitsThisGen = (cache?.ReadHits() ?? 0) - hitsBefore;
-                totalEvals += population.Count - elitesSkipped - cacheHitsThisGen;
-                generationsCompleted = gen + 1;
-
-                // Update progress
-                await progressCache.SetProgressAsync(
-                    runId, totalEvals, gaConfig.MaxEvaluations, CancellationToken.None);
-
-                // Track best fitness for stagnation detection
-                var genBest = population.Max(c => c.Fitness);
-                if (genBest > bestFitness)
-                {
-                    bestFitness = genBest;
-                    stagnation = 0;
-                }
-                else
-                {
-                    stagnation++;
-                }
-
-                logger.LogDebug(
-                    "GA {RunId} gen {Gen}: best={Best:F4}, stagnation={Stagnation}, evals={Evals}, cacheHits={CacheHits}",
-                    runId, gen, bestFitness, stagnation, totalEvals, cache?.ReadHits() ?? 0);
-
-                // Check termination
-                if (ga.ShouldTerminate(generationsCompleted, totalEvals, stagnation, stopwatch.Elapsed))
-                    break;
-
-                // Evolve next generation
-                population = ga.Evolve(population, activeAxes, gen, stagnation, rng);
-            }
-
-            stopwatch.Stop();
-
-            // Final progress
-            await progressCache.SetProgressAsync(
-                runId, totalEvals, gaConfig.MaxEvaluations, CancellationToken.None);
-
-            var trials = topTrials.DeduplicateAndDrainSorted();
-            var failedTrialDetails = failedTrials.Drain(runId);
-
-            var record = new OptimizationRunRecord
-            {
-                Id = runId,
-                StrategyName = command.StrategyName,
-                StrategyVersion = state.StrategyVersion ?? "0",
-                StartedAt = startedAt,
-                CompletedAt = DateTimeOffset.UtcNow,
-                DurationMs = (long)stopwatch.Elapsed.TotalMilliseconds,
-                TotalCombinations = totalEvals,
-                SortBy = Fitness,
-                DataSubscriptions = primarySub,
-                BacktestSettings = command.BacktestSettings,
-                MaxParallelism = maxParallelism,
-                Trials = trials,
-                FailedTrialDetails = failedTrialDetails,
-                FilteredTrials = Interlocked.Read(ref state.FilteredOutCount),
-                FailedTrials = Interlocked.Read(ref state.FailedTrialCount),
-                OptimizationMethod = "Genetic",
-                GenerationsCompleted = generationsCompleted,
-            };
-
-            await helper.SaveOptimizationAsync(record);
-
-            logger.LogInformation(
-                "GA Optimization {RunId}: {Gens} generations, {Evals} evaluations, {Kept} kept, {Filtered} filtered, {Failed} failed ({CacheHits} cache hits) in {Duration}ms",
-                runId, generationsCompleted, totalEvals, trials.Count, state.FilteredOutCount, state.FailedTrialCount, cache?.ReadHits() ?? 0, stopwatch.ElapsedMilliseconds);
         }
-        catch (OperationCanceledException)
-        {
-            logger.LogInformation("GA Optimization {RunId} was cancelled", runId);
-            await helper.SaveErrorOptimizationAsync(
-                command.StrategyName, command.BacktestSettings, primarySub,
-                Fitness, maxParallelism,
-                runId, startedAt, gaConfig.MaxEvaluations, topTrials,
-                failedTrials, state.FilteredOutCount, state.FailedTrialCount,
-                OptimizationRunStatus.CancelledMessage,
-                optimizationMethod: "Genetic", generationsCompleted: generationsCompleted);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "GA Optimization {RunId} failed", runId);
-            await helper.SaveErrorOptimizationAsync(
-                command.StrategyName, command.BacktestSettings, primarySub,
-                Fitness, maxParallelism,
-                runId, startedAt, gaConfig.MaxEvaluations, topTrials,
-                failedTrials, state.FilteredOutCount, state.FailedTrialCount,
-                ex.Message, ex.StackTrace,
-                optimizationMethod: "Genetic", generationsCompleted: generationsCompleted);
-        }
-        finally
+        catch
         {
             await progressCache.RemoveProgressAsync(runId);
-            cancellationRegistry.Remove(runId);
+            throw;
         }
-    }
-
-    /// <summary>
-    /// Shared mutable state for cross-thread counters that can't use ref in lambdas.
-    /// </summary>
-    private sealed class EvalState
-    {
-        public string? StrategyVersion;
-        public long FilteredOutCount;
-        public long FailedTrialCount;
-    }
-
-    /// <summary>
-    /// Evaluates all chromosomes in parallel using the same Partitioner pattern as brute-force.
-    /// After evaluation, each chromosome's Fitness is set.
-    /// </summary>
-    private void EvaluatePopulation(
-        List<Chromosome> population,
-        string strategyName,
-        BacktestSettingsDto settings,
-        IOptimizationStrategyFactory factory,
-        Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
-        IFitnessFunction fitnessFunction,
-        TrialFilter filter,
-        BoundedTrialQueue topTrials,
-        FailedTrialCollector failedTrials,
-        Guid runId,
-        DateTimeOffset startedAt,
-        EvalState state,
-        GeneticFitnessCache? cache,
-        IParameterNormalizer? normalizer,
-        int maxParallelism,
-        TimeSpan trialTimeout,
-        CancellationToken ct)
-    {
-        // Convert chromosomes to combinations for evaluation
-        var combos = new ParameterCombination[population.Count];
-        for (var i = 0; i < population.Count; i++)
-        {
-            combos[i] = ChromosomeFactory.ToParameterCombination(population[i]);
-            if (normalizer is not null)
-                combos[i] = normalizer.Normalize(combos[i]);
-        }
-
-        // Normalized duplicates become GeneticFitnessCache hits, avoiding redundant
-        // backtests. No separate DedupSkipped counter needed (unlike brute-force which
-        // pre-filters the combination stream via NormalizingEnumerable).
-
-        var fitnesses = new double[population.Count];
-        for (var i = 0; i < fitnesses.Length; i++)
-            fitnesses[i] = population[i].Fitness; // Elites carry fitness forward
-
-        var actualTasks = Math.Min(maxParallelism, population.Count);
-        var partitions = Partitioner.Create(
-            Enumerable.Range(0, population.Count),
-            EnumerablePartitionerOptions.NoBuffering)
-            .GetPartitions(actualTasks);
-
-        var tasks = new Task[partitions.Count];
-        for (var p = 0; p < tasks.Length; p++)
-        {
-            var partition = partitions[p];
-            tasks[p] = Task.Factory.StartNew(() =>
-            {
-                using (partition)
-                {
-                    var trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    try
-                    {
-                        while (partition.MoveNext())
-                        {
-                            var i = partition.Current;
-                            ct.ThrowIfCancellationRequested();
-
-                            // Skip elites that already have valid fitness
-                            if (fitnesses[i] != double.MinValue)
-                                continue;
-
-                            // Check fitness cache for duplicate chromosomes
-                            string? cacheKey = null;
-                            if (cache is not null)
-                            {
-                                if (cache.TryGet(combos[i], out cacheKey, out var cached))
-                                {
-                                    fitnesses[i] = cached.Fitness;
-                                    if (cached.WasFailed)
-                                        Interlocked.Increment(ref state.FailedTrialCount);
-                                    else if (cached.WasFilteredOut)
-                                        Interlocked.Increment(ref state.FilteredOutCount);
-                                    else if (cached.Record is not null)
-                                        topTrials.TryAdd(cached.Record);
-                                    continue;
-                                }
-                            }
-
-                            if (!trialCts.TryReset())
-                            {
-                                trialCts.Dispose();
-                                trialCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                            }
-                            trialCts.CancelAfter(trialTimeout);
-
-                            try
-                            {
-                                var record = helper.ExecuteTrial(
-                                    strategyName, settings,
-                                    combos[i], factory, dataCache,
-                                    runId, startedAt, ref state.StrategyVersion, trialCts.Token);
-
-                                var filteredOut = !filter.Passes(record.Metrics);
-                                fitnesses[i] = fitnessFunction.Evaluate(record.Metrics);
-                                record = record with { FitnessScore = fitnesses[i] };
-
-                                if (!filteredOut)
-                                    topTrials.TryAdd(record);
-                                else
-                                    Interlocked.Increment(ref state.FilteredOutCount);
-
-                                cache?.TryAdd(cacheKey!, new CachedFitnessEntry(
-                                    fitnesses[i], filteredOut, WasFailed: false,
-                                    Record: filteredOut ? null : record));
-                            }
-                            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                            {
-                                Interlocked.Increment(ref state.FailedTrialCount);
-                                failedTrials.RecordTimeout(combos[i].Values, trialTimeout);
-                                cache?.TryAdd(cacheKey!, new CachedFitnessEntry(
-                                    double.MinValue, false, WasFailed: true, Record: null));
-                            }
-                            catch (OperationCanceledException)
-                            {
-                                throw;
-                            }
-                            catch (Exception ex)
-                            {
-                                Interlocked.Increment(ref state.FailedTrialCount);
-                                failedTrials.Record(
-                                    combos[i].Values,
-                                    ex.GetType().FullName ?? ex.GetType().Name,
-                                    ex.Message,
-                                    ex.StackTrace ?? string.Empty);
-                                cache?.TryAdd(cacheKey!, new CachedFitnessEntry(
-                                    double.MinValue, false, WasFailed: true, Record: null));
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        trialCts.Dispose();
-                    }
-                }
-            }, ct, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        }
-
-        Task.WaitAll(tasks);
-
-        // Assign fitness scores back to chromosomes
-        for (var i = 0; i < population.Count; i++)
-            population[i].Fitness = fitnesses[i];
     }
 
     private static void ValidateGeneticSettings(GeneticConfig settings)

@@ -38,6 +38,19 @@ public sealed class GetValidationStatusQueryHandler(
         var record = await repository.GetByIdAsync(query.Id, ct);
         if (record is null) return null;
 
+        // Enqueued runs haven't started yet — return zero progress, not orphan
+        if (record.Status == ValidationRunStatus.Enqueued)
+        {
+            return new ValidationStatusDto
+            {
+                Id = query.Id,
+                Status = ValidationRunStatus.Enqueued,
+                CurrentStage = 0,
+                TotalStages = ValidationPipeline.StageCount,
+                Result = record,
+            };
+        }
+
         // Detect orphaned run: DB says InProgress but no active progress in cache
         // means the background task died without updating the record.
         if (record.Status == ValidationRunStatus.InProgress)

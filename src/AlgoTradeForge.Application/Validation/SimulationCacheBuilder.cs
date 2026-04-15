@@ -16,21 +16,31 @@ public static class SimulationCacheBuilder
     {
         if (trials.Count == 0) return 0;
 
-        // Group by (subscription, barCount) to count unique timelines for timestamp estimate.
-        var seen = new HashSet<(DataSubscriptionDto, int)>();
-        var totalBars = 0L;
-        var uniqueTimelineBars = 0L;
+        var hasEquityCurves = trials[0].EquityCurve.Count > 0;
 
-        foreach (var trial in trials)
+        if (hasEquityCurves)
         {
-            var bars = trial.EquityCurve.Count;
-            totalBars += bars;
-            if (seen.Add((trial.DataSubscriptions[0], bars)))
-                uniqueTimelineBars += bars;
+            var seen = new HashSet<(DataSubscriptionDto, int)>();
+            var totalBars = 0L;
+            var uniqueTimelineBars = 0L;
+
+            foreach (var trial in trials)
+            {
+                var bars = trial.EquityCurve.Count;
+                totalBars += bars;
+                if (seen.Add((trial.DataSubscriptions[0], bars)))
+                    uniqueTimelineBars += bars;
+            }
+
+            return totalBars * sizeof(double) + uniqueTimelineBars * sizeof(long);
         }
 
-        return totalBars * sizeof(double)            // PnL matrix (per trial)
-             + uniqueTimelineBars * sizeof(long);     // timestamps (per unique timeline)
+        // Trade P&L path: much smaller
+        var totalTrades = 0L;
+        foreach (var trial in trials)
+            totalTrades += trial.TradePnl.Count;
+
+        return totalTrades * (sizeof(double) + sizeof(long));
     }
 
     public static SimulationCache Build(IReadOnlyList<BacktestRunRecord> trials)
@@ -38,11 +48,14 @@ public static class SimulationCacheBuilder
         if (trials.Count == 0)
             throw new ArgumentException("No trials provided.");
 
-        if (trials[0].EquityCurve.Count == 0)
-            throw new ArgumentException("Trial 0 has an empty equity curve.");
+        // Use equity curves when available, fall back to trade P&L
+        return trials[0].EquityCurve.Count > 0
+            ? BuildFromEquityCurves(trials)
+            : BuildFromTradePnl(trials);
+    }
 
-        // Group trials by (DataSubscription, BarCount) → one timeline per group.
-        // Same subscription but different bar counts (e.g., early-stopped trials) get separate timelines.
+    private static SimulationCache BuildFromEquityCurves(IReadOnlyList<BacktestRunRecord> trials)
+    {
         var timelineKeys = new Dictionary<(DataSubscriptionDto Sub, int BarCount), int>();
         var timelines = new List<long[]>();
         var trialData = new TrialData[trials.Count];
@@ -52,7 +65,6 @@ public static class SimulationCacheBuilder
             var key = (trials[t].DataSubscriptions[0], trials[t].EquityCurve.Count);
             if (!timelineKeys.TryGetValue(key, out var tlIdx))
             {
-                // First trial for this (subscription, barCount) — extract timestamps as the timeline
                 tlIdx = timelines.Count;
                 timelineKeys[key] = tlIdx;
                 var curve = trials[t].EquityCurve;
@@ -62,7 +74,6 @@ public static class SimulationCacheBuilder
                 timelines.Add(ts);
             }
 
-            // Build PnL deltas
             var ec = trials[t].EquityCurve;
             var deltas = new double[ec.Count];
             if (ec.Count > 0)
@@ -76,6 +87,40 @@ public static class SimulationCacheBuilder
         }
 
         return new SimulationCache(timelines.ToArray(), trialData);
+    }
+
+    /// <summary>
+    /// Builds cache from trade-level P&amp;L when equity curves are not available.
+    /// Each trial gets its own timeline (trade timestamps). The resulting cache has
+    /// the same API — all validation stages work identically, just with fewer data
+    /// points (~100–1000 trades vs 43K+ bars).
+    /// </summary>
+    private static SimulationCache BuildFromTradePnl(IReadOnlyList<BacktestRunRecord> trials)
+    {
+        if (trials[0].TradePnl.Count == 0)
+            throw new ArgumentException("Trial 0 has neither equity curve nor trade P&L.");
+
+        // Each trial gets its own timeline (trade timestamps are unique per trial)
+        var timelines = new long[trials.Count][];
+        var trialData = new TrialData[trials.Count];
+
+        for (var t = 0; t < trials.Count; t++)
+        {
+            var trades = trials[t].TradePnl;
+            var timestamps = new long[trades.Count];
+            var pnlDeltas = new double[trades.Count];
+
+            for (var i = 0; i < trades.Count; i++)
+            {
+                timestamps[i] = trades[i].TimestampMs;
+                pnlDeltas[i] = trades[i].Pnl;
+            }
+
+            timelines[t] = timestamps;
+            trialData[t] = new TrialData(t, pnlDeltas);
+        }
+
+        return new SimulationCache(timelines, trialData);
     }
 
     public static TrialSummary[] BuildTrialSummaries(IReadOnlyList<BacktestRunRecord> trials)

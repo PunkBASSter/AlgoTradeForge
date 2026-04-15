@@ -3,28 +3,30 @@ using AlgoTradeForge.Domain.Validation.Results;
 namespace AlgoTradeForge.Domain.Validation.Statistics;
 
 /// <summary>
-/// Monte Carlo bootstrap simulation: shuffles bar-level P&amp;L deltas to generate
+/// Monte Carlo bootstrap simulation: shuffles trade-level P&amp;L to generate
 /// synthetic equity curves, measuring drawdown distribution and probability of ruin.
+/// Sequential iteration with array reuse — the outer Parallel.For in the stage
+/// already saturates all cores across candidates.
 /// </summary>
 public static class MonteCarloBootstrap
 {
     private static readonly int[] Percentiles = [5, 25, 50, 75, 95];
 
     /// <summary>
-    /// Runs bootstrap simulation by shuffling P&amp;L deltas across <paramref name="iterations"/> iterations.
+    /// Runs bootstrap simulation by shuffling trade P&amp;L across <paramref name="iterations"/> iterations.
     /// Each iteration produces an alternate equity path with the same total P&amp;L but different ordering.
     /// </summary>
-    /// <param name="pnlDeltas">Per-bar P&amp;L deltas from the original trial.</param>
+    /// <param name="tradePnls">Per-trade P&amp;L values from the original trial.</param>
     /// <param name="initialEquity">Starting equity for cumulative curve computation.</param>
     /// <param name="iterations">Number of bootstrap iterations (default 1000).</param>
     /// <param name="seed">RNG seed for reproducibility.</param>
     public static MonteCarloResult Run(
-        ReadOnlySpan<double> pnlDeltas,
+        ReadOnlySpan<double> tradePnls,
         double initialEquity,
         int iterations,
         int seed = 42)
     {
-        if (pnlDeltas.IsEmpty)
+        if (tradePnls.IsEmpty)
         {
             return new MonteCarloResult
             {
@@ -35,34 +37,31 @@ public static class MonteCarloBootstrap
             };
         }
 
-        var barCount = pnlDeltas.Length;
-        var source = pnlDeltas.ToArray();
+        var tradeCount = tradePnls.Length;
+        var source = tradePnls.ToArray();
 
-        // Pre-allocate per-iteration results
         var maxDrawdowns = new double[iterations];
         var ruinFlags = new int[iterations]; // 1 if equity hit <= 0
 
-        // TODO: Phase 5 hardening — consider streaming percentile computation to avoid
-        // full iterations×barCount equity matrix allocation for large bar counts.
-        var equityMatrix = new double[iterations][];
+        // Reusable arrays — sequential iteration avoids per-iteration allocation.
+        var rng = new Random(seed);
+        var shuffled = new double[tradeCount];
+        var equity = new double[tradeCount];
 
-        Parallel.For(0, iterations, i =>
+        for (var i = 0; i < iterations; i++)
         {
-            var rng = new Random(seed + i);
-            var shuffled = new double[barCount];
-            Array.Copy(source, shuffled, barCount);
+            Array.Copy(source, shuffled, tradeCount);
             StatisticalUtils.FisherYatesShuffle(shuffled, rng);
 
-            var equity = new double[barCount];
             var cumulative = initialEquity;
             var peak = initialEquity;
             var maxDdPct = 0.0;
             var hitRuin = false;
 
-            for (var b = 0; b < barCount; b++)
+            for (var t = 0; t < tradeCount; t++)
             {
-                cumulative += shuffled[b];
-                equity[b] = cumulative;
+                cumulative += shuffled[t];
+                equity[t] = cumulative;
 
                 if (cumulative <= 0)
                     hitRuin = true;
@@ -80,8 +79,7 @@ public static class MonteCarloBootstrap
 
             maxDrawdowns[i] = maxDdPct;
             ruinFlags[i] = hitRuin ? 1 : 0;
-            equityMatrix[i] = equity;
-        });
+        }
 
         // Compute drawdown percentiles
         Array.Sort(maxDrawdowns);
@@ -89,8 +87,8 @@ public static class MonteCarloBootstrap
         foreach (var p in Percentiles)
             ddPercentiles[p] = StatisticalUtils.GetPercentile(maxDrawdowns, p);
 
-        // Compute equity fan bands (5 percentile curves)
-        var fanBands = ComputeFanBands(equityMatrix, barCount);
+        // Compute equity fan bands (same seeds → identical shuffles)
+        var fanBands = ComputeFanBandsSinglePass(source, initialEquity, iterations, seed, tradeCount);
 
         // Probability of ruin
         var ruinCount = 0;
@@ -106,26 +104,52 @@ public static class MonteCarloBootstrap
         };
     }
 
-    private static double[][] ComputeFanBands(double[][] equityMatrix, int barCount)
+    /// <summary>
+    /// Computes per-trade equity fan bands in a single pass. Builds the full equity matrix
+    /// (iterations × tradeCount), then extracts column-wise percentiles. O(iterations × tradeCount)
+    /// vs the previous two-pass approach which was O(tradeCount² × iterations).
+    /// Memory: iterations × tradeCount × 8 bytes (e.g. 2000 × 10K = 160 MB).
+    /// </summary>
+    private static double[][] ComputeFanBandsSinglePass(
+        double[] source, double initialEquity, int iterations, int seed, int tradeCount)
     {
-        var iterations = equityMatrix.Length;
         var bands = new double[Percentiles.Length][];
         for (var p = 0; p < Percentiles.Length; p++)
-            bands[p] = new double[barCount];
+            bands[p] = new double[tradeCount];
 
+        // Build equity matrix: one row per iteration
+        var equityMatrix = new double[iterations][];
+        var shuffled = new double[tradeCount];
+
+        for (var i = 0; i < iterations; i++)
+        {
+            var rng = new Random(seed + i);
+            Array.Copy(source, shuffled, tradeCount);
+            StatisticalUtils.FisherYatesShuffle(shuffled, rng);
+
+            var row = new double[tradeCount];
+            var cumulative = initialEquity;
+            for (var t = 0; t < tradeCount; t++)
+            {
+                cumulative += shuffled[t];
+                row[t] = cumulative;
+            }
+
+            equityMatrix[i] = row;
+        }
+
+        // Column-wise percentiles
         var column = new double[iterations];
-        for (var b = 0; b < barCount; b++)
+        for (var t = 0; t < tradeCount; t++)
         {
             for (var i = 0; i < iterations; i++)
-                column[i] = equityMatrix[i][b];
+                column[i] = equityMatrix[i][t];
 
             Array.Sort(column);
-
             for (var p = 0; p < Percentiles.Length; p++)
-                bands[p][b] = StatisticalUtils.GetPercentile(column, Percentiles[p]);
+                bands[p][t] = StatisticalUtils.GetPercentile(column, Percentiles[p]);
         }
 
         return bands;
     }
-
 }

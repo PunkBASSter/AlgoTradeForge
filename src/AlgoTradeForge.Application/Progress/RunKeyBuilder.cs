@@ -32,23 +32,27 @@ public static class RunKeyBuilder
         return HashString(sb.ToString());
     }
 
-    public static string Build(RunOptimizationCommand cmd)
+    public static string BuildGroupKey(
+        string strategyName,
+        BacktestSettingsDto settings,
+        string optimizationMethod,
+        List<List<DataSubscriptionDto>>? subscriptionAxis,
+        Dictionary<string, OptimizationAxisOverride>? axes)
     {
-        var settings = cmd.BacktestSettings;
         var sb = new StringBuilder();
-        sb.Append(cmd.StrategyName).Append('|');
+        sb.Append("group|");
+        sb.Append(strategyName).Append('|');
+        sb.Append(optimizationMethod).Append('|');
         sb.Append(settings.StartTime.ToUniversalTime().ToString("O")).Append('|');
         sb.Append(settings.EndTime.ToUniversalTime().ToString("O")).Append('|');
         sb.Append(settings.InitialCash).Append('|');
         sb.Append(settings.CommissionPerTrade).Append('|');
-        sb.Append(settings.SlippageTicks).Append('|');
-        sb.Append(cmd.MaxDegreeOfParallelism).Append('|');
-        sb.Append(cmd.MaxCombinations);
+        sb.Append(settings.SlippageTicks);
 
-        if (cmd.SubscriptionAxis is { Count: > 0 })
+        if (subscriptionAxis is { Count: > 0 })
         {
-            sb.Append("|axis:");
-            var sortedGroups = cmd.SubscriptionAxis
+            sb.Append("|dss:");
+            var sortedGroups = subscriptionAxis
                 .Select(g => g.OrderBy(d => d.AssetName).ThenBy(d => d.Exchange).ThenBy(d => d.TimeFrame).ToList())
                 .OrderBy(g => g[0].AssetName)
                 .ThenBy(g => g[0].Exchange)
@@ -62,10 +66,10 @@ public static class RunKeyBuilder
             }
         }
 
-        if (cmd.Axes is { Count: > 0 })
+        if (axes is { Count: > 0 })
         {
             sb.Append('|');
-            foreach (var kvp in cmd.Axes.OrderBy(k => k.Key))
+            foreach (var kvp in axes.OrderBy(k => k.Key))
                 sb.Append(kvp.Key).Append('=').Append(string.Format(CultureInfo.InvariantCulture, "{0}", kvp.Value)).Append(',');
         }
 

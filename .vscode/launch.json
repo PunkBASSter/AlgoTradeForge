@@ -20,6 +20,20 @@
             }
         },
         {
+            "name": "Backend: WebApi (with log)",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/AlgoTradeForge.WebApi/bin/Debug/net10.0/AlgoTradeForge.WebApi.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/AlgoTradeForge.WebApi",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:5000",
+                "DIAG_LOG_FILE": "${workspaceFolder}/optimization-diag.log"
+            },
+            "preLaunchTask": "build-backend"
+        },
+        {
             "name": "CandleIngestor",
             "type": "coreclr",
             "request": "launch",
@@ -49,6 +63,11 @@
         {
             "name": "Full Stack: Backend + Frontend",
             "configurations": ["Backend: WebApi", "Frontend: npm run dev"],
+            "stopAll": true
+        },
+        {
+            "name": "Full Stack: Backend + Frontend (with log)",
+            "configurations": ["Backend: WebApi (with log)", "Frontend: npm run dev"],
             "stopAll": true
         }
     ]

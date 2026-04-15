@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Infrastructure.Persistence;
 
 internal static class SqliteDbInitializer
 {
-    private const int CurrentVersion = 17;
+    private const int CurrentVersion = 1;
 
     private static readonly SemaphoreSlim _orphanCleanupLock = new(1, 1);
     private static bool _orphanCleanupDone;
@@ -14,6 +14,23 @@ internal static class SqliteDbInitializer
 
         CREATE TABLE IF NOT EXISTS schema_version (
             version INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS optimization_groups (
+            id                          TEXT    NOT NULL PRIMARY KEY,
+            strategy_name               TEXT    NOT NULL,
+            strategy_version            TEXT    NULL,
+            optimization_method         TEXT    NOT NULL,
+            started_at                  TEXT    NOT NULL,
+            completed_at                TEXT    NULL,
+            total_runs                  INTEGER NOT NULL,
+            status                      TEXT    NOT NULL DEFAULT 'InProgress',
+            input_json                  TEXT    NULL,
+            subscriptions_json          TEXT    NOT NULL,
+            backtest_settings_json      TEXT    NOT NULL,
+            optimization_settings_json  TEXT    NULL,
+            fitness_config_json         TEXT    NULL,
+            max_parallelism             INTEGER NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS optimization_runs (
@@ -42,7 +59,9 @@ internal static class SqliteDbInitializer
             input_json          TEXT    NULL,
             error_message       TEXT    NULL,
             status              TEXT    NOT NULL DEFAULT 'Completed',
-            subscriptions_json  TEXT    NULL
+            subscriptions_json  TEXT    NULL,
+            group_id            TEXT    NULL REFERENCES optimization_groups(id),
+            dss_index           INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS backtest_runs (
@@ -71,7 +90,15 @@ internal static class SqliteDbInitializer
             error_message       TEXT    NULL,
             error_stack_trace   TEXT    NULL,
             fitness_score       REAL    NULL,
-            subscriptions_json  TEXT    NULL
+            subscriptions_json  TEXT    NULL,
+            sharpe_ratio        REAL    NULL,
+            sortino_ratio       REAL    NULL,
+            profit_factor       REAL    NULL,
+            max_drawdown_pct    REAL    NULL,
+            win_rate_pct        REAL    NULL,
+            total_trades        INTEGER NULL,
+            net_profit          REAL    NULL,
+            annualized_return_pct REAL  NULL
         );
 
         CREATE INDEX IF NOT EXISTS ix_br_strategy ON backtest_runs(strategy_name);
@@ -79,6 +106,7 @@ internal static class SqliteDbInitializer
         CREATE INDEX IF NOT EXISTS ix_br_opt_id ON backtest_runs(optimization_run_id);
         CREATE INDEX IF NOT EXISTS ix_br_asset ON backtest_runs(asset_name, exchange, timeframe);
         CREATE INDEX IF NOT EXISTS ix_opr_asset ON optimization_runs(asset_name, exchange, timeframe);
+        CREATE INDEX IF NOT EXISTS ix_or_group_id ON optimization_runs(group_id);
         -- ix_br_opt_fitness created asynchronously by SqliteIndexMaintenanceService
 
         CREATE TABLE IF NOT EXISTS optimization_failed_trials (
@@ -91,6 +119,19 @@ internal static class SqliteDbInitializer
             occurrence_count       INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS ix_oft_opt_id ON optimization_failed_trials(optimization_run_id);
+
+        CREATE TABLE IF NOT EXISTS validation_groups (
+            id                      TEXT    NOT NULL PRIMARY KEY,
+            optimization_group_id   TEXT    NOT NULL REFERENCES optimization_groups(id),
+            strategy_name           TEXT    NOT NULL,
+            threshold_profile_name  TEXT    NOT NULL,
+            threshold_profile_json  TEXT    NULL,
+            started_at              TEXT    NOT NULL,
+            completed_at            TEXT    NULL,
+            total_runs              INTEGER NOT NULL,
+            status                  TEXT    NOT NULL DEFAULT 'InProgress'
+        );
+        CREATE INDEX IF NOT EXISTS ix_vg_opt_group_id ON validation_groups(optimization_group_id);
 
         CREATE TABLE IF NOT EXISTS validation_runs (
             id                      TEXT    NOT NULL PRIMARY KEY,
@@ -111,9 +152,11 @@ internal static class SqliteDbInitializer
             invocation_count        INTEGER NOT NULL DEFAULT 1,
             error_message           TEXT    NULL,
             category_scores_json    TEXT    NULL,
-            rejections_json         TEXT    NULL
+            rejections_json         TEXT    NULL,
+            validation_group_id     TEXT    NULL REFERENCES validation_groups(id)
         );
         CREATE INDEX IF NOT EXISTS ix_validation_runs_opt_id ON validation_runs(optimization_run_id);
+        CREATE INDEX IF NOT EXISTS ix_vr_validation_group_id ON validation_runs(validation_group_id);
 
         CREATE TABLE IF NOT EXISTS validation_stage_results (
             id                      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,102 +169,6 @@ internal static class SqliteDbInitializer
             candidate_verdicts_json TEXT    NULL
         );
         CREATE INDEX IF NOT EXISTS ix_vsr_validation_run_id ON validation_stage_results(validation_run_id);
-        """;
-
-    private const string MigrationV3 = """
-        ALTER TABLE backtest_runs ADD COLUMN error_message TEXT NULL;
-        ALTER TABLE backtest_runs ADD COLUMN error_stack_trace TEXT NULL;
-        """;
-
-    private const string MigrationV4 = """
-        ALTER TABLE optimization_runs ADD COLUMN filtered_trials INTEGER NOT NULL DEFAULT 0;
-        ALTER TABLE optimization_runs ADD COLUMN failed_trials INTEGER NOT NULL DEFAULT 0;
-        """;
-
-    private const string MigrationV6 = """
-        ALTER TABLE backtest_runs ADD COLUMN trade_pnl_json TEXT NOT NULL DEFAULT '[]';
-        """;
-
-    private const string MigrationV7 = """
-        ALTER TABLE optimization_runs ADD COLUMN optimization_method TEXT NULL;
-        ALTER TABLE optimization_runs ADD COLUMN generations_completed INTEGER NULL;
-        """;
-
-    private const string MigrationV8 = """
-        ALTER TABLE optimization_runs ADD COLUMN error_message TEXT NULL;
-        """;
-
-    private const string MigrationV9 = """
-        ALTER TABLE optimization_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'Completed';
-        UPDATE optimization_runs SET status = 'InProgress' WHERE completed_at = '';
-        UPDATE optimization_runs SET status = 'Cancelled' WHERE error_message = 'Run was cancelled by user.' AND completed_at != '';
-        UPDATE optimization_runs SET status = 'Failed' WHERE error_message IS NOT NULL AND error_message != 'Run was cancelled by user.' AND completed_at != '';
-        """;
-
-    private const string MigrationV10 = """
-        ALTER TABLE optimization_runs ADD COLUMN input_json TEXT NULL;
-        """;
-
-    private const string MigrationV11 = """
-        ALTER TABLE backtest_runs ADD COLUMN fitness_score REAL NULL;
-        """;
-
-    private const string MigrationV12 = """
-        CREATE TABLE IF NOT EXISTS validation_runs (
-            id                      TEXT    NOT NULL PRIMARY KEY,
-            optimization_run_id     TEXT    NOT NULL REFERENCES optimization_runs(id),
-            strategy_name           TEXT    NOT NULL,
-            strategy_version        TEXT    NULL,
-            started_at              TEXT    NOT NULL,
-            completed_at            TEXT    NULL,
-            duration_ms             INTEGER NOT NULL DEFAULT 0,
-            status                  TEXT    NOT NULL DEFAULT 'InProgress',
-            threshold_profile_name  TEXT    NOT NULL,
-            threshold_profile_json  TEXT    NULL,
-            candidates_in           INTEGER NOT NULL DEFAULT 0,
-            candidates_out          INTEGER NOT NULL DEFAULT 0,
-            composite_score         REAL    NOT NULL DEFAULT 0,
-            verdict                 TEXT    NOT NULL DEFAULT 'Red',
-            verdict_summary         TEXT    NULL,
-            invocation_count        INTEGER NOT NULL DEFAULT 1,
-            error_message           TEXT    NULL
-        );
-        CREATE INDEX IF NOT EXISTS ix_validation_runs_opt_id ON validation_runs(optimization_run_id);
-
-        CREATE TABLE IF NOT EXISTS validation_stage_results (
-            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-            validation_run_id       TEXT    NOT NULL REFERENCES validation_runs(id),
-            stage_number            INTEGER NOT NULL,
-            stage_name              TEXT    NOT NULL,
-            candidates_in           INTEGER NOT NULL DEFAULT 0,
-            candidates_out          INTEGER NOT NULL DEFAULT 0,
-            duration_ms             INTEGER NOT NULL DEFAULT 0,
-            candidate_verdicts_json TEXT    NULL
-        );
-        CREATE INDEX IF NOT EXISTS ix_vsr_validation_run_id ON validation_stage_results(validation_run_id);
-        """;
-
-    private const string MigrationV5 = """
-        CREATE TABLE IF NOT EXISTS optimization_failed_trials (
-            id                     TEXT    NOT NULL PRIMARY KEY,
-            optimization_run_id    TEXT    NOT NULL REFERENCES optimization_runs(id),
-            exception_type         TEXT    NOT NULL,
-            exception_message      TEXT    NOT NULL,
-            stack_trace            TEXT    NOT NULL,
-            sample_parameters_json TEXT    NOT NULL,
-            occurrence_count       INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS ix_oft_opt_id ON optimization_failed_trials(optimization_run_id);
-        """;
-
-    private const string MigrationV14 = """
-        CREATE TABLE IF NOT EXISTS threshold_profiles (
-            name            TEXT    NOT NULL PRIMARY KEY,
-            profile_json    TEXT    NOT NULL,
-            is_builtin      INTEGER NOT NULL DEFAULT 0,
-            created_at      TEXT    NOT NULL,
-            updated_at      TEXT    NOT NULL
-        );
 
         CREATE TABLE IF NOT EXISTS simulation_cache_metadata (
             optimization_run_id TEXT    NOT NULL PRIMARY KEY REFERENCES optimization_runs(id),
@@ -231,16 +178,18 @@ internal static class SqliteDbInitializer
             created_at          TEXT    NOT NULL,
             size_bytes          INTEGER NOT NULL DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS threshold_profiles (
+            name            TEXT    NOT NULL PRIMARY KEY,
+            profile_json    TEXT    NOT NULL,
+            is_builtin      INTEGER NOT NULL DEFAULT 0,
+            created_at      TEXT    NOT NULL,
+            updated_at      TEXT    NOT NULL
+        );
         """;
 
-    private const string MigrationV16 = """
-        ALTER TABLE backtest_runs ADD COLUMN subscriptions_json TEXT NULL;
-        ALTER TABLE optimization_runs ADD COLUMN subscriptions_json TEXT NULL;
-        """;
-
-    private const string MigrationV17 = """
-        CREATE INDEX IF NOT EXISTS ix_br_opt_fitness ON backtest_runs(optimization_run_id, fitness_score DESC);
-        """;
+    // Migrations removed — Schema represents the canonical v1 state.
+    // Future migrations should be added as MigrationV2, V3, etc.
 
     public static async Task EnsureCreatedAsync(string connectionString)
     {
@@ -260,126 +209,7 @@ internal static class SqliteDbInitializer
             """;
         await versionCmd.ExecuteNonQueryAsync();
 
-        // Apply migrations for existing databases
-        var currentVersion = await GetVersionAsync(connection);
-        if (currentVersion < 3)
-        {
-            await using var migrateCmd = connection.CreateCommand();
-            migrateCmd.CommandText = MigrationV3;
-            await migrateCmd.ExecuteNonQueryAsync();
-            await SetVersionAsync(connection, 3);
-        }
-
-        if (currentVersion < 4)
-        {
-            await using var migrateCmd = connection.CreateCommand();
-            migrateCmd.CommandText = MigrationV4;
-            await migrateCmd.ExecuteNonQueryAsync();
-            await SetVersionAsync(connection, 4);
-        }
-
-        if (currentVersion < 5)
-        {
-            await using var migrateCmd = connection.CreateCommand();
-            migrateCmd.CommandText = MigrationV5;
-            await migrateCmd.ExecuteNonQueryAsync();
-            await SetVersionAsync(connection, 5);
-        }
-
-        if (currentVersion < 6)
-        {
-            await using var migrateCmd = connection.CreateCommand();
-            migrateCmd.CommandText = MigrationV6;
-            await migrateCmd.ExecuteNonQueryAsync();
-            await SetVersionAsync(connection, 6);
-        }
-
-        if (currentVersion < 7)
-        {
-            await using var migrateCmd = connection.CreateCommand();
-            migrateCmd.CommandText = MigrationV7;
-            await migrateCmd.ExecuteNonQueryAsync();
-            await SetVersionAsync(connection, 7);
-        }
-
-        if (currentVersion < 8)
-        {
-            await using var migrateCmd = connection.CreateCommand();
-            migrateCmd.CommandText = MigrationV8;
-            await migrateCmd.ExecuteNonQueryAsync();
-            await SetVersionAsync(connection, 8);
-        }
-
-        if (currentVersion < 9)
-        {
-            await using var migrateCmd = connection.CreateCommand();
-            migrateCmd.CommandText = MigrationV9;
-            await migrateCmd.ExecuteNonQueryAsync();
-            await SetVersionAsync(connection, 9);
-        }
-
-        if (currentVersion < 10)
-        {
-            await using var migrateCmd = connection.CreateCommand();
-            migrateCmd.CommandText = MigrationV10;
-            await migrateCmd.ExecuteNonQueryAsync();
-            await SetVersionAsync(connection, 10);
-        }
-
-        if (currentVersion < 11)
-        {
-            await using var migrateCmd = connection.CreateCommand();
-            migrateCmd.CommandText = MigrationV11;
-            await migrateCmd.ExecuteNonQueryAsync();
-            await SetVersionAsync(connection, 11);
-        }
-
-        if (currentVersion < 12)
-        {
-            await using var migrateCmd = connection.CreateCommand();
-            migrateCmd.CommandText = MigrationV12;
-            await migrateCmd.ExecuteNonQueryAsync();
-            await SetVersionAsync(connection, 12);
-        }
-
-        if (currentVersion < 13)
-        {
-            // Schema's CREATE TABLE IF NOT EXISTS may have already created
-            // validation_runs with these columns (for DBs upgrading from < v12).
-            // SQLite has no ADD COLUMN IF NOT EXISTS, so check PRAGMA first.
-            await AddColumnIfNotExistsAsync(connection, "validation_runs", "category_scores_json", "TEXT NULL");
-            await AddColumnIfNotExistsAsync(connection, "validation_runs", "rejections_json", "TEXT NULL");
-            await SetVersionAsync(connection, 13);
-        }
-
-        if (currentVersion < 14)
-        {
-            await using var migrateCmd = connection.CreateCommand();
-            migrateCmd.CommandText = MigrationV14;
-            await migrateCmd.ExecuteNonQueryAsync();
-            await SetVersionAsync(connection, 14);
-        }
-
-        if (currentVersion < 15)
-        {
-            await AddColumnIfNotExistsAsync(connection, "optimization_runs", "dedup_skipped", "INTEGER NOT NULL DEFAULT 0");
-            await SetVersionAsync(connection, 15);
-        }
-
-        if (currentVersion < 16)
-        {
-            await using var migrateCmd = connection.CreateCommand();
-            migrateCmd.CommandText = MigrationV16;
-            await migrateCmd.ExecuteNonQueryAsync();
-            await SetVersionAsync(connection, 16);
-        }
-
-        if (currentVersion < 17)
-        {
-            // Index created asynchronously by SqliteIndexMaintenanceService
-            // to avoid blocking startup on large databases.
-            await SetVersionAsync(connection, 17);
-        }
+        // Future migrations go here as: if (currentVersion < 2) { ... }
 
         await CleanupOrphanedRunsOnceAsync(connection);
     }
@@ -404,7 +234,7 @@ internal static class SqliteDbInitializer
             orphanCmd.CommandText = """
                 UPDATE optimization_runs
                 SET completed_at = started_at, error_message = 'Server restarted during execution', status = 'Failed'
-                WHERE status = 'InProgress'
+                WHERE status IN ('InProgress', 'Enqueued')
                 """;
             await orphanCmd.ExecuteNonQueryAsync();
 
@@ -412,9 +242,23 @@ internal static class SqliteDbInitializer
             orphanValCmd.CommandText = """
                 UPDATE validation_runs
                 SET completed_at = started_at, error_message = 'Server restarted during execution', status = 'Failed'
-                WHERE status = 'InProgress'
+                WHERE status IN ('InProgress', 'Enqueued')
                 """;
             await orphanValCmd.ExecuteNonQueryAsync();
+
+            await using var orphanOptGroupCmd = connection.CreateCommand();
+            orphanOptGroupCmd.CommandText = """
+                UPDATE optimization_groups SET status = 'Failed', completed_at = started_at
+                WHERE status = 'InProgress'
+                """;
+            await orphanOptGroupCmd.ExecuteNonQueryAsync();
+
+            await using var orphanValGroupCmd = connection.CreateCommand();
+            orphanValGroupCmd.CommandText = """
+                UPDATE validation_groups SET status = 'Failed', completed_at = started_at
+                WHERE status = 'InProgress'
+                """;
+            await orphanValGroupCmd.ExecuteNonQueryAsync();
 
             _orphanCleanupDone = true;
         }
@@ -432,16 +276,26 @@ internal static class SqliteDbInitializer
         return result is not null ? Convert.ToInt32(result) : 0;
     }
 
+    private static readonly System.Text.RegularExpressions.Regex SafeIdentifier =
+        new(@"^[a-zA-Z_][a-zA-Z0-9_]*$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
     private static async Task AddColumnIfNotExistsAsync(
         SqliteConnection connection, string table, string column, string definition)
     {
+        if (!SafeIdentifier.IsMatch(table))
+            throw new ArgumentException($"Invalid table identifier: {table}", nameof(table));
+        if (!SafeIdentifier.IsMatch(column))
+            throw new ArgumentException($"Invalid column identifier: {column}", nameof(column));
+
         await using var checkCmd = connection.CreateCommand();
-        checkCmd.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'";
+        checkCmd.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = $col";
+        checkCmd.Parameters.AddWithValue("$col", column);
         var exists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
         if (exists) return;
 
+        // table/column are validated against SafeIdentifier above; definition is always a hardcoded literal.
         await using var alterCmd = connection.CreateCommand();
-        alterCmd.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition}";
+        alterCmd.CommandText = $"ALTER TABLE [{table}] ADD COLUMN [{column}] {definition}";
         await alterCmd.ExecuteNonQueryAsync();
     }
 

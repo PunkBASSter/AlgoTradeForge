@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getClient } from "@/lib/services";
 import { RunFilters, type FilterValues } from "@/components/features/dashboard/run-filters";
 import { RunsTable } from "@/components/features/dashboard/runs-table";
+import { TaskQueuePanel } from "@/components/features/dashboard/task-queue-panel";
 import { Pagination } from "@/components/ui/pagination";
 import { useLiveSessions } from "@/hooks/use-live-sessions";
 import { useRunNew } from "@/contexts/run-new-context";
@@ -95,6 +96,8 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
 
   return (
     <>
+      {(mode === "optimization" || mode === "validation") && <TaskQueuePanel />}
+
       {mode !== "live" && (
         <RunFilters filters={filters} onChange={handleFilterChange} />
       )}

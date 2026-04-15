@@ -158,6 +158,7 @@ public static class BacktestEndpoints
         bool? standaloneOnly,
         DateTimeOffset? from,
         DateTimeOffset? to,
+        string? sortBy,
         int limit = 50,
         int offset = 0,
         CancellationToken ct = default)
@@ -173,6 +174,7 @@ public static class BacktestEndpoints
             To = to,
             Limit = limit,
             Offset = offset,
+            SortBy = sortBy,
         };
         var query = new ListBacktestRunsQuery(filter);
 

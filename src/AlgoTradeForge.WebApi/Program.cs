@@ -16,8 +16,21 @@ using AlgoTradeForge.WebApi;
 using AlgoTradeForge.Infrastructure.History;
 using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Plugins;
+using System.Text;
 using AlgoTradeForge.WebApi.Endpoints;
 using AlgoTradeForge.WebApi.Middleware;
+
+// ── Diagnostic file logging (set DIAG_LOG_FILE env var to enable) ──
+StreamWriter? diagWriter = null;
+var diagLogPath = Environment.GetEnvironmentVariable("DIAG_LOG_FILE");
+if (diagLogPath is not null)
+{
+    diagWriter = new StreamWriter(diagLogPath, append: false) { AutoFlush = true };
+    var originalOut = Console.Out;
+    var originalErr = Console.Error;
+    Console.SetOut(new TeeTextWriter(originalOut, diagWriter));
+    Console.SetError(new TeeTextWriter(originalErr, diagWriter));
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -101,6 +114,7 @@ foreach (var asm in pluginAssemblies)
 Assembly[] strategyAssemblies = [typeof(AlgoTradeForge.Domain.Strategy.StrategyBase<>).Assembly, .. pluginAssemblies];
 builder.Services.AddInfrastructure(strategyAssemblies);
 builder.Services.AddHostedService<SqliteIndexMaintenanceService>();
+builder.Services.AddHostedService<ComputeQueueConsumer>();
 
 builder.Services.AddSingleton<IAssetRepository, FileSystemAssetRepository>();
 
@@ -148,9 +162,20 @@ app.MapStrategyEndpoints();
 app.MapDebugEndpoints();
 DebugWebSocketHandler.MapDebugWebSocket(app);
 app.MapValidationEndpoints();
+app.MapTaskQueueEndpoints();
 app.MapThresholdProfileEndpoints();
 app.MapLiveEndpoints();
 
 app.Run();
 
 public partial class Program { }
+
+/// <summary>Writes to two TextWriters simultaneously. Used for diagnostic file logging.</summary>
+file sealed class TeeTextWriter(TextWriter primary, TextWriter secondary) : TextWriter
+{
+    public override Encoding Encoding => primary.Encoding;
+    public override void Write(char value) { primary.Write(value); secondary.Write(value); }
+    public override void Write(string? value) { primary.Write(value); secondary.Write(value); }
+    public override void WriteLine(string? value) { primary.WriteLine(value); secondary.WriteLine(value); }
+    public override void Flush() { primary.Flush(); secondary.Flush(); }
+}

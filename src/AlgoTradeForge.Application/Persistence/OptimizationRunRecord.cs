@@ -2,6 +2,7 @@ namespace AlgoTradeForge.Application.Persistence;
 
 public static class OptimizationRunStatus
 {
+    public const string Enqueued = "Enqueued";
     public const string InProgress = "InProgress";
     public const string Completed = "Completed";
     public const string Failed = "Failed";
@@ -41,4 +42,6 @@ public sealed record OptimizationRunRecord
     public string? OptimizationMethod { get; init; }
     public int? GenerationsCompleted { get; init; }
     public string Status { get; init; } = OptimizationRunStatus.Completed;
+    public Guid? GroupId { get; init; }
+    public int DssIndex { get; init; }
 }

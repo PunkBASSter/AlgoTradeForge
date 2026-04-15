@@ -2,6 +2,7 @@ namespace AlgoTradeForge.Application.Persistence;
 
 public static class ValidationRunStatus
 {
+    public const string Enqueued = "Enqueued";
     public const string InProgress = "InProgress";
     public const string Completed = "Completed";
     public const string Failed = "Failed";
@@ -29,6 +30,7 @@ public sealed record ValidationRunRecord
     public string? RejectionsJson { get; init; }
     public int InvocationCount { get; init; } = 1;
     public string? ErrorMessage { get; init; }
+    public Guid? ValidationGroupId { get; init; }
     public IReadOnlyList<StageResultRecord> StageResults { get; init; } = [];
 }
 

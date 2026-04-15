@@ -186,8 +186,9 @@ public class EvaluateOptimizationQueryHandlerTests
 
         var result = await _handler.HandleAsync(query, TestContext.Current.CancellationToken);
 
-        // 3 param values * 2 subscription axis entries = 6
-        Assert.Equal(6, result.TotalCombinations);
+        // Per-DSS group mode: 3 param values per run (not multiplied by 2 DSS)
+        Assert.Equal(3, result.TotalCombinations);
+        Assert.Equal(2, result.DssCount);
     }
 
     [Fact]
@@ -242,8 +243,9 @@ public class EvaluateOptimizationQueryHandlerTests
 
         var result = await _handler.HandleAsync(query, TestContext.Current.CancellationToken);
 
-        // 3 values * 3 subs = 9
-        Assert.Equal(9, result.TotalCombinations);
+        // Per-DSS group mode: 3 values per run (not multiplied by 3 DSS)
+        Assert.Equal(3, result.TotalCombinations);
+        Assert.Equal(3, result.DssCount);
     }
 
     [Fact]

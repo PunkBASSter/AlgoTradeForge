@@ -8,6 +8,14 @@
             "problemMatcher": "$msCompile"
         },
         {
+            "label": "run-backend-with-log",
+            "type": "shell",
+            "command": "dotnet run --project src/AlgoTradeForge.WebApi *> optimization-diag.log",
+            "dependsOn": "build-backend",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
             "label": "build-backend",
             "type": "process",
             "command": "dotnet",

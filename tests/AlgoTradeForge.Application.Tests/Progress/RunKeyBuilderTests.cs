@@ -1,6 +1,5 @@
 using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Live;
-using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Progress;
 using Xunit;
 
@@ -65,46 +64,6 @@ public sealed class RunKeyBuilderTests
         // SHA256 produces 64 hex chars (lowercase)
         Assert.Equal(64, key.Length);
         Assert.Matches("^[0-9a-f]{64}$", key);
-    }
-
-    [Fact]
-    public void Build_Optimization_Identical_Params_Produces_Same_Key()
-    {
-        var cmd = MakeOptimizationCommand();
-        var key1 = RunKeyBuilder.Build(cmd);
-        var key2 = RunKeyBuilder.Build(cmd);
-
-        Assert.Equal(key1, key2);
-    }
-
-    [Fact]
-    public void Build_Optimization_Different_Params_Produces_Different_Key()
-    {
-        var cmd1 = MakeOptimizationCommand();
-        var cmd2 = MakeOptimizationCommand() with { StrategyName = "OtherStrategy" };
-
-        Assert.NotEqual(RunKeyBuilder.Build(cmd1), RunKeyBuilder.Build(cmd2));
-    }
-
-    [Fact]
-    public void Build_Optimization_Returns_SHA256_Hex_Format()
-    {
-        var key = RunKeyBuilder.Build(MakeOptimizationCommand());
-
-        Assert.Equal(64, key.Length);
-        Assert.Matches("^[0-9a-f]{64}$", key);
-    }
-
-    [Fact]
-    public void Build_Optimization_SubscriptionGroupOrderIndependence()
-    {
-        var btc = new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1:00:00" };
-        var eth = new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "1:00:00" };
-
-        var cmd1 = MakeOptimizationCommand() with { SubscriptionAxis = [[btc], [eth]] };
-        var cmd2 = MakeOptimizationCommand() with { SubscriptionAxis = [[eth], [btc]] };
-
-        Assert.Equal(RunKeyBuilder.Build(cmd1), RunKeyBuilder.Build(cmd2));
     }
 
     // -----------------------------------------------------------------------
@@ -196,18 +155,4 @@ public sealed class RunKeyBuilderTests
         DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }],
     };
 
-    private static RunOptimizationCommand MakeOptimizationCommand() => new()
-    {
-        StrategyName = "SmaCrossover",
-        BacktestSettings = new BacktestSettingsDto
-        {
-            InitialCash = 10000m,
-            StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            EndTime = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero),
-        },
-        SubscriptionAxis =
-        [
-            [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1:00:00" }]
-        ]
-    };
 }

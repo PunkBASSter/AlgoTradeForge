@@ -11,34 +11,40 @@ namespace AlgoTradeForge.WebApi.Tests.Endpoints;
 [Collection("Api")]
 public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory factory) : ApiTestBase(factory)
 {
-    private static RunOptimizationRequest MakeOptimizationRequest() => new()
+    // Each call returns a unique request to avoid RunKey dedup collisions between tests
+    private static int _requestCounter;
+    private static RunOptimizationRequest MakeOptimizationRequest()
     {
-        StrategyName = "BuyAndHold",
-        BacktestSettings = new()
+        var offset = Interlocked.Increment(ref _requestCounter) * 10m;
+        return new()
         {
-            InitialCash = 10_000m,
-            StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
-        },
-        OptimizationSettings = new()
-        {
-            MaxDegreeOfParallelism = 1,
-            MinTradeCount = null,
-        },
-        SubscriptionAxis =
-        [
-            [new DataSubscriptionDto
+            StrategyName = "BuyAndHold",
+            BacktestSettings = new()
             {
-                AssetName = "BTCUSDT",
-                Exchange = "Binance",
-                TimeFrame = "01:00:00",
-            }]
-        ],
-        OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
-        {
-            ["Quantity"] = new RangeOverride(1m, 3m, 2m), // 2 values: 1, 3
-        },
-    };
+                InitialCash = 10_000m + offset,
+                StartTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2025, 1, 15, 0, 0, 0, TimeSpan.Zero),
+            },
+            OptimizationSettings = new()
+            {
+                MaxDegreeOfParallelism = 1,
+                MinTradeCount = null,
+            },
+            SubscriptionAxis =
+            [
+                [new DataSubscriptionDto
+                {
+                    AssetName = "BTCUSDT",
+                    Exchange = "Binance",
+                    TimeFrame = "01:00:00",
+                }]
+            ],
+            OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
+            {
+                ["Quantity"] = new RangeOverride(1m, 3m, 2m), // 2 values: 1, 3
+            },
+        };
+    }
 
     // ── Happy paths ──────────────────────────────────────────────────
 
@@ -136,8 +142,10 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
     }
 
     [Fact]
-    public async Task Post_UnknownAsset_Returns400()
+    public async Task Post_UnknownAsset_Returns202ThenRunFails()
     {
+        // In the compute queue architecture, asset validation is deferred to execution time.
+        // The submission is accepted (202), and the run fails during processing.
         var request = new RunOptimizationRequest
         {
             StrategyName = "BuyAndHold",
@@ -160,7 +168,7 @@ public sealed class OptimizationEndpointsApiTests(AlgoTradeForgeApiFactory facto
 
         var response = await Client.PostAsJsonAsync("/api/optimizations", request, Json, TestContext.Current.CancellationToken);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
     }
 
     [Fact]

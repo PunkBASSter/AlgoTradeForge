@@ -3,6 +3,9 @@ using System.Text.Json;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.WebApi.Contracts;
 
+[assembly: TestCaseOrderer(typeof(Xunit.v3.DefaultTestCaseOrderer))]
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace AlgoTradeForge.WebApi.Tests.Infrastructure;
 
 [CollectionDefinition("Api")]
@@ -60,8 +63,24 @@ public abstract class ApiTestBase : IDisposable
             throw new HttpRequestException(
                 $"POST /api/optimizations returned {(int)response.StatusCode}: {errorBody}");
         }
-        var body = (await response.Content.ReadFromJsonAsync<OptimizationSubmissionResponse>(Json))!;
-        return (response, body);
+
+        // The endpoint returns OptimizationGroupSubmissionResponse when subscriptionAxis is present.
+        // Try group response first, then fall back to single-run response.
+        var content = await response.Content.ReadAsStringAsync();
+        var doc = System.Text.Json.JsonDocument.Parse(content);
+        if (doc.RootElement.TryGetProperty("groupId", out _))
+        {
+            var group = System.Text.Json.JsonSerializer.Deserialize<OptimizationGroupSubmissionResponse>(content, Json)!;
+            var body = new OptimizationSubmissionResponse
+            {
+                Id = group.Runs.Count > 0 ? group.Runs[0].Id : group.GroupId,
+                TotalCombinations = group.TotalCombinationsPerRun,
+            };
+            return (response, body);
+        }
+
+        var single = System.Text.Json.JsonSerializer.Deserialize<OptimizationSubmissionResponse>(content, Json)!;
+        return (response, single);
     }
 
     protected async Task<OptimizationStatusResponse> PollOptimizationUntilDoneAsync(Guid id, TimeSpan timeout)
@@ -72,7 +91,9 @@ public abstract class ApiTestBase : IDisposable
             var response = await Client.GetFromJsonAsync<OptimizationStatusResponse>(
                 $"/api/optimizations/{id}/status", Json);
 
-            if (response!.Result is not null)
+            // Check for terminal status — Enqueued placeholders have Result != null
+            // but are not yet processed by the compute queue consumer
+            if (response!.Status is "Completed" or "Failed" or "Cancelled")
                 return response;
 
             await Task.Delay(500);

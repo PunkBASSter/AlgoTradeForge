@@ -16,7 +16,7 @@ public sealed class TrialFilterTests
         InitialCapital = 10_000m, FinalEquity = 15_000m, TradingDays = 365,
     };
 
-    private static RunOptimizationCommand MakeCommand(
+    private static RunGroupOptimizationCommand MakeCommand(
         int? minTradeCount = null,
         decimal? minNetProfit = null,
         double? minProfitFactor = null,
@@ -26,6 +26,8 @@ public sealed class TrialFilterTests
         double? minAnnualizedReturnPct = null) => new()
     {
         StrategyName = "Test",
+        OptimizationMethod = "BruteForce",
+        SubscriptionAxis = [[new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }]],
         BacktestSettings = new BacktestSettingsDto
         {
             InitialCash = 10_000m,
@@ -67,10 +69,12 @@ public sealed class TrialFilterTests
     [Fact]
     public void Default_command_filters_low_trade_count()
     {
-        // RunOptimizationCommand defaults MinTradeCount to 30
-        var command = new RunOptimizationCommand
+        // RunGroupOptimizationCommand defaults MinTradeCount to 30
+        var command = new RunGroupOptimizationCommand
         {
             StrategyName = "Test",
+            OptimizationMethod = "BruteForce",
+            SubscriptionAxis = [[new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }]],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10_000m,
