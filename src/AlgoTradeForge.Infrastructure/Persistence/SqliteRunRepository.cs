@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Domain.Reporting;
@@ -19,6 +20,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
     };
 
     /// <summary>All backtest_runs columns except equity_curve_json, for list queries.</summary>
