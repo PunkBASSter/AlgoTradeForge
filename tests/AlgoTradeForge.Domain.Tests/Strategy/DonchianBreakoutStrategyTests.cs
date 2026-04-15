@@ -33,7 +33,7 @@ public sealed class DonchianBreakoutStrategyTests
         SignalThreshold = 30,
         FilterThreshold = -100, // Allow through even when regime is unknown (score 0)
         DefaultAtrStopMultiplier = 2.0,
-        MoneyManagement = new MoneyManagementParams { RiskPercent = 2.0 },
+        MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
         TrailingStopConfig = new TrailingStopParams { Variant = TrailingStopVariant.Atr, AtrMultiplier = 2.0 },
         RegimeDetectorConfig = new RegimeDetectorParams { AdxPeriod = 7, TrendThreshold = 20.0 },
@@ -140,7 +140,7 @@ public sealed class DonchianBreakoutStrategyTests
             SignalThreshold = 30,
             FilterThreshold = 50, // Requires regime filter to pass (100 = trending)
             DefaultAtrStopMultiplier = 2.0,
-            MoneyManagement = new MoneyManagementParams { RiskPercent = 2.0 },
+            MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
             TrailingStopConfig = new TrailingStopParams { Variant = TrailingStopVariant.Atr, AtrMultiplier = 2.0 },
             RegimeDetectorConfig = new RegimeDetectorParams { AdxPeriod = 7, TrendThreshold = 20.0 },

@@ -35,7 +35,7 @@ public sealed class Rsi2MeanReversionStrategyTests
         SignalThreshold = 30,
         FilterThreshold = 0,
         DefaultAtrStopMultiplier = 2.0,
-        MoneyManagement = new() { RiskPercent = 2.0 },
+        MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new() { MaxConcurrentGroups = 1 },
         DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
     };
@@ -307,7 +307,7 @@ public sealed class Rsi2MeanReversionStrategyTests
             TrendFilterPeriod = 50, AtrPeriod = 14,
             AtrFilter = new AtrVolatilityFilterParams { Period = 14, MinAtr = 999_999, MaxAtr = 0 },
             SignalThreshold = 30, FilterThreshold = 1, DefaultAtrStopMultiplier = 2.0,
-            MoneyManagement = new() { RiskPercent = 2.0 },
+            MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new() { MaxConcurrentGroups = 1 },
             DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
         };
@@ -331,7 +331,7 @@ public sealed class Rsi2MeanReversionStrategyTests
             TrendFilterPeriod = 50, AtrPeriod = 14,
             AtrFilter = new AtrVolatilityFilterParams { Period = 14, MinAtr = 0, MaxAtr = 0 },
             SignalThreshold = 99, FilterThreshold = 0, DefaultAtrStopMultiplier = 2.0,
-            MoneyManagement = new() { RiskPercent = 2.0 },
+            MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new() { MaxConcurrentGroups = 1 },
             DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
         };

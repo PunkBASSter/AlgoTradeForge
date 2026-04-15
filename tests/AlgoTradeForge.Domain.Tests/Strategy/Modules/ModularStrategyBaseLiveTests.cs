@@ -143,7 +143,7 @@ public sealed class ModularStrategyBaseLiveTests
         {
             RsiPeriod = 2, OversoldThreshold = 10, OverboughtThreshold = 90,
             TrendFilterPeriod = 50, AtrPeriod = 14,
-            MoneyManagement = new MoneyManagementParams { RiskPercent = 2.0 },
+            MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
             DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
         };

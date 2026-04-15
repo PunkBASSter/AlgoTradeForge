@@ -33,12 +33,8 @@ public sealed class MoneyManagementModuleTests
         return context;
     }
 
-    private static MoneyManagementModule CreateModule(double riskPercent = 1.0) =>
-        new(new MoneyManagementParams
-        {
-            Method = SizingMethod.FixedFractional,
-            RiskPercent = riskPercent,
-        });
+    private static FixedFractionalModule CreateModule(double riskPercent = 1.0) =>
+        new(new FixedFractionalParams { RiskPercent = riskPercent });
 
     [Fact]
     public void FixedFractional_KnownInputs_ReturnsExpectedQuantity()
@@ -114,12 +110,8 @@ public sealed class MoneyManagementModuleTests
 
     // --- AtrVolTarget Tests (T038) ---
 
-    private static MoneyManagementModule CreateAtrVolTargetModule(double volTarget = 0.15) =>
-        new(new MoneyManagementParams
-        {
-            Method = SizingMethod.AtrVolTarget,
-            VolTarget = volTarget,
-        });
+    private static AtrVolTargetModule CreateAtrVolTargetModule(double volTarget = 0.15) =>
+        new(new AtrVolTargetParams { VolTarget = volTarget });
 
     private static StrategyContext CreateContextWithAtr(long cash, long currentAtr, long usedMargin = 0L)
     {
@@ -190,14 +182,9 @@ public sealed class MoneyManagementModuleTests
 
     // --- HalfKelly Tests (T039) ---
 
-    private static MoneyManagementModule CreateHalfKellyModule(
+    private static HalfKellyModule CreateHalfKellyModule(
         double winRate = 0.5, double payoffRatio = 2.0) =>
-        new(new MoneyManagementParams
-        {
-            Method = SizingMethod.HalfKelly,
-            WinRate = winRate,
-            PayoffRatio = payoffRatio,
-        });
+        new(new HalfKellyParams { WinRate = winRate, PayoffRatio = payoffRatio });
 
     [Fact]
     public void HalfKelly_KnownInputs_ReturnsExpectedQuantity()

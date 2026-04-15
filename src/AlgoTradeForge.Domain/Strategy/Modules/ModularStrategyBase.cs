@@ -19,7 +19,7 @@ public abstract class ModularStrategyBase<TParams>(TParams parameters, IIndicato
     private readonly List<IIndicator<Int64Bar, double>> _doubleIndicators = [];
     private readonly Dictionary<int, List<Int64Bar>> _barHistories = [];
     private TradeRegistryModule _tradeRegistry = null!;
-    private MoneyManagementModule _moneyManagement = null!;
+    private IMoneyManagementModule _moneyManagement = null!;
     private ExitModule? _exit;
     private TrailingStopModule? _trailingStop;
     private RegimeDetectorModule? _regimeDetector;
@@ -47,7 +47,7 @@ public abstract class ModularStrategyBase<TParams>(TParams parameters, IIndicato
     {
         Context = new StrategyContext();
         _tradeRegistry = new TradeRegistryModule(Params.TradeRegistry);
-        _moneyManagement = new MoneyManagementModule(Params.MoneyManagement);
+        _moneyManagement = Params.MoneyManagement;
 
         if (_tradeRegistry is IEventBusReceiver busReceiver)
             busReceiver.SetEventBus(EventBus);

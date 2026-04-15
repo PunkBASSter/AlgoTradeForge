@@ -29,7 +29,7 @@ public sealed class ModularStrategyEventTests
         TrendFilterPeriod = 50, AtrPeriod = 14,
         AtrFilter = new AtrVolatilityFilterParams { Period = 14, MinAtr = 0, MaxAtr = 0 },
         SignalThreshold = 30, FilterThreshold = 0, DefaultAtrStopMultiplier = 2.0,
-        MoneyManagement = new MoneyManagementParams { RiskPercent = 2.0 },
+        MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
         DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
     };

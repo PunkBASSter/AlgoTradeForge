@@ -6,6 +6,7 @@ using AlgoTradeForge.Domain.Strategy.Modules.Regime;
 using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Strategy.Modules.TrailingStop;
 
+
 namespace AlgoTradeForge.Domain.Strategy.Modules;
 
 public class ModularStrategyParamsBase : StrategyParamsBase
@@ -22,7 +23,8 @@ public class ModularStrategyParamsBase : StrategyParamsBase
     [Optimizable(Min = 1.0, Max = 5.0, Step = 0.5)]
     public double DefaultAtrStopMultiplier { get; init; } = 2.0;
 
-    public MoneyManagementParams MoneyManagement { get; init; } = new();
+    [OptimizableModule]
+    public IMoneyManagementModule MoneyManagement { get; init; } = new FixedFractionalModule(new FixedFractionalParams());
     public TradeRegistryParams TradeRegistry { get; init; } = new();
     public TrailingStopParams? TrailingStop { get; init; }
     public TimeBasedExitParams? Exit { get; init; }

@@ -35,7 +35,7 @@ public sealed class PairsTradingStrategyTests
         SignalThreshold = 30,
         FilterThreshold = -100, // Effectively disabled
         DefaultAtrStopMultiplier = 3.0,
-        MoneyManagement = new MoneyManagementParams { RiskPercent = 2.0 },
+        MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
         DataSubscriptions =
         [
