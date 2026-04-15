@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Table, type Column } from "@/components/ui/table";
+import { OptimizationRunsTable } from "./optimization-runs-table";
 import { formatNumber, formatPercent } from "@/lib/utils/format";
 import type { BacktestRun, OptimizationRun, LiveSession } from "@/types/api";
 
@@ -58,50 +59,6 @@ const backtestColumns: Column<BacktestRun>[] = [
     key: "netProfit",
     header: "Net Profit",
     render: (_v, row) => formatNumber(row.metrics?.netProfit ?? 0),
-  },
-];
-
-const optimizationColumns: Column<OptimizationRun>[] = [
-  { key: "strategyVersion", header: "Version" },
-  { key: "id", header: "Run ID", render: (v) => String(v).substring(0, 8) },
-  { key: "dataSubscriptions.asset", header: "Asset", render: (_v, row) => row.dataSubscriptions[0]?.assetName },
-  { key: "dataSubscriptions.exchange", header: "Exchange", render: (_v, row) => row.dataSubscriptions[0]?.exchange },
-  { key: "dataSubscriptions.tf", header: "TF", render: (_v, row) => row.dataSubscriptions[0]?.timeFrame },
-  { key: "totalCombinations", header: "Combinations" },
-  {
-    key: "status",
-    header: "Status",
-    render: (_v, row) => {
-      if (row.status === "Enqueued") return <span className="text-gray-400">Enqueued</span>;
-      if (row.status === "InProgress") return <span className="text-blue-400">In Progress</span>;
-      if (row.status === "Failed") return <span className="text-red-400">Failed</span>;
-      if (row.status === "Cancelled") return <span className="text-yellow-400">Cancelled</span>;
-      return <span className="text-green-400">Completed</span>;
-    },
-  },
-  {
-    key: "durationMs",
-    header: "Duration",
-    render: (v, row) => row.status === "InProgress" || row.status === "Enqueued"
-      ? "\u2014"
-      : `${(Number(v) / 1000).toFixed(1)}s`,
-  },
-  {
-    key: "groupId",
-    header: "Group",
-    render: (_v, row) => row.groupId
-      ? (
-        <span
-          className="text-accent-blue hover:underline cursor-pointer"
-          onClick={(e) => {
-            e.stopPropagation();
-            window.location.href = `/report/optimization-group/${row.groupId}`;
-          }}
-        >
-          {row.groupId.substring(0, 8)}
-        </span>
-      )
-      : "\u2014",
   },
 ];
 
@@ -188,14 +145,5 @@ export function RunsTable({
     );
   }
 
-  return (
-    <Table<OptimizationRun>
-      columns={optimizationColumns}
-      data={optimizations ?? []}
-      rowKey="id"
-      onRowClick={(row) => router.push(`/report/optimization/${row.id}`)}
-      emptyMessage="No optimization runs found"
-      testId="runs-table"
-    />
-  );
+  return <OptimizationRunsTable data={optimizations ?? []} />;
 }

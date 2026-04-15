@@ -5,6 +5,7 @@ const presetColors: Record<string, string> = {
   Pending: "bg-yellow-900/30 text-yellow-400 border-yellow-700",
   Running: "bg-green-900/30 text-green-400 border-green-700",
   Completed: "bg-green-900/30 text-green-400 border-green-700",
+  InProgress: "bg-blue-900/30 text-blue-400 border-blue-700",
   Failed: "bg-red-900/30 text-red-400 border-red-700",
   Cancelled: "bg-neutral-800 text-text-muted border-border-default",
   Connecting: "bg-yellow-900/30 text-yellow-400 border-yellow-700",

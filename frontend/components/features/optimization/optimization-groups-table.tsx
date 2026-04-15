@@ -5,48 +5,10 @@
 import { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { formatDuration } from "@/lib/utils/format";
+import { ChevronIcon } from "@/components/ui/chevron-icon";
+import { StatusBadge } from "@/components/ui/status-badge";
 import type { OptimizationGroupSummary } from "@/types/optimization-group";
 import type { DataSubscriptionInput } from "@/types/api";
-
-/** Status badge with color coding. */
-function StatusBadge({ status }: { status: string }) {
-  const colorClass = (() => {
-    switch (status) {
-      case "Completed": return "bg-green-900/30 text-green-400 border-green-700";
-      case "InProgress": return "bg-blue-900/30 text-blue-400 border-blue-700";
-      case "Failed": return "bg-red-900/30 text-red-400 border-red-700";
-      case "Cancelled": return "bg-yellow-900/30 text-yellow-400 border-yellow-700";
-      default: return "bg-bg-surface text-text-muted border-border-default";
-    }
-  })();
-
-  const label = status === "InProgress" ? "In Progress" : status;
-
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${colorClass}`}>
-      {label}
-    </span>
-  );
-}
-
-/** Chevron icon for expand/collapse. */
-function ChevronIcon({ expanded }: { expanded: boolean }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={`transition-transform ${expanded ? "rotate-90" : ""}`}
-    >
-      <path d="M6 4l4 4-4 4" />
-    </svg>
-  );
-}
 
 /** Format a DSS array as a compact string. */
 function formatDss(dss: DataSubscriptionInput[]): string {

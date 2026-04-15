@@ -3,26 +3,8 @@
 // T057 - DssBuilder — collapsible section for building subscriptionAxis rows
 
 import { useState, useCallback } from "react";
+import { ChevronIcon } from "@/components/ui/chevron-icon";
 import type { DataSubscription } from "@/types/api";
-
-/** Chevron icon for collapse/expand. */
-function ChevronIcon({ expanded }: { expanded: boolean }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={`transition-transform ${expanded ? "rotate-90" : ""}`}
-    >
-      <path d="M6 4l4 4-4 4" />
-    </svg>
-  );
-}
 
 interface DssRow {
   assetName: string;
