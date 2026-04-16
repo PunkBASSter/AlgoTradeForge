@@ -26,7 +26,7 @@ public sealed class TrailingStopModule(TrailingStopParams parameters)
     /// </summary>
     /// <param name="groupId">The order group ID.</param>
     /// <param name="bar">Current price bar.</param>
-    /// <param name="currentAtr">Current ATR value from StrategyContext. Used by Atr/Chandelier variants;
+    /// <param name="currentAtr">Current ATR value from IVolatilityContext. Used by Atr/Chandelier variants;
     /// falls back to 2% of watermark when zero (indicator not yet warmed up).</param>
     /// <returns>New stop price if changed, null otherwise.</returns>
     public long? Update(long groupId, Int64Bar bar, long currentAtr = 0)

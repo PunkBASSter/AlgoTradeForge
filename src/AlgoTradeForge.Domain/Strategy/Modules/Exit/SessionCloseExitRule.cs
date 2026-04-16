@@ -11,7 +11,7 @@ public sealed class SessionCloseExitRule(int closeHourUtc) : IExitRule
 {
     public string Name => "SessionClose";
 
-    public int Evaluate(Int64Bar bar, StrategyContext context, OrderGroup group)
+    public int Evaluate(Int64Bar bar, StrategyContextBase context, OrderGroup group)
     {
         var hour = bar.Timestamp.UtcDateTime.Hour;
         return hour == closeHourUtc ? -100 : 0;

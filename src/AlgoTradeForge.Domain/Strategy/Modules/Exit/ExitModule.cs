@@ -9,7 +9,7 @@ public sealed class ExitModule : IStrategyModule
 
     public void AddRule(IExitRule rule) => _rules.Add(rule);
 
-    public int Evaluate(Int64Bar bar, StrategyContext context, OrderGroup group)
+    public int Evaluate(Int64Bar bar, StrategyContextBase context, OrderGroup group)
     {
         if (_rules.Count == 0) return 0;
 

@@ -5,18 +5,14 @@ namespace AlgoTradeForge.Domain.Strategy.Modules.Exit;
 
 /// <summary>
 /// Exits position when pair cointegration breaks.
-/// Reads "crossasset.cointegrated" from context. Returns -100 when false, 0 when true or absent.
+/// Returns -100 when IsCointegrated is false, 0 when true or when context is unavailable.
 /// </summary>
-public sealed class CointegrationBreakExitRule : IExitRule
+public sealed class CointegrationBreakExitRule(ICrossAssetContext crossAssetContext) : IExitRule
 {
     public string Name => "CointegrationBreak";
 
-    public int Evaluate(Int64Bar bar, StrategyContext context, OrderGroup group)
+    public int Evaluate(Int64Bar bar, StrategyContextBase context, OrderGroup group)
     {
-        if (!context.Has("crossasset.cointegrated"))
-            return 0;
-
-        var isCointegrated = context.Get<bool>("crossasset.cointegrated");
-        return isCointegrated ? 0 : -100;
+        return crossAssetContext.IsCointegrated ? 0 : -100;
     }
 }

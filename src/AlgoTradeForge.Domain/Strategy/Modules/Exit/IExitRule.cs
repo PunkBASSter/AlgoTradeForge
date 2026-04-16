@@ -6,5 +6,5 @@ namespace AlgoTradeForge.Domain.Strategy.Modules.Exit;
 public interface IExitRule
 {
     string Name { get; }
-    int Evaluate(Int64Bar bar, StrategyContext context, OrderGroup group);
+    int Evaluate(Int64Bar bar, StrategyContextBase context, OrderGroup group);
 }

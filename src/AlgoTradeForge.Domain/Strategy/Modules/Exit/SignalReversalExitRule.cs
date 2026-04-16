@@ -11,11 +11,11 @@ namespace AlgoTradeForge.Domain.Strategy.Modules.Exit;
 /// Returns -70 when signal reversed, 0 when same direction or no signal.
 /// </summary>
 public sealed class SignalReversalExitRule(
-    Func<Int64Bar, StrategyContext, int> signalEvaluator) : IExitRule
+    Func<Int64Bar, StrategyContextBase, int> signalEvaluator) : IExitRule
 {
     public string Name => "SignalReversal";
 
-    public int Evaluate(Int64Bar bar, StrategyContext context, OrderGroup group)
+    public int Evaluate(Int64Bar bar, StrategyContextBase context, OrderGroup group)
     {
         var signal = signalEvaluator(bar, context);
 

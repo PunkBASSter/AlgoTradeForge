@@ -11,7 +11,7 @@ public sealed class TimeBasedExitRule(int maxHoldBars, long barIntervalMs) : IEx
 {
     public string Name => "TimeBased";
 
-    public int Evaluate(Int64Bar bar, StrategyContext context, OrderGroup group)
+    public int Evaluate(Int64Bar bar, StrategyContextBase context, OrderGroup group)
     {
         var elapsedMs = bar.TimestampMs - group.CreatedAt.ToUnixTimeMilliseconds();
         var barsHeld = elapsedMs / barIntervalMs;

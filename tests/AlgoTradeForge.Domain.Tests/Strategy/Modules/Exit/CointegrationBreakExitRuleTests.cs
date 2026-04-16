@@ -23,36 +23,36 @@ public sealed class CointegrationBreakExitRuleTests
     [Fact]
     public void Name_ReturnsExpectedValue()
     {
-        var rule = new CointegrationBreakExitRule();
+        var ctx = new TestStrategyContext { IsCointegrated = true };
+        var rule = new CointegrationBreakExitRule(ctx);
         Assert.Equal("CointegrationBreak", rule.Name);
     }
 
     [Fact]
     public void Evaluate_CointegratedTrue_ReturnsZero()
     {
-        var context = new StrategyContext();
-        context.Set("crossasset.cointegrated", true);
+        var ctx = new TestStrategyContext { IsCointegrated = true };
+        var rule = new CointegrationBreakExitRule(ctx);
 
-        var rule = new CointegrationBreakExitRule();
-        Assert.Equal(0, rule.Evaluate(DefaultBar, context, CreateGroup()));
+        Assert.Equal(0, rule.Evaluate(DefaultBar, ctx, CreateGroup()));
     }
 
     [Fact]
     public void Evaluate_CointegratedFalse_ReturnsNeg100()
     {
-        var context = new StrategyContext();
-        context.Set("crossasset.cointegrated", false);
+        var ctx = new TestStrategyContext { IsCointegrated = false };
+        var rule = new CointegrationBreakExitRule(ctx);
 
-        var rule = new CointegrationBreakExitRule();
-        Assert.Equal(-100, rule.Evaluate(DefaultBar, context, CreateGroup()));
+        Assert.Equal(-100, rule.Evaluate(DefaultBar, ctx, CreateGroup()));
     }
 
     [Fact]
-    public void Evaluate_NoCointegrationKey_ReturnsZero()
+    public void Evaluate_DefaultCointegration_ReturnsNeg100()
     {
-        var context = new StrategyContext();
+        // Default IsCointegrated is false
+        var ctx = new TestStrategyContext();
+        var rule = new CointegrationBreakExitRule(ctx);
 
-        var rule = new CointegrationBreakExitRule();
-        Assert.Equal(0, rule.Evaluate(DefaultBar, context, CreateGroup()));
+        Assert.Equal(-100, rule.Evaluate(DefaultBar, ctx, CreateGroup()));
     }
 }

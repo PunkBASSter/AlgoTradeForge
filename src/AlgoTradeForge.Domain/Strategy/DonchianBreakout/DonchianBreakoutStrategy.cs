@@ -18,7 +18,7 @@ namespace AlgoTradeForge.Domain.Strategy.DonchianBreakout;
 [StrategyKey("DonchianBreakout")]
 public sealed class DonchianBreakoutStrategy(
     DonchianParams parameters, IIndicatorFactory? indicators = null)
-    : ModularStrategyBase<DonchianParams>(parameters, indicators)
+    : ModularStrategyBase<DonchianParams, DonchianContext>(parameters, indicators)
 {
     public override string Version => "1.0.0";
 
@@ -57,7 +57,7 @@ public sealed class DonchianBreakoutStrategy(
         AddFilter(regimeFilter);
 
         // Exit rules
-        _regimeChangeExit = new RegimeChangeExitRule();
+        _regimeChangeExit = new RegimeChangeExitRule(Context);
         var exitModule = new ExitModule();
         exitModule.AddRule(_regimeChangeExit);
 
@@ -74,10 +74,10 @@ public sealed class DonchianBreakoutStrategy(
     {
         var atrValues = _atr.Buffers["Value"];
         if (atrValues.Count > 0)
-            Context.CurrentAtr = atrValues[^1];
+            Context.Current = atrValues[^1];
     }
 
-    protected override int OnGenerateSignal(Int64Bar bar, StrategyContext context)
+    protected override int OnGenerateSignal(Int64Bar bar, DonchianContext context)
     {
         var upper = _entryChannel.Buffers["Upper"];
         var lower = _entryChannel.Buffers["Lower"];
@@ -99,7 +99,7 @@ public sealed class DonchianBreakoutStrategy(
     }
 
     protected override (long price, OrderType type) OnGetEntryPrice(
-        Int64Bar bar, OrderSide direction, StrategyContext context)
+        Int64Bar bar, OrderSide direction, DonchianContext context)
     {
         var upper = _entryChannel.Buffers["Upper"];
         var lower = _entryChannel.Buffers["Lower"];
@@ -111,9 +111,9 @@ public sealed class DonchianBreakoutStrategy(
     }
 
     protected override (long stopLoss, TpLevel[] takeProfits) OnGetRiskLevels(
-        Int64Bar bar, OrderSide direction, long entryPrice, StrategyContext context)
+        Int64Bar bar, OrderSide direction, long entryPrice, DonchianContext context)
     {
-        var atr = context.CurrentAtr;
+        var atr = context.Current;
         if (atr == 0) atr = bar.Close / 50;
 
         var distance = (long)(Params.AtrStopMultiplier * atr);

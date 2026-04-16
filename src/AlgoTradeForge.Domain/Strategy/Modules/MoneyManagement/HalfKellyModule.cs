@@ -7,7 +7,7 @@ public sealed class HalfKellyModule(HalfKellyParams parameters)
     : MoneyManagementModuleBase, IStrategyModule<HalfKellyParams>
 {
     protected override decimal CalculateRawQuantity(
-        long equity, long entryPrice, long stopLoss, long riskDistance, StrategyContext context)
+        long equity, long entryPrice, long stopLoss, long riskDistance, StrategyContextBase context)
     {
         if (entryPrice <= 0) return 0m;
 

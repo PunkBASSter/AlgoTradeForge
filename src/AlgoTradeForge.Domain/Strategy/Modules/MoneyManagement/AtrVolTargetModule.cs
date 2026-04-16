@@ -7,9 +7,12 @@ public sealed class AtrVolTargetModule(AtrVolTargetParams parameters)
     : MoneyManagementModuleBase, IStrategyModule<AtrVolTargetParams>
 {
     protected override decimal CalculateRawQuantity(
-        long equity, long entryPrice, long stopLoss, long riskDistance, StrategyContext context)
+        long equity, long entryPrice, long stopLoss, long riskDistance, StrategyContextBase context)
     {
-        var atr = context.CurrentAtr;
+        if (context is not IVolatilityContext vol)
+            return 0m;
+
+        var atr = vol.Current;
         if (atr <= 0) return 0m;
 
         // qty = (equity * volTarget) / ATR

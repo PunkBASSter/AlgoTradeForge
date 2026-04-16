@@ -12,7 +12,7 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules.Exit;
 public sealed class ExitModuleTests
 {
     private static readonly Int64Bar DefaultBar = TestBars.Flat();
-    private static readonly StrategyContext DefaultContext = new();
+    private static readonly StrategyContextBase DefaultContext = new();
 
     private static OrderGroup CreateOrderGroup() => new()
     {
@@ -25,7 +25,7 @@ public sealed class ExitModuleTests
     private static IExitRule CreateRule(int score)
     {
         var rule = Substitute.For<IExitRule>();
-        rule.Evaluate(Arg.Any<Int64Bar>(), Arg.Any<StrategyContext>(), Arg.Any<OrderGroup>())
+        rule.Evaluate(Arg.Any<Int64Bar>(), Arg.Any<StrategyContextBase>(), Arg.Any<OrderGroup>())
             .Returns(score);
         return rule;
     }

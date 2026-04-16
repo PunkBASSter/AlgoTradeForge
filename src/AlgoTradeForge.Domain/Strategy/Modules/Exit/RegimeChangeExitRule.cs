@@ -9,7 +9,7 @@ namespace AlgoTradeForge.Domain.Strategy.Modules.Exit;
 /// Returns -80 when regime changed, 0 when same or when either regime is Unknown.
 /// Tracks per-group entry regimes.
 /// </summary>
-public sealed class RegimeChangeExitRule : IExitRule
+public sealed class RegimeChangeExitRule(IRegimeContext regimeContext) : IExitRule
 {
     private readonly Dictionary<long, MarketRegime> _entryRegimes = [];
 
@@ -47,14 +47,14 @@ public sealed class RegimeChangeExitRule : IExitRule
             _entryRegimes.Remove(id);
     }
 
-    public int Evaluate(Int64Bar bar, StrategyContext context, OrderGroup group)
+    public int Evaluate(Int64Bar bar, StrategyContextBase context, OrderGroup group)
     {
         if (!_entryRegimes.TryGetValue(group.GroupId, out var entryRegime))
             return 0;
 
-        if (entryRegime == MarketRegime.Unknown || context.CurrentRegime == MarketRegime.Unknown)
+        if (entryRegime == MarketRegime.Unknown || regimeContext.CurrentRegime == MarketRegime.Unknown)
             return 0;
 
-        return context.CurrentRegime != entryRegime ? -80 : 0;
+        return regimeContext.CurrentRegime != entryRegime ? -80 : 0;
     }
 }

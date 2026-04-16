@@ -196,7 +196,7 @@ public sealed class ModularStrategyParamsOptimizationTests
         s2.OnInit();
 
         // Access context via reflection
-        var ctxProp = typeof(ModularStrategyBase<Rsi2Params>)
+        var ctxProp = typeof(ModularStrategyBase<Rsi2Params, Rsi2Context>)
             .GetProperty("Context", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         var ctx1 = ctxProp.GetValue(s1);

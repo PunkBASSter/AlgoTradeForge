@@ -18,7 +18,7 @@ namespace AlgoTradeForge.Domain.Strategy.PairsTrading;
 [StrategyKey("PairsTrading")]
 public sealed class PairsTradingStrategy(
     PairsTradingParams parameters, IIndicatorFactory? indicators = null)
-    : ModularStrategyBase<PairsTradingParams>(parameters, indicators)
+    : ModularStrategyBase<PairsTradingParams, PairsTradingContext>(parameters, indicators)
 {
     public override string Version => "1.0.0";
 
@@ -43,7 +43,7 @@ public sealed class PairsTradingStrategy(
 
         // Exit rules
         var exitModule = new ExitModule();
-        exitModule.AddRule(new CointegrationBreakExitRule());
+        exitModule.AddRule(new CointegrationBreakExitRule(Context));
         SetExit(exitModule);
     }
 
@@ -57,33 +57,31 @@ public sealed class PairsTradingStrategy(
         {
             var atrValues = _atr.Buffers["Value"];
             if (atrValues.Count > 0)
-                Context.CurrentAtr = atrValues[^1];
+                Context.Current = atrValues[^1];
         }
     }
 
-    protected override int OnGenerateSignal(Int64Bar bar, StrategyContext context)
+    protected override int OnGenerateSignal(Int64Bar bar, PairsTradingContext context)
     {
-        if (!context.Has("crossasset.zscore"))
+        if (context.ZScore == 0)
             return 0;
 
-        var zScore = context.Get<double>("crossasset.zscore");
-
         // Z-score > entry threshold → spread too wide → sell spread (sell A, buy B)
-        if (zScore > Params.CrossAsset.ZScoreEntryThreshold)
+        if (context.ZScore > Params.CrossAsset.ZScoreEntryThreshold)
             return -80; // Sell
 
         // Z-score < -entry threshold → spread too narrow → buy spread (buy A, sell B)
-        if (zScore < -Params.CrossAsset.ZScoreEntryThreshold)
+        if (context.ZScore < -Params.CrossAsset.ZScoreEntryThreshold)
             return 80;  // Buy
 
         return 0;
     }
 
     protected override (long stopLoss, TpLevel[] takeProfits) OnGetRiskLevels(
-        Int64Bar bar, OrderSide direction, long entryPrice, StrategyContext context)
+        Int64Bar bar, OrderSide direction, long entryPrice, PairsTradingContext context)
     {
         // SL at 3x ATR from entry (extreme z-score protection)
-        var atr = context.CurrentAtr;
+        var atr = context.Current;
         if (atr == 0) atr = bar.Close / 50;
         var distance = (long)(3.0 * atr);
 
@@ -95,21 +93,20 @@ public sealed class PairsTradingStrategy(
     }
 
     protected override int OnEvaluateExit(
-        Int64Bar bar, StrategyContext context, OrderGroup group)
+        Int64Bar bar, PairsTradingContext context, OrderGroup group)
     {
         // Z-score reversion: exit when z-score reverts past exit threshold
-        if (!context.Has("crossasset.zscore"))
+        if (context.ZScore == 0)
             return 0;
 
-        var zScore = context.Get<double>("crossasset.zscore");
         var exitThreshold = Params.CrossAsset.ZScoreExitThreshold;
 
         // If we're long (bought when z < -entry), exit when z reverts above -exit
-        if (group.EntrySide == OrderSide.Buy && zScore > -exitThreshold)
+        if (group.EntrySide == OrderSide.Buy && context.ZScore > -exitThreshold)
             return -60;
 
         // If we're short (sold when z > entry), exit when z reverts below exit
-        if (group.EntrySide == OrderSide.Sell && zScore < exitThreshold)
+        if (group.EntrySide == OrderSide.Sell && context.ZScore < exitThreshold)
             return -60;
 
         return 0;
@@ -118,7 +115,7 @@ public sealed class PairsTradingStrategy(
     protected override void OnExecuteEntry(
         Asset asset, OrderSide direction, OrderType orderType, long entryPrice,
         long stopLoss, TpLevel[] takeProfits, decimal quantity,
-        StrategyContext context, IOrderContext orders)
+        PairsTradingContext context, IOrderContext orders)
     {
         // Submit primary leg via trade registry
         var registry = ((ITradeRegistryProvider)this).TradeRegistry;

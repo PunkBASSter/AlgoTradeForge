@@ -10,7 +10,7 @@ namespace AlgoTradeForge.Domain.Strategy.Rsi2MeanReversion;
 [StrategyKey("RSI2-MeanReversion")]
 public sealed class Rsi2MeanReversionStrategy(
     Rsi2Params parameters, IIndicatorFactory? indicators = null)
-    : ModularStrategyBase<Rsi2Params>(parameters, indicators)
+    : ModularStrategyBase<Rsi2Params, Rsi2Context>(parameters, indicators)
 {
     public override string Version => "1.0.0";
 
@@ -41,10 +41,10 @@ public sealed class Rsi2MeanReversionStrategy(
     {
         var atrValues = _atr.Buffers["Value"];
         if (atrValues.Count > 0)
-            Context.CurrentAtr = atrValues[^1];
+            Context.Current = atrValues[^1];
     }
 
-    protected override int OnGenerateSignal(Int64Bar bar, StrategyContext context)
+    protected override int OnGenerateSignal(Int64Bar bar, Rsi2Context context)
     {
         var rsiValues = _rsi.Buffers["Value"];
         var smaValues = _trendFilter.Buffers["Value"];

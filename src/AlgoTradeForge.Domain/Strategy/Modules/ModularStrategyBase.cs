@@ -10,9 +10,10 @@ using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Strategy.Modules;
 
-public abstract class ModularStrategyBase<TParams>(TParams parameters, IIndicatorFactory? indicators = null)
+public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters, IIndicatorFactory? indicators = null)
     : StrategyBase<TParams>(parameters, indicators), ITradeRegistryProvider
     where TParams : ModularStrategyParamsBase
+    where TContext : StrategyContextBase, new()
 {
     private readonly List<IFilterModule> _filters = [];
     private readonly List<IIndicator<Int64Bar, long>> _longIndicators = [];
@@ -24,7 +25,7 @@ public abstract class ModularStrategyBase<TParams>(TParams parameters, IIndicato
     private TrailingStopModule? _trailingStop;
     private RegimeDetectorModule? _regimeDetector;
 
-    protected StrategyContext Context { get; private set; } = null!;
+    protected TContext Context { get; private set; } = null!;
 
     protected void RegisterIndicator(IIndicator<Int64Bar, long> indicator) =>
         _longIndicators.Add(indicator);
@@ -39,13 +40,20 @@ public abstract class ModularStrategyBase<TParams>(TParams parameters, IIndicato
     protected void AddFilter(IFilterModule filter) => _filters.Add(filter);
     protected void SetExit(ExitModule exit) => _exit = exit;
     protected void SetTrailingStop(TrailingStopModule stop) => _trailingStop = stop;
-    protected void SetRegimeDetector(RegimeDetectorModule detector) => _regimeDetector = detector;
+
+    protected void SetRegimeDetector(RegimeDetectorModule detector)
+    {
+        if (Context is not IRegimeContext)
+            throw new InvalidOperationException(
+                $"Cannot use RegimeDetectorModule: {typeof(TContext).Name} does not implement IRegimeContext");
+        _regimeDetector = detector;
+    }
 
     // ── Lifecycle: sealed orchestration ──
 
     public sealed override void OnInit()
     {
-        Context = new StrategyContext();
+        Context = new TContext();
         _tradeRegistry = new TradeRegistryModule(Params.TradeRegistry);
         _moneyManagement = Params.MoneyManagement;
 
@@ -80,7 +88,10 @@ public abstract class ModularStrategyBase<TParams>(TParams parameters, IIndicato
             filter.Update(history);
 
         Context.Update(bar, subscription, orders);
-        _regimeDetector?.Update(bar, Context);
+
+        if (_regimeDetector is not null && Context is IRegimeContext regimeCtx)
+            _regimeDetector.Update(bar, regimeCtx);
+
         OnContextUpdated(bar, subscription);
 
         // Phases 2-3 only on primary subscription
@@ -120,7 +131,8 @@ public abstract class ModularStrategyBase<TParams>(TParams parameters, IIndicato
         long? newStop = null;
         if (_trailingStop is not null)
         {
-            newStop = _trailingStop.Update(group.GroupId, bar, Context.CurrentAtr);
+            var atr = Context is IVolatilityContext vol ? vol.Current : 0L;
+            newStop = _trailingStop.Update(group.GroupId, bar, atr);
         }
 
         // 2b: Evaluate exit rules
@@ -237,18 +249,18 @@ public abstract class ModularStrategyBase<TParams>(TParams parameters, IIndicato
     /// Magnitude indicates conviction (e.g., +80 = Buy strength 80, -80 = Sell strength 80).
     /// Compared against <c>Params.SignalThreshold</c> via absolute value.
     /// </summary>
-    protected abstract int OnGenerateSignal(Int64Bar bar, StrategyContext context);
+    protected abstract int OnGenerateSignal(Int64Bar bar, TContext context);
 
     // ── Virtual: override to customize, defaults handle common cases ──
 
     protected virtual (long price, OrderType type) OnGetEntryPrice(
-        Int64Bar bar, OrderSide direction, StrategyContext context)
+        Int64Bar bar, OrderSide direction, TContext context)
         => (0, OrderType.Market);
 
     protected virtual (long stopLoss, TpLevel[] takeProfits) OnGetRiskLevels(
-        Int64Bar bar, OrderSide direction, long entryPrice, StrategyContext context)
+        Int64Bar bar, OrderSide direction, long entryPrice, TContext context)
     {
-        var atr = context.CurrentAtr;
+        var atr = context is IVolatilityContext vol ? vol.Current : 0L;
         if (atr == 0) atr = bar.Close / 50; // fallback: 2% of price
         var mult = Params.DefaultAtrStopMultiplier;
         var distance = (long)(mult * atr);
@@ -261,7 +273,7 @@ public abstract class ModularStrategyBase<TParams>(TParams parameters, IIndicato
     protected virtual void OnExecuteEntry(
         Asset asset, OrderSide direction, OrderType orderType, long entryPrice,
         long stopLoss, TpLevel[] takeProfits, decimal quantity,
-        StrategyContext context, IOrderContext orders)
+        TContext context, IOrderContext orders)
     {
         _tradeRegistry.OpenGroup(
             orders, asset, direction, orderType, quantity, stopLoss,
@@ -271,7 +283,7 @@ public abstract class ModularStrategyBase<TParams>(TParams parameters, IIndicato
     }
 
     protected virtual int OnEvaluateExit(
-        Int64Bar bar, StrategyContext context, OrderGroup group) => 0;
+        Int64Bar bar, TContext context, OrderGroup group) => 0;
 
     protected virtual long OnGetExitPrice(Int64Bar bar, OrderGroup group) => 0;
 

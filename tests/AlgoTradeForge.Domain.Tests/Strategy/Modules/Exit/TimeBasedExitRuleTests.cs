@@ -10,7 +10,7 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules.Exit;
 
 public sealed class TimeBasedExitRuleTests
 {
-    private static readonly StrategyContext DefaultContext = new();
+    private static readonly StrategyContextBase DefaultContext = new();
 
     private static OrderGroup CreateGroup(DateTimeOffset createdAt) => new()
     {

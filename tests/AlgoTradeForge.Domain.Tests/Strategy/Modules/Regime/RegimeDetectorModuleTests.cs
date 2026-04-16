@@ -25,7 +25,7 @@ public sealed class RegimeDetectorModuleTests
     public void Update_BeforeInitialize_SetsUnknown()
     {
         var module = new RegimeDetectorModule(new RegimeDetectorParams());
-        var context = new StrategyContext();
+        var context = new TestStrategyContext();
         var bar = TestBars.Flat();
 
         module.Update(bar, context);
@@ -60,7 +60,7 @@ public sealed class RegimeDetectorModuleTests
         if (adx is not null)
         {
             adx.Compute(bars);
-            var context = new StrategyContext();
+            var context = new TestStrategyContext();
             module.Update(bars[^1], context);
 
             // ADX from a strong trend should be high
@@ -99,7 +99,7 @@ public sealed class RegimeDetectorModuleTests
         if (adx is not null)
         {
             adx.Compute(bars);
-            var context = new StrategyContext();
+            var context = new TestStrategyContext();
             module.Update(bars[^1], context);
 
             var adxValue = adx.Buffers["Value"][^1];
@@ -136,7 +136,7 @@ public sealed class RegimeDetectorModuleTests
         if (adx is not null)
         {
             adx.Compute(bars);
-            var context = new StrategyContext();
+            var context = new TestStrategyContext();
             module.Update(bars[^1], context);
 
             Assert.Equal(MarketRegime.Unknown, context.CurrentRegime);

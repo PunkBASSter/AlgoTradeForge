@@ -7,7 +7,7 @@ namespace AlgoTradeForge.Domain.Strategy.Modules.MoneyManagement;
 /// </summary>
 public abstract class MoneyManagementModuleBase : IMoneyManagementModule
 {
-    public decimal CalculateSize(long entryPrice, long stopLoss, StrategyContext context, Asset asset)
+    public decimal CalculateSize(long entryPrice, long stopLoss, StrategyContextBase context, Asset asset)
     {
         if (entryPrice == 0 || stopLoss == 0) return 0m;
 
@@ -32,5 +32,5 @@ public abstract class MoneyManagementModuleBase : IMoneyManagementModule
     /// Called only when equity > 0, riskDistance > 0, and both prices are non-zero.
     /// </summary>
     protected abstract decimal CalculateRawQuantity(
-        long equity, long entryPrice, long stopLoss, long riskDistance, StrategyContext context);
+        long equity, long entryPrice, long stopLoss, long riskDistance, StrategyContextBase context);
 }

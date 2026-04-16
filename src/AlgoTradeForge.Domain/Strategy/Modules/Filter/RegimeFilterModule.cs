@@ -13,12 +13,12 @@ namespace AlgoTradeForge.Domain.Strategy.Modules.Filter;
 [ModuleKey("filter.regime")]
 public sealed class RegimeFilterModule : IFilterModule
 {
-    private readonly StrategyContext _context;
+    private readonly IRegimeContext _regimeContext;
     private readonly HashSet<MarketRegime> _allowedRegimes;
 
-    public RegimeFilterModule(StrategyContext context, params MarketRegime[] allowedRegimes)
+    public RegimeFilterModule(IRegimeContext regimeContext, params MarketRegime[] allowedRegimes)
     {
-        _context = context;
+        _regimeContext = regimeContext;
         _allowedRegimes = new HashSet<MarketRegime>(allowedRegimes);
     }
 
@@ -29,9 +29,9 @@ public sealed class RegimeFilterModule : IFilterModule
 
     public int Evaluate(Int64Bar bar, OrderSide proposedSide)
     {
-        if (_context.CurrentRegime == MarketRegime.Unknown)
+        if (_regimeContext.CurrentRegime == MarketRegime.Unknown)
             return 0;
 
-        return _allowedRegimes.Contains(_context.CurrentRegime) ? 100 : -100;
+        return _allowedRegimes.Contains(_regimeContext.CurrentRegime) ? 100 : -100;
     }
 }

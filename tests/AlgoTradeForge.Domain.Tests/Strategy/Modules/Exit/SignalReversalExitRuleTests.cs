@@ -10,7 +10,7 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules.Exit;
 
 public sealed class SignalReversalExitRuleTests
 {
-    private static readonly StrategyContext DefaultContext = new();
+    private static readonly StrategyContextBase DefaultContext = new();
     private static readonly Int64Bar DefaultBar = TestBars.Flat();
 
     private static OrderGroup CreateGroup(OrderSide side) => new()
@@ -82,7 +82,7 @@ public sealed class SignalReversalExitRuleTests
     public void Evaluate_DelegateReceivesBarAndContext()
     {
         Int64Bar? capturedBar = null;
-        StrategyContext? capturedCtx = null;
+        StrategyContextBase? capturedCtx = null;
 
         var rule = new SignalReversalExitRule((bar, ctx) =>
         {
