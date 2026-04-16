@@ -55,7 +55,7 @@ public sealed class PairsTradingStrategy(
         }
     }
 
-    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub, IOrderContext orders)
+    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub)
     {
         if (!ReferenceEquals(Context.CurrentSubscription, DataSubscriptions[0]))
             return;
@@ -86,7 +86,7 @@ public sealed class PairsTradingStrategy(
             return;
 
         CreateEntryGroup(sub.Asset, direction, orderType, entryPrice,
-            stopLoss, takeProfits, quantity, Context, orders);
+            stopLoss, takeProfits, quantity, Context);
 
         EmitSignal(bar.Timestamp, "Entry", sub.Asset.Name,
             direction.ToString(), signalStrength,
@@ -125,7 +125,7 @@ public sealed class PairsTradingStrategy(
     }
 
     protected override void ManagePositions(
-        TradeRegistryModule tradeRegistry, PairsTradingContext context, IOrderContext orders)
+        TradeRegistryModule tradeRegistry, PairsTradingContext context)
     {
         if (!ReferenceEquals(context.CurrentSubscription, DataSubscriptions[0]))
             return;
@@ -137,7 +137,7 @@ public sealed class PairsTradingStrategy(
             // Cointegration break → immediate exit
             if (!context.IsCointegrated)
             {
-                tradeRegistry.LiquidateGroup(group.GroupId, orders);
+                tradeRegistry.LiquidateGroup(group.GroupId);
                 EmitSignal(bar.Timestamp, "Exit", context.CurrentSubscription.Asset.Name,
                     "Close", -100, "exit_score=-100 (cointegration break)");
                 continue;
@@ -153,7 +153,7 @@ public sealed class PairsTradingStrategy(
 
             if (shouldExit)
             {
-                tradeRegistry.LiquidateGroup(group.GroupId, orders);
+                tradeRegistry.LiquidateGroup(group.GroupId);
                 EmitSignal(bar.Timestamp, "Exit", context.CurrentSubscription.Asset.Name,
                     "Close", -60, "exit_score=-60 (z-score reversion)");
             }
@@ -163,12 +163,12 @@ public sealed class PairsTradingStrategy(
     protected override void CreateEntryGroup(
         Asset asset, OrderSide direction, OrderType orderType, long entryPrice,
         long stopLoss, TpLevel[] takeProfits, decimal quantity,
-        PairsTradingContext context, IOrderContext orders)
+        PairsTradingContext context)
     {
         // Submit primary leg via trade registry
         var registry = ((ITradeRegistryProvider)this).TradeRegistry;
         registry.OpenGroup(
-            orders, asset, direction, orderType, quantity, stopLoss, takeProfits,
+            asset, direction, orderType, quantity, stopLoss, takeProfits,
             entryLimitPrice: orderType == OrderType.Limit ? entryPrice : null,
             entryStopPrice: orderType == OrderType.Stop ? entryPrice : null,
             tag: "pairs-primary");

@@ -34,6 +34,7 @@ public sealed class TradeRegistryTestStrategy(TradeRegistryTestParams p)
 
     public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
     {
+        base.OnBarComplete(bar, subscription, orders);
         NextBarTcs.TrySetResult(bar);
 
         var action = Interlocked.Exchange(ref OnNextBar, null);
@@ -208,7 +209,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         _strategyA.OnNextBar = orders =>
         {
             registryA.OpenGroup(
-                orders, _asset!, OrderSide.Buy, OrderType.Market,
+                _asset!, OrderSide.Buy, OrderType.Market,
                 quantity: MinQty, slPrice: slPriceA,
                 tpLevels: [new TpLevel { Price = tpPriceA, ClosurePercentage = 1.0m }]);
         };
@@ -224,7 +225,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         _strategyB.OnNextBar = orders =>
         {
             registryB.OpenGroup(
-                orders, _asset!, OrderSide.Buy, OrderType.Market,
+                _asset!, OrderSide.Buy, OrderType.Market,
                 quantity: MinQty, slPrice: slPriceB,
                 tpLevels: [new TpLevel { Price = tpPriceB, ClosurePercentage = 1.0m }]);
         };

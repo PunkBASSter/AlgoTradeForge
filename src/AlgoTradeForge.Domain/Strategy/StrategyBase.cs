@@ -10,7 +10,7 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
     : IInt64BarStrategy, IEventBusReceiver, IFeedContextReceiver, ITradeRegistryProvider
     where TParams : StrategyParamsBase
 {
-    private TradeRegistryModule _tradeRegistry = new(parameters.TradeRegistry);
+    private readonly TradeRegistryModule _tradeRegistry = new(parameters.TradeRegistry);
 
     public abstract string Version { get; }
 
@@ -24,13 +24,21 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
 
     protected TradeRegistryModule TradeRegistry => _tradeRegistry;
 
+    protected IOrderContext Orders { get; private set; } = null!;
+
     TradeRegistryModule ITradeRegistryProvider.TradeRegistry => _tradeRegistry;
 
     public IList<DataSubscription> DataSubscriptions => Params.DataSubscriptions;
 
-    public virtual void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders) { }
+    public virtual void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+    {
+        ScopeOrderContext(orders);
+    }
 
-    public virtual void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders) { }
+    public virtual void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+    {
+        ScopeOrderContext(orders);
+    }
 
     public virtual void OnInit()
     {
@@ -40,7 +48,8 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
 
     public virtual void OnTrade(Fill fill, Order order, IOrderContext orders)
     {
-        _tradeRegistry.OnFill(fill, order, orders);
+        ScopeOrderContext(orders);
+        _tradeRegistry.OnFill(fill, order);
     }
 
     protected void EmitSignal(DateTimeOffset timestamp, string signalName, string assetName,
@@ -49,6 +58,12 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
         EventBus.Emit(new SignalEvent(
             timestamp, GetType().Name,
             signalName, assetName, direction, strength, reason));
+    }
+
+    private void ScopeOrderContext(IOrderContext orders)
+    {
+        Orders = orders;
+        _tradeRegistry.SetOrderContext(orders);
     }
 
     void IEventBusReceiver.SetEventBus(IEventBus bus) => EventBus = bus;

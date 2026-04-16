@@ -46,7 +46,7 @@ public sealed class Rsi2MeanReversionStrategy(
             Context.Current = atrValues[^1];
     }
 
-    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub, IOrderContext orders)
+    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub)
     {
         var signalStrength = GenerateSignal(bar, Context);
         if (signalStrength == 0)
@@ -74,7 +74,7 @@ public sealed class Rsi2MeanReversionStrategy(
             return;
 
         CreateEntryGroup(sub.Asset, direction, orderType, entryPrice,
-            stopLoss, takeProfits, quantity, Context, orders);
+            stopLoss, takeProfits, quantity, Context);
 
         EmitSignal(bar.Timestamp, "Entry", sub.Asset.Name,
             direction.ToString(), signalStrength,

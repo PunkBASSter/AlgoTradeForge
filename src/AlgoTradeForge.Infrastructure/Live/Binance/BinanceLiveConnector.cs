@@ -371,8 +371,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
                             var repairTcs = new TaskCompletionSource();
                             entry.EventQueue.Writer.TryWrite(() =>
                             {
+                                provider.TradeRegistry.SetOrderContext(entry.OrderContext);
                                 foreach (var (groupId, missingIds) in result.MissingByGroup)
-                                    provider.TradeRegistry.RepairGroup(groupId, missingIds, entry.OrderContext);
+                                    provider.TradeRegistry.RepairGroup(groupId, missingIds);
                                 repairTcs.SetResult();
                             });
                             await repairTcs.Task;

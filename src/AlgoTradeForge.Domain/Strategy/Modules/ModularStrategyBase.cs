@@ -37,6 +37,8 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
 
     public sealed override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
     {
+        base.OnBarComplete(bar, subscription, orders);
+
         // ── PHASE 1: UPDATE CONTEXT ──
         // Track bar history and compute indicators
         var subIndex = DataSubscriptions.IndexOf(subscription);
@@ -53,18 +55,18 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         foreach (var ind in _doubleIndicators)
             ind.Compute(history);
 
-        Context.Update(bar, subscription, orders);
+        Context.Update(bar, subscription, Orders);
 
         OnContextUpdated(bar, subscription);
 
         // ── PHASE 2: MANAGE POSITIONS ──
-        ManagePositions(TradeRegistry, Context, orders);
+        ManagePositions(TradeRegistry, Context);
 
         // ── PHASE 3: EVALUATE ENTRY ──
         if (TradeRegistry.ActiveGroupCount < (Params.TradeRegistry.MaxConcurrentGroups == 0
                 ? int.MaxValue : Params.TradeRegistry.MaxConcurrentGroups))
         {
-            EvaluateEntry(bar, subscription, orders);
+            EvaluateEntry(bar, subscription);
         }
     }
 
@@ -81,9 +83,9 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     protected virtual void OnOrderFilled(Fill fill, Order order) { }
 
     protected virtual void ManagePositions(
-        TradeRegistryModule tradeRegistry, TContext context, IOrderContext orders) { }
+        TradeRegistryModule tradeRegistry, TContext context) { }
 
-    protected virtual void EvaluateEntry(Int64Bar bar, DataSubscription sub, IOrderContext orders) { }
+    protected virtual void EvaluateEntry(Int64Bar bar, DataSubscription sub) { }
 
     // ── Entry pipeline hooks (used by strategies that override EvaluateEntry) ──
 
@@ -97,10 +99,10 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     protected virtual void CreateEntryGroup(
         Asset asset, OrderSide direction, OrderType orderType, long entryPrice,
         long stopLoss, TpLevel[] takeProfits, decimal quantity,
-        TContext context, IOrderContext orders)
+        TContext context)
     {
         TradeRegistry.OpenGroup(
-            orders, asset, direction, orderType, quantity, stopLoss,
+            asset, direction, orderType, quantity, stopLoss,
             takeProfits,
             entryLimitPrice: orderType == OrderType.Limit ? entryPrice : null,
             entryStopPrice: orderType == OrderType.Stop ? entryPrice : null);

@@ -27,6 +27,7 @@ internal sealed class TestnetE2EStrategy(TestnetE2EStrategyParams p)
 
     public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
     {
+        base.OnBarComplete(bar, subscription, orders);
         var assetName = subscription.Asset.Name;
         BarsReceived.Add((assetName, bar));
         _assetsSeen.TryAdd(assetName, true);

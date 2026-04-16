@@ -317,6 +317,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
         {
+            base.OnBarComplete(bar, subscription, orders);
             _barHistory.Add(bar);
             _dzz.Compute(_barHistory);
         }

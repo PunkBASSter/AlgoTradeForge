@@ -100,8 +100,9 @@ public sealed class OrderGroupReconciler(IExchangeOrderClient orderClient, ILogg
         var expected = registry.GetExpectedOrders();
         var result = await DetectAsync(symbol, expected, resolveExchangeId, knownPendingIds: null, ct);
 
+        registry.SetOrderContext(orders);
         foreach (var (groupId, missingIds) in result.MissingByGroup)
-            registry.RepairGroup(groupId, missingIds, orders);
+            registry.RepairGroup(groupId, missingIds);
 
         if (result.OrphanIds.Count > 0)
             await CancelOrphansAsync(symbol, result.OrphanIds, ct);

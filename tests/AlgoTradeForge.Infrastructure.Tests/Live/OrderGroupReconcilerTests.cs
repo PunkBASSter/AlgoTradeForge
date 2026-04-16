@@ -52,13 +52,15 @@ public class OrderGroupReconcilerTests
 
     private static OrderGroup SetupActiveGroup(TradeRegistryModule module, IOrderContext ctx)
     {
+        module.SetOrderContext(ctx);
+
         var group = module.OpenGroup(
-            ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+            TestAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         return group;
     }

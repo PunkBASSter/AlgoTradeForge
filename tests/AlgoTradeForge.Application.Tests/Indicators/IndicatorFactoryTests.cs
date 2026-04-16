@@ -332,6 +332,7 @@ public class IndicatorFactoryTests
 
         public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
         {
+            base.OnBarComplete(bar, subscription, orders);
             if (subscription == DataSubscriptions[0])
             {
                 _m1History.Add(bar);

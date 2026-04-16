@@ -56,12 +56,14 @@ public class TradeRegistryIntegrationTests
         public void OnTrade(Fill fill, Order order, IOrderContext orders)
         {
             _simulationTime = fill.Timestamp;
-            _registry.OnFill(fill, order, orders);
+            _registry.SetOrderContext(orders);
+            _registry.OnFill(fill, order);
         }
 
         public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
         {
             _simulationTime = DateTimeOffset.FromUnixTimeMilliseconds(bar.TimestampMs);
+            _registry.SetOrderContext(orders);
             _onBar?.Invoke(bar, subscription, orders, _registry, _barIndex);
             _barIndex++;
         }
@@ -81,7 +83,7 @@ public class TradeRegistryIntegrationTests
             if (i == 0)
             {
                 // Bar 0: place market buy entry with SL at 14800 and TP at 16000
-                group = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                group = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 10m, slPrice: 14800,
                     tpLevels: [new TpLevel { Price = 16000, ClosurePercentage = 1.0m }]);
             }
@@ -118,7 +120,7 @@ public class TradeRegistryIntegrationTests
         {
             if (i == 0)
             {
-                group = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                group = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 10m, slPrice: 14000,
                     tpLevels: [new TpLevel { Price = 15500, ClosurePercentage = 1.0m }]);
             }
@@ -160,7 +162,7 @@ public class TradeRegistryIntegrationTests
         {
             if (i == 0)
             {
-                group = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                group = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 10m, slPrice: 14000,
                     tpLevels: [new TpLevel { Price = 16000, ClosurePercentage = 1.0m }]);
             }
@@ -196,7 +198,7 @@ public class TradeRegistryIntegrationTests
         {
             if (i == 0)
             {
-                group = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                group = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 10m, slPrice: 14000,
                     tpLevels:
                     [
@@ -239,12 +241,12 @@ public class TradeRegistryIntegrationTests
             if (i == 0)
             {
                 // Group 1: Buy, SL=14000, TP=16000
-                group1 = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                group1 = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 5m, slPrice: 14000,
                     tpLevels: [new TpLevel { Price = 16000, ClosurePercentage = 1.0m }]);
 
                 // Group 2: Buy, SL=14500, TP=15500
-                group2 = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                group2 = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 5m, slPrice: 14500,
                     tpLevels: [new TpLevel { Price = 15500, ClosurePercentage = 1.0m }]);
             }
@@ -280,7 +282,7 @@ public class TradeRegistryIntegrationTests
         {
             if (i == 0)
             {
-                group = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                group = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 10m, slPrice: 14500,
                     tpLevels: [new TpLevel { Price = 20000, ClosurePercentage = 1.0m }]);
             }
@@ -292,7 +294,7 @@ public class TradeRegistryIntegrationTests
                     highestClose = bar.Close;
                     var newSl = bar.Close - 500;
                     if (newSl > group.SlPrice)
-                        reg.UpdateStopLoss(group.GroupId, newSl, ctx);
+                        reg.UpdateStopLoss(group.GroupId, newSl);
                 }
             }
         })
@@ -330,7 +332,7 @@ public class TradeRegistryIntegrationTests
         {
             if (i == 0)
             {
-                reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 10m, slPrice: 14000,
                     tpLevels: [new TpLevel { Price = 15500, ClosurePercentage = 1.0m }],
                     tag: "test-tag");
@@ -370,7 +372,7 @@ public class TradeRegistryIntegrationTests
         {
             if (i == 0)
             {
-                group = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                group = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 10m, slPrice: 14800,
                     tpLevels:
                     [
@@ -412,13 +414,13 @@ public class TradeRegistryIntegrationTests
             if (i == 0)
             {
                 // Group A: Buy Limit at 14800, SL=14000, TP=16000
-                groupA = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Limit,
+                groupA = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Limit,
                     quantity: 10m, slPrice: 14000,
                     tpLevels: [new TpLevel { Price = 16000, ClosurePercentage = 1.0m }],
                     entryLimitPrice: 14800);
 
                 // Group B: Buy Limit at 14500, SL=13500, TP=16000
-                groupB = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Limit,
+                groupB = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Limit,
                     quantity: 10m, slPrice: 13500,
                     tpLevels: [new TpLevel { Price = 16000, ClosurePercentage = 1.0m }],
                     entryLimitPrice: 14500);
@@ -457,12 +459,12 @@ public class TradeRegistryIntegrationTests
             if (i == 0)
             {
                 // Group A: Buy, SL=14500, TP=16000, qty=5
-                groupA = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                groupA = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 5m, slPrice: 14500,
                     tpLevels: [new TpLevel { Price = 16000, ClosurePercentage = 1.0m }]);
 
                 // Group B: Buy, SL=14000, TP=15500, qty=5
-                groupB = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                groupB = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 5m, slPrice: 14000,
                     tpLevels: [new TpLevel { Price = 15500, ClosurePercentage = 1.0m }]);
             }
@@ -507,14 +509,14 @@ public class TradeRegistryIntegrationTests
         {
             if (i == 0)
             {
-                group = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                group = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 10m, slPrice: 14000,
                     tpLevels: [new TpLevel { Price = 20000, ClosurePercentage = 1.0m }]);
             }
             else if (i == 2 && group is { Status: OrderGroupStatus.ProtectionActive })
             {
                 // Strategy decides to liquidate on bar 2
-                reg.LiquidateGroup(group.GroupId, ctx);
+                reg.LiquidateGroup(group.GroupId);
             }
         })
         { DataSubscriptions = [sub] };
@@ -553,19 +555,19 @@ public class TradeRegistryIntegrationTests
             if (i == 0)
             {
                 // Group A: Buy, SL=14000, TP=20000 (wide TP — will be liquidated)
-                groupA = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                groupA = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 5m, slPrice: 14000,
                     tpLevels: [new TpLevel { Price = 20000, ClosurePercentage = 1.0m }]);
 
                 // Group B: Buy, SL=14000, TP=15500 (will reach TP naturally)
-                groupB = reg.OpenGroup(ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+                groupB = reg.OpenGroup(TestAsset, OrderSide.Buy, OrderType.Market,
                     quantity: 5m, slPrice: 14000,
                     tpLevels: [new TpLevel { Price = 15500, ClosurePercentage = 1.0m }]);
             }
             else if (i == 2 && groupA is { Status: OrderGroupStatus.ProtectionActive })
             {
                 // Strategy liquidates A on bar 2
-                reg.LiquidateGroup(groupA.GroupId, ctx);
+                reg.LiquidateGroup(groupA.GroupId);
             }
         })
         { DataSubscriptions = [sub] };

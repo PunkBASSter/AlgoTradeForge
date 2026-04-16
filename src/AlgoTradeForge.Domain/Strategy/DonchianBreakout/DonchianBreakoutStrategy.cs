@@ -71,7 +71,7 @@ public sealed class DonchianBreakoutStrategy(
         _regimeDetector.Update(bar, Context);
     }
 
-    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub, IOrderContext orders)
+    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub)
     {
         var signalStrength = GenerateSignal(bar, Context);
         if (signalStrength == 0)
@@ -99,7 +99,7 @@ public sealed class DonchianBreakoutStrategy(
             return;
 
         CreateEntryGroup(sub.Asset, direction, orderType, entryPrice,
-            stopLoss, takeProfits, quantity, Context, orders);
+            stopLoss, takeProfits, quantity, Context);
 
         EmitSignal(bar.Timestamp, "Entry", sub.Asset.Name,
             direction.ToString(), signalStrength,
@@ -159,7 +159,7 @@ public sealed class DonchianBreakoutStrategy(
     }
 
     protected override void ManagePositions(
-        TradeRegistryModule tradeRegistry, DonchianContext context, IOrderContext orders)
+        TradeRegistryModule tradeRegistry, DonchianContext context)
     {
         foreach (var group in tradeRegistry.ActiveGroups.ToArray())
         {
@@ -176,14 +176,14 @@ public sealed class DonchianBreakoutStrategy(
 
             if (exitSignal <= Params.ExitThreshold)
             {
-                tradeRegistry.LiquidateGroup(group.GroupId, orders);
+                tradeRegistry.LiquidateGroup(group.GroupId);
                 _trailingStopModule.Remove(group.GroupId);
                 EmitSignal(bar.Timestamp, "Exit", context.CurrentSubscription.Asset.Name,
                     "Close", exitSignal, $"exit_score={exitSignal}");
             }
             else if (newStop is not null && newStop.Value != group.SlPrice)
             {
-                tradeRegistry.UpdateStopLoss(group.GroupId, newStop.Value, orders);
+                tradeRegistry.UpdateStopLoss(group.GroupId, newStop.Value);
             }
         }
     }

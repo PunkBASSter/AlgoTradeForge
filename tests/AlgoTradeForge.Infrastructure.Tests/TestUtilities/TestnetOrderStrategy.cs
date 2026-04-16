@@ -24,6 +24,7 @@ public sealed class TestnetOrderStrategy(TestnetOrderStrategyParams p)
 
     public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
     {
+        base.OnBarComplete(bar, subscription, orders);
         ReceivedBars.Add((bar, subscription));
         NextBarTcs.TrySetResult(bar);
 
