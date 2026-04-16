@@ -71,7 +71,42 @@ public sealed class DonchianBreakoutStrategy(
         _regimeDetector.Update(bar, Context);
     }
 
-    protected override int OnGenerateSignal(Int64Bar bar, DonchianContext context)
+    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub, IOrderContext orders)
+    {
+        var signalStrength = GenerateSignal(bar, Context);
+        if (signalStrength == 0)
+            return;
+
+        var direction = signalStrength > 0 ? OrderSide.Buy : OrderSide.Sell;
+
+        var (entryPrice, orderType) = GetEntryPrice(bar, direction, Context);
+        var (stopLoss, takeProfits) = GetRiskLevels(bar, direction, entryPrice, Context);
+
+        if (entryPrice != 0)
+        {
+            if (direction == OrderSide.Buy && stopLoss >= entryPrice) return;
+            if (direction == OrderSide.Sell && stopLoss <= entryPrice) return;
+        }
+        else
+        {
+            if (direction == OrderSide.Buy && stopLoss >= bar.Close) return;
+            if (direction == OrderSide.Sell && stopLoss <= bar.Close) return;
+        }
+
+        var quantity = Params.MoneyManagement.CalculateSize(
+            entryPrice != 0 ? entryPrice : bar.Close, stopLoss, Context, sub.Asset);
+        if (quantity < sub.Asset.MinOrderQuantity)
+            return;
+
+        CreateEntryGroup(sub.Asset, direction, orderType, entryPrice,
+            stopLoss, takeProfits, quantity, Context, orders);
+
+        EmitSignal(bar.Timestamp, "Entry", sub.Asset.Name,
+            direction.ToString(), signalStrength,
+            $"type={orderType}, sl={stopLoss}, qty={quantity}");
+    }
+
+    protected override int GenerateSignal(Int64Bar bar, DonchianContext context)
     {
         // Regime filter: block when explicitly non-trending
         if (context.CurrentRegime == MarketRegime.RangeBound)
@@ -97,7 +132,7 @@ public sealed class DonchianBreakoutStrategy(
         return Math.Abs(signal) >= Params.SignalThreshold ? signal : 0;
     }
 
-    protected override (long price, OrderType type) OnGetEntryPrice(
+    protected override (long price, OrderType type) GetEntryPrice(
         Int64Bar bar, OrderSide direction, DonchianContext context)
     {
         var upper = _entryChannel.Buffers["Upper"];
@@ -109,7 +144,7 @@ public sealed class DonchianBreakoutStrategy(
         return (price, OrderType.Stop);
     }
 
-    protected override (long stopLoss, TpLevel[] takeProfits) OnGetRiskLevels(
+    protected override (long stopLoss, TpLevel[] takeProfits) GetRiskLevels(
         Int64Bar bar, OrderSide direction, long entryPrice, DonchianContext context)
     {
         var atr = context.Current;

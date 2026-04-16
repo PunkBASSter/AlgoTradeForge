@@ -55,7 +55,45 @@ public sealed class PairsTradingStrategy(
         }
     }
 
-    protected override int OnGenerateSignal(Int64Bar bar, PairsTradingContext context)
+    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub, IOrderContext orders)
+    {
+        if (!ReferenceEquals(Context.CurrentSubscription, DataSubscriptions[0]))
+            return;
+
+        var signalStrength = GenerateSignal(bar, Context);
+        if (signalStrength == 0)
+            return;
+
+        var direction = signalStrength > 0 ? OrderSide.Buy : OrderSide.Sell;
+
+        var (entryPrice, orderType) = GetEntryPrice(bar, direction, Context);
+        var (stopLoss, takeProfits) = GetRiskLevels(bar, direction, entryPrice, Context);
+
+        if (entryPrice != 0)
+        {
+            if (direction == OrderSide.Buy && stopLoss >= entryPrice) return;
+            if (direction == OrderSide.Sell && stopLoss <= entryPrice) return;
+        }
+        else
+        {
+            if (direction == OrderSide.Buy && stopLoss >= bar.Close) return;
+            if (direction == OrderSide.Sell && stopLoss <= bar.Close) return;
+        }
+
+        var quantity = Params.MoneyManagement.CalculateSize(
+            entryPrice != 0 ? entryPrice : bar.Close, stopLoss, Context, sub.Asset);
+        if (quantity < sub.Asset.MinOrderQuantity)
+            return;
+
+        CreateEntryGroup(sub.Asset, direction, orderType, entryPrice,
+            stopLoss, takeProfits, quantity, Context, orders);
+
+        EmitSignal(bar.Timestamp, "Entry", sub.Asset.Name,
+            direction.ToString(), signalStrength,
+            $"type={orderType}, sl={stopLoss}, qty={quantity}");
+    }
+
+    protected override int GenerateSignal(Int64Bar bar, PairsTradingContext context)
     {
         if (context.ZScore == 0)
             return 0;
@@ -72,7 +110,7 @@ public sealed class PairsTradingStrategy(
         return Math.Abs(signal) >= Params.SignalThreshold ? signal : 0;
     }
 
-    protected override (long stopLoss, TpLevel[] takeProfits) OnGetRiskLevels(
+    protected override (long stopLoss, TpLevel[] takeProfits) GetRiskLevels(
         Int64Bar bar, OrderSide direction, long entryPrice, PairsTradingContext context)
     {
         var atr = context.Current;
@@ -89,6 +127,9 @@ public sealed class PairsTradingStrategy(
     protected override void ManagePositions(
         TradeRegistryModule tradeRegistry, PairsTradingContext context, IOrderContext orders)
     {
+        if (!ReferenceEquals(context.CurrentSubscription, DataSubscriptions[0]))
+            return;
+
         foreach (var group in tradeRegistry.ActiveGroups.ToArray())
         {
             var bar = context.CurrentBar;
@@ -119,7 +160,7 @@ public sealed class PairsTradingStrategy(
         }
     }
 
-    protected override void OnExecuteEntry(
+    protected override void CreateEntryGroup(
         Asset asset, OrderSide direction, OrderType orderType, long entryPrice,
         long stopLoss, TpLevel[] takeProfits, decimal quantity,
         PairsTradingContext context, IOrderContext orders)

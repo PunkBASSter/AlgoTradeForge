@@ -1,7 +1,6 @@
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
-using AlgoTradeForge.Domain.Strategy.Modules.MoneyManagement;
 using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Trading;
 
@@ -16,7 +15,6 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     private readonly List<IIndicator<Int64Bar, double>> _doubleIndicators = [];
     private readonly Dictionary<int, List<Int64Bar>> _barHistories = [];
     private TradeRegistryModule _tradeRegistry = null!;
-    private IMoneyManagementModule _moneyManagement = null!;
 
     protected TContext Context { get; private set; } = null!;
 
@@ -34,7 +32,6 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     {
         Context = new TContext();
         _tradeRegistry = new TradeRegistryModule(Params.TradeRegistry);
-        _moneyManagement = Params.MoneyManagement;
 
         if (_tradeRegistry is IEventBusReceiver busReceiver)
             busReceiver.SetEventBus(EventBus);
@@ -66,11 +63,6 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
 
         OnContextUpdated(bar, subscription);
 
-        // Phases 2-3 only on primary subscription
-        var isPrimary = DataSubscriptions.Count == 0 ||
-                        ReferenceEquals(subscription, DataSubscriptions[0]);
-        if (!isPrimary) return;
-
         // ── PHASE 2: MANAGE POSITIONS ──
         ManagePositions(_tradeRegistry, Context, orders);
 
@@ -88,75 +80,34 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         OnOrderFilled(fill, order);
     }
 
-    // ── Phase 2 implementation ──
+    // ── Virtual hooks ──
+
+    protected virtual void OnStrategyInit() { }
+    protected virtual void OnContextUpdated(Int64Bar bar, DataSubscription sub) { }
+    protected virtual void OnOrderFilled(Fill fill, Order order) { }
 
     protected virtual void ManagePositions(
         TradeRegistryModule tradeRegistry, TContext context, IOrderContext orders) { }
 
-    // ── Phase 3 implementation ──
+    protected virtual void EvaluateEntry(Int64Bar bar, DataSubscription sub, IOrderContext orders) { }
 
-    private void EvaluateEntry(Int64Bar bar, DataSubscription sub, IOrderContext orders)
-    {
-        // 3a: Signal generation [STRATEGY-SPECIFIC]
-        var signalStrength = OnGenerateSignal(bar, Context);
-        if (signalStrength == 0)
-            return;
-
-        // Derive direction from sign: positive = Buy, negative = Sell
-        var direction = signalStrength > 0 ? OrderSide.Buy : OrderSide.Sell;
-
-        // 3b: Entry price [STRATEGY-SPECIFIC]
-        var (entryPrice, orderType) = OnGetEntryPrice(bar, direction, Context);
-
-        // 3c: Risk levels [STRATEGY-SPECIFIC]
-        var (stopLoss, takeProfits) = OnGetRiskLevels(bar, direction, entryPrice, Context);
-
-        // Validate SL is on correct side
-        if (entryPrice != 0) // non-market orders have known entry price
-        {
-            if (direction == OrderSide.Buy && stopLoss >= entryPrice) return;
-            if (direction == OrderSide.Sell && stopLoss <= entryPrice) return;
-        }
-        else // market order: use Close as proxy
-        {
-            if (direction == OrderSide.Buy && stopLoss >= bar.Close) return;
-            if (direction == OrderSide.Sell && stopLoss <= bar.Close) return;
-        }
-
-        // 3d: Position sizing [infrastructure]
-        var quantity = _moneyManagement.CalculateSize(
-            entryPrice != 0 ? entryPrice : bar.Close, stopLoss, Context, sub.Asset);
-        if (quantity < sub.Asset.MinOrderQuantity)
-            return;
-
-        // 3e: Order submission [STRATEGY-SPECIFIC with default]
-        OnExecuteEntry(sub.Asset, direction, orderType, entryPrice,
-            stopLoss, takeProfits, quantity, Context, orders);
-
-        EmitSignal(bar.Timestamp, "Entry", sub.Asset.Name,
-            direction.ToString(), signalStrength,
-            $"type={orderType}, sl={stopLoss}, qty={quantity}");
-    }
-
-    // ── Abstract: the ONE method every strategy MUST implement ──
+    // ── Entry pipeline hooks (used by strategies that override EvaluateEntry) ──
 
     /// <summary>
     /// Returns a signed signal score: positive = Buy, negative = Sell, 0 = no signal.
     /// Magnitude indicates conviction (e.g., +80 = Buy strength 80, -80 = Sell strength 80).
     /// The strategy is responsible for applying its own signal threshold filter.
     /// </summary>
-    protected abstract int OnGenerateSignal(Int64Bar bar, TContext context);
+    protected virtual int GenerateSignal(Int64Bar bar, TContext context) => 0;
 
-    // ── Virtual: override to customize, defaults handle common cases ──
-
-    protected virtual (long price, OrderType type) OnGetEntryPrice(
+    protected virtual (long price, OrderType type) GetEntryPrice(
         Int64Bar bar, OrderSide direction, TContext context)
         => (0, OrderType.Market);
 
-    protected abstract (long stopLoss, TpLevel[] takeProfits) OnGetRiskLevels(
-        Int64Bar bar, OrderSide direction, long entryPrice, TContext context);
+    protected virtual (long stopLoss, TpLevel[] takeProfits) GetRiskLevels(
+        Int64Bar bar, OrderSide direction, long entryPrice, TContext context) => (0, []);
 
-    protected virtual void OnExecuteEntry(
+    protected virtual void CreateEntryGroup(
         Asset asset, OrderSide direction, OrderType orderType, long entryPrice,
         long stopLoss, TpLevel[] takeProfits, decimal quantity,
         TContext context, IOrderContext orders)
@@ -167,10 +118,4 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
             entryLimitPrice: orderType == OrderType.Limit ? entryPrice : null,
             entryStopPrice: orderType == OrderType.Stop ? entryPrice : null);
     }
-
-    // ── Optional hooks ──
-
-    protected virtual void OnStrategyInit() { }
-    protected virtual void OnContextUpdated(Int64Bar bar, DataSubscription sub) { }
-    protected virtual void OnOrderFilled(Fill fill, Order order) { }
 }
