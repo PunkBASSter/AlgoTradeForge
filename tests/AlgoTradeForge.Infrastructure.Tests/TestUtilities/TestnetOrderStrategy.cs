@@ -33,6 +33,7 @@ public sealed class TestnetOrderStrategy(TestnetOrderStrategyParams p)
 
     public override void OnTrade(Fill fill, Order order, IOrderContext orders)
     {
+        base.OnTrade(fill, order, orders);
         ReceivedFills.Add(fill);
         NextFillTcs.TrySetResult(fill);
     }

@@ -325,6 +325,7 @@ public class IndicatorFactoryTests
 
         public override void OnInit()
         {
+            base.OnInit();
             _m1Dzz = Indicators.Create(new NamedDeltaZigZag("DeltaZigZag_M1", 0.5, 10.0), DataSubscriptions[0]);
             _h1Dzz = Indicators.Create(new NamedDeltaZigZag("DeltaZigZag_H1", 0.5, 10.0), DataSubscriptions[1]);
         }

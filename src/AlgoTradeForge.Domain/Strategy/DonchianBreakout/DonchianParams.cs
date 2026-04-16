@@ -27,7 +27,7 @@ public sealed class DonchianParams : ModularStrategyParamsBase
     [Optimizable(Min = -100, Max = -20, Step = 10)]
     public int ExitThreshold { get; init; } = -50;
 
-    public new TradeRegistryParams TradeRegistry { get; init; } = new() { MaxConcurrentGroups = 1 };
+    public override TradeRegistryParams TradeRegistry { get; init; } = new() { MaxConcurrentGroups = 1 };
     public TimeBasedExitParams Exit { get; init; } = new();
     public TrailingStopParams TrailingStopConfig { get; init; } = new();
     public RegimeDetectorParams RegimeDetectorConfig { get; init; } = new();

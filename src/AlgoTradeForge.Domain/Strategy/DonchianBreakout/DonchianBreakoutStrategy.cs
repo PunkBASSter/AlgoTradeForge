@@ -106,7 +106,7 @@ public sealed class DonchianBreakoutStrategy(
             $"type={orderType}, sl={stopLoss}, qty={quantity}");
     }
 
-    protected override int GenerateSignal(Int64Bar bar, DonchianContext context)
+    private int GenerateSignal(Int64Bar bar, DonchianContext context)
     {
         // Regime filter: block when explicitly non-trending
         if (context.CurrentRegime == MarketRegime.RangeBound)

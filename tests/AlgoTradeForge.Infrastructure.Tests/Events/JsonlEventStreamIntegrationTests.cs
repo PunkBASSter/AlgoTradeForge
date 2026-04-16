@@ -311,6 +311,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         public override void OnInit()
         {
+            base.OnInit();
             _dzz = Indicators.Create(new DeltaZigZag(0.5, 10.0), DataSubscriptions[0]);
         }
 

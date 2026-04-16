@@ -1,3 +1,5 @@
+using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
+
 namespace AlgoTradeForge.Domain.Strategy;
 
 public class StrategyParamsBase
@@ -9,4 +11,6 @@ public class StrategyParamsBase
     /// Override in multi-asset strategies (e.g., pairs trading needs 2).
     /// </summary>
     public virtual int RequiredSubscriptionCount => 1;
+
+    public virtual TradeRegistryParams TradeRegistry { get; init; } = new();
 }

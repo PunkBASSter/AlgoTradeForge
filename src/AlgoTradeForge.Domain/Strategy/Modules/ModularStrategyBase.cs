@@ -7,14 +7,13 @@ using AlgoTradeForge.Domain.Trading;
 namespace AlgoTradeForge.Domain.Strategy.Modules;
 
 public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters, IIndicatorFactory? indicators = null)
-    : StrategyBase<TParams>(parameters, indicators), ITradeRegistryProvider
+    : StrategyBase<TParams>(parameters, indicators)
     where TParams : ModularStrategyParamsBase
     where TContext : StrategyContextBase, new()
 {
     private readonly List<IIndicator<Int64Bar, long>> _longIndicators = [];
     private readonly List<IIndicator<Int64Bar, double>> _doubleIndicators = [];
     private readonly Dictionary<int, List<Int64Bar>> _barHistories = [];
-    private TradeRegistryModule _tradeRegistry = null!;
 
     protected TContext Context { get; private set; } = null!;
 
@@ -24,19 +23,14 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     protected void RegisterIndicator(IIndicator<Int64Bar, double> indicator) =>
         _doubleIndicators.Add(indicator);
 
-    TradeRegistryModule ITradeRegistryProvider.TradeRegistry => _tradeRegistry;
-
     // ── Lifecycle: sealed orchestration ──
 
     public sealed override void OnInit()
     {
         Context = new TContext();
-        _tradeRegistry = new TradeRegistryModule(Params.TradeRegistry);
+        base.OnInit();
 
-        if (_tradeRegistry is IEventBusReceiver busReceiver)
-            busReceiver.SetEventBus(EventBus);
-
-        _tradeRegistry.SetClock(() => Context.CurrentBar.Timestamp);
+        TradeRegistry.SetClock(() => Context.CurrentBar.Timestamp);
 
         OnStrategyInit();
     }
@@ -64,10 +58,10 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         OnContextUpdated(bar, subscription);
 
         // ── PHASE 2: MANAGE POSITIONS ──
-        ManagePositions(_tradeRegistry, Context, orders);
+        ManagePositions(TradeRegistry, Context, orders);
 
         // ── PHASE 3: EVALUATE ENTRY ──
-        if (_tradeRegistry.ActiveGroupCount < (Params.TradeRegistry.MaxConcurrentGroups == 0
+        if (TradeRegistry.ActiveGroupCount < (Params.TradeRegistry.MaxConcurrentGroups == 0
                 ? int.MaxValue : Params.TradeRegistry.MaxConcurrentGroups))
         {
             EvaluateEntry(bar, subscription, orders);
@@ -76,7 +70,7 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
 
     public sealed override void OnTrade(Fill fill, Order order, IOrderContext orders)
     {
-        _tradeRegistry.OnFill(fill, order, orders);
+        base.OnTrade(fill, order, orders);
         OnOrderFilled(fill, order);
     }
 
@@ -93,13 +87,6 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
 
     // ── Entry pipeline hooks (used by strategies that override EvaluateEntry) ──
 
-    /// <summary>
-    /// Returns a signed signal score: positive = Buy, negative = Sell, 0 = no signal.
-    /// Magnitude indicates conviction (e.g., +80 = Buy strength 80, -80 = Sell strength 80).
-    /// The strategy is responsible for applying its own signal threshold filter.
-    /// </summary>
-    protected virtual int GenerateSignal(Int64Bar bar, TContext context) => 0;
-
     protected virtual (long price, OrderType type) GetEntryPrice(
         Int64Bar bar, OrderSide direction, TContext context)
         => (0, OrderType.Market);
@@ -112,7 +99,7 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         long stopLoss, TpLevel[] takeProfits, decimal quantity,
         TContext context, IOrderContext orders)
     {
-        _tradeRegistry.OpenGroup(
+        TradeRegistry.OpenGroup(
             orders, asset, direction, orderType, quantity, stopLoss,
             takeProfits,
             entryLimitPrice: orderType == OrderType.Limit ? entryPrice : null,

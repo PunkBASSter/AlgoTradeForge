@@ -81,7 +81,7 @@ public sealed class Rsi2MeanReversionStrategy(
             $"type={orderType}, sl={stopLoss}, qty={quantity}");
     }
 
-    protected override int GenerateSignal(Int64Bar bar, Rsi2Context context)
+    private int GenerateSignal(Int64Bar bar, Rsi2Context context)
     {
         // Volatility filter gate
         var filterAtrValues = _filterAtr.Buffers["Value"];

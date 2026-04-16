@@ -93,7 +93,7 @@ public sealed class PairsTradingStrategy(
             $"type={orderType}, sl={stopLoss}, qty={quantity}");
     }
 
-    protected override int GenerateSignal(Int64Bar bar, PairsTradingContext context)
+    private int GenerateSignal(Int64Bar bar, PairsTradingContext context)
     {
         if (context.ZScore == 0)
             return 0;

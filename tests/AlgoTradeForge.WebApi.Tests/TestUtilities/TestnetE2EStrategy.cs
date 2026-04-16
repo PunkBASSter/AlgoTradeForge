@@ -66,6 +66,7 @@ internal sealed class TestnetE2EStrategy(TestnetE2EStrategyParams p)
 
     public override void OnTrade(Fill fill, Order order, IOrderContext orders)
     {
+        base.OnTrade(fill, order, orders);
         FillsReceived.Add(fill);
 
         try
