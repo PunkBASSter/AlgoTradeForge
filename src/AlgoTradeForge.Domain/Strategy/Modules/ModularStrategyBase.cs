@@ -1,11 +1,8 @@
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
-using AlgoTradeForge.Domain.Strategy.Modules.Exit;
 using AlgoTradeForge.Domain.Strategy.Modules.MoneyManagement;
-using AlgoTradeForge.Domain.Strategy.Modules.Regime;
 using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
-using AlgoTradeForge.Domain.Strategy.Modules.TrailingStop;
 using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Strategy.Modules;
@@ -15,15 +12,11 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     where TParams : ModularStrategyParamsBase
     where TContext : StrategyContextBase, new()
 {
-    private readonly List<IFilterModule> _filters = [];
     private readonly List<IIndicator<Int64Bar, long>> _longIndicators = [];
     private readonly List<IIndicator<Int64Bar, double>> _doubleIndicators = [];
     private readonly Dictionary<int, List<Int64Bar>> _barHistories = [];
     private TradeRegistryModule _tradeRegistry = null!;
     private IMoneyManagementModule _moneyManagement = null!;
-    private ExitModule? _exit;
-    private TrailingStopModule? _trailingStop;
-    private RegimeDetectorModule? _regimeDetector;
 
     protected TContext Context { get; private set; } = null!;
 
@@ -34,20 +27,6 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         _doubleIndicators.Add(indicator);
 
     TradeRegistryModule ITradeRegistryProvider.TradeRegistry => _tradeRegistry;
-
-    // ── Module registration (called in OnStrategyInit of concrete strategy) ──
-
-    protected void AddFilter(IFilterModule filter) => _filters.Add(filter);
-    protected void SetExit(ExitModule exit) => _exit = exit;
-    protected void SetTrailingStop(TrailingStopModule stop) => _trailingStop = stop;
-
-    protected void SetRegimeDetector(RegimeDetectorModule detector)
-    {
-        if (Context is not IRegimeContext)
-            throw new InvalidOperationException(
-                $"Cannot use RegimeDetectorModule: {typeof(TContext).Name} does not implement IRegimeContext");
-        _regimeDetector = detector;
-    }
 
     // ── Lifecycle: sealed orchestration ──
 
@@ -83,14 +62,7 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         foreach (var ind in _doubleIndicators)
             ind.Compute(history);
 
-        // Update filter modules with bar history
-        foreach (var filter in _filters)
-            filter.Update(history);
-
         Context.Update(bar, subscription, orders);
-
-        if (_regimeDetector is not null && Context is IRegimeContext regimeCtx)
-            _regimeDetector.Update(bar, regimeCtx);
 
         OnContextUpdated(bar, subscription);
 
@@ -127,20 +99,11 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     private void ManagePosition(
         Int64Bar bar, DataSubscription sub, IOrderContext orders, OrderGroup group)
     {
-        // 2a: Ratchet trailing stop
-        long? newStop = null;
-        if (_trailingStop is not null)
-        {
-            var atr = Context is IVolatilityContext vol ? vol.Current : 0L;
-            newStop = _trailingStop.Update(group.GroupId, bar, atr);
-        }
+        // 2a: Strategy-specific stop adjustment
+        var newStop = OnAdjustStopLoss(bar, Context, group);
 
         // 2b: Evaluate exit rules
-        var exitSignal = _exit?.Evaluate(bar, Context, group) ?? 0;
-
-        // Allow strategy to inject custom exit logic
-        var customExit = OnEvaluateExit(bar, Context, group);
-        exitSignal = Math.Min(exitSignal, customExit); // most negative wins
+        var exitSignal = OnEvaluateExit(bar, Context, group);
 
         // Emit exit evaluation event
         EventBus.Emit(new ExitEvaluationEvent(
@@ -152,7 +115,7 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         {
             var exitPrice = OnGetExitPrice(bar, group);
             _tradeRegistry.LiquidateGroup(group.GroupId, orders);
-            _trailingStop?.Remove(group.GroupId);
+            OnGroupLiquidated(group.GroupId);
             EmitSignal(bar.Timestamp, "Exit", sub.Asset.Name,
                 "Close", exitSignal, $"exit_score={exitSignal}");
         }
@@ -166,17 +129,7 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
 
     private void EvaluateEntry(Int64Bar bar, DataSubscription sub, IOrderContext orders)
     {
-        // 3b: Filter gate
-        var (filterScore, filterScores) = EvaluateFilters(bar);
-
-        EventBus.Emit(new FilterEvaluationEvent(
-            bar.Timestamp, GetType().Name, sub.Asset.Name,
-            filterScores, filterScore, filterScore >= Params.FilterThreshold));
-
-        if (filterScore < Params.FilterThreshold)
-            return;
-
-        // 3c: Signal generation [STRATEGY-SPECIFIC]
+        // 3a: Signal generation [STRATEGY-SPECIFIC]
         var signalStrength = OnGenerateSignal(bar, Context);
         if (Math.Abs(signalStrength) < Params.SignalThreshold)
             return;
@@ -184,14 +137,10 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         // Derive direction from sign: positive = Buy, negative = Sell
         var direction = signalStrength > 0 ? OrderSide.Buy : OrderSide.Sell;
 
-        // Reconcile signal direction with filter
-        if (direction == OrderSide.Buy && filterScore < 0) return;
-        if (direction == OrderSide.Sell && filterScore > 0) return;
-
-        // 3d: Entry price [STRATEGY-SPECIFIC]
+        // 3b: Entry price [STRATEGY-SPECIFIC]
         var (entryPrice, orderType) = OnGetEntryPrice(bar, direction, Context);
 
-        // 3e: Risk levels [STRATEGY-SPECIFIC]
+        // 3c: Risk levels [STRATEGY-SPECIFIC]
         var (stopLoss, takeProfits) = OnGetRiskLevels(bar, direction, entryPrice, Context);
 
         // Validate SL is on correct side
@@ -206,40 +155,19 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
             if (direction == OrderSide.Sell && stopLoss <= bar.Close) return;
         }
 
-        // 3f: Position sizing [infrastructure]
+        // 3d: Position sizing [infrastructure]
         var quantity = _moneyManagement.CalculateSize(
             entryPrice != 0 ? entryPrice : bar.Close, stopLoss, Context, sub.Asset);
         if (quantity < sub.Asset.MinOrderQuantity)
             return;
 
-        // 3g: Order submission [STRATEGY-SPECIFIC with default]
+        // 3e: Order submission [STRATEGY-SPECIFIC with default]
         OnExecuteEntry(sub.Asset, direction, orderType, entryPrice,
             stopLoss, takeProfits, quantity, Context, orders);
 
         EmitSignal(bar.Timestamp, "Entry", sub.Asset.Name,
             direction.ToString(), signalStrength,
             $"type={orderType}, sl={stopLoss}, qty={quantity}");
-    }
-
-    private (int score, Dictionary<string, int> perFilter) EvaluateFilters(Int64Bar bar)
-    {
-        var scores = new Dictionary<string, int>();
-        if (_filters.Count == 0) return (100, scores);
-
-        var weightedSum = 0;
-        var totalWeight = 0;
-        foreach (var filter in _filters)
-        {
-            var weight = Params.GetFilterWeight(filter);
-            var score = filter.Evaluate(bar, OrderSide.Buy);
-            var key = filter.GetType().Name;
-            scores[key] = score;
-            weightedSum += weight * score;
-            totalWeight += weight;
-        }
-
-        var composite = totalWeight > 0 ? weightedSum / totalWeight : 100;
-        return (composite, scores);
     }
 
     // ── Abstract: the ONE method every strategy MUST implement ──
@@ -285,6 +213,9 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     protected virtual int OnEvaluateExit(
         Int64Bar bar, TContext context, OrderGroup group) => 0;
 
+    protected virtual long? OnAdjustStopLoss(
+        Int64Bar bar, TContext context, OrderGroup group) => null;
+
     protected virtual long OnGetExitPrice(Int64Bar bar, OrderGroup group) => 0;
 
     // ── Optional hooks ──
@@ -292,4 +223,5 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     protected virtual void OnStrategyInit() { }
     protected virtual void OnContextUpdated(Int64Bar bar, DataSubscription sub) { }
     protected virtual void OnOrderFilled(Fill fill, Order order) { }
+    protected virtual void OnGroupLiquidated(long groupId) { }
 }

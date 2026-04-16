@@ -112,7 +112,6 @@ public class OptimizationStrategyFactoryTests
             ["RegimeDetectorConfig"] = """{"adxPeriod":20,"trendThreshold":30}""",
             ["MoneyManagement"] = """{"method":0,"riskPercent":2,"volTarget":0.15,"winRate":0.5,"payoffRatio":2}""",
             ["TradeRegistry"] = """{"maxConcurrentGroups":0}""",
-            ["FilterWeights"] = """{"AtrFilter":2}""",
         });
 
         Assert.IsType<DonchianBreakoutStrategy>(strategy);

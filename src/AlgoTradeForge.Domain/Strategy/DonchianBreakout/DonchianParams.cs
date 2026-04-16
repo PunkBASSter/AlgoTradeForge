@@ -22,7 +22,7 @@ public sealed class DonchianParams : ModularStrategyParamsBase
     public double AtrStopMultiplier { get; init; } = 2.0;
 
     public new TradeRegistryParams TradeRegistry { get; init; } = new() { MaxConcurrentGroups = 1 };
-    public new TimeBasedExitParams Exit { get; init; } = new();
+    public TimeBasedExitParams Exit { get; init; } = new();
     public TrailingStopParams TrailingStopConfig { get; init; } = new();
     public RegimeDetectorParams RegimeDetectorConfig { get; init; } = new();
 }

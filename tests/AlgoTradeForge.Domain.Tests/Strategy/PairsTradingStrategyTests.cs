@@ -33,7 +33,6 @@ public sealed class PairsTradingStrategyTests
         },
         AtrPeriod = 7,
         SignalThreshold = 30,
-        FilterThreshold = -100, // Effectively disabled
         DefaultAtrStopMultiplier = 3.0,
         MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
@@ -137,10 +136,10 @@ public sealed class PairsTradingStrategyTests
         // The pipeline should have processed all bars
         Assert.Equal(s1.Count + s2.Count, result.TotalBarsProcessed);
 
-        // Filter events should only be emitted for primary subscription bars
-        var filterEvents = bus.Events.OfType<FilterEvaluationEvent>().ToList();
-        Assert.True(filterEvents.Count <= s1.Count,
-            $"Filter events ({filterEvents.Count}) should not exceed primary series count ({s1.Count})");
+        // Exit events should only be emitted for primary subscription bars when position active
+        var exitEvents = bus.Events.OfType<ExitEvaluationEvent>().ToList();
+        Assert.True(exitEvents.Count <= s1.Count,
+            $"Exit events ({exitEvents.Count}) should not exceed primary series count ({s1.Count})");
     }
 
     [Fact]

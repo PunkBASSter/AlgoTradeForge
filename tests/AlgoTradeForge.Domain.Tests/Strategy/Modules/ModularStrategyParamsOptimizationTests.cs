@@ -43,7 +43,6 @@ public sealed class ModularStrategyParamsOptimizationTests
             .Select(p => p.Name)
             .ToHashSet();
 
-        Assert.Contains("FilterThreshold", props);
         Assert.Contains("SignalThreshold", props);
         Assert.Contains("ExitThreshold", props);
         Assert.Contains("DefaultAtrStopMultiplier", props);

@@ -3,7 +3,6 @@ using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Strategy.Modules;
 using AlgoTradeForge.Domain.Strategy.Modules.Exit;
-using AlgoTradeForge.Domain.Strategy.Modules.Filter;
 using AlgoTradeForge.Domain.Strategy.Modules.Regime;
 using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Strategy.Modules.TrailingStop;
@@ -26,7 +25,9 @@ public sealed class DonchianBreakoutStrategy(
     private DonchianChannel _exitChannel = null!;
     private Atr _atr = null!;
     private TrailingStopModule _trailingStopModule = null!;
+    private RegimeDetectorModule _regimeDetector = null!;
     private RegimeChangeExitRule _regimeChangeExit = null!;
+    private TimeBasedExitRule? _timeBasedExit;
 
     protected override void OnStrategyInit()
     {
@@ -45,29 +46,19 @@ public sealed class DonchianBreakoutStrategy(
 
         // Trailing stop
         _trailingStopModule = new TrailingStopModule(Params.TrailingStopConfig);
-        SetTrailingStop(_trailingStopModule);
 
         // Regime detector
-        var regimeDetector = new RegimeDetectorModule(Params.RegimeDetectorConfig);
-        regimeDetector.Initialize(Indicators, DataSubscriptions[0]);
-        SetRegimeDetector(regimeDetector);
-
-        // Regime filter: only allow Trending
-        var regimeFilter = new RegimeFilterModule(Context, MarketRegime.Trending);
-        AddFilter(regimeFilter);
+        _regimeDetector = new RegimeDetectorModule(Params.RegimeDetectorConfig);
+        _regimeDetector.Initialize(Indicators, DataSubscriptions[0]);
 
         // Exit rules
         _regimeChangeExit = new RegimeChangeExitRule(Context);
-        var exitModule = new ExitModule();
-        exitModule.AddRule(_regimeChangeExit);
 
         if (Params.Exit is { MaxHoldBars: > 0 } exitParams)
         {
             var intervalMs = (long)DataSubscriptions[0].TimeFrame.TotalMilliseconds;
-            exitModule.AddRule(new TimeBasedExitRule(exitParams.MaxHoldBars, intervalMs));
+            _timeBasedExit = new TimeBasedExitRule(exitParams.MaxHoldBars, intervalMs);
         }
-
-        SetExit(exitModule);
     }
 
     protected override void OnContextUpdated(Int64Bar bar, DataSubscription sub)
@@ -75,10 +66,17 @@ public sealed class DonchianBreakoutStrategy(
         var atrValues = _atr.Buffers["Value"];
         if (atrValues.Count > 0)
             Context.Current = atrValues[^1];
+
+        // Update regime detector (previously handled by base)
+        _regimeDetector.Update(bar, Context);
     }
 
     protected override int OnGenerateSignal(Int64Bar bar, DonchianContext context)
     {
+        // Regime filter: block when explicitly non-trending
+        if (context.CurrentRegime == MarketRegime.RangeBound)
+            return 0;
+
         var upper = _entryChannel.Buffers["Upper"];
         var lower = _entryChannel.Buffers["Lower"];
         if (upper.Count < 2) return 0;
@@ -123,6 +121,25 @@ public sealed class DonchianBreakoutStrategy(
 
         return (sl, []);
     }
+
+    protected override int OnEvaluateExit(
+        Int64Bar bar, DonchianContext context, OrderGroup group)
+    {
+        var score = _regimeChangeExit.Evaluate(bar, context, group);
+        if (_timeBasedExit is not null)
+            score = Math.Min(score, _timeBasedExit.Evaluate(bar, context, group));
+        return score;
+    }
+
+    protected override long? OnAdjustStopLoss(
+        Int64Bar bar, DonchianContext context, OrderGroup group)
+    {
+        var atr = context.Current;
+        return _trailingStopModule.Update(group.GroupId, bar, atr);
+    }
+
+    protected override void OnGroupLiquidated(long groupId)
+        => _trailingStopModule.Remove(groupId);
 
     protected override void OnOrderFilled(Fill fill, Order order)
     {

@@ -31,7 +31,6 @@ public sealed class DonchianBreakoutStrategyTests
         AtrPeriod = 7,
         AtrStopMultiplier = 2.0,
         SignalThreshold = 30,
-        FilterThreshold = -100, // Allow through even when regime is unknown (score 0)
         DefaultAtrStopMultiplier = 2.0,
         MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
@@ -133,12 +132,11 @@ public sealed class DonchianBreakoutStrategyTests
     [Fact]
     public void Run_RegimeFilterBlocks_WhenRangeBound()
     {
-        // Set filter threshold high so regime filter must pass
+        // Regime filter is now inlined: blocks when CurrentRegime == RangeBound
         var p = new DonchianParams
         {
             EntryPeriod = 10, ExitPeriod = 5, AtrPeriod = 7, AtrStopMultiplier = 2.0,
             SignalThreshold = 30,
-            FilterThreshold = 50, // Requires regime filter to pass (100 = trending)
             DefaultAtrStopMultiplier = 2.0,
             MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },

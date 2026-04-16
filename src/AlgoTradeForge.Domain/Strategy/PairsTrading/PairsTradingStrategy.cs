@@ -3,7 +3,6 @@ using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Strategy.Modules;
 using AlgoTradeForge.Domain.Strategy.Modules.CrossAsset;
-using AlgoTradeForge.Domain.Strategy.Modules.Exit;
 using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Trading;
 
@@ -40,11 +39,6 @@ public sealed class PairsTradingStrategy(
         // Cross-asset module
         _crossAsset = new CrossAssetModule(Params.CrossAsset);
         _crossAsset.Initialize(Indicators, DataSubscriptions[0], DataSubscriptions[1]);
-
-        // Exit rules
-        var exitModule = new ExitModule();
-        exitModule.AddRule(new CointegrationBreakExitRule(Context));
-        SetExit(exitModule);
     }
 
     protected override void OnContextUpdated(Int64Bar bar, DataSubscription sub)
@@ -95,6 +89,10 @@ public sealed class PairsTradingStrategy(
     protected override int OnEvaluateExit(
         Int64Bar bar, PairsTradingContext context, OrderGroup group)
     {
+        // Cointegration break exit (was CointegrationBreakExitRule)
+        if (!context.IsCointegrated)
+            return -100;
+
         // Z-score reversion: exit when z-score reverts past exit threshold
         if (context.ZScore == 0)
             return 0;

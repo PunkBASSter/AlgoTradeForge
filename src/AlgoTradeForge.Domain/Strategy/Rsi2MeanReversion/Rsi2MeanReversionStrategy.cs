@@ -2,7 +2,6 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Strategy.Modules;
-using AlgoTradeForge.Domain.Strategy.Modules.Filter;
 using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Strategy.Rsi2MeanReversion;
@@ -17,6 +16,7 @@ public sealed class Rsi2MeanReversionStrategy(
     private Rsi _rsi = null!;
     private Sma _trendFilter = null!;
     private Atr _atr = null!;
+    private Atr _filterAtr = null!;
 
     protected override void OnStrategyInit()
     {
@@ -32,9 +32,10 @@ public sealed class Rsi2MeanReversionStrategy(
         Indicators.Create(_atr, DataSubscriptions[0]);
         RegisterIndicator(_atr);
 
-        var filter = new AtrVolatilityFilterModule(Params.AtrFilter);
-        filter.Initialize(Indicators, DataSubscriptions[0]);
-        AddFilter(filter);
+        // Volatility filter ATR (was AtrVolatilityFilterModule)
+        _filterAtr = new Atr(Params.AtrFilter.Period);
+        Indicators.Create(_filterAtr, DataSubscriptions[0]);
+        RegisterIndicator(_filterAtr);
     }
 
     protected override void OnContextUpdated(Int64Bar bar, DataSubscription sub)
@@ -46,6 +47,16 @@ public sealed class Rsi2MeanReversionStrategy(
 
     protected override int OnGenerateSignal(Int64Bar bar, Rsi2Context context)
     {
+        // Volatility filter gate
+        var filterAtrValues = _filterAtr.Buffers["Value"];
+        if (filterAtrValues.Count > 0)
+        {
+            var filterAtr = filterAtrValues[^1];
+            if (filterAtr == 0) return 0;
+            if (Params.AtrFilter.MinAtr > 0 && filterAtr < Params.AtrFilter.MinAtr) return 0;
+            if (Params.AtrFilter.MaxAtr > 0 && filterAtr > Params.AtrFilter.MaxAtr) return 0;
+        }
+
         var rsiValues = _rsi.Buffers["Value"];
         var smaValues = _trendFilter.Buffers["Value"];
         if (rsiValues.Count < Params.RsiPeriod + 1 || smaValues.Count == 0) return 0;

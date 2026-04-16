@@ -10,6 +10,7 @@ using AlgoTradeForge.Domain.Tests.TestUtilities;
 using AlgoTradeForge.Domain.Trading;
 using Xunit;
 
+
 namespace AlgoTradeForge.Domain.Tests.Strategy.Modules;
 
 public sealed class ModularStrategyEventTests
@@ -28,7 +29,7 @@ public sealed class ModularStrategyEventTests
         RsiPeriod = 2, OversoldThreshold = 10, OverboughtThreshold = 90,
         TrendFilterPeriod = 50, AtrPeriod = 14,
         AtrFilter = new AtrVolatilityFilterParams { Period = 14, MinAtr = 0, MaxAtr = 0 },
-        SignalThreshold = 30, FilterThreshold = 0, DefaultAtrStopMultiplier = 2.0,
+        SignalThreshold = 30, DefaultAtrStopMultiplier = 2.0,
         MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
         DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
@@ -59,21 +60,6 @@ public sealed class ModularStrategyEventTests
         var series = new TimeSeries<Int64Bar>();
         foreach (var bar in bars) series.Add(bar);
         return series;
-    }
-
-    [Fact]
-    public void Run_EmitsFilterEvaluationEvents()
-    {
-        var bus = new CapturingEventBus();
-        var bars = CreateSignalSeries();
-        var strategy = new Rsi2MeanReversionStrategy(CreateParams());
-
-        Engine.Run([bars], strategy, CreateOptions(),
-            ct: TestContext.Current.CancellationToken, bus: bus);
-
-        var filterEvents = bus.Events.OfType<FilterEvaluationEvent>().ToList();
-        Assert.True(filterEvents.Count > 0,
-            "Pipeline should emit FilterEvaluationEvent on each Phase 3 execution");
     }
 
     [Fact]
