@@ -33,7 +33,7 @@ public sealed class PairsTradingStrategyTests
         },
         AtrPeriod = 7,
         SignalThreshold = 30,
-        DefaultAtrStopMultiplier = 3.0,
+        AtrStopMultiplier = 3.0,
         MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
         DataSubscriptions =

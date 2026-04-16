@@ -60,24 +60,24 @@ public sealed class PairsTradingStrategy(
         if (context.ZScore == 0)
             return 0;
 
+        int signal = 0;
+
         // Z-score > entry threshold → spread too wide → sell spread (sell A, buy B)
         if (context.ZScore > Params.CrossAsset.ZScoreEntryThreshold)
-            return -80; // Sell
-
+            signal = -80; // Sell
         // Z-score < -entry threshold → spread too narrow → buy spread (buy A, sell B)
-        if (context.ZScore < -Params.CrossAsset.ZScoreEntryThreshold)
-            return 80;  // Buy
+        else if (context.ZScore < -Params.CrossAsset.ZScoreEntryThreshold)
+            signal = 80;  // Buy
 
-        return 0;
+        return Math.Abs(signal) >= Params.SignalThreshold ? signal : 0;
     }
 
     protected override (long stopLoss, TpLevel[] takeProfits) OnGetRiskLevels(
         Int64Bar bar, OrderSide direction, long entryPrice, PairsTradingContext context)
     {
-        // SL at 3x ATR from entry (extreme z-score protection)
         var atr = context.Current;
         if (atr == 0) atr = bar.Close / 50;
-        var distance = (long)(3.0 * atr);
+        var distance = (long)(Params.AtrStopMultiplier * atr);
 
         var sl = direction == OrderSide.Buy
             ? (entryPrice != 0 ? entryPrice : bar.Close) - distance
@@ -86,28 +86,37 @@ public sealed class PairsTradingStrategy(
         return (sl, []);
     }
 
-    protected override int OnEvaluateExit(
-        Int64Bar bar, PairsTradingContext context, OrderGroup group)
+    protected override void ManagePositions(
+        TradeRegistryModule tradeRegistry, PairsTradingContext context, IOrderContext orders)
     {
-        // Cointegration break exit (was CointegrationBreakExitRule)
-        if (!context.IsCointegrated)
-            return -100;
+        foreach (var group in tradeRegistry.ActiveGroups.ToArray())
+        {
+            var bar = context.CurrentBar;
 
-        // Z-score reversion: exit when z-score reverts past exit threshold
-        if (context.ZScore == 0)
-            return 0;
+            // Cointegration break → immediate exit
+            if (!context.IsCointegrated)
+            {
+                tradeRegistry.LiquidateGroup(group.GroupId, orders);
+                EmitSignal(bar.Timestamp, "Exit", context.CurrentSubscription.Asset.Name,
+                    "Close", -100, "exit_score=-100 (cointegration break)");
+                continue;
+            }
 
-        var exitThreshold = Params.CrossAsset.ZScoreExitThreshold;
+            // Z-score reversion exit
+            if (context.ZScore == 0) continue;
 
-        // If we're long (bought when z < -entry), exit when z reverts above -exit
-        if (group.EntrySide == OrderSide.Buy && context.ZScore > -exitThreshold)
-            return -60;
+            var exitThreshold = Params.CrossAsset.ZScoreExitThreshold;
+            var shouldExit =
+                (group.EntrySide == OrderSide.Buy && context.ZScore > -exitThreshold) ||
+                (group.EntrySide == OrderSide.Sell && context.ZScore < exitThreshold);
 
-        // If we're short (sold when z > entry), exit when z reverts below exit
-        if (group.EntrySide == OrderSide.Sell && context.ZScore < exitThreshold)
-            return -60;
-
-        return 0;
+            if (shouldExit)
+            {
+                tradeRegistry.LiquidateGroup(group.GroupId, orders);
+                EmitSignal(bar.Timestamp, "Exit", context.CurrentSubscription.Asset.Name,
+                    "Close", -60, "exit_score=-60 (z-score reversion)");
+            }
+        }
     }
 
     protected override void OnExecuteEntry(

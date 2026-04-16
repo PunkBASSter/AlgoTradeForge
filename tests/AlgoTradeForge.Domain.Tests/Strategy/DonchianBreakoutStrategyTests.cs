@@ -31,7 +31,7 @@ public sealed class DonchianBreakoutStrategyTests
         AtrPeriod = 7,
         AtrStopMultiplier = 2.0,
         SignalThreshold = 30,
-        DefaultAtrStopMultiplier = 2.0,
+
         MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
         TrailingStopConfig = new TrailingStopParams { Variant = TrailingStopVariant.Atr, AtrMultiplier = 2.0 },
@@ -137,7 +137,7 @@ public sealed class DonchianBreakoutStrategyTests
         {
             EntryPeriod = 10, ExitPeriod = 5, AtrPeriod = 7, AtrStopMultiplier = 2.0,
             SignalThreshold = 30,
-            DefaultAtrStopMultiplier = 2.0,
+    
             MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
             TrailingStopConfig = new TrailingStopParams { Variant = TrailingStopVariant.Atr, AtrMultiplier = 2.0 },

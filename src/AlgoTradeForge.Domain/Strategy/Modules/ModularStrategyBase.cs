@@ -72,13 +72,7 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         if (!isPrimary) return;
 
         // ── PHASE 2: MANAGE POSITIONS ──
-        if (!_tradeRegistry.IsFlat)
-        {
-            foreach (var group in _tradeRegistry.ActiveGroups.ToArray())
-            {
-                ManagePosition(bar, subscription, orders, group);
-            }
-        }
+        ManagePositions(_tradeRegistry, Context, orders);
 
         // ── PHASE 3: EVALUATE ENTRY ──
         if (_tradeRegistry.ActiveGroupCount < (Params.TradeRegistry.MaxConcurrentGroups == 0
@@ -96,34 +90,8 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
 
     // ── Phase 2 implementation ──
 
-    private void ManagePosition(
-        Int64Bar bar, DataSubscription sub, IOrderContext orders, OrderGroup group)
-    {
-        // 2a: Strategy-specific stop adjustment
-        var newStop = OnAdjustStopLoss(bar, Context, group);
-
-        // 2b: Evaluate exit rules
-        var exitSignal = OnEvaluateExit(bar, Context, group);
-
-        // Emit exit evaluation event
-        EventBus.Emit(new ExitEvaluationEvent(
-            bar.Timestamp, GetType().Name, sub.Asset.Name,
-            group.GroupId, [], exitSignal, exitSignal <= Params.ExitThreshold));
-
-        // 2c: Act on decision
-        if (exitSignal <= Params.ExitThreshold)
-        {
-            var exitPrice = OnGetExitPrice(bar, group);
-            _tradeRegistry.LiquidateGroup(group.GroupId, orders);
-            OnGroupLiquidated(group.GroupId);
-            EmitSignal(bar.Timestamp, "Exit", sub.Asset.Name,
-                "Close", exitSignal, $"exit_score={exitSignal}");
-        }
-        else if (newStop is not null && newStop.Value != group.SlPrice)
-        {
-            _tradeRegistry.UpdateStopLoss(group.GroupId, newStop.Value, orders);
-        }
-    }
+    protected virtual void ManagePositions(
+        TradeRegistryModule tradeRegistry, TContext context, IOrderContext orders) { }
 
     // ── Phase 3 implementation ──
 
@@ -131,7 +99,7 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     {
         // 3a: Signal generation [STRATEGY-SPECIFIC]
         var signalStrength = OnGenerateSignal(bar, Context);
-        if (Math.Abs(signalStrength) < Params.SignalThreshold)
+        if (signalStrength == 0)
             return;
 
         // Derive direction from sign: positive = Buy, negative = Sell
@@ -175,7 +143,7 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     /// <summary>
     /// Returns a signed signal score: positive = Buy, negative = Sell, 0 = no signal.
     /// Magnitude indicates conviction (e.g., +80 = Buy strength 80, -80 = Sell strength 80).
-    /// Compared against <c>Params.SignalThreshold</c> via absolute value.
+    /// The strategy is responsible for applying its own signal threshold filter.
     /// </summary>
     protected abstract int OnGenerateSignal(Int64Bar bar, TContext context);
 
@@ -185,18 +153,8 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         Int64Bar bar, OrderSide direction, TContext context)
         => (0, OrderType.Market);
 
-    protected virtual (long stopLoss, TpLevel[] takeProfits) OnGetRiskLevels(
-        Int64Bar bar, OrderSide direction, long entryPrice, TContext context)
-    {
-        var atr = context is IVolatilityContext vol ? vol.Current : 0L;
-        if (atr == 0) atr = bar.Close / 50; // fallback: 2% of price
-        var mult = Params.DefaultAtrStopMultiplier;
-        var distance = (long)(mult * atr);
-        var sl = direction == OrderSide.Buy
-            ? (entryPrice != 0 ? entryPrice : bar.Close) - distance
-            : (entryPrice != 0 ? entryPrice : bar.Close) + distance;
-        return (sl, []);
-    }
+    protected abstract (long stopLoss, TpLevel[] takeProfits) OnGetRiskLevels(
+        Int64Bar bar, OrderSide direction, long entryPrice, TContext context);
 
     protected virtual void OnExecuteEntry(
         Asset asset, OrderSide direction, OrderType orderType, long entryPrice,
@@ -210,18 +168,9 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
             entryStopPrice: orderType == OrderType.Stop ? entryPrice : null);
     }
 
-    protected virtual int OnEvaluateExit(
-        Int64Bar bar, TContext context, OrderGroup group) => 0;
-
-    protected virtual long? OnAdjustStopLoss(
-        Int64Bar bar, TContext context, OrderGroup group) => null;
-
-    protected virtual long OnGetExitPrice(Int64Bar bar, OrderGroup group) => 0;
-
     // ── Optional hooks ──
 
     protected virtual void OnStrategyInit() { }
     protected virtual void OnContextUpdated(Int64Bar bar, DataSubscription sub) { }
     protected virtual void OnOrderFilled(Fill fill, Order order) { }
-    protected virtual void OnGroupLiquidated(long groupId) { }
 }

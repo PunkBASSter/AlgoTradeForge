@@ -32,8 +32,6 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
     public int ActiveGroupCount =>
         _groups.Values.Count(g => g.Status is OrderGroupStatus.PendingEntry or OrderGroupStatus.ProtectionActive);
 
-    public bool IsFlat => ActiveGroupCount == 0;
-
     public OrderGroup? GetGroup(long groupId) =>
         _groups.GetValueOrDefault(groupId);
 

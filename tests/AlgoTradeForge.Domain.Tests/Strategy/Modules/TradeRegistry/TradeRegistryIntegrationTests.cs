@@ -491,7 +491,7 @@ public class TradeRegistryIntegrationTests
         Assert.Equal(-2500, groupA.RealizedPnl);
         // B: TP profit = 1 * (15500 - 15000) * 5 * 1 = 2500
         Assert.Equal(2500, groupB.RealizedPnl);
-        Assert.True(registry.IsFlat);
+        Assert.Equal(0, registry.ActiveGroupCount);
     }
 
     // ── T23: LiquidateGroup_Integration_MarketCloseNextBar ────────
@@ -536,7 +536,7 @@ public class TradeRegistryIntegrationTests
         Assert.Equal(2, result.Fills.Count); // entry + liquidation
         // PnL: 1 * (15300 - 15000) * 10 * 1 = 3000
         Assert.Equal(3000, group.RealizedPnl);
-        Assert.True(registry.IsFlat);
+        Assert.Equal(0, registry.ActiveGroupCount);
     }
 
     // ── T24: LiquidateGroup_ConcurrentGroups_OnlyTargetLiquidated ─
@@ -592,7 +592,7 @@ public class TradeRegistryIntegrationTests
         Assert.Equal(1000, groupA.RealizedPnl);
         // B: TP PnL = 1 * (15500 - 15000) * 5 * 1 = 2500
         Assert.Equal(2500, groupB.RealizedPnl);
-        Assert.True(registry.IsFlat);
+        Assert.Equal(0, registry.ActiveGroupCount);
     }
 
     // ── Helpers ─────────────────────────────────────────────────

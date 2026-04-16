@@ -35,17 +35,16 @@ public sealed class ModularStrategyParamsOptimizationTests
     }
 
     [Fact]
-    public void ModularStrategyParamsBase_ThresholdParams_AreDiscoverable()
+    public void Rsi2Params_ThresholdAndStopParams_AreDiscoverable()
     {
-        var props = typeof(ModularStrategyParamsBase)
+        var props = typeof(Rsi2Params)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.GetCustomAttribute<OptimizableAttribute>() is not null)
             .Select(p => p.Name)
             .ToHashSet();
 
         Assert.Contains("SignalThreshold", props);
-        Assert.Contains("ExitThreshold", props);
-        Assert.Contains("DefaultAtrStopMultiplier", props);
+        Assert.Contains("AtrStopMultiplier", props);
     }
 
     [Fact]

@@ -393,7 +393,6 @@ public class TradeRegistryModuleTests
         }
 
         Assert.Equal(50, module.ActiveGroupCount);
-        Assert.False(module.IsFlat);
     }
 
     // ── T13a: OnFill_SlFill_CancelsAllPendingTps ──────────────

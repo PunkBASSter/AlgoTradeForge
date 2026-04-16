@@ -54,7 +54,6 @@ public sealed class ModularStrategyBaseLiveTests
         var strategy = CreateInitializedStrategy();
         var registry = ((ITradeRegistryProvider)strategy).TradeRegistry;
 
-        Assert.True(registry.IsFlat);
         Assert.Equal(0, registry.ActiveGroupCount);
     }
 

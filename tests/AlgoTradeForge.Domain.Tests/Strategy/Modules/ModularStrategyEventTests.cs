@@ -29,7 +29,7 @@ public sealed class ModularStrategyEventTests
         RsiPeriod = 2, OversoldThreshold = 10, OverboughtThreshold = 90,
         TrendFilterPeriod = 50, AtrPeriod = 14,
         AtrFilter = new AtrVolatilityFilterParams { Period = 14, MinAtr = 0, MaxAtr = 0 },
-        SignalThreshold = 30, DefaultAtrStopMultiplier = 2.0,
+        SignalThreshold = 30, AtrStopMultiplier = 2.0,
         MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
         DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
@@ -81,23 +81,18 @@ public sealed class ModularStrategyEventTests
     }
 
     [Fact]
-    public void Run_EmitsExitEvaluationEventsWhenNotFlat()
+    public void Run_Rsi2_NoExitEventsEmitted_BecauseNoManagePositionsOverride()
     {
         var bus = new CapturingEventBus();
         var bars = CreateSignalSeries();
         var strategy = new Rsi2MeanReversionStrategy(CreateParams());
 
-        var result = Engine.Run([bars], strategy, CreateOptions(),
+        Engine.Run([bars], strategy, CreateOptions(),
             ct: TestContext.Current.CancellationToken, bus: bus);
 
+        // Rsi2 has no ManagePositions override, so no exit events are emitted
         var exitEvents = bus.Events.OfType<ExitEvaluationEvent>().ToList();
-
-        // If there were any fills, exit evaluation should have run on subsequent bars
-        if (result.Fills.Count > 0)
-        {
-            Assert.True(exitEvents.Count > 0,
-                "ExitEvaluationEvent should be emitted during Phase 2 when position active");
-        }
+        Assert.Empty(exitEvents);
     }
 
     [Fact]

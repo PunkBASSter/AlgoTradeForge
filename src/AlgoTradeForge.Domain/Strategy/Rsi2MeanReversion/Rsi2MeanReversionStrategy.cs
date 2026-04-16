@@ -2,6 +2,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Strategy.Modules;
+using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Strategy.Rsi2MeanReversion;
@@ -65,12 +66,24 @@ public sealed class Rsi2MeanReversionStrategy(
         var sma = smaValues[^1];
         if (sma == 0) return 0;
 
+        int signal = 0;
         if (rsi < Params.OversoldThreshold && bar.Close > sma)
-            return 80;  // Buy
+            signal = 80;  // Buy
+        else if (rsi > Params.OverboughtThreshold && bar.Close < sma)
+            signal = -80; // Sell
 
-        if (rsi > Params.OverboughtThreshold && bar.Close < sma)
-            return -80; // Sell
+        return Math.Abs(signal) >= Params.SignalThreshold ? signal : 0;
+    }
 
-        return 0;
+    protected override (long stopLoss, TpLevel[] takeProfits) OnGetRiskLevels(
+        Int64Bar bar, OrderSide direction, long entryPrice, Rsi2Context context)
+    {
+        var atr = context.Current;
+        if (atr == 0) atr = bar.Close / 50;
+        var distance = (long)(Params.AtrStopMultiplier * atr);
+        var sl = direction == OrderSide.Buy
+            ? (entryPrice != 0 ? entryPrice : bar.Close) - distance
+            : (entryPrice != 0 ? entryPrice : bar.Close) + distance;
+        return (sl, []);
     }
 }

@@ -85,15 +85,16 @@ public sealed class DonchianBreakoutStrategy(
         var prevLower = lower[^2];
         if (prevUpper == 0 || prevLower == 0) return 0;
 
+        int signal = 0;
+
         // Breakout above previous bar's upper channel
         if (bar.High > prevUpper)
-            return 80;  // Buy
-
+            signal = 80;  // Buy
         // Breakout below previous bar's lower channel
-        if (bar.Low < prevLower)
-            return -80; // Sell
+        else if (bar.Low < prevLower)
+            signal = -80; // Sell
 
-        return 0;
+        return Math.Abs(signal) >= Params.SignalThreshold ? signal : 0;
     }
 
     protected override (long price, OrderType type) OnGetEntryPrice(
@@ -122,24 +123,35 @@ public sealed class DonchianBreakoutStrategy(
         return (sl, []);
     }
 
-    protected override int OnEvaluateExit(
-        Int64Bar bar, DonchianContext context, OrderGroup group)
+    protected override void ManagePositions(
+        TradeRegistryModule tradeRegistry, DonchianContext context, IOrderContext orders)
     {
-        var score = _regimeChangeExit.Evaluate(bar, context, group);
-        if (_timeBasedExit is not null)
-            score = Math.Min(score, _timeBasedExit.Evaluate(bar, context, group));
-        return score;
-    }
+        foreach (var group in tradeRegistry.ActiveGroups.ToArray())
+        {
+            var bar = context.CurrentBar;
 
-    protected override long? OnAdjustStopLoss(
-        Int64Bar bar, DonchianContext context, OrderGroup group)
-    {
-        var atr = context.Current;
-        return _trailingStopModule.Update(group.GroupId, bar, atr);
-    }
+            // Trailing stop adjustment
+            var atr = context.Current;
+            var newStop = _trailingStopModule.Update(group.GroupId, bar, atr);
 
-    protected override void OnGroupLiquidated(long groupId)
-        => _trailingStopModule.Remove(groupId);
+            // Exit evaluation
+            var exitSignal = _regimeChangeExit.Evaluate(bar, context, group);
+            if (_timeBasedExit is not null)
+                exitSignal = Math.Min(exitSignal, _timeBasedExit.Evaluate(bar, context, group));
+
+            if (exitSignal <= Params.ExitThreshold)
+            {
+                tradeRegistry.LiquidateGroup(group.GroupId, orders);
+                _trailingStopModule.Remove(group.GroupId);
+                EmitSignal(bar.Timestamp, "Exit", context.CurrentSubscription.Asset.Name,
+                    "Close", exitSignal, $"exit_score={exitSignal}");
+            }
+            else if (newStop is not null && newStop.Value != group.SlPrice)
+            {
+                tradeRegistry.UpdateStopLoss(group.GroupId, newStop.Value, orders);
+            }
+        }
+    }
 
     protected override void OnOrderFilled(Fill fill, Order order)
     {
