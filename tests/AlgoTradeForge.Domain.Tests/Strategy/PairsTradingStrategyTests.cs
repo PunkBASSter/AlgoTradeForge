@@ -136,10 +136,6 @@ public sealed class PairsTradingStrategyTests
         // The pipeline should have processed all bars
         Assert.Equal(s1.Count + s2.Count, result.TotalBarsProcessed);
 
-        // Exit events should only be emitted for primary subscription bars when position active
-        var exitEvents = bus.Events.OfType<ExitEvaluationEvent>().ToList();
-        Assert.True(exitEvents.Count <= s1.Count,
-            $"Exit events ({exitEvents.Count}) should not exceed primary series count ({s1.Count})");
     }
 
     [Fact]

@@ -2,7 +2,6 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Strategy.Modules;
-using AlgoTradeForge.Domain.Strategy.Modules.Exit;
 using AlgoTradeForge.Domain.Strategy.Modules.Regime;
 using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Strategy.Modules.TrailingStop;
@@ -26,8 +25,9 @@ public sealed class DonchianBreakoutStrategy(
     private Atr _atr = null!;
     private TrailingStopModule _trailingStopModule = null!;
     private RegimeDetectorModule _regimeDetector = null!;
-    private RegimeChangeExitRule _regimeChangeExit = null!;
-    private TimeBasedExitRule? _timeBasedExit;
+    private readonly Dictionary<long, MarketRegime> _entryRegimes = [];
+    private int _maxHoldBars;
+    private long _barIntervalMs;
 
     protected override void OnStrategyInit()
     {
@@ -51,14 +51,9 @@ public sealed class DonchianBreakoutStrategy(
         _regimeDetector = new RegimeDetectorModule(Params.RegimeDetectorConfig);
         _regimeDetector.Initialize(Indicators, DataSubscriptions[0]);
 
-        // Exit rules
-        _regimeChangeExit = new RegimeChangeExitRule(Context);
-
-        if (Params.Exit is { MaxHoldBars: > 0 } exitParams)
-        {
-            var intervalMs = (long)DataSubscriptions[0].TimeFrame.TotalMilliseconds;
-            _timeBasedExit = new TimeBasedExitRule(exitParams.MaxHoldBars, intervalMs);
-        }
+        // Exit config
+        _maxHoldBars = Params.MaxHoldBars;
+        _barIntervalMs = (long)DataSubscriptions[0].TimeFrame.TotalMilliseconds;
     }
 
     protected override void OnContextUpdated(Int64Bar bar, DataSubscription sub)
@@ -169,15 +164,23 @@ public sealed class DonchianBreakoutStrategy(
             var atr = context.Current;
             var newStop = _trailingStopModule.Update(group.GroupId, bar, atr);
 
-            // Exit evaluation
-            var exitSignal = _regimeChangeExit.Evaluate(bar, context, group);
-            if (_timeBasedExit is not null)
-                exitSignal = Math.Min(exitSignal, _timeBasedExit.Evaluate(bar, context, group));
+            // Exit evaluation — regime change
+            var exitSignal = EvaluateRegimeChangeExit(group);
+
+            // Exit evaluation — time-based
+            if (_maxHoldBars > 0)
+            {
+                var elapsedMs = bar.TimestampMs - group.CreatedAt.ToUnixTimeMilliseconds();
+                var barsHeld = elapsedMs / _barIntervalMs;
+                if (barsHeld >= _maxHoldBars)
+                    exitSignal = Math.Min(exitSignal, -100);
+            }
 
             if (exitSignal <= Params.ExitThreshold)
             {
                 tradeRegistry.LiquidateGroup(group.GroupId);
                 _trailingStopModule.Remove(group.GroupId);
+                _entryRegimes.Remove(group.GroupId);
                 EmitSignal(bar.Timestamp, "Exit", context.CurrentSubscription.Asset.Name,
                     "Close", exitSignal, $"exit_score={exitSignal}");
             }
@@ -203,13 +206,41 @@ public sealed class DonchianBreakoutStrategy(
                     group.EntrySide,
                     group.SlPrice);
 
-                // Record entry regime for regime-change exit rule
-                _regimeChangeExit.Activate(group.GroupId, Context.CurrentRegime);
+                // Record entry regime for regime-change exit
+                _entryRegimes[group.GroupId] = Context.CurrentRegime;
                 break;
             }
         }
 
         // Clean up stale regime-change tracking for closed groups
-        _regimeChangeExit.RemoveInactive(registry.ActiveGroups);
+        RemoveInactiveRegimeEntries(registry.ActiveGroups);
+    }
+
+    private int EvaluateRegimeChangeExit(OrderGroup group)
+    {
+        if (!_entryRegimes.TryGetValue(group.GroupId, out var entryRegime))
+            return 0;
+
+        if (entryRegime == MarketRegime.Unknown || Context.CurrentRegime == MarketRegime.Unknown)
+            return 0;
+
+        return Context.CurrentRegime != entryRegime ? -80 : 0;
+    }
+
+    private void RemoveInactiveRegimeEntries(IEnumerable<OrderGroup> activeGroups)
+    {
+        var activeIds = new HashSet<long>();
+        foreach (var g in activeGroups)
+            activeIds.Add(g.GroupId);
+
+        var stale = new List<long>();
+        foreach (var id in _entryRegimes.Keys)
+        {
+            if (!activeIds.Contains(id))
+                stale.Add(id);
+        }
+
+        foreach (var id in stale)
+            _entryRegimes.Remove(id);
     }
 }

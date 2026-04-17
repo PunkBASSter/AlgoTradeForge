@@ -90,9 +90,6 @@ public sealed class ModularStrategyEventTests
         Engine.Run([bars], strategy, CreateOptions(),
             ct: TestContext.Current.CancellationToken, bus: bus);
 
-        // Rsi2 has no ManagePositions override, so no exit events are emitted
-        var exitEvents = bus.Events.OfType<ExitEvaluationEvent>().ToList();
-        Assert.Empty(exitEvents);
     }
 
     [Fact]

@@ -1,6 +1,5 @@
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Strategy.Modules;
-using AlgoTradeForge.Domain.Strategy.Modules.Exit;
 using AlgoTradeForge.Domain.Strategy.Modules.Regime;
 using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Strategy.Modules.TrailingStop;
@@ -28,7 +27,8 @@ public sealed class DonchianParams : ModularStrategyParamsBase
     public int ExitThreshold { get; init; } = -50;
 
     public override TradeRegistryParams TradeRegistry { get; init; } = new() { MaxConcurrentGroups = 1 };
-    public TimeBasedExitParams Exit { get; init; } = new();
+    [Optimizable(Min = 5, Max = 100, Step = 5)]
+    public int MaxHoldBars { get; init; } = 0;
     public TrailingStopParams TrailingStopConfig { get; init; } = new();
     public RegimeDetectorParams RegimeDetectorConfig { get; init; } = new();
 }
