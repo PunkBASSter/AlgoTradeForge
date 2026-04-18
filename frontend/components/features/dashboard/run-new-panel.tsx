@@ -131,7 +131,7 @@ export function RunNewPanel({
         if (axis && Array.isArray(axis)) {
           setDssValue(axis);
         } else if (!axis) {
-          setDssValue([]);
+          setDssValue(prev => prev.length === 0 ? prev : []);
         }
       } catch {
         // Invalid JSON — don't update DSS builder
