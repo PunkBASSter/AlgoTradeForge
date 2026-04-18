@@ -88,12 +88,14 @@ public sealed class ModularStrategyParamsOptimizationTests
     }
 
     [Fact]
-    public void ModularStrategyParamsBase_MoneyManagement_HasOptimizableModuleAttribute()
+    public void ModularStrategyParamsBase_MoneyManagement_DoesNotHaveOptimizableModuleAttribute()
     {
+        // MoneyManagement is intentionally not optimizable — FixedNotionalModule is forced
+        // as the default to ensure objective strategy performance estimation.
         var mmProp = typeof(ModularStrategyParamsBase)
             .GetProperty("MoneyManagement");
         Assert.NotNull(mmProp);
-        Assert.NotNull(mmProp!.GetCustomAttribute<OptimizableModuleAttribute>());
+        Assert.Null(mmProp!.GetCustomAttribute<OptimizableModuleAttribute>());
     }
 
     [Fact]

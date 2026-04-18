@@ -274,8 +274,9 @@ public sealed class GeneticOptimizationTaskExecutor(
                                     runId, startedAt, ref localStrategyVersion, trialCts.Token);
 
                                 var filteredOut = !filter.Passes(record.Metrics);
-                                Volatile.Write(ref fitnesses[i], fitnessFunction.Evaluate(record.Metrics));
-                                record = record with { FitnessScore = Volatile.Read(ref fitnesses[i]) };
+                                var rawFitness = fitnessFunction.Evaluate(record.Metrics);
+                                Volatile.Write(ref fitnesses[i], rawFitness);
+                                record = record with { FitnessScore = rawFitness <= double.MinValue ? null : rawFitness };
 
                                 if (!filteredOut)
                                     topTrials.TryAdd(record);

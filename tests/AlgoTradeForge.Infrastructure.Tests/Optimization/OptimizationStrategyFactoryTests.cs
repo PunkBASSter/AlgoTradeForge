@@ -110,7 +110,6 @@ public class OptimizationStrategyFactoryTests
         {
             ["TrailingStopConfig"] = """{"variant":0,"atrMultiplier":3.5,"atrPeriod":20,"donchianPeriod":30}""",
             ["RegimeDetectorConfig"] = """{"adxPeriod":20,"trendThreshold":30}""",
-            ["MoneyManagement"] = """{"method":0,"riskPercent":2,"volTarget":0.15,"winRate":0.5,"payoffRatio":2}""",
             ["TradeRegistry"] = """{"maxConcurrentGroups":0}""",
         });
 
