@@ -777,9 +777,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 : reader.GetString(reader.GetOrdinal("run_folder_path")),
             RunMode = reader.GetString(reader.GetOrdinal("run_mode")),
             OptimizationRunId = optIdStr is not null ? Guid.Parse(optIdStr) : null,
-            FitnessScore = reader.IsDBNull(reader.GetOrdinal("fitness_score"))
-                ? null
-                : reader.GetDouble(reader.GetOrdinal("fitness_score")),
+            FitnessScore = ReadFiniteDoubleOrNull(reader, "fitness_score"),
             ErrorMessage = reader.IsDBNull(reader.GetOrdinal("error_message"))
                 ? null
                 : reader.GetString(reader.GetOrdinal("error_message")),
@@ -895,6 +893,15 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         if (sortBy.Equals("TotalTrades", cmp))             return $" ORDER BY {prefix}total_trades DESC NULLS LAST";
         if (sortBy.Equals("AnnualizedReturnPct", cmp))     return $" ORDER BY {prefix}annualized_return_pct DESC NULLS LAST";
         return $" ORDER BY {prefix}fitness_score DESC NULLS LAST";
+    }
+
+    private static double? ReadFiniteDoubleOrNull(DbDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        if (reader.IsDBNull(ordinal))
+            return null;
+        var value = reader.GetDouble(ordinal);
+        return double.IsFinite(value) && value > double.MinValue ? value : null;
     }
 
     private static string SerializeEquityCurve(IReadOnlyList<EquityPoint> curve)

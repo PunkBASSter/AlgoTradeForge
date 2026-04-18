@@ -5,6 +5,7 @@ using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.BuyAndHold;
 using AlgoTradeForge.Domain.Strategy.DonchianBreakout;
+using AlgoTradeForge.Domain.Strategy.Modules.MoneyManagement;
 using AlgoTradeForge.Domain.Strategy.Modules.TrailingStop;
 using AlgoTradeForge.Infrastructure.Optimization;
 using Xunit;
@@ -185,6 +186,30 @@ public class OptimizationStrategyFactoryTests
         var strategy = factory.Create("WithModule", combination);
         Assert.NotNull(strategy);
         Assert.IsType<StrategyWithModule>(strategy);
+    }
+
+    [Fact]
+    public void Create_EmptyModuleSlot_KeepsDefault()
+    {
+        var strategy = _factory.Create("DonchianBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
+        {
+            ["MoneyManagement"] = JsonDocument.Parse("{}").RootElement,
+        });
+
+        Assert.IsType<DonchianBreakoutStrategy>(strategy);
+        var mm = GetParams<DonchianParams>(strategy).MoneyManagement;
+        Assert.IsType<FixedNotionalModule>(mm);
+    }
+
+    [Fact]
+    public void Create_ModuleSlotWithoutTypeKey_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            _factory.Create("DonchianBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
+            {
+                ["MoneyManagement"] = JsonDocument.Parse("""{"riskPercent":2}""").RootElement,
+            }));
+        Assert.Contains("typeKey", ex.Message);
     }
 
     private static T GetParams<T>(IInt64BarStrategy strategy)

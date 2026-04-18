@@ -103,7 +103,7 @@ public sealed class MoneyManagementModuleTests
 
     private static TestStrategyContext CreateContextWithAtr(long cash, long currentAtr, long usedMargin = 0L)
     {
-        var context = new TestStrategyContext { Current = currentAtr };
+        var context = new TestStrategyContext { CurrentVolatility = currentAtr };
         var bar = new Int64Bar(0, 50000, 51000, 49000, 50000, 1000);
         var orders = Substitute.For<IOrderContext>();
         orders.Cash.Returns(cash);

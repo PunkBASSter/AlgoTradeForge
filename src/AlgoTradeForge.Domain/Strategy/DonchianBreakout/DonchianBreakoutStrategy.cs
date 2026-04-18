@@ -60,7 +60,7 @@ public sealed class DonchianBreakoutStrategy(
     {
         var atrValues = _atr.Buffers["Value"];
         if (atrValues.Count > 0)
-            Context.Current = atrValues[^1];
+            Context.CurrentVolatility = atrValues[^1];
 
         // Update regime detector (previously handled by base)
         _regimeDetector.Update(bar, Context);
@@ -142,7 +142,7 @@ public sealed class DonchianBreakoutStrategy(
     protected override (long stopLoss, TpLevel[] takeProfits) GetRiskLevels(
         Int64Bar bar, OrderSide direction, long entryPrice, DonchianContext context)
     {
-        var atr = context.Current;
+        var atr = context.CurrentVolatility;
         if (atr == 0) atr = bar.Close / 50;
 
         var distance = (long)(Params.AtrStopMultiplier * atr);
@@ -161,7 +161,7 @@ public sealed class DonchianBreakoutStrategy(
             var bar = context.CurrentBar;
 
             // Trailing stop adjustment
-            var atr = context.Current;
+            var atr = context.CurrentVolatility;
             var newStop = _trailingStopModule.Update(group.GroupId, bar, atr);
 
             // Exit evaluation — regime change

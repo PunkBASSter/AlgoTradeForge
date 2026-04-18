@@ -12,7 +12,7 @@ public sealed class AtrVolTargetModule(AtrVolTargetParams parameters)
         if (context is not IVolatilityContext vol)
             return 0m;
 
-        var atr = vol.Current;
+        var atr = vol.CurrentVolatility;
         if (atr <= 0) return 0m;
 
         // qty = (equity * volTarget) / ATR

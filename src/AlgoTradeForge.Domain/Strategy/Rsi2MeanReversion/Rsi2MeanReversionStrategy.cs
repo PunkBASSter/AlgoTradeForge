@@ -43,7 +43,7 @@ public sealed class Rsi2MeanReversionStrategy(
     {
         var atrValues = _atr.Buffers["Value"];
         if (atrValues.Count > 0)
-            Context.Current = atrValues[^1];
+            Context.CurrentVolatility = atrValues[^1];
     }
 
     protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub)
@@ -113,7 +113,7 @@ public sealed class Rsi2MeanReversionStrategy(
     protected override (long stopLoss, TpLevel[] takeProfits) GetRiskLevels(
         Int64Bar bar, OrderSide direction, long entryPrice, Rsi2Context context)
     {
-        var atr = context.Current;
+        var atr = context.CurrentVolatility;
         if (atr == 0) atr = bar.Close / 50;
         var distance = (long)(Params.AtrStopMultiplier * atr);
         var sl = direction == OrderSide.Buy

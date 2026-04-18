@@ -4,5 +4,5 @@ namespace AlgoTradeForge.Domain.Strategy.Rsi2MeanReversion;
 
 public sealed class Rsi2Context : StrategyContextBase, IVolatilityContext
 {
-    public long Current { get; set; }
+    public long CurrentVolatility { get; set; }
 }

@@ -347,6 +347,9 @@ public sealed class ParameterLandscapeStage : IValidationStage
         };
     }
 
-    private static double ComputeFitness(TrialSummary trial) =>
-        TrialFitnessEvaluator.Evaluate(trial.Metrics);
+    private static double ComputeFitness(TrialSummary trial)
+    {
+        var fitness = TrialFitnessEvaluator.Evaluate(trial.Metrics);
+        return fitness <= double.MinValue ? double.NaN : fitness;
+    }
 }

@@ -833,6 +833,20 @@ public class SqliteRunRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAndGetById_DoubleMinValueFitnessScore_ReadAsNull()
+    {
+        // double.MinValue is finite (passes write-path IsFinite check) but the read path
+        // must convert it to null for legacy records written before the handler-level fix.
+        var record = MakeBacktestRecord() with { FitnessScore = double.MinValue };
+
+        await _repo.SaveAsync(record, TestContext.Current.CancellationToken);
+        var loaded = await _repo.GetByIdAsync(record.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Null(loaded.FitnessScore);
+    }
+
+    [Fact]
     public async Task OptimizationTrials_SortedByFitnessScore()
     {
         var optId = Guid.NewGuid();

@@ -128,49 +128,64 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
             return true;
         }
 
-        // Parse JsonElement or string-encoded JSON
-        JsonElement? obj = value switch
+        // Parse JsonElement or string-encoded JSON (dispose document if we created one)
+        JsonDocument? ownedDoc = null;
+        JsonElement? obj;
+        try
         {
-            JsonElement { ValueKind: JsonValueKind.Object } el => el,
-            string json when json.TrimStart().StartsWith('{') =>
-                JsonDocument.Parse(json).RootElement,
-            _ => null,
-        };
+            if (value is JsonElement { ValueKind: JsonValueKind.Object } el)
+            {
+                obj = el;
+            }
+            else if (value is string json && json.TrimStart().StartsWith('{'))
+            {
+                ownedDoc = JsonDocument.Parse(json);
+                obj = ownedDoc.RootElement;
+            }
+            else
+            {
+                obj = null;
+            }
 
-        if (obj is not { } element)
-            throw new ArgumentException(
-                $"Module slot '{propertyName}' requires a JSON object. " +
-                $"Use {{}} to keep the default or {{\"typeKey\": \"<key>\", \"params\": {{...}}}} to select a variant.");
+            if (obj is not { } element)
+                throw new ArgumentException(
+                    $"Module slot '{propertyName}' requires a JSON object. " +
+                    $"Use {{}} to keep the default or {{\"typeKey\": \"<key>\", \"params\": {{...}}}} to select a variant.");
 
-        // Empty object {} — keep the default module instance
-        if (element.EnumerateObject().Any() is false)
+            // Empty object {} — keep the default module instance
+            if (element.EnumerateObject().Any() is false)
+                return true;
+
+            if (!element.TryGetProperty("typeKey", out var typeKeyElement)
+                || typeKeyElement.GetString() is not { } typeKey)
+                throw new ArgumentException(
+                    $"Module slot '{propertyName}' requires a 'typeKey' property to select the module implementation. " +
+                    $"Use {{}} to keep the default. " +
+                    $"Expected format: {{\"typeKey\": \"<key>\", \"params\": {{...}}}}");
+
+            // Need a ModuleSlotAxis to resolve the variant — requires [OptimizableModule] on the property
+            var slotAxis = descriptor.Axes.OfType<ModuleSlotAxis>()
+                .FirstOrDefault(a => a.Name == propertyName)
+                ?? throw new ArgumentException(
+                    $"Module slot '{propertyName}' is not configurable. " +
+                    $"Remove it from the request to use the default.");
+
+            var subParams = new Dictionary<string, object>();
+            if (element.TryGetProperty("params", out var paramsElement)
+                && paramsElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var p in paramsElement.EnumerateObject())
+                    subParams[p.Name] = p.Value.Clone();
+            }
+
+            SetModuleProperty(descriptor, paramsInstance, propertyName,
+                new ModuleSelection(typeKey, subParams));
             return true;
-
-        if (!element.TryGetProperty("typeKey", out var typeKeyElement)
-            || typeKeyElement.GetString() is not { } typeKey)
-            throw new ArgumentException(
-                $"Module slot '{propertyName}' requires a 'typeKey' property to select the module implementation. " +
-                $"Use {{}} to keep the default. " +
-                $"Expected format: {{\"typeKey\": \"<key>\", \"params\": {{...}}}}");
-
-        // Need a ModuleSlotAxis to resolve the variant — requires [OptimizableModule] on the property
-        var slotAxis = descriptor.Axes.OfType<ModuleSlotAxis>()
-            .FirstOrDefault(a => a.Name == propertyName)
-            ?? throw new ArgumentException(
-                $"Module slot '{propertyName}' is not configurable. " +
-                $"Remove it from the request to use the default.");
-
-        var subParams = new Dictionary<string, object>();
-        if (element.TryGetProperty("params", out var paramsElement)
-            && paramsElement.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var p in paramsElement.EnumerateObject())
-                subParams[p.Name] = p.Value.Clone();
         }
-
-        SetModuleProperty(descriptor, paramsInstance, propertyName,
-            new ModuleSelection(typeKey, subParams));
-        return true;
+        finally
+        {
+            ownedDoc?.Dispose();
+        }
     }
 
     private static readonly HashSet<string> SkippableProperties = ["DataSubscriptions"];

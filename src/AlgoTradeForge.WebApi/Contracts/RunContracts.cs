@@ -43,22 +43,31 @@ public static class MetricsMapping
             ["grossProfit"] = m.GrossProfit,
             ["grossLoss"] = m.GrossLoss,
             ["totalCommissions"] = m.TotalCommissions,
-            ["totalReturnPct"] = m.TotalReturnPct,
-            ["annualizedReturnPct"] = m.AnnualizedReturnPct,
-            ["sharpeRatio"] = m.SharpeRatio,
-            ["sortinoRatio"] = m.SortinoRatio,
-            ["maxDrawdownPct"] = m.MaxDrawdownPct,
-            ["winRatePct"] = m.WinRatePct,
-            ["profitFactor"] = m.ProfitFactor,
-            ["averageWin"] = m.AverageWin,
-            ["averageLoss"] = m.AverageLoss,
             ["initialCapital"] = m.InitialCapital,
             ["finalEquity"] = m.FinalEquity,
             ["tradingDays"] = m.TradingDays,
         };
-        if (fitnessScore.HasValue)
-            dict["fitness"] = fitnessScore.Value;
+
+        AddIfFinite(dict, "totalReturnPct", m.TotalReturnPct);
+        AddIfFinite(dict, "annualizedReturnPct", m.AnnualizedReturnPct);
+        AddIfFinite(dict, "sharpeRatio", m.SharpeRatio);
+        AddIfFinite(dict, "sortinoRatio", m.SortinoRatio);
+        AddIfFinite(dict, "maxDrawdownPct", m.MaxDrawdownPct);
+        AddIfFinite(dict, "winRatePct", m.WinRatePct);
+        AddIfFinite(dict, "profitFactor", m.ProfitFactor);
+        AddIfFinite(dict, "averageWin", m.AverageWin);
+        AddIfFinite(dict, "averageLoss", m.AverageLoss);
+
+        if (fitnessScore is { } fs && double.IsFinite(fs))
+            dict["fitness"] = fs;
+
         return dict;
+    }
+
+    private static void AddIfFinite(Dictionary<string, object> dict, string key, double value)
+    {
+        if (double.IsFinite(value))
+            dict[key] = value;
     }
 }
 

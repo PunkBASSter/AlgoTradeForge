@@ -5,6 +5,6 @@ namespace AlgoTradeForge.Domain.Strategy.DonchianBreakout;
 
 public sealed class DonchianContext : StrategyContextBase, IVolatilityContext, IRegimeContext
 {
-    public long Current { get; set; }
+    public long CurrentVolatility { get; set; }
     public MarketRegime CurrentRegime { get; set; } = MarketRegime.Unknown;
 }

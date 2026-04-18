@@ -51,7 +51,7 @@ public sealed class PairsTradingStrategy(
         {
             var atrValues = _atr.Buffers["Value"];
             if (atrValues.Count > 0)
-                Context.Current = atrValues[^1];
+                Context.CurrentVolatility = atrValues[^1];
         }
     }
 
@@ -113,7 +113,7 @@ public sealed class PairsTradingStrategy(
     protected override (long stopLoss, TpLevel[] takeProfits) GetRiskLevels(
         Int64Bar bar, OrderSide direction, long entryPrice, PairsTradingContext context)
     {
-        var atr = context.Current;
+        var atr = context.CurrentVolatility;
         if (atr == 0) atr = bar.Close / 50;
         var distance = (long)(Params.AtrStopMultiplier * atr);
 

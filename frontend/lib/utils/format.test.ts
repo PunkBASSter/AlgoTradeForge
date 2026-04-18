@@ -37,6 +37,18 @@ describe("formatNumber", () => {
   it("formats negative numbers", () => {
     expect(formatNumber(-42.1)).toBe("-42.10");
   });
+
+  it("returns em-dash for NaN", () => {
+    expect(formatNumber(NaN)).toBe("\u2014");
+  });
+
+  it("returns em-dash for Infinity", () => {
+    expect(formatNumber(Infinity)).toBe("\u2014");
+  });
+
+  it("returns em-dash for -Infinity", () => {
+    expect(formatNumber(-Infinity)).toBe("\u2014");
+  });
 });
 
 describe("formatCurrency", () => {
@@ -47,6 +59,14 @@ describe("formatCurrency", () => {
   it("formats negative values", () => {
     expect(formatCurrency(-99.99)).toBe("-$99.99");
   });
+
+  it("returns em-dash for NaN", () => {
+    expect(formatCurrency(NaN)).toBe("\u2014");
+  });
+
+  it("returns em-dash for Infinity", () => {
+    expect(formatCurrency(Infinity)).toBe("\u2014");
+  });
 });
 
 describe("formatPercent", () => {
@@ -56,6 +76,18 @@ describe("formatPercent", () => {
 
   it("formats zero", () => {
     expect(formatPercent(0)).toBe("0.00%");
+  });
+
+  it("returns em-dash for NaN", () => {
+    expect(formatPercent(NaN)).toBe("\u2014");
+  });
+
+  it("returns em-dash for Infinity", () => {
+    expect(formatPercent(Infinity)).toBe("\u2014");
+  });
+
+  it("returns em-dash for -Infinity", () => {
+    expect(formatPercent(-Infinity)).toBe("\u2014");
   });
 });
 

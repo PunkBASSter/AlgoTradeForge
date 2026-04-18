@@ -280,8 +280,11 @@ public static class ParameterSensitivityAnalyzer
         return best;
     }
 
-    private static double ComputeTrialFitness(TrialSummary trial) =>
-        TrialFitnessEvaluator.Evaluate(trial.Metrics);
+    private static double ComputeTrialFitness(TrialSummary trial)
+    {
+        var fitness = TrialFitnessEvaluator.Evaluate(trial.Metrics);
+        return fitness <= double.MinValue ? double.NaN : fitness;
+    }
 
     private static bool IsNumeric(object value) => ParameterValueHelper.IsNumeric(value);
 

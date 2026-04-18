@@ -9,7 +9,7 @@ namespace AlgoTradeForge.Domain.Tests.TestUtilities;
 /// </summary>
 internal sealed class TestStrategyContext : StrategyContextBase, IVolatilityContext, IRegimeContext, ICrossAssetContext
 {
-    public long Current { get; set; }
+    public long CurrentVolatility { get; set; }
     public MarketRegime CurrentRegime { get; set; } = MarketRegime.Unknown;
     public double ZScore { get; set; }
     public double HedgeRatio { get; set; }
