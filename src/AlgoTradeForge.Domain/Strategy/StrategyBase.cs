@@ -7,7 +7,7 @@ using AlgoTradeForge.Domain.Trading;
 namespace AlgoTradeForge.Domain.Strategy;
 
 public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactory? indicators = null)
-    : IInt64BarStrategy, IEventBusReceiver, IFeedContextReceiver, ITradeRegistryProvider
+    : IInt64BarStrategy, IEventBusReceiver, IFeedContextReceiver, IOrderContextReceiver, ITradeRegistryProvider
     where TParams : StrategyParamsBase
 {
     private readonly TradeRegistryModule _tradeRegistry = new(parameters.TradeRegistry);
@@ -24,21 +24,15 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
 
     protected TradeRegistryModule TradeRegistry => _tradeRegistry;
 
-    protected IOrderContext Orders { get; private set; } = null!;
+    protected IOrderContext Orders { get; private set; } = UninitializedOrderContext.Instance;
 
     TradeRegistryModule ITradeRegistryProvider.TradeRegistry => _tradeRegistry;
 
     public IList<DataSubscription> DataSubscriptions => Params.DataSubscriptions;
 
-    public virtual void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
-    {
-        ScopeOrderContext(orders);
-    }
+    public virtual void OnBarStart(Int64Bar bar, DataSubscription subscription) { }
 
-    public virtual void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
-    {
-        ScopeOrderContext(orders);
-    }
+    public virtual void OnBarComplete(Int64Bar bar, DataSubscription subscription) { }
 
     public virtual void OnInit()
     {
@@ -46,9 +40,8 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
             busReceiver.SetEventBus(EventBus);
     }
 
-    public virtual void OnTrade(Fill fill, Order order, IOrderContext orders)
+    public virtual void OnTrade(Fill fill, Order order)
     {
-        ScopeOrderContext(orders);
         _tradeRegistry.OnFill(fill, order);
     }
 
@@ -60,10 +53,10 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
             signalName, assetName, direction, strength, reason));
     }
 
-    private void ScopeOrderContext(IOrderContext orders)
+    void IOrderContextReceiver.SetOrderContext(IOrderContext context)
     {
-        Orders = orders;
-        _tradeRegistry.SetOrderContext(orders);
+        Orders = context;
+        _tradeRegistry.SetOrderContext(context);
     }
 
     void IEventBusReceiver.SetEventBus(IEventBus bus) => EventBus = bus;

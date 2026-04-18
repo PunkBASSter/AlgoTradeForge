@@ -28,15 +28,15 @@ public class TradeRegistryIntegrationTests
 
     // ── Helper strategy that opens a group on bar 0 and delegates fills ──
 
-    private sealed class TestStrategy : IInt64BarStrategy, IEventBusReceiver
+    private sealed class TestStrategy : IInt64BarStrategy, IEventBusReceiver, IOrderContextReceiver
     {
         private readonly TradeRegistryModule _registry;
-        private readonly Action<Int64Bar, DataSubscription, IOrderContext, TradeRegistryModule, int>? _onBar;
+        private readonly Action<Int64Bar, DataSubscription, TradeRegistryModule, int>? _onBar;
         private int _barIndex;
 
         public TestStrategy(
             TradeRegistryModule registry,
-            Action<Int64Bar, DataSubscription, IOrderContext, TradeRegistryModule, int>? onBar = null)
+            Action<Int64Bar, DataSubscription, TradeRegistryModule, int>? onBar = null)
         {
             _registry = registry;
             _onBar = onBar;
@@ -53,18 +53,18 @@ public class TradeRegistryIntegrationTests
 
         public void SetEventBus(IEventBus bus) => _registry.SetEventBus(bus);
 
-        public void OnTrade(Fill fill, Order order, IOrderContext orders)
+        public void SetOrderContext(IOrderContext context) => _registry.SetOrderContext(context);
+
+        public void OnTrade(Fill fill, Order order)
         {
             _simulationTime = fill.Timestamp;
-            _registry.SetOrderContext(orders);
             _registry.OnFill(fill, order);
         }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+        public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
         {
             _simulationTime = DateTimeOffset.FromUnixTimeMilliseconds(bar.TimestampMs);
-            _registry.SetOrderContext(orders);
-            _onBar?.Invoke(bar, subscription, orders, _registry, _barIndex);
+            _onBar?.Invoke(bar, subscription, _registry, _barIndex);
             _barIndex++;
         }
     }
@@ -78,7 +78,7 @@ public class TradeRegistryIntegrationTests
         var sub = new DataSubscription(TestAsset, OneMinute);
         OrderGroup? group = null;
 
-        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
         {
             if (i == 0)
             {
@@ -116,7 +116,7 @@ public class TradeRegistryIntegrationTests
         var sub = new DataSubscription(TestAsset, OneMinute);
         OrderGroup? group = null;
 
-        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
         {
             if (i == 0)
             {
@@ -158,7 +158,7 @@ public class TradeRegistryIntegrationTests
         var sub = new DataSubscription(TestAsset, OneMinute);
         OrderGroup? group = null;
 
-        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
         {
             if (i == 0)
             {
@@ -194,7 +194,7 @@ public class TradeRegistryIntegrationTests
         var sub = new DataSubscription(TestAsset, OneMinute);
         OrderGroup? group = null;
 
-        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
         {
             if (i == 0)
             {
@@ -236,7 +236,7 @@ public class TradeRegistryIntegrationTests
         var sub = new DataSubscription(TestAsset, OneMinute);
         OrderGroup? group1 = null, group2 = null;
 
-        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
         {
             if (i == 0)
             {
@@ -278,7 +278,7 @@ public class TradeRegistryIntegrationTests
         OrderGroup? group = null;
         long highestClose = 0;
 
-        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
         {
             if (i == 0)
             {
@@ -328,7 +328,7 @@ public class TradeRegistryIntegrationTests
         var events = new List<OrderGroupEvent>();
         var bus = new CapturingEventBus(events);
 
-        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
         {
             if (i == 0)
             {
@@ -368,7 +368,7 @@ public class TradeRegistryIntegrationTests
         var sub = new DataSubscription(TestAsset, OneMinute);
         OrderGroup? group = null;
 
-        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
         {
             if (i == 0)
             {
@@ -409,7 +409,7 @@ public class TradeRegistryIntegrationTests
         var sub = new DataSubscription(TestAsset, OneMinute);
         OrderGroup? groupA = null, groupB = null;
 
-        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
         {
             if (i == 0)
             {
@@ -454,7 +454,7 @@ public class TradeRegistryIntegrationTests
         var sub = new DataSubscription(TestAsset, OneMinute);
         OrderGroup? groupA = null, groupB = null;
 
-        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
         {
             if (i == 0)
             {
@@ -505,7 +505,7 @@ public class TradeRegistryIntegrationTests
         var sub = new DataSubscription(TestAsset, OneMinute);
         OrderGroup? group = null;
 
-        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
         {
             if (i == 0)
             {
@@ -550,7 +550,7 @@ public class TradeRegistryIntegrationTests
         var sub = new DataSubscription(TestAsset, OneMinute);
         OrderGroup? groupA = null, groupB = null;
 
-        var strategy = new TestStrategy(registry, onBar: (bar, sub, ctx, reg, i) =>
+        var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
         {
             if (i == 0)
             {

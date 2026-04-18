@@ -315,9 +315,9 @@ public class JsonlEventStreamIntegrationTests : IDisposable
             _dzz = Indicators.Create(new DeltaZigZag(0.5, 10.0), DataSubscriptions[0]);
         }
 
-        public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+        public override void OnBarComplete(Int64Bar bar, DataSubscription subscription)
         {
-            base.OnBarComplete(bar, subscription, orders);
+            base.OnBarComplete(bar, subscription);
             _barHistory.Add(bar);
             _dzz.Compute(_barHistory);
         }

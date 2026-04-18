@@ -126,7 +126,7 @@ public class SpaceDescriptorBuilderTests
 public sealed class BadStrategyWithNonNumericOptimizable(BadNonNumericParams p) : StrategyBase<BadNonNumericParams>(p)
 {
     public override string Version => "1.0.0";
-    public override void OnBarComplete(Domain.History.Int64Bar bar, DataSubscription sub, IOrderContext orders) { }
+    public override void OnBarComplete(Domain.History.Int64Bar bar, DataSubscription sub) { }
 }
 
 public class BadNonNumericParams : StrategyParamsBase
@@ -154,7 +154,7 @@ public class TestModuleParams : ModuleParamsBase
 public sealed class StrategyWithModule(StrategyWithModuleParams p, IIndicatorFactory? indicators = null) : StrategyBase<StrategyWithModuleParams>(p, indicators)
 {
     public override string Version => "1.0.0";
-    public override void OnBarComplete(Domain.History.Int64Bar bar, DataSubscription sub, IOrderContext orders) { }
+    public override void OnBarComplete(Domain.History.Int64Bar bar, DataSubscription sub) { }
 }
 
 public class StrategyWithModuleParams : StrategyParamsBase

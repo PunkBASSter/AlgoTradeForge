@@ -185,7 +185,7 @@ public class GatingDebugProbeTests
         var pauseGate = new ManualResetEventSlim(false);
         var barCount = 0;
 
-        var strategy = new CallbackStrategy(sub, onBarComplete: (_, _, _) =>
+        var strategy = new CallbackStrategy(sub, onBarComplete: (_, _) =>
         {
             var n = Interlocked.Increment(ref barCount);
             if (n == 5)
@@ -282,7 +282,7 @@ public class GatingDebugProbeTests
         var reachedGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var barCount = 0;
 
-        var strategy = new CallbackStrategy(sub, onBarComplete: (_, _, _) =>
+        var strategy = new CallbackStrategy(sub, onBarComplete: (_, _) =>
         {
             if (Interlocked.Increment(ref barCount) == 3)
             {
@@ -327,7 +327,7 @@ public class GatingDebugProbeTests
         var reachedGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var barCount = 0;
 
-        var strategy = new CallbackStrategy(sub, onBarComplete: (_, _, _) =>
+        var strategy = new CallbackStrategy(sub, onBarComplete: (_, _) =>
         {
             if (Interlocked.Increment(ref barCount) == 2)
             {
@@ -391,19 +391,20 @@ public class GatingDebugProbeTests
         await engineTask;
     }
 
-    private sealed class OrderOnBar2Strategy(DataSubscription subscription) : IInt64BarStrategy
+    private sealed class OrderOnBar2Strategy(DataSubscription subscription) : IInt64BarStrategy, IOrderContextReceiver
     {
         private bool _submitted;
+        private IOrderContext _orders = null!;
         public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
         public void OnInit() { }
-        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
+        public void OnTrade(Fill fill, Order order) { }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription sub, IOrderContext orders)
+        public void OnBarComplete(Int64Bar bar, DataSubscription sub)
         {
             if (_submitted) return;
             _submitted = true;
-            orders.Submit(new Order
+            _orders.Submit(new Order
             {
                 Id = 0,
                 Asset = TestAssets.Aapl,
@@ -412,6 +413,8 @@ public class GatingDebugProbeTests
                 Quantity = 1m
             });
         }
+
+        void IOrderContextReceiver.SetOrderContext(IOrderContext context) => _orders = context;
     }
 
     [Fact]
@@ -495,15 +498,15 @@ public class GatingDebugProbeTests
 
     private sealed class CallbackStrategy(
         DataSubscription subscription,
-        Action<Int64Bar, DataSubscription, IOrderContext>? onBarComplete = null) : IInt64BarStrategy
+        Action<Int64Bar, DataSubscription>? onBarComplete = null) : IInt64BarStrategy
     {
         public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
         public void OnInit() { }
-        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
+        public void OnTrade(Fill fill, Order order) { }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription sub, IOrderContext orders)
-            => onBarComplete?.Invoke(bar, sub, orders);
+        public void OnBarComplete(Int64Bar bar, DataSubscription sub)
+            => onBarComplete?.Invoke(bar, sub);
     }
 
     /// <summary>
@@ -518,9 +521,9 @@ public class GatingDebugProbeTests
         public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
         public void OnInit() { }
-        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
+        public void OnTrade(Fill fill, Order order) { }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription sub, IOrderContext orders)
+        public void OnBarComplete(Int64Bar bar, DataSubscription sub)
         {
             if (_barIndex == 1)
             {

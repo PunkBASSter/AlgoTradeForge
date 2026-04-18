@@ -44,9 +44,9 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
             Assert.Skip(BinanceTestnetCredentials.SkipReason);
 
         Strategy.ResetFillTcs();
-        Strategy.OnNextBar = orders =>
+        Strategy.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            Strategy.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = fixture.Asset!,
@@ -75,9 +75,9 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
 
         // Buy first
         Strategy.ResetFillTcs();
-        Strategy.OnNextBar = orders =>
+        Strategy.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            Strategy.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = fixture.Asset!,
@@ -90,9 +90,9 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
 
         // Sell
         Strategy.ResetFillTcs();
-        Strategy.OnNextBar = orders =>
+        Strategy.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            Strategy.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = fixture.Asset!,
@@ -119,9 +119,9 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         var limitPrice = ReferencePrice + (long)(100m / fixture.Asset!.TickSize); // far above market
 
         Strategy.ResetFillTcs();
-        Strategy.OnNextBar = orders =>
+        Strategy.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            Strategy.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = fixture.Asset!,
@@ -150,9 +150,9 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
 
         // Buy first to have position
         Strategy.ResetFillTcs();
-        Strategy.OnNextBar = orders =>
+        Strategy.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            Strategy.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = fixture.Asset!,
@@ -166,9 +166,9 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         var limitPrice = ReferencePrice - (long)(100m / fixture.Asset!.TickSize); // far below market
 
         Strategy.ResetFillTcs();
-        Strategy.OnNextBar = orders =>
+        Strategy.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            Strategy.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = fixture.Asset!,
@@ -200,9 +200,9 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         Strategy.ResetFillTcs();
         try
         {
-            Strategy.OnNextBar = orders =>
+            Strategy.OnNextBar = () =>
             {
-                orders.Submit(new Order
+                Strategy.Orders.Submit(new Order
                 {
                     Id = 0,
                     Asset = fixture.Asset!,
@@ -234,9 +234,9 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
 
         // Buy first
         Strategy.ResetFillTcs();
-        Strategy.OnNextBar = orders =>
+        Strategy.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            Strategy.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = fixture.Asset!,
@@ -252,9 +252,9 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         Strategy.ResetFillTcs();
         try
         {
-            Strategy.OnNextBar = orders =>
+            Strategy.OnNextBar = () =>
             {
-                orders.Submit(new Order
+                Strategy.Orders.Submit(new Order
                 {
                     Id = 0,
                     Asset = fixture.Asset!,
@@ -290,9 +290,9 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         Strategy.ResetFillTcs();
         try
         {
-            Strategy.OnNextBar = orders =>
+            Strategy.OnNextBar = () =>
             {
-                orders.Submit(new Order
+                Strategy.Orders.Submit(new Order
                 {
                     Id = 0,
                     Asset = fixture.Asset!,
@@ -325,9 +325,9 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
 
         // Buy first
         Strategy.ResetFillTcs();
-        Strategy.OnNextBar = orders =>
+        Strategy.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            Strategy.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = fixture.Asset!,
@@ -344,9 +344,9 @@ public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
         Strategy.ResetFillTcs();
         try
         {
-            Strategy.OnNextBar = orders =>
+            Strategy.OnNextBar = () =>
             {
-                orders.Submit(new Order
+                Strategy.Orders.Submit(new Order
                 {
                     Id = 0,
                     Asset = fixture.Asset!,

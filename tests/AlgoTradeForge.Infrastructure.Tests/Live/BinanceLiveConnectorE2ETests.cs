@@ -27,23 +27,25 @@ public sealed class TradeRegistryTestStrategy(TradeRegistryTestParams p)
     public TaskCompletionSource<Fill> NextFillTcs { get; private set; } = new();
     public TaskCompletionSource<Int64Bar> NextBarTcs { get; private set; } = new();
 
-    public Action<IOrderContext>? OnNextBar;
+    public Action? OnNextBar;
+
+    public new IOrderContext Orders => base.Orders;
 
     public void ResetFillTcs() => NextFillTcs = new TaskCompletionSource<Fill>();
     public void ResetBarTcs() => NextBarTcs = new TaskCompletionSource<Int64Bar>();
 
-    public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+    public override void OnBarComplete(Int64Bar bar, DataSubscription subscription)
     {
-        base.OnBarComplete(bar, subscription, orders);
+        base.OnBarComplete(bar, subscription);
         NextBarTcs.TrySetResult(bar);
 
         var action = Interlocked.Exchange(ref OnNextBar, null);
-        action?.Invoke(orders);
+        action?.Invoke();
     }
 
-    public override void OnTrade(Fill fill, Order order, IOrderContext orders)
+    public override void OnTrade(Fill fill, Order order)
     {
-        base.OnTrade(fill, order, orders);
+        base.OnTrade(fill, order);
         ReceivedFills.Add(fill);
         NextFillTcs.TrySetResult(fill);
     }
@@ -149,9 +151,9 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
 
         // Strategy A: market buy
         _strategyA!.ResetFillTcs();
-        _strategyA.OnNextBar = orders =>
+        _strategyA.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            _strategyA.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = _asset!,
@@ -166,9 +168,9 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
 
         // Strategy B: market buy
         _strategyB!.ResetFillTcs();
-        _strategyB.OnNextBar = orders =>
+        _strategyB.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            _strategyB.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = _asset!,
@@ -206,7 +208,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         var registryB = ((ITradeRegistryProvider)_strategyB!).TradeRegistry;
 
         _strategyA.ResetFillTcs();
-        _strategyA.OnNextBar = orders =>
+        _strategyA.OnNextBar = () =>
         {
             registryA.OpenGroup(
                 _asset!, OrderSide.Buy, OrderType.Market,
@@ -222,7 +224,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         var slPriceB = _lastPrice - (long)(600m / _asset!.TickSize);
 
         _strategyB.ResetFillTcs();
-        _strategyB.OnNextBar = orders =>
+        _strategyB.OnNextBar = () =>
         {
             registryB.OpenGroup(
                 _asset!, OrderSide.Buy, OrderType.Market,
@@ -265,9 +267,9 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         var farLimitPrice = _lastPrice / 2;
 
         _strategyA!.ResetBarTcs();
-        _strategyA.OnNextBar = orders =>
+        _strategyA.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            _strategyA.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = _asset!,

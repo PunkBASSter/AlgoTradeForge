@@ -204,7 +204,7 @@ public class DebugProbeTests
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
         strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
             .Do(_ => throw new InvalidOperationException("Strategy error"));
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 1);
@@ -225,7 +225,7 @@ public class DebugProbeTests
         using var cts = new CancellationTokenSource();
         var strategy = Substitute.For<IInt64BarStrategy>();
         strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>(), Arg.Any<IOrderContext>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
             .Do(_ => cts.Cancel());
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 2);
@@ -272,15 +272,18 @@ public class DebugProbeTests
 
     private sealed class SimpleOrderStrategy(
         DataSubscription subscription,
-        Action<Int64Bar, DataSubscription, IOrderContext> onBarComplete) : IInt64BarStrategy
+        Action<Int64Bar, DataSubscription, IOrderContext> onBarComplete) : IInt64BarStrategy, IOrderContextReceiver
     {
+        private IOrderContext _orders = null!;
+
         public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
 
+        public void SetOrderContext(IOrderContext context) => _orders = context;
         public void OnInit() { }
-        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
+        public void OnTrade(Fill fill, Order order) { }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
-            => onBarComplete(bar, subscription, orders);
+        public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+            => onBarComplete(bar, subscription, _orders);
     }
 }

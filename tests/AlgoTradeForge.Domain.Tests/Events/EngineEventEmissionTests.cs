@@ -542,23 +542,26 @@ public class EngineEventEmissionTests
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    private sealed class ActionStrategy(DataSubscription subscription) : IInt64BarStrategy
+    private sealed class ActionStrategy(DataSubscription subscription) : IInt64BarStrategy, IOrderContextReceiver
     {
+        private IOrderContext _orders = null!;
+
         public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
 
         public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarStartAction { get; init; }
         public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarCompleteAction { get; init; }
 
+        public void SetOrderContext(IOrderContext context) => _orders = context;
         public void OnInit() { }
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders) =>
-            OnBarStartAction?.Invoke(bar, subscription, orders);
+        public void OnBarStart(Int64Bar bar, DataSubscription subscription) =>
+            OnBarStartAction?.Invoke(bar, subscription, _orders);
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders) =>
-            OnBarCompleteAction?.Invoke(bar, subscription, orders);
+        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) =>
+            OnBarCompleteAction?.Invoke(bar, subscription, _orders);
 
-        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
+        public void OnTrade(Fill fill, Order order) { }
     }
 
     private sealed class SignalTestParams : StrategyParamsBase;
@@ -566,7 +569,7 @@ public class EngineEventEmissionTests
     private sealed class SignalEmittingTestStrategy(SignalTestParams p) : StrategyBase<SignalTestParams>(p)
     {
         public override string Version => "1.0.0";
-        public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+        public override void OnBarComplete(Int64Bar bar, DataSubscription subscription)
         {
             EmitSignal(bar.Timestamp, "CrossUp", subscription.Asset.Name, "Long", 0.9m, "Test reason");
         }

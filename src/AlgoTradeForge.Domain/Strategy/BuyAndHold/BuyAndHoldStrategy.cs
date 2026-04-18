@@ -13,7 +13,7 @@ public sealed class BuyAndHoldStrategy(BuyAndHoldParams parameters, IIndicatorFa
 
     private bool _entered;
 
-    public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+    public override void OnBarComplete(Int64Bar bar, DataSubscription subscription)
     {
         if (_entered)
             return;
@@ -28,7 +28,7 @@ public sealed class BuyAndHoldStrategy(BuyAndHoldParams parameters, IIndicatorFa
         if (quantity < subscription.Asset.MinOrderQuantity)
             return;
 
-        orders.Submit(new Order
+        Orders.Submit(new Order
         {
             Id = 0,
             Asset = subscription.Asset,

@@ -94,13 +94,11 @@ public sealed class OrderGroupReconciler(IExchangeOrderClient orderClient, ILogg
         string symbol,
         TradeRegistryModule registry,
         Func<long, long> resolveExchangeId,
-        IOrderContext orders,
         CancellationToken ct)
     {
         var expected = registry.GetExpectedOrders();
         var result = await DetectAsync(symbol, expected, resolveExchangeId, knownPendingIds: null, ct);
 
-        registry.SetOrderContext(orders);
         foreach (var (groupId, missingIds) in result.MissingByGroup)
             registry.RepairGroup(groupId, missingIds);
 

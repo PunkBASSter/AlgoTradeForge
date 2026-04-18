@@ -315,8 +315,10 @@ public class BacktestEngineFeedTests
     /// Test strategy that implements <see cref="IFeedContextReceiver"/> so the engine
     /// wires <see cref="IFeedContext"/> before <c>OnInit</c>.
     /// </summary>
-    private sealed class FeedAwareTestStrategy : IInt64BarStrategy, IFeedContextReceiver, IEventBusReceiver
+    private sealed class FeedAwareTestStrategy : IInt64BarStrategy, IFeedContextReceiver, IEventBusReceiver, IOrderContextReceiver
     {
+        private IOrderContext _orders = null!;
+
         public string Version => "1.0";
         public IList<DataSubscription> DataSubscriptions { get; } = new List<DataSubscription>();
         public IFeedContext? Feeds { get; private set; }
@@ -324,15 +326,16 @@ public class BacktestEngineFeedTests
         public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarStartAction { get; set; }
         public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarCompleteAction { get; set; }
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
-            => OnBarStartAction?.Invoke(bar, subscription, orders);
+        public void OnBarStart(Int64Bar bar, DataSubscription subscription)
+            => OnBarStartAction?.Invoke(bar, subscription, _orders);
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
-            => OnBarCompleteAction?.Invoke(bar, subscription, orders);
+        public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+            => OnBarCompleteAction?.Invoke(bar, subscription, _orders);
 
         public void OnInit() { }
-        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
+        public void OnTrade(Fill fill, Order order) { }
         void IFeedContextReceiver.SetFeedContext(IFeedContext context) => Feeds = context;
         void IEventBusReceiver.SetEventBus(IEventBus bus) { }
+        void IOrderContextReceiver.SetOrderContext(IOrderContext context) => _orders = context;
     }
 }

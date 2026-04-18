@@ -35,9 +35,9 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         OnStrategyInit();
     }
 
-    public sealed override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+    public sealed override void OnBarComplete(Int64Bar bar, DataSubscription subscription)
     {
-        base.OnBarComplete(bar, subscription, orders);
+        base.OnBarComplete(bar, subscription);
 
         // ── PHASE 1: UPDATE CONTEXT ──
         // Track bar history and compute indicators
@@ -70,9 +70,9 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         }
     }
 
-    public sealed override void OnTrade(Fill fill, Order order, IOrderContext orders)
+    public sealed override void OnTrade(Fill fill, Order order)
     {
-        base.OnTrade(fill, order, orders);
+        base.OnTrade(fill, order);
         OnOrderFilled(fill, order);
     }
 

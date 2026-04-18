@@ -100,6 +100,9 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
         if (strategy is IFeedContextReceiver feedReceiver)
             feedReceiver.SetFeedContext(feedContext ?? (IFeedContext)NullFeedContext.Instance);
 
+        if (strategy is IOrderContextReceiver orderReceiver)
+            orderReceiver.SetOrderContext(state.OrderContext);
+
         strategy.OnInit();
 
         if (state.BusActive)
@@ -187,7 +190,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
 
             // Notify strategy that a new bar is starting (open price only)
             var startBar = new Int64Bar(bar.TimestampMs, bar.Open, bar.Open, bar.Open, bar.Open, 0);
-            state.Strategy.OnBarStart(startBar, subscription, state.OrderContext);
+            state.Strategy.OnBarStart(startBar, subscription);
             AssignOrderIds(state, barTimestamp);
 
             // ── Order processing ──────────────────────────────────────
@@ -232,7 +235,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
             EvaluateSlTpPositions(state, subscription.Asset, bar, barTimestamp);
 
             // Deliver completed bar to strategy
-            state.Strategy.OnBarComplete(bar, subscription, state.OrderContext);
+            state.Strategy.OnBarComplete(bar, subscription);
             AssignOrderIds(state, barTimestamp);
 
             state.LastPrices[subscription.Asset.Name] = bar.Close;
@@ -382,7 +385,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
             order.Status = OrderStatus.Filled;
             state.Fills.Add(fill);
             state.Portfolio.Apply(fill);
-            state.Strategy.OnTrade(fill, order, state.OrderContext);
+            state.Strategy.OnTrade(fill, order);
             state.ToRemoveBuffer.Add(order.Id);
 
             EmitFillAndPosition(state, timestamp, fill);
@@ -438,7 +441,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
 
             state.Fills.Add(fill);
             state.Portfolio.Apply(fill);
-            state.Strategy.OnTrade(fill, pos.OriginalOrder, state.OrderContext);
+            state.Strategy.OnTrade(fill, pos.OriginalOrder);
 
             EmitFillAndPosition(state, timestamp, fill);
 
