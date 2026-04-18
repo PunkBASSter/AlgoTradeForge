@@ -183,12 +183,30 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
     {
         ReplaceSl(group);
 
-        // TPs: Submit ALL levels upfront starting from FilledTpCount
+        // TPs: Submit ALL levels upfront. Quantities are aligned to the asset's
+        // QuantityStepSize; the last level gets the remainder to avoid residuals.
         var closeSide = group.EntrySide == OrderSide.Buy ? OrderSide.Sell : OrderSide.Buy;
-        for (var i = group.FilledTpCount; i < group.TpLevels.Length; i++)
+        var stepSize = group.Asset.QuantityStepSize;
+        var allocated = 0m;
+
+        for (var i = 0; i < group.TpLevels.Length; i++)
         {
             var tp = group.TpLevels[i];
             var tpQuantity = group.EntryQuantity * tp.ClosurePercentage;
+
+            if (stepSize > 0m)
+            {
+                if (i == group.TpLevels.Length - 1 && i > 0)
+                    tpQuantity = group.EntryQuantity - allocated;
+                else
+                    tpQuantity = Math.Floor(tpQuantity / stepSize) * stepSize;
+            }
+
+            allocated += tpQuantity;
+
+            if (tpQuantity < group.Asset.MinOrderQuantity)
+                continue;
+
             SubmitTp(group, i, closeSide, tp.Price, tpQuantity);
         }
     }
