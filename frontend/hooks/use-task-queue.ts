@@ -25,6 +25,12 @@ export function useCancelTask() {
     mutationFn: (taskId: string) => client.cancelTask(taskId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TASK_QUEUE_KEY });
+      queryClient.invalidateQueries({ queryKey: ["optimizations"] });
+      queryClient.invalidateQueries({ queryKey: ["optimization-groups"] });
+      queryClient.invalidateQueries({ queryKey: ["optimization-group"] });
+      queryClient.invalidateQueries({ queryKey: ["validations"] });
+      queryClient.invalidateQueries({ queryKey: ["validation-groups"] });
+      queryClient.invalidateQueries({ queryKey: ["validation-group"] });
     },
   });
 }
@@ -36,6 +42,12 @@ export function usePurgeQueue() {
     mutationFn: () => client.purgeQueue(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TASK_QUEUE_KEY });
+      queryClient.invalidateQueries({ queryKey: ["optimizations"] });
+      queryClient.invalidateQueries({ queryKey: ["optimization-groups"] });
+      queryClient.invalidateQueries({ queryKey: ["optimization-group"] });
+      queryClient.invalidateQueries({ queryKey: ["validations"] });
+      queryClient.invalidateQueries({ queryKey: ["validation-groups"] });
+      queryClient.invalidateQueries({ queryKey: ["validation-group"] });
     },
   });
 }

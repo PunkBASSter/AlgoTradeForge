@@ -62,7 +62,8 @@ public static class TaskQueueEndpoints
 
     private static IResult CancelTask(
         Guid taskId,
-        ComputeTaskQueue queue)
+        ComputeTaskQueue queue,
+        IRunCancellationRegistry cancellationRegistry)
     {
         if (!queue.TryCancelTask(taskId, out var task, out var cascaded))
         {
@@ -71,6 +72,11 @@ public static class TaskQueueEndpoints
 
             return Results.Conflict(new { message = $"Task {taskId} is already in terminal state '{task.Status}'." });
         }
+
+        // If the task was in-progress, signal its CancellationTokenSource
+        // so the executor stops promptly. For pending tasks this is a harmless
+        // no-op (no CTS registered in the registry).
+        cancellationRegistry.TryCancel(task!.RunId);
 
         return Results.Ok(new CancelTaskResponse
         {
