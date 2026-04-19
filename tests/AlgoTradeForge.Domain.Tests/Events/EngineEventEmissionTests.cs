@@ -569,7 +569,7 @@ public class EngineEventEmissionTests
     private sealed class SignalEmittingTestStrategy(SignalTestParams p) : StrategyBase<SignalTestParams>(p)
     {
         public override string Version => "1.0.0";
-        public override void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+        protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
         {
             EmitSignal(bar.Timestamp, "CrossUp", subscription.Asset.Name, "Long", 0.9m, "Test reason");
         }

@@ -29,15 +29,13 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     {
         Context = new TContext();
         base.OnInit();
-
-        TradeRegistry.SetClock(() => Context.CurrentBar.Timestamp);
-
         OnStrategyInit();
     }
 
-    public sealed override void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+    protected sealed override void OnBarStartInner(Int64Bar bar, DataSubscription subscription) { }
+
+    protected sealed override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
     {
-        base.OnBarComplete(bar, subscription);
 
         // ── PHASE 1: UPDATE CONTEXT ──
         // Track bar history and compute indicators

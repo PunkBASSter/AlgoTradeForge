@@ -24,9 +24,8 @@ public sealed class TestnetOrderStrategy(TestnetOrderStrategyParams p)
     public void ResetFillTcs() => NextFillTcs = new TaskCompletionSource<Fill>();
     public void ResetBarTcs() => NextBarTcs = new TaskCompletionSource<Int64Bar>();
 
-    public override void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+    protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
     {
-        base.OnBarComplete(bar, subscription);
         ReceivedBars.Add((bar, subscription));
         NextBarTcs.TrySetResult(bar);
 

@@ -13,7 +13,7 @@ public sealed class BuyAndHoldStrategy(BuyAndHoldParams parameters, IIndicatorFa
 
     private bool _entered;
 
-    public override void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+    protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
     {
         if (_entered)
             return;

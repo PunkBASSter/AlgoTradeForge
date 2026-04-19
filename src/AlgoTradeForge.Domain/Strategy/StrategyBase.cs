@@ -11,6 +11,7 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
     where TParams : StrategyParamsBase
 {
     private readonly TradeRegistryModule _tradeRegistry = new(parameters.TradeRegistry);
+    private DateTimeOffset _currentBarTimestamp;
 
     public abstract string Version { get; }
 
@@ -30,14 +31,27 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
 
     public IList<DataSubscription> DataSubscriptions => Params.DataSubscriptions;
 
-    public virtual void OnBarStart(Int64Bar bar, DataSubscription subscription) { }
+    public void OnBarStart(Int64Bar bar, DataSubscription subscription)
+    {
+        _currentBarTimestamp = bar.Timestamp;
+        OnBarStartInner(bar, subscription);
+    }
 
-    public virtual void OnBarComplete(Int64Bar bar, DataSubscription subscription) { }
+    public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+    {
+        _currentBarTimestamp = bar.Timestamp;
+        OnBarCompleteInner(bar, subscription);
+    }
+
+    protected virtual void OnBarStartInner(Int64Bar bar, DataSubscription subscription) { }
+
+    protected virtual void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription) { }
 
     public virtual void OnInit()
     {
         if (_tradeRegistry is IEventBusReceiver busReceiver)
             busReceiver.SetEventBus(EventBus);
+        _tradeRegistry.SetClock(() => _currentBarTimestamp);
     }
 
     public virtual void OnTrade(Fill fill, Order order)

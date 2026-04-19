@@ -330,9 +330,8 @@ public class IndicatorFactoryTests
             _h1Dzz = Indicators.Create(new NamedDeltaZigZag("DeltaZigZag_H1", 0.5, 10.0), DataSubscriptions[1]);
         }
 
-        public override void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+        protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
         {
-            base.OnBarComplete(bar, subscription);
             if (subscription == DataSubscriptions[0])
             {
                 _m1History.Add(bar);

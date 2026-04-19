@@ -18,7 +18,7 @@ public class StrategyEventBusReceiverTests
     private sealed class SignalEmittingStrategy(TestParams p) : StrategyBase<TestParams>(p)
     {
         public override string Version => "1.0.0";
-        public override void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+        protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
         {
             EmitSignal(bar.Timestamp, "BuySignal", subscription.Asset.Name, "Long", 0.85m, "MA crossover");
         }
@@ -88,7 +88,7 @@ public class StrategyEventBusReceiverTests
     private sealed class NoReasonSignalStrategy(TestParams p) : StrategyBase<TestParams>(p)
     {
         public override string Version => "1.0.0";
-        public override void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+        protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
         {
             EmitSignal(bar.Timestamp, "SellSignal", subscription.Asset.Name, "Short", 0.5m);
         }

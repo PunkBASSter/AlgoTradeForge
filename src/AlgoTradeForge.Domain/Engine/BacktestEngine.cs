@@ -238,6 +238,21 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
             state.Strategy.OnBarComplete(bar, subscription);
             AssignOrderIds(state, barTimestamp);
 
+            // Same-bar execution: stop/limit orders placed during OnBarComplete (e.g.,
+            // stop entries after a liquidation) may target a price the current bar
+            // already crossed. Re-run the fill loop against this bar's OHLC to avoid
+            // artificial gap fills on the next bar. Market orders are excluded — they
+            // fill at the next bar's open.
+            pass = 0;
+            do
+            {
+                fillsBefore = state.Fills.Count;
+                ProcessPendingOrders(state, subscription.Asset, bar, barTimestamp, skipMarketOrders: true);
+                if (state.Fills.Count > fillsBefore)
+                    AssignOrderIds(state, barTimestamp);
+            }
+            while (state.Fills.Count > fillsBefore && ++pass < 4);
+
             state.LastPrices[subscription.Asset.Name] = bar.Close;
             state.Cursors[s]++;
             state.TotalBarsDelivered++;
@@ -335,7 +350,8 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
     private static long ComputeCommission(long price, decimal quantity, decimal multiplier, decimal rate)
         => MoneyConvert.ToLong(price * quantity * multiplier * rate);
 
-    private void ProcessPendingOrders(RunState state, Asset asset, Int64Bar bar, DateTimeOffset timestamp)
+    private void ProcessPendingOrders(RunState state, Asset asset, Int64Bar bar, DateTimeOffset timestamp,
+        bool skipMarketOrders = false)
     {
         var pending = state.OrderQueue.GetPendingForAsset(asset);
         state.ToRemoveBuffer.Clear();
@@ -345,6 +361,11 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
             // Defensive: an earlier fill's OnTrade callback may have cancelled this order
             // (e.g., SL fills → strategy cancels sibling TP). Skip if no longer actionable.
             if (order.Status is not (OrderStatus.Pending or OrderStatus.Triggered))
+                continue;
+
+            // Post-OnBarComplete pass: only evaluate stop/limit orders against the current bar.
+            // Market orders must wait for the next bar's open.
+            if (skipMarketOrders && order.Type == OrderType.Market)
                 continue;
 
             var fillPrice = barMatcher.GetFillPrice(order, bar, state.Options);
