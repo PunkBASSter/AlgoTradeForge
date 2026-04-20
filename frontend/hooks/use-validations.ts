@@ -131,7 +131,10 @@ export function useCancelValidationGroup() {
   return useMutation({
     mutationFn: (groupId: string) => client.cancelValidationGroup(groupId),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["task-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["validations"] });
       queryClient.invalidateQueries({ queryKey: ["validation-groups"] });
+      queryClient.invalidateQueries({ queryKey: ["validation-group"] });
     },
   });
 }

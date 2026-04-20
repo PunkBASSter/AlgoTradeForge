@@ -74,6 +74,28 @@ public sealed class ComputeTaskQueue
         return true;
     }
 
+    /// <summary>
+    /// Cancel all pending/in-progress tasks belonging to a job (group).
+    /// Returns the cancelled tasks so the caller can trigger their CTS.
+    /// </summary>
+    public IReadOnlyList<ComputeTask> TryCancelJob(Guid jobId)
+    {
+        var cancelled = new List<ComputeTask>();
+
+        foreach (var task in _tasks.Values)
+        {
+            if (task.JobId == jobId
+                && task.Status is ComputeTaskStatus.Pending or ComputeTaskStatus.InProgress)
+            {
+                task.Status = ComputeTaskStatus.Cancelled;
+                task.ErrorMessage = "Cancelled by user.";
+                cancelled.Add(task);
+            }
+        }
+
+        return cancelled;
+    }
+
     public (int PurgedCount, List<Guid> PurgedIds) PurgePending()
     {
         var purged = new List<Guid>();

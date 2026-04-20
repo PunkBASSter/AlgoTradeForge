@@ -82,27 +82,8 @@ export function useOptimizationGroupStatus(groupId: string) {
   });
 }
 
-export function useCancelOptimizationGroup() {
-  const client = getClient();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (groupId: string) => client.cancelOptimizationGroup(groupId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["optimization-groups"] });
-    },
-  });
-}
-
-export function useDeleteOptimizationGroup() {
-  const client = getClient();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (groupId: string) => client.deleteOptimizationGroup(groupId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["optimization-groups"] });
-    },
-  });
-}
+// useCancelOptimizationGroup and useDeleteOptimizationGroup live in
+// use-optimization-groups.ts — do not duplicate here.
 
 // ---------------------------------------------------------------------------
 // T053 - Cross-DSS optimization group trials hook

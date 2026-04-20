@@ -223,6 +223,92 @@ public sealed class ComputeTaskQueueTests
         Assert.Equal(task.Id, received[0].Id);
     }
 
+    // ── TryCancelJob ─────────────────────────────────────────────
+
+    [Fact]
+    public void TryCancelJob_cancels_all_pending_tasks_for_job()
+    {
+        var queue = new ComputeTaskQueue();
+        var jobId = Guid.NewGuid();
+        var opt = MakeTask(ComputeTaskType.Optimization, 0, jobId);
+        var val = MakeTask(ComputeTaskType.Validation, 0, jobId);
+
+        queue.EnqueueRange([opt, val]);
+
+        var cancelled = queue.TryCancelJob(jobId);
+
+        Assert.Equal(2, cancelled.Count);
+        Assert.All(cancelled, t => Assert.Equal(ComputeTaskStatus.Cancelled, t.Status));
+    }
+
+    [Fact]
+    public void TryCancelJob_returns_empty_for_unknown_job()
+    {
+        var queue = new ComputeTaskQueue();
+        queue.Enqueue(MakeTask());
+
+        var cancelled = queue.TryCancelJob(Guid.NewGuid());
+
+        Assert.Empty(cancelled);
+    }
+
+    [Fact]
+    public void TryCancelJob_skips_completed_and_failed_tasks()
+    {
+        var queue = new ComputeTaskQueue();
+        var jobId = Guid.NewGuid();
+        var completed = MakeTask(ComputeTaskType.Optimization, 0, jobId);
+        completed.Status = ComputeTaskStatus.Completed;
+        var failed = MakeTask(ComputeTaskType.Optimization, 1, jobId);
+        failed.Status = ComputeTaskStatus.Failed;
+        var pending = MakeTask(ComputeTaskType.Optimization, 2, jobId);
+
+        queue.EnqueueRange([completed, failed, pending]);
+
+        var cancelled = queue.TryCancelJob(jobId);
+
+        Assert.Single(cancelled);
+        Assert.Equal(pending.Id, cancelled[0].Id);
+        Assert.Equal(ComputeTaskStatus.Completed, completed.Status);
+        Assert.Equal(ComputeTaskStatus.Failed, failed.Status);
+    }
+
+    [Fact]
+    public void TryCancelJob_includes_in_progress_task()
+    {
+        var queue = new ComputeTaskQueue();
+        var jobId = Guid.NewGuid();
+        var inProgress = MakeTask(ComputeTaskType.Optimization, 0, jobId);
+        inProgress.Status = ComputeTaskStatus.InProgress;
+        var pending = MakeTask(ComputeTaskType.Validation, 0, jobId);
+
+        queue.EnqueueRange([inProgress, pending]);
+
+        var cancelled = queue.TryCancelJob(jobId);
+
+        Assert.Equal(2, cancelled.Count);
+        Assert.All(cancelled, t => Assert.Equal(ComputeTaskStatus.Cancelled, t.Status));
+    }
+
+    [Fact]
+    public void TryCancelJob_does_not_affect_other_jobs()
+    {
+        var queue = new ComputeTaskQueue();
+        var jobA = Guid.NewGuid();
+        var jobB = Guid.NewGuid();
+        var taskA = MakeTask(dssIndex: 0, jobId: jobA);
+        var taskB = MakeTask(dssIndex: 0, jobId: jobB);
+
+        queue.EnqueueRange([taskA, taskB]);
+
+        queue.TryCancelJob(jobA);
+
+        Assert.Equal(ComputeTaskStatus.Cancelled, taskA.Status);
+        Assert.Equal(ComputeTaskStatus.Pending, taskB.Status);
+    }
+
+    // ── Job tracking ──────────────────────────────────────────
+
     [Fact]
     public void RegisterJob_and_RecordTaskCompletion_tracks_job_lifecycle()
     {

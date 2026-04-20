@@ -56,8 +56,15 @@ export function useInfiniteOptimizationGroupTrials(
 
 export function useCancelOptimizationGroup() {
   const client = getClient();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (groupId: string) => client.cancelOptimizationGroup(groupId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["task-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["optimizations"] });
+      queryClient.invalidateQueries({ queryKey: ["optimization-groups"] });
+      queryClient.invalidateQueries({ queryKey: ["optimization-group"] });
+    },
   });
 }
 
