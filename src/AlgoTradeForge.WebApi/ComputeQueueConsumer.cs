@@ -237,6 +237,8 @@ public sealed class ComputeQueueConsumer(
             FailedTrials = result.FailedTrials,
             OptimizationMethod = "Genetic",
             GenerationsCompleted = result.GenerationsCompleted,
+            GroupId = ctx.GroupId,
+            DssIndex = task.DssIndex,
         };
 
         FireAndForgetPersist(task.RunId, record, result.Trials.Count);

@@ -181,11 +181,36 @@ public static class OptimizationEndpoints
         };
         var inputJson = JsonSerializer.Serialize(request, JsonOptions);
 
-        // Genetic group mode not yet implemented — fail fast at the boundary
-        if (request.SubscriptionAxis is { Count: > 0 })
-            return Results.BadRequest(new { error = "Genetic optimization does not yet support multi-DSS groups. Use brute-force mode or run each DSS individually." });
+        // Multi-DSS genetic → dispatch through group handler (same pattern as brute-force)
+        if (request.SubscriptionAxis is { Count: > 1 })
+        {
+            var groupCommand = new RunGroupOptimizationCommand
+            {
+                StrategyName = request.StrategyName,
+                OptimizationMethod = "Genetic",
+                Axes = request.OptimizationAxes,
+                SubscriptionAxis = request.SubscriptionAxis,
+                BacktestSettings = backtestSettings,
+                MaxDegreeOfParallelism = request.MaxThreads > 0 ? request.MaxThreads : request.OptimizationSettings.MaxDegreeOfParallelism,
+                MaxTrialsToKeep = request.OptimizationSettings.MaxTrialsToKeep,
+                MinProfitFactor = request.OptimizationSettings.MinProfitFactor,
+                MaxDrawdownPct = request.OptimizationSettings.MaxDrawdownPct,
+                MinSharpeRatio = request.OptimizationSettings.MinSharpeRatio,
+                MinSortinoRatio = request.OptimizationSettings.MinSortinoRatio,
+                MinAnnualizedReturnPct = request.OptimizationSettings.MinAnnualizedReturnPct,
+                MinTradeCount = request.OptimizationSettings.MinTradeCount,
+                MinNetProfit = request.OptimizationSettings.MinNetProfit,
+                GeneticSettings = MapGeneticSettings(request.GeneticSettings, request.OptimizationSettings.FitnessWeights),
+                FitnessConfig = MapFitnessConfig(request.OptimizationSettings.FitnessWeights),
+                InputJson = inputJson,
+                Validate = request.Validate,
+                ThresholdProfileName = request.ThresholdProfileName,
+                MaxThreads = request.MaxThreads,
+            };
+            return await DispatchGroupOptimization(groupCommand, groupHandler, ct);
+        }
 
-        // Single-run path (no DSS — backward compat)
+        // Single-run path
         var command = new RunGeneticOptimizationCommand
         {
             StrategyName = request.StrategyName,
