@@ -10,7 +10,8 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 {
     private readonly TradeRegistryParams _params = parameters;
     private readonly Dictionary<long, OrderGroup> _groups = [];
-    private readonly HashSet<long> _activeGroupIds = [];
+    // Reference-keyed: OrderGroup is a class with no Equals override. Do NOT make it a record.
+    private readonly HashSet<OrderGroup> _activeGroups = [];
     private readonly Dictionary<long, OrderGroup> _orderToGroup = [];
     private long _nextGroupId;
     private long _nextOrderId = -1_000_000; // Negative range to avoid collisions with engine-assigned IDs
@@ -38,16 +39,18 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
     // ── Queries ──────────────────────────────────────────────────
 
-    public IEnumerable<OrderGroup> ActiveGroups
-    {
-        get
-        {
-            foreach (var id in _activeGroupIds)
-                yield return _groups[id];
-        }
-    }
+    /// <summary>
+    /// Live view over groups currently in <see cref="OrderGroupStatus.PendingEntry"/> or
+    /// <see cref="OrderGroupStatus.ProtectionActive"/>. O(1) <c>Count</c>; zero-allocation
+    /// enumeration via the underlying <see cref="HashSet{T}"/>'s struct enumerator. Mutating
+    /// registry calls (OpenGroup, CancelGroup, fills) modify the underlying set, so callers
+    /// iterating with intent to mutate must snapshot first (e.g. <c>.ToArray()</c>).
+    /// Surface is intentionally <see cref="IReadOnlyCollection{T}"/> (not <c>IReadOnlySet</c>)
+    /// to avoid implying stable membership semantics across mutations.
+    /// </summary>
+    public IReadOnlyCollection<OrderGroup> ActiveGroups => _activeGroups;
 
-    public int ActiveGroupCount => _activeGroupIds.Count;
+    public int ActiveGroupCount => _activeGroups.Count;
 
     public OrderGroup? GetGroup(long groupId) =>
         _groups.GetValueOrDefault(groupId);
@@ -97,7 +100,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         };
 
         _groups[groupId] = group;
-        _activeGroupIds.Add(groupId);
+        _activeGroups.Add(group);
         _orderToGroup[entryOrderId] = group;
 
         var entryOrder = new Order
@@ -140,6 +143,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
     {
         group.Status = OrderGroupStatus.ProtectionActive;
         group.EntryPrice = fill.Price;
+        group.EntryFilledAt = _clock();
 
         EmitEvent(group, OrderGroupTransition.EntryFilled, fill.OrderId, fill.Price, fill.Quantity);
 
@@ -275,7 +279,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         {
             Orders.Cancel(group.EntryOrderId);
             group.Status = OrderGroupStatus.Cancelled;
-            _activeGroupIds.Remove(group.GroupId);
+            _activeGroups.Remove(group);
             EmitEvent(group, OrderGroupTransition.EntryCancelled, group.EntryOrderId, null, null);
             return true;
         }
@@ -486,7 +490,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
     {
         group.Status = OrderGroupStatus.Closed;
         group.ClosedAt = _clock();
-        _activeGroupIds.Remove(group.GroupId);
+        _activeGroups.Remove(group);
     }
 
     private void EmitEvent(

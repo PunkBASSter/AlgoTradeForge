@@ -873,4 +873,114 @@ public class TradeRegistryModuleTests
         Assert.Equal(OrderGroupStatus.Cancelled, group2.Status);
         ctx.Received(1).Cancel(group2.EntryOrderId);
     }
+
+    // ── EntryFilledAt: lifecycle invariants ─────────────────────
+
+    [Fact]
+    public void EntryFilledAt_IsNullWhilePendingEntry()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
+
+        var group = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        Assert.Equal(OrderGroupStatus.PendingEntry, group.Status);
+        Assert.Null(group.EntryFilledAt);
+    }
+
+    [Fact]
+    public void EntryFilledAt_IsSetWhenEntryFills()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
+
+        var fillBarTimestamp = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        module.SetClock(() => fillBarTimestamp);
+
+        var group = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId));
+
+        Assert.Equal(OrderGroupStatus.ProtectionActive, group.Status);
+        Assert.Equal(fillBarTimestamp, group.EntryFilledAt);
+    }
+
+    [Fact]
+    public void EntryFilledAt_IsImmutableThroughLaterFills()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
+
+        var entryBarTimestamp = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var slBarTimestamp = entryBarTimestamp.AddHours(3);
+
+        var clock = entryBarTimestamp;
+        module.SetClock(() => clock);
+
+        var group = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId));
+
+        // Advance the clock and fire a stop-loss fill — EntryFilledAt must not move.
+        clock = slBarTimestamp;
+        module.OnFill(
+            MakeFill(group.SlOrderId, 14000, 10m, OrderSide.Sell),
+            MakeOrder(group.SlOrderId));
+
+        Assert.Equal(OrderGroupStatus.Closed, group.Status);
+        Assert.Equal(entryBarTimestamp, group.EntryFilledAt);
+        Assert.Equal(slBarTimestamp, group.ClosedAt);
+    }
+
+    [Fact]
+    public void EntryFilledAt_IsImmutableThroughTpAndLiquidation()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
+
+        var entryBarTimestamp = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var clock = entryBarTimestamp;
+        module.SetClock(() => clock);
+
+        var group = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId));
+
+        // TP1 partial close — entry timestamp must survive.
+        clock = entryBarTimestamp.AddHours(1);
+        var tp1OrderId = group.TpLevels[0].OrderId;
+        module.OnFill(
+            MakeFill(tp1OrderId, 15500, 5m, OrderSide.Sell),
+            MakeOrder(tp1OrderId));
+        Assert.Equal(entryBarTimestamp, group.EntryFilledAt);
+
+        // Liquidation of remainder — still entry timestamp.
+        clock = entryBarTimestamp.AddHours(2);
+        module.LiquidateGroup(group.GroupId);
+        var liqOrderId = group.LiquidationOrderId;
+        module.OnFill(
+            MakeFill(liqOrderId, 15800, 5m, OrderSide.Sell),
+            MakeOrder(liqOrderId));
+
+        Assert.Equal(OrderGroupStatus.Closed, group.Status);
+        Assert.Equal(entryBarTimestamp, group.EntryFilledAt);
+    }
 }
