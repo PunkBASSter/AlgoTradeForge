@@ -10,6 +10,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 {
     private readonly TradeRegistryParams _params = parameters;
     private readonly Dictionary<long, OrderGroup> _groups = [];
+    private readonly HashSet<long> _activeGroupIds = [];
     private readonly Dictionary<long, OrderGroup> _orderToGroup = [];
     private long _nextGroupId;
     private long _nextOrderId = -1_000_000; // Negative range to avoid collisions with engine-assigned IDs
@@ -37,11 +38,16 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
     // ── Queries ──────────────────────────────────────────────────
 
-    public IEnumerable<OrderGroup> ActiveGroups =>
-        _groups.Values.Where(g => g.Status is OrderGroupStatus.PendingEntry or OrderGroupStatus.ProtectionActive);
+    public IEnumerable<OrderGroup> ActiveGroups
+    {
+        get
+        {
+            foreach (var id in _activeGroupIds)
+                yield return _groups[id];
+        }
+    }
 
-    public int ActiveGroupCount =>
-        _groups.Values.Count(g => g.Status is OrderGroupStatus.PendingEntry or OrderGroupStatus.ProtectionActive);
+    public int ActiveGroupCount => _activeGroupIds.Count;
 
     public OrderGroup? GetGroup(long groupId) =>
         _groups.GetValueOrDefault(groupId);
@@ -91,6 +97,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         };
 
         _groups[groupId] = group;
+        _activeGroupIds.Add(groupId);
         _orderToGroup[entryOrderId] = group;
 
         var entryOrder = new Order
@@ -268,6 +275,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         {
             Orders.Cancel(group.EntryOrderId);
             group.Status = OrderGroupStatus.Cancelled;
+            _activeGroupIds.Remove(group.GroupId);
             EmitEvent(group, OrderGroupTransition.EntryCancelled, group.EntryOrderId, null, null);
             return true;
         }
@@ -478,6 +486,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
     {
         group.Status = OrderGroupStatus.Closed;
         group.ClosedAt = _clock();
+        _activeGroupIds.Remove(group.GroupId);
     }
 
     private void EmitEvent(

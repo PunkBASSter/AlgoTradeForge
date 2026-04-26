@@ -145,7 +145,7 @@ public static class OptimizationEndpoints
             Axes = request.OptimizationAxes,
             SubscriptionAxis = request.SubscriptionAxis,
             BacktestSettings = backtestSettings,
-            MaxDegreeOfParallelism = request.OptimizationSettings.MaxDegreeOfParallelism,
+            MaxDegreeOfParallelism = request.MaxThreads > 0 ? request.MaxThreads : request.OptimizationSettings.MaxDegreeOfParallelism,
             MaxCombinations = request.OptimizationSettings.MaxCombinations,
             MaxTrialsToKeep = request.OptimizationSettings.MaxTrialsToKeep,
             MinProfitFactor = request.OptimizationSettings.MinProfitFactor,
