@@ -29,7 +29,11 @@ public sealed class PrevBarBreakoutStrategy(
 {
     public override string Version => "1.0.0";
 
-    private Atr _atr = null!;
+    // Held as the wrapped indicator so the EmittingIndicatorDecorator's Compute is the one
+    // the engine drives — that decorator is what emits the IndicatorEvent / IndicatorMutationEvent
+    // pair the Debug UI consumes to render the ATR line. Holding the bare Atr would silently
+    // bypass event emission (Buffers still update, but the chart stays empty).
+    private IIndicator<Int64Bar, long> _atr = null!;
     private MaxHoldBarsModule _maxHoldBars = null!;
     private long _barIntervalMs;
     private bool _hasPrevBar;
@@ -37,8 +41,7 @@ public sealed class PrevBarBreakoutStrategy(
 
     protected override void OnStrategyInit()
     {
-        _atr = new Atr(Params.AtrPeriod);
-        Indicators.Create(_atr, DataSubscriptions[0]);
+        _atr = Indicators.Create(new Atr(Params.AtrPeriod), DataSubscriptions[0]);
         RegisterIndicator(_atr);
 
         _maxHoldBars = new MaxHoldBarsModule(new MaxHoldBarsParams

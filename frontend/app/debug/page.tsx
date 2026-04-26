@@ -2,18 +2,20 @@
 
 // T028 - Debug page with full session lifecycle
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useDebugStore } from "@/lib/stores/debug-store";
 import { useDebugWebSocket } from "@/hooks/use-debug-websocket";
 import { SessionConfigEditor } from "@/components/features/debug/session-config-editor";
 import { DebugToolbar } from "@/components/features/debug/debug-toolbar";
 import { DebugMetrics } from "@/components/features/debug/debug-metrics";
+import { OrderLog } from "@/components/features/debug/order-log";
 import { ChartSkeleton } from "@/components/features/charts/chart-skeleton";
 import { useToast } from "@/components/ui/toast";
 import { getClient } from "@/lib/services";
 import type { StartDebugSessionRequest, DebugCommand } from "@/types/api";
 import { SESSION_KEYS } from "@/lib/constants";
+import { reduceOrders } from "@/lib/utils/orders";
 
 const ChartStack = dynamic(
   () =>
@@ -85,6 +87,7 @@ export default function DebugPage() {
         const session = await client.createDebugSession(config);
         const s2 = useDebugStore.getState();
         s2.setSessionId(session.sessionId);
+        s2.setLogFolderPath(session.logFolderPath);
         s2.setSessionState("connecting");
       } catch (err) {
         toast(String(err), "error");
@@ -141,9 +144,53 @@ export default function DebugPage() {
   const isActive =
     store.sessionState === "active" || store.sessionState === "connecting";
 
+  const orderRows = useMemo(() => reduceOrders(store.trades), [store.trades]);
+
+  const handleCopyLogPath = useCallback(() => {
+    if (!store.logFolderPath) return;
+    navigator.clipboard.writeText(store.logFolderPath);
+    toast("Log path copied", "success");
+  }, [store.logFolderPath, toast]);
+
   return (
     <div className="p-6 space-y-4">
-      <h1 className="text-xl font-bold text-text-primary">Debug Session</h1>
+      <div className="flex items-baseline justify-between gap-4 flex-wrap">
+        <h1 className="text-xl font-bold text-text-primary">Debug Session</h1>
+        {store.logFolderPath && (
+          <div
+            className="flex items-center gap-2 text-xs text-text-muted bg-bg-panel border border-border-default rounded px-2 py-1 max-w-full"
+            data-testid="log-path-banner"
+          >
+            <span className="font-medium uppercase tracking-wider">Logs:</span>
+            <span
+              className="font-mono text-text-secondary truncate"
+              title={store.logFolderPath}
+            >
+              {store.logFolderPath}
+            </span>
+            <button
+              onClick={handleCopyLogPath}
+              className="p-1 rounded hover:bg-bg-surface text-text-muted hover:text-text-primary transition-colors flex-shrink-0"
+              title="Copy log path to clipboard"
+              aria-label="Copy log path"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="5.5" y="5.5" width="8" height="8" rx="1" />
+                <path d="M10.5 5.5V3.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
 
       {store.sessionState === "idle" && !autostartConfig && (
         <SessionConfigEditor onStart={handleStart} />
@@ -178,7 +225,7 @@ export default function DebugPage() {
             disabled={store.sessionState !== "active"}
           />
 
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4">
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-4">
             <div className="space-y-2">
               <ChartStack
                 candles={store.candles}
@@ -190,7 +237,10 @@ export default function DebugPage() {
                 <PnlChart equityHistory={store.equityHistory} />
               )}
             </div>
-            <DebugMetrics snapshot={store.latestSnapshot} />
+            <div className="flex flex-col gap-2 min-h-0">
+              <DebugMetrics snapshot={store.latestSnapshot} />
+              <OrderLog orders={orderRows} />
+            </div>
           </div>
         </>
       )}

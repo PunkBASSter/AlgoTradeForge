@@ -119,6 +119,6 @@ public sealed class StartDebugSessionCommandHandler(
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default);
 
-        return new DebugSessionDto(session.Id, resolvedAssetName!, command.StrategyName, session.CreatedAt);
+        return new DebugSessionDto(session.Id, resolvedAssetName!, command.StrategyName, session.CreatedAt, runSink.RunFolderPath);
     }
 }
