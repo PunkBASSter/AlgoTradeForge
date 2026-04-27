@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks\AlgoTradeForge.Benchmarks\AlgoTradeForge.Benchmarks.csproj" />
+  </Folder>
   <Project Path="src\AlgoTradeForge.Domain\AlgoTradeForge.Domain.csproj" />
   <Folder Name="/tests/">
     <Project Path="tests/AlgoTradeForge.WebApi.Tests/AlgoTradeForge.WebApi.Tests.csproj" />

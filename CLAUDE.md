@@ -140,4 +140,19 @@ When searching for strategy code, also search `../AlgoTradeForge.Private/` if no
 - `IEventBus` — strategies implement `IEventBusReceiver` to receive at init; emit structured events
 - Event types: `BarEvent`, `FillEvent`, `OrderSubmittedEvent`, `SignalEvent`, `IndicatorUpdateEvent`, etc.
 
+## Performance Benchmarks
+
+Performance regressions in engine, strategy, indicator, registry, or optimization hot paths MUST be caught with the BenchmarkDotNet harness at `benchmarks/AlgoTradeForge.Benchmarks/`. Use the `run-benchmarks` skill (`.claude/skills/run-benchmarks/SKILL.md`) or the `/benchmark` slash command — do not invent ad-hoc timing scripts.
+
+- **Scenarios:** `BacktestBenchmarks.Backtest_5y_Hourly` (single-thread engine throughput) and `OptimizationBenchmarks.Optimization_1000Trials_Parallel` (mirrors `OptimizationTaskExecutor`'s loop shape).
+- **Sample strategy:** `PrevBarBreakoutStrategy` (`src/AlgoTradeForge.Domain/Strategy/PrevBarBreakout/`, `[StrategyKey("PrevBarBreakout")]`) exercises `ModularStrategyBase` + `TradeRegistryModule` + `FixedNotionalModule` + `MaxHoldBarsModule` + ATR indicator end-to-end. ATR-based `MinVolatilityPct` filter is available for non-benchmark use.
+- **Bundled data:** 5y BTCUSDT 1h CSVs (~2.4 MB) live under `benchmarks/AlgoTradeForge.Benchmarks/data/BTCUSDT_1h/` and are copied to the build output.
+- **Workflow:** capture baseline on the parent commit, switch to the new commit, re-run, diff. Use the helper scripts (preferred over hand-diffing markdown):
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/perf/save-baseline.ps1 [-Filter '*Backtest_5y*'] [-Job dry|default] [-Label 'pre-fix']` — runs the harness and archives `*-report-brief.json` + markdown to `~/.algo-tradeforge/perf-history/<sha>[-dirty]-<utc>[-<label>]/` (machine-stamped via `metadata.json`; never committed).
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/perf/compare-baseline.ps1 -Baseline previous -Candidate latest` — diffs Mean and Allocated, warns on machine/filter/job mismatches, prints a paste-ready PR summary.
+  - Both **Mean** and **Allocated** matter; allocation regressions surface before wall-time ones.
+- **JSON exporter wiring:** `BriefJsonConfig` (`benchmarks/AlgoTradeForge.Benchmarks/BriefJsonConfig.cs`) is applied via `[Config(typeof(BriefJsonConfig))]` on each `*Benchmarks` class — that's what produces the brief JSON the scripts consume.
+- **Pre-flight:** never run benchmarks while another `dotnet` process is active on the machine — CPU contention destroys the measurement signal. `save-baseline.ps1` warns when it detects competing `dotnet` PIDs.
+- **Shell:** this machine has no `pwsh` (PowerShell 7); always invoke `powershell.exe` (Windows PowerShell 5.1).
+
 <!-- MANUAL ADDITIONS END -->
