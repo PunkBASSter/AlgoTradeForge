@@ -29,8 +29,25 @@ public sealed class ComputeTask
     public required string DssLabel { get; init; }
     public DateTimeOffset EnqueuedAt { get; init; } = DateTimeOffset.UtcNow;
 
-    public ComputeTaskStatus Status { get; set; } = ComputeTaskStatus.Pending;
-    public string? ErrorMessage { get; set; }
+    /// <summary>
+    /// Mutable status — written by the consumer thread and by HTTP threads
+    /// (via <see cref="ComputeTaskQueue.TryCancelTask"/> / <see cref="ComputeTaskQueue.TryCancelJob"/>).
+    /// Uses <see cref="Volatile"/> to ensure cross-thread visibility.
+    /// Stored as <c>int</c> because <c>Volatile.Read/Write&lt;T&gt;</c> require reference types.
+    /// </summary>
+    private int _status = (int)ComputeTaskStatus.Pending;
+    public ComputeTaskStatus Status
+    {
+        get => (ComputeTaskStatus)Volatile.Read(ref _status);
+        set => Volatile.Write(ref _status, (int)value);
+    }
+
+    private string? _errorMessage;
+    public string? ErrorMessage
+    {
+        get => Volatile.Read(ref _errorMessage);
+        set => Volatile.Write(ref _errorMessage, value);
+    }
 
     /// <summary>
     /// Additional context needed by the executor (e.g., command, axes, settings).

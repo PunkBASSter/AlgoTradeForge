@@ -59,7 +59,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
                 resolvedAxes, axisSubscriptionGroups);
         }
 
-        ValidateGeneticSettings(command.GeneticSettings);
+        GeneticConfigResolver.ValidateSettings(command.GeneticSettings);
         var gaConfig = GeneticConfigResolver.Resolve(command.GeneticSettings, activeAxes);
 
         // 4. Create IDs and progress
@@ -178,15 +178,4 @@ public sealed class RunGeneticOptimizationCommandHandler(
         }
     }
 
-    private static void ValidateGeneticSettings(GeneticConfig settings)
-    {
-        if (settings.PopulationSize > 2000)
-            throw new ArgumentException("PopulationSize cannot exceed 2,000.");
-
-        if (settings.MaxGenerations > 5000)
-            throw new ArgumentException("MaxGenerations cannot exceed 5,000.");
-
-        if (settings.MaxEvaluations > 1_000_000)
-            throw new ArgumentException("MaxEvaluations cannot exceed 1,000,000.");
-    }
 }

@@ -35,34 +35,67 @@ public sealed class ModularStrategyParamsOptimizationTests
     }
 
     [Fact]
-    public void ModularStrategyParamsBase_ThresholdParams_AreDiscoverable()
+    public void Rsi2Params_ThresholdAndStopParams_AreDiscoverable()
     {
-        var props = typeof(ModularStrategyParamsBase)
+        var props = typeof(Rsi2Params)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.GetCustomAttribute<OptimizableAttribute>() is not null)
             .Select(p => p.Name)
             .ToHashSet();
 
-        Assert.Contains("FilterThreshold", props);
         Assert.Contains("SignalThreshold", props);
-        Assert.Contains("ExitThreshold", props);
-        Assert.Contains("DefaultAtrStopMultiplier", props);
+        Assert.Contains("AtrStopMultiplier", props);
     }
 
     [Fact]
-    public void MoneyManagementParams_NestedOptimizableParams_AreDiscoverable()
+    public void FixedFractionalParams_OptimizableParams_AreDiscoverable()
     {
-        var props = typeof(MoneyManagementParams)
+        var props = typeof(FixedFractionalParams)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.GetCustomAttribute<OptimizableAttribute>() is not null)
             .Select(p => p.Name)
             .ToHashSet();
 
-        Assert.Contains("Method", props);
+        Assert.Single(props);
         Assert.Contains("RiskPercent", props);
+    }
+
+    [Fact]
+    public void AtrVolTargetParams_OptimizableParams_AreDiscoverable()
+    {
+        var props = typeof(AtrVolTargetParams)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.GetCustomAttribute<OptimizableAttribute>() is not null)
+            .Select(p => p.Name)
+            .ToHashSet();
+
+        Assert.Single(props);
         Assert.Contains("VolTarget", props);
+    }
+
+    [Fact]
+    public void HalfKellyParams_OptimizableParams_AreDiscoverable()
+    {
+        var props = typeof(HalfKellyParams)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.GetCustomAttribute<OptimizableAttribute>() is not null)
+            .Select(p => p.Name)
+            .ToHashSet();
+
+        Assert.Equal(2, props.Count);
         Assert.Contains("WinRate", props);
         Assert.Contains("PayoffRatio", props);
+    }
+
+    [Fact]
+    public void ModularStrategyParamsBase_MoneyManagement_DoesNotHaveOptimizableModuleAttribute()
+    {
+        // MoneyManagement is intentionally not optimizable — FixedNotionalModule is forced
+        // as the default to ensure objective strategy performance estimation.
+        var mmProp = typeof(ModularStrategyParamsBase)
+            .GetProperty("MoneyManagement");
+        Assert.NotNull(mmProp);
+        Assert.Null(mmProp!.GetCustomAttribute<OptimizableModuleAttribute>());
     }
 
     [Fact]
@@ -82,7 +115,7 @@ public sealed class ModularStrategyParamsOptimizationTests
     {
         var mmProp = typeof(Rsi2Params).GetProperty("MoneyManagement");
         Assert.NotNull(mmProp);
-        Assert.Equal(typeof(MoneyManagementParams), mmProp!.PropertyType);
+        Assert.Equal(typeof(IMoneyManagementModule), mmProp!.PropertyType);
     }
 
     [Fact]
@@ -113,7 +146,7 @@ public sealed class ModularStrategyParamsOptimizationTests
         {
             RsiPeriod = 2, OversoldThreshold = 10, OverboughtThreshold = 90,
             TrendFilterPeriod = 50, AtrPeriod = 14,
-            MoneyManagement = new() { RiskPercent = 1.0 },
+            MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 1.0 }),
             TradeRegistry = new() { MaxConcurrentGroups = 1 },
             DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
         };
@@ -122,7 +155,7 @@ public sealed class ModularStrategyParamsOptimizationTests
         {
             RsiPeriod = 5, OversoldThreshold = 20, OverboughtThreshold = 80,
             TrendFilterPeriod = 50, AtrPeriod = 14,
-            MoneyManagement = new() { RiskPercent = 3.0 },
+            MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 3.0 }),
             TradeRegistry = new() { MaxConcurrentGroups = 2 },
             DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
         };
@@ -163,7 +196,7 @@ public sealed class ModularStrategyParamsOptimizationTests
         s2.OnInit();
 
         // Access context via reflection
-        var ctxProp = typeof(ModularStrategyBase<Rsi2Params>)
+        var ctxProp = typeof(ModularStrategyBase<Rsi2Params, Rsi2Context>)
             .GetProperty("Context", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
         var ctx1 = ctxProp.GetValue(s1);

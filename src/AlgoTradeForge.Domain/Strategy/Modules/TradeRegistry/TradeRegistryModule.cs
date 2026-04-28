@@ -10,11 +10,14 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 {
     private readonly TradeRegistryParams _params = parameters;
     private readonly Dictionary<long, OrderGroup> _groups = [];
+    // Reference-keyed: OrderGroup is a class with no Equals override. Do NOT make it a record.
+    private readonly HashSet<OrderGroup> _activeGroups = [];
     private readonly Dictionary<long, OrderGroup> _orderToGroup = [];
     private long _nextGroupId;
     private long _nextOrderId = -1_000_000; // Negative range to avoid collisions with engine-assigned IDs
     private IEventBus _bus = NullEventBus.Instance;
     private Func<DateTimeOffset> _clock = () => DateTimeOffset.UtcNow;
+    private IOrderContext? _orders;
 
     public void SetEventBus(IEventBus bus) => _bus = bus;
 
@@ -24,15 +27,30 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
     /// </summary>
     public void SetClock(Func<DateTimeOffset> clock) => _clock = clock;
 
+    /// <summary>
+    /// Set the current order context. Called by the strategy at the start of each
+    /// lifecycle method (OnBarStart, OnBarComplete, OnTrade) to scope the context
+    /// for the duration of that callback.
+    /// </summary>
+    public void SetOrderContext(IOrderContext orders) => _orders = orders;
+
+    private IOrderContext Orders => _orders
+        ?? throw new InvalidOperationException("No order context set. Call SetOrderContext before invoking trade operations.");
+
     // ── Queries ──────────────────────────────────────────────────
 
-    public IEnumerable<OrderGroup> ActiveGroups =>
-        _groups.Values.Where(g => g.Status is OrderGroupStatus.PendingEntry or OrderGroupStatus.ProtectionActive);
+    /// <summary>
+    /// Live view over groups currently in <see cref="OrderGroupStatus.PendingEntry"/> or
+    /// <see cref="OrderGroupStatus.ProtectionActive"/>. O(1) <c>Count</c>; zero-allocation
+    /// enumeration via the underlying <see cref="HashSet{T}"/>'s struct enumerator. Mutating
+    /// registry calls (OpenGroup, CancelGroup, fills) modify the underlying set, so callers
+    /// iterating with intent to mutate must snapshot first (e.g. <c>.ToArray()</c>).
+    /// Surface is intentionally <see cref="IReadOnlyCollection{T}"/> (not <c>IReadOnlySet</c>)
+    /// to avoid implying stable membership semantics across mutations.
+    /// </summary>
+    public IReadOnlyCollection<OrderGroup> ActiveGroups => _activeGroups;
 
-    public int ActiveGroupCount =>
-        _groups.Values.Count(g => g.Status is OrderGroupStatus.PendingEntry or OrderGroupStatus.ProtectionActive);
-
-    public bool IsFlat => ActiveGroupCount == 0;
+    public int ActiveGroupCount => _activeGroups.Count;
 
     public OrderGroup? GetGroup(long groupId) =>
         _groups.GetValueOrDefault(groupId);
@@ -40,7 +58,6 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
     // ── OpenGroup ────────────────────────────────────────────────
 
     public OrderGroup? OpenGroup(
-        IOrderContext orders,
         Asset asset,
         OrderSide side,
         OrderType entryType,
@@ -83,6 +100,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         };
 
         _groups[groupId] = group;
+        _activeGroups.Add(group);
         _orderToGroup[entryOrderId] = group;
 
         var entryOrder = new Order
@@ -97,7 +115,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
             GroupId = groupId,
         };
 
-        orders.Submit(entryOrder);
+        Orders.Submit(entryOrder);
 
         EmitEvent(group, OrderGroupTransition.EntrySubmitted, entryOrderId, entryLimitPrice ?? entryStopPrice, quantity);
 
@@ -106,32 +124,33 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
     // ── OnFill ───────────────────────────────────────────────────
 
-    public void OnFill(Fill fill, Order order, IOrderContext orders)
+    public void OnFill(Fill fill, Order order)
     {
         if (!_orderToGroup.TryGetValue(fill.OrderId, out var group))
             return;
 
         if (fill.OrderId == group.EntryOrderId)
-            HandleEntryFill(group, fill, orders);
+            HandleEntryFill(group, fill);
         else if (fill.OrderId == group.SlOrderId)
-            HandleSlFill(group, fill, orders);
+            HandleSlFill(group, fill);
         else if (fill.OrderId == group.LiquidationOrderId)
             HandleLiquidationFill(group, fill);
         else
-            HandleTpFill(group, fill, orders);
+            HandleTpFill(group, fill);
     }
 
-    private void HandleEntryFill(OrderGroup group, Fill fill, IOrderContext orders)
+    private void HandleEntryFill(OrderGroup group, Fill fill)
     {
         group.Status = OrderGroupStatus.ProtectionActive;
         group.EntryPrice = fill.Price;
+        group.EntryFilledAt = _clock();
 
         EmitEvent(group, OrderGroupTransition.EntryFilled, fill.OrderId, fill.Price, fill.Quantity);
 
-        PlaceProtectiveOrders(group, orders);
+        PlaceProtectiveOrders(group);
     }
 
-    private void HandleSlFill(OrderGroup group, Fill fill, IOrderContext orders)
+    private void HandleSlFill(OrderGroup group, Fill fill)
     {
         ComputePnl(group, fill);
         group.RemainingQuantity = 0m;
@@ -139,12 +158,12 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         EmitEvent(group, OrderGroupTransition.SlFilled, fill.OrderId, fill.Price, fill.Quantity);
 
         // Cancel ALL pending TPs
-        CancelAllPendingTps(group, orders);
+        CancelAllPendingTps(group);
 
         CloseGroup(group);
     }
 
-    private void HandleTpFill(OrderGroup group, Fill fill, IOrderContext orders)
+    private void HandleTpFill(OrderGroup group, Fill fill)
     {
         ComputePnl(group, fill);
         group.RemainingQuantity -= fill.Quantity;
@@ -158,36 +177,54 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         if (group.RemainingQuantity <= 0m || group.FilledTpCount >= group.TpLevels.Length)
         {
             // Fully closed — cancel SL + any remaining TPs
-            CancelSl(group, orders);
-            CancelAllPendingTps(group, orders);
+            CancelSl(group);
+            CancelAllPendingTps(group);
             CloseGroup(group);
         }
         else
         {
             // Partially closed — replace SL with reduced qty (TPs already on exchange)
-            ReplaceSl(group, orders);
+            ReplaceSl(group);
         }
     }
 
     // ── Protective Orders ────────────────────────────────────────
 
-    private void PlaceProtectiveOrders(OrderGroup group, IOrderContext orders)
+    private void PlaceProtectiveOrders(OrderGroup group)
     {
-        ReplaceSl(group, orders);
+        ReplaceSl(group);
 
-        // TPs: Submit ALL levels upfront starting from FilledTpCount
+        // TPs: Submit ALL levels upfront. Quantities are aligned to the asset's
+        // QuantityStepSize; the last level gets the remainder to avoid residuals.
         var closeSide = group.EntrySide == OrderSide.Buy ? OrderSide.Sell : OrderSide.Buy;
-        for (var i = group.FilledTpCount; i < group.TpLevels.Length; i++)
+        var stepSize = group.Asset.QuantityStepSize;
+        var allocated = 0m;
+
+        for (var i = 0; i < group.TpLevels.Length; i++)
         {
             var tp = group.TpLevels[i];
             var tpQuantity = group.EntryQuantity * tp.ClosurePercentage;
-            SubmitTp(group, orders, i, closeSide, tp.Price, tpQuantity);
+
+            if (stepSize > 0m)
+            {
+                if (i == group.TpLevels.Length - 1 && i > 0)
+                    tpQuantity = group.EntryQuantity - allocated;
+                else
+                    tpQuantity = Math.Floor(tpQuantity / stepSize) * stepSize;
+            }
+
+            allocated += tpQuantity;
+
+            if (tpQuantity < group.Asset.MinOrderQuantity)
+                continue;
+
+            SubmitTp(group, i, closeSide, tp.Price, tpQuantity);
         }
     }
 
     // ── LiquidateGroup ───────────────────────────────────────────
 
-    public bool LiquidateGroup(long groupId, IOrderContext orders)
+    public bool LiquidateGroup(long groupId)
     {
         if (!_groups.TryGetValue(groupId, out var group))
             return false;
@@ -196,8 +233,8 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         if (group.LiquidationOrderId != 0)
             return false;
 
-        CancelSl(group, orders);
-        CancelAllPendingTps(group, orders);
+        CancelSl(group);
+        CancelAllPendingTps(group);
 
         var closeSide = group.EntrySide == OrderSide.Buy ? OrderSide.Sell : OrderSide.Buy;
         var liqOrderId = --_nextOrderId;
@@ -213,7 +250,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
         group.LiquidationOrderId = liqOrderId;
         _orderToGroup[liqOrderId] = group;
-        orders.Submit(liqOrder);
+        Orders.Submit(liqOrder);
 
         EmitEvent(group, OrderGroupTransition.LiquidationSubmitted, liqOrderId, null, group.RemainingQuantity);
 
@@ -233,23 +270,24 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
     // ── CancelGroup ──────────────────────────────────────────────
 
-    public bool CancelGroup(long groupId, IOrderContext orders)
+    public bool CancelGroup(long groupId)
     {
         if (!_groups.TryGetValue(groupId, out var group))
             return false;
 
         if (group.Status == OrderGroupStatus.PendingEntry)
         {
-            orders.Cancel(group.EntryOrderId);
+            Orders.Cancel(group.EntryOrderId);
             group.Status = OrderGroupStatus.Cancelled;
+            _activeGroups.Remove(group);
             EmitEvent(group, OrderGroupTransition.EntryCancelled, group.EntryOrderId, null, null);
             return true;
         }
 
         if (group.Status == OrderGroupStatus.ProtectionActive)
         {
-            CancelSl(group, orders);
-            CancelAllPendingTps(group, orders);
+            CancelSl(group);
+            CancelAllPendingTps(group);
             CloseGroup(group);
             return true;
         }
@@ -259,7 +297,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
     // ── UpdateStopLoss ───────────────────────────────────────────
 
-    public bool UpdateStopLoss(long groupId, long newSlPrice, IOrderContext orders)
+    public bool UpdateStopLoss(long groupId, long newSlPrice)
     {
         if (!_groups.TryGetValue(groupId, out var group))
             return false;
@@ -267,7 +305,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
             return false;
 
         group.SlPrice = newSlPrice;
-        ReplaceSl(group, orders);
+        ReplaceSl(group);
         return true;
     }
 
@@ -278,7 +316,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
     /// Liquidation submits a market close order, so the caller must ensure
     /// at least one more bar/tick is processed for the fill to arrive.
     /// </summary>
-    public void CloseAllGroups(IOrderContext orders)
+    public void CloseAllGroups()
     {
         var activeGroups = _groups.Values
             .Where(g => g.Status is OrderGroupStatus.PendingEntry or OrderGroupStatus.ProtectionActive)
@@ -287,42 +325,42 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         foreach (var group in activeGroups)
         {
             if (group.Status == OrderGroupStatus.ProtectionActive)
-                LiquidateGroup(group.GroupId, orders);
+                LiquidateGroup(group.GroupId);
             else
-                CancelGroup(group.GroupId, orders);
+                CancelGroup(group.GroupId);
         }
     }
 
     // ── Helpers ──────────────────────────────────────────────────
 
-    private void CancelSl(OrderGroup group, IOrderContext orders)
+    private void CancelSl(OrderGroup group)
     {
         if (group.SlOrderId != 0)
         {
-            orders.Cancel(group.SlOrderId);
+            Orders.Cancel(group.SlOrderId);
             EmitEvent(group, OrderGroupTransition.ProtectiveCancelled, group.SlOrderId, null, null);
             _orderToGroup.Remove(group.SlOrderId);
             group.SlOrderId = 0;
         }
     }
 
-    private void CancelAllPendingTps(OrderGroup group, IOrderContext orders)
+    private void CancelAllPendingTps(OrderGroup group)
     {
         for (var i = 0; i < group.TpLevels.Length; i++)
         {
             var tpOrderId = group.TpLevels[i].OrderId;
             if (tpOrderId != 0 && _orderToGroup.ContainsKey(tpOrderId))
             {
-                orders.Cancel(tpOrderId);
+                Orders.Cancel(tpOrderId);
                 EmitEvent(group, OrderGroupTransition.ProtectiveCancelled, tpOrderId, null, null);
                 _orderToGroup.Remove(tpOrderId);
             }
         }
     }
 
-    private void ReplaceSl(OrderGroup group, IOrderContext orders)
+    private void ReplaceSl(OrderGroup group)
     {
-        CancelSl(group, orders);
+        CancelSl(group);
 
         var closeSide = group.EntrySide == OrderSide.Buy ? OrderSide.Sell : OrderSide.Buy;
         var slOrderId = --_nextOrderId;
@@ -339,12 +377,12 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
         group.SlOrderId = slOrderId;
         _orderToGroup[slOrderId] = group;
-        orders.Submit(slOrder);
+        Orders.Submit(slOrder);
 
         EmitEvent(group, OrderGroupTransition.SlPlaced, slOrderId, group.SlPrice, group.RemainingQuantity);
     }
 
-    private void SubmitTp(OrderGroup group, IOrderContext orders, int tpIndex, OrderSide closeSide, long price, decimal quantity)
+    private void SubmitTp(OrderGroup group, int tpIndex, OrderSide closeSide, long price, decimal quantity)
     {
         var tpOrderId = --_nextOrderId;
         var tpOrder = new Order
@@ -360,7 +398,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
         group.TpLevels[tpIndex].OrderId = tpOrderId;
         _orderToGroup[tpOrderId] = group;
-        orders.Submit(tpOrder);
+        Orders.Submit(tpOrder);
 
         EmitEvent(group, OrderGroupTransition.TpPlaced, tpOrderId, price, quantity);
     }
@@ -404,7 +442,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         return result;
     }
 
-    public void RepairGroup(long groupId, IReadOnlySet<long> missingOrderIds, IOrderContext orders)
+    public void RepairGroup(long groupId, IReadOnlySet<long> missingOrderIds)
     {
         if (!_groups.TryGetValue(groupId, out var group))
             return;
@@ -421,7 +459,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
                 // SL is missing — remove old tracking and resubmit
                 _orderToGroup.Remove(group.SlOrderId);
                 group.SlOrderId = 0;
-                ReplaceSl(group, orders);
+                ReplaceSl(group);
             }
             else
             {
@@ -433,7 +471,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
                         _orderToGroup.Remove(missingId);
                         group.TpLevels[i].OrderId = 0;
                         var tpQuantity = group.EntryQuantity * group.TpLevels[i].ClosurePercentage;
-                        SubmitTp(group, orders, i, closeSide, group.TpLevels[i].Price, tpQuantity);
+                        SubmitTp(group, i, closeSide, group.TpLevels[i].Price, tpQuantity);
                         break;
                     }
                 }
@@ -452,6 +490,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
     {
         group.Status = OrderGroupStatus.Closed;
         group.ClosedAt = _clock();
+        _activeGroups.Remove(group);
     }
 
     private void EmitEvent(

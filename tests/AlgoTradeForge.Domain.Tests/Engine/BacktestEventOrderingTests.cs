@@ -290,8 +290,10 @@ public class BacktestEventOrderingTests
         Assert.Equal(7m, result.Fills[0].Quantity);
     }
 
-    private sealed class EventRecordingStrategy(DataSubscription subscription) : IInt64BarStrategy
+    private sealed class EventRecordingStrategy(DataSubscription subscription) : IInt64BarStrategy, IOrderContextReceiver
     {
+        private IOrderContext _orders = null!;
+
         public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
         public List<string> Events { get; } = [];
@@ -299,21 +301,22 @@ public class BacktestEventOrderingTests
         public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarStartAction { get; init; }
         public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarCompleteAction { get; init; }
 
+        public void SetOrderContext(IOrderContext context) => _orders = context;
         public void OnInit() => Events.Add("OnInit");
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+        public void OnBarStart(Int64Bar bar, DataSubscription subscription)
         {
             Events.Add($"OnBarStart:{bar.Open}");
-            OnBarStartAction?.Invoke(bar, subscription, orders);
+            OnBarStartAction?.Invoke(bar, subscription, _orders);
         }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+        public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
         {
             Events.Add($"OnBarComplete:{bar.Open}");
-            OnBarCompleteAction?.Invoke(bar, subscription, orders);
+            OnBarCompleteAction?.Invoke(bar, subscription, _orders);
         }
 
-        public void OnTrade(Fill fill, Order order, IOrderContext orders) =>
+        public void OnTrade(Fill fill, Order order) =>
             Events.Add($"OnTrade:{fill.Side}:{fill.Price}");
     }
 }

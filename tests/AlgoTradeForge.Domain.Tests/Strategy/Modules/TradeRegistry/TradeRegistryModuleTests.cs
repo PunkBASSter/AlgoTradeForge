@@ -60,9 +60,10 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp);
 
         Assert.NotNull(group);
@@ -79,13 +80,14 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule(maxConcurrentGroups: 1);
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group1 = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp);
 
         var group2 = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp);
 
         Assert.NotNull(group1);
@@ -99,15 +101,16 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
         // Simulate entry fill
         var fill = MakeFill(group.EntryOrderId, price: 15000, quantity: 10m, OrderSide.Buy);
         var order = MakeOrder(group.EntryOrderId);
-        module.OnFill(fill, order, ctx);
+        module.OnFill(fill, order);
 
         Assert.Equal(OrderGroupStatus.ProtectionActive, group.Status);
         Assert.Equal(15000, group.EntryPrice);
@@ -122,18 +125,19 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
         // Entry fill
         var entryFill = MakeFill(group.EntryOrderId, price: 15000, quantity: 10m, OrderSide.Buy);
-        module.OnFill(entryFill, MakeOrder(group.EntryOrderId), ctx);
+        module.OnFill(entryFill, MakeOrder(group.EntryOrderId));
 
         // SL fill (price dropped to SL)
         var slFill = MakeFill(group.SlOrderId, price: 14000, quantity: 10m, OrderSide.Sell);
-        module.OnFill(slFill, MakeOrder(group.SlOrderId), ctx);
+        module.OnFill(slFill, MakeOrder(group.SlOrderId));
 
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
         Assert.Equal(0m, group.RemainingQuantity);
@@ -150,19 +154,20 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
 
         // Entry fill
         var entryFill = MakeFill(group.EntryOrderId, price: 15000, quantity: 10m, OrderSide.Buy);
-        module.OnFill(entryFill, MakeOrder(group.EntryOrderId), ctx);
+        module.OnFill(entryFill, MakeOrder(group.EntryOrderId));
 
         // TP1 fill: closes 50% of total = 5 units
         var tp1OrderId = group.TpLevels[0].OrderId;
         var tp1Fill = MakeFill(tp1OrderId, price: 15500, quantity: 5m, OrderSide.Sell);
-        module.OnFill(tp1Fill, MakeOrder(tp1OrderId), ctx);
+        module.OnFill(tp1Fill, MakeOrder(tp1OrderId));
 
         Assert.Equal(OrderGroupStatus.ProtectionActive, group.Status);
         Assert.Equal(5m, group.RemainingQuantity);
@@ -185,21 +190,22 @@ public class TradeRegistryModuleTests
             submittedOrders.Add(o);
             return o.Id;
         });
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
 
         // Entry fill
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         // TP1 fill: closes 50% = 5 units
         var tp1OrderId = group.TpLevels[0].OrderId;
         module.OnFill(
             MakeFill(tp1OrderId, 15500, 5m, OrderSide.Sell),
-            MakeOrder(tp1OrderId), ctx);
+            MakeOrder(tp1OrderId));
 
         // The LAST submitted Stop order should have reduced qty
         var lastSl = submittedOrders.Last(o => o.Type == OrderType.Stop);
@@ -214,27 +220,28 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
 
         // Entry fill
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         // TP1 fill
         var tp1OrderId = group.TpLevels[0].OrderId;
         module.OnFill(
             MakeFill(tp1OrderId, 15500, 5m, OrderSide.Sell),
-            MakeOrder(tp1OrderId), ctx);
+            MakeOrder(tp1OrderId));
 
         // TP2 fill (remaining 5 units)
         var tp2OrderId = group.TpLevels[1].OrderId;
         module.OnFill(
             MakeFill(tp2OrderId, 16000, 5m, OrderSide.Sell),
-            MakeOrder(tp2OrderId), ctx);
+            MakeOrder(tp2OrderId));
 
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
         Assert.Equal(0m, group.RemainingQuantity);
@@ -249,12 +256,13 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
-        var result = module.CancelGroup(group.GroupId, ctx);
+        var result = module.CancelGroup(group.GroupId);
 
         Assert.True(result);
         Assert.Equal(OrderGroupStatus.Cancelled, group.Status);
@@ -268,20 +276,21 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
         // Entry fill to move to ProtectionActive
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         var slId = group.SlOrderId;
         var tpId = group.TpLevels[0].OrderId;
 
-        var result = module.CancelGroup(group.GroupId, ctx);
+        var result = module.CancelGroup(group.GroupId);
 
         Assert.True(result);
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
@@ -296,18 +305,19 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         var oldSlId = group.SlOrderId;
 
-        var result = module.UpdateStopLoss(group.GroupId, 14500, ctx);
+        var result = module.UpdateStopLoss(group.GroupId, 14500);
 
         Assert.True(result);
         Assert.Equal(14500, group.SlPrice);
@@ -324,17 +334,18 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         // Create a group to have some state
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
         // Fill with an unknown order ID — should be a no-op
         var fill = MakeFill(orderId: 999999, price: 15000, quantity: 10m, OrderSide.Buy);
         var order = MakeOrder(999999);
 
-        module.OnFill(fill, order, ctx);
+        module.OnFill(fill, order);
 
         Assert.Equal(OrderGroupStatus.PendingEntry, group.Status);
     }
@@ -353,16 +364,17 @@ public class TradeRegistryModuleTests
             submittedOrders.Add(o);
             return o.Id;
         });
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Sell, OrderType.Market,
+            DefaultAsset, OrderSide.Sell, OrderType.Market,
             quantity: 10m, slPrice: 16000,
             tpLevels: [new TpLevel { Price = 14000, ClosurePercentage = 1.0m }])!;
 
         // Entry fill
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Sell),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         // SL should be Buy Stop, TP should be Buy Limit
         var slOrder = submittedOrders.First(o => o.Type == OrderType.Stop);
@@ -381,19 +393,19 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule(maxConcurrentGroups: 0);
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var groups = new List<OrderGroup>();
         for (var i = 0; i < 50; i++)
         {
             var g = module.OpenGroup(
-                ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+                DefaultAsset, OrderSide.Buy, OrderType.Market,
                 quantity: 1m, slPrice: 14000, tpLevels: SingleTp);
             Assert.NotNull(g);
             groups.Add(g);
         }
 
         Assert.Equal(50, module.ActiveGroupCount);
-        Assert.False(module.IsFlat);
     }
 
     // ── T13a: OnFill_SlFill_CancelsAllPendingTps ──────────────
@@ -403,15 +415,16 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
 
         // Entry fill → SL + 2 TPs placed
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         var tp1Id = group.TpLevels[0].OrderId;
         var tp2Id = group.TpLevels[1].OrderId;
@@ -421,7 +434,7 @@ public class TradeRegistryModuleTests
         // SL fill — should cancel BOTH TPs
         module.OnFill(
             MakeFill(group.SlOrderId, 14000, 10m, OrderSide.Sell),
-            MakeOrder(group.SlOrderId), ctx);
+            MakeOrder(group.SlOrderId));
 
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
         ctx.Received(1).Cancel(tp1Id);
@@ -435,14 +448,15 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         // Both TPs should have non-zero OrderIds
         Assert.NotEqual(0, group.TpLevels[0].OrderId);
@@ -460,14 +474,15 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         var expected = module.GetExpectedOrders();
 
@@ -490,19 +505,20 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         var oldSlId = group.SlOrderId;
 
         // Repair: SL is "missing" on exchange
-        module.RepairGroup(group.GroupId, new HashSet<long> { oldSlId }, ctx);
+        module.RepairGroup(group.GroupId, new HashSet<long> { oldSlId });
 
         // New SL should have been submitted with a different ID
         Assert.NotEqual(oldSlId, group.SlOrderId);
@@ -518,19 +534,20 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         var oldTp2Id = group.TpLevels[1].OrderId;
 
         // Repair: TP2 is "missing" on exchange
-        module.RepairGroup(group.GroupId, new HashSet<long> { oldTp2Id }, ctx);
+        module.RepairGroup(group.GroupId, new HashSet<long> { oldTp2Id });
 
         // New TP2 should have been submitted with a different ID
         Assert.NotEqual(oldTp2Id, group.TpLevels[1].OrderId);
@@ -546,20 +563,21 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         var oldSlId = group.SlOrderId;
         var oldTp2Id = group.TpLevels[1].OrderId;
 
         // Repair: both SL and TP2 are "missing" on exchange
-        module.RepairGroup(group.GroupId, new HashSet<long> { oldSlId, oldTp2Id }, ctx);
+        module.RepairGroup(group.GroupId, new HashSet<long> { oldSlId, oldTp2Id });
 
         // Both should get new IDs
         Assert.NotEqual(oldSlId, group.SlOrderId);
@@ -577,6 +595,7 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         TpLevel[] badTps =
         [
@@ -585,7 +604,7 @@ public class TradeRegistryModuleTests
         ];
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: badTps);
 
         Assert.Null(group);
@@ -599,16 +618,17 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
-        module.LiquidateGroup(group.GroupId, ctx);
+        module.LiquidateGroup(group.GroupId);
 
         var expected = module.GetExpectedOrders();
 
@@ -635,19 +655,20 @@ public class TradeRegistryModuleTests
             submittedOrders.Add(o);
             return o.Id;
         });
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         var slId = group.SlOrderId;
         var tpId = group.TpLevels[0].OrderId;
 
-        var result = module.LiquidateGroup(group.GroupId, ctx);
+        var result = module.LiquidateGroup(group.GroupId);
 
         Assert.True(result);
         ctx.Received(1).Cancel(slId);
@@ -667,20 +688,21 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
-        module.LiquidateGroup(group.GroupId, ctx);
+        module.LiquidateGroup(group.GroupId);
 
         // Simulate liquidation fill at 15200
         var liqFill = MakeFill(group.LiquidationOrderId, 15200, 10m, OrderSide.Sell);
-        module.OnFill(liqFill, MakeOrder(group.LiquidationOrderId), ctx);
+        module.OnFill(liqFill, MakeOrder(group.LiquidationOrderId));
 
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
         Assert.Equal(0m, group.RemainingQuantity);
@@ -695,12 +717,13 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
-        var result = module.LiquidateGroup(group.GroupId, ctx);
+        var result = module.LiquidateGroup(group.GroupId);
 
         Assert.False(result);
         Assert.Equal(OrderGroupStatus.PendingEntry, group.Status);
@@ -714,17 +737,18 @@ public class TradeRegistryModuleTests
     {
         var module = CreateModule();
         var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
-        Assert.True(module.LiquidateGroup(group.GroupId, ctx));
-        Assert.False(module.LiquidateGroup(group.GroupId, ctx));
+        Assert.True(module.LiquidateGroup(group.GroupId));
+        Assert.False(module.LiquidateGroup(group.GroupId));
     }
 
     // ── LiquidateGroup_AfterPartialTp_ClosesRemainingQty ─────────
@@ -741,24 +765,25 @@ public class TradeRegistryModuleTests
             submittedOrders.Add(o);
             return o.Id;
         });
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         // TP1 fills (50% = 5 units)
         var tp1Id = group.TpLevels[0].OrderId;
         module.OnFill(
             MakeFill(tp1Id, 15500, 5m, OrderSide.Sell),
-            MakeOrder(tp1Id), ctx);
+            MakeOrder(tp1Id));
 
         Assert.Equal(5m, group.RemainingQuantity);
 
-        module.LiquidateGroup(group.GroupId, ctx);
+        module.LiquidateGroup(group.GroupId);
 
         // Liquidation order should be for remaining 5 units
         var liqOrder = submittedOrders.Last();
@@ -767,7 +792,7 @@ public class TradeRegistryModuleTests
 
         // Simulate liquidation fill
         var liqFill = MakeFill(group.LiquidationOrderId, 15800, 5m, OrderSide.Sell);
-        module.OnFill(liqFill, MakeOrder(group.LiquidationOrderId), ctx);
+        module.OnFill(liqFill, MakeOrder(group.LiquidationOrderId));
 
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
         Assert.Equal(0m, group.RemainingQuantity);
@@ -789,17 +814,18 @@ public class TradeRegistryModuleTests
             submittedOrders.Add(o);
             return o.Id;
         });
+        module.SetOrderContext(ctx);
 
         var group = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Sell, OrderType.Market,
+            DefaultAsset, OrderSide.Sell, OrderType.Market,
             quantity: 10m, slPrice: 16000,
             tpLevels: [new TpLevel { Price = 14000, ClosurePercentage = 1.0m }])!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Sell),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
-        module.LiquidateGroup(group.GroupId, ctx);
+        module.LiquidateGroup(group.GroupId);
 
         var liqOrder = submittedOrders.Last();
         Assert.Equal(OrderSide.Buy, liqOrder.Side);
@@ -821,22 +847,23 @@ public class TradeRegistryModuleTests
             submittedOrders.Add(o);
             return o.Id;
         });
+        module.SetOrderContext(ctx);
 
         // Group 1: entry fills → ProtectionActive
         var group1 = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
 
         module.OnFill(
             MakeFill(group1.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group1.EntryOrderId), ctx);
+            MakeOrder(group1.EntryOrderId));
 
         // Group 2: stays PendingEntry
         var group2 = module.OpenGroup(
-            ctx, DefaultAsset, OrderSide.Buy, OrderType.Market,
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
             quantity: 5m, slPrice: 14000, tpLevels: SingleTp)!;
 
-        module.CloseAllGroups(ctx);
+        module.CloseAllGroups();
 
         // Group 1 should have a liquidation order (market close)
         Assert.NotEqual(0, group1.LiquidationOrderId);
@@ -845,5 +872,115 @@ public class TradeRegistryModuleTests
         // Group 2 should be cancelled (entry cancelled)
         Assert.Equal(OrderGroupStatus.Cancelled, group2.Status);
         ctx.Received(1).Cancel(group2.EntryOrderId);
+    }
+
+    // ── EntryFilledAt: lifecycle invariants ─────────────────────
+
+    [Fact]
+    public void EntryFilledAt_IsNullWhilePendingEntry()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
+
+        var group = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        Assert.Equal(OrderGroupStatus.PendingEntry, group.Status);
+        Assert.Null(group.EntryFilledAt);
+    }
+
+    [Fact]
+    public void EntryFilledAt_IsSetWhenEntryFills()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
+
+        var fillBarTimestamp = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        module.SetClock(() => fillBarTimestamp);
+
+        var group = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId));
+
+        Assert.Equal(OrderGroupStatus.ProtectionActive, group.Status);
+        Assert.Equal(fillBarTimestamp, group.EntryFilledAt);
+    }
+
+    [Fact]
+    public void EntryFilledAt_IsImmutableThroughLaterFills()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
+
+        var entryBarTimestamp = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var slBarTimestamp = entryBarTimestamp.AddHours(3);
+
+        var clock = entryBarTimestamp;
+        module.SetClock(() => clock);
+
+        var group = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId));
+
+        // Advance the clock and fire a stop-loss fill — EntryFilledAt must not move.
+        clock = slBarTimestamp;
+        module.OnFill(
+            MakeFill(group.SlOrderId, 14000, 10m, OrderSide.Sell),
+            MakeOrder(group.SlOrderId));
+
+        Assert.Equal(OrderGroupStatus.Closed, group.Status);
+        Assert.Equal(entryBarTimestamp, group.EntryFilledAt);
+        Assert.Equal(slBarTimestamp, group.ClosedAt);
+    }
+
+    [Fact]
+    public void EntryFilledAt_IsImmutableThroughTpAndLiquidation()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
+
+        var entryBarTimestamp = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var clock = entryBarTimestamp;
+        module.SetClock(() => clock);
+
+        var group = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId));
+
+        // TP1 partial close — entry timestamp must survive.
+        clock = entryBarTimestamp.AddHours(1);
+        var tp1OrderId = group.TpLevels[0].OrderId;
+        module.OnFill(
+            MakeFill(tp1OrderId, 15500, 5m, OrderSide.Sell),
+            MakeOrder(tp1OrderId));
+        Assert.Equal(entryBarTimestamp, group.EntryFilledAt);
+
+        // Liquidation of remainder — still entry timestamp.
+        clock = entryBarTimestamp.AddHours(2);
+        module.LiquidateGroup(group.GroupId);
+        var liqOrderId = group.LiquidationOrderId;
+        module.OnFill(
+            MakeFill(liqOrderId, 15800, 5m, OrderSide.Sell),
+            MakeOrder(liqOrderId));
+
+        Assert.Equal(OrderGroupStatus.Closed, group.Status);
+        Assert.Equal(entryBarTimestamp, group.EntryFilledAt);
     }
 }

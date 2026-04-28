@@ -5,6 +5,7 @@ using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Domain.Optimization.Fitness;
+using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Validation;
 using Microsoft.Extensions.Logging;
@@ -26,8 +27,7 @@ public sealed class RunGroupOptimizationCommandHandler(
     public async Task<OptimizationGroupSubmissionDto> HandleAsync(
         RunGroupOptimizationCommand command, CancellationToken ct = default)
     {
-        if (command.OptimizationMethod != "BruteForce")
-            throw new NotImplementedException("Genetic group mode not yet implemented");
+        var isGenetic = command.OptimizationMethod == "Genetic";
 
         // 1. Compute group RunKey and check for dedup under a narrow lock.
         //    Only the dedup check + key reservation are inside the lock;
@@ -93,11 +93,25 @@ public sealed class RunGroupOptimizationCommandHandler(
             })
             .ToList();
 
-        // 5. Estimate combinations count (same for each DSS)
-        var estimatedCountPerDss = cartesianGenerator.EstimateCount(activeAxes);
-        if (estimatedCountPerDss > command.MaxCombinations)
-            throw new ArgumentException(
-                $"Estimated {estimatedCountPerDss} combinations per DSS exceeds maximum of {command.MaxCombinations}.");
+        // 5. Estimate work per DSS — brute-force uses cartesian count, genetic uses GA eval budget
+        long estimatedCountPerDss;
+        GeneticConfig? gaConfig = null;
+
+        if (isGenetic)
+        {
+            var geneticSettings = command.GeneticSettings
+                ?? throw new ArgumentException("GeneticSettings is required for Genetic optimization.");
+            GeneticConfigResolver.ValidateSettings(geneticSettings);
+            gaConfig = GeneticConfigResolver.Resolve(geneticSettings, activeAxes);
+            estimatedCountPerDss = gaConfig.MaxEvaluations;
+        }
+        else
+        {
+            estimatedCountPerDss = cartesianGenerator.EstimateCount(activeAxes);
+            if (estimatedCountPerDss > command.MaxCombinations)
+                throw new ArgumentException(
+                    $"Estimated {estimatedCountPerDss} combinations per DSS exceeds maximum of {command.MaxCombinations}.");
+        }
 
         // 6. Create IDs
         var startedAt = DateTimeOffset.UtcNow;
@@ -155,7 +169,7 @@ public sealed class RunGroupOptimizationCommandHandler(
                 BacktestSettings = settings,
                 MaxParallelism = maxParallelism,
                 Trials = [],
-                OptimizationMethod = "BruteForce",
+                OptimizationMethod = command.OptimizationMethod,
                 InputJson = command.InputJson,
                 Status = OptimizationRunStatus.Enqueued,
                 GroupId = groupId,
@@ -185,31 +199,50 @@ public sealed class RunGroupOptimizationCommandHandler(
             var dssLabel = string.Join(", ", subscriptionAxis[dssIdx]
                 .Select(s => $"{s.AssetName}/{s.Exchange}/{s.TimeFrame}"));
 
-            var optCtx = new OptimizationExecutionContext
-            {
-                StrategyName = command.StrategyName,
-                OptimizationMethod = command.OptimizationMethod,
-                BacktestSettings = settings,
-                SubscriptionDtos = subscriptionAxis[dssIdx]
-                    .Select(s => new DataSubscriptionDto
-                    {
-                        AssetName = s.AssetName,
-                        Exchange = s.Exchange,
-                        TimeFrame = s.TimeFrame,
-                    })
-                    .ToList(),
-                ActiveAxes = activeAxes,
-                EstimatedCount = estimatedCountPerDss,
-                MaxParallelism = maxParallelism,
-                MaxTrialsToKeep = command.MaxTrialsToKeep,
-                FilterOptions = command,
-                FitnessConfig = command.FitnessConfig ?? FitnessConfig.Default,
-                Normalizer = normalizer,
-                GroupId = groupId,
-                GroupRunKey = groupRunKey,
-                StartedAt = startedAt,
-                InputJson = command.InputJson,
-            };
+            var dssSubs = subscriptionAxis[dssIdx]
+                .Select(s => new DataSubscriptionDto
+                {
+                    AssetName = s.AssetName,
+                    Exchange = s.Exchange,
+                    TimeFrame = s.TimeFrame,
+                })
+                .ToList();
+
+            object executionCtx = isGenetic
+                ? new GeneticExecutionContext
+                {
+                    StrategyName = command.StrategyName,
+                    BacktestSettings = settings,
+                    SubscriptionDtos = dssSubs,
+                    ActiveAxes = activeAxes,
+                    GaConfig = gaConfig!,
+                    MaxParallelism = maxParallelism,
+                    MaxTrialsToKeep = command.MaxTrialsToKeep,
+                    FilterOptions = command,
+                    Normalizer = normalizer,
+                    GroupId = groupId,
+                    GroupRunKey = groupRunKey,
+                    StartedAt = startedAt,
+                    InputJson = command.InputJson,
+                }
+                : new OptimizationExecutionContext
+                {
+                    StrategyName = command.StrategyName,
+                    OptimizationMethod = command.OptimizationMethod,
+                    BacktestSettings = settings,
+                    SubscriptionDtos = dssSubs,
+                    ActiveAxes = activeAxes,
+                    EstimatedCount = estimatedCountPerDss,
+                    MaxParallelism = maxParallelism,
+                    MaxTrialsToKeep = command.MaxTrialsToKeep,
+                    FilterOptions = command,
+                    FitnessConfig = command.FitnessConfig ?? FitnessConfig.Default,
+                    Normalizer = normalizer,
+                    GroupId = groupId,
+                    GroupRunKey = groupRunKey,
+                    StartedAt = startedAt,
+                    InputJson = command.InputJson,
+                };
 
             computeTasks.Add(new ComputeTask
             {
@@ -218,7 +251,7 @@ public sealed class RunGroupOptimizationCommandHandler(
                 DssIndex = dssIdx,
                 RunId = childRunIds[dssIdx],
                 DssLabel = dssLabel,
-                ExecutionContext = optCtx,
+                ExecutionContext = executionCtx,
             });
 
             // Optionally pair with validation task

@@ -262,12 +262,13 @@ public class CryptoFuturesIntegrationTests
     /// Opens a position on one bar and optionally closes on another.
     /// Uses market orders filled at bar open price.
     /// </summary>
-    private sealed class SimpleEntryExitStrategy : IInt64BarStrategy, IFeedContextReceiver, IEventBusReceiver
+    private sealed class SimpleEntryExitStrategy : IInt64BarStrategy, IFeedContextReceiver, IEventBusReceiver, IOrderContextReceiver
     {
         private readonly Asset _asset;
         private readonly int _buyOnBar;
         private readonly int _sellOnBar;
         private int _barIndex;
+        private IOrderContext _orders = null!;
 
         public SimpleEntryExitStrategy(Asset asset, int buyOnBar = -1, int sellOnBar = -1)
         {
@@ -280,31 +281,33 @@ public class CryptoFuturesIntegrationTests
         public string Version => "1.0";
         public IList<DataSubscription> DataSubscriptions { get; } = new List<DataSubscription>();
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+        public void OnBarStart(Int64Bar bar, DataSubscription subscription)
         {
             if (_barIndex == _buyOnBar)
-                orders.Submit(new Order { Id = 0, Asset = _asset, Side = OrderSide.Buy, Type = OrderType.Market, Quantity = 1m });
+                _orders.Submit(new Order { Id = 0, Asset = _asset, Side = OrderSide.Buy, Type = OrderType.Market, Quantity = 1m });
             if (_barIndex == _sellOnBar)
-                orders.Submit(new Order { Id = 0, Asset = _asset, Side = OrderSide.Sell, Type = OrderType.Market, Quantity = 1m });
+                _orders.Submit(new Order { Id = 0, Asset = _asset, Side = OrderSide.Sell, Type = OrderType.Market, Quantity = 1m });
         }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders) =>
+        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) =>
             _barIndex++;
 
         public void OnInit() { }
-        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
+        public void OnTrade(Fill fill, Order order) { }
         void IFeedContextReceiver.SetFeedContext(IFeedContext context) { }
         void IEventBusReceiver.SetEventBus(IEventBus bus) { }
+        void IOrderContextReceiver.SetOrderContext(IOrderContext context) => _orders = context;
     }
 
     /// <summary>
     /// Buys both spot and perp on bar 0. Two subscriptions.
     /// </summary>
-    private sealed class DualAssetStrategy : IInt64BarStrategy, IFeedContextReceiver, IEventBusReceiver
+    private sealed class DualAssetStrategy : IInt64BarStrategy, IFeedContextReceiver, IEventBusReceiver, IOrderContextReceiver
     {
         private readonly Asset _spotAsset;
         private readonly Asset _perpAsset;
         private bool _ordered;
+        private IOrderContext _orders = null!;
 
         public DualAssetStrategy(Asset spotAsset, Asset perpAsset)
         {
@@ -317,19 +320,20 @@ public class CryptoFuturesIntegrationTests
         public string Version => "1.0";
         public IList<DataSubscription> DataSubscriptions { get; } = new List<DataSubscription>();
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+        public void OnBarStart(Int64Bar bar, DataSubscription subscription)
         {
             if (_ordered) return;
-            orders.Submit(new Order { Id = 0, Asset = _spotAsset, Side = OrderSide.Buy, Type = OrderType.Market, Quantity = 1m });
-            orders.Submit(new Order { Id = 0, Asset = _perpAsset, Side = OrderSide.Buy, Type = OrderType.Market, Quantity = 1m });
+            _orders.Submit(new Order { Id = 0, Asset = _spotAsset, Side = OrderSide.Buy, Type = OrderType.Market, Quantity = 1m });
+            _orders.Submit(new Order { Id = 0, Asset = _perpAsset, Side = OrderSide.Buy, Type = OrderType.Market, Quantity = 1m });
             _ordered = true;
         }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders) { }
+        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) { }
         public void OnInit() { }
-        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
+        public void OnTrade(Fill fill, Order order) { }
         void IFeedContextReceiver.SetFeedContext(IFeedContext context) { }
         void IEventBusReceiver.SetEventBus(IEventBus bus) { }
+        void IOrderContextReceiver.SetOrderContext(IOrderContext context) => _orders = context;
     }
 
     /// <summary>
@@ -350,15 +354,15 @@ public class CryptoFuturesIntegrationTests
         public string Version => "1.0";
         public IList<DataSubscription> DataSubscriptions { get; } = new List<DataSubscription>();
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders) { }
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+        public void OnBarStart(Int64Bar bar, DataSubscription subscription) { }
+        public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
         {
             _onBar(_feeds, _barIndex);
             _barIndex++;
         }
 
         public void OnInit() { }
-        public void OnTrade(Fill fill, Order order, IOrderContext orders) { }
+        public void OnTrade(Fill fill, Order order) { }
         void IFeedContextReceiver.SetFeedContext(IFeedContext context) => _feeds = context;
         void IEventBusReceiver.SetEventBus(IEventBus bus) { }
     }

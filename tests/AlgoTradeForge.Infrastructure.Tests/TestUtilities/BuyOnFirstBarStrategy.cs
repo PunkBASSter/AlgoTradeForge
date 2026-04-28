@@ -11,11 +11,11 @@ internal sealed class BuyOnFirstBarStrategy(BuyOnFirstBarParams p) : StrategyBas
     public override string Version => "1.0.0";
     private bool _submitted;
 
-    public override void OnBarStart(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+    protected override void OnBarStartInner(Int64Bar bar, DataSubscription subscription)
     {
         if (_submitted) return;
         _submitted = true;
-        orders.Submit(new Order
+        Orders.Submit(new Order
         {
             Id = 0,
             Asset = subscription.Asset,

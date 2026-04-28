@@ -333,8 +333,7 @@ public class RunBacktestCommandHandlerTests
         // short enough that the engine reaches ct.ThrowIfCancellationRequested() between bars
         strategy.When(s => s.OnBarComplete(
                 Arg.Any<Domain.History.Int64Bar>(),
-                Arg.Any<DataSubscription>(),
-                Arg.Any<Domain.Strategy.IOrderContext>()))
+                Arg.Any<DataSubscription>()))
             .Do(_ =>
             {
                 enteredBar.Set();

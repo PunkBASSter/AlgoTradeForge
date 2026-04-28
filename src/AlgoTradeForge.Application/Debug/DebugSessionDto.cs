@@ -6,7 +6,8 @@ public sealed record DebugSessionDto(
     Guid SessionId,
     string AssetName,
     string StrategyName,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string LogFolderPath);
 
 public sealed record DebugStepResultDto(
     bool SessionActive,

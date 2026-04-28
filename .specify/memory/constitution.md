@@ -1,35 +1,20 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.8.0 → 1.8.1
+Version change: 1.8.1 → 1.8.2
 Modified principles: None (all 6 unchanged)
-Added sections:
-  - Frontend > Frontend Test Stack (Vitest + Testing Library + jsdom)
-  - Backend > Strategy Hosting > Modular Strategy Framework
-  - HistoryLoader architecture note
-Removed sections: None
+Added sections: None
 Modified sections:
-  - Frontend > Framework: Next.js version floor 15+ → 16+
-  - Frontend > Code Organization: Added contexts/, components/layout/,
-    lib/stores/, lib/services/, lib/events/, lib/utils/
-  - Principle I (Strategy-as-Code): Added multi-DataSubscription note
-    for cross-asset analysis
-  - Backend > Solution Layout: Added HistoryLoader subsystem (4 src +
-    1 test projects), WebApi.Tests, WebApi.PlaywrightTests, Validation/
-    across Domain/Application/Infrastructure, new Application dirs
-    (Debug, Indicators, Live, Persistence), Infrastructure dirs (IO,
-    Live, Optimization, Repositories), WebApi Middleware, expanded
-    Strategy/Modules/ with 10 module categories, frontend/ root entry
-  - Backend > Code Organization conventions: Added HistoryLoader
-    reference pattern (full clean arch)
-  - Persistence table: Updated from aspirational (PostgreSQL,
-    TimescaleDB, Redis) to current reality (SQLite, CSV, in-memory
-    cache) with migration target note
-Trigger: Periodic validate-and-refresh (speckit.constitution)
+  - Testing Requirements: Added rule mandating use of the
+    BenchmarkDotNet harness (benchmarks/AlgoTradeForge.Benchmarks/,
+    invoked via the `run-benchmarks` skill / `/benchmark` command) for
+    measuring changes to engine/strategy/indicator/registry/optimization
+    hot paths; ad-hoc timing scripts are disallowed.
+Trigger: Resurrected benchmark project; codify usage convention.
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ compatible (dynamic gates)
-  - .specify/templates/spec-template.md ✅ compatible (no hardcoded refs)
-  - .specify/templates/tasks-template.md ✅ compatible (no hardcoded refs)
+  - .specify/templates/plan-template.md ✅ compatible
+  - .specify/templates/spec-template.md ✅ compatible
+  - .specify/templates/tasks-template.md ✅ compatible
 Follow-up TODOs: None
 -->
 
@@ -527,6 +512,15 @@ Background jobs fall into two categories:
 - Strategy verification pipeline MUST have end-to-end tests
 - Performance and time-bound tests MUST use `[Trait("Category", "Performance")]`
   so CI pipelines can exclude them from fast feedback loops
+- Changes to engine, strategy, indicator, trade-registry, or optimization hot
+  paths MUST be measured with the BenchmarkDotNet harness at
+  `benchmarks/AlgoTradeForge.Benchmarks/` (invoke via the `run-benchmarks`
+  skill / `/benchmark` slash command). Capture a baseline on the parent
+  commit, re-run on the change, and diff Mean and Allocated columns.
+  Ad-hoc timing scripts MUST NOT be used in place of the harness — its
+  bundled data, sample strategy (`PrevBarBreakoutStrategy`), and statistical
+  rigor (warmup, multiple iterations, confidence intervals) are what makes
+  before/after comparisons trustworthy.
 - Shared test utilities (builders, fakes, assertion helpers) MUST NOT be
   duplicated across test projects; extract to a shared test utilities project
   or reference from the primary test project via `InternalsVisibleTo`
@@ -582,4 +576,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.8.1 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-04-12
+**Version**: 1.8.2 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-04-26

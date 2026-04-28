@@ -187,14 +187,15 @@ public class OptimizationGroupHandlerTests
         _repository.GetOptimizationGroupByIdAsync(GroupId, Arg.Any<CancellationToken>())
             .Returns((OptimizationGroupRecord?)null);
 
-        var handler = new CancelOptimizationGroupCommandHandler(_repository, _cancellationRegistry);
+        var queue = new ComputeTaskQueue();
+        var handler = new CancelOptimizationGroupCommandHandler(_repository, queue, _cancellationRegistry);
         var result = await handler.HandleAsync(new CancelOptimizationGroupCommand(GroupId), TestContext.Current.CancellationToken);
 
         Assert.False(result);
     }
 
     [Fact]
-    public async Task Cancel_CancelsViaGroupId()
+    public async Task Cancel_CancelsQueuedTasksAndTriggersCts()
     {
         var group = MakeGroup("InProgress",
             MakeRun(RunId1, "InProgress"),
@@ -202,12 +203,20 @@ public class OptimizationGroupHandlerTests
         _repository.GetOptimizationGroupByIdAsync(GroupId, Arg.Any<CancellationToken>())
             .Returns(group);
 
-        var handler = new CancelOptimizationGroupCommandHandler(_repository, _cancellationRegistry);
+        var queue = new ComputeTaskQueue();
+        var task = new ComputeTask
+        {
+            JobId = GroupId, Type = ComputeTaskType.Optimization,
+            DssIndex = 0, RunId = RunId1, DssLabel = "test",
+        };
+        queue.Enqueue(task);
+
+        var handler = new CancelOptimizationGroupCommandHandler(_repository, queue, _cancellationRegistry);
         var result = await handler.HandleAsync(new CancelOptimizationGroupCommand(GroupId), TestContext.Current.CancellationToken);
 
         Assert.True(result);
-        // Group-level CTS cancellation cascades to all linked per-DSS tokens
-        _cancellationRegistry.Received(1).TryCancel(GroupId);
+        Assert.Equal(ComputeTaskStatus.Cancelled, task.Status);
+        _cancellationRegistry.Received(1).TryCancel(RunId1);
     }
 
     // ── DeleteOptimizationGroupCommand ──────────────────────────

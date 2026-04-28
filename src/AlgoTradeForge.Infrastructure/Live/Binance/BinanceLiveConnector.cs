@@ -186,6 +186,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
         if (config.Strategy is IEventBusReceiver receiver)
             receiver.SetEventBus(NullEventBus.Instance);
 
+        if (config.Strategy is IOrderContextReceiver orderReceiver)
+            orderReceiver.SetOrderContext(orderContext);
+
         config.Strategy.OnInit();
 
         var entry = new LiveSessionEntry(
@@ -372,7 +375,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
                             entry.EventQueue.Writer.TryWrite(() =>
                             {
                                 foreach (var (groupId, missingIds) in result.MissingByGroup)
-                                    provider.TradeRegistry.RepairGroup(groupId, missingIds, entry.OrderContext);
+                                    provider.TradeRegistry.RepairGroup(groupId, missingIds);
                                 repairTcs.SetResult();
                             });
                             await repairTcs.Task;
@@ -430,11 +433,11 @@ public sealed class BinanceLiveConnector : ILiveConnector
             if (entry.Routing.HasFlag(LiveEventRouting.OnBarStart))
             {
                 var startBar = new Int64Bar(bar.TimestampMs, bar.Open, bar.Open, bar.Open, bar.Open, 0);
-                entry.Strategy.OnBarStart(startBar, subscription, entry.OrderContext);
+                entry.Strategy.OnBarStart(startBar, subscription);
             }
 
             if (entry.Routing.HasFlag(LiveEventRouting.OnBarComplete))
-                entry.Strategy.OnBarComplete(bar, subscription, entry.OrderContext);
+                entry.Strategy.OnBarComplete(bar, subscription);
         });
 
         _logger.LogDebug("Bar closed {Symbol} {Interval}: O={Open} H={High} L={Low} C={Close}",
@@ -549,7 +552,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
                     Quantity = decimal.Parse(report.OriginalQuantity, CultureInfo.InvariantCulture),
                 };
 
-                entry.Strategy.OnTrade(fill, order, entry.OrderContext);
+                entry.Strategy.OnTrade(fill, order);
             }
 
             _logger.LogInformation(

@@ -3,7 +3,6 @@ using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Strategy.Modules;
 using AlgoTradeForge.Domain.Strategy.Modules.CrossAsset;
-using AlgoTradeForge.Domain.Strategy.Modules.Exit;
 using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Trading;
 
@@ -18,7 +17,7 @@ namespace AlgoTradeForge.Domain.Strategy.PairsTrading;
 [StrategyKey("PairsTrading")]
 public sealed class PairsTradingStrategy(
     PairsTradingParams parameters, IIndicatorFactory? indicators = null)
-    : ModularStrategyBase<PairsTradingParams>(parameters, indicators)
+    : ModularStrategyBase<PairsTradingParams, PairsTradingContext>(parameters, indicators)
 {
     public override string Version => "1.0.0";
 
@@ -40,11 +39,6 @@ public sealed class PairsTradingStrategy(
         // Cross-asset module
         _crossAsset = new CrossAssetModule(Params.CrossAsset);
         _crossAsset.Initialize(Indicators, DataSubscriptions[0], DataSubscriptions[1]);
-
-        // Exit rules
-        var exitModule = new ExitModule();
-        exitModule.AddRule(new CointegrationBreakExitRule());
-        SetExit(exitModule);
     }
 
     protected override void OnContextUpdated(Int64Bar bar, DataSubscription sub)
@@ -57,35 +51,71 @@ public sealed class PairsTradingStrategy(
         {
             var atrValues = _atr.Buffers["Value"];
             if (atrValues.Count > 0)
-                Context.CurrentAtr = atrValues[^1];
+                Context.CurrentVolatility = atrValues[^1];
         }
     }
 
-    protected override int OnGenerateSignal(Int64Bar bar, StrategyContext context)
+    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub)
     {
-        if (!context.Has("crossasset.zscore"))
-            return 0;
+        if (!ReferenceEquals(Context.CurrentSubscription, DataSubscriptions[0]))
+            return;
 
-        var zScore = context.Get<double>("crossasset.zscore");
+        var signalStrength = GenerateSignal(bar, Context);
+        if (signalStrength == 0)
+            return;
 
-        // Z-score > entry threshold → spread too wide → sell spread (sell A, buy B)
-        if (zScore > Params.CrossAsset.ZScoreEntryThreshold)
-            return -80; // Sell
+        var direction = signalStrength > 0 ? OrderSide.Buy : OrderSide.Sell;
 
-        // Z-score < -entry threshold → spread too narrow → buy spread (buy A, sell B)
-        if (zScore < -Params.CrossAsset.ZScoreEntryThreshold)
-            return 80;  // Buy
+        var (entryPrice, orderType) = GetEntryPrice(bar, direction, Context);
+        var (stopLoss, takeProfits) = GetRiskLevels(bar, direction, entryPrice, Context);
 
-        return 0;
+        if (entryPrice != 0)
+        {
+            if (direction == OrderSide.Buy && stopLoss >= entryPrice) return;
+            if (direction == OrderSide.Sell && stopLoss <= entryPrice) return;
+        }
+        else
+        {
+            if (direction == OrderSide.Buy && stopLoss >= bar.Close) return;
+            if (direction == OrderSide.Sell && stopLoss <= bar.Close) return;
+        }
+
+        var quantity = Params.MoneyManagement.CalculateSize(
+            entryPrice != 0 ? entryPrice : bar.Close, stopLoss, Context, sub.Asset);
+        if (quantity < sub.Asset.MinOrderQuantity)
+            return;
+
+        CreateEntryGroup(sub.Asset, direction, orderType, entryPrice,
+            stopLoss, takeProfits, quantity, Context);
+
+        EmitSignal(bar.Timestamp, "Entry", sub.Asset.Name,
+            direction.ToString(), signalStrength,
+            $"type={orderType}, sl={stopLoss}, qty={quantity}");
     }
 
-    protected override (long stopLoss, TpLevel[] takeProfits) OnGetRiskLevels(
-        Int64Bar bar, OrderSide direction, long entryPrice, StrategyContext context)
+    private int GenerateSignal(Int64Bar bar, PairsTradingContext context)
     {
-        // SL at 3x ATR from entry (extreme z-score protection)
-        var atr = context.CurrentAtr;
+        if (context.ZScore == 0)
+            return 0;
+
+        int signal = 0;
+
+        // Z-score > entry threshold → spread too wide → sell spread (sell A, buy B)
+        if (context.ZScore > Params.CrossAsset.ZScoreEntryThreshold)
+            signal = -80; // Sell
+        // Z-score < -entry threshold → spread too narrow → buy spread (buy A, sell B)
+        else if (context.ZScore < -Params.CrossAsset.ZScoreEntryThreshold)
+            signal = 80;  // Buy
+
+        return Math.Abs(signal) >= Params.SignalThreshold ? signal : 0;
+    }
+
+    protected override (long stopLoss, TpLevel[] takeProfits) GetRiskLevels(
+        Int64Bar bar, OrderSide direction, long entryPrice, PairsTradingContext context)
+    {
+        var atr = context.CurrentVolatility;
         if (atr == 0) atr = bar.Close / 50;
-        var distance = (long)(3.0 * atr);
+        var distance = (long)(Params.AtrStopMultiplier * atr);
 
         var sl = direction == OrderSide.Buy
             ? (entryPrice != 0 ? entryPrice : bar.Close) - distance
@@ -94,36 +124,51 @@ public sealed class PairsTradingStrategy(
         return (sl, []);
     }
 
-    protected override int OnEvaluateExit(
-        Int64Bar bar, StrategyContext context, OrderGroup group)
+    protected override void ManagePositions(
+        TradeRegistryModule tradeRegistry, PairsTradingContext context)
     {
-        // Z-score reversion: exit when z-score reverts past exit threshold
-        if (!context.Has("crossasset.zscore"))
-            return 0;
+        if (!ReferenceEquals(context.CurrentSubscription, DataSubscriptions[0]))
+            return;
 
-        var zScore = context.Get<double>("crossasset.zscore");
-        var exitThreshold = Params.CrossAsset.ZScoreExitThreshold;
+        foreach (var group in tradeRegistry.ActiveGroups.ToArray())
+        {
+            var bar = context.CurrentBar;
 
-        // If we're long (bought when z < -entry), exit when z reverts above -exit
-        if (group.EntrySide == OrderSide.Buy && zScore > -exitThreshold)
-            return -60;
+            // Cointegration break → immediate exit
+            if (!context.IsCointegrated)
+            {
+                tradeRegistry.LiquidateGroup(group.GroupId);
+                EmitSignal(bar.Timestamp, "Exit", context.CurrentSubscription.Asset.Name,
+                    "Close", -100, "exit_score=-100 (cointegration break)");
+                continue;
+            }
 
-        // If we're short (sold when z > entry), exit when z reverts below exit
-        if (group.EntrySide == OrderSide.Sell && zScore < exitThreshold)
-            return -60;
+            // Z-score reversion exit
+            if (context.ZScore == 0) continue;
 
-        return 0;
+            var exitThreshold = Params.CrossAsset.ZScoreExitThreshold;
+            var shouldExit =
+                (group.EntrySide == OrderSide.Buy && context.ZScore > -exitThreshold) ||
+                (group.EntrySide == OrderSide.Sell && context.ZScore < exitThreshold);
+
+            if (shouldExit)
+            {
+                tradeRegistry.LiquidateGroup(group.GroupId);
+                EmitSignal(bar.Timestamp, "Exit", context.CurrentSubscription.Asset.Name,
+                    "Close", -60, "exit_score=-60 (z-score reversion)");
+            }
+        }
     }
 
-    protected override void OnExecuteEntry(
+    protected override void CreateEntryGroup(
         Asset asset, OrderSide direction, OrderType orderType, long entryPrice,
         long stopLoss, TpLevel[] takeProfits, decimal quantity,
-        StrategyContext context, IOrderContext orders)
+        PairsTradingContext context)
     {
         // Submit primary leg via trade registry
         var registry = ((ITradeRegistryProvider)this).TradeRegistry;
         registry.OpenGroup(
-            orders, asset, direction, orderType, quantity, stopLoss, takeProfits,
+            asset, direction, orderType, quantity, stopLoss, takeProfits,
             entryLimitPrice: orderType == OrderType.Limit ? entryPrice : null,
             entryStopPrice: orderType == OrderType.Stop ? entryPrice : null,
             tag: "pairs-primary");

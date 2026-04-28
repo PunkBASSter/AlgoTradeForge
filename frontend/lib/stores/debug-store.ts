@@ -39,6 +39,7 @@ export interface EquityPoint {
 interface DebugStoreState {
   sessionState: DebugSessionState;
   sessionId: string | null;
+  logFolderPath: string | null;
   candles: CandleData[];
   indicatorBuffers: Map<string, DebugBufferPoint[]>;
   indicatorBufferMeta: Map<string, DebugBufferMeta>;
@@ -50,6 +51,7 @@ interface DebugStoreState {
 
   setSessionState: (state: DebugSessionState) => void;
   setSessionId: (id: string | null) => void;
+  setLogFolderPath: (path: string | null) => void;
   addCandle: (candle: CandleData) => void;
   updateCandle: (candle: CandleData) => void;
   addIndicator: (data: IndicatorEventData, time: number) => void;
@@ -64,6 +66,7 @@ interface DebugStoreState {
 const initialState = {
   sessionState: "idle" as DebugSessionState,
   sessionId: null as string | null,
+  logFolderPath: null as string | null,
   candles: [] as CandleData[],
   indicatorBuffers: new Map<string, DebugBufferPoint[]>(),
   indicatorBufferMeta: new Map<string, DebugBufferMeta>(),
@@ -79,6 +82,7 @@ export const useDebugStore = create<DebugStoreState>((set) => ({
 
   setSessionState: (sessionState) => set({ sessionState }),
   setSessionId: (sessionId) => set({ sessionId }),
+  setLogFolderPath: (logFolderPath) => set({ logFolderPath }),
 
   addCandle: (candle) =>
     set((state) => {

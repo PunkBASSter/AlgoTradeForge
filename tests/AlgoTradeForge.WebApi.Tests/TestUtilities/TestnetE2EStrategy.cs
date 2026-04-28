@@ -25,7 +25,7 @@ internal sealed class TestnetE2EStrategy(TestnetE2EStrategyParams p)
     private int _bothConfirmed;
     private int _orderPhase; // 0=waiting, 1=buy submitted, 2=sell submitted
 
-    public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+    protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
     {
         var assetName = subscription.Asset.Name;
         BarsReceived.Add((assetName, bar));
@@ -47,7 +47,7 @@ internal sealed class TestnetE2EStrategy(TestnetE2EStrategyParams p)
         {
             try
             {
-                orders.Submit(new Order
+                Orders.Submit(new Order
                 {
                     Id = 0,
                     Asset = subscription.Asset,
@@ -64,8 +64,9 @@ internal sealed class TestnetE2EStrategy(TestnetE2EStrategyParams p)
         }
     }
 
-    public override void OnTrade(Fill fill, Order order, IOrderContext orders)
+    public override void OnTrade(Fill fill, Order order)
     {
+        base.OnTrade(fill, order);
         FillsReceived.Add(fill);
 
         try
@@ -74,7 +75,7 @@ internal sealed class TestnetE2EStrategy(TestnetE2EStrategyParams p)
                 Interlocked.CompareExchange(ref _orderPhase, 2, 1) == 1)
             {
                 // Sell to close
-                orders.Submit(new Order
+                Orders.Submit(new Order
                 {
                     Id = 0,
                     Asset = fill.Asset,

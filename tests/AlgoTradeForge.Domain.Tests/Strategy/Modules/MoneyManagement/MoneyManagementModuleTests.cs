@@ -22,9 +22,9 @@ public sealed class MoneyManagementModuleTests
             maxOrderQuantity: maxOrderQuantity,
             quantityStepSize: quantityStepSize);
 
-    private static StrategyContext CreateContext(long cash, long usedMargin = 0L)
+    private static StrategyContextBase CreateContext(long cash, long usedMargin = 0L)
     {
-        var context = new StrategyContext();
+        var context = new StrategyContextBase();
         var bar = new Int64Bar(0, 50000, 51000, 49000, 50000, 1000);
         var orders = Substitute.For<IOrderContext>();
         orders.Cash.Returns(cash);
@@ -33,20 +33,12 @@ public sealed class MoneyManagementModuleTests
         return context;
     }
 
-    private static MoneyManagementModule CreateModule(double riskPercent = 1.0) =>
-        new(new MoneyManagementParams
-        {
-            Method = SizingMethod.FixedFractional,
-            RiskPercent = riskPercent,
-        });
+    private static FixedFractionalModule CreateModule(double riskPercent = 1.0) =>
+        new(new FixedFractionalParams { RiskPercent = riskPercent });
 
     [Fact]
     public void FixedFractional_KnownInputs_ReturnsExpectedQuantity()
     {
-        // equity=100000, riskPercent=1%, entry=50000, SL=48000
-        // riskDistance = 2000, riskAmount = 100000 * 1.0 / 100 = 1000
-        // rawQty = 1000 / 2000 = 0.5
-        // RoundQuantityDown(0.5, step=0.001) = 0.5 (exact)
         var module = CreateModule(riskPercent: 1.0);
         var context = CreateContext(cash: 100_000L);
         var asset = CreateAsset();
@@ -59,9 +51,6 @@ public sealed class MoneyManagementModuleTests
     [Fact]
     public void FixedFractional_QuantityClampedToMaxOrderQuantity()
     {
-        // equity=10_000_000, riskPercent=5%, entry=50000, SL=49999
-        // riskDistance=1, riskAmount=10_000_000*5/100=500_000
-        // rawQty=500_000 — far exceeds maxOrderQuantity=100
         var module = CreateModule(riskPercent: 5.0);
         var context = CreateContext(cash: 10_000_000L);
         var asset = CreateAsset(maxOrderQuantity: 100m);
@@ -74,10 +63,6 @@ public sealed class MoneyManagementModuleTests
     [Fact]
     public void FixedFractional_QuantityBelowMinOrderQuantity_ReturnsZero()
     {
-        // equity=100, riskPercent=1%, entry=50000, SL=48000
-        // riskDistance=2000, riskAmount=100*1/100=1
-        // rawQty=1/2000=0.0005 → RoundQuantityDown(0.0005, step=0.001) = 0.000
-        // 0.000 < minOrderQuantity=0.001 → 0
         var module = CreateModule(riskPercent: 1.0);
         var context = CreateContext(cash: 100L);
         var asset = CreateAsset(minOrderQuantity: 0.001m);
@@ -102,7 +87,6 @@ public sealed class MoneyManagementModuleTests
     [Fact]
     public void FixedFractional_ZeroRiskDistance_ReturnsZero()
     {
-        // entry == stopLoss → riskDistance = 0
         var module = CreateModule(riskPercent: 1.0);
         var context = CreateContext(cash: 100_000L);
         var asset = CreateAsset();
@@ -112,32 +96,25 @@ public sealed class MoneyManagementModuleTests
         Assert.Equal(0m, qty);
     }
 
-    // --- AtrVolTarget Tests (T038) ---
+    // --- AtrVolTarget Tests ---
 
-    private static MoneyManagementModule CreateAtrVolTargetModule(double volTarget = 0.15) =>
-        new(new MoneyManagementParams
-        {
-            Method = SizingMethod.AtrVolTarget,
-            VolTarget = volTarget,
-        });
+    private static AtrVolTargetModule CreateAtrVolTargetModule(double volTarget = 0.15) =>
+        new(new AtrVolTargetParams { VolTarget = volTarget });
 
-    private static StrategyContext CreateContextWithAtr(long cash, long currentAtr, long usedMargin = 0L)
+    private static TestStrategyContext CreateContextWithAtr(long cash, long currentAtr, long usedMargin = 0L)
     {
-        var context = new StrategyContext();
+        var context = new TestStrategyContext { CurrentVolatility = currentAtr };
         var bar = new Int64Bar(0, 50000, 51000, 49000, 50000, 1000);
         var orders = Substitute.For<IOrderContext>();
         orders.Cash.Returns(cash);
         orders.UsedMargin.Returns(usedMargin);
         context.Update(bar, DefaultSubscription, orders);
-        context.CurrentAtr = currentAtr;
         return context;
     }
 
     [Fact]
     public void AtrVolTarget_KnownInputs_ReturnsExpectedQuantity()
     {
-        // equity=100000, volTarget=0.15, ATR=500
-        // qty = (100000 * 0.15) / 500 = 15000 / 500 = 30
         var module = CreateAtrVolTargetModule(volTarget: 0.15);
         var context = CreateContextWithAtr(cash: 100_000L, currentAtr: 500L);
         var asset = CreateAsset(maxOrderQuantity: 1000m);
@@ -150,7 +127,6 @@ public sealed class MoneyManagementModuleTests
     [Fact]
     public void AtrVolTarget_InverselyProportionalToAtr()
     {
-        // Higher ATR → smaller position
         var module = CreateAtrVolTargetModule(volTarget: 0.10);
         var asset = CreateAsset(maxOrderQuantity: 10000m);
 
@@ -178,7 +154,6 @@ public sealed class MoneyManagementModuleTests
     [Fact]
     public void AtrVolTarget_ResultClampedToMaxOrderQuantity()
     {
-        // Very small ATR → huge qty → clamped
         var module = CreateAtrVolTargetModule(volTarget: 0.15);
         var context = CreateContextWithAtr(cash: 1_000_000L, currentAtr: 1L);
         var asset = CreateAsset(maxOrderQuantity: 100m);
@@ -188,24 +163,15 @@ public sealed class MoneyManagementModuleTests
         Assert.Equal(100m, qty);
     }
 
-    // --- HalfKelly Tests (T039) ---
+    // --- HalfKelly Tests ---
 
-    private static MoneyManagementModule CreateHalfKellyModule(
+    private static HalfKellyModule CreateHalfKellyModule(
         double winRate = 0.5, double payoffRatio = 2.0) =>
-        new(new MoneyManagementParams
-        {
-            Method = SizingMethod.HalfKelly,
-            WinRate = winRate,
-            PayoffRatio = payoffRatio,
-        });
+        new(new HalfKellyParams { WinRate = winRate, PayoffRatio = payoffRatio });
 
     [Fact]
     public void HalfKelly_KnownInputs_ReturnsExpectedQuantity()
     {
-        // winRate=0.5, payoff=2.0
-        // kellyF = (0.5 * 2.0 - 0.5) / 2.0 = (1.0 - 0.5) / 2.0 = 0.25
-        // halfKelly = 0.5 * 0.25 = 0.125
-        // qty = 0.125 * 100000 / 50000 = 0.25
         var module = CreateHalfKellyModule(winRate: 0.5, payoffRatio: 2.0);
         var context = CreateContext(cash: 100_000L);
         var asset = CreateAsset();
@@ -218,10 +184,6 @@ public sealed class MoneyManagementModuleTests
     [Fact]
     public void HalfKelly_HighWinRateHighPayoff_LargerPosition()
     {
-        // winRate=0.6, payoff=3.0
-        // kellyF = (0.6 * 3.0 - 0.4) / 3.0 = (1.8 - 0.4) / 3.0 = 0.4667
-        // halfKelly = 0.5 * 0.4667 = 0.2333
-        // qty = 0.2333 * 100000 / 50000 = 0.4667
         var module = CreateHalfKellyModule(winRate: 0.6, payoffRatio: 3.0);
         var context = CreateContext(cash: 100_000L);
         var asset = CreateAsset();
@@ -235,8 +197,6 @@ public sealed class MoneyManagementModuleTests
     [Fact]
     public void HalfKelly_NegativeKellyFraction_ReturnsZero()
     {
-        // winRate=0.3, payoff=1.0
-        // kellyF = (0.3 * 1.0 - 0.7) / 1.0 = -0.4 → negative → 0
         var module = CreateHalfKellyModule(winRate: 0.3, payoffRatio: 1.0);
         var context = CreateContext(cash: 100_000L);
         var asset = CreateAsset();
@@ -261,7 +221,6 @@ public sealed class MoneyManagementModuleTests
     [Fact]
     public void HalfKelly_ResultRoundedAndClamped()
     {
-        // Large equity, small price → huge qty → clamped to maxOrderQuantity
         var module = CreateHalfKellyModule(winRate: 0.6, payoffRatio: 3.0);
         var context = CreateContext(cash: 100_000_000L);
         var asset = CreateAsset(maxOrderQuantity: 100m);

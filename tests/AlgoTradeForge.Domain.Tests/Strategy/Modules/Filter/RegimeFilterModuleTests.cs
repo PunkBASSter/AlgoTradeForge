@@ -15,8 +15,7 @@ public sealed class RegimeFilterModuleTests
     [Fact]
     public void Evaluate_RegimeInAllowedSet_Returns100()
     {
-        var context = new StrategyContext();
-        context.CurrentRegime = MarketRegime.Trending;
+        var context = new TestStrategyContext { CurrentRegime = MarketRegime.Trending };
 
         var filter = new RegimeFilterModule(context, MarketRegime.Trending);
 
@@ -26,8 +25,7 @@ public sealed class RegimeFilterModuleTests
     [Fact]
     public void Evaluate_RegimeNotInAllowedSet_ReturnsNeg100()
     {
-        var context = new StrategyContext();
-        context.CurrentRegime = MarketRegime.RangeBound;
+        var context = new TestStrategyContext { CurrentRegime = MarketRegime.RangeBound };
 
         var filter = new RegimeFilterModule(context, MarketRegime.Trending);
 
@@ -37,8 +35,7 @@ public sealed class RegimeFilterModuleTests
     [Fact]
     public void Evaluate_RegimeIsUnknown_ReturnsZero()
     {
-        var context = new StrategyContext();
-        context.CurrentRegime = MarketRegime.Unknown;
+        var context = new TestStrategyContext { CurrentRegime = MarketRegime.Unknown };
 
         var filter = new RegimeFilterModule(context, MarketRegime.Trending);
 
@@ -48,8 +45,7 @@ public sealed class RegimeFilterModuleTests
     [Fact]
     public void Evaluate_MultipleAllowedRegimes_MatchesAny()
     {
-        var context = new StrategyContext();
-        context.CurrentRegime = MarketRegime.HighVolatility;
+        var context = new TestStrategyContext { CurrentRegime = MarketRegime.HighVolatility };
 
         var filter = new RegimeFilterModule(context,
             MarketRegime.Trending, MarketRegime.HighVolatility);
@@ -60,8 +56,7 @@ public sealed class RegimeFilterModuleTests
     [Fact]
     public void Evaluate_MultipleAllowed_NoMatch_ReturnsNeg100()
     {
-        var context = new StrategyContext();
-        context.CurrentRegime = MarketRegime.RangeBound;
+        var context = new TestStrategyContext { CurrentRegime = MarketRegime.RangeBound };
 
         var filter = new RegimeFilterModule(context,
             MarketRegime.Trending, MarketRegime.HighVolatility);
@@ -72,8 +67,7 @@ public sealed class RegimeFilterModuleTests
     [Fact]
     public void Evaluate_DirectionDoesNotAffectResult()
     {
-        var context = new StrategyContext();
-        context.CurrentRegime = MarketRegime.Trending;
+        var context = new TestStrategyContext { CurrentRegime = MarketRegime.Trending };
 
         var filter = new RegimeFilterModule(context, MarketRegime.Trending);
 

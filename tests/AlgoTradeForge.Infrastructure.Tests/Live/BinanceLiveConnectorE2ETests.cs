@@ -19,33 +19,33 @@ namespace AlgoTradeForge.Infrastructure.Tests.Live;
 public sealed class TradeRegistryTestParams : StrategyParamsBase;
 
 public sealed class TradeRegistryTestStrategy(TradeRegistryTestParams p)
-    : StrategyBase<TradeRegistryTestParams>(p), ITradeRegistryProvider
+    : StrategyBase<TradeRegistryTestParams>(p)
 {
     public override string Version => "1.0.0";
-
-    public TradeRegistryModule TradeRegistry { get; } = new(new TradeRegistryParams());
 
     public ConcurrentBag<Fill> ReceivedFills { get; } = [];
     public TaskCompletionSource<Fill> NextFillTcs { get; private set; } = new();
     public TaskCompletionSource<Int64Bar> NextBarTcs { get; private set; } = new();
 
-    public Action<IOrderContext>? OnNextBar;
+    public Action? OnNextBar;
+
+    public new IOrderContext Orders => base.Orders;
 
     public void ResetFillTcs() => NextFillTcs = new TaskCompletionSource<Fill>();
     public void ResetBarTcs() => NextBarTcs = new TaskCompletionSource<Int64Bar>();
 
-    public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+    protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
     {
         NextBarTcs.TrySetResult(bar);
 
         var action = Interlocked.Exchange(ref OnNextBar, null);
-        action?.Invoke(orders);
+        action?.Invoke();
     }
 
-    public override void OnTrade(Fill fill, Order order, IOrderContext orders)
+    public override void OnTrade(Fill fill, Order order)
     {
+        base.OnTrade(fill, order);
         ReceivedFills.Add(fill);
-        TradeRegistry.OnFill(fill, order, orders);
         NextFillTcs.TrySetResult(fill);
     }
 }
@@ -150,9 +150,9 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
 
         // Strategy A: market buy
         _strategyA!.ResetFillTcs();
-        _strategyA.OnNextBar = orders =>
+        _strategyA.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            _strategyA.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = _asset!,
@@ -167,9 +167,9 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
 
         // Strategy B: market buy
         _strategyB!.ResetFillTcs();
-        _strategyB.OnNextBar = orders =>
+        _strategyB.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            _strategyB.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = _asset!,
@@ -203,11 +203,14 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         var tpPriceA = _lastPrice + (long)(500m / _asset!.TickSize);
         var slPriceA = _lastPrice - (long)(500m / _asset!.TickSize);
 
-        _strategyA!.ResetFillTcs();
-        _strategyA.OnNextBar = orders =>
+        var registryA = ((ITradeRegistryProvider)_strategyA!).TradeRegistry;
+        var registryB = ((ITradeRegistryProvider)_strategyB!).TradeRegistry;
+
+        _strategyA.ResetFillTcs();
+        _strategyA.OnNextBar = () =>
         {
-            _strategyA.TradeRegistry.OpenGroup(
-                orders, _asset!, OrderSide.Buy, OrderType.Market,
+            registryA.OpenGroup(
+                _asset!, OrderSide.Buy, OrderType.Market,
                 quantity: MinQty, slPrice: slPriceA,
                 tpLevels: [new TpLevel { Price = tpPriceA, ClosurePercentage = 1.0m }]);
         };
@@ -219,11 +222,11 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         var tpPriceB = _lastPrice + (long)(600m / _asset!.TickSize);
         var slPriceB = _lastPrice - (long)(600m / _asset!.TickSize);
 
-        _strategyB!.ResetFillTcs();
-        _strategyB.OnNextBar = orders =>
+        _strategyB.ResetFillTcs();
+        _strategyB.OnNextBar = () =>
         {
-            _strategyB.TradeRegistry.OpenGroup(
-                orders, _asset!, OrderSide.Buy, OrderType.Market,
+            registryB.OpenGroup(
+                _asset!, OrderSide.Buy, OrderType.Market,
                 quantity: MinQty, slPrice: slPriceB,
                 tpLevels: [new TpLevel { Price = tpPriceB, ClosurePercentage = 1.0m }]);
         };
@@ -234,8 +237,8 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         await Task.Delay(3000, TestContext.Current.CancellationToken);
 
         // Each TradeRegistry should have expected orders (1 SL + 1 TP)
-        var expectedA = _strategyA.TradeRegistry.GetExpectedOrders();
-        var expectedB = _strategyB.TradeRegistry.GetExpectedOrders();
+        var expectedA = registryA.GetExpectedOrders();
+        var expectedB = registryB.GetExpectedOrders();
 
         Assert.Equal(2, expectedA.Count); // SL + TP
         Assert.Equal(2, expectedB.Count); // SL + TP
@@ -263,9 +266,9 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         var farLimitPrice = _lastPrice / 2;
 
         _strategyA!.ResetBarTcs();
-        _strategyA.OnNextBar = orders =>
+        _strategyA.OnNextBar = () =>
         {
-            orders.Submit(new Order
+            _strategyA.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = _asset!,

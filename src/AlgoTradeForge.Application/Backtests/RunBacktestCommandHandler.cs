@@ -138,7 +138,8 @@ public sealed class RunBacktestCommandHandler(
             var scaledMetrics = MetricsScaler.ScaleDown(metrics, setup.Scale);
 
             var fitnessFunc = new CompositeFitnessFunction(command.FitnessConfig ?? FitnessConfig.Default);
-            var fitnessScore = fitnessFunc.Evaluate(scaledMetrics);
+            var rawFitness = fitnessFunc.Evaluate(scaledMetrics);
+            var fitnessScore = rawFitness <= double.MinValue ? (double?)null : rawFitness;
 
             var completedAt = DateTimeOffset.UtcNow;
 

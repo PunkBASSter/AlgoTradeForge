@@ -22,4 +22,10 @@ public sealed class Rsi2Params : ModularStrategyParamsBase
 
     [Optimizable(Min = 5, Max = 50, Step = 5)]
     public int AtrPeriod { get; init; } = 14;
+
+    [Optimizable(Min = 10, Max = 80, Step = 10)]
+    public int SignalThreshold { get; init; } = 30;
+
+    [Optimizable(Min = 1.0, Max = 5.0, Step = 0.5)]
+    public double AtrStopMultiplier { get; init; } = 2.0;
 }

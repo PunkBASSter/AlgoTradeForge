@@ -47,7 +47,16 @@ public sealed class ComputeQueueConsumer(
                 {
                     logger.LogInformation("Skipping cancelled task {TaskId} ({Type} DSS[{Dss}])",
                         task.Id, task.Type, task.DssIndex);
+
+                    try { await UpdateRunStatusAsync(task); }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex,
+                            "Failed to update DB status for cancelled task {TaskId}", task.Id);
+                    }
+
                     queue.RemoveCompleted(task.Id);
+                    await TryFinalizeJobAsync(task);
                     continue;
                 }
 
@@ -75,8 +84,16 @@ public sealed class ComputeQueueConsumer(
                             break;
                     }
 
-                    task.Status = ComputeTaskStatus.Completed;
-                    logger.LogInformation("Task {TaskId} completed successfully", task.Id);
+                    if (task.Status != ComputeTaskStatus.Cancelled)
+                    {
+                        task.Status = ComputeTaskStatus.Completed;
+                        logger.LogInformation("Task {TaskId} completed successfully", task.Id);
+                    }
+                    else
+                    {
+                        logger.LogInformation(
+                            "Task {TaskId} finished execution but was already cancelled", task.Id);
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -103,6 +120,20 @@ public sealed class ComputeQueueConsumer(
                     cancellationRegistry.Remove(task.RunId);
                     queue.ActiveTask = null;
                     await progressCache.RemoveProgressAsync(task.RunId);
+
+                    // Update per-DSS run record for non-successful outcomes
+                    // (Completed status is persisted inside the executor methods)
+                    if (task.Status is ComputeTaskStatus.Cancelled or ComputeTaskStatus.Failed)
+                    {
+                        try { await UpdateRunStatusAsync(task); }
+                        catch (Exception ex)
+                        {
+                            logger.LogError(ex,
+                                "Failed to update DB status to {Status} for task {TaskId}",
+                                task.Status, task.Id);
+                        }
+                    }
+
                     queue.RemoveCompleted(task.Id);
 
                     // Check if all tasks for this job are done → update group status
@@ -206,6 +237,8 @@ public sealed class ComputeQueueConsumer(
             FailedTrials = result.FailedTrials,
             OptimizationMethod = "Genetic",
             GenerationsCompleted = result.GenerationsCompleted,
+            GroupId = ctx.GroupId,
+            DssIndex = task.DssIndex,
         };
 
         FireAndForgetPersist(task.RunId, record, result.Trials.Count);
@@ -280,6 +313,35 @@ public sealed class ComputeQueueConsumer(
 
         // Clean up trial cache for this DSS
         _trialCache.Remove((failedTask.JobId, failedTask.DssIndex));
+    }
+
+    /// <summary>
+    /// Transition the per-DSS run record in the DB to its terminal status
+    /// (Cancelled or Failed). Completed runs are persisted by the executor.
+    /// </summary>
+    private async Task UpdateRunStatusAsync(ComputeTask task)
+    {
+        var status = task.Status switch
+        {
+            ComputeTaskStatus.Cancelled => task.Type == ComputeTaskType.Optimization
+                ? OptimizationRunStatus.Cancelled : ValidationRunStatus.Cancelled,
+            ComputeTaskStatus.Failed => task.Type == ComputeTaskType.Optimization
+                ? OptimizationRunStatus.Failed : ValidationRunStatus.Failed,
+            _ => throw new ArgumentException(
+                $"Unexpected status {task.Status} for DB update", nameof(task)),
+        };
+
+        switch (task.Type)
+        {
+            case ComputeTaskType.Optimization:
+                await runRepository.UpdateOptimizationRunStatusAsync(
+                    task.RunId, status, CancellationToken.None);
+                break;
+            case ComputeTaskType.Validation:
+                await validationRepository.UpdateValidationRunStatusAsync(
+                    task.RunId, status, CancellationToken.None);
+                break;
+        }
     }
 
     private async Task TryFinalizeJobAsync(ComputeTask completedTask)

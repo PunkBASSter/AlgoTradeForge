@@ -22,7 +22,7 @@ public sealed class RegimeDetectorModule(RegimeDetectorParams parameters)
         _initialized = true;
     }
 
-    public void Update(Int64Bar bar, StrategyContext context)
+    public void Update(Int64Bar bar, IRegimeContext context)
     {
         if (!_initialized || _adx is null)
         {

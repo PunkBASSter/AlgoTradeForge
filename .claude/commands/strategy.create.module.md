@@ -319,11 +319,11 @@ public override void OnInit()
 }
 
 // In OnBarComplete():
-public override void OnBarComplete(Int64Bar bar, DataSubscription sub, IOrderContext orders)
+public override void OnBarComplete(Int64Bar bar, DataSubscription sub)
 {
     // Use the module
     if (_{name}Module.ShouldExit(bar, _entryPrice, _direction))
-        orders.Submit(exitOrder);
+        Orders.Submit(exitOrder);
 }
 ```
 

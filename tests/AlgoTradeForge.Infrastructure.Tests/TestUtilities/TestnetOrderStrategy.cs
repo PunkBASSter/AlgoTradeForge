@@ -12,27 +12,30 @@ public sealed class TestnetOrderStrategy(TestnetOrderStrategyParams p)
 {
     public override string Version => "1.0.0";
 
+    public new IOrderContext Orders => base.Orders;
+
     public ConcurrentBag<(Int64Bar Bar, DataSubscription Subscription)> ReceivedBars { get; } = [];
     public ConcurrentBag<Fill> ReceivedFills { get; } = [];
 
-    public Action<IOrderContext>? OnNextBar;
+    public Action? OnNextBar;
     public TaskCompletionSource<Fill> NextFillTcs { get; private set; } = new();
     public TaskCompletionSource<Int64Bar> NextBarTcs { get; private set; } = new();
 
     public void ResetFillTcs() => NextFillTcs = new TaskCompletionSource<Fill>();
     public void ResetBarTcs() => NextBarTcs = new TaskCompletionSource<Int64Bar>();
 
-    public override void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders)
+    protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
     {
         ReceivedBars.Add((bar, subscription));
         NextBarTcs.TrySetResult(bar);
 
         var action = Interlocked.Exchange(ref OnNextBar, null);
-        action?.Invoke(orders);
+        action?.Invoke();
     }
 
-    public override void OnTrade(Fill fill, Order order, IOrderContext orders)
+    public override void OnTrade(Fill fill, Order order)
     {
+        base.OnTrade(fill, order);
         ReceivedFills.Add(fill);
         NextFillTcs.TrySetResult(fill);
     }

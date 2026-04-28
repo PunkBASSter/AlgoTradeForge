@@ -426,6 +426,8 @@ export const mockClient: typeof import("./api-client").apiClient & {
       assetName: req.dataSubscriptions[0]?.assetName ?? "",
       strategyName: req.strategyName,
       createdAt: new Date().toISOString(),
+      logFolderPath:
+        "C:\\Users\\mock\\AppData\\Local\\AlgoTradeForge\\Data\\EventLogs\\mock-run-folder",
     };
   },
 

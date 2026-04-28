@@ -29,9 +29,9 @@ public sealed class ConnectorCancelTests(TestnetConnectorFixture fixture)
 
         Strategy.ResetFillTcs();
         Strategy.ResetBarTcs();
-        Strategy.OnNextBar = orders =>
+        Strategy.OnNextBar = () =>
         {
-            orderId = orders.Submit(new Order
+            orderId = Strategy.Orders.Submit(new Order
             {
                 Id = 0,
                 Asset = fixture.Asset!,
@@ -51,9 +51,9 @@ public sealed class ConnectorCancelTests(TestnetConnectorFixture fixture)
         // Cancel the order
         Strategy.ResetBarTcs();
         Order? cancelled = null;
-        Strategy.OnNextBar = orders =>
+        Strategy.OnNextBar = () =>
         {
-            cancelled = orders.Cancel(orderId);
+            cancelled = Strategy.Orders.Cancel(orderId);
         };
 
         await Strategy.NextBarTcs.Task.WaitAsync(TimeSpan.FromSeconds(90), TestContext.Current.CancellationToken);

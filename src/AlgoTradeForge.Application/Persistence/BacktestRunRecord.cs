@@ -1,7 +1,9 @@
+using System.Text.Json.Serialization;
 using AlgoTradeForge.Domain.Reporting;
 
 namespace AlgoTradeForge.Application.Persistence;
 
+[JsonNumberHandling(JsonNumberHandling.AllowNamedFloatingPointLiterals)]
 public sealed record BacktestRunRecord
 {
     public required Guid Id { get; init; }

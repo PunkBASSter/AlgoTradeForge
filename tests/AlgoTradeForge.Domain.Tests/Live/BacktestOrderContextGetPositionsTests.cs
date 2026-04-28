@@ -41,14 +41,14 @@ public class BacktestOrderContextGetPositionsTests
     public void OnTrade_ReceivesOrderContext()
     {
         var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
-        IOrderContext? receivedContext = null;
+        bool tradeFired = false;
 
         var strategy = new OnTradeCapturingStrategy(sub)
         {
-            OnTradeAction = (_, _, ctx) => receivedContext = ctx,
+            OnTradeAction = (_, _) => tradeFired = true,
             OnBarCompleteAction = (_, _, orders) =>
             {
-                if (receivedContext is not null) return;
+                if (tradeFired) return;
                 orders.Submit(new Order
                 {
                     Id = 0,
@@ -71,22 +71,24 @@ public class BacktestOrderContextGetPositionsTests
 
         engine.Run([bars], strategy, options, ct: TestContext.Current.CancellationToken);
 
-        Assert.NotNull(receivedContext);
-        Assert.True(receivedContext.Cash > 0);
+        Assert.True(tradeFired);
+        Assert.True(strategy.Orders.Cash > 0);
     }
 
-    private sealed class OnTradeCapturingStrategy(DataSubscription subscription) : IInt64BarStrategy
+    private sealed class OnTradeCapturingStrategy(DataSubscription subscription) : IInt64BarStrategy, IOrderContextReceiver
     {
         public string Version => "1.0.0";
         public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
+        public IOrderContext Orders { get; private set; } = null!;
 
-        public Action<Fill, Order, IOrderContext>? OnTradeAction { get; init; }
+        public Action<Fill, Order>? OnTradeAction { get; init; }
         public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarCompleteAction { get; init; }
 
         public void OnInit() { }
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription, IOrderContext orders) =>
-            OnBarCompleteAction?.Invoke(bar, subscription, orders);
-        public void OnTrade(Fill fill, Order order, IOrderContext orders) =>
-            OnTradeAction?.Invoke(fill, order, orders);
+        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) =>
+            OnBarCompleteAction?.Invoke(bar, subscription, Orders);
+        public void OnTrade(Fill fill, Order order) =>
+            OnTradeAction?.Invoke(fill, order);
+        void IOrderContextReceiver.SetOrderContext(IOrderContext context) => Orders = context;
     }
 }

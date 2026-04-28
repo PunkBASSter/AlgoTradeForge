@@ -12,6 +12,8 @@ interface SlideOverProps {
 export function SlideOver({ open, onClose, title, children }: SlideOverProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -21,7 +23,7 @@ export function SlideOver({ open, onClose, title, children }: SlideOverProps) {
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -64,7 +66,7 @@ export function SlideOver({ open, onClose, title, children }: SlideOverProps) {
       // Restore focus to the element that opened the panel
       previousFocusRef.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

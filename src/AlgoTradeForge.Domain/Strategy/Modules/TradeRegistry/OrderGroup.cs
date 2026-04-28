@@ -36,6 +36,7 @@ public sealed class OrderGroup
     public long RealizedPnl { get; internal set; }
     public required Asset Asset { get; init; }
     public DateTimeOffset CreatedAt { get; internal set; }
+    public DateTimeOffset? EntryFilledAt { get; internal set; }
     public DateTimeOffset? ClosedAt { get; internal set; }
 
     // Debug

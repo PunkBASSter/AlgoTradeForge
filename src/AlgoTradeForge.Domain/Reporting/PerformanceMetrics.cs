@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace AlgoTradeForge.Domain.Reporting;
 
+[JsonNumberHandling(JsonNumberHandling.AllowNamedFloatingPointLiterals)]
 public sealed record PerformanceMetrics
 {
     public required int TotalTrades { get; init; }

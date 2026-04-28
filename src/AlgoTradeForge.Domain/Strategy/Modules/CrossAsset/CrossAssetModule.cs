@@ -7,7 +7,7 @@ namespace AlgoTradeForge.Domain.Strategy.Modules.CrossAsset;
 /// <summary>
 /// Cross-asset module for pairs trading. Computes z-score of the log-spread,
 /// hedge ratio, and simplified cointegration status.
-/// Writes results to context via keys: crossasset.zscore, crossasset.hedge_ratio, crossasset.cointegrated.
+/// Writes results to the ICrossAssetContext.
 /// </summary>
 [ModuleKey("cross-asset")]
 public sealed class CrossAssetModule(CrossAssetParams parameters)
@@ -24,7 +24,7 @@ public sealed class CrossAssetModule(CrossAssetParams parameters)
         _sub2 = sub2;
     }
 
-    public void Update(Int64Bar bar, DataSubscription sub, StrategyContext context)
+    public void Update(Int64Bar bar, DataSubscription sub, ICrossAssetContext context)
     {
         if (sub == _sub1)
             _prices1.Add(bar.Close);
@@ -39,7 +39,7 @@ public sealed class CrossAssetModule(CrossAssetParams parameters)
         // Compute hedge ratio (simple regression slope over lookback window)
         var startIdx = count - parameters.LookbackPeriod;
         var hedgeRatio = ComputeHedgeRatio(startIdx, count);
-        context.Set("crossasset.hedge_ratio", hedgeRatio);
+        context.HedgeRatio = hedgeRatio;
 
         // Compute spread: log(A) - hedgeRatio * log(B)
         var spreads = new double[parameters.LookbackPeriod];
@@ -56,12 +56,12 @@ public sealed class CrossAssetModule(CrossAssetParams parameters)
 
         var currentSpread = spreads[^1];
         var zScore = stddev > 0 ? (currentSpread - mean) / stddev : 0;
-        context.Set("crossasset.zscore", zScore);
+        context.ZScore = zScore;
 
         // Simplified cointegration check: high correlation + bounded spread
         var correlation = ComputeCorrelation(startIdx, count);
         var isCointegrated = Math.Abs(correlation) > 0.7 && stddev < Math.Abs(mean) * 2;
-        context.Set("crossasset.cointegrated", isCointegrated);
+        context.IsCointegrated = isCointegrated;
 
         // Trim consumed entries to bound memory — keep only the lookback window
         TrimPriceLists();

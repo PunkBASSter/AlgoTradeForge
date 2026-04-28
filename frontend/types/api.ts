@@ -463,6 +463,7 @@ export interface DebugSession {
   assetName: string;
   strategyName: string;
   createdAt: string;
+  logFolderPath: string;
 }
 
 export interface DebugSessionStatus {

@@ -2,8 +2,6 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Strategy.Modules;
-using AlgoTradeForge.Domain.Strategy.Modules.Exit;
-using AlgoTradeForge.Domain.Strategy.Modules.Filter;
 using AlgoTradeForge.Domain.Strategy.Modules.Regime;
 using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Strategy.Modules.TrailingStop;
@@ -18,7 +16,7 @@ namespace AlgoTradeForge.Domain.Strategy.DonchianBreakout;
 [StrategyKey("DonchianBreakout")]
 public sealed class DonchianBreakoutStrategy(
     DonchianParams parameters, IIndicatorFactory? indicators = null)
-    : ModularStrategyBase<DonchianParams>(parameters, indicators)
+    : ModularStrategyBase<DonchianParams, DonchianContext>(parameters, indicators)
 {
     public override string Version => "1.0.0";
 
@@ -26,7 +24,10 @@ public sealed class DonchianBreakoutStrategy(
     private DonchianChannel _exitChannel = null!;
     private Atr _atr = null!;
     private TrailingStopModule _trailingStopModule = null!;
-    private RegimeChangeExitRule _regimeChangeExit = null!;
+    private RegimeDetectorModule _regimeDetector = null!;
+    private readonly Dictionary<long, MarketRegime> _entryRegimes = [];
+    private int _maxHoldBars;
+    private long _barIntervalMs;
 
     protected override void OnStrategyInit()
     {
@@ -45,40 +46,67 @@ public sealed class DonchianBreakoutStrategy(
 
         // Trailing stop
         _trailingStopModule = new TrailingStopModule(Params.TrailingStopConfig);
-        SetTrailingStop(_trailingStopModule);
 
         // Regime detector
-        var regimeDetector = new RegimeDetectorModule(Params.RegimeDetectorConfig);
-        regimeDetector.Initialize(Indicators, DataSubscriptions[0]);
-        SetRegimeDetector(regimeDetector);
+        _regimeDetector = new RegimeDetectorModule(Params.RegimeDetectorConfig);
+        _regimeDetector.Initialize(Indicators, DataSubscriptions[0]);
 
-        // Regime filter: only allow Trending
-        var regimeFilter = new RegimeFilterModule(Context, MarketRegime.Trending);
-        AddFilter(regimeFilter);
-
-        // Exit rules
-        _regimeChangeExit = new RegimeChangeExitRule();
-        var exitModule = new ExitModule();
-        exitModule.AddRule(_regimeChangeExit);
-
-        if (Params.Exit is { MaxHoldBars: > 0 } exitParams)
-        {
-            var intervalMs = (long)DataSubscriptions[0].TimeFrame.TotalMilliseconds;
-            exitModule.AddRule(new TimeBasedExitRule(exitParams.MaxHoldBars, intervalMs));
-        }
-
-        SetExit(exitModule);
+        // Exit config
+        _maxHoldBars = Params.MaxHoldBars;
+        _barIntervalMs = (long)DataSubscriptions[0].TimeFrame.TotalMilliseconds;
     }
 
     protected override void OnContextUpdated(Int64Bar bar, DataSubscription sub)
     {
         var atrValues = _atr.Buffers["Value"];
         if (atrValues.Count > 0)
-            Context.CurrentAtr = atrValues[^1];
+            Context.CurrentVolatility = atrValues[^1];
+
+        // Update regime detector (previously handled by base)
+        _regimeDetector.Update(bar, Context);
     }
 
-    protected override int OnGenerateSignal(Int64Bar bar, StrategyContext context)
+    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub)
     {
+        var signalStrength = GenerateSignal(bar, Context);
+        if (signalStrength == 0)
+            return;
+
+        var direction = signalStrength > 0 ? OrderSide.Buy : OrderSide.Sell;
+
+        var (entryPrice, orderType) = GetEntryPrice(bar, direction, Context);
+        var (stopLoss, takeProfits) = GetRiskLevels(bar, direction, entryPrice, Context);
+
+        if (entryPrice != 0)
+        {
+            if (direction == OrderSide.Buy && stopLoss >= entryPrice) return;
+            if (direction == OrderSide.Sell && stopLoss <= entryPrice) return;
+        }
+        else
+        {
+            if (direction == OrderSide.Buy && stopLoss >= bar.Close) return;
+            if (direction == OrderSide.Sell && stopLoss <= bar.Close) return;
+        }
+
+        var quantity = Params.MoneyManagement.CalculateSize(
+            entryPrice != 0 ? entryPrice : bar.Close, stopLoss, Context, sub.Asset);
+        if (quantity < sub.Asset.MinOrderQuantity)
+            return;
+
+        CreateEntryGroup(sub.Asset, direction, orderType, entryPrice,
+            stopLoss, takeProfits, quantity, Context);
+
+        EmitSignal(bar.Timestamp, "Entry", sub.Asset.Name,
+            direction.ToString(), signalStrength,
+            $"type={orderType}, sl={stopLoss}, qty={quantity}");
+    }
+
+    private int GenerateSignal(Int64Bar bar, DonchianContext context)
+    {
+        // Regime filter: block when explicitly non-trending
+        if (context.CurrentRegime == MarketRegime.RangeBound)
+            return 0;
+
         var upper = _entryChannel.Buffers["Upper"];
         var lower = _entryChannel.Buffers["Lower"];
         if (upper.Count < 2) return 0;
@@ -87,19 +115,20 @@ public sealed class DonchianBreakoutStrategy(
         var prevLower = lower[^2];
         if (prevUpper == 0 || prevLower == 0) return 0;
 
+        int signal = 0;
+
         // Breakout above previous bar's upper channel
         if (bar.High > prevUpper)
-            return 80;  // Buy
-
+            signal = 80;  // Buy
         // Breakout below previous bar's lower channel
-        if (bar.Low < prevLower)
-            return -80; // Sell
+        else if (bar.Low < prevLower)
+            signal = -80; // Sell
 
-        return 0;
+        return Math.Abs(signal) >= Params.SignalThreshold ? signal : 0;
     }
 
-    protected override (long price, OrderType type) OnGetEntryPrice(
-        Int64Bar bar, OrderSide direction, StrategyContext context)
+    protected override (long price, OrderType type) GetEntryPrice(
+        Int64Bar bar, OrderSide direction, DonchianContext context)
     {
         var upper = _entryChannel.Buffers["Upper"];
         var lower = _entryChannel.Buffers["Lower"];
@@ -110,10 +139,10 @@ public sealed class DonchianBreakoutStrategy(
         return (price, OrderType.Stop);
     }
 
-    protected override (long stopLoss, TpLevel[] takeProfits) OnGetRiskLevels(
-        Int64Bar bar, OrderSide direction, long entryPrice, StrategyContext context)
+    protected override (long stopLoss, TpLevel[] takeProfits) GetRiskLevels(
+        Int64Bar bar, OrderSide direction, long entryPrice, DonchianContext context)
     {
-        var atr = context.CurrentAtr;
+        var atr = context.CurrentVolatility;
         if (atr == 0) atr = bar.Close / 50;
 
         var distance = (long)(Params.AtrStopMultiplier * atr);
@@ -122,6 +151,44 @@ public sealed class DonchianBreakoutStrategy(
             : entryPrice + distance;
 
         return (sl, []);
+    }
+
+    protected override void ManagePositions(
+        TradeRegistryModule tradeRegistry, DonchianContext context)
+    {
+        foreach (var group in tradeRegistry.ActiveGroups.ToArray())
+        {
+            var bar = context.CurrentBar;
+
+            // Trailing stop adjustment
+            var atr = context.CurrentVolatility;
+            var newStop = _trailingStopModule.Update(group.GroupId, bar, atr);
+
+            // Exit evaluation — regime change
+            var exitSignal = EvaluateRegimeChangeExit(group);
+
+            // Exit evaluation — time-based
+            if (_maxHoldBars > 0)
+            {
+                var elapsedMs = bar.TimestampMs - group.CreatedAt.ToUnixTimeMilliseconds();
+                var barsHeld = elapsedMs / _barIntervalMs;
+                if (barsHeld >= _maxHoldBars)
+                    exitSignal = Math.Min(exitSignal, -100);
+            }
+
+            if (exitSignal <= Params.ExitThreshold)
+            {
+                tradeRegistry.LiquidateGroup(group.GroupId);
+                _trailingStopModule.Remove(group.GroupId);
+                _entryRegimes.Remove(group.GroupId);
+                EmitSignal(bar.Timestamp, "Exit", context.CurrentSubscription.Asset.Name,
+                    "Close", exitSignal, $"exit_score={exitSignal}");
+            }
+            else if (newStop is not null && newStop.Value != group.SlPrice)
+            {
+                tradeRegistry.UpdateStopLoss(group.GroupId, newStop.Value);
+            }
+        }
     }
 
     protected override void OnOrderFilled(Fill fill, Order order)
@@ -139,13 +206,41 @@ public sealed class DonchianBreakoutStrategy(
                     group.EntrySide,
                     group.SlPrice);
 
-                // Record entry regime for regime-change exit rule
-                _regimeChangeExit.Activate(group.GroupId, Context.CurrentRegime);
+                // Record entry regime for regime-change exit
+                _entryRegimes[group.GroupId] = Context.CurrentRegime;
                 break;
             }
         }
 
         // Clean up stale regime-change tracking for closed groups
-        _regimeChangeExit.RemoveInactive(registry.ActiveGroups);
+        RemoveInactiveRegimeEntries(registry.ActiveGroups);
+    }
+
+    private int EvaluateRegimeChangeExit(OrderGroup group)
+    {
+        if (!_entryRegimes.TryGetValue(group.GroupId, out var entryRegime))
+            return 0;
+
+        if (entryRegime == MarketRegime.Unknown || Context.CurrentRegime == MarketRegime.Unknown)
+            return 0;
+
+        return Context.CurrentRegime != entryRegime ? -80 : 0;
+    }
+
+    private void RemoveInactiveRegimeEntries(IEnumerable<OrderGroup> activeGroups)
+    {
+        var activeIds = new HashSet<long>();
+        foreach (var g in activeGroups)
+            activeIds.Add(g.GroupId);
+
+        var stale = new List<long>();
+        foreach (var id in _entryRegimes.Keys)
+        {
+            if (!activeIds.Contains(id))
+                stale.Add(id);
+        }
+
+        foreach (var id in stale)
+            _entryRegimes.Remove(id);
     }
 }

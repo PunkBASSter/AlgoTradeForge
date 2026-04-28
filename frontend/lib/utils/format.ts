@@ -18,6 +18,7 @@ export function toTitleCase(camelCase: string): string {
  * @param decimals - Number of decimal places (default 2)
  */
 export function formatNumber(value: number, decimals: number = 2): string {
+  if (!Number.isFinite(value)) return "\u2014";
   return value.toLocaleString("en-US", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
@@ -28,6 +29,7 @@ export function formatNumber(value: number, decimals: number = 2): string {
  * Formats a number as USD currency.
  */
 export function formatCurrency(value: number): string {
+  if (!Number.isFinite(value)) return "\u2014";
   return value.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
@@ -38,6 +40,7 @@ export function formatCurrency(value: number): string {
  * Formats a number as a percentage with 2 decimals and % sign.
  */
 export function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) return "\u2014";
   return `${value.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,

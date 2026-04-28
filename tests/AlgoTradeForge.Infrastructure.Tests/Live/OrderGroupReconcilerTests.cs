@@ -52,13 +52,15 @@ public class OrderGroupReconcilerTests
 
     private static OrderGroup SetupActiveGroup(TradeRegistryModule module, IOrderContext ctx)
     {
+        module.SetOrderContext(ctx);
+
         var group = module.OpenGroup(
-            ctx, TestAsset, OrderSide.Buy, OrderType.Market,
+            TestAsset, OrderSide.Buy, OrderType.Market,
             quantity: 10m, slPrice: 14000, tpLevels: TwoTps)!;
 
         module.OnFill(
             MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
-            MakeOrder(group.EntryOrderId), ctx);
+            MakeOrder(group.EntryOrderId));
 
         return group;
     }
@@ -73,7 +75,7 @@ public class OrderGroupReconcilerTests
         var module = CreateModule();
         var ctx = MockOrderContext();
 
-        await reconciler.ReconcileAsync("BTCUSDT", module, id => id, ctx, CancellationToken.None);
+        await reconciler.ReconcileAsync("BTCUSDT", module, id => id, CancellationToken.None);
 
         // No groups → no exchange queries
         await client.DidNotReceive().GetOpenOrdersAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -111,7 +113,7 @@ public class OrderGroupReconcilerTests
 
         var submitCountBefore = ctx.ReceivedCalls().Count(c => c.GetMethodInfo().Name == "Submit");
 
-        await reconciler.ReconcileAsync("BTCUSDT", module, id => idMap.GetValueOrDefault(id, id), ctx, CancellationToken.None);
+        await reconciler.ReconcileAsync("BTCUSDT", module, id => idMap.GetValueOrDefault(id, id), CancellationToken.None);
 
         // No new submits (no repairs needed)
         var submitCountAfter = ctx.ReceivedCalls().Count(c => c.GetMethodInfo().Name == "Submit");
@@ -157,7 +159,7 @@ public class OrderGroupReconcilerTests
 
         var oldSlId = group.SlOrderId;
 
-        await reconciler.ReconcileAsync("BTCUSDT", module, id => idMap.GetValueOrDefault(id, id), ctx, CancellationToken.None);
+        await reconciler.ReconcileAsync("BTCUSDT", module, id => idMap.GetValueOrDefault(id, id), CancellationToken.None);
 
         // SL should have been repaired — new SL ID
         Assert.NotEqual(oldSlId, group.SlOrderId);
@@ -200,7 +202,7 @@ public class OrderGroupReconcilerTests
 
         var oldTp2Id = group.TpLevels[1].OrderId;
 
-        await reconciler.ReconcileAsync("BTCUSDT", module, id => idMap.GetValueOrDefault(id, id), ctx, CancellationToken.None);
+        await reconciler.ReconcileAsync("BTCUSDT", module, id => idMap.GetValueOrDefault(id, id), CancellationToken.None);
 
         // TP2 should have been repaired — new order ID
         Assert.NotEqual(oldTp2Id, group.TpLevels[1].OrderId);
@@ -243,7 +245,7 @@ public class OrderGroupReconcilerTests
             [tp2Order.OrderId] = 402,
         };
 
-        await reconciler.ReconcileAsync("BTCUSDT", module, id => idMap.GetValueOrDefault(id, id), ctx, CancellationToken.None);
+        await reconciler.ReconcileAsync("BTCUSDT", module, id => idMap.GetValueOrDefault(id, id), CancellationToken.None);
 
         // Orphaned order 999 should be cancelled on exchange
         await client.Received(1).CancelOrderAsync("BTCUSDT", 999, Arg.Any<CancellationToken>());
@@ -302,7 +304,7 @@ public class OrderGroupReconcilerTests
         var oldGroup1SlId = group1.SlOrderId;
         var oldGroup2Tp2Id = group2.TpLevels[1].OrderId;
 
-        await reconciler.ReconcileAsync("BTCUSDT", module, id => idMap.GetValueOrDefault(id, id), ctx, CancellationToken.None);
+        await reconciler.ReconcileAsync("BTCUSDT", module, id => idMap.GetValueOrDefault(id, id), CancellationToken.None);
 
         // Group1 SL should be repaired
         Assert.NotEqual(oldGroup1SlId, group1.SlOrderId);

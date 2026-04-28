@@ -153,7 +153,8 @@ public sealed class OptimizationTaskExecutor(
                                         combinationWithSubs, strategyFactory, dataCache,
                                         childRunId, ctx.StartedAt,
                                         ref strategyVersion, trialCts.Token);
-                                    record = record with { FitnessScore = fitnessFunc.Evaluate(record.Metrics) };
+                                    var rawFitness = fitnessFunc.Evaluate(record.Metrics);
+                                    record = record with { FitnessScore = rawFitness <= double.MinValue ? null : rawFitness };
 
                                     if (filter.Passes(record.Metrics))
                                         topTrials.TryAdd(record);

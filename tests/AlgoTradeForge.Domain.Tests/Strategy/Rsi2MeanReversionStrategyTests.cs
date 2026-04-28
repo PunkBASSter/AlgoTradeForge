@@ -11,6 +11,7 @@ using AlgoTradeForge.Domain.Tests.TestUtilities;
 using AlgoTradeForge.Domain.Trading;
 using Xunit;
 
+
 namespace AlgoTradeForge.Domain.Tests.Strategy;
 
 public sealed class Rsi2MeanReversionStrategyTests
@@ -33,9 +34,8 @@ public sealed class Rsi2MeanReversionStrategyTests
         AtrPeriod = 14,
         AtrFilter = new AtrVolatilityFilterParams { Period = 14, MinAtr = 0, MaxAtr = 0 },
         SignalThreshold = 30,
-        FilterThreshold = 0,
-        DefaultAtrStopMultiplier = 2.0,
-        MoneyManagement = new() { RiskPercent = 2.0 },
+        AtrStopMultiplier = 2.0,
+        MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new() { MaxConcurrentGroups = 1 },
         DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
     };
@@ -251,7 +251,6 @@ public sealed class Rsi2MeanReversionStrategyTests
 
         // Check if signal events were emitted
         var signalEvents = bus.Events.OfType<SignalEvent>().ToList();
-        var filterEvents = bus.Events.OfType<FilterEvaluationEvent>().ToList();
 
         // After the sharp dip (bars 50-52), RSI(2) should be deeply oversold
         // while price is still above SMA(50). This should trigger a buy.
@@ -262,7 +261,6 @@ public sealed class Rsi2MeanReversionStrategyTests
 
         Assert.True(result.Fills.Count > 0,
             $"Expected at least one fill. SignalEvents={signalEvents.Count}, " +
-            $"FilterEvents={filterEvents.Count} (passed={filterEvents.Count(e => e.Passed)}), " +
             $"Rejects={rejectEvents.Count} ({string.Join("; ", rejectEvents.Select(r => r.Reason))}), " +
             $"Warnings={warnEvents.Count} ({string.Join("; ", warnEvents.Select(w => w.Message))}), " +
             $"OrderPlaces={orderPlaceEvents.Count}, GroupEvents={grpEvents.Count}, " +
@@ -306,8 +304,8 @@ public sealed class Rsi2MeanReversionStrategyTests
             RsiPeriod = 2, OversoldThreshold = 10, OverboughtThreshold = 90,
             TrendFilterPeriod = 50, AtrPeriod = 14,
             AtrFilter = new AtrVolatilityFilterParams { Period = 14, MinAtr = 999_999, MaxAtr = 0 },
-            SignalThreshold = 30, FilterThreshold = 1, DefaultAtrStopMultiplier = 2.0,
-            MoneyManagement = new() { RiskPercent = 2.0 },
+            SignalThreshold = 30, AtrStopMultiplier = 2.0,
+            MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new() { MaxConcurrentGroups = 1 },
             DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
         };
@@ -330,8 +328,8 @@ public sealed class Rsi2MeanReversionStrategyTests
             RsiPeriod = 2, OversoldThreshold = 10, OverboughtThreshold = 90,
             TrendFilterPeriod = 50, AtrPeriod = 14,
             AtrFilter = new AtrVolatilityFilterParams { Period = 14, MinAtr = 0, MaxAtr = 0 },
-            SignalThreshold = 99, FilterThreshold = 0, DefaultAtrStopMultiplier = 2.0,
-            MoneyManagement = new() { RiskPercent = 2.0 },
+            SignalThreshold = 99, AtrStopMultiplier = 2.0,
+            MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new() { MaxConcurrentGroups = 1 },
             DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
         };

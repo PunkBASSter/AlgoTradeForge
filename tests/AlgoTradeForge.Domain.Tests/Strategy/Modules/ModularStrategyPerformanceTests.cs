@@ -8,6 +8,7 @@ using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Strategy.Rsi2MeanReversion;
 using AlgoTradeForge.Domain.Strategy.Modules.Filter;
 using AlgoTradeForge.Domain.Tests.TestUtilities;
+
 using AlgoTradeForge.Domain.Trading;
 using Xunit;
 
@@ -70,8 +71,8 @@ public sealed class ModularStrategyPerformanceTests
             RsiPeriod = 2, OversoldThreshold = 10, OverboughtThreshold = 90,
             TrendFilterPeriod = 50, AtrPeriod = 14,
             AtrFilter = new AtrVolatilityFilterParams { Period = 14, MinAtr = 0, MaxAtr = 0 },
-            SignalThreshold = 30, FilterThreshold = 0, DefaultAtrStopMultiplier = 2.0,
-            MoneyManagement = new MoneyManagementParams { RiskPercent = 2.0 },
+            SignalThreshold = 30, AtrStopMultiplier = 2.0,
+            MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
             DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
         };
@@ -99,9 +100,8 @@ public sealed class ModularStrategyPerformanceTests
             RsiPeriod = 2, OversoldThreshold = 10, OverboughtThreshold = 90,
             TrendFilterPeriod = 50, AtrPeriod = 14,
             AtrFilter = new AtrVolatilityFilterParams { Period = 14, MinAtr = 0, MaxAtr = 0 },
-            SignalThreshold = 30, FilterThreshold = -101, // Never blocks (bypass)
-            DefaultAtrStopMultiplier = 2.0,
-            MoneyManagement = new MoneyManagementParams { RiskPercent = 2.0 },
+            SignalThreshold = 30, AtrStopMultiplier = 2.0,
+            MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
             DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
         };
@@ -117,9 +117,8 @@ public sealed class ModularStrategyPerformanceTests
             RsiPeriod = 2, OversoldThreshold = 10, OverboughtThreshold = 90,
             TrendFilterPeriod = 50, AtrPeriod = 14,
             AtrFilter = new AtrVolatilityFilterParams { Period = 14, MinAtr = 100, MaxAtr = 5000 },
-            SignalThreshold = 30, FilterThreshold = 50,
-            DefaultAtrStopMultiplier = 2.0,
-            MoneyManagement = new MoneyManagementParams { RiskPercent = 2.0 },
+            SignalThreshold = 30, AtrStopMultiplier = 2.0,
+            MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
             DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
         };

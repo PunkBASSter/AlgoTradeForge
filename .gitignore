@@ -59,6 +59,10 @@ nunit-*.xml
 # Plugin assemblies
 **/AlgoTradeForge.WebApi/plugins/
 
+# BenchmarkDotNet output (transient, machine-specific). Persistent perf
+# history is archived outside the repo via scripts/perf/save-baseline.ps1.
+BenchmarkDotNet.Artifacts/
+
 # User secrets
 *.user
 .env*

@@ -8,6 +8,21 @@ namespace AlgoTradeForge.Domain.Optimization.Genetic;
 /// </summary>
 public static class GeneticConfigResolver
 {
+    /// <summary>
+    /// Validates hard limits on GA configuration to prevent runaway executions.
+    /// </summary>
+    public static void ValidateSettings(GeneticConfig config)
+    {
+        if (config.PopulationSize > 2000)
+            throw new ArgumentException("PopulationSize cannot exceed 2,000.");
+
+        if (config.MaxGenerations > 5000)
+            throw new ArgumentException("MaxGenerations cannot exceed 5,000.");
+
+        if (config.MaxEvaluations > 1_000_000)
+            throw new ArgumentException("MaxEvaluations cannot exceed 1,000,000.");
+    }
+
     public static GeneticConfig Resolve(GeneticConfig config, IReadOnlyList<ResolvedAxis> axes)
     {
         var effectiveDims = ComputeEffectiveDimensions(axes);
