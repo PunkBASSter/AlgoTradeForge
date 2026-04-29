@@ -33,7 +33,7 @@ Add information-driven bars (`EqT`/`EqV`/`EqD`/`EqI`) and reserve a slot for pat
 History/binance/BTCUSDT_perp/
 ├── candles/2019-09_1m.csv, 2019-09_1h.csv, …          # existing
 ├── ticks/2024-01-01.csv, …                            # daily, §3.5
-├── funding_rate/2019-09_8h.csv                        # existing side feed
+├── funding-rate/2019-09_8h.csv                        # existing side feed
 ├── aggregated/
 │   ├── EqV_1m_1000/2019-09.csv, …
 │   ├── EqI_ticks_500000/2019-09.csv, …
@@ -64,9 +64,9 @@ aggregated/<TypeCode>_<SourceCode>_<Threshold>.flow/<YYYY>-<MM>[.p<NN>].csv     
 |---|---|
 | `TypeCode` | `EqT`, `EqV`, `EqD`, `EqI`, future `Range`, `Renko` |
 | `SourceCode` | `1m`, `5m`, `15m`, `1h`, `4h`, `1d`, `ticks` |
-| `Threshold` | positive integer in **canonical display units** (the value the user enters) |
+| `Threshold` | positive integer in **canonical display units** (the value the user enters); sub-unit values use the milli (`m`) / micro (`u`) suffixes — see §3.4 |
 
-Display name uses SI: `EqV_1m_1000` ↔ `EqV/1m:1k`.
+Display name uses SI: `EqV_1m_1000` ↔ `EqV/1m:1k`. Sub-unit thresholds: `EqV_1m_500m` ↔ `EqV/1m:500m` = 0.5 BTC base. Filename keeps an integer-with-suffix form (no `.`) so lex sort and path semantics are unaffected.
 
 ### 3.4 Threshold units & scale alignment
 
@@ -81,8 +81,10 @@ Display name uses SI: `EqV_1m_1000` ↔ `EqV/1m:1k`.
 
 | Form | Where | Units |
 |---|---|---|
-| Display | FeedId, filename, API, `feeds.json`, UI | human canonical (`1000` for 1000 BTC) |
+| Display | FeedId, filename, API, `feeds.json`, UI | human canonical (`1000` for 1000 BTC, `500m` for 0.5 BTC) |
 | Scaled | accumulator runtime only | `ScaleContext.QuantityScale` (base) or `PriceScale` (quote) |
+
+**Sub-unit thresholds.** The display form accepts SI suffixes both upward (`k`, `M`, `G`) and downward (`m` = 1e−3, `u` = 1e−6). The wire payload (`threshold` in the §5.4 request, `threshold.value` in the manifest) carries the **integer mantissa** and an explicit suffix (or unit-tag) so no `.`-bearing string ever lands in a filename or feedId. Server resolves `(mantissa, suffix) → scaled long` once at accumulator construction. Minimum effective threshold is `1u` of the canonical unit; below that the eligibility endpoint rejects the request.
 
 Application layer applies `scale.AmountToTicks(displayThreshold)` once at accumulator construction. FeedId/filename/manifest never carry scaled longs. Scale-tag equality is asserted at accumulator entry **for primary-bar inputs**. Side feeds are unscaled `double` (§3.6); the aggregator handles `double → long` conversion explicitly at the sum site. Misalignment on a primary-bar input is a write-time validation failure. Storage is `long` (qty/price on primary bars) + `double` (side feeds and analytical sidecar); no `decimal` anywhere.
 
@@ -120,7 +122,7 @@ EqI feeds MUST publish a sidecar (≥ `signed_imbalance`, `realized_threshold`).
 History/.../ticks/<YYYY>-<MM>-<DD>.csv      # daily; ~50 MB / ~30 files per month
 ts, price, qty, is_buyer_maker, agg_id
 ```
-All `long` except `is_buyer_maker` (`int 0/1`). `is_buyer_maker=1` → sell-aggressor (EqI: −qty); `=0` → buy-aggressor (+qty). `agg_id` is the resume-on-crash key.
+All `long` except `is_buyer_maker` (`int 0/1`). `is_buyer_maker=1` → sell-aggressor (EqI: −qty); `=0` → buy-aggressor (+qty). `agg_id` is the **ingestor**'s resume-on-crash key (last-written Binance trade ID per day-partition, used to de-dupe on reconnect). Aggregator runs are full-range in v1 (§5.4) and restart from scratch on crash; the §4.1 sweep deletes staging dirs so no partial bars survive.
 
 ### 3.6 Numeric type convention
 
@@ -270,7 +272,7 @@ Drives the FE form (Type dropdown, N validator, warning banners, button-enabled 
 
 When the source is not aggregatable: `eligible_types: []`, `ineligible_reason: { code, message }` (FE renders as disabled-button tooltip).
 
-**Caching.** Eligibility responses cache on the same invalidation event as the `/api/v1/assets` catalog (manifest writer raises an event; both keys clear together).
+**Caching.** Eligibility responses cache on the same invalidation event as the `/api/v1/assets` catalog (manifest writer raises an event; both keys clear together). All `feeds.json` writes — alt-bar aggregation **and** existing HistoryLoader registrations (`candle-ext`, `funding-rate`, etc.) — flow through the §4.1 synchronized writer, so a fresh `candle-ext` registration invalidates eligibility caches that depend on `has_candle_ext` without a separate code path.
 
 ### 5.4 Aggregation command
 
@@ -322,7 +324,7 @@ event: error       → { type, job_id, code, message, retryable }
 
 The `complete` payload is the canonical summary (also returned under `summary` in the snapshot once `state=complete`). `partitions_written_count` (in `progress`) is an integer running counter; `partitions_written` (in `complete` and §4 manifest) is the array of `YYYY-MM` strings — distinct names for distinct shapes.
 
-**Cancellation.** Out of scope in v1. To abort an in-flight job, restart HistoryLoader; the §4.1 startup sweep cleans staging dirs and orphan partitions. A future `DELETE /aggregations/{jobId}` is reserved for Phase 6 alongside the durable queue.
+**Cancellation.** Out of scope in v1. To abort an in-flight job, restart HistoryLoader; the §4.1 startup sweep cleans staging dirs and orphan partitions, so restart is always safe (no half-built feeds visible to readers). Restart aborts **all** concurrent jobs, not just the targeted one — the FE Data tab should label these as "interrupted" rather than "failed" in v1, so users can distinguish self-cancellation from a host restart. A future `DELETE /aggregations/{jobId}` is reserved for Phase 6 alongside the durable queue.
 
 **Reconnect.** Standard SSE `Last-Event-ID` resumes from next event. Without it, server emits synthetic `started + progress` snapshot then resumes live. Terminal event retained 15 min; thereafter `progress` returns 410 Gone and FE falls back to the snapshot endpoint. FE persists `jobId` in `localStorage` keyed by `(exchange, asset, feedId)`.
 
@@ -331,6 +333,8 @@ The `complete` payload is the canonical summary (also returned under `summary` i
 - `422` — type incompatible with source.
 - `423` — duplicate outcome `feed_id` already queued/running. Body: `{ code: "feed_already_locked", feed_id, existing_job_id, existing_job_state }`. FE attaches to the existing job's progress instead of error-toasting.
 - `503` — queue full (rare; `Retry-After` header).
+
+**Status-code precedence:** `423` (active job) is checked before `409` (feed exists). When `overwrite_existing=true` is mid-run, the existing manifest entry still exists on disk while staging is in flight — a duplicate enqueue must surface as the active-job conflict, not the on-disk-feed conflict, so the FE can attach to the in-flight progress stream. `422` (type/source incompatibility) is a request-validation error and runs before either.
 
 ### 5.5 Feed deletion
 
@@ -395,7 +399,7 @@ public interface IBarAccumulator
 | EqD | quote-vol acc (long), OHLC | `quote_acc ≥ N` |
 | EqI | signed acc (long; `is_buyer_maker` from ticks, `taker_buy` proxy from time bars), OHLC | `abs(signed_acc) ≥ N` |
 
-OHLC: time-bar source — first-open / max-high / min-low / last-close. Bar `vol` is the sum of source `vol` (long+long, no conversion). Buy/sell columns originate from `candle-ext.taker_buy_vol` (`double`, side-feed convention §3.6); the aggregator converts at the sum site:
+OHLC: time-bar source — first-open / max-high / min-low / last-close, where "first" and "last" are determined by the source reader's **chronological** enumeration across partition boundaries (§6.2), not file/iterator order. Bar `vol` is the sum of source `vol` (long+long, no conversion). Buy/sell columns originate from `candle-ext.taker_buy_vol` (`double`, side-feed convention §3.6); the aggregator converts at the sum site:
 ```
 taker_buy_ticks = MoneyConvert.ToLong(taker_buy_vol_double * QuantityScale);
 signed_acc += (2 * taker_buy_ticks - source_vol_long);   // EqI proxy
@@ -431,6 +435,8 @@ Sidecar columns the aggregator emits (`buy_volume`, `sell_volume`, `signed_imbal
 
 **Config (`aggregator.*`):** `maxConcurrentJobs=2`, `maxQueueDepth=64`, `jobRetentionMinutes=15`, `maxPartitionSizeMB=100`. Tuning via `AggregatorBenchmarks` (Phase 1b gate). Past 2–3 workers, shared-disk I/O contention dominates.
 
+**Tick-source concurrency.** The Phase 1b benchmarks (`EqV_1m_1000`, `EqT_1m_500`) exercise time-bar sources only. Tick aggregation (Phase 2a+) is materially more I/O-bound (5y BTCUSDT ≈ 500M records, §6.1) and should run effectively serially: Phase 2a adds a tick-source benchmark scenario and re-tunes `maxConcurrentJobs` accordingly (likely a separate `aggregator.maxConcurrentTickJobs=1` gate rather than lowering the global default and starving time-bar throughput).
+
 ## 7. Compatibility Matrix
 
 `candle-ext` (`HistoryLoader.Domain/FeedNames.cs:6`) is futures-only (`BinanceFuturesClient.CandleExtColumns`); spot has none.
@@ -441,7 +447,7 @@ Sidecar columns the aggregator emits (`buy_volume`, `sell_volume`, `signed_imbal
 | OHLCV_TimeBar **+ candle-ext** | Perp/Future | EqT, EqV, EqD, EqI* | EqI* = `m1_taker_buy_proxy`; UI warning. |
 | OHLCV_TimeBar (no candle-ext) | Spot | EqT, EqV, EqD | EqI requires tick source. |
 | OHLCV_TimeBar OHLC-only | any | future Range/Renko | No volume → volume types unbuildable. |
-| OHLCV_AltBar | any | none | No re-aggregation in v1. |
+| OHLCV_AltBar | any | none | No re-aggregation in v1; deferred to Phase 6 (§12 item 5). |
 | Side | any | none | Aggregate disabled. |
 
 ## 8. Main API (proxy layer)
@@ -563,7 +569,7 @@ public interface IFeedContext
 public sealed record PrimarySidecarSchema(IReadOnlyList<string> Columns);
 ```
 
-`ReadOnlySpan<double>` is `ref struct` — it cannot be stored in a field, so "do not hold across bars" becomes a compile-time guarantee instead of a documented runtime hope. Trade-off: spans cannot cross async boundaries. `IFeedContext` consumers in backtest/live are synchronous bar handlers, so this works; future async streaming aggregation (out-of-scope per §1 non-goals) would need a different shape. Every existing `IFeedContext` impl changes signature in Phase 4 alongside the rest of the §9 redesign.
+`ReadOnlySpan<double>` is `ref struct` — it cannot be stored in a field, so "do not hold across bars" becomes a compile-time guarantee instead of a documented runtime hope. Trade-off: spans cannot cross async boundaries. `IFeedContext` consumers in backtest/live are synchronous bar handlers, so this works; future async streaming aggregation (out-of-scope per §1 non-goals) would need an async-friendly twin (likely `ReadOnlyMemory<double>` returning a per-bar snapshot copy, accepted as a one-time cost on the async path). Every existing `IFeedContext` impl changes signature in Phase 4 alongside the rest of the §9 redesign.
 
 Engine binds `TryGetPrimarySidecar` to the FeedSeries named by the primary's `sidecar` field. Strategies that don't call it pay zero cost (lazy load). DIM fallback to a separate `ISidecarReceiver` if Phase 0 audit blocks DIMs on plugin assemblies.
 
@@ -665,11 +671,12 @@ Per-phase test scope. Each bullet is a behavior, not a method — the named test
 - **Startup sweep — orphan tmp (§4.1).** Plant `*.tmp` files under `aggregated/EqV_1m_1000/` and `EqV_1m_1000.flow/`; boot HistoryLoader; assert all `*.tmp` deleted, real `.csv` partitions untouched.
 - **Startup sweep — orphan feed dir.** Create `aggregated/Orphan_1m_999/2026-04.csv` with **no** `feeds.json` entry; boot; assert directory recursively deleted **and** WARN log line emitted with the absolute path (capture via Serilog test sink).
 - **Startup sweep — manifest entry without dir.** Manifest references `EqV_1m_2000` but no `aggregated/EqV_1m_2000/` exists; sweep MUST NOT delete the manifest entry (only the inverse direction is destructive). Lock this with a test so a future "symmetric cleanup" refactor doesn't lose state.
-- **Concurrent manifest writers (§4.1 read-merge-write).** Two tasks aggregate distinct `feed_id`s on the same asset, both finalize concurrently. Assert: both entries present in final `feeds.json`; no entry overwritten; `*.tmp` cleaned up. Repeat 100× to flush out lock-ordering races. Use `ManualResetEventSlim` to align finalizers within ~1 ms.
+- **Concurrent manifest writers (§4.1 read-merge-write).** Two tasks aggregate distinct `feed_id`s on the same asset, both finalize concurrently. Assert: both entries present in final `feeds.json`; no entry overwritten; `*.tmp` cleaned up. Repeat 100× to flush out lock-ordering races. Use `ManualResetEventSlim` to align finalizers within ~1 ms on every iteration (not just the first). Tag with `[Trait("Category", "Stress")]` so it can be excluded from the default `dotnet test` filter if it ever flakes on shared CI.
 - **Cross-volume rename guard.** When `.staging-<jobId>/` somehow ends up on a different volume (test plants it deliberately), the writer MUST surface a clear error rather than silently performing a non-atomic copy. Skipped on CI if only one volume available.
 - **Scale-tag assertion (§3.4).** Mismatched `ScaleContext` between source feed and accumulator entry throws at write-time. Verify the assertion is wired even though Phase 1a's "accumulator" is a no-op.
 - **`CsvFeedSeriesLoader` NaN parsing.** `nullable_columns: true` in manifest → empty cells parse to `NaN`. `nullable_columns: false` (or unset) → empty cell throws. Pin the gating behavior.
 - **Legacy `CsvInt64BarLoader` removed.** Solution-wide grep test (a `dotnet test`-runnable assertion over `Type.GetType("CsvInt64BarLoader, ...")` returning null) prevents accidental re-introduction.
+- **Manifest required-field validation.** A non-EqI feed entry that omits `fidelity.imbalance_reconstruction_method` (the §4 "MUST be present even on non-EqI feeds" rule) round-trips as a manifest validation error at write time AND read time. Pin the rule on both sides — the writer is correct today, but a future refactor that loosens deserialization would silently re-allow malformed manifests.
 
 ### Phase 1b — aggregation pipeline + REST + queue
 
@@ -697,7 +704,7 @@ Per-phase test scope. Each bullet is a behavior, not a method — the named test
 - **EqI taker-buy proxy.** Same scenario via `candle-ext.taker_buy_vol`; assert `signed_imbalance = 2 * taker_buy - vol`; assert manifest `imbalance_reconstruction_method = "m1_taker_buy_proxy"`.
 - **Sidecar zero-cost (§9.4 lazy load).** Strategy that does **not** call `TryGetPrimarySidecar` triggers no sidecar `CsvFeedSeriesLoader.Load` (verify via mocked loader, `Received(0)`).
 - **Sidecar binding correctness.** `feeds.json` `sidecar` field auto-binds; mismatched/missing sidecar yields a clear error at engine init, not silent NaN-soup at runtime.
-- **`ReadOnlySpan<double>` field-storage compile-time check.** A negative-compile test (e.g., a `dotnet build` test fixture invoking `Microsoft.CodeAnalysis.CSharp` to compile a snippet that tries to store the span in a field) confirms the `ref struct` invariant. Optional but cheap insurance.
+- ~~**`ReadOnlySpan<double>` field-storage compile-time check.**~~ Removed: `ref struct` field-storage prohibition is a C# language rule enforced by the compiler unconditionally. A negative-compile test would only re-verify the language spec, not anything project-specific.
 
 ### Phase 3 — main API proxy + Data Tab UI
 
@@ -715,7 +722,7 @@ Per-phase test scope. Each bullet is a behavior, not a method — the named test
 ### Cross-cutting
 
 - **No `decimal` in storage layer.** Solution-wide test that walks every type implementing the read/write CSV interfaces and asserts no `decimal` field/property. Pins §3.4.
-- **No raw `(long)` casts in aggregator.** Roslyn-analyzer-style assertion that flags `(long)` outside `MoneyConvert` and `tests/`. Already a project rule (CLAUDE.md), but the aggregator is new code worth pinning at PR time.
+- **No raw `(long)` casts.** The existing project-wide rule (CLAUDE.md "Int64 Money Convention") flags `(long)` outside `MoneyConvert` and `tests/`. Phase 1b confirms the aggregator's `HistoryLoader.Application/Aggregation/**` paths are within scope of the existing assertion rather than adding a parallel one.
 
 ## 12. Open Items
 
@@ -723,3 +730,4 @@ Per-phase test scope. Each bullet is a behavior, not a method — the named test
 2. **Multi-instance HistoryLoader.** v1 single-instance via `IOptions<HistoryLoaderOptions>{ BaseUrl }`. YARP is the upgrade path.
 3. **Resumable / partial aggregations.** v1 always full-range; `from_ts`/`to_ts` are not in the v1 request schema. Phase 6 reintroduces them with real semantics (partitions are calendar-aligned and atomic per partition, so incremental rebuild is a natural extension).
 4. **Plugin ABI for `IFeedContextReceiver`.** Confirm interface is public/stable so private-repo strategies compile unchanged. Validated by Phase 0 DIM audit.
+5. **Re-aggregation from alt-bar sources.** `EqV_2000` from existing `EqV_1000` (≈10× fewer source records than re-running over time bars). Deferred to Phase 6: requires an alt-bar source reader that respects variable bar duration and a fidelity-equivalence proof (re-aggregation must produce the same bar boundaries as a fresh aggregation modulo accumulator initialization).
