@@ -1,5 +1,6 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
+using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
 using Microsoft.Extensions.Options;
@@ -20,13 +21,14 @@ public sealed class HistoryRepository(
                 $"Requested timeframe ({subscription.TimeFrame}) is smaller than the asset's smallest interval ({sourceInterval}).",
                 nameof(subscription));
 
-        var raw = barLoader.Load(
-            storageOptions.Value.DataRoot,
-            asset.Exchange,
-            AssetDirectoryName.From(subscription.Asset),
-            from,
-            to,
-            sourceInterval);
+        var descriptor = new DataFeedDescriptor(
+            DataRoot: storageOptions.Value.DataRoot,
+            Exchange: asset.Exchange,
+            Asset: AssetDirectoryName.From(subscription.Asset),
+            FeedId: TimeFrameFormatter.Format(sourceInterval),
+            Kind: DataFeedKind.TimeBar);
+
+        var raw = barLoader.Load(descriptor, from, to);
 
         if (subscription.TimeFrame == sourceInterval)
             return raw;

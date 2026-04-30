@@ -14,5 +14,6 @@ public interface IFeedSeriesLoader
         string feedName,
         string interval,
         DateOnly from,
-        DateOnly to);
+        DateOnly to,
+        bool nullableColumns = false);
 }

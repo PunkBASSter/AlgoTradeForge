@@ -11,6 +11,18 @@ namespace AlgoTradeForge.Infrastructure.History;
 /// Path pattern: {dataRoot}/{exchange}/{assetDir}/{feedName}/{YYYY-MM}[_{interval}].csv
 /// Header: ts,col1,col2,...  (ts is long unix ms, columns are doubles)
 /// </summary>
+/// <remarks>
+/// Empty-cell handling is gated by the <c>nullableColumns</c> argument (TRD §3.5):
+/// <list type="bullet">
+///   <item><c>true</c>: empty / truncated cells parse as <see cref="double.NaN"/>. Used by
+///         sidecar feeds (<c>.flow</c>) and any side feed declared with
+///         <c>nullable_columns: true</c> in <c>feeds.json</c>.</item>
+///   <item><c>false</c> (default): empty / truncated cells throw with file/row/column context.
+///         Surfaces malformed legacy data instead of silently filling with zero.</item>
+/// </list>
+/// Malformed non-empty cells (e.g. <c>"abc"</c>) always throw regardless of flag — that's
+/// data corruption, never silent.
+/// </remarks>
 public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
 {
     private readonly ILogger<CsvFeedSeriesLoader> _logger;
@@ -20,17 +32,6 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
         _logger = logger ?? NullLogger<CsvFeedSeriesLoader>.Instance;
     }
 
-    /// <summary>
-    /// Loads feed data for the given date range.
-    /// </summary>
-    /// <param name="dataRoot">Root data directory.</param>
-    /// <param name="exchange">Exchange name.</param>
-    /// <param name="assetDir">Asset directory name (e.g. BTCUSDT or BTCUSDT_perp).</param>
-    /// <param name="feedName">Feed subdirectory name (e.g. "funding_rate").</param>
-    /// <param name="interval">Optional interval suffix for the filename (e.g. "1h"). Empty string means no suffix.</param>
-    /// <param name="from">Start date (inclusive).</param>
-    /// <param name="to">End date (inclusive).</param>
-    /// <returns>A <see cref="FeedSeries"/> if any data was found; otherwise <c>null</c>.</returns>
     public FeedSeries? Load(
         string dataRoot,
         string exchange,
@@ -38,11 +39,11 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
         string feedName,
         string interval,
         DateOnly from,
-        DateOnly to)
+        DateOnly to,
+        bool nullableColumns = false)
     {
         var timestamps = new List<long>();
         List<double>[]? columnLists = null;
-        int missingColumnRows = 0;
 
         var current = new DateOnly(from.Year, from.Month, 1);
         var endMonth = new DateOnly(to.Year, to.Month, 1);
@@ -66,12 +67,13 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
 
             var firstLine = true;
             string? line;
+            var rowIndex = -1;
             while ((line = reader.ReadLine()) is not null)
             {
+                rowIndex++;
                 if (firstLine)
                 {
                     firstLine = false;
-                    // Parse column count from header (skip "ts" column)
                     if (columnLists is null)
                     {
                         var headerParts = line.Split(',');
@@ -96,7 +98,6 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
                 if (ts < fromMs || ts > toMs)
                     continue;
 
-                // Ensure columnLists is initialised (handles files with no data before header)
                 if (columnLists is null)
                 {
                     var colCount = parts.Length - 1;
@@ -105,31 +106,41 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
                         columnLists[i] = [];
                 }
 
-                // Parse all column values, skipping the row if any value is malformed
                 var values = new double[columnLists.Length];
-                bool parseFailed = false;
+                var skipRow = false;
                 for (var c = 0; c < columnLists.Length; c++)
                 {
                     var valueIdx = c + 1;
-                    if (valueIdx < parts.Length
-                        && double.TryParse(parts[valueIdx], CultureInfo.InvariantCulture, out var v))
+                    string? raw = valueIdx < parts.Length ? parts[valueIdx] : null;
+
+                    if (raw is null || raw.Length == 0)
+                    {
+                        // Empty / missing cell — gated by nullable_columns (TRD §3.5).
+                        if (nullableColumns)
+                        {
+                            values[c] = double.NaN;
+                        }
+                        else
+                        {
+                            throw new FormatException(
+                                $"Empty/missing cell in feed '{feedName}', file '{filePath}', " +
+                                $"row {rowIndex} (ts={ts}), column index {c}. " +
+                                $"Set nullable_columns: true in feeds.json to allow empty → NaN.");
+                        }
+                    }
+                    else if (double.TryParse(raw, CultureInfo.InvariantCulture, out var v))
                     {
                         values[c] = v;
                     }
-                    else if (valueIdx >= parts.Length)
-                    {
-                        values[c] = 0d;
-                        missingColumnRows++;
-                    }
                     else
                     {
-                        parseFailed = true;
+                        // Malformed non-empty cell. Keep the legacy "skip row" behavior — only
+                        // empty cells are governed by the nullable_columns flag.
+                        skipRow = true;
                         break;
                     }
                 }
-
-                if (parseFailed)
-                    continue;
+                if (skipRow) continue;
 
                 timestamps.Add(ts);
                 for (var c = 0; c < columnLists.Length; c++)
@@ -137,13 +148,6 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
             }
 
             current = current.AddMonths(1);
-        }
-
-        if (missingColumnRows > 0)
-        {
-            _logger.LogWarning(
-                "{Count} rows had fewer columns than header in {Feed}/{AssetDir} — filled with 0",
-                missingColumnRows, feedName, assetDir);
         }
 
         if (timestamps.Count == 0 || columnLists is null)

@@ -51,7 +51,8 @@ public sealed class FeedContextBuilder(
         foreach (var (feedName, def) in metadata.Feeds)
         {
             var series = feedSeriesLoader.Load(
-                dataRoot, asset.Exchange, assetDir, feedName, def.Interval, from, to);
+                dataRoot, asset.Exchange, assetDir, feedName, def.Interval ?? string.Empty, from, to,
+                nullableColumns: def.NullableColumns ?? false);
 
             if (series is null)
                 continue;

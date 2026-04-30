@@ -12,11 +12,11 @@ Tests are interleaved with the implementation they cover so they can be written 
 
 These are blockers. Every audit produces a written decision in `specs/` or this file. No Phase 1 code lands until all five are checked off.
 
-- [ ] **P0-1** DIM audit on `IFeedContext` — verify `AssemblyLoadContext.Default` semantics on .NET 10, enumerate all impls in public + `../AlgoTradeForge.Private/`, confirm JIT DIM dispatch on plugin assemblies. Output: pass/fail decision. (TRD §11 Phase 0, §9.4)
-- [ ] **P0-2** Define `ISidecarReceiver` fallback shape **only if** P0-1 fails. Skip if P0-1 passes. (TRD §9.4)
-- [ ] **P0-3** `IInt64BarLoader` external-consumer audit — enumerate every callsite in public + private repos. Output: callsite list pinned in `specs/`. (TRD §11 Phase 0)
-- [ ] **P0-4** `TimeFrame` raw-`TimeSpan` overload audit — enumerate every callsite of `IInt64BarStrategy` / loader / subscription APIs taking raw `TimeSpan`. Output: callsite list (bounds Phase 4 removal). (TRD §11 Phase 0, §9.1)
-- [ ] **P0-5** Lock threshold-input semantics — `feeds.json` always stores absolute canonical units; request payload carries explicit `input_mode ∈ {absolute, convenience}`; `threshold.convenience_input` preserves original. Output: wire-schema doc in `specs/`. (TRD §11 Phase 0, §12 item 1) — _gates P1a-5._
+- [x] **P0-1** DIM audit on `IFeedContext` — verify `AssemblyLoadContext.Default` semantics on .NET 10, enumerate all impls in public + `../AlgoTradeForge.Private/`, confirm JIT DIM dispatch on plugin assemblies. Output: pass/fail decision. (TRD §11 Phase 0, §9.4) → `specs/031-alternative-bars/p0-1-dim-audit.md` (PASS)
+- [-] **P0-2** Define `ISidecarReceiver` fallback shape **only if** P0-1 fails. Skip if P0-1 passes. (TRD §9.4) — _skipped (P0-1 passed)._
+- [x] **P0-3** `IInt64BarLoader` external-consumer audit — enumerate every callsite in public + private repos. Output: callsite list pinned in `specs/`. (TRD §11 Phase 0) → `specs/031-alternative-bars/p0-3-int64barloader-callsites.md` (24 callsites)
+- [x] **P0-4** `TimeFrame` raw-`TimeSpan` overload audit — enumerate every callsite of `IInt64BarStrategy` / loader / subscription APIs taking raw `TimeSpan`. Output: callsite list (bounds Phase 4 removal). (TRD §11 Phase 0, §9.1) → `specs/031-alternative-bars/p0-4-timespan-callsites.md`
+- [x] **P0-5** Lock threshold-input semantics — `feeds.json` always stores absolute canonical units; request payload carries explicit `input_mode ∈ {absolute, convenience}`; `threshold.convenience_input` preserves original. Output: wire-schema doc in `specs/`. (TRD §11 Phase 0, §12 item 1) — _gates P1a-5._ → `specs/031-alternative-bars/p0-5-threshold-wire-schema.md`
 
 ---
 
@@ -26,65 +26,65 @@ These are blockers. Every audit produces a written decision in `specs/` or this 
 
 ### Scale alignment
 
-- [ ] **P1a-1** Add `ScaleContext.QuantityScale` (and `PriceScale` if not already present); wire on `Asset`. (TRD §3.4) — _gates P1a-15 assertion._
-- [ ] **P1a-2** Test: `ScaleContext.QuantityScale` correctness across `CryptoAsset`, `CryptoPerpetualAsset`, `EquityAsset`, `FutureAsset`.
+- [x] **P1a-1** Add `ScaleContext.QuantityScale` (and `PriceScale` if not already present); wire on `Asset`. (TRD §3.4) — _gates P1a-15 assertion._
+- [x] **P1a-2** Test: `ScaleContext.QuantityScale` correctness across `CryptoAsset`, `CryptoPerpetualAsset`, `EquityAsset`, `FutureAsset`.
 
 ### Naming grammar
 
-- [ ] **P1a-3** Implement positional parser for `<TypeCode>_<SourceCode>_<Threshold>` and `.flow` suffix. Document the `EqV_1m_500m` ambiguity in code comments at the parser. (TRD §3.3, X-5)
-- [ ] **P1a-4** Test: parser round-trip incl. ambiguous fixtures (`EqV_1m_500m`, `EqV_5m_500m`, `EqV_1d_1d`).
+- [x] **P1a-3** Implement positional parser for `<TypeCode>_<SourceCode>_<Threshold>` and `.flow` suffix. Document the `EqV_1m_500m` ambiguity in code comments at the parser. (TRD §3.3, X-5)
+- [x] **P1a-4** Test: parser round-trip incl. ambiguous fixtures (`EqV_1m_500m`, `EqV_5m_500m`, `EqV_1d_1d`).
 
 ### Manifest schema
 
-- [ ] **P1a-5** Extend `feeds.json` schema with `kind`, `type`, `source`, `threshold` (incl. `input_mode` per P0-5), `build`, `fidelity`, `first_bar_ts`, `last_bar_ts`, `sidecar`. Schema only — no aggregator. (TRD §4) — _depends on P0-5._
-- [ ] **P1a-6** Enforce `fidelity.imbalance_reconstruction_method` MUST be present (null on non-EqI) at write AND read. (TRD §4 rule)
-- [ ] **P1a-7** Test: manifest required-field validation — non-EqI without `imbalance_reconstruction_method` errors at both ends.
+- [x] **P1a-5** Extend `feeds.json` schema with `kind`, `type`, `source`, `threshold` (incl. `input_mode` per P0-5), `build`, `fidelity`, `first_bar_ts`, `last_bar_ts`, `sidecar`. Schema only — no aggregator. (TRD §4) — _depends on P0-5._
+- [x] **P1a-6** Enforce `fidelity.imbalance_reconstruction_method` MUST be present (null on non-EqI) at write AND read. (TRD §4 rule)
+- [x] **P1a-7** Test: manifest required-field validation — non-EqI without `imbalance_reconstruction_method` errors at both ends.
 
 ### Manifest writer + atomicity
 
-- [ ] **P1a-8** Implement per-`(exchange, asset)` synchronized manifest writer with read-merge-write protocol under exclusive lock. Shared lock for readers; exclusive lock for writers. (TRD §4.1)
-- [ ] **P1a-9** Manifest writer raises a "manifest changed" event for downstream cache invalidation. (TRD §5.1, §5.3)
-- [ ] **P1a-10** Test: concurrent manifest writers — 100× stress, `[Trait("Category", "Stress")]`, `ManualResetEventSlim` align finalizers per iteration.
-- [ ] **P1a-11** Co-locate staging dirs + `*.tmp` files on the same volume as target `aggregated/<feedId>/`. Writer rejects cross-volume staging with a clear error. (TRD §3.2)
-- [ ] **P1a-12** Test: cross-volume rename guard. CI-skipped if single-volume.
+- [x] **P1a-8** Implement per-`(exchange, asset)` synchronized manifest writer with read-merge-write protocol under exclusive lock. Shared lock for readers; exclusive lock for writers. (TRD §4.1)
+- [x] **P1a-9** Manifest writer raises a "manifest changed" event for downstream cache invalidation. (TRD §5.1, §5.3)
+- [x] **P1a-10** Test: concurrent manifest writers — 100× stress, `[Trait("Category", "Stress")]`, `ManualResetEventSlim` align finalizers per iteration.
+- [x] **P1a-11** Co-locate staging dirs + `*.tmp` files on the same volume as target `aggregated/<feedId>/`. Writer rejects cross-volume staging with a clear error. (TRD §3.2) — implemented as `SameVolumeGuard` + integrated in `OverwritePathWriter` and `PartitionedSinkWriter`.
+- [x] **P1a-12** Test: cross-volume rename guard. — `CrossVolumeGuardTests` uses an injected `VolumeResolver` to simulate cross-volume layout on single-drive CI hosts (no `[Skip]` needed).
 
 ### Startup sweep
 
-- [ ] **P1a-13** Implement startup sweep: delete `*.tmp` + recursively delete orphan `aggregated/<feedId>/`, `<feedId>.flow/`, AND any `.staging-*/` subdirs whose `feedId` is absent from `feeds.json` or whose staging job is no longer running. WARN-log absolute path for each deletion. (TRD §4.1, review fix #2)
-- [ ] **P1a-14** Test: startup sweep — orphan `*.tmp` deleted, real partitions untouched.
-- [ ] **P1a-15** Test: startup sweep — orphan feed dir deleted + WARN log captured via Serilog test sink.
-- [ ] **P1a-16** Test: startup sweep — orphan `.staging-*/` deleted even when manifest entry exists (review fix #2 path).
-- [ ] **P1a-17** Test: startup sweep — manifest-entry-without-dir is preserved (asymmetry test).
+- [x] **P1a-13** Implement startup sweep: delete `*.tmp` + recursively delete orphan `aggregated/<feedId>/`, `<feedId>.flow/`, AND any `.staging-*/` subdirs whose `feedId` is absent from `feeds.json` or whose staging job is no longer running. WARN-log absolute path for each deletion. (TRD §4.1, review fix #2)
+- [x] **P1a-14** Test: startup sweep — orphan `*.tmp` deleted, real partitions untouched.
+- [x] **P1a-15** Test: startup sweep — orphan feed dir deleted + WARN log captured via Serilog test sink.
+- [x] **P1a-16** Test: startup sweep — orphan `.staging-*/` deleted even when manifest entry exists (review fix #2 path).
+- [x] **P1a-17** Test: startup sweep — manifest-entry-without-dir is preserved (asymmetry test).
 
 ### Overwrite path
 
-- [ ] **P1a-18** Implement overwrite: stage to `aggregated/<feedId>/.staging-<jobId>/`, atomic rename of staging → live (deleting old live first), then write `feeds.json`. (TRD §4.1)
+- [x] **P1a-18** Implement overwrite: stage to `aggregated/<feedId>/.staging-<jobId>/`, atomic rename of staging → live (deleting old live first), then write `feeds.json`. (TRD §4.1)
 
 ### Partition writer (sink-side overflow)
 
-- [ ] **P1a-19** Implement `PartitionedSinkWriter` with part-numbered overflow: soft `aggregator.maxPartitionSizeMB=100` budget; sticky-per-month; mid-month first overflow → atomic-rename `<YYYY>-<MM>.csv` → `.p01.csv`, open `.p02.csv`; subsequent months pre-open as `.p01.csv`. Standalone unit (test-fed in 1a; aggregator-fed in 1b). (TRD §3.2, §6.2)
-- [ ] **P1a-20** Test: mid-month overflow rename — `PartitionOverflowTests`.
-- [ ] **P1a-21** Test: sticky overflow — no `<YYYY>-<MM>.csv` reappears after rollover.
+- [x] **P1a-19** Implement `PartitionedSinkWriter` with part-numbered overflow: soft `aggregator.maxPartitionSizeMB=100` budget; sticky-per-month; mid-month first overflow → atomic-rename `<YYYY>-<MM>.csv` → `.p01.csv`, open `.p02.csv`; subsequent months pre-open as `.p01.csv`. Standalone unit (test-fed in 1a; aggregator-fed in 1b). (TRD §3.2, §6.2)
+- [x] **P1a-20** Test: mid-month overflow rename — `PartitionOverflowTests`.
+- [x] **P1a-21** Test: sticky overflow — no `<YYYY>-<MM>.csv` reappears after rollover.
 
 ### Scale-tag assertion (no-op accumulator)
 
-- [ ] **P1a-22** Apply scale-tag assertion at accumulator-entry call sites. Phase 1a's "accumulator" is a no-op stub; assertion still wired to lock the contract. (TRD §3.4)
-- [ ] **P1a-23** Test: scale-tag mismatch throws at write-time.
+- [x] **P1a-22** Apply scale-tag assertion at accumulator-entry call sites. Phase 1a's "accumulator" is a no-op stub; assertion still wired to lock the contract. (TRD §3.4)
+- [x] **P1a-23** Test: scale-tag mismatch throws at write-time.
 
 ### Side-feed reader
 
-- [ ] **P1a-24** Gate `CsvFeedSeriesLoader` empty-cell→`NaN` parsing on manifest `nullable_columns: true`. (TRD §3.5, §11 Phase 1a)
-- [ ] **P1a-25** Test: `nullable_columns` gating — empty cells parse to `NaN` when set, throw when unset.
+- [x] **P1a-24** Gate `CsvFeedSeriesLoader` empty-cell→`NaN` parsing on manifest `nullable_columns: true`. (TRD §3.5, §11 Phase 1a)
+- [x] **P1a-25** Test: `nullable_columns` gating — empty cells parse to `NaN` when set, throw when unset.
 
 ### Loader signature (breaking)
 
-- [ ] **P1a-26** Introduce `DataFeedDescriptor(DataRoot, Exchange, Asset, FeedId, Kind)`. (TRD §9.5) — _depends on P0-3 audit._
-- [ ] **P1a-27** Refactor `IInt64BarLoader.Load` to take `DataFeedDescriptor`. Update every callsite from P0-3's enumeration.
-- [ ] **P1a-28** Add `Kind`-based path resolution to `PartitionedCsvBarLoader` (TimeBar, AltBar, Tick, Side). (TRD §9.5, §9.3 glob table)
-- [ ] **P1a-29** Glob-based partition listing in `PartitionedCsvBarLoader` with per-FeedId filter for mixed-timeframe `candles/` regression safety.
-- [ ] **P1a-30** Test: glob-based reader — mixed `.csv` + `.pNN.csv` chronological order; per-FeedId filter excludes `2026-04_5m.csv` when loading `1m`.
-- [ ] **P1a-31** Delete legacy `CsvInt64BarLoader` (`src/AlgoTradeForge.Infrastructure/CandleIngestion/CsvInt64BarLoader.cs`). Confirm zero call sites first.
-- [ ] **P1a-32** Test: legacy `CsvInt64BarLoader` removed — solution-wide reflective `Type.GetType(...)` returns null.
+- [x] **P1a-26** Introduce `DataFeedDescriptor(DataRoot, Exchange, Asset, FeedId, Kind)`. (TRD §9.5) — _depends on P0-3 audit._
+- [x] **P1a-27** Refactor `IInt64BarLoader.Load` to take `DataFeedDescriptor`. Update every callsite from P0-3's enumeration.
+- [x] **P1a-28** Add `Kind`-based path resolution to `PartitionedCsvBarLoader` (TimeBar, AltBar, Tick, Side). (TRD §9.5, §9.3 glob table)
+- [x] **P1a-29** Glob-based partition listing in `PartitionedCsvBarLoader` with per-FeedId filter for mixed-timeframe `candles/` regression safety.
+- [x] **P1a-30** Test: glob-based reader — mixed `.csv` + `.pNN.csv` chronological order; per-FeedId filter excludes `2026-04_5m.csv` when loading `1m`.
+- [x] **P1a-31** Delete legacy `CsvInt64BarLoader` (`src/AlgoTradeForge.Infrastructure/CandleIngestion/CsvInt64BarLoader.cs`). Confirm zero call sites first.
+- [x] **P1a-32** Test: legacy `CsvInt64BarLoader` removed — solution-wide reflective `Type.GetType(...)` returns null.
 
 ### Bake
 
@@ -95,6 +95,11 @@ These are blockers. Every audit produces a written decision in `specs/` or this 
 ## Phase 1b — Aggregation (REST + queue + accumulators)
 
 Time-bar source aggregation only. Tick sources are Phase 2a.
+
+### Carryover from Phase 1a review (2026-04-30)
+
+- [ ] **P1b-0a** Tighten `CsvFeedSeriesLoader` malformed-cell handling: under both `nullable_columns: true` AND `false`, a non-empty malformed cell (e.g. `"abc"` in a numeric column) MUST throw `FormatException` with file/row/column context — not silently skip the row. Update `CsvFeedSeriesLoaderTests.Load_NonNumericValue_SkipsRow` to assert the throw. Phase 1a kept legacy "skip row" behavior for backward compat; Phase 1b makes data corruption loud. (Review remediation #7)
+- [ ] **P1b-0b** API-boundary path-traversal validation: every `DataFeedDescriptor` synthesized from `POST /aggregate` request input MUST flow through `AltBarFeedId.TryParse` before hitting the loader / sink. Otherwise an attacker-controlled `source_feed_id` / `type_code` / `threshold` could inject `..\..\evil` into `FeedId` and escape `aggregated/<feedId>/`. (Review security note)
 
 ### Aggregator core
 
@@ -285,11 +290,11 @@ Path-dependent; require ticks or sub-minute time bars.
 
 ## Cross-cutting (run alongside whichever phase ships them)
 
-- [ ] **X-1** Solution-wide reflective test: no `decimal` in storage layer (walks every type implementing read/write CSV interfaces). Land in Phase 1a. (TRD §11A Cross-cutting, §3.4)
+- [x] **X-1** Solution-wide reflective test: no `decimal` in storage layer (walks every type implementing read/write CSV interfaces). Land in Phase 1a. (TRD §11A Cross-cutting, §3.4)
 - [ ] **X-2** Confirm `HistoryLoader.Application/Aggregation/**` is in scope of the existing CLAUDE.md "Int64 Money Convention" `(long)` cast rule. Don't add a parallel rule. Land in Phase 1b. (TRD §11A Cross-cutting)
-- [ ] **X-3** Existing HistoryLoader registrations (`candle-ext`, `funding-rate`, etc.) flow through the P1a-8 synchronized writer. Audit + migrate. Land in Phase 1a. (TRD §5.3)
+- [x] **X-3** Existing HistoryLoader registrations (`candle-ext`, `funding-rate`, etc.) flow through the P1a-8 synchronized writer. Audit + migrate. Land in Phase 1a. (TRD §5.3) — confirmed: every registration path goes through `ISchemaManager.EnsureSchema` (the only impl is `FeedSchemaManager`, registered as singleton), so the concurrency upgrade applies uniformly without a separate migration.
 - [ ] **X-4** Logging audit: every sweep deletion at WARN with absolute path; every job lifecycle event structured-logged via Serilog. Land in Phase 1b.
-- [ ] **X-5** Code comment at the §3.3 positional parser warning about `EqV_1m_500m` ambiguity (parser is positional). Land in Phase 1a (P1a-3).
+- [x] **X-5** Code comment at the §3.3 positional parser warning about `EqV_1m_500m` ambiguity (parser is positional). Land in Phase 1a (P1a-3). — inline comment lives on `AltBarFeedId.TryParse`.
 
 ---
 

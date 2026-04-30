@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.CandleIngestion;
+using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using Microsoft.Extensions.Options;
 
@@ -24,13 +25,17 @@ public sealed class CsvDataSource(
                 $"Requested timeframe ({query.TimeFrame}) is smaller than the source interval ({sourceInterval}).",
                 nameof(query));
 
+        var descriptor = new DataFeedDescriptor(
+            DataRoot: storageOptions.Value.DataRoot,
+            Exchange: asset.Exchange,
+            Asset: AssetDirectoryName.From(asset),
+            FeedId: TimeFrameFormatter.Format(sourceInterval),
+            Kind: DataFeedKind.TimeBar);
+
         var raw = barLoader.Load(
-            storageOptions.Value.DataRoot,
-            asset.Exchange,
-            AssetDirectoryName.From(asset),
+            descriptor,
             DateOnly.FromDateTime(from.UtcDateTime),
-            DateOnly.FromDateTime(to.UtcDateTime),
-            sourceInterval);
+            DateOnly.FromDateTime(to.UtcDateTime));
 
         if (query.TimeFrame > sourceInterval)
             return raw.Resample(query.TimeFrame);

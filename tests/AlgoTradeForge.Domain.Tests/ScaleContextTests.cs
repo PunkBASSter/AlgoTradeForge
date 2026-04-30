@@ -109,4 +109,88 @@ public class ScaleContextTests
         var asset = new EquityAsset { Name = "BAD", Exchange = "TEST", TickSize = 0m };
         Assert.Throws<ArgumentOutOfRangeException>(() => new ScaleContext(asset));
     }
+
+    // ---- QuantityScale (Phase 1a P1a-1, P1a-2) -------------------------------
+
+    [Fact]
+    public void QuantityScale_CryptoAsset_DerivedFromQuantityStepSize()
+    {
+        var btc = CryptoAsset.Create(
+            name: "BTCUSDT", exchange: "binance",
+            decimalDigits: 2,
+            quantityStepSize: 0.00001m);
+
+        var scale = new ScaleContext(btc);
+
+        Assert.Equal(100_000m, scale.QuantityScale);
+    }
+
+    [Fact]
+    public void QuantityScale_CryptoPerpetualAsset_DerivedFromQuantityStepSize()
+    {
+        var btcPerp = CryptoPerpetualAsset.Create(
+            name: "BTCUSDT", exchange: "binance",
+            decimalDigits: 2,
+            quantityStepSize: 0.001m);
+
+        var scale = new ScaleContext(btcPerp);
+
+        Assert.Equal(1_000m, scale.QuantityScale);
+    }
+
+    [Fact]
+    public void QuantityScale_EquityAsset_DefaultsToOneWhenStepSizeUnset()
+    {
+        var aapl = new EquityAsset { Name = "AAPL", Exchange = "NYSE", TickSize = 0.01m };
+
+        var scale = new ScaleContext(aapl);
+
+        Assert.Equal(1m, scale.QuantityScale);
+    }
+
+    [Fact]
+    public void QuantityScale_FutureAsset_DerivedFromExplicitQuantityStepSize()
+    {
+        var es = FutureAsset.Create(
+            name: "ESM5", exchange: "CME",
+            multiplier: 50m, tickSize: 0.25m,
+            quantityStepSize: 1m);
+
+        var scale = new ScaleContext(es);
+
+        Assert.Equal(1m, scale.QuantityScale);
+    }
+
+    [Theory]
+    [InlineData(0.01,       0.0001,     10000)]
+    [InlineData(0.5,        1,          1)]
+    [InlineData(0.00000001, 0.00001,    100_000)]
+    public void Constructor_FromTickSizeAndQuantityStep_SetsQuantityScale(
+        decimal tickSize, decimal stepSize, decimal expectedQuantityScale)
+    {
+        var scale = new ScaleContext(tickSize, stepSize);
+        Assert.Equal(expectedQuantityScale, scale.QuantityScale);
+    }
+
+    [Fact]
+    public void Constructor_FromTickSizeAndQuantityStep_ZeroStepIsIdentityScale()
+    {
+        var scale = new ScaleContext(tickSize: 0.01m, quantityStepSize: 0m);
+        Assert.Equal(1m, scale.QuantityScale);
+    }
+
+    [Fact]
+    public void Constructor_FromTickSizeAndQuantityStep_ThrowsOnNegativeStep()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new ScaleContext(tickSize: 0.01m, quantityStepSize: -1m));
+    }
+
+    [Fact]
+    public void Constructor_FromTickSize_QuantityScaleDefaultsToOne()
+    {
+        // The single-arg ctor has no quantity context; identity-scale is the safe default.
+        var scale = new ScaleContext(0.01m);
+        Assert.Equal(1m, scale.QuantityScale);
+    }
 }

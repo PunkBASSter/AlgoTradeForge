@@ -11,7 +11,6 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Infrastructure;
-using AlgoTradeForge.Infrastructure.CandleIngestion;
 using AlgoTradeForge.WebApi;
 using AlgoTradeForge.Infrastructure.History;
 using AlgoTradeForge.Infrastructure.Live.Binance;

@@ -35,9 +35,8 @@ public class CsvDataSourceTests
     private void SetupLoader(TimeSeries<Int64Bar> series)
     {
         _loader.Load(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
-            Arg.Any<TimeSpan>())
+            Arg.Any<DataFeedDescriptor>(),
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
             .Returns(series);
     }
 

@@ -30,7 +30,7 @@ internal sealed class CandleCsvWriter(WriteLockManager writeLockManager) : ICand
             if (fs.Length == 0)
                 writer.WriteLine("ts,o,h,l,c,vol");
 
-            // Scale by 10^decimalDigits so the reader (CsvInt64BarLoader) can reconstruct
+            // Scale by 10^decimalDigits so the reader (PartitionedCsvBarLoader) can reconstruct
             // the original decimal values using the same multiplier stored in feeds.json.
             var multiplier = (decimal)Math.Pow(10, decimalDigits);
             var open   = MoneyConvert.ToLong(record.Open   * multiplier);

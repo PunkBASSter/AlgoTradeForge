@@ -1,5 +1,6 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 using AlgoTradeForge.HistoryLoader.WebApi;
@@ -49,6 +50,11 @@ builder.Services.AddSingleton<ISettingsWriter>(sp =>
 builder.Services.AddSingleton<ICollectionCircuitBreaker, CollectionCircuitBreaker>();
 builder.Services.AddSingleton<SymbolCollector>();
 builder.Services.AddSingleton<BackfillOrchestrator>();
+
+// Aggregation startup sweep — MUST run before any collector hosted service so any
+// orphan staging/tmp left by a prior crash is gone before workers start (TRD §4.1).
+builder.Services.AddHostedService<StartupSweepService>();
+
 builder.Services.AddHostedService<KlineCollectorService>();
 builder.Services.AddHostedService<FundingRateCollectorService>();
 builder.Services.AddHostedService<OiCollectorService>();

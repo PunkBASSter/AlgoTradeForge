@@ -1,5 +1,6 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
@@ -111,6 +112,9 @@ public static class DependencyInjection
         services.AddSingleton<IFeedWriter, FeedCsvWriter>();
         services.AddSingleton<ISchemaManager, FeedSchemaManager>();
         services.AddSingleton<IFeedStatusStore, FeedStatusManager>();
+
+        // Phase 1a: alt-bar aggregation foundation
+        services.AddSingleton<AggregatedDirSweeper>();
 
         return services;
     }
