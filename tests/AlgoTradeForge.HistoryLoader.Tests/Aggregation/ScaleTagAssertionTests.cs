@@ -42,34 +42,39 @@ public sealed class ScaleTagAssertionTests
     }
 
     // -------------------------------------------------------------------------
-    // AccumulatorEntry — assertion fires at the accumulator-construction call site
+    // AccumulatorEntry — assertion fires at the accumulator-construction call site,
+    // dispatch happens after assertion so a scale mismatch never reaches a real impl.
     // -------------------------------------------------------------------------
-
-    [Fact]
-    public void Open_MatchingScales_ReturnsNoOpAccumulator()
-    {
-        var scale = new ScaleContext(tickSize: 0.01m, quantityStepSize: 0.0001m);
-
-        var acc = AccumulatorEntry.Open(scale, scale);
-
-        Assert.IsType<NoOpBarAccumulator>(acc);
-
-        // The no-op accumulator never emits.
-        var emitted = acc.TryAdvance(new SourceRecord(0, 0, 0, 0, 0, 0), out _);
-        Assert.False(emitted);
-    }
 
     [Fact]
     public void Open_MismatchedScales_ThrowsBeforeAllocatingAccumulator()
     {
-        // Phase 1a uses a no-op accumulator regardless, but the assertion is the gate —
-        // a future EqV accumulator that scales `taker_buy_vol * QuantityScale` would silently
+        // A real EqV accumulator that scales `taker_buy_vol * QuantityScale` would silently
         // produce wrong long values if the source's QuantityScale differs from the
-        // accumulator's expected scale.
+        // accumulator's expected scale. Asserting before dispatch makes the failure loud.
         var sourceScale = new ScaleContext(tickSize: 0.01m, quantityStepSize: 0.0001m);
         var accScale    = new ScaleContext(tickSize: 0.01m, quantityStepSize: 0.001m);
 
-        Assert.Throws<InvalidOperationException>(() => AccumulatorEntry.Open(sourceScale, accScale));
+        Assert.Throws<InvalidOperationException>(() =>
+            AccumulatorEntry.Open("EqV", threshold: 1000, sourceScale, accScale));
+    }
+
+    [Fact]
+    public void Open_UnknownTypeCode_Throws()
+    {
+        var scale = new ScaleContext(tickSize: 0.01m, quantityStepSize: 0.0001m);
+
+        Assert.Throws<ArgumentException>(() =>
+            AccumulatorEntry.Open("WhatNow", threshold: 1000, scale, scale));
+    }
+
+    [Fact]
+    public void Open_EqI_NotYetSupported_Throws()
+    {
+        var scale = new ScaleContext(tickSize: 0.01m, quantityStepSize: 0.0001m);
+
+        Assert.Throws<NotSupportedException>(() =>
+            AccumulatorEntry.Open("EqI", threshold: 1000, scale, scale));
     }
 
     [Fact]

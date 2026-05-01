@@ -1,0 +1,103 @@
+using AlgoTradeForge.Domain.History;
+
+namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
+
+/// <summary>
+/// Lazily yields <see cref="SourceRecord"/>s from a partitioned CSV time-bar feed in
+/// chronological order (TRD §6.2). Mirrors the path / glob resolution of
+/// <c>PartitionedCsvBarLoader</c> but streams record-by-record so the aggregator's peak
+/// working set stays bounded regardless of source span (P1b-12 memory contract).
+/// </summary>
+/// <remarks>
+/// Phase 1b supports time-bar sources only; tick sources land in Phase 2a, after which
+/// this reader gains a tick path. The optional <c>candle-ext</c> 1:1 join (TRD §6.2 last
+/// sentence) is reserved for Phase 2b's EqI proxy and not exposed here yet.
+/// </remarks>
+public sealed class PartitionedSourceReader
+{
+    /// <summary>
+    /// Yields source records inside <paramref name="from"/>..<paramref name="to"/> inclusive.
+    /// Filters by ts in milliseconds. Malformed rows (wrong column count, un-parseable cells)
+    /// throw <see cref="FormatException"/> with file/row/column context — silent skipping would
+    /// shift downstream threshold-equivalence boundaries and produce structurally different
+    /// alt-bars than the user expects (P1b-0a parity with the side-feed loader).
+    /// </summary>
+    public IEnumerable<SourceRecord> Read(
+        DataFeedDescriptor source,
+        DateOnly? from = null,
+        DateOnly? to = null)
+    {
+        if (source.Kind != DataFeedKind.TimeBar)
+            throw new NotSupportedException(
+                $"Phase 1b source reader only supports TimeBar; got Kind={source.Kind}. " +
+                $"Tick sources land in Phase 2a.");
+
+        var dir = Path.Combine(source.DataRoot, source.Exchange, source.Asset, "candles");
+        if (!Directory.Exists(dir))
+            yield break;
+
+        var fromMs = (from ?? DateOnly.MinValue) == DateOnly.MinValue
+            ? long.MinValue
+            : new DateTimeOffset(from!.Value.Year, from.Value.Month, from.Value.Day,
+                0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+        var toMs = (to ?? DateOnly.MaxValue) == DateOnly.MaxValue
+            ? long.MaxValue
+            : new DateTimeOffset(to!.Value.Year, to.Value.Month, to.Value.Day,
+                0, 0, 0, TimeSpan.Zero).AddDays(1).ToUnixTimeMilliseconds() - 1;
+
+        // Per-FeedId glob avoids cross-interval contamination (P1a-29 / P1a-30 regression):
+        // loading "1m" must NOT pick up "2026-04_5m.csv". Lex sort matches chronological because
+        // months format as YYYY-MM and any future part-numbered overflow files (.pNN) sort after
+        // their bare month within the same calendar.
+        var pattern = $"*_{source.FeedId}.csv";
+        foreach (var filePath in Directory
+                     .EnumerateFiles(dir, pattern, SearchOption.TopDirectoryOnly)
+                     .OrderBy(Path.GetFileName, StringComparer.Ordinal))
+        {
+            foreach (var record in ReadFile(filePath, fromMs, toMs))
+                yield return record;
+        }
+    }
+
+    private static IEnumerable<SourceRecord> ReadFile(string filePath, long fromMs, long toMs)
+    {
+        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var reader = new StreamReader(fs);
+
+        string? line;
+        var firstLine = true;
+        var rowIndex = 0;   // 1-based after we increment, so error messages match the file viewer
+        while ((line = reader.ReadLine()) is not null)
+        {
+            rowIndex++;
+            if (firstLine) { firstLine = false; continue; }
+            if (line.Length == 0) continue;
+
+            var parts = line.Split(',');
+            if (parts.Length < 6)
+                throw new FormatException(
+                    $"Malformed source row in '{filePath}' (row {rowIndex}): expected at least 6 comma-separated columns (ts,o,h,l,c,vol), got {parts.Length}.");
+
+            if (!long.TryParse(parts[0], out var ts))
+                throw MalformedCell(filePath, rowIndex, "ts", parts[0]);
+            if (!long.TryParse(parts[1], out var open))
+                throw MalformedCell(filePath, rowIndex, "o", parts[1]);
+            if (!long.TryParse(parts[2], out var high))
+                throw MalformedCell(filePath, rowIndex, "h", parts[2]);
+            if (!long.TryParse(parts[3], out var low))
+                throw MalformedCell(filePath, rowIndex, "l", parts[3]);
+            if (!long.TryParse(parts[4], out var close))
+                throw MalformedCell(filePath, rowIndex, "c", parts[4]);
+            if (!long.TryParse(parts[5], out var volume))
+                throw MalformedCell(filePath, rowIndex, "vol", parts[5]);
+
+            if (ts < fromMs || ts > toMs) continue;
+
+            yield return new SourceRecord(ts, open, high, low, close, volume);
+        }
+    }
+
+    private static FormatException MalformedCell(string filePath, int rowIndex, string column, string raw) =>
+        new($"Malformed source cell '{raw}' in '{filePath}' (row {rowIndex}, column '{column}'): expected long.");
+}

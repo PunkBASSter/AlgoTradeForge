@@ -21,7 +21,8 @@ namespace AlgoTradeForge.Infrastructure.History;
 ///         Surfaces malformed legacy data instead of silently filling with zero.</item>
 /// </list>
 /// Malformed non-empty cells (e.g. <c>"abc"</c>) always throw regardless of flag — that's
-/// data corruption, never silent.
+/// data corruption, never silent (TRD §3.5; tightened in Phase 1b P1b-0a from the legacy
+/// "skip row" behavior).
 /// </remarks>
 public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
 {
@@ -107,7 +108,6 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
                 }
 
                 var values = new double[columnLists.Length];
-                var skipRow = false;
                 for (var c = 0; c < columnLists.Length; c++)
                 {
                     var valueIdx = c + 1;
@@ -134,13 +134,14 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
                     }
                     else
                     {
-                        // Malformed non-empty cell. Keep the legacy "skip row" behavior — only
-                        // empty cells are governed by the nullable_columns flag.
-                        skipRow = true;
-                        break;
+                        // Malformed non-empty cell — data corruption. Phase 1b (P1b-0a) tightened
+                        // this from the legacy "skip row" behavior so silent loss never happens
+                        // under either nullable_columns setting.
+                        throw new FormatException(
+                            $"Malformed numeric cell '{raw}' in feed '{feedName}', file '{filePath}', " +
+                            $"row {rowIndex} (ts={ts}), column index {c}.");
                     }
                 }
-                if (skipRow) continue;
 
                 timestamps.Add(ts);
                 for (var c = 0; c < columnLists.Length; c++)

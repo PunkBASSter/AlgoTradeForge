@@ -1,9 +1,12 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
+using AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
+using AlgoTradeForge.HistoryLoader.Application.Catalog;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 using AlgoTradeForge.HistoryLoader.WebApi;
+using AlgoTradeForge.HistoryLoader.WebApi.Aggregation;
 using AlgoTradeForge.HistoryLoader.WebApi.Collection;
 using AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 using AlgoTradeForge.HistoryLoader.Infrastructure;
@@ -24,6 +27,15 @@ builder.Services.AddSerilog(cfg => cfg
 builder.Services.Configure<HistoryLoaderOptions>(
     builder.Configuration.GetSection("HistoryLoader"));
 builder.Services.AddSingleton<IValidateOptions<HistoryLoaderOptions>, HistoryLoaderOptionsValidator>();
+
+// API-side JSON convention: snake_case to match TRD §5.4 wire schema. Distinct from the
+// camelCase used by FeedSchemaManager for on-disk feeds.json (its own JsonOptions).
+builder.Services.ConfigureHttpJsonOptions(o =>
+{
+    o.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower;
+    o.SerializerOptions.PropertyNameCaseInsensitive = false;
+    o.SerializerOptions.DictionaryKeyPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower;
+});
 
 builder.Services.AddHealthChecks();
 
@@ -51,6 +63,17 @@ builder.Services.AddSingleton<ICollectionCircuitBreaker, CollectionCircuitBreake
 builder.Services.AddSingleton<SymbolCollector>();
 builder.Services.AddSingleton<BackfillOrchestrator>();
 
+// Aggregation pipeline DI (Phase 1b — TRD §6.5).
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IFeedCatalog, FeedCatalog>();
+builder.Services.AddSingleton<IAggregationJobRegistry, AggregationJobRegistry>();
+builder.Services.AddSingleton<IAggregationJobQueue, AggregationJobQueue>();
+builder.Services.AddScoped<PartitionedSourceReader>();
+builder.Services.AddScoped<OverwritePathWriter>();
+builder.Services.AddScoped<AggregationPipeline>();
+builder.Services.AddHostedService<AggregationWorkerHost>();
+
 // Aggregation startup sweep — MUST run before any collector hosted service so any
 // orphan staging/tmp left by a prior crash is gone before workers start (TRD §4.1).
 builder.Services.AddHostedService<StartupSweepService>();
@@ -67,5 +90,7 @@ var app = builder.Build();
 app.MapHealthChecks("/health");
 app.MapStatusEndpoints();
 app.MapBackfillEndpoints();
+app.MapCatalogEndpoints();
+app.MapAggregationEndpoints();
 
 app.Run();

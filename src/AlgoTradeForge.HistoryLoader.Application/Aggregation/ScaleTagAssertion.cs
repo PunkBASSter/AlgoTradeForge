@@ -36,15 +36,33 @@ public static class ScaleTagAssertion
 }
 
 /// <summary>
-/// Phase 1a wiring: scale-tag assertion fires at accumulator construction, even though the
-/// accumulator we hand back is a no-op. Phase 1b replaces <see cref="NoOpBarAccumulator"/>
-/// with the real type-specific accumulators without touching this entry point.
+/// Single entry point for opening an accumulator. Asserts source/accumulator scale parity
+/// (TRD §3.4) before dispatching on <paramref name="typeCode"/>. Phase 1b ships EqV / EqT / EqD;
+/// EqI lands in Phase 2b; Range / Renko in Phase 5. Unknown type codes throw.
 /// </summary>
 public static class AccumulatorEntry
 {
-    public static IBarAccumulator Open(ScaleContext sourceScale, ScaleContext accumulatorScale)
+    public static IBarAccumulator Open(
+        string typeCode,
+        long threshold,
+        ScaleContext sourceScale,
+        ScaleContext accumulatorScale)
     {
+        ArgumentException.ThrowIfNullOrEmpty(typeCode);
         ScaleTagAssertion.Assert(sourceScale, accumulatorScale);
-        return new NoOpBarAccumulator();
+
+        return typeCode switch
+        {
+            "EqV" => new Accumulators.EqVAccumulator(threshold),
+            "EqT" => new Accumulators.EqTAccumulator(threshold),
+            "EqD" => new Accumulators.EqDAccumulator(threshold),
+            "EqI" => throw new NotSupportedException(
+                "EqI accumulator lands in Phase 2b (signed-imbalance + .flow sidecar)."),
+            "Range" or "Renko" => throw new NotSupportedException(
+                $"{typeCode} accumulator lands in Phase 5."),
+            _ => throw new ArgumentException(
+                $"Unknown alt-bar type code '{typeCode}' (allowed: EqT, EqV, EqD, EqI, Range, Renko).",
+                nameof(typeCode)),
+        };
     }
 }

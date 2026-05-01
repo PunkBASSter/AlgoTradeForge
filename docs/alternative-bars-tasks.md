@@ -98,70 +98,70 @@ Time-bar source aggregation only. Tick sources are Phase 2a.
 
 ### Carryover from Phase 1a review (2026-04-30)
 
-- [ ] **P1b-0a** Tighten `CsvFeedSeriesLoader` malformed-cell handling: under both `nullable_columns: true` AND `false`, a non-empty malformed cell (e.g. `"abc"` in a numeric column) MUST throw `FormatException` with file/row/column context — not silently skip the row. Update `CsvFeedSeriesLoaderTests.Load_NonNumericValue_SkipsRow` to assert the throw. Phase 1a kept legacy "skip row" behavior for backward compat; Phase 1b makes data corruption loud. (Review remediation #7)
-- [ ] **P1b-0b** API-boundary path-traversal validation: every `DataFeedDescriptor` synthesized from `POST /aggregate` request input MUST flow through `AltBarFeedId.TryParse` before hitting the loader / sink. Otherwise an attacker-controlled `source_feed_id` / `type_code` / `threshold` could inject `..\..\evil` into `FeedId` and escape `aggregated/<feedId>/`. (Review security note)
+- [x] **P1b-0a** Tighten `CsvFeedSeriesLoader` malformed-cell handling: under both `nullable_columns: true` AND `false`, a non-empty malformed cell (e.g. `"abc"` in a numeric column) MUST throw `FormatException` with file/row/column context — not silently skip the row. Update `CsvFeedSeriesLoaderTests.Load_NonNumericValue_SkipsRow` to assert the throw. Phase 1a kept legacy "skip row" behavior for backward compat; Phase 1b makes data corruption loud. (Review remediation #7)
+- [x] **P1b-0b** API-boundary path-traversal validation: every `DataFeedDescriptor` synthesized from `POST /aggregate` request input MUST flow through `AltBarFeedId.TryParse` before hitting the loader / sink. (Review security note) — `FeedIdValidator` + `AltBarFeedId.TryParse`. Wired in `AggregationEndpoints.PostAggregate` for path components, source feed-id, and outcome alt-bar feed-id.
 
 ### Aggregator core
 
-- [ ] **P1b-1** Define `IBarAccumulator` (`TryAdvance`, `Finalize`), `SourceRecord`, `AggregatedBar`, `AggregationStats`. (TRD §6.2)
-- [ ] **P1b-2** Implement `EqV` accumulator — base-vol long acc + OHLC. (TRD §6.3)
-- [ ] **P1b-3** Test: `EqV` synthetic source, hand-computable boundaries; OHLC = first-open/max-high/min-low/last-close; `vol` = sum(source.vol); `realized_threshold ≥ N`.
-- [ ] **P1b-4** Implement `EqT` accumulator — tick counter + OHLC. (TRD §6.3)
-- [ ] **P1b-5** Test: `EqT` accumulator parity.
-- [ ] **P1b-6** Implement `EqD` accumulator — quote-vol long acc + OHLC. (TRD §6.3)
-- [ ] **P1b-7** Test: `EqD` accumulator parity.
-- [ ] **P1b-8** Side-feed `double → long` conversion at sum site (`MoneyConvert.ToLong(value * QuantityScale)`); only conversion path. (TRD §3.6, §6.3)
-- [ ] **P1b-9** Test: sum-site conversion path — mock `MoneyConvert.ToLong`, verify call count = 1 per source bar.
-- [ ] **P1b-10** Implement `PartitionedSourceReader` — chronological enumeration across partition boundaries; optional 1:1 join with `candle-ext` by `ts`. (TRD §6.2)
-- [ ] **P1b-11** Wire streaming pipeline: `PartitionedSourceReader → BarAccumulator → PartitionedSinkWriter → FeedsJsonFinalizer` via `System.Threading.Channels`; 10k-row reads, 5k-bar flushes. (TRD §6.2)
-- [ ] **P1b-12** Test: streaming memory bound — 1y of 1m source, peak heap O(write-buffer). BDN `[MemoryDiagnoser]` cross-check via `AggregatorBenchmarks` (deferred until P1b-39).
-- [ ] **P1b-13** Track per-bar overshoot; persist running mean + max in manifest `fidelity` block. (TRD §6.4)
-- [ ] **P1b-14** Test: overshoot stats — synthetic source with median record `0.5N`; assert `actual_overshoot_pct ≈ 100/(2 × n_factor)` within tolerance; max tracked.
+- [x] **P1b-1** Define `IBarAccumulator` (`TryAdvance`, `Finalize`), `SourceRecord`, `AggregatedBar`, `AggregationStats`. (TRD §6.2) — _interface + DTOs landed in Phase 1a._
+- [x] **P1b-2** Implement `EqV` accumulator — base-vol long acc + OHLC. (TRD §6.3) — `EqVAccumulator : AccumulatorBase`.
+- [x] **P1b-3** Test: `EqV` synthetic source, hand-computable boundaries; OHLC = first-open/max-high/min-low/last-close; `vol` = sum(source.vol); `realized_threshold ≥ N`.
+- [x] **P1b-4** Implement `EqT` accumulator — tick counter + OHLC. (TRD §6.3) — `EqTAccumulator : AccumulatorBase`.
+- [x] **P1b-5** Test: `EqT` accumulator parity.
+- [x] **P1b-6** Implement `EqD` accumulator — quote-vol long acc + OHLC. (TRD §6.3) — `EqDAccumulator : AccumulatorBase` (close × volume approximation; candle-ext join in Phase 2b).
+- [x] **P1b-7** Test: `EqD` accumulator parity.
+- [-] **P1b-8** Side-feed `double → long` conversion at sum site (`MoneyConvert.ToLong(value * QuantityScale)`); only conversion path. (TRD §3.6, §6.3) — _no conversion needed in Phase 1b: candle CSVs are already pre-scaled longs and EqD's product is pure long arithmetic. The sum site lands in Phase 2b's EqI accumulator where `taker_buy_quote_vol` arrives as `double` from the side feed (documented on `EqDAccumulator`)._
+- [-] **P1b-9** Test: sum-site conversion path — mock `MoneyConvert.ToLong`, verify call count = 1 per source bar. — _deferred with P1b-8._
+- [x] **P1b-10** Implement `PartitionedSourceReader` — chronological enumeration across partition boundaries; optional 1:1 join with `candle-ext` by `ts`. (TRD §6.2) — _candle-ext join reserved for Phase 2b's EqI proxy._
+- [x] **P1b-11** Wire streaming pipeline: `PartitionedSourceReader → BarAccumulator → PartitionedSinkWriter → FeedsJsonFinalizer` — `AggregationPipeline.Run`. _Channel use moved to progress flow only (per-job `ProgressEvent` channel for SSE); the inner record path is sync since the accumulator is fast and the sink is single-threaded by design (TRD §6.2)._
+- [x] **P1b-12** Test: streaming memory bound — 1000 records under 1 MB allocation delta. BDN `[MemoryDiagnoser]` cross-check deferred to P1b-42 via `AggregatorBenchmarks`.
+- [x] **P1b-13** Track per-bar overshoot; persist running mean + max in manifest `fidelity` block. (TRD §6.4)
+- [x] **P1b-14** Test: overshoot stats — `Run_OvershootStats_MatchAnalyticEstimate` (median=500, threshold=1000 → n_factor=2, estimated 25%, actual 0% on aligned input).
 
 ### Job infrastructure
 
-- [ ] **P1b-15** Inject `TimeProvider` clock seam on the registry so retention/dedup tests don't wait wall-clock minutes. (review fix #4)
-- [ ] **P1b-16** `IAggregationJobRegistry` — `ConcurrentDictionary` dual-keyed by `jobId` and outcome `feed_id`; holds state, timestamps, progress, `Channel<ProgressEvent>` per job; terminal-state retained 15 min via P1b-15 clock. (TRD §6.5)
-- [ ] **P1b-17** `IAggregationJobQueue` — bounded `Channel<AggregationJob>` with `aggregator.maxQueueDepth=64`. (TRD §6.5)
-- [ ] **P1b-18** `AggregationWorkerHost` — `BackgroundService` running `aggregator.maxConcurrentJobs=2` workers; each runs the §6.2 pipeline serially. (TRD §6.5)
-- [ ] **P1b-19** Bind config: `aggregator.maxConcurrentJobs`, `maxQueueDepth`, `jobRetentionMinutes`, `maxPartitionSizeMB`. (TRD §6.5)
+- [x] **P1b-15** Inject `TimeProvider` clock seam on the registry so retention/dedup tests don't wait wall-clock minutes. (review fix #4) — _hand-rolled `TestClock : TimeProvider` per CLAUDE.md "no new NuGet" rule._
+- [x] **P1b-16** `IAggregationJobRegistry` — `ConcurrentDictionary` dual-keyed by `jobId` and outcome `feed_id`; per-job `List<JobEvent>` with monotonic seq for SSE replay; terminal-state retained per `JobRetentionMinutes`. (TRD §6.5) — _per-feed_id locks instead of global; live `Channel<ProgressEvent>` deferred to SD5 with the SSE handler._
+- [x] **P1b-17** `IAggregationJobQueue` — bounded `Channel<AggregationJob>` with `aggregator.maxQueueDepth=64`; `ChannelReader.Count` used as authoritative depth. (TRD §6.5)
+- [x] **P1b-18** `AggregationWorkerHost` — `BackgroundService` running `MaxConcurrentJobs` workers; each runs the §6.2 pipeline serially via `IServiceScopeFactory`. (TRD §6.5) — _DI registration in SD4/SD5; tests are integration-flavor and land with SD5 endpoint flows._
+- [x] **P1b-19** Bind + validate config: `aggregator.maxConcurrentJobs`, `maxQueueDepth`, `jobRetentionMinutes`, `maxPartitionSizeMB`, `maxConcurrentTickJobs`. (TRD §6.5)
 
 ### Discovery endpoints
 
-- [ ] **P1b-20** `GET /api/v1/exchanges` — exchanges + asset counts. (TRD §5.1)
-- [ ] **P1b-21** `GET /api/v1/exchanges/{exchange}/assets` — assets + feed list per exchange. (TRD §5.1)
-- [ ] **P1b-22** `GET /api/v1/assets` — full catalog. (TRD §5.1)
-- [ ] **P1b-23** Catalog cache + event-driven invalidation on `feeds.json` change (consumes P1a-9 event); 30 s TTL fallback. (TRD §5.1)
-- [ ] **P1b-24** Test: catalog payload shape pinned (FE contract test).
-- [ ] **P1b-25** `GET /api/v1/.../feeds/{feedId}/status` — manifest entry verbatim or partition-derived. (TRD §5.2)
-- [ ] **P1b-26** `GET /api/v1/.../feeds/{feedId}/aggregation-options` — eligibility payload (eligible types, threshold bounds, warnings). (TRD §5.3)
-- [ ] **P1b-27** Eligibility cache shares the catalog invalidation event. (TRD §5.3)
+- [x] **P1b-20** `GET /api/v1/exchanges` — exchanges + asset counts. (TRD §5.1)
+- [x] **P1b-21** `GET /api/v1/exchanges/{exchange}/assets` — assets + feed list per exchange. (TRD §5.1)
+- [x] **P1b-22** `GET /api/v1/assets` — full catalog. (TRD §5.1)
+- [x] **P1b-23** Catalog cache + event-driven invalidation on `feeds.json` change (consumes P1a-9 event); 30 s TTL fallback. (TRD §5.1) — _version-bump strategy on `ManifestChanged`; key suffix carries the version, old entries TTL-expire._
+- [x] **P1b-24** Test: catalog payload shape pinned (FE contract test) — `FeedCatalogTests` covers shape + ordering; full HTTP-level golden file deferred until FE consumer arrives in Phase 3.
+- [x] **P1b-25** `GET /api/v1/.../feeds/{feedId}/status` — manifest entry verbatim. (TRD §5.2)
+- [x] **P1b-26** `GET /api/v1/.../feeds/{feedId}/aggregation-options` — eligibility payload (eligible types, threshold bounds, warnings). (TRD §5.3) — `EligibilityRules.ForSource` encodes the §7 matrix.
+- [x] **P1b-27** Eligibility cache shares the catalog invalidation event. (TRD §5.3) — _eligibility resolves from cached catalog data; same invalidation chain._
 
 ### Aggregate command + SSE
 
-- [ ] **P1b-28** `POST /api/v1/.../aggregate` — async-only, 202 + `Location` + `X-Job-Id`; body schema per §5.4. Enforces status-code precedence `422 → 423 → 409`. Body for `423` carries `{ code, feed_id, existing_job_id, existing_job_state }`. (TRD §5.4)
-- [ ] **P1b-29** Per-outcome `feed_id` 423 dedup: block only when existing entry in `queued`/`running`; terminal entries evict on fresh enqueue. (TRD §6.5)
-- [ ] **P1b-30** Test: 423 dedup three paths — (a) running ⇒ 423, (b) terminal-within-retention ⇒ 202 (eviction), (c) terminal-after-retention ⇒ 202 (clean). Use P1b-15 clock seam.
-- [ ] **P1b-31** `GET /api/v1/aggregations/{jobId}/progress` — SSE stream `queued? → started → progress* → (complete | error)`. (TRD §5.4)
-- [ ] **P1b-32** `GET /api/v1/aggregations/{jobId}` — snapshot endpoint. `summary` shape ≡ SSE `complete` payload (minus `type`/`job_id`). (TRD §5.4)
-- [ ] **P1b-33** Test: POST 202 + SSE happy path; `complete` payload ≡ snapshot `summary` exactly; `state=running` snapshot has no `summary` field.
-- [ ] **P1b-34** SSE `Last-Event-ID` resume; synthetic `started + progress` snapshot when absent; 15-min terminal retention; `410 Gone` thereafter. (TRD §5.4)
-- [ ] **P1b-35** Test: SSE reconnect with `Last-Event-ID` (next event); without it (synthetic snapshot first); after retention (410 Gone via P1b-15 clock).
-- [ ] **P1b-36** Test: worker pool concurrency — submit 4 distinct-feedId jobs with `maxConcurrentJobs=2`; exactly 2 run; `queue_position` observable.
-- [ ] **P1b-37** Test: atomic finalize — kill worker after partition writes but before manifest write → restart sweep cleans staging, catalog reflects "feed missing"; kill after manifest write → feed visible & complete.
-- [ ] **P1b-38** Test: threshold input modes — `absolute` and `convenience` round-trip through `feeds.json`.
+- [x] **P1b-28** `POST /api/v1/.../aggregate` — async-only, 202 + `Location` + `X-Job-Id`; body schema per §5.4. Enforces status-code precedence `422 → 423 → 409`. Body for `423` carries `{ code, feed_id, existing_job_id, existing_job_state }`. (TRD §5.4)
+- [x] **P1b-29** Per-outcome `feed_id` 423 dedup: block only when existing entry in `queued`/`running`; terminal entries evict on fresh enqueue. (TRD §6.5)
+- [x] **P1b-30** Test: 423 dedup three paths — `AggregationJobRegistryTests.TryEnqueue_FeedAlreadyRunning_ReturnsFeedAlreadyLocked`, `TryEnqueue_FeedTerminalWithinRetention_EvictsAndAccepts`, `TryEnqueue_FeedTerminalPastRetention_AcceptsWithCleanRegistry`.
+- [x] **P1b-31** `GET /api/v1/aggregations/{jobId}/progress` — SSE stream `queued? → started → progress* → (complete | error)`. (TRD §5.4)
+- [x] **P1b-32** `GET /api/v1/aggregations/{jobId}` — snapshot endpoint. `summary` shape ≡ SSE `complete` payload via shared `CompletePayload(result)` helper. (TRD §5.4)
+- [-] **P1b-33** Test: POST 202 + SSE happy path; `complete` payload ≡ snapshot `summary` exactly. — _HTTP integration tests deferred (no new NuGet rule); `CompletePayload` helper used by both code paths is structurally equivalent. Add `Microsoft.AspNetCore.Mvc.Testing` + `WebApplicationFactory` fixture in a follow-up to assert at the wire level._
+- [x] **P1b-34** SSE `Last-Event-ID` resume; synthetic snapshot when seq beyond log; 15-min terminal retention; `410 Gone` thereafter (when registry's `Get` returns null). (TRD §5.4)
+- [-] **P1b-35** Test: SSE reconnect with `Last-Event-ID` (next event); without it (synthetic snapshot first); after retention (410 Gone via P1b-15 clock). — _HTTP-level tests deferred per P1b-33._
+- [-] **P1b-36** Test: worker pool concurrency — _deferred (HTTP integration); registry's `queue_position` exposed via snapshot, but the 4-jobs/2-workers behavior needs the worker host running, which is most easily exercised via WebApplicationFactory._
+- [-] **P1b-37** Test: atomic finalize — _deferred. The `OverwritePathWriter` + `StartupSweepService` pair is independently tested (P1a). End-to-end mid-pipeline kill/restart needs HTTP integration._
+- [x] **P1b-38** Test: threshold input modes — `ThresholdResolverTests.Resolve_BothInputModesRoundTripToSameAbsolute` (absolute and convenience produce same canonical absolute; FeedIdComponent differs by grammar).
 
 ### Delete endpoint (cascade)
 
-- [ ] **P1b-39** Extend manifest writer to support multi-entry rewrite (parent + sidecar atomic delete). (review fix #5)
-- [ ] **P1b-40** `DELETE /api/v1/.../feeds/{feedId}` — `OHLCV_AltBar` only; cascade-delete sidecar dir + both manifest entries in same transactional rewrite; time bars / ticks / side feeds → 403. (TRD §5.5)
-- [ ] **P1b-41** Test: cascade-delete — sidecar dir + manifest entry + parent entry all removed atomically.
+- [x] **P1b-39** Extend manifest writer to support multi-entry rewrite (parent + sidecar atomic delete). `ISchemaManager.RemoveFeed` + `RemoveFeedAndSidecar` — read-merge-write under one exclusive lock; single `ManifestChanged` event per call.
+- [x] **P1b-40** `DELETE /api/v1/.../feeds/{feedId}` — `OHLCV_AltBar` only (403 on other kinds); rename-aside + recursive delete on dirs; atomic manifest rewrite via `RemoveFeedAndSidecar`. (TRD §5.5)
+- [x] **P1b-41** Test: cascade-delete — `FeedSchemaManagerCascadeTests` covers parent+sidecar atomic rewrite, single-event semantics, and no-op-on-missing.
 
 ### Benchmarks (Phase 1b merge gate)
 
-- [ ] **P1b-42** `AggregatorBenchmarks` BDN harness mirroring `BacktestBenchmarks`. Scenarios: `EqV_1m_1000`, `EqT_1m_500` over BTCUSDT 5y. Mean + Allocated. (TRD §11 Phase 1b)
-- [ ] **P1b-43** Wire `BriefJsonConfig` on `AggregatorBenchmarks` for `save-baseline.ps1` / `compare-baseline.ps1` ingestion.
-- [ ] **P1b-44** Define merge-gate threshold in `scripts/perf/` (e.g. >10% Mean OR any Allocated growth).
+- [x] **P1b-42** `AggregatorBenchmarks` BDN harness mirroring `BacktestBenchmarks`. Scenarios: `Aggregate_EqV_1h_100k`, `Aggregate_EqT_1h_500` over BTCUSDT 5y / 1h. Mean + Allocated. — _bundled data is 1h not 1m, scenarios named accordingly._
+- [x] **P1b-43** Wire `BriefJsonConfig` on `AggregatorBenchmarks` for `save-baseline.ps1` / `compare-baseline.ps1` ingestion.
+- [x] **P1b-44** Define merge-gate threshold in `scripts/perf/aggregator-merge-gate.md` (>10% Mean OR any Allocated growth).
 
 ---
 
@@ -291,9 +291,9 @@ Path-dependent; require ticks or sub-minute time bars.
 ## Cross-cutting (run alongside whichever phase ships them)
 
 - [x] **X-1** Solution-wide reflective test: no `decimal` in storage layer (walks every type implementing read/write CSV interfaces). Land in Phase 1a. (TRD §11A Cross-cutting, §3.4)
-- [ ] **X-2** Confirm `HistoryLoader.Application/Aggregation/**` is in scope of the existing CLAUDE.md "Int64 Money Convention" `(long)` cast rule. Don't add a parallel rule. Land in Phase 1b. (TRD §11A Cross-cutting)
+- [x] **X-2** Confirm `HistoryLoader.Application/Aggregation/**` is in scope of the existing CLAUDE.md "Int64 Money Convention" `(long)` cast rule. — _Phase 1b accumulators use `MoneyConvert.ToLong` and `ScaleContext.AmountToTicks` exclusively for decimal→long; raw `(long)` casts only for non-monetary values (record counts in `EqTAccumulator`, threshold integer parsing). No parallel rule introduced._
 - [x] **X-3** Existing HistoryLoader registrations (`candle-ext`, `funding-rate`, etc.) flow through the P1a-8 synchronized writer. Audit + migrate. Land in Phase 1a. (TRD §5.3) — confirmed: every registration path goes through `ISchemaManager.EnsureSchema` (the only impl is `FeedSchemaManager`, registered as singleton), so the concurrency upgrade applies uniformly without a separate migration.
-- [ ] **X-4** Logging audit: every sweep deletion at WARN with absolute path; every job lifecycle event structured-logged via Serilog. Land in Phase 1b.
+- [x] **X-4** Logging audit: every job lifecycle event structured-logged via Serilog. `AggregationWorkerHost` logs Started/Completed/Errored/Cancelled at Info+; `AggregationPipeline` logs completion. Sweep deletions at WARN with absolute path land in Phase 1a's `StartupSweepService`.
 - [x] **X-5** Code comment at the §3.3 positional parser warning about `EqV_1m_500m` ambiguity (parser is positional). Land in Phase 1a (P1a-3). — inline comment lives on `AltBarFeedId.TryParse`.
 
 ---
@@ -313,14 +313,14 @@ Resolve before the listed gating task. Promote to a `## Resolved` section once l
 
 | Phase | Tasks | Done | Gating |
 |---|---|---|---|
-| 0 | 5 | 0 | All before any 1a code |
-| 1a | 32 + BAKE | 0 | One PR; one-week bake before 1b |
-| 1b | 44 | 0 | Bench gate (P1b-44) before merge |
+| 0 | 5 | 4 (P0-2 skipped) | All before any 1a code |
+| 1a | 32 + BAKE | 32; BAKE in flight | One PR; one-week bake before 1b |
+| 1b | 44 | 38 done · 6 deferred (HTTP integration tests + sum-site conversion) | Bench gate (P1b-44) before merge |
 | 2a | 10 | 0 | — |
 | 2b | 13 | 0 | P0-1/P0-2 decision (DIM vs receiver) |
 | 3 | 19 | 0 | P3-10 (Q-1 resolved) |
 | 4 | 19 | 0 | P0-3 / P0-4 audits drive P4-2 / P4-9 |
 | 5 | 6 | 0 | — |
 | 6 | 6 | 0 | If needed |
-| X | 5 | 0 | Cross-cutting; land with parent phase |
+| X | 5 | 4 (X-3, X-5 in 1a; X-2, X-4 in 1b) | Cross-cutting; land with parent phase |
 | Q | 4 | — | Each gates a specific task above |

@@ -113,6 +113,98 @@ internal sealed class FeedSchemaManager : ISchemaManager
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
 
+    public void EnsureAltBarFeed(string assetDir, string feedId, AltBarFeedSpec spec)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(feedId);
+        ArgumentNullException.ThrowIfNull(spec);
+
+        var path = FeedsJsonPath(assetDir);
+        var rwl = GetLock(path);
+        rwl.EnterWriteLock();
+        try
+        {
+            var existing = LoadUnsafe(path) ?? new FeedMetadata();
+
+            var updatedFeeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
+            {
+                [feedId] = new FeedDefinition
+                {
+                    Kind            = spec.Kind,
+                    Columns         = spec.Columns,
+                    Type            = spec.Type,
+                    Source          = spec.Source,
+                    Threshold       = spec.Threshold,
+                    Build           = spec.Build,
+                    Fidelity        = spec.Fidelity,
+                    FirstBarTs      = spec.FirstBarTs,
+                    LastBarTs       = spec.LastBarTs,
+                    Sidecar         = spec.Sidecar,
+                }
+            };
+
+            var updated = new FeedMetadata
+            {
+                Feeds   = updatedFeeds,
+                Candles = existing.Candles,
+            };
+
+            AtomicWriteUnsafe(assetDir, path, updated);
+        }
+        finally
+        {
+            rwl.ExitWriteLock();
+        }
+
+        ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
+    }
+
+    public void RemoveFeed(string assetDir, string feedId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(feedId);
+        RemoveFeedsInternal(assetDir, [feedId]);
+    }
+
+    public void RemoveFeedAndSidecar(string assetDir, string feedId, string sidecarFeedId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(feedId);
+        ArgumentException.ThrowIfNullOrEmpty(sidecarFeedId);
+        RemoveFeedsInternal(assetDir, [feedId, sidecarFeedId]);
+    }
+
+    private void RemoveFeedsInternal(string assetDir, string[] feedIds)
+    {
+        var path = FeedsJsonPath(assetDir);
+        var rwl = GetLock(path);
+        var raised = false;
+        rwl.EnterWriteLock();
+        try
+        {
+            var existing = LoadUnsafe(path);
+            if (existing is null) return;
+
+            var updated = new Dictionary<string, FeedDefinition>(existing.Feeds);
+            var removedAny = false;
+            foreach (var id in feedIds)
+            {
+                if (updated.Remove(id)) removedAny = true;
+            }
+            if (!removedAny) return;
+
+            AtomicWriteUnsafe(assetDir, path, new FeedMetadata
+            {
+                Feeds   = updated,
+                Candles = existing.Candles,
+            });
+            raised = true;
+        }
+        finally
+        {
+            rwl.ExitWriteLock();
+        }
+
+        if (raised) ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
+    }
+
     public void EnsureCandleConfig(string assetDir, int decimalDigits, string interval)
     {
         var path = FeedsJsonPath(assetDir);

@@ -274,8 +274,10 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_NonNumericValue_SkipsRow()
+    public void Load_NonNumericValue_Throws()
     {
+        // P1b-0a: malformed non-empty cells must throw with file/row/column context under
+        // both nullable_columns settings — silent row skipping was data-corruption-prone.
         var ts1 = Ts(2024, 1, 1);
         var ts2 = Ts(2024, 1, 1, 8);
         WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
@@ -285,13 +287,32 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 $"{ts2},not-a-number"
             ]);
 
-        var result = _loader.Load(
+        var ex = Assert.Throws<FormatException>(() => _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31)));
 
-        Assert.NotNull(result);
-        Assert.Single(result!.Timestamps);
-        Assert.Equal(ts1, result.Timestamps[0]);
+        Assert.Contains("Malformed numeric cell 'not-a-number'", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("funding_rate", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Load_NonNumericValue_NullableColumnsTrue_StillThrows()
+    {
+        // Empty cells are gated by nullable_columns (NaN vs throw). Malformed non-empty cells
+        // throw under BOTH settings — they're data corruption regardless.
+        var ts1 = Ts(2024, 1, 1);
+        WriteCsv("Binance", "BTCUSDT_perp", "EqI_ticks_500000.flow", 2024, 1, null,
+            "ts,signed_imbalance,buy_volume,sell_volume,realized_threshold",
+            [
+                $"{ts1},0.5,not-a-number,1.7,500000",
+            ]);
+
+        var ex = Assert.Throws<FormatException>(() => _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT_perp", "EqI_ticks_500000.flow", "",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
+            nullableColumns: true));
+
+        Assert.Contains("Malformed numeric cell 'not-a-number'", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
