@@ -169,16 +169,17 @@ Time-bar source aggregation only. Tick sources are Phase 2a.
 
 No EqI yet; tick storage and signed accumulator are independent surfaces.
 
-- [ ] **P2a-1** Tick ingestion — daily partitions `History/.../ticks/<YYYY>-<MM>-<DD>.csv` with schema `ts, price, qty, is_buyer_maker, agg_id`. (TRD §3.5)
-- [ ] **P2a-2** `agg_id` resume-on-crash — last-written Binance trade ID per day-partition; de-dup on reconnect. (TRD §3.5)
-- [ ] **P2a-3** Test: `agg_id` resume — crash mid-day-partition, no duplicate, no skip at boundary.
-- [ ] **P2a-4** Tick reader — chronological across daily partitions. (TRD §6.2)
-- [ ] **P2a-5** Register `ticks` feed in `feeds.json` per asset. (TRD §3.5, §4)
-- [ ] **P2a-6** Aggregator tick-source mode — per-tick OHLC; strict-monotonic `bar.ts_open = max(prev_bar.ts_open + 1, raw_ts)`; +1 ms bump tracked in stats. (TRD §6.3)
-- [ ] **P2a-7** Test: tick monotonicity bump — 50 ticks at identical ms; cluster-internal `+1 ms` strictly increasing; stats record N bumps.
-- [ ] **P2a-8** Test: tick-source EqT/EqV/EqD parity — re-aggregate to 1m baseline on BTCUSDT_perp slice; assert `actual_overshoot_pct ≤ 0.05%`.
-- [ ] **P2a-9** Add tick-source benchmark scenario to `AggregatorBenchmarks`. (TRD §6.5)
-- [ ] **P2a-10** Add `aggregator.maxConcurrentTickJobs=1` config gate (separate from time-bar `maxConcurrentJobs`); re-tune per benchmarks. (TRD §6.5)
+- [x] **P2a-1** Tick ingestion — daily partitions `History/.../ticks/<YYYY>-<MM>-<DD>.csv` with schema `ts, price, qty, is_buyer_maker, agg_id`. (TRD §3.5) — `BinanceFuturesClient.AggregateTrades` partial + `BinanceAggTradeParser` + `DailyTickCsvWriter` + `AggTradeFeedCollector` + `TicksCollectorService` (5 min PeriodicTimer) + DI wiring.
+- [x] **P2a-2** `agg_id` resume-on-crash — last-written Binance trade ID per day-partition; de-dup on reconnect. (TRD §3.5) — `DailyTickCsvWriter.ResumeFrom` reads tail with chunked-backwards scan; torn-row repair via `FileStream.SetLength`; `_lastAggIdByDay` cache rejects replays. Collector advances `fromMs = lastTsMs` (inclusive) so multi-tick-per-ms boundary clusters are re-fetched and dedupped by id, not skipped by ts+1.
+- [x] **P2a-3** Test: `agg_id` resume — crash mid-day-partition, no duplicate, no skip at boundary. — `DailyTickCsvWriterTests` covers torn-write truncation, replay dedup across the boundary aggId range, and clean cut at UTC midnight (10 tests).
+- [x] **P2a-4** Tick reader — chronological across daily partitions. (TRD §6.2) — `PartitionedSourceReader` gains `Kind`-switch in `Read()` delegating to private `ReadTickFile`; daily glob `????-??-??.csv` lex-sorted ≡ chronological by ISO date; ts maps to `SourceRecord(ts, price, price, price, price, qty)`.
+- [x] **P2a-5** Register `ticks` feed in `feeds.json` per asset. (TRD §3.5, §4) — `AggTradeFeedCollector.CollectAsync` calls `SchemaManager.EnsureSchema(assetDir, "ticks", "", ["price","qty","is_buyer_maker","agg_id"])`; `appsettings.json` adds `{"Name":"ticks", "Interval":"", "HistoryStart":"2026-04-15"}` to BTCUSDT_perp.
+- [ ] **P2a-BAKE** Merge Phase 2a collection PR (P2a-1..5); bake 24–48 h on `main`. Validates: no duplicate `agg_id`, no day-boundary gaps, no SIGKILL data loss, daily files rotate at UTC midnight. **No Phase 2a aggregator work (P2a-6+) starts until bake clears.**
+- [x] **P2a-6** Aggregator tick-source mode — per-tick OHLC; strict-monotonic `bar.ts_open = max(prev_bar.ts_open + 1, raw_ts)`; +1 ms bump tracked in stats. (TRD §6.3) — `MonotonicTickSource` decorator wraps source enumeration when `Kind=Tick`; `BumpCount` property surfaces post-iteration; `AggregationStats.MonotonicBumps` (4th positional, default 0) carries the count; `BuildInfo.MonotonicBumps` (nullable) lands in `feeds.json` for tick jobs only.
+- [x] **P2a-7** Test: tick monotonicity bump — 50 ticks at identical ms; cluster-internal `+1 ms` strictly increasing; stats record N bumps. — `MonotonicTickSourceTests` covers all-same-ms (49 bumps), mixed cluster `[t,t,t+5,t+5,t+5]→[t,t+1,t+5,t+6,t+7]` (3 bumps), already-strict (0 bumps), out-of-order, empty, and BumpCount-resets-between-runs (7 tests).
+- [-] **P2a-8** Test: tick-source EqT/EqV/EqD parity — re-aggregate to 1m baseline on BTCUSDT_perp slice; assert `actual_overshoot_pct ≤ 0.05%`. — _deferred. Parity test needs real BTCUSDT_perp tick data over a 1-day slice (50–200 MB), which only exists post-`P2a-BAKE`. Synthetic-data benchmark scenarios (P2a-9) catch regressions on the code path; the parity test lands once bake produces real ticks._
+- [x] **P2a-9** Add tick-source benchmark scenario to `AggregatorBenchmarks`. (TRD §6.5) — `Aggregate_EqV_FromTicks_1h` + `Aggregate_EqT_FromTicks_1h` scenarios. Synthetic generator produces ~150k deterministic ticks (Poisson interarrival, walking price, exponential qty, fixed seed) at `[GlobalSetup]` — no large fixture checked into git.
+- [x] **P2a-10** Add `aggregator.maxConcurrentTickJobs=1` config gate (separate from time-bar `maxConcurrentJobs`); re-tune per benchmarks. (TRD §6.5) — `IAggregationTickJobQueue : IAggregationJobQueue` + `AggregationTickJobQueue` impl; `AggregationWorkerHost` spawns two pools sized by `MaxConcurrentJobs` and `MaxConcurrentTickJobs`; `AggregationEndpoints.PostAggregate` routes by `body.SourceFeedId == "ticks"` to the tick queue. Time-bar workers stay unblocked when tick jobs are active.
 
 ---
 
@@ -316,7 +317,7 @@ Resolve before the listed gating task. Promote to a `## Resolved` section once l
 | 0 | 5 | 4 (P0-2 skipped) | All before any 1a code |
 | 1a | 32 + BAKE | 32; BAKE in flight | One PR; one-week bake before 1b |
 | 1b | 44 | 38 done · 6 deferred (HTTP integration tests + sum-site conversion) | Bench gate (P1b-44) before merge |
-| 2a | 10 | 0 | — |
+| 2a | 10 + BAKE | 9 done · P2a-8 deferred (needs real ticks post-BAKE) · BAKE pending merge | One PR for collection (P2a-1..5); 24–48 h bake before aggregator work (P2a-6..10) |
 | 2b | 13 | 0 | P0-1/P0-2 decision (DIM vs receiver) |
 | 3 | 19 | 0 | P3-10 (Q-1 resolved) |
 | 4 | 19 | 0 | P0-3 / P0-4 audits drive P4-2 / P4-9 |

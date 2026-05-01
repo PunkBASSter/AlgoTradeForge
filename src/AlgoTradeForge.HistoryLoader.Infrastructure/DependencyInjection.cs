@@ -98,6 +98,11 @@ public static class DependencyInjection
                 (symbol, _, fromMs, toMs, ct) =>
                     sp.GetRequiredService<BinanceFuturesClient>().FetchLiquidationsAsync(symbol, fromMs, toMs, ct)));
 
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.Ticks}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, _, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchAggTradesAsync(symbol, fromMs, toMs, ct)));
+
         // Keyed DI — spot
         services.AddKeyedSingleton<ICandleFetcher>("binance-spot",
             (sp, _) => sp.GetRequiredService<BinanceSpotClient>());
@@ -110,6 +115,7 @@ public static class DependencyInjection
         services.AddSingleton<WriteLockManager>();
         services.AddSingleton<ICandleWriter, CandleCsvWriter>();
         services.AddSingleton<IFeedWriter, FeedCsvWriter>();
+        services.AddSingleton<ITickFeedWriter, DailyTickCsvWriter>();
         services.AddSingleton<ISchemaManager, FeedSchemaManager>();
         services.AddSingleton<IFeedStatusStore, FeedStatusManager>();
 

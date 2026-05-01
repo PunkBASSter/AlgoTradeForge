@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
@@ -6,27 +7,32 @@ using Microsoft.Extensions.Options;
 namespace AlgoTradeForge.HistoryLoader.WebApi.Aggregation;
 
 /// <summary>
-/// Hosted worker pool that drains the aggregation job queue (TRD §6.5). Spawns
-/// <c>aggregator.maxConcurrentJobs</c> long-lived worker tasks, each running one
-/// <see cref="AggregationPipeline"/> per dequeued job to completion. Mirrors the lifecycle
-/// pattern of <c>ScheduledCollectorService</c> for cancellation + logging discipline.
+/// Hosted worker pool that drains the aggregation job queues (TRD §6.5). Phase 1b ran a single
+/// pool draining the time-bar queue (<see cref="IAggregationJobQueue"/>) sized by
+/// <c>aggregator.maxConcurrentJobs</c>. Phase 2a (P2a-10) adds a second pool draining
+/// <see cref="IAggregationTickJobQueue"/> sized by <c>aggregator.maxConcurrentTickJobs</c>;
+/// the split prevents I/O-heavy tick jobs from blocking CPU-heavy time-bar jobs at the queue
+/// head.
 /// </summary>
 public sealed class AggregationWorkerHost : BackgroundService
 {
-    private readonly IAggregationJobQueue _queue;
+    private readonly IAggregationJobQueue _timeBarQueue;
+    private readonly IAggregationTickJobQueue _tickQueue;
     private readonly IAggregationJobRegistry _registry;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IOptionsMonitor<HistoryLoaderOptions> _options;
     private readonly ILogger<AggregationWorkerHost> _logger;
 
     public AggregationWorkerHost(
-        IAggregationJobQueue queue,
+        IAggregationJobQueue timeBarQueue,
+        IAggregationTickJobQueue tickQueue,
         IAggregationJobRegistry registry,
         IServiceScopeFactory scopeFactory,
         IOptionsMonitor<HistoryLoaderOptions> options,
         ILogger<AggregationWorkerHost> logger)
     {
-        _queue = queue;
+        _timeBarQueue = timeBarQueue;
+        _tickQueue = tickQueue;
         _registry = registry;
         _scopeFactory = scopeFactory;
         _options = options;
@@ -35,27 +41,46 @@ public sealed class AggregationWorkerHost : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var concurrency = _options.CurrentValue.Aggregator.MaxConcurrentJobs;
-        if (concurrency < 1)
+        var aggregator = _options.CurrentValue.Aggregator;
+        var timeBarConcurrency = aggregator.MaxConcurrentJobs;
+        var tickConcurrency = aggregator.MaxConcurrentTickJobs;
+
+        if (timeBarConcurrency < 1 && tickConcurrency < 1)
         {
-            _logger.LogWarning("Aggregator MaxConcurrentJobs={Concurrency} — disabling worker pool.", concurrency);
+            _logger.LogWarning(
+                "Aggregator MaxConcurrentJobs={TimeBar} and MaxConcurrentTickJobs={Tick} both < 1 — disabling worker host.",
+                timeBarConcurrency, tickConcurrency);
             return;
         }
 
-        _logger.LogInformation("Aggregation worker host starting with {Concurrency} workers.", concurrency);
+        _logger.LogInformation(
+            "Aggregation worker host starting with {TimeBar} time-bar workers + {Tick} tick workers.",
+            timeBarConcurrency, tickConcurrency);
 
-        var workers = Enumerable.Range(0, concurrency)
-            .Select(i => Task.Run(() => RunWorkerAsync(i, stoppingToken), stoppingToken))
-            .ToArray();
+        var workers = new List<Task>(timeBarConcurrency + tickConcurrency);
+        for (int i = 0; i < timeBarConcurrency; i++)
+        {
+            int workerId = i;
+            workers.Add(Task.Run(() => RunWorkerAsync("timebar", workerId, _timeBarQueue.Reader, stoppingToken), stoppingToken));
+        }
+        for (int i = 0; i < tickConcurrency; i++)
+        {
+            int workerId = i;
+            workers.Add(Task.Run(() => RunWorkerAsync("tick", workerId, _tickQueue.Reader, stoppingToken), stoppingToken));
+        }
 
         await Task.WhenAll(workers);
     }
 
-    private async Task RunWorkerAsync(int workerId, CancellationToken stoppingToken)
+    private async Task RunWorkerAsync(
+        string poolName,
+        int workerId,
+        ChannelReader<AggregationJob> reader,
+        CancellationToken stoppingToken)
     {
         try
         {
-            await foreach (var job in _queue.Reader.ReadAllAsync(stoppingToken))
+            await foreach (var job in reader.ReadAllAsync(stoppingToken))
             {
                 try
                 {
@@ -74,8 +99,8 @@ public sealed class AggregationWorkerHost : BackgroundService
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
                     _logger.LogInformation(
-                        "Aggregation worker {WorkerId} canceling job {JobId} due to host shutdown.",
-                        workerId, job.JobId);
+                        "Aggregation worker {Pool}#{WorkerId} canceling job {JobId} due to host shutdown.",
+                        poolName, workerId, job.JobId);
                     _registry.OnErrored(job.JobId, "host_shutdown",
                         "Job interrupted by host shutdown.", retryable: true);
                     throw;
@@ -83,11 +108,8 @@ public sealed class AggregationWorkerHost : BackgroundService
                 catch (Exception ex)
                 {
                     _logger.LogError(ex,
-                        "Aggregation job {JobId} (feedId={FeedId}) failed.",
-                        job.JobId, job.OutcomeFeedId);
-                    // Redacted message: full ex (incl. stack, paths) is logged above; SSE / snapshot
-                    // consumers only see the type name + job_id correlation hook. ex.Message can
-                    // include absolute paths, environment data, and OS handle detail on IOException.
+                        "Aggregation job {JobId} (feedId={FeedId}, pool={Pool}) failed.",
+                        job.JobId, job.OutcomeFeedId, poolName);
                     var redacted = $"Aggregation job failed ({ex.GetType().Name}); see server logs (job_id={job.JobId}).";
                     _registry.OnErrored(job.JobId, "internal_error", redacted, retryable: false);
                 }
@@ -99,16 +121,10 @@ public sealed class AggregationWorkerHost : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Aggregation worker {WorkerId} crashed.", workerId);
+            _logger.LogCritical(ex, "Aggregation worker {Pool}#{WorkerId} crashed.", poolName, workerId);
         }
     }
 
-    /// <summary>
-    /// Routes pipeline-emitted events into the registry. The pipeline emits Started + Complete
-    /// alongside Progress, but the worker drives the state machine itself via <c>OnStarted</c> /
-    /// <c>OnCompleted</c> — Started/Complete from the pipeline are silently ignored to avoid
-    /// duplicate event-log entries.
-    /// </summary>
     private void RouteProgress(string jobId, ProgressEvent ev)
     {
         if (ev is ProgressEvent.Progress p)

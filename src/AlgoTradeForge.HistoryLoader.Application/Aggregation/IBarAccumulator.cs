@@ -41,10 +41,21 @@ public readonly record struct AggregatedBar(
     long Volume);
 
 /// <summary>Per-job aggregation stats returned by <see cref="IBarAccumulator.Finalize"/>.</summary>
+/// <param name="BarsEmitted">Total number of <see cref="AggregatedBar"/>s emitted.</param>
+/// <param name="MeanOvershootPct">Mean per-bar overshoot of the threshold accumulator at emission, in percent.</param>
+/// <param name="MaxOvershootPct">Max per-bar overshoot of the threshold accumulator at emission, in percent.</param>
+/// <param name="MonotonicBumps">
+/// Phase 2a: count of source-side <c>+1 ms</c> timestamp bumps applied to enforce strict
+/// monotonicity (TRD §6.3). Always 0 for time-bar sources; non-zero for tick sources whenever
+/// multiple aggregated trades share a millisecond. Set by <c>AggregationPipeline</c> after
+/// pipe-out from the accumulator (the bump is a property of the source stream, not the
+/// accumulator math).
+/// </param>
 public sealed record AggregationStats(
     long BarsEmitted,
     double MeanOvershootPct,
-    double MaxOvershootPct);
+    double MaxOvershootPct,
+    long MonotonicBumps = 0);
 
 /// <summary>
 /// Phase 1a placeholder. The interface is wired through the pipeline so Phase 1b can

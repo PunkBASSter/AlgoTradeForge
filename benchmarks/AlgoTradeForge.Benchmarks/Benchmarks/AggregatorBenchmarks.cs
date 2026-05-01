@@ -1,3 +1,4 @@
+using System.Globalization;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
@@ -23,9 +24,12 @@ public class AggregatorBenchmarks
 {
     private string _tempDir = null!;
     private string _assetDir = null!;
+    private string _tickAssetDir = null!;
     private AggregationPipeline _pipeline = null!;
     private AggregationJob _eqVJob = null!;
     private AggregationJob _eqTJob = null!;
+    private AggregationJob _eqVTickJob = null!;
+    private AggregationJob _eqTTickJob = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -56,9 +60,23 @@ public class AggregatorBenchmarks
         // (~43,800 records). Small enough to exercise the partition writer's accumulation
         // pattern without producing trivially few bars.
         _eqVJob = MakeJob(source, "EqV", outcomeFeedId: "EqV_1h_100k",
-            thresholdAbsolute: 100_000m, thresholdScaled: 100_000, scale);
+            thresholdAbsolute: 100_000m, thresholdScaled: 100_000, scale, _assetDir);
         _eqTJob = MakeJob(source, "EqT", outcomeFeedId: "EqT_1h_500",
-            thresholdAbsolute: 500m, thresholdScaled: 500, scale);
+            thresholdAbsolute: 500m, thresholdScaled: 500, scale, _assetDir);
+
+        // P2a-9: synthetic tick scenarios. ~150k ticks / 1h matches BTCUSDT_perp burst rate
+        // without bloating the repo with real-trade CSVs (the benchmark's purpose is regression
+        // detection, not real-world parity — TickSourceParityTests covers parity).
+        _tickAssetDir = Path.Combine(_tempDir, "binance", "BTCUSDT_perp");
+        var ticksDir = Path.Combine(_tickAssetDir, "ticks");
+        Directory.CreateDirectory(ticksDir);
+        WriteSyntheticTicks(Path.Combine(ticksDir, "2024-04-15.csv"), tickCount: 150_000, seed: 42);
+
+        var tickSource = new DataFeedDescriptor(_tempDir, "binance", "BTCUSDT_perp", "ticks", DataFeedKind.Tick);
+        _eqVTickJob = MakeJob(tickSource, "EqV", outcomeFeedId: "EqV_ticks_100k",
+            thresholdAbsolute: 100_000m, thresholdScaled: 100_000, scale, _tickAssetDir);
+        _eqTTickJob = MakeJob(tickSource, "EqT", outcomeFeedId: "EqT_ticks_500",
+            thresholdAbsolute: 500m, thresholdScaled: 500, scale, _tickAssetDir);
     }
 
     [GlobalCleanup]
@@ -72,10 +90,16 @@ public class AggregatorBenchmarks
     public void IterationCleanup()
     {
         // Reset output between iterations so each timed call starts from a clean state.
-        var aggregatedDir = Path.Combine(_assetDir, "aggregated");
+        ResetAssetOutput(_assetDir);
+        ResetAssetOutput(_tickAssetDir);
+    }
+
+    private static void ResetAssetOutput(string assetDir)
+    {
+        var aggregatedDir = Path.Combine(assetDir, "aggregated");
         if (Directory.Exists(aggregatedDir))
             Directory.Delete(aggregatedDir, recursive: true);
-        var feedsJson = Path.Combine(_assetDir, "feeds.json");
+        var feedsJson = Path.Combine(assetDir, "feeds.json");
         if (File.Exists(feedsJson)) File.Delete(feedsJson);
     }
 
@@ -85,13 +109,19 @@ public class AggregatorBenchmarks
     [Benchmark]
     public AggregationResult Aggregate_EqT_1h_500() => _pipeline.Run(_eqTJob);
 
-    private AggregationJob MakeJob(
+    [Benchmark]
+    public AggregationResult Aggregate_EqV_FromTicks_1h() => _pipeline.Run(_eqVTickJob);
+
+    [Benchmark]
+    public AggregationResult Aggregate_EqT_FromTicks_1h() => _pipeline.Run(_eqTTickJob);
+
+    private static AggregationJob MakeJob(
         DataFeedDescriptor source, string typeCode, string outcomeFeedId,
-        decimal thresholdAbsolute, long thresholdScaled, ScaleContext scale) =>
+        decimal thresholdAbsolute, long thresholdScaled, ScaleContext scale, string assetDir) =>
         new(
-            JobId: $"bench-{typeCode}",
+            JobId: $"bench-{typeCode}-{outcomeFeedId}",
             Source: source,
-            AssetDir: _assetDir,
+            AssetDir: assetDir,
             OutcomeFeedId: outcomeFeedId,
             TypeCode: typeCode,
             ThresholdAbsolute: thresholdAbsolute,
@@ -103,4 +133,46 @@ public class AggregatorBenchmarks
             AccumulatorScale: scale,
             MaxPartitionSizeMB: 100,
             ToolVersion: "bench");
+
+    /// <summary>
+    /// Generates a deterministic synthetic 1-hour tick stream. Inter-arrival times are
+    /// roughly Poisson (geometric in ms) and quantities are exponential — produces realistic
+    /// burstiness so the monotonicity bumper sees real work without checking a 60 MB fixture
+    /// into git.
+    /// </summary>
+    private static void WriteSyntheticTicks(string path, int tickCount, int seed)
+    {
+        var rng = new Random(seed);
+        long ts = new DateTimeOffset(2024, 4, 15, 12, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        long aggId = 1_000_000;
+        long price = 5_000_000; // $50,000.00 in 0.01 ticks
+
+        using var sw = new StreamWriter(path);
+        sw.WriteLine("ts,price,qty,is_buyer_maker,agg_id");
+
+        for (int i = 0; i < tickCount; i++)
+        {
+            // Inter-arrival: 0..50 ms (mean ~24 ms → ~150k ticks/h matches BTCUSDT_perp burst rate).
+            // Use 0 sometimes to exercise the monotonicity bumper.
+            ts += rng.Next(0, 50);
+
+            // Random walk on price, ±$5 per tick.
+            price += rng.Next(-500, 501);
+            if (price < 1_000_000) price = 1_000_000;
+
+            // qty: exponential-ish (most small, some large)
+            long qty = 1 + (long)(-Math.Log(1 - rng.NextDouble()) * 100);
+
+            int isBuyerMaker = rng.Next(2);
+            sw.Write(ts.ToString(CultureInfo.InvariantCulture));
+            sw.Write(',');
+            sw.Write(price.ToString(CultureInfo.InvariantCulture));
+            sw.Write(',');
+            sw.Write(qty.ToString(CultureInfo.InvariantCulture));
+            sw.Write(',');
+            sw.Write(isBuyerMaker.ToString(CultureInfo.InvariantCulture));
+            sw.Write(',');
+            sw.WriteLine((aggId++).ToString(CultureInfo.InvariantCulture));
+        }
+    }
 }

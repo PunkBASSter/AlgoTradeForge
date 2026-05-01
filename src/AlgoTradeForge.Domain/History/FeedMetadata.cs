@@ -118,6 +118,14 @@ public sealed class BuildInfo
     public long? BarCount { get; init; }
     public string[]? PartitionsWritten { get; init; }
     public int? MaxPartitionSizeMB { get; init; }
+
+    /// <summary>
+    /// Phase 2a (TRD §6.3): cumulative count of <c>+1 ms</c> bumps applied to enforce
+    /// strict-monotonic <c>bar.ts_open</c> on tick-source aggregations. Always 0 (or absent)
+    /// for time-bar source jobs. High values relative to source record count indicate
+    /// clustered exchange activity (volatility windows).
+    /// </summary>
+    public long? MonotonicBumps { get; init; }
 }
 
 public sealed class FidelityInfo

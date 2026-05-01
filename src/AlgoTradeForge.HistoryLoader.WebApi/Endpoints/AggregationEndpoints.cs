@@ -50,7 +50,8 @@ internal static class AggregationEndpoints
         IFeedCatalog catalog,
         ISchemaManager schema,
         IAggregationJobRegistry registry,
-        IAggregationJobQueue queue)
+        IAggregationJobQueue queue,
+        IAggregationTickJobQueue tickQueue)
     {
         // 1. Path / input validation (422)
         if (!FeedIdValidator.TryValidatePathComponent(exchange, out var pathErr1))
@@ -142,9 +143,15 @@ internal static class AggregationEndpoints
         }
 
         // 8. Enqueue (race-protected: TryEnqueue rechecks 423 internally).
+        // Phase 2a: tick sources route to a separate queue + worker pool to keep their I/O
+        // load from blocking CPU-bound time-bar aggregations at the queue head.
+        var sourceKind = string.Equals(body.SourceFeedId, FeedNames.Ticks, StringComparison.Ordinal)
+            ? DataFeedKind.Tick
+            : DataFeedKind.TimeBar;
+
         var job = new AggregationJob(
             JobId: Guid.NewGuid().ToString("N"),
-            Source: new DataFeedDescriptor(config.DataRoot, exchange, asset, body.SourceFeedId, DataFeedKind.TimeBar),
+            Source: new DataFeedDescriptor(config.DataRoot, exchange, asset, body.SourceFeedId, sourceKind),
             AssetDir: assetDir,
             OutcomeFeedId: outcomeFeedId,
             TypeCode: body.TypeCode,
@@ -158,7 +165,8 @@ internal static class AggregationEndpoints
             MaxPartitionSizeMB: config.Aggregator.MaxPartitionSizeMB,
             ToolVersion: typeof(AggregationEndpoints).Assembly.GetName().Version?.ToString() ?? "0.0.0");
 
-        var outcome = registry.TryEnqueue(job, queue);
+        IAggregationJobQueue targetQueue = sourceKind == DataFeedKind.Tick ? tickQueue : queue;
+        var outcome = registry.TryEnqueue(job, targetQueue);
         return outcome switch
         {
             EnqueueOutcome.Accepted accepted => AcceptedResult(accepted.Record),

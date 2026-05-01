@@ -52,6 +52,7 @@ builder.Services.AddSingleton<IFeedCollector, LsRatioTopAccountsFeedCollector>()
 builder.Services.AddSingleton<IFeedCollector, TakerVolumeFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LsRatioTopPositionsFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LiquidationFeedCollector>();
+builder.Services.AddSingleton<IFeedCollector, AggTradeFeedCollector>();
 
 // Settings writer (persists discovered feed dates back to appsettings.json)
 var appSettingsPath = Path.Combine(builder.Environment.ContentRootPath, "appsettings.json");
@@ -69,6 +70,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IFeedCatalog, FeedCatalog>();
 builder.Services.AddSingleton<IAggregationJobRegistry, AggregationJobRegistry>();
 builder.Services.AddSingleton<IAggregationJobQueue, AggregationJobQueue>();
+builder.Services.AddSingleton<IAggregationTickJobQueue, AggregationTickJobQueue>();
 builder.Services.AddScoped<PartitionedSourceReader>();
 builder.Services.AddScoped<OverwritePathWriter>();
 builder.Services.AddScoped<AggregationPipeline>();
@@ -84,6 +86,7 @@ builder.Services.AddHostedService<OiCollectorService>();
 builder.Services.AddHostedService<RatioCollectorService>();
 builder.Services.AddHostedService<HourlyCollectorService>();
 builder.Services.AddHostedService<LiquidationStreamService>();
+builder.Services.AddHostedService<TicksCollectorService>();
 
 var app = builder.Build();
 

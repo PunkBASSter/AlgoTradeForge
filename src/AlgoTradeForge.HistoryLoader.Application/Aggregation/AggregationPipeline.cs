@@ -68,8 +68,17 @@ public sealed class AggregationPipeline
         using var sink = new PartitionedSinkWriter(stagingDir, bytesBudget, OutputHeader);
 
         // Source record volume samples — drives `median_source_record_value` on finalize.
-        // Bounded by source span (Phase 1b time-bar; Phase 2a switches to streaming median).
-        var volumeSamples = new List<long>(capacity: 1024);
+        // Time-bar path keeps the exact median (small N, ~25 MB worst case for 5y of 1m).
+        // Tick path swaps in a P²-streaming estimator so 5y of perp ticks (~500M records)
+        // doesn't blow allocations (Phase 2a, see <see cref="StreamingMedianEstimator"/>).
+        var isTickSource = job.Source.Kind == DataFeedKind.Tick;
+        var volumeSamples = isTickSource ? null : new List<long>(capacity: 1024);
+        var streamingMedian = isTickSource ? new StreamingMedianEstimator() : null;
+
+        // Strict-monotonic ts decorator (TRD §6.3 / P2a-6) wraps the reader for tick sources;
+        // bump count is read out post-iteration and surfaced in stats + manifest.
+        var monoSource = isTickSource ? new MonotonicTickSource() : null;
+
         long barsEmitted = 0;
         long? firstBarTs = null;
         long lastBarTs = 0;
@@ -82,11 +91,18 @@ public sealed class AggregationPipeline
         long sourceRecordsConsumed = 0;
         string? lastEmittedMonth = null;
 
-        foreach (var record in _reader.Read(job.Source))
+        var sourceStream = monoSource is null
+            ? _reader.Read(job.Source)
+            : monoSource.Read(_reader.Read(job.Source));
+
+        foreach (var record in sourceStream)
         {
             ct.ThrowIfCancellationRequested();
             sourceRecordsConsumed++;
-            volumeSamples.Add(record.Volume);
+            if (streamingMedian is not null)
+                streamingMedian.Add(record.Volume);
+            else
+                volumeSamples!.Add(record.Volume);
 
             if (accumulator.TryAdvance(in record, out var bar))
             {
@@ -121,6 +137,12 @@ public sealed class AggregationPipeline
         }
 
         var stats = accumulator.Finalize();
+        // Phase 2a: source-side bump count (always 0 for time-bar) gets folded into stats here.
+        // The decorator owns the count because it's a property of the source stream, not the
+        // accumulator math.
+        if (monoSource is not null)
+            stats = stats with { MonotonicBumps = monoSource.BumpCount };
+
         // Force any in-progress partition file to atomic-rename to its final name before promote.
         sink.Dispose();
 
@@ -136,7 +158,9 @@ public sealed class AggregationPipeline
         _overwriter.Promote(feedDir, stagingDir);
 
         // Compute fidelity stats (TRD §6.4).
-        var medianSourceRecordValue = ComputeMedian(volumeSamples);
+        var medianSourceRecordValue = streamingMedian is not null
+            ? streamingMedian.Median
+            : ComputeMedian(volumeSamples!);
         var nFactor = medianSourceRecordValue > 0d
             ? (double)job.ThresholdScaled / medianSourceRecordValue
             : 0d;
@@ -169,6 +193,7 @@ public sealed class AggregationPipeline
                 BarCount = stats.BarsEmitted,
                 PartitionsWritten = partitions,
                 MaxPartitionSizeMB = job.MaxPartitionSizeMB,
+                MonotonicBumps = isTickSource ? stats.MonotonicBumps : null,
             },
             Fidelity: new FidelityInfo
             {

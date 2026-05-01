@@ -12,4 +12,5 @@ public static class FeedNames
     public const string LsRatioTopAccounts = "ls-ratio-top-accounts";
     public const string LsRatioTopPositions = "ls-ratio-top-positions";
     public const string Liquidations = "liquidations";
+    public const string Ticks = "ticks";
 }
