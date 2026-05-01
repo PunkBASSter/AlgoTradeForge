@@ -185,19 +185,19 @@ No EqI yet; tick storage and signed accumulator are independent surfaces.
 
 ## Phase 2b — EqI + sidecar + `IFeedContext` extension
 
-- [ ] **P2b-1** Implement signed accumulator — tick path (`is_buyer_maker`) and time-bar proxy path (`taker_buy`); emit at `abs(signed_acc) ≥ N`. (TRD §6.3)
-- [ ] **P2b-2** EqI eligibility checks — ticks always eligible; time-bar EqI requires `candle-ext` (perp/future only). (TRD §7)
-- [ ] **P2b-3** Tag `fidelity.imbalance_reconstruction_method ∈ {tick_signed, m1_taker_buy_proxy}`. (TRD §4)
-- [ ] **P2b-4** `.flow` sidecar writer — schema `ts, signed_imbalance, buy_volume, sell_volume, realized_threshold` (all double, `nullable_columns: true`). (TRD §3.5)
-- [ ] **P2b-5** `.flow` sidecar reader via `CsvFeedSeriesLoader`. (TRD §3.5)
-- [ ] **P2b-6** Sidecar manifest entry registered alongside parent EqI entry; `sidecar` field on parent points to it. (TRD §4)
-- [ ] **P2b-7** Test: EqI tick-signed — known buy/sell mix, `signed_acc += +qty` on `is_buyer_maker=0`, `−qty` on `=1`; bar emits at `abs(signed_acc) ≥ N`; sign convention pinned with 100%-buy fixture.
-- [ ] **P2b-8** Test: EqI taker-buy proxy — `signed_imbalance = 2 × taker_buy − vol`; manifest tag asserted; sign convention pinned with 100%-taker-buy fixture (review fix #8).
-- [ ] **P2b-9** `IFeedContext.TryGetPrimarySidecar` + `PrimarySidecarSchema` (DIM, fallback to P0-2 `ISidecarReceiver` if needed). (TRD §9.4)
-- [ ] **P2b-10** Engine binds `TryGetPrimarySidecar` to FeedSeries named by primary's `sidecar` field (lazy load). (TRD §9.4)
-- [ ] **P2b-11** Test: sidecar zero-cost — strategy that doesn't call `TryGetPrimarySidecar` triggers zero loader hits.
-- [ ] **P2b-12** Test: sidecar binding correctness — mismatched/missing sidecar errors at engine init, not silent NaN at runtime.
-- [ ] **P2b-13** UI yellow-banner warning copy for time-bar EqI (consumed by Phase 3 Data tab + Status card). (TRD §10.1)
+- [x] **P2b-1** Implement signed accumulator — tick path (`is_buyer_maker`) and time-bar proxy path (`taker_buy`); emit at `abs(signed_acc) ≥ N`. (TRD §6.3) — `EqIAccumulator` (long signed-acc + raw-double buy/sell for sidecar). `SourceRecord` gains `BuyVolumeLong`/`SellVolumeLong`; tick reader populates from `is_buyer_maker`; `CandleExtJoiningSource` decorates time-bar source for the proxy path.
+- [x] **P2b-2** EqI eligibility checks — ticks always eligible; time-bar EqI requires `candle-ext` (perp/future only). (TRD §7) — already encoded in `EligibilityRules.ForSource` (pre-existing); P2b ships compatible accumulator.
+- [x] **P2b-3** Tag `fidelity.imbalance_reconstruction_method ∈ {tick_signed, m1_taker_buy_proxy}`. (TRD §4) — `AggregationPipeline` selects by `Source.Kind` (Tick → `tick_signed`, TimeBar → `m1_taker_buy_proxy`).
+- [x] **P2b-4** `.flow` sidecar writer — schema `ts, signed_imbalance, buy_volume, sell_volume, realized_threshold` (all double, `nullable_columns: true`). (TRD §3.5) — Pipeline-side `PartitionedSinkWriter` opens a sibling staging dir under `aggregated/<feedId>.flow/`.
+- [x] **P2b-5** `.flow` sidecar reader via `CsvFeedSeriesLoader`. (TRD §3.5) — `feedName: aggregated/<feedId>.flow`, `nullable_columns: true` propagated from manifest.
+- [x] **P2b-6** Sidecar manifest entry registered alongside parent EqI entry; `sidecar` field on parent points to it. (TRD §4) — `ISchemaManager.EnsureAltBarWithSidecar` writes both atomically under one exclusive lock.
+- [x] **P2b-7** Test: EqI tick-signed — `EqIAccumulatorTests` (100%-buy positive sidecar, 100%-sell negative, mixed cancellation) + `AggregationPipeline_EqITests.Run_TickEqI_AllBuy_ManifestTaggedTickSigned`.
+- [x] **P2b-8** Test: EqI taker-buy proxy — `AggregationPipeline_EqITests.Run_TimeBarEqI_TakerBuyProxy_FormulaMatchesTrd` (100%-taker-buy fixture asserts positive signed and `signed = 2*taker_buy − vol`); manifest tag pinned by `Run_TimeBarEqI_AllTakerBuy_PositiveSignedImbalance_ManifestTagged`.
+- [x] **P2b-9** `IFeedContext.TryGetPrimarySidecar` + `PrimarySidecarSchema` (DIM, fallback to P0-2 `ISidecarReceiver` if needed). (TRD §9.4) — default-interface methods on `IFeedContext`; `BacktestFeedContext` overrides for backtest path. `GetPrimarySignedImbalance()` convenience helper lands as default-method too.
+- [x] **P2b-10** Engine binds `TryGetPrimarySidecar` to FeedSeries named by primary's `sidecar` field (lazy load). (TRD §9.4) — `BacktestFeedContext.RegisterPrimarySidecarLazy` + `EnsurePrimarySidecarMaterialized`. `IFeedContextBuilder.Build` gains `primaryFeedName` param; `FeedContextBuilder` skips eager `.flow` load and registers lazy when primary's manifest entry has `Sidecar`. Cursor catches up to `_latestAdvanceTs` on first materialization so mid-run access doesn't replay history.
+- [x] **P2b-11** Test: sidecar zero-cost — `BacktestFeedContextSidecarTests.TryGetPrimarySidecar_WhenStrategyNeverAccesses_LoaderNotInvoked` + `_FirstAccess_InvokesLoaderExactlyOnce`.
+- [x] **P2b-12** Test: sidecar binding correctness — `BacktestFeedContextSidecarTests.TryGetPrimarySidecar_LoaderReturnsNull_ThrowsInvalidOperationException` (loud failure at first access, not silent `NaN`).
+- [x] **P2b-13** UI yellow-banner warning copy for time-bar EqI (consumed by Phase 3 Data tab + Status card). (TRD §10.1) — `AltBarWarnings.TimeBarEqIProxy` constant; `EligibilityRules` returns it via the eligibility-options endpoint so the FE relays the canonical wording without composing copy.
 
 ---
 
@@ -318,7 +318,7 @@ Resolve before the listed gating task. Promote to a `## Resolved` section once l
 | 1a | 32 + BAKE | 32; BAKE in flight | One PR; one-week bake before 1b |
 | 1b | 44 | 38 done · 6 deferred (HTTP integration tests + sum-site conversion) | Bench gate (P1b-44) before merge |
 | 2a | 10 + BAKE | 9 done · P2a-8 deferred (needs real ticks post-BAKE) · BAKE pending merge | One PR for collection (P2a-1..5); 24–48 h bake before aggregator work (P2a-6..10) |
-| 2b | 13 | 0 | P0-1/P0-2 decision (DIM vs receiver) |
+| 2b | 13 | 13 | P0-1/P0-2 decision (DIM vs receiver) — DIMs landed (P0-1 PASS) |
 | 3 | 19 | 0 | P3-10 (Q-1 resolved) |
 | 4 | 19 | 0 | P0-3 / P0-4 audits drive P4-2 / P4-9 |
 | 5 | 6 | 0 | — |

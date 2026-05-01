@@ -160,13 +160,24 @@ public sealed class PartitionedSourceReader
                 throw MalformedCell(filePath, rowIndex, "price", parts[1]);
             if (!long.TryParse(parts[2], out var qty))
                 throw MalformedCell(filePath, rowIndex, "qty", parts[2]);
-            // is_buyer_maker and agg_id parsed but discarded at this layer (Phase 2b's EqI
-            // accumulator reads them via a signed-aware reader path).
+            // is_buyer_maker drives EqI's per-tick signed contribution (TRD §3.5):
+            // is_buyer_maker=0 → buy-aggressive (+qty); =1 → sell-aggressive (-qty).
+            // Populated unconditionally — EqV/EqT/EqD ignore the new SourceRecord fields, so
+            // the cost is one branch + one struct field write per tick (no measurable overhead
+            // vs. the parse cost itself).
+            if (!int.TryParse(parts[3], out var isBuyerMaker) || (isBuyerMaker != 0 && isBuyerMaker != 1))
+                throw MalformedCell(filePath, rowIndex, "is_buyer_maker", parts[3]);
+            // agg_id intentionally not parsed — used only by the ingestor's resume-on-crash path.
 
             if (ts < fromMs || ts > toMs) continue;
 
+            var buyLong = isBuyerMaker == 0 ? qty : 0L;
+            var sellLong = isBuyerMaker == 1 ? qty : 0L;
+
             // Per-tick OHLC: price for all four fields; qty for volume.
-            yield return new SourceRecord(ts, price, price, price, price, qty);
+            yield return new SourceRecord(
+                ts, price, price, price, price, qty,
+                BuyVolumeLong: buyLong, SellVolumeLong: sellLong);
         }
     }
 

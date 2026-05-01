@@ -15,19 +15,55 @@ public interface IBarAccumulator
 {
     bool TryAdvance(in SourceRecord record, out AggregatedBar emitted);
     AggregationStats Finalize();
+
+    /// <summary>
+    /// EqI accumulators emit a sidecar row alongside each primary bar (TRD §3.5).
+    /// The pipeline calls this immediately after a successful <see cref="TryAdvance"/> emit;
+    /// non-EqI accumulators leave the default impl returning <c>false</c>.
+    /// </summary>
+    /// <remarks>
+    /// Default-interface method: lives on <see cref="IBarAccumulator"/> rather than a separate
+    /// <c>IFlowEmittingAccumulator</c> sub-interface so the pipeline's call site stays a single
+    /// dispatch — the JIT inlines the default false-return for EqV/EqT/EqD. Per the P0-1 audit,
+    /// DIM dispatch is safe across plugin assemblies on .NET 10.
+    /// </remarks>
+    bool TryGetLastSidecarRow(out SidecarRow row)
+    {
+        row = default;
+        return false;
+    }
 }
 
 /// <summary>
 /// One row out of the source reader (a time-bar from <c>candles/</c> or a tick from
 /// <c>ticks/</c>). All long-typed fields are tick-scaled per <see cref="AlgoTradeForge.Domain.ScaleContext"/>.
 /// </summary>
+/// <param name="TsMs">Bar/tick timestamp in epoch milliseconds.</param>
+/// <param name="Open">Open price (tick-scaled).</param>
+/// <param name="High">High price (tick-scaled).</param>
+/// <param name="Low">Low price (tick-scaled).</param>
+/// <param name="Close">Close price (tick-scaled).</param>
+/// <param name="Volume">Base-asset volume (quantity-scaled).</param>
+/// <param name="BuyVolumeLong">
+/// Phase 2b (EqI): buy-aggressive volume contribution in the same scaled units as
+/// <paramref name="Volume"/>. Tick path: <c>qty</c> when <c>is_buyer_maker == 0</c>, else 0.
+/// Time-bar path (proxy): <c>MoneyConvert.ToLong(taker_buy_vol_double * QuantityScale)</c>.
+/// 0 for non-EqI flows — EqV/EqT/EqD ignore this field.
+/// </param>
+/// <param name="SellVolumeLong">
+/// Phase 2b (EqI): sell-aggressive volume contribution. Tick path: <c>qty</c> when
+/// <c>is_buyer_maker == 1</c>, else 0. Time-bar path: <c>Volume - BuyVolumeLong</c>.
+/// 0 for non-EqI flows.
+/// </param>
 public readonly record struct SourceRecord(
     long TsMs,
     long Open,
     long High,
     long Low,
     long Close,
-    long Volume);
+    long Volume,
+    long BuyVolumeLong = 0L,
+    long SellVolumeLong = 0L);
 
 /// <summary>
 /// Aggregated bar output — same 6-long shape as <c>Int64Bar</c> for storage compatibility.
@@ -39,6 +75,23 @@ public readonly record struct AggregatedBar(
     long Low,
     long Close,
     long Volume);
+
+/// <summary>
+/// Phase 2b — sidecar row emitted alongside an EqI bar (TRD §3.5). Side-feed convention:
+/// columns are <c>double</c>, raw base-asset units (no scaling). The <see cref="TsMs"/>
+/// field joins 1:1 to the primary bar's <c>ts</c>.
+/// </summary>
+/// <param name="TsMs">Bar open ts (joins to primary <c>ts</c>).</param>
+/// <param name="SignedImbalance"><c>buy - sell</c> in raw base-asset units.</param>
+/// <param name="BuyVolume">Cumulative buy-aggressive volume for the bar, raw base-asset units.</param>
+/// <param name="SellVolume">Cumulative sell-aggressive volume for the bar, raw base-asset units.</param>
+/// <param name="RealizedThreshold"><c>abs(SignedImbalance)</c> at emit (≥ N for EqI).</param>
+public readonly record struct SidecarRow(
+    long TsMs,
+    double SignedImbalance,
+    double BuyVolume,
+    double SellVolume,
+    double RealizedThreshold);
 
 /// <summary>Per-job aggregation stats returned by <see cref="IBarAccumulator.Finalize"/>.</summary>
 /// <param name="BarsEmitted">Total number of <see cref="AggregatedBar"/>s emitted.</param>

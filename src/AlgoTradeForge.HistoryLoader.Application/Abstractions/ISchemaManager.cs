@@ -21,6 +21,30 @@ public interface ISchemaManager
     void EnsureAltBarFeed(string assetDir, string feedId, AltBarFeedSpec spec);
 
     /// <summary>
+    /// Phase 2b — atomic two-entry write for EqI: parent alt-bar entry + its analytical
+    /// <c>.flow</c> sidecar entry. Both rewrites land under a single exclusive lock so readers
+    /// see either both-present (with the parent's <see cref="AltBarFeedSpec.Sidecar"/> field
+    /// pointing at the live sidecar) or both-absent — never half a registration.
+    /// </summary>
+    /// <param name="assetDir">Asset directory containing <c>feeds.json</c>.</param>
+    /// <param name="parentFeedId">Primary alt-bar feed-id, e.g. <c>"EqI_ticks_500000"</c>.</param>
+    /// <param name="parentSpec">
+    /// Spec for the primary entry. <see cref="AltBarFeedSpec.Sidecar"/> is overridden to
+    /// <paramref name="sidecarFeedId"/> by this method — callers may pass <c>null</c> here.
+    /// </param>
+    /// <param name="sidecarFeedId">Sidecar feed-id, e.g. <c>"EqI_ticks_500000.flow"</c>.</param>
+    /// <param name="sidecarColumns">
+    /// Sidecar column names (excluding <c>ts</c>). Phase 2b shape:
+    /// <c>["signed_imbalance", "buy_volume", "sell_volume", "realized_threshold"]</c>.
+    /// </param>
+    void EnsureAltBarWithSidecar(
+        string assetDir,
+        string parentFeedId,
+        AltBarFeedSpec parentSpec,
+        string sidecarFeedId,
+        string[] sidecarColumns);
+
+    /// <summary>
     /// Removes one feed entry from <c>feeds.json</c>. No-op if the entry isn't present.
     /// </summary>
     void RemoveFeed(string assetDir, string feedId);

@@ -437,6 +437,7 @@ internal static class AggregationEndpoints
     {
         job_id = r.JobId,
         feed_id = r.OutcomeFeedId,
+        sidecar_feed_id = r.SidecarFeedId,        // null for non-EqI; populated for EqI (Phase 2b)
         bar_count = r.BarCount,
         partitions_written = r.PartitionsWritten,
         first_bar_ts = r.FirstBarTs,

@@ -87,9 +87,17 @@ public sealed class BacktestPreparer(
             seriesArray[i] = historyRepository.Load(strategy.DataSubscriptions[i], fromDate, toDate);
         }
 
+        // Phase 2b — pass the primary's feed-id (the time-frame code, e.g. "1m") so the
+        // builder can lazy-bind a primary sidecar if `feeds.json` lists one. For Phase 2b's
+        // pre-Phase-4 callers, primary is always a TimeBar and time-bar feeds don't carry
+        // sidecars; the binding is a no-op until Phase 4 lands AltBar primaries.
+        var primaryTimeFrameCode = primarySub.TimeFrame is { Length: > 0 } tf
+            ? TimeFrameFormatter.TryParseShorthand(tf, out _) ? tf : null
+            : null;
+
         var feedContext = feedContextBuilder?.Build(
             storageOptions?.Value.DataRoot ?? CandleStorageOptions.DefaultDataRoot,
-            asset, fromDate, toDate);
+            asset, fromDate, toDate, primaryFeedName: primaryTimeFrameCode);
 
         return new BacktestSetup(asset, scale, options, strategy, seriesArray, FeedContext: feedContext);
     }

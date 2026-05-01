@@ -41,4 +41,9 @@ public sealed record AggregationResult(
     double EstimatedOvershootPct,
     double MedianSourceRecordValue,
     double NFactor,
-    double DurationSeconds);
+    double DurationSeconds,
+    /// <summary>
+    /// Phase 2b — companion <c>.flow</c> sidecar feed-id for EqI runs (TRD §5.4 SSE
+    /// <c>complete</c> payload). <c>null</c> for non-EqI types.
+    /// </summary>
+    string? SidecarFeedId = null);

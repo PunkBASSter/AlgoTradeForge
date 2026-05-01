@@ -56,8 +56,7 @@ public static class AccumulatorEntry
             "EqV" => new Accumulators.EqVAccumulator(threshold),
             "EqT" => new Accumulators.EqTAccumulator(threshold),
             "EqD" => new Accumulators.EqDAccumulator(threshold),
-            "EqI" => throw new NotSupportedException(
-                "EqI accumulator lands in Phase 2b (signed-imbalance + .flow sidecar)."),
+            "EqI" => new Accumulators.EqIAccumulator(threshold, accumulatorScale),
             "Range" or "Renko" => throw new NotSupportedException(
                 $"{typeCode} accumulator lands in Phase 5."),
             _ => throw new ArgumentException(

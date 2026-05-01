@@ -38,7 +38,7 @@ public static class EligibilityRules
 
             SourceKind.TimeBarWithVolume when hasCandleExt && IsPerpOrFuture(assetType) =>
                 Allow(["EqT", "EqV", "EqD", "EqI"], [],
-                    warning: "Time-bar EqI uses the m1_taker_buy_proxy reconstruction; sidecar fidelity is approximate."),
+                    warning: AltBarWarnings.TimeBarEqIProxy),
 
             SourceKind.TimeBarWithVolume when hasCandleExt /* spot */ =>
                 Allow(["EqT", "EqV", "EqD"],

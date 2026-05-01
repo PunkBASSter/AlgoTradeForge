@@ -26,6 +26,10 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 public sealed class AggregationPipeline
 {
     private const string OutputHeader = "ts,o,h,l,c,vol";
+    private const string SidecarHeader = "ts,signed_imbalance,buy_volume,sell_volume,realized_threshold";
+
+    private static readonly string[] SidecarColumns =
+        ["signed_imbalance", "buy_volume", "sell_volume", "realized_threshold"];
 
     private readonly PartitionedSourceReader _reader;
     private readonly ISchemaManager _schemaManager;
@@ -67,6 +71,21 @@ public sealed class AggregationPipeline
         long bytesBudget = (long)job.MaxPartitionSizeMB * 1024 * 1024;
         using var sink = new PartitionedSinkWriter(stagingDir, bytesBudget, OutputHeader);
 
+        // Phase 2b: EqI publishes a sidecar (.flow) sibling dir alongside the bar dir.
+        // Both stage in parallel; both promote atomically; the manifest writes both entries
+        // under one exclusive lock at finalize so readers never see a half-registered EqI feed.
+        var isEqI = string.Equals(job.TypeCode, "EqI", StringComparison.Ordinal);
+        var sidecarFeedId = isEqI ? job.OutcomeFeedId + ".flow" : null;
+        var sidecarFeedDir = isEqI ? Path.Combine(job.AssetDir, "aggregated", sidecarFeedId!) : null;
+        string? sidecarStagingDir = null;
+        PartitionedSinkWriter? sidecarSink = null;
+        if (isEqI)
+        {
+            Directory.CreateDirectory(sidecarFeedDir!);
+            sidecarStagingDir = _overwriter.PrepareStagingDir(sidecarFeedDir!, job.JobId);
+            sidecarSink = new PartitionedSinkWriter(sidecarStagingDir, bytesBudget, SidecarHeader);
+        }
+
         // Source record volume samples — drives `median_source_record_value` on finalize.
         // Time-bar path keeps the exact median (small N, ~25 MB worst case for 5y of 1m).
         // Tick path swaps in a P²-streaming estimator so 5y of perp ticks (~500M records)
@@ -91,9 +110,17 @@ public sealed class AggregationPipeline
         long sourceRecordsConsumed = 0;
         string? lastEmittedMonth = null;
 
-        var sourceStream = monoSource is null
-            ? _reader.Read(job.Source)
-            : monoSource.Read(_reader.Read(job.Source));
+        // Phase 2b: time-bar EqI joins candle-ext for its m1_taker_buy_proxy reconstruction
+        // (TRD §6.2). Spot/no-candle-ext layouts are rejected at eligibility (§7), so reaching
+        // here with a missing dir means partial coverage → drop unjoined records (TRD §6.2).
+        IEnumerable<SourceRecord> sourceStream = _reader.Read(job.Source);
+        if (monoSource is not null)
+            sourceStream = monoSource.Read(sourceStream);
+        if (isEqI && job.Source.Kind == DataFeedKind.TimeBar)
+        {
+            var join = new CandleExtJoiningSource(job.AssetDir, job.Source.FeedId, job.SourceScale);
+            sourceStream = join.Join(sourceStream);
+        }
 
         foreach (var record in sourceStream)
         {
@@ -114,6 +141,17 @@ public sealed class AggregationPipeline
                          .Append(bar.Close.ToString(CultureInfo.InvariantCulture)).Append(',')
                          .Append(bar.Volume.ToString(CultureInfo.InvariantCulture));
                 sink.WriteRow(bar.TsMs, rowBuffer.ToString());
+
+                if (sidecarSink is not null && accumulator.TryGetLastSidecarRow(out var sidecar))
+                {
+                    rowBuffer.Clear();
+                    rowBuffer.Append(sidecar.TsMs.ToString(CultureInfo.InvariantCulture)).Append(',')
+                             .Append(sidecar.SignedImbalance.ToString("R", CultureInfo.InvariantCulture)).Append(',')
+                             .Append(sidecar.BuyVolume.ToString("R", CultureInfo.InvariantCulture)).Append(',')
+                             .Append(sidecar.SellVolume.ToString("R", CultureInfo.InvariantCulture)).Append(',')
+                             .Append(sidecar.RealizedThreshold.ToString("R", CultureInfo.InvariantCulture));
+                    sidecarSink.WriteRow(sidecar.TsMs, rowBuffer.ToString());
+                }
 
                 firstBarTs ??= bar.TsMs;
                 lastBarTs = bar.TsMs;
@@ -145,6 +183,7 @@ public sealed class AggregationPipeline
 
         // Force any in-progress partition file to atomic-rename to its final name before promote.
         sink.Dispose();
+        sidecarSink?.Dispose();
 
         // Enumerate produced partitions BEFORE the staging→live rename so we report the
         // canonical filenames (without the path prefix) regardless of the post-promote layout.
@@ -156,6 +195,8 @@ public sealed class AggregationPipeline
             .ToArray();
 
         _overwriter.Promote(feedDir, stagingDir);
+        if (sidecarSink is not null)
+            _overwriter.Promote(sidecarFeedDir!, sidecarStagingDir!);
 
         // Compute fidelity stats (TRD §6.4).
         var medianSourceRecordValue = streamingMedian is not null
@@ -202,13 +243,25 @@ public sealed class AggregationPipeline
                 MaxOvershootPct = stats.MaxOvershootPct,
                 MedianSourceRecordValue = medianSourceRecordValue,
                 NFactor = nFactor,
-                ImbalanceReconstructionMethod = null,    // non-EqI in Phase 1b
+                // EqI sets the reconstruction method per its source kind (TRD §4 / §6.3);
+                // every other type keeps it null but the field MUST be present (validator pins this).
+                ImbalanceReconstructionMethod = isEqI
+                    ? (job.Source.Kind == DataFeedKind.Tick ? "tick_signed" : "m1_taker_buy_proxy")
+                    : null,
             },
             FirstBarTs: firstBarTs?.ToString(CultureInfo.InvariantCulture),
             LastBarTs: barsEmitted > 0 ? lastBarTs.ToString(CultureInfo.InvariantCulture) : null,
-            Sidecar: null);
+            Sidecar: sidecarFeedId);    // overridden by EnsureAltBarWithSidecar for EqI; null for others
 
-        _schemaManager.EnsureAltBarFeed(job.AssetDir, job.OutcomeFeedId, spec);
+        if (isEqI)
+        {
+            _schemaManager.EnsureAltBarWithSidecar(
+                job.AssetDir, job.OutcomeFeedId, spec, sidecarFeedId!, SidecarColumns);
+        }
+        else
+        {
+            _schemaManager.EnsureAltBarFeed(job.AssetDir, job.OutcomeFeedId, spec);
+        }
 
         var result = new AggregationResult(
             JobId: job.JobId,
@@ -222,7 +275,8 @@ public sealed class AggregationPipeline
             EstimatedOvershootPct: estimatedOvershootPct,
             MedianSourceRecordValue: medianSourceRecordValue,
             NFactor: nFactor,
-            DurationSeconds: elapsedSeconds);
+            DurationSeconds: elapsedSeconds,
+            SidecarFeedId: sidecarFeedId);
 
         onProgress?.Invoke(new ProgressEvent.Complete(result));
 

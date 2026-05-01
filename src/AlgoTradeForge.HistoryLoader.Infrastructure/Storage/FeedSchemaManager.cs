@@ -158,6 +158,71 @@ internal sealed class FeedSchemaManager : ISchemaManager
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
 
+    public void EnsureAltBarWithSidecar(
+        string assetDir,
+        string parentFeedId,
+        AltBarFeedSpec parentSpec,
+        string sidecarFeedId,
+        string[] sidecarColumns)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(parentFeedId);
+        ArgumentException.ThrowIfNullOrEmpty(sidecarFeedId);
+        ArgumentNullException.ThrowIfNull(parentSpec);
+        ArgumentNullException.ThrowIfNull(sidecarColumns);
+
+        var path = FeedsJsonPath(assetDir);
+        var rwl = GetLock(path);
+        rwl.EnterWriteLock();
+        try
+        {
+            var existing = LoadUnsafe(path) ?? new FeedMetadata();
+
+            // Override the parent's Sidecar field — both entries are tied together by this
+            // pointer; the caller supplies the spec but we own the linkage so the contract
+            // "Sidecar field references a live sidecar entry in this same write" stays exact.
+            var parentEntry = new FeedDefinition
+            {
+                Kind            = parentSpec.Kind,
+                Columns         = parentSpec.Columns,
+                Type            = parentSpec.Type,
+                Source          = parentSpec.Source,
+                Threshold       = parentSpec.Threshold,
+                Build           = parentSpec.Build,
+                Fidelity        = parentSpec.Fidelity,
+                FirstBarTs      = parentSpec.FirstBarTs,
+                LastBarTs       = parentSpec.LastBarTs,
+                Sidecar         = sidecarFeedId,
+            };
+
+            var sidecarEntry = new FeedDefinition
+            {
+                Kind            = "Side",
+                Columns         = sidecarColumns,
+                NullableColumns = true,
+            };
+
+            var updatedFeeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
+            {
+                [parentFeedId]  = parentEntry,
+                [sidecarFeedId] = sidecarEntry,
+            };
+
+            var updated = new FeedMetadata
+            {
+                Feeds   = updatedFeeds,
+                Candles = existing.Candles,
+            };
+
+            AtomicWriteUnsafe(assetDir, path, updated);
+        }
+        finally
+        {
+            rwl.ExitWriteLock();
+        }
+
+        ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
+    }
+
     public void RemoveFeed(string assetDir, string feedId)
     {
         ArgumentException.ThrowIfNullOrEmpty(feedId);
