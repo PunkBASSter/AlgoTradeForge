@@ -205,28 +205,28 @@ No EqI yet; tick storage and signed accumulator are independent surfaces.
 
 ### Main API proxy (backend first)
 
-- [ ] **P3-1** Typed `HistoryLoaderClient` via `IHttpClientFactory` + `IOptions<HistoryLoaderOptions>{ BaseUrl, RequestTimeout }`. (TRD §8)
-- [ ] **P3-2** AuthN/AuthZ before forwarding. (TRD §8)
-- [ ] **P3-3** Single `MapDataEndpoints()` extension mirroring §5 endpoints under `/api/data/*`. (TRD §8)
-- [ ] **P3-4** Cache `exchanges`, `exchanges/{e}/assets`, `assets` (5 s TTL). Event-driven invalidation on aggregate/delete. (TRD §8)
-- [ ] **P3-5** SSE pass-through with `IHttpResponseBodyFeature.DisableBuffering()` on the proxy route. (TRD §8)
-- [ ] **P3-6** 5xx → `ProblemDetails` with stable error codes. (TRD §8)
-- [ ] **P3-7** Test: SSE pass-through preserves chunked transfer-encoding; `DisableBuffering()` invoked.
-- [ ] **P3-8** Test: cache invalidation — `POST aggregate` clears affected `(exchange, asset)` and catalog keys; concurrent reader sees fresh data.
-- [ ] **P3-9** Test: catalog payload shape round-trips through main API unchanged.
+- [x] **P3-1** Typed `HistoryLoaderClient` via `IHttpClientFactory` + `IOptions<HistoryLoaderOptions>{ BaseUrl, RequestTimeout }`. (TRD §8) — `src/AlgoTradeForge.WebApi/Data/HistoryLoaderClient.cs` + `HistoryLoaderClientExtensions.AddHistoryLoaderClient`. Thin shell — no JSON deserialization (P3-9 byte-identical contract). 8 unit tests.
+- [-] **P3-2** AuthN/AuthZ before forwarding. (TRD §8) — _deferred to Phase 4. Neither WebApi nor HistoryLoader has auth today; introducing it pulls a scheme decision (cookie / JWT / Windows) into Phase 3 scope. Re-open when an auth scheme is chosen._
+- [x] **P3-3** Single `MapDataEndpoints()` extension mirroring §5 endpoints under `/api/data/*`. (TRD §8) — `src/AlgoTradeForge.WebApi/Endpoints/DataEndpoints.cs`. Catalog GETs (cached), per-feed status / aggregation-options / snapshot (passthrough), POST aggregate, DELETE feed, SSE progress.
+- [x] **P3-4** Cache `exchanges`, `exchanges/{e}/assets`, `assets` (5 s TTL). Event-driven invalidation on aggregate/delete. (TRD §8) — `DataProxyCache` (write-through invalidation; main API can't subscribe to upstream's in-process `ManifestChanged` across the process boundary, so write-through + 5-s TTL safety net replaces the event subscription).
+- [x] **P3-5** SSE pass-through with `IHttpResponseBodyFeature.DisableBuffering()` on the proxy route. (TRD §8) — `DataEndpoints.ProxySse` forwards Last-Event-ID, sets SSE headers, disables Kestrel buffering, copies upstream stream byte-for-byte.
+- [x] **P3-6** 5xx → `ProblemDetails` with stable error codes. (TRD §8) — `DataProxyProblem` (codes: `history_loader_unavailable`/502, `upstream_timeout`/504, `upstream_error` passthrough). 4xx forwarded byte-identical (422/423/409 carry domain-meaningful payloads).
+- [x] **P3-7** Test: SSE pass-through preserves chunked transfer-encoding; `DisableBuffering()` invoked. — `DataProxyTests.SsePassThrough_PreservesContentType_AndDisablesBuffering` + `_410Gone_ForwardsStatusAndBody`. `BufferingCapture` decorator records the `DisableBuffering()` call.
+- [x] **P3-8** Test: cache invalidation — `POST aggregate` clears affected `(exchange, asset)` and catalog keys; concurrent reader sees fresh data. — `DataProxyTests.PostAggregate_InvalidatesCache_ConcurrentReaderSeesFresh` + `DeleteFeed_InvalidatesCache`.
+- [x] **P3-9** Test: catalog payload shape round-trips through main API unchanged. — `DataProxyTests.CatalogPayloads_RoundTripUnchanged_GetExchanges` (+ `_GetAssets`, `_GetExchangeAssets`). Byte-identical assertion on raw response bodies; cache stores opaque bytes (no JSON re-serialization).
 
 ### Data Tab UI (frontend after backend stable)
 
-- [ ] **P3-10** Decide horizontal-virtualization library (TanStack Virtual / react-window / custom). Output: ADR. (review Q-1)
-- [ ] **P3-11** New top-level "Data" tab (left of "Backtest"). Per-exchange expandable cards. (TRD §10.1)
-- [ ] **P3-12** Asset×feed grid; columns dynamic (union of feeds across visible assets); order: time bars → aggregated (by type/threshold asc) → ticks → side feeds. Display names use §3.3 grammar (lowercase `1m`).
-- [ ] **P3-13** Horizontal virtualization per P3-10 choice. ≥10k cells regression test.
-- [ ] **P3-14** Cell affordance — `+` / `−`; sidecar-bearing aggregated cells render an indicator dot.
-- [ ] **P3-15** Right sidebar — Status card (Monaco viewer for `feeds.json` entry).
-- [ ] **P3-16** Right sidebar — New aggregate bar card (Source / Type / N / Aggregate). N input accepts SI suffixes; Type filtered by eligibility.
-- [ ] **P3-17** SSE progress UI — `Queued (#N)` → `Aggregating <YYYY>-<MM> … X%`. Success: column appears, toast with `actual_overshoot_pct`. Failure: `ProblemDetails` rendered.
-- [ ] **P3-18** `localStorage` persistence of `jobId` keyed by `(exchange, asset, feedId)` + `Last-Event-ID` resume.
-- [ ] **P3-19** Time-bar EqI yellow banner on the form AND on the built feed's Status card (uses P2b-13 copy).
+- [x] **P3-10** Decide horizontal-virtualization library (TanStack Virtual / react-window / custom). Output: ADR. (review Q-1) → [`docs/adr/2026-05-virtualization-tanstack.md`](adr/2026-05-virtualization-tanstack.md) (TanStack Virtual, both axes)
+- [x] **P3-11** New top-level "Data" tab (left of "Backtest"). Per-exchange expandable cards. (TRD §10.1) — `frontend/app/data/page.tsx` + `DataTabRoot` + `ExchangeCard`. NavBar adds an always-visible "Data" link in its own group; "data" added to `reservedPrefixes` so the strategy/mode parser doesn't consume the URL.
+- [x] **P3-12** Asset×feed grid; columns dynamic (union of feeds across visible assets); order: time bars → aggregated (by type/threshold asc) → ticks → side feeds. Display names use §3.3 grammar (lowercase `1m`). — `AssetFeedGrid` + `feed-order.ts` (`compareFeed` + `unionFeedColumns`). Server-supplied `kind`/`type_code`/`threshold_value` drive sort; no §3.3 grammar parser ported to TS.
+- [x] **P3-13** Horizontal virtualization per P3-10 choice. ≥10k cells regression test. — `@tanstack/react-virtual` v3 with both-axis `useVirtualizer` instances sharing one scroll container. Test `renders_only_visible_cells_for_10k_grid` asserts <500 buttons in DOM for a 500×20 grid (vs 10000 logical cells).
+- [x] **P3-14** Cell affordance — `+` / `−`; sidecar-bearing aggregated cells render an indicator dot. — `FeedCell` component; `+` for absent feeds (clickable, opens new-aggregate form), `−` for present alt-bars (opens Status card), `aria-label="has sidecar"` dot for cells whose feed has a non-null sidecar.
+- [x] **P3-15** Right sidebar — Status card (CodeMirror viewer for `feeds.json` entry). — `FeedStatusCard` + `DataSidebar` host (uses existing `SlideOver` primitive). CodeMirror 6 in `EditorState.readOnly.of(true)` + `EditorView.editable.of(false)` mode (TanStack Virtual ADR records the CodeMirror-vs-Monaco choice).
+- [x] **P3-16** Right sidebar — New aggregate bar card (Source / Type / N / Aggregate). N input accepts SI suffixes; Type filtered by eligibility. — `NewAggregateForm` + `lib/data/si-suffix.ts` (case-sensitive: lowercase `m` = milli, uppercase `M` = mega per TRD §3.4). Type dropdown sourced from `/aggregation-options` `eligible_types`; submits with `input_mode=convenience` so server preserves the original suffix string in `convenience_input`.
+- [x] **P3-17** SSE progress UI — `Queued (#N)` → `Aggregating <YYYY>-<MM> … X%`. Success: column appears, toast with `actual_overshoot_pct`. Failure: `ProblemDetails` rendered. — `JobProgressCard` + `useJobStream` hook. SSE client uses `@microsoft/fetch-event-source` (native EventSource doesn't support `Last-Event-ID` injection from localStorage).
+- [x] **P3-18** `localStorage` persistence of `jobId` keyed by `(exchange, asset, feedId)` + `Last-Event-ID` resume. — `useDataJobsStore` with `zustand/middleware`'s `persist` (`partialize` keeps only the `jobs` map; functions never serialized). Composite key `${exchange}|${asset}|${outcomeFeedIdHint}` allows multiple in-flight jobs per asset. `purgeStale` on hydrate drops entries >24h old (server retention is ~10min anyway). 410 Gone on resume → `clearJob` to stop reconnect loops.
+- [x] **P3-19** Time-bar EqI yellow banner on the form AND on the built feed's Status card (uses P2b-13 copy). — `lib/data/eqi-banner.ts` `pickEqiBanner(warnings)` filters by the substring `"taker-buy proxy"` and returns the server-supplied string verbatim. Form pulls from `/aggregation-options.warnings`; Status card pulls from same endpoint when manifest's `imbalance_reconstruction_method == "m1_taker_buy_proxy"`. Zero client-side string composition (`eqi-banner.test.tsx` pins this).
 
 ---
 

@@ -16,6 +16,7 @@ using AlgoTradeForge.Infrastructure.History;
 using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Plugins;
 using System.Text;
+using AlgoTradeForge.WebApi.Data;
 using AlgoTradeForge.WebApi.Endpoints;
 using AlgoTradeForge.WebApi.Middleware;
 
@@ -121,6 +122,10 @@ builder.Services.AddSingleton<IAssetRepository, FileSystemAssetRepository>();
 // Debug WebSocket handler (instance class for constructor-injected JSON options)
 builder.Services.AddSingleton<DebugWebSocketHandler>();
 
+// History-loader proxy (Phase 3 / TRD §8): typed HttpClient over the sibling WebApi.
+builder.Services.AddHistoryLoaderClient(builder.Configuration);
+builder.Services.AddSingleton<DataProxyCache>();
+
 // CORS for frontend dev server
 builder.Services.AddCors(options =>
 {
@@ -165,6 +170,7 @@ app.MapValidationEndpoints();
 app.MapTaskQueueEndpoints();
 app.MapThresholdProfileEndpoints();
 app.MapLiveEndpoints();
+app.MapDataEndpoints();
 
 app.Run();
 
