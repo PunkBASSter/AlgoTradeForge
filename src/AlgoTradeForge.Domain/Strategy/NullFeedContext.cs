@@ -10,9 +10,9 @@ public sealed class NullFeedContext : IFeedContext
 {
     public static readonly NullFeedContext Instance = new();
 
-    public bool TryGetLatest(string feedKey, out double[] values)
+    public bool TryGetLatest(string feedKey, out ReadOnlySpan<double> values)
     {
-        values = [];
+        values = ReadOnlySpan<double>.Empty;
         return false;
     }
 

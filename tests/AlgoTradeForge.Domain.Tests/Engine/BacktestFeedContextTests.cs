@@ -244,17 +244,23 @@ public class BacktestFeedContextTests
     #region Zero-allocation verification
 
     [Fact]
-    public void TryGetLatest_ReturnsSameBufferInstance()
+    public void TryGetLatest_AliasesStableBuffer_AcrossAdvances()
     {
+        // Phase 4 P4-9 migrated TryGetLatest from `out double[]` to `out ReadOnlySpan<double>`.
+        // The zero-alloc row-buffer-reuse design is still load-bearing — spans just hide the
+        // backing array from callers. Pin the design via address-equality on the first element
+        // (MemoryMarshal.GetReference + Unsafe.AreSame) so a future refactor that allocates a
+        // fresh array per TryGetLatest call surfaces as a test failure.
         var (ctx, _) = CreateFundingContext();
         ctx.AdvanceTo(28_800_000L);
+        Assert.True(ctx.TryGetLatest("funding", out var values1));
+        ref readonly var firstRef = ref System.Runtime.InteropServices.MemoryMarshal.GetReference(values1);
 
-        ctx.TryGetLatest("funding", out var values1);
         ctx.AdvanceTo(57_600_000L);
-        ctx.TryGetLatest("funding", out var values2);
+        Assert.True(ctx.TryGetLatest("funding", out var values2));
+        ref readonly var secondRef = ref System.Runtime.InteropServices.MemoryMarshal.GetReference(values2);
 
-        // Same buffer reused (zero-alloc design)
-        Assert.Same(values1, values2);
+        Assert.True(System.Runtime.CompilerServices.Unsafe.AreSame(in firstRef, in secondRef));
     }
 
     #endregion

@@ -11,9 +11,11 @@ public interface IFeedContext
 {
     /// <summary>
     /// Returns the latest record at or before the current bar's timestamp.
-    /// The returned array is a shared buffer — do NOT hold a reference across bars.
+    /// The returned span aliases a shared row buffer — the type system enforces
+    /// "do not hold across bars" since <see cref="ReadOnlySpan{T}"/> is a <c>ref struct</c>
+    /// and cannot be stored in fields, captured by closures, or boxed (TRD §9.4).
     /// </summary>
-    bool TryGetLatest(string feedKey, out double[] values);
+    bool TryGetLatest(string feedKey, out ReadOnlySpan<double> values);
 
     /// <summary>True if a new record arrived at or before the current bar's timestamp.</summary>
     bool HasNewData(string feedKey);
@@ -34,13 +36,12 @@ public interface IFeedContext
     /// </summary>
     /// <remarks>
     /// Lazy-loaded: a strategy that never calls this triggers zero loader hits (P2b-11).
-    /// The returned array is a shared buffer — do NOT hold a reference across bars.
-    /// Phase 4 will migrate this to <c>ReadOnlySpan&lt;double&gt;</c> alongside
-    /// <see cref="TryGetLatest"/> (TRD §9.4).
+    /// The returned span aliases a shared row buffer; the ref-struct lifetime prevents the
+    /// caller from holding it across bars (TRD §9.4 — Phase 4 P4-9 lock).
     /// </remarks>
-    bool TryGetPrimarySidecar(out double[] values)
+    bool TryGetPrimarySidecar(out ReadOnlySpan<double> values)
     {
-        values = [];
+        values = ReadOnlySpan<double>.Empty;
         return false;
     }
 
@@ -62,7 +63,7 @@ public interface IFeedContext
         if (schema is null) return double.NaN;
         var idx = IndexOf(schema.ColumnNames, "signed_imbalance");
         if (idx < 0) return double.NaN;
-        return TryGetPrimarySidecar(out var values) && idx < values.Length
+        return TryGetPrimarySidecar(out ReadOnlySpan<double> values) && idx < values.Length
             ? values[idx]
             : double.NaN;
     }

@@ -108,7 +108,7 @@ public sealed class BacktestFeedContextSidecarTests
         // default — pin both paths.
         IFeedContext null_ = NullFeedContext.Instance;
         Assert.False(null_.TryGetPrimarySidecar(out var v));
-        Assert.Empty(v);
+        Assert.True(v.IsEmpty);
         Assert.Null(null_.PrimarySidecarSchema);
         Assert.True(double.IsNaN(null_.GetPrimarySignedImbalance()));
 

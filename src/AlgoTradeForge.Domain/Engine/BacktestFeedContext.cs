@@ -109,7 +109,7 @@ public sealed class BacktestFeedContext : IFeedContext
         }
     }
 
-    public bool TryGetLatest(string feedKey, out double[] values)
+    public bool TryGetLatest(string feedKey, out ReadOnlySpan<double> values)
     {
         if (_feeds.TryGetValue(feedKey, out var entry) && entry.HasData)
         {
@@ -117,7 +117,7 @@ public sealed class BacktestFeedContext : IFeedContext
             return true;
         }
 
-        values = [];
+        values = ReadOnlySpan<double>.Empty;
         return false;
     }
 
@@ -137,7 +137,7 @@ public sealed class BacktestFeedContext : IFeedContext
     /// </summary>
     public DataFeedSchema? PrimarySidecarSchema => _primarySidecarSchema;
 
-    public bool TryGetPrimarySidecar(out double[] values)
+    public bool TryGetPrimarySidecar(out ReadOnlySpan<double> values)
     {
         // Lazy materialization: the loader runs at most once. After that, the sidecar entry
         // behaves like any other registered feed (cursor advances via AdvanceTo, HasData flips).
@@ -149,7 +149,7 @@ public sealed class BacktestFeedContext : IFeedContext
             return true;
         }
 
-        values = [];
+        values = ReadOnlySpan<double>.Empty;
         return false;
     }
 

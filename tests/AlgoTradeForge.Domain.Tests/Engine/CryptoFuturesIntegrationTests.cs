@@ -208,11 +208,11 @@ public class CryptoFuturesIntegrationTests
             if (barIndex == 1)
             {
                 if (feeds.TryGetLatest("funding", out var fv))
-                    captures["funding"] = (double[])fv.Clone();
+                    captures["funding"] = fv.ToArray();
                 if (feeds.TryGetLatest("oi", out var oiv))
-                    captures["oi"] = (double[])oiv.Clone();
+                    captures["oi"] = oiv.ToArray();
                 if (feeds.TryGetLatest("taker_vol", out var tv))
-                    captures["taker_vol"] = (double[])tv.Clone();
+                    captures["taker_vol"] = tv.ToArray();
             }
         });
 

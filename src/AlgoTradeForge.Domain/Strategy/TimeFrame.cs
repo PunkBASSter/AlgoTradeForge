@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using AlgoTradeForge.Domain.Engine;
 
 namespace AlgoTradeForge.Domain.Strategy;
@@ -18,6 +19,7 @@ namespace AlgoTradeForge.Domain.Strategy;
 /// <c>Code</c>'s integer cast.
 /// </remarks>
 /// <param name="Duration">Underlying bar interval. Must round-trip through <see cref="Code"/>.</param>
+[JsonConverter(typeof(TimeFrameJsonConverter))]
 public readonly record struct TimeFrame(TimeSpan Duration)
 {
     public TimeSpan Duration { get; } = Validate(Duration);
