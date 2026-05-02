@@ -1,3 +1,5 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
+
 namespace AlgoTradeForge.WebApi.Contracts;
 
 public sealed record OptimizationGroupSubmissionResponse
@@ -10,7 +12,7 @@ public sealed record OptimizationGroupSubmissionResponse
 public sealed record GroupRunSubmission
 {
     public required Guid Id { get; init; }
-    public required List<DataSubscriptionInput> Dss { get; init; }
+    public required List<DataFeedSubscription> Dss { get; init; }
     public required long TotalCombinations { get; init; }
 }
 
@@ -26,7 +28,7 @@ public sealed record OptimizationGroupSummaryResponse
     public int CompletedRuns { get; init; }
     public int FailedRuns { get; init; }
     public required string Status { get; init; }
-    public required List<List<DataSubscriptionInput>> Subscriptions { get; init; }
+    public required List<List<DataFeedSubscription>> Subscriptions { get; init; }
 }
 
 public sealed record OptimizationGroupDetailResponse
@@ -41,7 +43,7 @@ public sealed record OptimizationGroupDetailResponse
     public int CompletedRuns { get; init; }
     public int FailedRuns { get; init; }
     public required string Status { get; init; }
-    public required List<List<DataSubscriptionInput>> Subscriptions { get; init; }
+    public required List<List<DataFeedSubscription>> Subscriptions { get; init; }
     public required int MaxParallelism { get; init; }
     public string? InputJson { get; init; }
     public required List<GroupRunDetailResponse> Runs { get; init; }
@@ -50,7 +52,7 @@ public sealed record OptimizationGroupDetailResponse
 public sealed record GroupRunDetailResponse
 {
     public required Guid Id { get; init; }
-    public required List<DataSubscriptionInput> Dss { get; init; }
+    public required List<DataFeedSubscription> Dss { get; init; }
     public required string Status { get; init; }
     public required long TotalCombinations { get; init; }
     public int KeptTrials { get; init; }

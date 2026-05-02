@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using AlgoTradeForge.Application;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.WebApi.Contracts;
 
@@ -10,9 +10,17 @@ namespace AlgoTradeForge.WebApi.Contracts;
 /// Every strategy uses the same format — single-subscription strategies simply have
 /// one subscription per group: <c>[[{sub1}], [{sub2}]]</c>.
 /// </summary>
-public sealed class SubscriptionAxisConverter : JsonConverter<List<List<DataSubscriptionDto>>?>
+/// <remarks>
+/// The inner element shape is the polymorphic <see cref="DataFeedSubscription"/> hierarchy
+/// (TRD §9.2): the wire carries a <c>"kind"</c> discriminator that STJ uses to dispatch to
+/// the concrete record (<c>TimeBarSubscription</c> / <c>AltBarSubscription</c> /
+/// <c>TickSubscription</c> / <c>SideFeedSubscription</c>). The 2D-array shape guard stays
+/// in this converter — STJ's polymorphism handles per-element discrimination, but the outer
+/// nesting is a contract assertion that fails fast with a clear message.
+/// </remarks>
+public sealed class SubscriptionAxisConverter : JsonConverter<List<List<DataFeedSubscription>>?>
 {
-    public override List<List<DataSubscriptionDto>>? Read(
+    public override List<List<DataFeedSubscription>>? Read(
         ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType == JsonTokenType.Null)
@@ -27,7 +35,7 @@ public sealed class SubscriptionAxisConverter : JsonConverter<List<List<DataSubs
         if (root.GetArrayLength() == 0)
             return [];
 
-        var result = new List<List<DataSubscriptionDto>>(root.GetArrayLength());
+        var result = new List<List<DataFeedSubscription>>(root.GetArrayLength());
         foreach (var groupElement in root.EnumerateArray())
         {
             if (groupElement.ValueKind != JsonValueKind.Array)
@@ -35,11 +43,11 @@ public sealed class SubscriptionAxisConverter : JsonConverter<List<List<DataSubs
                     "subscriptionAxis must be a 2D array: [[{sub}, ...], ...]. " +
                     $"Expected inner array but found {groupElement.ValueKind}.");
 
-            var group = new List<DataSubscriptionDto>(groupElement.GetArrayLength());
+            var group = new List<DataFeedSubscription>(groupElement.GetArrayLength());
             foreach (var subElement in groupElement.EnumerateArray())
             {
-                var sub = subElement.Deserialize<DataSubscriptionDto>(options)
-                    ?? throw new JsonException("Failed to deserialize DataSubscriptionDto in group.");
+                var sub = subElement.Deserialize<DataFeedSubscription>(options)
+                    ?? throw new JsonException("Failed to deserialize DataFeedSubscription in group.");
                 group.Add(sub);
             }
 
@@ -53,7 +61,7 @@ public sealed class SubscriptionAxisConverter : JsonConverter<List<List<DataSubs
     }
 
     public override void Write(
-        Utf8JsonWriter writer, List<List<DataSubscriptionDto>>? value, JsonSerializerOptions options)
+        Utf8JsonWriter writer, List<List<DataFeedSubscription>>? value, JsonSerializerOptions options)
     {
         if (value is null)
         {

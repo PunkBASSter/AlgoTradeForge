@@ -3,6 +3,8 @@ using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Reporting;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Optimization;
 
@@ -17,7 +19,7 @@ public sealed class BoundedTrialQueueTests
             StrategyName = "Test",
             StrategyVersion = "1",
             Parameters = new Dictionary<string, object> { ["sharpe"] = sharpe },
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10_000m,

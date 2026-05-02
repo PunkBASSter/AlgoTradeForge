@@ -18,6 +18,7 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Backtests;
 
@@ -59,7 +60,7 @@ public class RunBacktestCommandHandlerTests
 
     private static RunBacktestCommand CreateCommand() => new()
     {
-        DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }],
+        DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
         BacktestSettings = new BacktestSettingsDto
         {
             InitialCash = 10_000m,
@@ -207,6 +208,35 @@ public class RunBacktestCommandHandlerTests
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task HandleAsync_AltBarPrimary_ThrowsNotSupportedException()
+    {
+        // Phase 4 PR-A pins backtest to TimeBar primaries — alt-bar / tick / side primaries
+        // come in PR-C. The guard prevents silent coercion to a 1m time bar (which would load
+        // wrong data for the user's submitted feed). Use a strategy that returns an empty
+        // DataSubscriptions list so the preparer falls through to the command-driven branch
+        // where the guard runs.
+        var asset = TestAssets.BtcUsdt;
+        _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Domain.Asset?>(asset));
+
+        var strategy = Substitute.For<IInt64BarStrategy>();
+        strategy.Version.Returns("1.0");
+        strategy.DataSubscriptions.Returns(new List<DataSubscription>()); // empty — triggers command-driven branch
+
+        _strategyFactory.Create("TestStrategy", Arg.Any<IIndicatorFactory>(), Arg.Any<IDictionary<string, object>?>())
+            .Returns(strategy);
+
+        var handler = CreateHandler();
+        var command = CreateCommand() with
+        {
+            DataSubscriptions = [new AltBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, "EqV_1m_500m")],
+        };
+
+        await Assert.ThrowsAsync<NotSupportedException>(
+            () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
     }
 
     // --- Background execution path tests ---

@@ -7,6 +7,7 @@ using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Application.Backtests;
@@ -55,24 +56,25 @@ public sealed class BacktestPreparer(
 
         if (strategy.DataSubscriptions.Count == 0)
         {
-            foreach (var sub in command.DataSubscriptions)
+            for (var i = 0; i < command.DataSubscriptions.Count; i++)
             {
-                var subAsset = sub == primarySub
+                var sub = command.DataSubscriptions[i];
+                var subAsset = i == 0
                     ? asset
                     : await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
                       ?? throw new ArgumentException($"Asset '{sub.AssetName}' not found.");
 
-                TimeFrame timeFrame;
-                if (string.IsNullOrEmpty(sub.TimeFrame))
-                {
-                    timeFrame = new TimeFrame(TimeSpan.FromMinutes(1));
-                }
-                else if (!TimeFrame.TryParseLiberal(sub.TimeFrame, out timeFrame))
-                {
-                    throw new ArgumentException($"Invalid TimeFrame format: '{sub.TimeFrame}'");
-                }
+                // Phase 4 PR-A: backtest engine path is TimeBar-only; alt-bar / tick / side
+                // primaries arrive via PR-C once HistoryRepository.Load(DataFeedSubscription)
+                // is wired. Mirrors the guards in OptimizationSetupHelper / StartLiveSession
+                // — silent coercion to a 1m time bar would load the wrong feed and produce
+                // a misleading run record.
+                if (sub is not TimeBarSubscription tb)
+                    throw new NotSupportedException(
+                        $"Phase 4 PR-A: only TimeBarSubscription is supported in BacktestPreparer; " +
+                        $"got {sub.GetType().Name}. PR-C extends this to alt-bar / tick / side primaries.");
 
-                strategy.DataSubscriptions.Add(new DataSubscription(subAsset, timeFrame));
+                strategy.DataSubscriptions.Add(new DataSubscription(subAsset, tb.TimeFrame));
             }
         }
 
@@ -85,17 +87,16 @@ public sealed class BacktestPreparer(
             seriesArray[i] = historyRepository.Load(strategy.DataSubscriptions[i], fromDate, toDate);
         }
 
-        // Phase 2b — pass the primary's feed-id (the time-frame code, e.g. "1m") so the
-        // builder can lazy-bind a primary sidecar if `feeds.json` lists one. For Phase 2b's
-        // pre-Phase-4 callers, primary is always a TimeBar and time-bar feeds don't carry
-        // sidecars; the binding is a no-op until Phase 4 lands AltBar primaries.
-        // Preserve only canonical-shorthand inputs verbatim — the feed-id grammar (TRD §3.3)
-        // requires the lowercase form, and `feeds.json` directories are named with it. A
-        // wire-form input ("00:01:00") would still be a valid TimeFrame but isn't a feed-id;
-        // bind only when the request payload itself was already in shorthand.
-        var primaryTimeFrameCode = TimeFrame.TryParse(primarySub.TimeFrame, out _)
-            ? primarySub.TimeFrame
-            : null;
+        // Phase 4 (TRD §9.3) — propagate the primary's feed-id so FeedContextBuilder can
+        // lazy-bind a sidecar if `feeds.json` lists one. TimeBar primaries pass their
+        // canonical TimeFrame.Code; AltBar primaries pass their FeedId. Tick/Side never
+        // sidecar (they are themselves the source / a side feed).
+        var primaryTimeFrameCode = primarySub switch
+        {
+            TimeBarSubscription tb => tb.TimeFrame.Code,
+            AltBarSubscription ab => ab.FeedId,
+            _ => null,
+        };
 
         var feedContext = feedContextBuilder?.Build(
             storageOptions?.Value.DataRoot ?? CandleStorageOptions.DefaultDataRoot,

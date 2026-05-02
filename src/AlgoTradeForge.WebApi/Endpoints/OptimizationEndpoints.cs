@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
@@ -6,6 +7,7 @@ using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Optimization.Genetic;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.WebApi.Contracts;
 
 namespace AlgoTradeForge.WebApi.Endpoints;
@@ -494,12 +496,7 @@ public static class OptimizationEndpoints
                 Runs = groupSubmission.Runs.Select(r => new GroupRunSubmission
                 {
                     Id = r.Id,
-                    Dss = r.Dss.Select(d => new DataSubscriptionInput
-                    {
-                        AssetName = d.AssetName,
-                        Exchange = d.Exchange,
-                        TimeFrame = d.TimeFrame,
-                    }).ToList(),
+                    Dss = r.Dss.ToList(),
                     TotalCombinations = r.TotalCombinations,
                 }).ToList(),
             };
@@ -516,13 +513,15 @@ public static class OptimizationEndpoints
     private static async Task<IResult> GetOptimizationGroup(
         Guid groupId,
         IQueryHandler<GetOptimizationGroupByIdQuery, OptimizationGroupRecord?> handler,
+        ILoggerFactory loggerFactory,
         CancellationToken ct)
     {
         var group = await handler.HandleAsync(new GetOptimizationGroupByIdQuery(groupId), ct);
         if (group is null)
             return Results.NotFound(new { error = $"Optimization group '{groupId}' not found." });
 
-        return Results.Ok(MapGroupToResponse(group));
+        var logger = loggerFactory.CreateLogger("OptimizationEndpoints");
+        return Results.Ok(MapGroupToResponse(group, logger));
     }
 
     private static async Task<IResult> GetOptimizationGroupTrials(
@@ -591,21 +590,28 @@ public static class OptimizationEndpoints
         return Results.NoContent();
     }
 
-    private static OptimizationGroupDetailResponse MapGroupToResponse(OptimizationGroupRecord group)
+    private static OptimizationGroupDetailResponse MapGroupToResponse(
+        OptimizationGroupRecord group,
+        ILogger logger)
     {
-        List<List<DataSubscriptionInput>> subscriptions = [];
+        List<List<DataFeedSubscription>> subscriptions = [];
         if (!string.IsNullOrEmpty(group.SubscriptionsJson))
         {
             try
             {
-                var parsed = JsonSerializer.Deserialize<List<List<DataSubscriptionInput>>>(
+                var parsed = JsonSerializer.Deserialize<List<List<DataFeedSubscription>>>(
                     group.SubscriptionsJson, JsonOptions);
                 if (parsed is not null)
                     subscriptions = parsed;
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
-                // Malformed JSON — fall back to empty
+                // Malformed JSON — fall back to empty. Pre-P4-10 rows don't carry the `kind`
+                // discriminator and will land here. Log so ops sees the corruption rather
+                // than silently returning an empty subscriptions array.
+                logger.LogWarning(ex,
+                    "Legacy or malformed subscriptions_json for optimization group {GroupId}; returning empty subscriptions.",
+                    group.Id);
             }
         }
 
@@ -625,12 +631,7 @@ public static class OptimizationEndpoints
             Runs = group.Runs.Select(r => new GroupRunDetailResponse
             {
                 Id = r.Id,
-                Dss = r.DataSubscriptions.Select(d => new DataSubscriptionInput
-                {
-                    AssetName = d.AssetName,
-                    Exchange = d.Exchange,
-                    TimeFrame = d.TimeFrame,
-                }).ToList(),
+                Dss = r.DataSubscriptions.ToList(),
                 Status = r.Status,
                 TotalCombinations = r.TotalCombinations,
                 KeptTrials = r.TrialCount,

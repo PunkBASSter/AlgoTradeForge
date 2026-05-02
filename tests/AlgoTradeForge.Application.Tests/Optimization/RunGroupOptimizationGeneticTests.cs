@@ -17,6 +17,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Optimization;
 
@@ -65,9 +67,9 @@ public class RunGroupOptimizationGeneticTests
             StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
         },
-        SubscriptionAxis = Enumerable.Range(0, dssCount).Select(_ => new List<DataSubscriptionDto>
+        SubscriptionAxis = Enumerable.Range(0, dssCount).Select(_ => new List<DataFeedSubscription>
         {
-            new() { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }
+            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))
         }).ToList(),
         Axes = new Dictionary<string, OptimizationAxisOverride>
         {

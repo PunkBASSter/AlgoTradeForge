@@ -37,13 +37,11 @@ var builder = WebApplication.CreateBuilder(args);
 // Shared JSON options for FE-facing API (camelCase + case-insensitive)
 builder.Services.AddSingleton(JsonDefaults.Api);
 
-// Configure minimal API request/response JSON to match frontend conventions
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-    options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
-    options.SerializerOptions.PropertyNameCaseInsensitive = true;
-    options.SerializerOptions.NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
-});
+// Apply the canonical JSON policy (camelCase + case-insensitive from Web defaults,
+// AllowNamedFloatingPointLiterals for NaN/Infinity round-trip, JsonStringEnumConverter for
+// stable enum wire shape). The framework hands us an existing options instance pre-loaded
+// with Web defaults, so we only apply the deltas. Single source of truth: JsonDefaults.Apply.
+builder.Services.ConfigureHttpJsonOptions(options => JsonDefaults.Apply(options.SerializerOptions));
 
 // Add OpenAPI/Swagger
 builder.Services.AddEndpointsApiExplorer();

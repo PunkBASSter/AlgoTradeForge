@@ -4,6 +4,7 @@ using System.Text;
 using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Application.Optimization;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 namespace AlgoTradeForge.Application.Progress;
 
 public static class RunKeyBuilder
@@ -13,9 +14,8 @@ public static class RunKeyBuilder
         var settings = cmd.BacktestSettings;
         var sb = new StringBuilder();
         sb.Append(cmd.StrategyName).Append('|');
-        foreach (var sub in cmd.DataSubscriptions.OrderBy(s => s.AssetName).ThenBy(s => s.Exchange))
-            sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':')
-              .Append(!string.IsNullOrEmpty(sub.TimeFrame) ? sub.TimeFrame : "default").Append(',');
+        foreach (var sub in cmd.DataSubscriptions.OrderBy(BacktestInputsFormatter.Key, StringComparer.Ordinal))
+            sb.Append(BacktestInputsFormatter.Key(sub)).Append(',');
         sb.Append('|');
         sb.Append(settings.StartTime.ToUniversalTime().ToString("O")).Append('|');
         sb.Append(settings.EndTime.ToUniversalTime().ToString("O")).Append('|');
@@ -36,7 +36,7 @@ public static class RunKeyBuilder
         string strategyName,
         BacktestSettingsDto settings,
         string optimizationMethod,
-        List<List<DataSubscriptionDto>>? subscriptionAxis,
+        List<List<DataFeedSubscription>>? subscriptionAxis,
         Dictionary<string, OptimizationAxisOverride>? axes)
     {
         var sb = new StringBuilder();
@@ -53,15 +53,13 @@ public static class RunKeyBuilder
         {
             sb.Append("|dss:");
             var sortedGroups = subscriptionAxis
-                .Select(g => g.OrderBy(d => d.AssetName).ThenBy(d => d.Exchange).ThenBy(d => d.TimeFrame).ToList())
-                .OrderBy(g => g[0].AssetName)
-                .ThenBy(g => g[0].Exchange)
-                .ThenBy(g => g[0].TimeFrame);
+                .Select(g => g.OrderBy(BacktestInputsFormatter.Key, StringComparer.Ordinal).ToList())
+                .OrderBy(g => BacktestInputsFormatter.Key(g[0]), StringComparer.Ordinal);
             foreach (var sortedGroup in sortedGroups)
             {
                 sb.Append('[');
                 foreach (var sub in sortedGroup)
-                    sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
+                    sb.Append(BacktestInputsFormatter.Key(sub)).Append(',');
                 sb.Append(']');
             }
         }
@@ -91,11 +89,9 @@ public static class RunKeyBuilder
         {
             sb.Append('|');
             var sorted = cmd.DataSubscriptions
-                .OrderBy(d => d.AssetName)
-                .ThenBy(d => d.Exchange)
-                .ThenBy(d => d.TimeFrame);
+                .OrderBy(BacktestInputsFormatter.Key, StringComparer.Ordinal);
             foreach (var sub in sorted)
-                sb.Append(sub.AssetName).Append(':').Append(sub.Exchange).Append(':').Append(sub.TimeFrame).Append(',');
+                sb.Append(BacktestInputsFormatter.Key(sub)).Append(',');
         }
 
         return HashString(sb.ToString());

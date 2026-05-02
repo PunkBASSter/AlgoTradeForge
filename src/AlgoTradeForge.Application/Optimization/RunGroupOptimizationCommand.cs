@@ -1,6 +1,7 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Optimization.Genetic;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Optimization;
 
@@ -9,7 +10,7 @@ public sealed record RunGroupOptimizationCommand : ICommand<OptimizationGroupSub
     public required string StrategyName { get; init; }
     public required string OptimizationMethod { get; init; } // "BruteForce" or "Genetic"
     public Dictionary<string, OptimizationAxisOverride>? Axes { get; init; }
-    public required List<List<DataSubscriptionDto>> SubscriptionAxis { get; init; }
+    public required List<List<DataFeedSubscription>> SubscriptionAxis { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public int MaxDegreeOfParallelism { get; init; } = -1;
     public long MaxCombinations { get; init; } = 500_000;
@@ -39,6 +40,6 @@ public sealed record OptimizationGroupSubmissionDto
 public sealed record GroupRunSubmissionDto
 {
     public required Guid Id { get; init; }
-    public required IReadOnlyList<DataSubscriptionDto> Dss { get; init; }
+    public required IReadOnlyList<DataFeedSubscription> Dss { get; init; }
     public required long TotalCombinations { get; init; }
 }

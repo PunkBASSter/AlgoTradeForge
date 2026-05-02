@@ -6,6 +6,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Live;
 
@@ -21,17 +22,20 @@ public sealed class StartLiveSessionCommandHandler(
         if (command.DataSubscriptions is null or { Count: 0 })
             throw new ArgumentException("At least one data subscription must be provided.");
 
-        // Resolve assets from subscription DTOs
+        // Resolve assets from subscriptions. Phase 4 PR-A: live trading is TimeBar-only;
+        // alt-bar / tick / side-feed primaries arrive via PR-C once HistoryRepository's
+        // polymorphic loader is wired (see plan PR-B/C).
         var resolvedSubscriptions = new List<DataSubscription>();
         foreach (var sub in command.DataSubscriptions)
         {
             var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
                 ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
-            if (!TimeFrame.TryParseLiberal(sub.TimeFrame, out var timeFrame))
-                throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.AssetName}'.");
+            if (sub is not TimeBarSubscription tb)
+                throw new NotSupportedException(
+                    $"Live trading currently supports TimeBarSubscription only; got {sub.GetType().Name}.");
 
-            resolvedSubscriptions.Add(new DataSubscription(asset, timeFrame));
+            resolvedSubscriptions.Add(new DataSubscription(asset, tb.TimeFrame));
         }
 
         var primaryAsset = resolvedSubscriptions[0].Asset;

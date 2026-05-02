@@ -1,5 +1,6 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain.Optimization.Genetic;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Optimization;
 
@@ -7,7 +8,7 @@ public sealed record RunGeneticOptimizationCommand : ICommand<OptimizationSubmis
 {
     public required string StrategyName { get; init; }
     public Dictionary<string, OptimizationAxisOverride>? Axes { get; init; }
-    public List<List<DataSubscriptionDto>>? SubscriptionAxis { get; init; }
+    public List<List<DataFeedSubscription>>? SubscriptionAxis { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public int MaxDegreeOfParallelism { get; init; } = -1;
     public int MaxTrialsToKeep { get; init; } = 10_000;

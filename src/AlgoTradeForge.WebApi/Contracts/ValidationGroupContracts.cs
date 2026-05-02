@@ -1,3 +1,5 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
+
 namespace AlgoTradeForge.WebApi.Contracts;
 
 public sealed record RunGroupValidationRequest
@@ -37,7 +39,7 @@ public sealed record ValidationGroupRunDetailResponse
 {
     public required Guid Id { get; init; }
     public required Guid OptimizationRunId { get; init; }
-    public required List<DataSubscriptionInput> Dss { get; init; }
+    public required List<DataFeedSubscription> Dss { get; init; }
     public required string Status { get; init; }
     public int CandidatesIn { get; init; }
     public int CandidatesOut { get; init; }

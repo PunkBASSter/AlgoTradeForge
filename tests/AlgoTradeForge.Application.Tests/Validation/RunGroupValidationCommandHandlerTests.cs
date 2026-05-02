@@ -2,6 +2,8 @@ using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Validation;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -52,12 +54,7 @@ public class RunGroupValidationCommandHandlerTests
                 DurationMs = 5000,
                 TotalCombinations = 100,
                 SortBy = "FitnessScore",
-                DataSubscriptions = [new DataSubscriptionDto
-                {
-                    AssetName = $"ASSET{i}",
-                    Exchange = "Binance",
-                    TimeFrame = "01:00:00",
-                }],
+                DataSubscriptions = [new TimeBarSubscription($"ASSET{i}", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
                 BacktestSettings = new BacktestSettingsDto
                 {
                     InitialCash = 10_000m,
@@ -84,12 +81,7 @@ public class RunGroupValidationCommandHandlerTests
                 DurationMs = 1000,
                 TotalCombinations = 100,
                 SortBy = "FitnessScore",
-                DataSubscriptions = [new DataSubscriptionDto
-                {
-                    AssetName = $"FAILED{i}",
-                    Exchange = "Binance",
-                    TimeFrame = "01:00:00",
-                }],
+                DataSubscriptions = [new TimeBarSubscription($"FAILED{i}", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
                 BacktestSettings = new BacktestSettingsDto
                 {
                     InitialCash = 10_000m,

@@ -1,4 +1,6 @@
+using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Persistence;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Validation;
 using AlgoTradeForge.Domain.Validation.Stages;
 
@@ -6,8 +8,8 @@ namespace AlgoTradeForge.Application.Validation;
 
 /// <summary>
 /// Builds a <see cref="SimulationCache"/> from optimization trial records.
-/// Groups trials by <see cref="DataSubscriptionDto"/> so that trials sharing the same
-/// asset/exchange/timeframe share a single timeline (deduplicated timestamps).
+/// Groups trials by <see cref="DataFeedSubscription"/> so that trials sharing the same
+/// asset/exchange/feed share a single timeline (deduplicated timestamps).
 /// </summary>
 public static class SimulationCacheBuilder
 {
@@ -20,7 +22,8 @@ public static class SimulationCacheBuilder
 
         if (hasEquityCurves)
         {
-            var seen = new HashSet<(DataSubscriptionDto, int)>();
+            // Group by (canonical key, bar count) — value-equatable strings keep the HashSet light.
+            var seen = new HashSet<(string PrimaryKey, int BarCount)>();
             var totalBars = 0L;
             var uniqueTimelineBars = 0L;
 
@@ -28,7 +31,7 @@ public static class SimulationCacheBuilder
             {
                 var bars = trial.EquityCurve.Count;
                 totalBars += bars;
-                if (seen.Add((trial.DataSubscriptions[0], bars)))
+                if (seen.Add((BacktestInputsFormatter.Key(trial.DataSubscriptions[0]), bars)))
                     uniqueTimelineBars += bars;
             }
 
@@ -56,13 +59,13 @@ public static class SimulationCacheBuilder
 
     private static SimulationCache BuildFromEquityCurves(IReadOnlyList<BacktestRunRecord> trials)
     {
-        var timelineKeys = new Dictionary<(DataSubscriptionDto Sub, int BarCount), int>();
+        var timelineKeys = new Dictionary<(string PrimaryKey, int BarCount), int>();
         var timelines = new List<long[]>();
         var trialData = new TrialData[trials.Count];
 
         for (var t = 0; t < trials.Count; t++)
         {
-            var key = (trials[t].DataSubscriptions[0], trials[t].EquityCurve.Count);
+            var key = (BacktestInputsFormatter.Key(trials[t].DataSubscriptions[0]), trials[t].EquityCurve.Count);
             if (!timelineKeys.TryGetValue(key, out var tlIdx))
             {
                 tlIdx = timelines.Count;
@@ -153,8 +156,8 @@ public static class SimulationCacheBuilder
         for (var i = 0; i < trials.Count; i++)
         {
             var subs = trials[i].DataSubscriptions
-                .OrderBy(s => s.AssetName).ThenBy(s => s.Exchange).ThenBy(s => s.TimeFrame);
-            map[i] = string.Join(",", subs.Select(s => $"{s.AssetName}:{s.Exchange}:{s.TimeFrame}"));
+                .OrderBy(BacktestInputsFormatter.Key, StringComparer.Ordinal);
+            map[i] = string.Join(",", subs.Select(BacktestInputsFormatter.Key));
         }
 
         var distinctGroups = new HashSet<string>(map.Values);

@@ -4,6 +4,8 @@ using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.WebApi.Contracts;
 using AlgoTradeForge.WebApi.Tests.Infrastructure;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.WebApi.Tests.Endpoints;
 
@@ -38,12 +40,7 @@ public sealed class ValidationEndpointGroupTests(AlgoTradeForgeApiFactory factor
             },
             SubscriptionAxis =
             [
-                [new DataSubscriptionDto
-                {
-                    AssetName = "BTCUSDT",
-                    Exchange = "Binance",
-                    TimeFrame = "01:00:00",
-                }]
+                [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))]
             ],
             OptimizationAxes = new Dictionary<string, OptimizationAxisOverride>
             {

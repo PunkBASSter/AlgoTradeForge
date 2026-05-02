@@ -94,9 +94,7 @@ public sealed class BoundedTrialQueue
     {
         var sb = new System.Text.StringBuilder();
         foreach (var sub in record.DataSubscriptions)
-            sb.Append(sub.AssetName)
-              .Append(':').Append(sub.Exchange)
-              .Append(':').Append(sub.TimeFrame)
+            sb.Append(AlgoTradeForge.Application.Backtests.BacktestInputsFormatter.Key(sub))
               .Append('|');
 
         var first = true;

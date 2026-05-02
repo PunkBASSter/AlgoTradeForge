@@ -153,13 +153,11 @@ public sealed class RunBacktestCommandHandler(
                 StrategyVersion = setup.Strategy.Version,
                 Parameters = command.StrategyParameters?.AsReadOnly()
                     ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-                DataSubscriptions = setup.Strategy.DataSubscriptions
-                    .Select(s => new DataSubscriptionDto
-                    {
-                        AssetName = AssetLookupName.From(s.Asset),
-                        Exchange = s.Asset.Exchange,
-                        TimeFrame = TimeFrameFormatter.Format(s.TimeFrame),
-                    }).ToList(),
+                // Persist the original wire shape — `setup.Strategy.DataSubscriptions` is the
+                // resolved (Asset, TimeFrame) form which collapses AltBar/Tick/Side back to
+                // TimeBar and erases FeedId. PR-A only resolves TimeBar today, but using the
+                // command's list keeps the audit record correct once PR-C lifts the guard.
+                DataSubscriptions = command.DataSubscriptions,
                 BacktestSettings = command.BacktestSettings,
                 StartedAt = startedAt,
                 CompletedAt = completedAt,
@@ -210,13 +208,11 @@ public sealed class RunBacktestCommandHandler(
                 StrategyVersion = setup.Strategy.Version,
                 Parameters = command.StrategyParameters?.AsReadOnly()
                     ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-                DataSubscriptions = setup.Strategy.DataSubscriptions
-                    .Select(s => new DataSubscriptionDto
-                    {
-                        AssetName = AssetLookupName.From(s.Asset),
-                        Exchange = s.Asset.Exchange,
-                        TimeFrame = TimeFrameFormatter.Format(s.TimeFrame),
-                    }).ToList(),
+                // Persist the original wire shape — `setup.Strategy.DataSubscriptions` is the
+                // resolved (Asset, TimeFrame) form which collapses AltBar/Tick/Side back to
+                // TimeBar and erases FeedId. PR-A only resolves TimeBar today, but using the
+                // command's list keeps the audit record correct once PR-C lifts the guard.
+                DataSubscriptions = command.DataSubscriptions,
                 BacktestSettings = command.BacktestSettings,
                 StartedAt = startedAt,
                 CompletedAt = completedAt,

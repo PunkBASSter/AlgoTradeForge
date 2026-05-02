@@ -1,6 +1,8 @@
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Domain.Reporting;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Optimization;
 
@@ -27,7 +29,7 @@ public sealed class TrialFilterTests
     {
         StrategyName = "Test",
         OptimizationMethod = "BruteForce",
-        SubscriptionAxis = [[new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }]],
+        SubscriptionAxis = [[new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))]],
         BacktestSettings = new BacktestSettingsDto
         {
             InitialCash = 10_000m,
@@ -74,7 +76,7 @@ public sealed class TrialFilterTests
         {
             StrategyName = "Test",
             OptimizationMethod = "BruteForce",
-            SubscriptionAxis = [[new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }]],
+            SubscriptionAxis = [[new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))]],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10_000m,

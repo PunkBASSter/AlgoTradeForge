@@ -49,7 +49,10 @@ public static class BacktestInputsFormatter
     /// <summary>
     /// Hash-friendly key for one subscription: <c>asset:exchange:feed:role</c>. Includes the
     /// role suffix so a subscription that appears in both Primary and Side positions across
-    /// different inputs hashes distinctly.
+    /// different inputs hashes distinctly. The role is rendered as the integer ordinal
+    /// (Primary=0, Side=1) — pinning it to ordinals here decouples persisted run-key hashes
+    /// from the wire shape (the JSON layer renders <c>DataFeedRole</c> as <c>"Primary"</c>/
+    /// <c>"Side"</c> via <c>JsonStringEnumConverter</c>; this key intentionally does not).
     /// </summary>
     public static string Key(DataFeedSubscription sub)
     {
@@ -61,6 +64,6 @@ public static class BacktestInputsFormatter
             SideFeedSubscription s => s.FeedId,
             _ => sub.GetType().Name,
         };
-        return $"{sub.AssetName}:{sub.Exchange}:{feed}:{sub.Role}";
+        return $"{sub.AssetName}:{sub.Exchange}:{feed}:{(int)sub.Role}";
     }
 }

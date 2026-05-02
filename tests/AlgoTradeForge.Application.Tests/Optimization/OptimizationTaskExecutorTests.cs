@@ -19,6 +19,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Optimization;
 
@@ -205,7 +206,7 @@ public sealed class OptimizationTaskExecutorTests
             StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
         },
-        SubscriptionDtos = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }],
+        Subscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
         ActiveAxes = [new ResolvedNumericAxis("Period", [10, 20])],
         EstimatedCount = estimatedCount,
         MaxParallelism = 1,

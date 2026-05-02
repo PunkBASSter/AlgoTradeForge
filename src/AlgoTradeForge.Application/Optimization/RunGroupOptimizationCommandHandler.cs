@@ -2,6 +2,7 @@ using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
+using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Domain.Optimization.Fitness;
@@ -146,14 +147,7 @@ public sealed class RunGroupOptimizationCommandHandler(
             var childRunId = Guid.NewGuid();
             childRunIds[dssIdx] = childRunId;
 
-            var dssSubs = subscriptionAxis[dssIdx]
-                .Select(s => new DataSubscriptionDto
-                {
-                    AssetName = s.AssetName,
-                    Exchange = s.Exchange,
-                    TimeFrame = s.TimeFrame,
-                })
-                .ToList();
+            var dssSubs = subscriptionAxis[dssIdx].ToList();
 
             await helper.InsertPlaceholderAsync(new OptimizationRunRecord
             {
@@ -197,23 +191,16 @@ public sealed class RunGroupOptimizationCommandHandler(
         for (var dssIdx = 0; dssIdx < dssCount; dssIdx++)
         {
             var dssLabel = string.Join(", ", subscriptionAxis[dssIdx]
-                .Select(s => $"{s.AssetName}/{s.Exchange}/{s.TimeFrame}"));
+                .Select(BacktestInputsFormatter.Format));
 
-            var dssSubs = subscriptionAxis[dssIdx]
-                .Select(s => new DataSubscriptionDto
-                {
-                    AssetName = s.AssetName,
-                    Exchange = s.Exchange,
-                    TimeFrame = s.TimeFrame,
-                })
-                .ToList();
+            var dssSubs = subscriptionAxis[dssIdx].ToList();
 
             object executionCtx = isGenetic
                 ? new GeneticExecutionContext
                 {
                     StrategyName = command.StrategyName,
                     BacktestSettings = settings,
-                    SubscriptionDtos = dssSubs,
+                    Subscriptions = dssSubs,
                     ActiveAxes = activeAxes,
                     GaConfig = gaConfig!,
                     MaxParallelism = maxParallelism,
@@ -230,7 +217,7 @@ public sealed class RunGroupOptimizationCommandHandler(
                     StrategyName = command.StrategyName,
                     OptimizationMethod = command.OptimizationMethod,
                     BacktestSettings = settings,
-                    SubscriptionDtos = dssSubs,
+                    Subscriptions = dssSubs,
                     ActiveAxes = activeAxes,
                     EstimatedCount = estimatedCountPerDss,
                     MaxParallelism = maxParallelism,

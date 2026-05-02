@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
@@ -143,7 +144,7 @@ public sealed class RunGroupValidationCommandHandler(
         {
             var optimizationRun = completedRuns[i];
             var dssLabel = string.Join(", ", optimizationRun.DataSubscriptions
-                .Select(s => $"{s.AssetName}/{s.Exchange}/{s.TimeFrame}"));
+                .Select(BacktestInputsFormatter.Format));
 
             computeTasks.Add(new ComputeTask
             {

@@ -5,6 +5,7 @@ using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Validation;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.WebApi.Contracts;
 
 namespace AlgoTradeForge.WebApi.Endpoints;
@@ -412,7 +413,7 @@ public static class ValidationEndpoints
             return Results.NotFound(new { error = $"Validation group '{groupId}' not found." });
 
         // Load DSS info from the linked optimization group's child runs
-        Dictionary<Guid, IReadOnlyList<DataSubscriptionDto>>? optRunDssLookup = null;
+        Dictionary<Guid, IReadOnlyList<DataFeedSubscription>>? optRunDssLookup = null;
         var optGroup = await optGroupHandler.HandleAsync(
             new GetOptimizationGroupByIdQuery(group.OptimizationGroupId), ct);
         if (optGroup is not null)
@@ -472,7 +473,7 @@ public static class ValidationEndpoints
 
     private static ValidationGroupDetailResponse MapValidationGroupToResponse(
         ValidationGroupRecord group,
-        Dictionary<Guid, IReadOnlyList<DataSubscriptionDto>>? optRunDssLookup) => new()
+        Dictionary<Guid, IReadOnlyList<DataFeedSubscription>>? optRunDssLookup) => new()
     {
         Id = group.Id,
         OptimizationGroupId = group.OptimizationGroupId,
@@ -487,13 +488,8 @@ public static class ValidationEndpoints
             // Look up DSS from the linked optimization run
             var dss = optRunDssLookup is not null
                 && optRunDssLookup.TryGetValue(r.OptimizationRunId, out var subs)
-                ? subs.Select(d => new DataSubscriptionInput
-                {
-                    AssetName = d.AssetName,
-                    Exchange = d.Exchange,
-                    TimeFrame = d.TimeFrame,
-                }).ToList()
-                : [];
+                ? subs.ToList()
+                : new List<DataFeedSubscription>();
 
             return new ValidationGroupRunDetailResponse
             {

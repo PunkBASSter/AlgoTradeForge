@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
@@ -71,7 +72,7 @@ public sealed class RunValidationCommandHandler(
         // 5. Enqueue compute task to the queue
         var thresholdProfileJson = JsonSerializer.Serialize(profile, JsonOptions);
         var dssLabel = string.Join(", ", optimization.DataSubscriptions
-            .Select(s => $"{s.AssetName}/{s.Exchange}/{s.TimeFrame}"));
+            .Select(BacktestInputsFormatter.Format));
 
         var computeTask = new ComputeTask
         {

@@ -7,6 +7,8 @@ using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.Domain.Optimization.Space;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Optimization;
 
@@ -178,8 +180,8 @@ public class EvaluateOptimizationQueryHandlerTests
             },
             SubscriptionAxis =
             [
-                [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
-                [new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
+                [new TimeBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
+                [new TimeBarSubscription("ETHUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             ],
             Mode = "BruteForce",
         };
@@ -207,7 +209,7 @@ public class EvaluateOptimizationQueryHandlerTests
             },
             SubscriptionAxis =
             [
-                [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
+                [new TimeBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             ],
             Mode = "BruteForce",
         };
@@ -234,9 +236,9 @@ public class EvaluateOptimizationQueryHandlerTests
             },
             SubscriptionAxis =
             [
-                [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
-                [new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
-                [new DataSubscriptionDto { AssetName = "SOLUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
+                [new TimeBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
+                [new TimeBarSubscription("ETHUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
+                [new TimeBarSubscription("SOLUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             ],
             Mode = "BruteForce",
         };

@@ -12,6 +12,7 @@ using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Application.Tests.TestUtilities;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Debug;
 
@@ -70,7 +71,7 @@ public class DebugSessionHandlerTests
 
         var dto = await CreateStartHandler().HandleAsync(new StartDebugSessionCommand
         {
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" }],
+            DataSubscriptions = [new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 100_000m,
@@ -108,7 +109,7 @@ public class DebugSessionHandlerTests
 
         var sessionDto = await startHandler.HandleAsync(new StartDebugSessionCommand
         {
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" }],
+            DataSubscriptions = [new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 100_000m,
@@ -182,7 +183,7 @@ public class DebugSessionHandlerTests
 
         var sessionDto = await startHandler.HandleAsync(new StartDebugSessionCommand
         {
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" }],
+            DataSubscriptions = [new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 100_000m,

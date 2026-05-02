@@ -2,6 +2,8 @@ using AlgoTradeForge.Application.Persistence;
 using Xunit;
 using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Validation;
 
@@ -138,8 +140,10 @@ public class SimulationCacheBuilderTests
 
         Assert.NotNull(result);
         Assert.Equal(2, result.Count);
-        Assert.Equal("BTCUSDT:binance:1h", result[0]);
-        Assert.Equal("ETHUSD:binance:1h", result[1]);
+        // Phase 4 P4-A: BacktestInputsFormatter.Key includes the Role segment as an integer
+        // ordinal (Primary=0, Side=1) so the format is decoupled from JSON enum serialization.
+        Assert.Equal("BTCUSDT:binance:1h:0", result[0]);
+        Assert.Equal("ETHUSD:binance:1h:0", result[1]);
     }
 
     [Fact]
@@ -152,17 +156,18 @@ public class SimulationCacheBuilderTests
         {
             DataSubscriptions =
             [
-                new DataSubscriptionDto { AssetName = "ETHUSD", Exchange = "binance", TimeFrame = "1h" },
-                new DataSubscriptionDto { AssetName = "BTCUSD", Exchange = "binance", TimeFrame = "1h" },
+                new TimeBarSubscription("ETHUSD", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                new TimeBarSubscription("BTCUSD", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
             ],
         };
 
         var result = SimulationCacheBuilder.BuildSubscriptionGroupMap([trial1, trial2]);
 
         Assert.NotNull(result);
-        Assert.Equal("BTCUSDT:binance:1h", result[0]);
+        // Phase 4 P4-A: Key format is asset:exchange:feed:role(int)
+        Assert.Equal("BTCUSDT:binance:1h:0", result[0]);
         // Sorted: BTCUSD comes before ETHUSD
-        Assert.Equal("BTCUSD:binance:1h,ETHUSD:binance:1h", result[1]);
+        Assert.Equal("BTCUSD:binance:1h:0,ETHUSD:binance:1h:0", result[1]);
     }
 
     [Fact]
@@ -180,12 +185,7 @@ public class SimulationCacheBuilderTests
         var trial = CreateTrial(initialCapital, equityPoints);
         return trial with
         {
-            DataSubscriptions = [new DataSubscriptionDto
-            {
-                AssetName = assetName,
-                Exchange = exchange,
-                TimeFrame = timeFrame,
-            }],
+            DataSubscriptions = [new TimeBarSubscription(assetName, exchange, DataFeedRole.Primary, TimeFrame.Parse(timeFrame))],
         };
     }
 
@@ -197,12 +197,7 @@ public class SimulationCacheBuilderTests
             StrategyName = "Test",
             StrategyVersion = "1.0",
             Parameters = new Dictionary<string, object>(),
-            DataSubscriptions = [new DataSubscriptionDto
-            {
-                AssetName = "BTCUSDT",
-                Exchange = "binance",
-                TimeFrame = "1h",
-            }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = initialCapital,

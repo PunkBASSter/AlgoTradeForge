@@ -5,6 +5,8 @@ using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Validation;
 using AlgoTradeForge.Infrastructure.Validation;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Infrastructure.Tests.Validation;
 
@@ -228,12 +230,7 @@ public class SimulationCacheFileStoreTests : IDisposable
                 StrategyName = "Test",
                 StrategyVersion = "1.0",
                 Parameters = new Dictionary<string, object>(),
-                DataSubscriptions = [new DataSubscriptionDto
-                {
-                    AssetName = "TEST",
-                    Exchange = "Binance",
-                    TimeFrame = "1m",
-                }],
+                DataSubscriptions = [new TimeBarSubscription("TEST", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
                 BacktestSettings = new BacktestSettingsDto
                 {
                     InitialCash = initialCapital,

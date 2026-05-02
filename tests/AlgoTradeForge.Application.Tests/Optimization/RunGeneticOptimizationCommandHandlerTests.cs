@@ -18,6 +18,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Optimization;
 
@@ -67,7 +68,7 @@ public class RunGeneticOptimizationCommandHandlerTests
         },
         SubscriptionAxis =
         [
-            [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }]
+            [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))]
         ],
         Axes = new Dictionary<string, OptimizationAxisOverride>
         {
@@ -113,7 +114,7 @@ public class RunGeneticOptimizationCommandHandlerTests
     {
         SetupStandardMocks();
         var handler = CreateHandler();
-        var command = CreateCommand() with { SubscriptionAxis = new List<List<DataSubscriptionDto>>() };
+        var command = CreateCommand() with { SubscriptionAxis = new List<List<DataFeedSubscription>>() };
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => handler.HandleAsync(command, TestContext.Current.CancellationToken));

@@ -2,6 +2,8 @@ using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Application.Progress;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Progress;
 
@@ -41,20 +43,11 @@ public sealed class RunKeyBuilderTests
         Assert.Equal(RunKeyBuilder.Build(cmd1), RunKeyBuilder.Build(cmd2));
     }
 
-    [Fact]
-    public void Build_Backtest_Empty_TimeFrame_Equals_Default_TimeFrame_Key()
-    {
-        var cmdEmpty = MakeBacktestCommand() with
-        {
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "" }]
-        };
-        var cmdDefault = MakeBacktestCommand() with
-        {
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "default" }]
-        };
-
-        Assert.Equal(RunKeyBuilder.Build(cmdEmpty), RunKeyBuilder.Build(cmdDefault));
-    }
+    // Phase 4 P4-A removed the original "empty/default TimeFrame normalization" test:
+    // `TimeFrame` is now a strict value type and cannot be constructed from "" or "default",
+    // so the case the old test guarded is unreachable at the type system. Empty-input
+    // behavior is now the responsibility of `TimeFrame.Parse` (throws), which has its own
+    // tests in `Domain.Tests/Strategy/TimeFrameTests.cs`.
 
     [Fact]
     public void Build_Backtest_Returns_SHA256_Hex_Format()
@@ -97,11 +90,11 @@ public sealed class RunKeyBuilderTests
     {
         var cmd1 = MakeLiveCommand() with
         {
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }]
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))]
         };
         var cmd2 = MakeLiveCommand() with
         {
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }]
+            DataSubscriptions = [new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))]
         };
 
         Assert.NotEqual(RunKeyBuilder.Build(cmd1), RunKeyBuilder.Build(cmd2));
@@ -133,7 +126,7 @@ public sealed class RunKeyBuilderTests
 
     private static RunBacktestCommand MakeBacktestCommand() => new()
     {
-        DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }],
+        DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
         BacktestSettings = new BacktestSettingsDto
         {
             InitialCash = 10000m,
@@ -152,7 +145,7 @@ public sealed class RunKeyBuilderTests
         StrategyName = "Strat",
         InitialCash = 10000m,
         StrategyParameters = parameters,
-        DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" }],
+        DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
     };
 
 }

@@ -84,12 +84,7 @@ public static class BacktestEndpoints
 
         var command = new RunBacktestCommand
         {
-            DataSubscriptions = request.DataSubscriptions.Select(s => new DataSubscriptionDto
-            {
-                AssetName = s.AssetName,
-                Exchange = s.Exchange,
-                TimeFrame = s.TimeFrame ?? "",
-            }).ToList(),
+            DataSubscriptions = request.DataSubscriptions,
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = request.BacktestSettings.InitialCash,

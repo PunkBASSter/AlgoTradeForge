@@ -9,6 +9,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.Application.Optimization;
@@ -35,7 +36,7 @@ public sealed class OptimizationSetupHelper(
     public async Task<(List<List<DataSubscription>> AxisSubscriptionGroups,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> DataCache)>
         ResolveSubscriptionsAsync(
-            List<List<DataSubscriptionDto>>? axisGroups,
+            List<List<DataFeedSubscription>>? axisGroups,
             DateOnly fromDate, DateOnly toDate,
             CancellationToken ct)
     {
@@ -45,10 +46,10 @@ public sealed class OptimizationSetupHelper(
         var axisSubscriptionGroups = new List<List<DataSubscription>>();
         var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
 
-        foreach (var dtoGroup in axisGroups)
+        foreach (var group in axisGroups)
         {
             var resolvedGroup = new List<DataSubscription>();
-            foreach (var sub in dtoGroup)
+            foreach (var sub in group)
                 await ResolveAndCacheAsync(sub, resolvedGroup, dataCache, fromDate, toDate, ct);
             axisSubscriptionGroups.Add(resolvedGroup);
         }
@@ -137,7 +138,7 @@ public sealed class OptimizationSetupHelper(
             .ToList();
 
     public async Task ResolveAndCacheAsync(
-        DataSubscriptionDto sub,
+        DataFeedSubscription sub,
         List<DataSubscription> target,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
         DateOnly fromDate, DateOnly toDate,
@@ -146,13 +147,17 @@ public sealed class OptimizationSetupHelper(
         var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
             ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
-        if (!TimeFrame.TryParseLiberal(sub.TimeFrame, out var timeFrame))
-            throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.AssetName}'.");
+        // Phase 4 PR-A: only TimeBarSubscription is wired through the loader. PR-C lifts this
+        // guard once HistoryRepository.Load(DataFeedSubscription, ...) is wired (per the plan).
+        if (sub is not TimeBarSubscription tb)
+            throw new NotSupportedException(
+                $"Phase 4 PR-A: only TimeBarSubscription is supported in OptimizationSetupHelper; " +
+                $"got {sub.GetType().Name}. PR-C extends this to alt-bar / tick / side primaries.");
 
-        var subscription = new DataSubscription(asset, timeFrame);
+        var subscription = new DataSubscription(asset, tb.TimeFrame);
         target.Add(subscription);
 
-        var key = CacheKey(asset, timeFrame);
+        var key = CacheKey(asset, tb.TimeFrame);
         if (!dataCache.ContainsKey(key))
         {
             var series = historyRepository.Load(subscription, fromDate, toDate);
@@ -232,13 +237,17 @@ public sealed class OptimizationSetupHelper(
             StrategyName = strategyName,
             StrategyVersion = strategy.Version,
             Parameters = combination.Values, // Store original unscaled values
+            // Phase 4 PR-A: trial subscriptions are provably TimeBar — `ResolveAndCacheAsync`
+            // throws NotSupportedException for AltBar/Tick/Side, so the rebuild from the
+            // resolved engine type is lossless. PR-C threads the original DataFeedSubscription
+            // through ExecuteTrial so per-trial records preserve FeedId for alt-bar primaries.
             DataSubscriptions = strategy.DataSubscriptions
-                .Select(s => new DataSubscriptionDto
-                {
-                    AssetName = AssetLookupName.From(s.Asset),
-                    Exchange = s.Asset.Exchange,
-                    TimeFrame = s.TimeFrame.Code,
-                }).ToList(),
+                .Select((s, i) => (DataFeedSubscription)new TimeBarSubscription(
+                    AssetLookupName.From(s.Asset),
+                    s.Asset.Exchange,
+                    i == 0 ? DataFeedRole.Primary : DataFeedRole.Side,
+                    s.TimeFrame))
+                .ToList(),
             BacktestSettings = settings,
             StartedAt = startedAt,
             CompletedAt = DateTimeOffset.UtcNow,
@@ -256,7 +265,7 @@ public sealed class OptimizationSetupHelper(
     public async Task SaveErrorOptimizationAsync(
         string strategyName,
         BacktestSettingsDto backtestSettings,
-        IReadOnlyList<DataSubscriptionDto> subscriptions,
+        IReadOnlyList<DataFeedSubscription> subscriptions,
         string sortBy,
         int maxParallelism,
         Guid optimizationRunId,
@@ -305,8 +314,21 @@ public sealed class OptimizationSetupHelper(
         }
     }
 
-    public static IReadOnlyList<DataSubscriptionDto> GetSubscriptionDtos(
-        List<List<DataSubscriptionDto>>? axisGroups)
+    /// <summary>
+    /// Returns a 1-element list whose single subscription is a clone of the first axis
+    /// group's first subscription, with <c>AssetName</c> overridden to a composite display
+    /// label (e.g. <c>"BTCUSDT+ETHUSDT"</c> for the first group, suffixed with
+    /// <c>" (+N more)"</c> when more axis groups follow). The other fields (Exchange, Role,
+    /// kind-specific payload such as TimeFrame/FeedId) are preserved verbatim.
+    /// <para>
+    /// Intended for status/log surfaces only — the synthesized <c>AssetName</c> is a
+    /// human-readable label, NOT a valid asset lookup key, so the returned record must
+    /// never be passed back through <c>IAssetRepository.GetByNameAsync</c>. Per-DSS
+    /// resolution (which uses real asset names) lives on each child run.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<DataFeedSubscription> GetSubscriptions(
+        List<List<DataFeedSubscription>>? axisGroups)
     {
         if (axisGroups is not { Count: > 0 })
             return [];

@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Validation;
@@ -31,7 +32,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
         var subscriptionAxis = command.SubscriptionAxis;
         if (subscriptionAxis is not { Count: > 0 } || subscriptionAxis[0].Count == 0)
             throw new ArgumentException("At least one data subscription must be provided.");
-        var primarySub = OptimizationSetupHelper.GetSubscriptionDtos(subscriptionAxis);
+        var primarySub = OptimizationSetupHelper.GetSubscriptions(subscriptionAxis);
 
         // 3. Resolve axes and GA config
         var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes);
@@ -101,14 +102,14 @@ public sealed class RunGeneticOptimizationCommandHandler(
         // 6. Build execution context and enqueue
         var normalizer = NormalizingEnumerable.TryCreateNormalizer(descriptor.ParamsType);
         var dssLabel = primarySub.Count > 0
-            ? string.Join(", ", primarySub.Select(s => $"{s.AssetName}/{s.Exchange}/{s.TimeFrame}"))
+            ? string.Join(", ", primarySub.Select(BacktestInputsFormatter.Format))
             : command.StrategyName;
 
         var geneticCtx = new GeneticExecutionContext
         {
             StrategyName = command.StrategyName,
             BacktestSettings = settings,
-            SubscriptionDtos = primarySub.ToList(),
+            Subscriptions = primarySub.ToList(),
             ActiveAxes = activeAxes,
             GaConfig = gaConfig,
             MaxParallelism = maxParallelism,

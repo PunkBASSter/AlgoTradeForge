@@ -48,9 +48,10 @@ internal static class SqliteDbInitializer
             commission          TEXT    NOT NULL,
             slippage_ticks      INTEGER NOT NULL,
             max_parallelism     INTEGER NOT NULL,
-            asset_name          TEXT    NOT NULL,
-            exchange            TEXT    NOT NULL,
-            timeframe           TEXT    NOT NULL,
+            primary_asset       TEXT    NOT NULL,
+            primary_exchange    TEXT    NOT NULL,
+            primary_feed        TEXT    NOT NULL,
+            primary_kind        TEXT    NOT NULL,
             filtered_trials     INTEGER NOT NULL DEFAULT 0,
             failed_trials       INTEGER NOT NULL DEFAULT 0,
             dedup_skipped       INTEGER NOT NULL DEFAULT 0,
@@ -59,7 +60,7 @@ internal static class SqliteDbInitializer
             input_json          TEXT    NULL,
             error_message       TEXT    NULL,
             status              TEXT    NOT NULL DEFAULT 'Completed',
-            subscriptions_json  TEXT    NULL,
+            subscriptions_json  TEXT    NOT NULL,
             group_id            TEXT    NULL REFERENCES optimization_groups(id),
             dss_index           INTEGER NOT NULL DEFAULT 0
         );
@@ -84,13 +85,14 @@ internal static class SqliteDbInitializer
             run_folder_path     TEXT    NULL,
             run_mode            TEXT    NOT NULL DEFAULT 'Backtest',
             optimization_run_id TEXT    NULL REFERENCES optimization_runs(id),
-            asset_name          TEXT    NOT NULL,
-            exchange            TEXT    NOT NULL,
-            timeframe           TEXT    NOT NULL,
+            primary_asset       TEXT    NOT NULL,
+            primary_exchange    TEXT    NOT NULL,
+            primary_feed        TEXT    NOT NULL,
+            primary_kind        TEXT    NOT NULL,
             error_message       TEXT    NULL,
             error_stack_trace   TEXT    NULL,
             fitness_score       REAL    NULL,
-            subscriptions_json  TEXT    NULL,
+            subscriptions_json  TEXT    NOT NULL,
             sharpe_ratio        REAL    NULL,
             sortino_ratio       REAL    NULL,
             profit_factor       REAL    NULL,
@@ -104,8 +106,8 @@ internal static class SqliteDbInitializer
         CREATE INDEX IF NOT EXISTS ix_br_strategy ON backtest_runs(strategy_name);
         CREATE INDEX IF NOT EXISTS ix_br_completed ON backtest_runs(completed_at);
         CREATE INDEX IF NOT EXISTS ix_br_opt_id ON backtest_runs(optimization_run_id);
-        CREATE INDEX IF NOT EXISTS ix_br_asset ON backtest_runs(asset_name, exchange, timeframe);
-        CREATE INDEX IF NOT EXISTS ix_opr_asset ON optimization_runs(asset_name, exchange, timeframe);
+        CREATE INDEX IF NOT EXISTS ix_br_primary ON backtest_runs(primary_asset, primary_exchange, primary_feed);
+        CREATE INDEX IF NOT EXISTS ix_opr_primary ON optimization_runs(primary_asset, primary_exchange, primary_feed);
         CREATE INDEX IF NOT EXISTS ix_or_group_id ON optimization_runs(group_id);
         -- ix_br_opt_fitness created asynchronously by SqliteIndexMaintenanceService
 
@@ -200,7 +202,7 @@ internal static class SqliteDbInitializer
         schemaCmd.CommandText = Schema;
         await schemaCmd.ExecuteNonQueryAsync();
 
-        // Seed version on first run; future migrations will check and increment
+        // Seed version on first run; future migrations will check and increment.
         await using var versionCmd = connection.CreateCommand();
         versionCmd.CommandText = $"""
             INSERT INTO schema_version (version)
@@ -266,44 +268,5 @@ internal static class SqliteDbInitializer
         {
             _orphanCleanupLock.Release();
         }
-    }
-
-    private static async Task<int> GetVersionAsync(SqliteConnection connection)
-    {
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT version FROM schema_version LIMIT 1";
-        var result = await cmd.ExecuteScalarAsync();
-        return result is not null ? Convert.ToInt32(result) : 0;
-    }
-
-    private static readonly System.Text.RegularExpressions.Regex SafeIdentifier =
-        new(@"^[a-zA-Z_][a-zA-Z0-9_]*$", System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    private static async Task AddColumnIfNotExistsAsync(
-        SqliteConnection connection, string table, string column, string definition)
-    {
-        if (!SafeIdentifier.IsMatch(table))
-            throw new ArgumentException($"Invalid table identifier: {table}", nameof(table));
-        if (!SafeIdentifier.IsMatch(column))
-            throw new ArgumentException($"Invalid column identifier: {column}", nameof(column));
-
-        await using var checkCmd = connection.CreateCommand();
-        checkCmd.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = $col";
-        checkCmd.Parameters.AddWithValue("$col", column);
-        var exists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
-        if (exists) return;
-
-        // table/column are validated against SafeIdentifier above; definition is always a hardcoded literal.
-        await using var alterCmd = connection.CreateCommand();
-        alterCmd.CommandText = $"ALTER TABLE [{table}] ADD COLUMN [{column}] {definition}";
-        await alterCmd.ExecuteNonQueryAsync();
-    }
-
-    private static async Task SetVersionAsync(SqliteConnection connection, int version)
-    {
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "UPDATE schema_version SET version = $version";
-        cmd.Parameters.AddWithValue("$version", version);
-        await cmd.ExecuteNonQueryAsync();
     }
 }

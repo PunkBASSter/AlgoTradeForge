@@ -1,8 +1,10 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
+
 namespace AlgoTradeForge.Application.Abstractions;
 
 public interface IBacktestSetupCommand
 {
-    IReadOnlyList<DataSubscriptionDto> DataSubscriptions { get; }
+    IReadOnlyList<DataFeedSubscription> DataSubscriptions { get; }
     BacktestSettingsDto BacktestSettings { get; }
     string StrategyName { get; }
     bool UseDetailedExecutionLogic { get; }
