@@ -521,12 +521,9 @@ public sealed record SideFeedSubscription(string Exchange, string Asset, string 
 ### 9.3 Backtest input model
 
 ```csharp
-public sealed class BacktestInputs
-{
-    public required DataFeedSubscription Primary { get; init; }   // Role=Primary, Kind ∈ {TimeBar, AltBar}
-    public IReadOnlyList<DataFeedSubscription> SideFeeds { get; init; } = [];
-    public DateRange Range { get; init; }
-}
+public sealed record BacktestInputs(IReadOnlyList<DataFeedSubscription> Subscriptions);
+// Index 0 is the primary (Role=Primary, Kind ∈ {TimeBar, AltBar, Tick}); the rest are
+// side feeds (Role=Side). DateRange is carried separately by the surrounding command.
 ```
 
 Engine resolves to glob:
@@ -586,9 +583,9 @@ public readonly record struct DataFeedDescriptor(
 
 ### 9.6 Optimization, validation, debug
 
-- **Backtest / Debug:** single Primary, list of side feeds.
-- **Optimization:** `BacktestInputs.Primary` becomes `IReadOnlyList<DataFeedSubscription> PrimaryCandidates`; engine fans out across primaries × parameter grid.
-- **Validation (walk-forward / OOS):** same Primary; range split server-side.
+- **Backtest / Debug:** `BacktestInputs(Subscriptions)` — exactly one `Role=Primary` entry (index 0), zero or more `Role=Side`.
+- **Optimization:** `OptimizationInputs(Subscriptions)` — same shape, but **multiple** `Role=Primary` entries (the candidate set); engine fans out across them × parameter grid.
+- **Validation (walk-forward / OOS):** same shape as Backtest; range split server-side.
 
 ## 10. UI
 
@@ -653,7 +650,7 @@ Aggregate click locks the command panel; status panel renders SSE progress (`Que
 
 **Phase 4 — Subscription redesign + run-launch UI.**
 - `DataFeedSubscription` end-to-end through Application + WebApi.
-- Optimization fan-out across `PrimaryCandidates`.
+- Optimization fan-out across multi-primary `OptimizationInputs.Subscriptions`.
 
 **Phase 5 — Range / Renko accumulators.** Path-dependent; require ticks or sub-minute time bars.
 
@@ -717,7 +714,7 @@ Per-phase test scope. Each bullet is a behavior, not a method — the named test
 - **Polymorphic deserialization (§9.2).** `DataFeedSubscription` JSON discriminator covers all four subtypes; round-trip test.
 - **`AltBarSubscription.FeedId`.** Format `{Type.Code}_{SourceFeedId}_{Threshold}` matches §3.3 grammar exactly; collision-detection test asserts no two subscriptions with the same components produce different `FeedId`.
 - **Engine glob resolution (§9.3).** Each `Kind` resolves to the correct glob; sidecar (`Side` with `<feedId>.flow`) routes to the nested `aggregated/<feedId>/` glob, top-level side feeds (`funding-rate`) route to the asset-root glob.
-- **Optimization fan-out.** `PrimaryCandidates × params` produces `|primaries| × |combos|` runs; deduplication via `IParameterNormalizer` still applies per-primary.
+- **Optimization fan-out.** `OptimizationInputs.Subscriptions` (multi-primary) × params produces `|primaries| × |combos|` runs; deduplication via `IParameterNormalizer` still applies per-primary.
 
 ### Cross-cutting
 

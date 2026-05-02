@@ -250,10 +250,10 @@ No EqI yet; tick storage and signed accumulator are independent surfaces.
 ### Engine + command boundary
 
 - [ ] **P4-10** Replace `Application.DataSubscriptionDto` with `DataFeedSubscription` at API/command boundary. No back-compat shims. (TRD §1, §9)
-- [ ] **P4-11** `BacktestInputs` carries `Primary` (Role=Primary, Kind ∈ {TimeBar, AltBar}) + `SideFeeds`. (TRD §9.3)
+- [x] **P4-11** `BacktestInputs` carries `Primary` (Role=Primary, Kind ∈ {TimeBar, AltBar}) + `SideFeeds`. (TRD §9.3) — staged shape uses single ordered `Subscriptions` list (index 0 = primary) with `Primary` / `SideFeeds` convenience accessors; sibling `OptimizationInputs(PrimaryCandidates, SideFeeds)` lands alongside for P4-14 fan-out. Tick is also accepted as a primary kind (P2a-6 monotonic-bump path). `BacktestInputsFormatter` centralizes the `asset/exchange/feed` and `asset:exchange:feed:role` formats consumed by `RunKeyBuilder` + `SimulationCacheBuilder` in PR-3.
 - [ ] **P4-12** Engine glob resolution per `Kind` (TimeBar / AltBar / Tick / Side-sidecar / Side-top-level). (TRD §9.3)
 - [ ] **P4-13** Test: engine glob resolution — sidecar (`Side` + `<feedId>.flow`) routes nested; top-level side feeds (`funding-rate`) route to asset-root glob.
-- [ ] **P4-14** Optimization: `BacktestInputs.PrimaryCandidates` → fan-out across primaries × parameter grid. `IParameterNormalizer` dedup applies per-primary. (TRD §9.6)
+- [ ] **P4-14** Optimization: `OptimizationInputs.Subscriptions` (multi-primary; `Role=Primary` entries are fan-out candidates, `Role=Side` are shared side feeds) → fan-out across primaries × parameter grid. `IParameterNormalizer` dedup applies per-primary. (TRD §9.6)
 - [ ] **P4-15** Test: optimization fan-out — `|primaries| × |combos|` runs; per-primary normalizer dedup intact.
 - [ ] **P4-16** Validation — same `Primary`, range split server-side. (TRD §9.6)
 
@@ -320,7 +320,7 @@ Resolve before the listed gating task. Promote to a `## Resolved` section once l
 | 2a | 10 + BAKE | 9 done · P2a-8 deferred (needs real ticks post-BAKE) · BAKE pending merge | One PR for collection (P2a-1..5); 24–48 h bake before aggregator work (P2a-6..10) |
 | 2b | 13 | 13 | P0-1/P0-2 decision (DIM vs receiver) — DIMs landed (P0-1 PASS) |
 | 3 | 19 | 0 | P3-10 (Q-1 resolved) |
-| 4 | 19 | 0 | P0-3 / P0-4 audits drive P4-2 / P4-9 |
+| 4 | 19 | 11 (P4-1..P4-9, P4-11) | P0-3 / P0-4 audits drive P4-2 / P4-9 |
 | 5 | 6 | 0 | — |
 | 6 | 6 | 0 | If needed |
 | X | 5 | 4 (X-3, X-5 in 1a; X-2, X-4 in 1b) | Cross-cutting; land with parent phase |
