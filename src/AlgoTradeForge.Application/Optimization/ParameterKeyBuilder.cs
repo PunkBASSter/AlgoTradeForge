@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Text;
+using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Optimization;
 
@@ -39,6 +41,18 @@ internal static class ParameterKeyBuilder
                     sb.Append(subs[si].Asset.Name).Append(':')
                       .Append(subs[si].Asset.Exchange).Append(':')
                       .Append(subs[si].TimeFrame);
+                }
+                sb.Append(']');
+                break;
+            case List<DataFeedSubscription> feedSubs:
+                // Phase 4 (TRD §9.3): kind-aware key for polymorphic carriers.
+                // BacktestInputsFormatter.Key encodes asset:exchange:feed:role so AltBar/Tick
+                // carriers don't alias with TimeBar carriers at the same nominal interval.
+                sb.Append('[');
+                for (var si = 0; si < feedSubs.Count; si++)
+                {
+                    if (si > 0) sb.Append('+');
+                    sb.Append(BacktestInputsFormatter.Key(feedSubs[si]));
                 }
                 sb.Append(']');
                 break;

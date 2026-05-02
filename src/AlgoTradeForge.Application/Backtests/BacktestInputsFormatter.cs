@@ -54,6 +54,12 @@ public static class BacktestInputsFormatter
     /// from the wire shape (the JSON layer renders <c>DataFeedRole</c> as <c>"Primary"</c>/
     /// <c>"Side"</c> via <c>JsonStringEnumConverter</c>; this key intentionally does not).
     /// </summary>
+    /// <remarks>
+    /// Including <c>role</c> means cross-input cache reuse only matches when role agrees, but
+    /// this is safe for intra-run optimization caches: a subscription's role is fixed for the
+    /// duration of one run (same <c>ctx.Subscriptions</c> reused across all trials), so the
+    /// role-bearing key never aliases or causes redundant loads inside a single optimization.
+    /// </remarks>
     public static string Key(DataFeedSubscription sub)
     {
         var feed = sub switch

@@ -47,6 +47,42 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     private DataFeedDescriptor AltBarDescriptor(string exchange, string symbol, string feedId) =>
         new(_testDataRoot, exchange, symbol, feedId, DataFeedKind.AltBar);
 
+    private DataFeedDescriptor TickDescriptor(string exchange, string symbol) =>
+        new(_testDataRoot, exchange, symbol, "ticks", DataFeedKind.Tick);
+
+    private DataFeedDescriptor SideDescriptor(string exchange, string symbol, string feedId) =>
+        new(_testDataRoot, exchange, symbol, feedId, DataFeedKind.Side);
+
+    private void WriteTicksCsv(string exchange, string symbol, int year, int month, int day, string[] rows)
+    {
+        var dir = Path.Combine(_testDataRoot, exchange, symbol, "ticks");
+        Directory.CreateDirectory(dir);
+        var filePath = Path.Combine(dir, $"{year}-{month:D2}-{day:D2}.csv");
+        var lines = new List<string> { "ts,o,h,l,c,vol" };
+        lines.AddRange(rows);
+        File.WriteAllLines(filePath, lines);
+    }
+
+    private void WriteSidecarCsv(string exchange, string symbol, string sidecarFeedId, string fileName, string[] rows)
+    {
+        var dir = Path.Combine(_testDataRoot, exchange, symbol, "aggregated", sidecarFeedId);
+        Directory.CreateDirectory(dir);
+        var filePath = Path.Combine(dir, fileName);
+        var lines = new List<string> { "ts,o,h,l,c,vol" };
+        lines.AddRange(rows);
+        File.WriteAllLines(filePath, lines);
+    }
+
+    private void WriteTopLevelSideCsv(string exchange, string symbol, string feedId, string fileName, string[] rows)
+    {
+        var dir = Path.Combine(_testDataRoot, exchange, symbol, feedId);
+        Directory.CreateDirectory(dir);
+        var filePath = Path.Combine(dir, fileName);
+        var lines = new List<string> { "ts,o,h,l,c,vol" };
+        lines.AddRange(rows);
+        File.WriteAllLines(filePath, lines);
+    }
+
     private static long Ts(int year, int month, int day, int hour = 0, int min = 0) =>
         new DateTimeOffset(year, month, day, hour, min, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
 
@@ -365,5 +401,83 @@ public class PartitionedCsvBarLoaderTests : IDisposable
         Assert.Equal(10L, series[0].Open);
         Assert.Equal(20L, series[1].Open);
         Assert.Equal(30L, series[2].Open);
+    }
+
+    // -------------------------------------------------------------------------
+    // P4-13 — Glob resolution coverage for Tick + Side (sidecar / top-level).
+    // The loader's CSV schema is OHLCV-shaped; we verify path resolution only,
+    // so test fixtures plant OHLCV rows in the per-Kind locations. (Real tick
+    // CSV is 5-col per TRD §3.5; tick-aware schema parsing is a separate task.)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Load_Tick_RoutesToTicksDir()
+    {
+        WriteTicksCsv("Binance", "BTCUSDT_perp", 2026, 4, 15,
+            [$"{Ts(2026,4,15,10,0)},100,100,100,100,5"]);
+        WriteTicksCsv("Binance", "BTCUSDT_perp", 2026, 4, 16,
+            [$"{Ts(2026,4,16,11,0)},110,110,110,110,7"]);
+
+        var series = _loader.Load(
+            TickDescriptor("Binance", "BTCUSDT_perp"),
+            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
+
+        Assert.Equal(2, series.Count);
+        Assert.Equal(100L, series[0].Open);
+        Assert.Equal(5L, series[0].Volume);
+        Assert.Equal(110L, series[1].Open);
+    }
+
+    [Fact]
+    public void Load_Side_Sidecar_RoutesToAggregatedFlowDir()
+    {
+        // .flow sidecar lives under aggregated/<feedId>.flow/ — same parent dir as the
+        // primary EqI bar feed, so reader path resolution treats them as siblings.
+        WriteSidecarCsv("Binance", "BTCUSDT_perp", "EqI_ticks_500000.flow", "2026-04.csv",
+            [$"{Ts(2026,4,1)},10,10,10,10,500"]);
+
+        var series = _loader.Load(
+            SideDescriptor("Binance", "BTCUSDT_perp", "EqI_ticks_500000.flow"),
+            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
+
+        var bar = Assert.Single(series);
+        Assert.Equal(10L, bar.Open);
+        Assert.Equal(500L, bar.Volume);
+    }
+
+    [Fact]
+    public void Load_Side_TopLevel_RoutesToAssetRootDir()
+    {
+        // Top-level side feed (e.g. funding-rate, candle-ext) lives directly under the asset
+        // root — NOT under aggregated/. Confirms the loader does not prefix `aggregated/`.
+        WriteTopLevelSideCsv("Binance", "BTCUSDT_perp", "funding-rate", "2026-04.csv",
+            [$"{Ts(2026,4,1)},20,20,20,20,1000"]);
+
+        var series = _loader.Load(
+            SideDescriptor("Binance", "BTCUSDT_perp", "funding-rate"),
+            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
+
+        var bar = Assert.Single(series);
+        Assert.Equal(20L, bar.Open);
+        Assert.Equal(1000L, bar.Volume);
+    }
+
+    [Fact]
+    public void Load_Side_Sidecar_DoesNotConflictWithParentBarDir()
+    {
+        // Plant both the parent EqI bar dir AND the sidecar dir as siblings. Loading the
+        // sidecar must not pick up the parent's bars (different feed-id, different glob).
+        WriteAggregatedCsv("Binance", "BTCUSDT_perp", "EqI_ticks_500000", "2026-04.csv",
+            [$"{Ts(2026,4,1)},999,999,999,999,99999"]);
+        WriteSidecarCsv("Binance", "BTCUSDT_perp", "EqI_ticks_500000.flow", "2026-04.csv",
+            [$"{Ts(2026,4,1)},1,1,1,1,1"]);
+
+        var sidecarSeries = _loader.Load(
+            SideDescriptor("Binance", "BTCUSDT_perp", "EqI_ticks_500000.flow"),
+            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
+
+        var bar = Assert.Single(sidecarSeries);
+        Assert.Equal(1L, bar.Open);
+        Assert.Equal(1L, bar.Volume);
     }
 }

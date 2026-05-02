@@ -54,37 +54,56 @@ public sealed class BacktestPreparer(
             spaceProvider, command.StrategyName, command.StrategyParameters, scale);
         var strategy = strategyFactory.Create(command.StrategyName, indicatorFactory, scaledParams);
 
+        var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
+        var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
+
+        TimeSeries<Int64Bar>[] seriesArray;
+
         if (strategy.DataSubscriptions.Count == 0)
         {
+            // Phase 4 (TRD §9.3): polymorphic dispatch by DataFeedSubscription subtype. Side
+            // entries are bound via FeedContextBuilder (below) — they are FeedSeries, not
+            // TimeSeries<Int64Bar>, and don't enter strategy.DataSubscriptions / seriesArray.
+            var primaries = new List<(DataFeedSubscription FeedSub, Asset SubAsset, DataSubscription StrategySub)>();
             for (var i = 0; i < command.DataSubscriptions.Count; i++)
             {
                 var sub = command.DataSubscriptions[i];
+                if (sub.Role == DataFeedRole.Side) continue;
+
                 var subAsset = i == 0
                     ? asset
                     : await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
                       ?? throw new ArgumentException($"Asset '{sub.AssetName}' not found.");
 
-                // Phase 4 PR-A: backtest engine path is TimeBar-only; alt-bar / tick / side
-                // primaries arrive via PR-C once HistoryRepository.Load(DataFeedSubscription)
-                // is wired. Mirrors the guards in OptimizationSetupHelper / StartLiveSession
-                // — silent coercion to a 1m time bar would load the wrong feed and produce
-                // a misleading run record.
-                if (sub is not TimeBarSubscription tb)
-                    throw new NotSupportedException(
-                        $"Phase 4 PR-A: only TimeBarSubscription is supported in BacktestPreparer; " +
-                        $"got {sub.GetType().Name}. PR-C extends this to alt-bar / tick / side primaries.");
+                var strategySub = StrategySubscriptionFactory.FromPrimary(sub, subAsset);
+                primaries.Add((sub, subAsset, strategySub));
+            }
 
-                strategy.DataSubscriptions.Add(new DataSubscription(subAsset, tb.TimeFrame));
+            seriesArray = new TimeSeries<Int64Bar>[primaries.Count];
+            for (var i = 0; i < primaries.Count; i++)
+            {
+                strategy.DataSubscriptions.Add(primaries[i].StrategySub);
+                seriesArray[i] = historyRepository.Load(
+                    primaries[i].SubAsset, primaries[i].FeedSub, fromDate, toDate);
             }
         }
-
-        var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
-        var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
-
-        var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
-        for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
+        else
         {
-            seriesArray[i] = historyRepository.Load(strategy.DataSubscriptions[i], fromDate, toDate);
+            // Strategy pre-declared its subscriptions; this branch is TimeBar-only by contract.
+            // The legacy Load(DataSubscription, ...) overload only knows TimeBar — guard against
+            // a future strategy pre-declaring an alt-bar/tick primary via DataSubscription.FeedKey,
+            // which would silently coerce to a 1m TimeBar load.
+            seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
+            for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
+            {
+                var preDeclared = strategy.DataSubscriptions[i];
+                if (preDeclared.FeedKey != "ohlcv")
+                    throw new NotSupportedException(
+                        $"Strategy pre-declared a non-TimeBar subscription (FeedKey='{preDeclared.FeedKey}'). " +
+                        "Strategies must declare alt-bar / tick / side primaries via the command's " +
+                        "DataSubscriptions (DataFeedSubscription), not strategy.DataSubscriptions.");
+                seriesArray[i] = historyRepository.Load(preDeclared, fromDate, toDate);
+            }
         }
 
         // Phase 4 (TRD §9.3) — propagate the primary's feed-id so FeedContextBuilder can

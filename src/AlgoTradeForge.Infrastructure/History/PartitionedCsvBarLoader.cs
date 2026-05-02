@@ -20,10 +20,13 @@ namespace AlgoTradeForge.Infrastructure.History;
 ///         (<c>2026-04.csv</c> &lt; <c>2026-05.p01.csv</c> &lt; <c>2026-05.p02.csv</c>).</item>
 ///   <item><see cref="DataFeedKind.Tick"/> →
 ///         <c>{root}/{ex}/{asset}/ticks/*.csv</c>. Phase 2a fills this.</item>
-///   <item><see cref="DataFeedKind.Side"/> →
-///         <c>{root}/{ex}/{asset}/{FeedId}/*.csv</c>. Side feeds are normally read by
-///         <see cref="CsvFeedSeriesLoader"/>; the path resolver covers the case for
-///         completeness so a future caller doesn't crash.</item>
+///   <item><see cref="DataFeedKind.Side"/> with sidecar FeedId (suffix <c>.flow</c>) →
+///         <c>{root}/{ex}/{asset}/aggregated/{FeedId}/*.csv</c>. Sibling of the parent
+///         alt-bar dir (TRD §9.3, §3.2).</item>
+///   <item><see cref="DataFeedKind.Side"/> with top-level FeedId (e.g. <c>funding-rate</c>,
+///         <c>candle-ext</c>) → <c>{root}/{ex}/{asset}/{FeedId}/*.csv</c>. Side feeds are
+///         normally read by <see cref="CsvFeedSeriesLoader"/>; the path resolver covers
+///         the case for completeness so a future caller doesn't crash.</item>
 /// </list>
 /// </remarks>
 public sealed class PartitionedCsvBarLoader : IInt64BarLoader
@@ -112,7 +115,13 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
             DataFeedKind.TimeBar => Path.Combine(feed.DataRoot, feed.Exchange, feed.Asset, "candles"),
             DataFeedKind.AltBar  => Path.Combine(feed.DataRoot, feed.Exchange, feed.Asset, "aggregated", feed.FeedId),
             DataFeedKind.Tick    => Path.Combine(feed.DataRoot, feed.Exchange, feed.Asset, "ticks"),
-            DataFeedKind.Side    => Path.Combine(feed.DataRoot, feed.Exchange, feed.Asset, feed.FeedId),
+            // TRD §9.3 distinguishes two Side cases by FeedId convention:
+            //   - sidecar (FeedId ending in `.flow`) → aggregated/{FeedId}/
+            //   - top-level (e.g. funding-rate, candle-ext) → {FeedId}/
+            // Auto-detection keeps FeedId semantically pure (no path baggage in the field).
+            DataFeedKind.Side    => feed.FeedId.EndsWith(".flow", StringComparison.Ordinal)
+                ? Path.Combine(feed.DataRoot, feed.Exchange, feed.Asset, "aggregated", feed.FeedId)
+                : Path.Combine(feed.DataRoot, feed.Exchange, feed.Asset, feed.FeedId),
             _                    => throw new ArgumentOutOfRangeException(nameof(feed), $"Unsupported kind: {feed.Kind}"),
         };
 

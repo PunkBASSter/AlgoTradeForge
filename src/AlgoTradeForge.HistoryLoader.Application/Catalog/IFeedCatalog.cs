@@ -13,7 +13,6 @@ public interface IFeedCatalog
     ExchangeListResponse GetExchanges();
     AssetListResponse GetAssetsByExchange(string exchange);
     AssetListResponse GetAllAssets();
-
     /// <summary>Returns the catalog entry for one asset, or <c>null</c> when not configured.</summary>
     AssetCatalogEntry? GetAsset(string exchange, string assetSymbol);
 

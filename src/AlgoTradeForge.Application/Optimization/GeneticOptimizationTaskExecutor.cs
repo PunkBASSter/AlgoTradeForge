@@ -81,6 +81,9 @@ public sealed class GeneticOptimizationTaskExecutor(
         foreach (var sub in ctx.Subscriptions)
             await helper.ResolveAndCacheAsync(sub, resolvedSubs, dataCache, fromDate, toDate, ct);
 
+        // Phase 4 dual-key carrier (TRD §9.3): see OptimizationTaskExecutor for rationale.
+        var feedSubs = ctx.Subscriptions.ToList();
+
         // 2. Set up trial infrastructure
         var maxParallelism = ctx.MaxParallelism > 0
             ? Math.Min(ctx.MaxParallelism, Environment.ProcessorCount)
@@ -117,7 +120,7 @@ public sealed class GeneticOptimizationTaskExecutor(
             // Evaluate population in parallel
             EvaluatePopulation(
                 population, ctx.StrategyName, ctx.BacktestSettings,
-                strategyFactory, dataCache, resolvedSubs,
+                strategyFactory, dataCache, resolvedSubs, feedSubs,
                 fitnessFunction, filter, topTrials, failedTrials,
                 childRunId, ctx.StartedAt, ref strategyVersion,
                 ref filteredOut, ref failedCount,
@@ -180,6 +183,7 @@ public sealed class GeneticOptimizationTaskExecutor(
         IOptimizationStrategyFactory factory,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
         List<DataSubscription> resolvedSubs,
+        List<DataFeedSubscription> feedSubs,
         IFitnessFunction fitnessFunction,
         TrialFilter filter,
         BoundedTrialQueue topTrials,
@@ -260,10 +264,11 @@ public sealed class GeneticOptimizationTaskExecutor(
                             }
                             trialCts.CancelAfter(trialTimeout);
 
-                            // Inject resolved subscriptions
+                            // Inject resolved subscriptions (dual-key per Phase 4 / TRD §9.3)
                             var mutableValues = new Dictionary<string, object>(combos[i].Values)
                             {
-                                ["DataSubscriptions"] = resolvedSubs
+                                ["DataSubscriptions"] = resolvedSubs,
+                                ["FeedSubscriptions"] = feedSubs,
                             };
                             var comboWithSubs = new ParameterCombination(mutableValues);
 

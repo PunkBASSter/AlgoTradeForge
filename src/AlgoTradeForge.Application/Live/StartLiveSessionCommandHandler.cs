@@ -22,9 +22,11 @@ public sealed class StartLiveSessionCommandHandler(
         if (command.DataSubscriptions is null or { Count: 0 })
             throw new ArgumentException("At least one data subscription must be provided.");
 
-        // Resolve assets from subscriptions. Phase 4 PR-A: live trading is TimeBar-only;
-        // alt-bar / tick / side-feed primaries arrive via PR-C once HistoryRepository's
-        // polymorphic loader is wired (see plan PR-B/C).
+        // Resolve assets from subscriptions. Phase 4 (P4-12) lifts the backtest+optimization
+        // guards but live trading stays TimeBar-only: alt-bar / tick live trading needs the
+        // connector aggregator pipeline to emit alt-bars in real time, which is post-Phase-6
+        // territory. Silently coercing a non-TimeBar primary to a 1m time bar would deliver
+        // wrong data to the live session.
         var resolvedSubscriptions = new List<DataSubscription>();
         foreach (var sub in command.DataSubscriptions)
         {
@@ -33,7 +35,10 @@ public sealed class StartLiveSessionCommandHandler(
 
             if (sub is not TimeBarSubscription tb)
                 throw new NotSupportedException(
-                    $"Live trading currently supports TimeBarSubscription only; got {sub.GetType().Name}.");
+                    $"Live trading currently supports TimeBarSubscription only; got {sub.GetType().Name}. " +
+                    "Alt-bar / tick live trading requires the live data pipeline to emit alt-bars in real " +
+                    "time (post-Phase-6 — the connector aggregator side is not built yet). Use a TimeBar " +
+                    "primary for live runs; alt-bar primaries are supported for backtest + optimization only.");
 
             resolvedSubscriptions.Add(new DataSubscription(asset, tb.TimeFrame));
         }

@@ -211,23 +211,37 @@ public class RunBacktestCommandHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_AltBarPrimary_ThrowsNotSupportedException()
+    public async Task HandleAsync_AltBarPrimary_RoutesThroughPolymorphicLoad()
     {
-        // Phase 4 PR-A pins backtest to TimeBar primaries — alt-bar / tick / side primaries
-        // come in PR-C. The guard prevents silent coercion to a 1m time bar (which would load
-        // wrong data for the user's submitted feed). Use a strategy that returns an empty
-        // DataSubscriptions list so the preparer falls through to the command-driven branch
-        // where the guard runs.
+        // P4-12 lifted the previous TimeBar-only guard. AltBar primaries now route through the
+        // polymorphic IHistoryRepository.Load(Asset, DataFeedSubscription, ...) overload.
+        // BacktestPreparer's command-driven branch (strategy.DataSubscriptions empty) synthesizes
+        // a strategy-side DataSubscription with a placeholder TimeFrame derived from the AltBar
+        // source code (TRD §3.3 grammar — `EqV_1m_500m` source = "1m" → TimeFrame.Parse("1m")).
+        SetupBackgroundMocks();
         var asset = TestAssets.BtcUsdt;
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Domain.Asset?>(asset));
 
         var strategy = Substitute.For<IInt64BarStrategy>();
         strategy.Version.Returns("1.0");
-        strategy.DataSubscriptions.Returns(new List<DataSubscription>()); // empty — triggers command-driven branch
+        var strategySubs = new List<DataSubscription>();  // mutable — preparer adds to it
+        strategy.DataSubscriptions.Returns(strategySubs);
 
         _strategyFactory.Create("TestStrategy", Arg.Any<IIndicatorFactory>(), Arg.Any<IDictionary<string, object>?>())
             .Returns(strategy);
+
+        DataFeedSubscription? capturedSub = null;
+        Domain.Asset? capturedAsset = null;
+        _historyRepository.Load(
+                Arg.Any<Domain.Asset>(), Arg.Any<DataFeedSubscription>(),
+                Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(call =>
+            {
+                capturedAsset = call.Arg<Domain.Asset>();
+                capturedSub = call.Arg<DataFeedSubscription>();
+                return TestBars.CreateSeries(10);
+            });
 
         var handler = CreateHandler();
         var command = CreateCommand() with
@@ -235,8 +249,21 @@ public class RunBacktestCommandHandlerTests
             DataSubscriptions = [new AltBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, "EqV_1m_500m")],
         };
 
-        await Assert.ThrowsAsync<NotSupportedException>(
-            () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
+        var submission = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(Guid.Empty, submission.Id);
+        Assert.NotNull(capturedSub);
+        var altBar = Assert.IsType<AltBarSubscription>(capturedSub);
+        Assert.Equal("EqV_1m_500m", altBar.FeedId);
+        Assert.Same((object)asset, capturedAsset!);
+        // The strategy-side DataSubscription gets a placeholder TimeFrame derived from the
+        // AltBar source code (TRD §3.3) so engine indicator wiring continues to work; FeedKey
+        // carries the alt-bar identity.
+        Assert.Single(strategySubs);
+        Assert.Equal("1m", strategySubs[0].TimeFrame.Code);
+        Assert.Equal("EqV_1m_500m", strategySubs[0].FeedKey);
+
+        await WaitForBackgroundCompletion(submission.Id, ct: TestContext.Current.CancellationToken);
     }
 
     // --- Background execution path tests ---

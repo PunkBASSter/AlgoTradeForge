@@ -833,7 +833,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         var parts = new List<string>();
         foreach (var (key, value) in parameters)
         {
-            if (key is "DataSubscriptions")
+            if (key is "DataSubscriptions" or "FeedSubscriptions")
                 continue;
             var val = value switch
             {

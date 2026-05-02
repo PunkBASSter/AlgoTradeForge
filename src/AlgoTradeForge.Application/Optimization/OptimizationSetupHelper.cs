@@ -147,20 +147,19 @@ public sealed class OptimizationSetupHelper(
         var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
             ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
-        // Phase 4 PR-A: only TimeBarSubscription is wired through the loader. PR-C lifts this
-        // guard once HistoryRepository.Load(DataFeedSubscription, ...) is wired (per the plan).
-        if (sub is not TimeBarSubscription tb)
-            throw new NotSupportedException(
-                $"Phase 4 PR-A: only TimeBarSubscription is supported in OptimizationSetupHelper; " +
-                $"got {sub.GetType().Name}. PR-C extends this to alt-bar / tick / side primaries.");
-
-        var subscription = new DataSubscription(asset, tb.TimeFrame);
+        // Phase 4 (TRD §9.3): polymorphic dispatch by subtype. The strategy-side slot uses a
+        // placeholder TimeFrame for non-TimeBar primaries; the polymorphic loader receives the
+        // original DataFeedSubscription so AltBar/Tick paths reach the right DataFeedDescriptor.
+        var subscription = StrategySubscriptionFactory.FromPrimary(sub, asset);
         target.Add(subscription);
 
-        var key = CacheKey(asset, tb.TimeFrame);
+        // Cache key is kind-aware: BacktestInputsFormatter.Key encodes asset:exchange:feed:role
+        // so two AltBar feeds at the same nominal source (e.g. EqV_1m_1000 vs EqV_1m_5000)
+        // hash distinctly.
+        var key = BacktestInputsFormatter.Key(sub);
         if (!dataCache.ContainsKey(key))
         {
-            var series = historyRepository.Load(subscription, fromDate, toDate);
+            var series = historyRepository.Load(asset, sub, fromDate, toDate);
             dataCache[key] = (asset, series);
         }
     }
@@ -178,11 +177,21 @@ public sealed class OptimizationSetupHelper(
     {
         var trialWatch = Stopwatch.StartNew();
 
-        // 1. Extract trial subscriptions from the combination's axis group
+        // 1. Extract trial subscriptions. Dual-key carrier (Phase 4 / TRD §9.3): FeedSubscriptions
+        //    holds the polymorphic originals (used for cache lookup + run record reconstruction);
+        //    DataSubscriptions holds the strategy-side projection (used for strategy wiring).
         var trialSubscriptions = combination.Values.TryGetValue("DataSubscriptions", out var subObj)
             && subObj is List<DataSubscription> group
             ? group
             : throw new InvalidOperationException("Trial has no data subscriptions — this indicates a bug in subscription resolution.");
+
+        var trialFeedSubscriptions = combination.Values.TryGetValue("FeedSubscriptions", out var feedObj)
+            && feedObj is List<DataFeedSubscription> feedGroup
+            ? feedGroup
+            : throw new InvalidOperationException(
+                "Trial missing FeedSubscriptions axis carrier — required for kind-aware cache " +
+                "lookup and run record fidelity. Both executors must inject this alongside " +
+                "DataSubscriptions (Phase 4 dual-key carrier).");
 
         // 2. Scale QuoteAsset params using this trial's actual asset
         var trialAsset = trialSubscriptions[0].Asset;
@@ -201,11 +210,10 @@ public sealed class OptimizationSetupHelper(
         foreach (var sub in trialSubscriptions)
             strategy.DataSubscriptions.Add(sub);
 
-        var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
-        for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
+        var seriesArray = new TimeSeries<Int64Bar>[trialFeedSubscriptions.Count];
+        for (var i = 0; i < trialFeedSubscriptions.Count; i++)
         {
-            var sub = strategy.DataSubscriptions[i];
-            var key = CacheKey(sub.Asset, sub.TimeFrame);
+            var key = BacktestInputsFormatter.Key(trialFeedSubscriptions[i]);
             if (dataCache.TryGetValue(key, out var cached))
                 seriesArray[i] = cached.Series;
             else
@@ -237,17 +245,9 @@ public sealed class OptimizationSetupHelper(
             StrategyName = strategyName,
             StrategyVersion = strategy.Version,
             Parameters = combination.Values, // Store original unscaled values
-            // Phase 4 PR-A: trial subscriptions are provably TimeBar — `ResolveAndCacheAsync`
-            // throws NotSupportedException for AltBar/Tick/Side, so the rebuild from the
-            // resolved engine type is lossless. PR-C threads the original DataFeedSubscription
-            // through ExecuteTrial so per-trial records preserve FeedId for alt-bar primaries.
-            DataSubscriptions = strategy.DataSubscriptions
-                .Select((s, i) => (DataFeedSubscription)new TimeBarSubscription(
-                    AssetLookupName.From(s.Asset),
-                    s.Asset.Exchange,
-                    i == 0 ? DataFeedRole.Primary : DataFeedRole.Side,
-                    s.TimeFrame))
-                .ToList(),
+            // Phase 4: persist the polymorphic originals so AltBar/Tick FeedIds round-trip
+            // through the run record (no more lossy TimeBar coercion).
+            DataSubscriptions = trialFeedSubscriptions,
             BacktestSettings = settings,
             StartedAt = startedAt,
             CompletedAt = DateTimeOffset.UtcNow,

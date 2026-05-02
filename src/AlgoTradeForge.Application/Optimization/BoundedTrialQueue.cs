@@ -99,7 +99,7 @@ public sealed class BoundedTrialQueue
 
         var first = true;
         foreach (var key in record.Parameters.Keys
-            .Where(k => k != "DataSubscriptions")
+            .Where(k => k != "DataSubscriptions" && k != "FeedSubscriptions")
             .OrderBy(k => k, StringComparer.Ordinal))
         {
             if (!first) sb.Append('|');
