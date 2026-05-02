@@ -17,10 +17,11 @@ import { getClient } from "@/lib/services";
 import { RunProgress } from "@/components/features/dashboard/run-progress";
 import { useAvailableStrategies } from "@/hooks/use-available-strategies";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
-import { DssBuilder } from "@/components/features/dashboard/dss-builder";
+import { FeedPicker, type FeedPickerSelection } from "@/components/features/launch/feed-picker";
+import { MultiPrimaryPicker } from "@/components/features/launch/multi-primary-picker";
 import { useThresholdProfiles } from "@/hooks/use-threshold-profiles";
 import type {
-  DataSubscription,
+  DataFeedSubscription,
   RunBacktestRequest,
   RunOptimizationRequest,
   RunGeneticOptimizationRequest,
@@ -65,6 +66,16 @@ function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
+/** Synthesize a stable picker-feed-id from a subscription (used to seed dropdown state). */
+function subFeedIdForSelection(sub: DataFeedSubscription): string {
+  switch (sub.kind) {
+    case "TimeBar": return sub.timeFrame;
+    case "AltBar": return sub.feedId;
+    case "Tick": return "ticks";
+    case "Side": return sub.feedId;
+  }
+}
+
 interface RunNewPanelProps {
   open: boolean;
   onClose: () => void;
@@ -91,7 +102,12 @@ export function RunNewPanel({
   const [evaluation, setEvaluation] = useState<OptimizationEvaluation | null>(null);
   const [evaluating, setEvaluating] = useState(false);
   const evaluationCacheRef = useRef<Map<string, OptimizationEvaluation>>(new Map());
-  const [dssValue, setDssValue] = useState<DataSubscription[][]>([]);
+  // Phase 4 (P4-17/18/19): polymorphic primary + side selections. One DSS containing
+  // [...primaries, ...sides] becomes the canonical subscriptionAxis on the wire — the
+  // server-side ExpandMultiPrimary fans the multi-primary case into N child runs (TRD §9.6).
+  // Backtest/Live restrict primaries to length === 1 via the picker UI.
+  const [primaries, setPrimaries] = useState<DataFeedSubscription[]>([]);
+  const [sides, setSides] = useState<DataFeedSubscription[]>([]);
   const [runValidation, setRunValidation] = useState(false);
   const [thresholdProfile, setThresholdProfile] = useState("Crypto-Standard");
   const [maxThreads, setMaxThreads] = useState(0);
@@ -121,20 +137,31 @@ export function RunNewPanel({
 
   const isOptimization = mode === "optimization";
 
-  // Handle editor doc changes: check cache, clear or restore evaluation, sync DSS builder
+  // Handle editor doc changes: check cache, clear or restore evaluation, sync pickers
   const handleDocChange = useCallback((text: string) => {
-    // Sync DSS builder from editor (unless the editor change was triggered BY the DSS builder)
+    // Sync picker state from editor (unless the editor change was triggered BY a picker).
+    // Phase 4: subscriptionAxis on the wire is DataFeedSubscription[][]. Each inner DSS
+    // splits by `role` into primaries + sides for picker display; the server-side
+    // ExpandMultiPrimary handles multi-primary fan-out at submit time.
     if (!suppressEditorSyncRef.current) {
       try {
         const obj = JSON.parse(text) as Record<string, unknown>;
-        const axis = obj.subscriptionAxis as DataSubscription[][] | undefined;
-        if (axis && Array.isArray(axis)) {
-          setDssValue(axis);
+        const axis = obj.subscriptionAxis as DataFeedSubscription[][] | undefined;
+        if (axis && Array.isArray(axis) && axis.length > 0) {
+          // Flatten across DSSes — every primary in any DSS becomes a fan-out candidate.
+          // Multi-DSS request shape was historical; the new flow puts all primaries +
+          // sides in a single DSS, but reading legacy multi-DSS JSON should still work.
+          const flat = axis.flat();
+          const nextPrimaries = flat.filter((s) => s.role === "Primary");
+          const nextSides = flat.filter((s) => s.role === "Side");
+          setPrimaries(nextPrimaries);
+          setSides(nextSides);
         } else if (!axis) {
-          setDssValue(prev => prev.length === 0 ? prev : []);
+          setPrimaries(prev => prev.length === 0 ? prev : []);
+          setSides(prev => prev.length === 0 ? prev : []);
         }
       } catch {
-        // Invalid JSON — don't update DSS builder
+        // Invalid JSON — don't update picker state
       }
     }
 
@@ -150,29 +177,70 @@ export function RunNewPanel({
     setEvaluation(null);
   }, [isOptimization]);
 
-  // Handle DSS builder changes: update subscriptionAxis in editor JSON
-  const handleDssChange = useCallback((newAxis: DataSubscription[][]) => {
-    setDssValue(newAxis);
-    const view = editorViewRef.current;
-    if (!view) return;
-
-    try {
-      const obj = JSON.parse(view.state.doc.toString()) as Record<string, unknown>;
-      if (newAxis.length > 0) {
-        obj.subscriptionAxis = newAxis;
-      } else {
-        delete obj.subscriptionAxis;
+  // Push picker state into the editor's subscriptionAxis, kept as a single DSS containing
+  // [...primaries, ...sides]. Server-side ExpandMultiPrimary fans the multi-primary case.
+  const syncEditorFromPickers = useCallback(
+    (nextPrimaries: DataFeedSubscription[], nextSides: DataFeedSubscription[]) => {
+      const view = editorViewRef.current;
+      if (!view) return;
+      try {
+        const obj = JSON.parse(view.state.doc.toString()) as Record<string, unknown>;
+        const combined = [...nextPrimaries, ...nextSides];
+        if (combined.length > 0) {
+          obj.subscriptionAxis = [combined];
+        } else {
+          delete obj.subscriptionAxis;
+        }
+        const newDoc = JSON.stringify(obj, null, 2);
+        suppressEditorSyncRef.current = true;
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: newDoc },
+        });
+        suppressEditorSyncRef.current = false;
+      } catch {
+        // Editor JSON is invalid — can't sync
       }
-      const newDoc = JSON.stringify(obj, null, 2);
-      suppressEditorSyncRef.current = true;
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: newDoc },
-      });
-      suppressEditorSyncRef.current = false;
-    } catch {
-      // Editor JSON is invalid — can't sync
-    }
-  }, []);
+    },
+    [],
+  );
+
+  const handlePrimariesChange = useCallback(
+    (next: DataFeedSubscription[]) => {
+      setPrimaries(next);
+      syncEditorFromPickers(next, sides);
+    },
+    [sides, syncEditorFromPickers],
+  );
+
+  const handleSidesChange = useCallback(
+    (next: DataFeedSubscription[]) => {
+      setSides(next);
+      syncEditorFromPickers(primaries, next);
+    },
+    [primaries, syncEditorFromPickers],
+  );
+
+  // Single-primary (Backtest/Live): wraps the multi-list shape behind FeedPicker's
+  // selection state. We synthesize FeedPickerSelection from the current primary so the
+  // dropdowns reflect the picked value when the panel reopens.
+  const singlePrimarySelection: FeedPickerSelection | null = useMemo(() => {
+    if (primaries.length === 0) return null;
+    const sub = primaries[0];
+    return {
+      exchange: sub.exchange,
+      asset: sub.assetName,
+      feedId: subFeedIdForSelection(sub),
+      subscription: sub,
+    };
+  }, [primaries]);
+
+  const handleSinglePrimaryChange = useCallback(
+    (sel: FeedPickerSelection | null) => {
+      const next = sel?.subscription ? [sel.subscription] : [];
+      handlePrimariesChange(next);
+    },
+    [handlePrimariesChange],
+  );
 
   // Create editor once when the slide-over opens
   useEffect(() => {
@@ -376,7 +444,6 @@ export function RunNewPanel({
       const req: EvaluateOptimizationRequest = {
         strategyName: parsed.strategyName as string,
         optimizationAxes: parsed.optimizationAxes as EvaluateOptimizationRequest["optimizationAxes"],
-        dataSubscriptions: parsed.dataSubscriptions as EvaluateOptimizationRequest["dataSubscriptions"],
         subscriptionAxis: parsed.subscriptionAxis as EvaluateOptimizationRequest["subscriptionAxis"],
         optimizationSettings: parsed.optimizationSettings as EvaluateOptimizationRequest["optimizationSettings"],
         mode: useGenetic ? "Genetic" : "BruteForce",
@@ -463,8 +530,10 @@ export function RunNewPanel({
       } else {
         let runId: string;
         if (mode === "backtest") {
-          // T059: Multi-DSS backtest — launch N separate backtest requests
-          const btReq = parsed as RunBacktestRequest & { subscriptionAxis?: DataSubscription[][] };
+          // Power-user escape hatch: the FeedPicker only emits a single DSS for backtest
+          // mode, so this multi-DSS branch fires only when the user hand-edits the JSON
+          // editor to add multiple DSSes. Each becomes its own backtest submission.
+          const btReq = parsed as RunBacktestRequest & { subscriptionAxis?: DataFeedSubscription[][] };
           if (btReq.subscriptionAxis && btReq.subscriptionAxis.length > 1) {
             const results: string[] = [];
             for (const dss of btReq.subscriptionAxis) {
@@ -620,7 +689,30 @@ export function RunNewPanel({
           )}
           {mode !== "live" && (
             <div className="shrink-0">
-              <DssBuilder value={dssValue} onChange={handleDssChange} />
+              {isOptimization ? (
+                <MultiPrimaryPicker
+                  primaries={primaries}
+                  sides={sides}
+                  onPrimariesChange={handlePrimariesChange}
+                  onSidesChange={handleSidesChange}
+                  costPreviewLabel={
+                    evaluation && primaries.length > 0
+                      ? `${primaries.length} × ${formatNumber(evaluation.totalCombinations)} = ${formatNumber(primaries.length * evaluation.totalCombinations)} trials`
+                      : undefined
+                  }
+                  disabled={submitting}
+                />
+              ) : (
+                <div className="rounded-lg border border-border-default bg-bg-panel p-3 space-y-2">
+                  <h3 className="text-sm font-semibold text-text-primary">Primary feed</h3>
+                  <FeedPicker
+                    role="Primary"
+                    value={singlePrimarySelection}
+                    onChange={handleSinglePrimaryChange}
+                    disabled={submitting}
+                  />
+                </div>
+              )}
             </div>
           )}
           <div

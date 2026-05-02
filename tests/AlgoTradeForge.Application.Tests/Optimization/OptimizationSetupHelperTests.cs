@@ -260,4 +260,28 @@ public sealed class OptimizationSetupHelperTests
         Assert.Same(s2, dss[2]);
         Assert.Same(s3, dss[3]);
     }
+
+    [Fact]
+    public void ExpandMultiPrimary_InterleavedPrimariesAndSides_CollapseToCanonicalOrder()
+    {
+        // Pins the canonical post-expansion ordering: each output DSS is
+        // [primary_i, ...all_sides_in_input_order], regardless of how primaries and
+        // sides were interleaved in the input. Downstream code (cache keys, persistence,
+        // engine glob resolution) relies on primary-at-index-0; if a future change ever
+        // tries to "preserve" interleaving, this test will catch the regression.
+        var pA = new TimeBarSubscription("BTC", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+        var sX = new SideFeedSubscription("BTC", "Binance", DataFeedRole.Side, "funding-rate");
+        var pB = new TimeBarSubscription("ETH", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+        var sY = new SideFeedSubscription("BTC", "Binance", DataFeedRole.Side, "open-interest");
+
+        // Input ordering: [Primary, Side, Primary, Side] (interleaved).
+        List<List<DataFeedSubscription>> input = [[pA, sX, pB, sY]];
+
+        var result = OptimizationSetupHelper.ExpandMultiPrimary(input);
+
+        Assert.Equal(2, result.Count);
+        // Each child DSS: [primary, side1, side2] — primary first, sides in input order.
+        Assert.Same(pA, result[0][0]); Assert.Same(sX, result[0][1]); Assert.Same(sY, result[0][2]);
+        Assert.Same(pB, result[1][0]); Assert.Same(sX, result[1][1]); Assert.Same(sY, result[1][2]);
+    }
 }

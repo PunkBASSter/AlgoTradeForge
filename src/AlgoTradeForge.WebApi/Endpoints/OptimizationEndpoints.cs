@@ -183,15 +183,28 @@ public static class OptimizationEndpoints
         };
         var inputJson = JsonSerializer.Serialize(request, JsonOptions);
 
-        // Multi-DSS genetic → dispatch through group handler (same pattern as brute-force)
-        if (request.SubscriptionAxis is { Count: > 1 })
+        // Phase 4 (P4-14b, TRD §9.6): route through group handler when *post-expansion*
+        // produces >1 child runs. This catches both classic multi-DSS requests AND
+        // single-DSS-multi-primary requests (`[[Primary(A), Primary(B)]]`), which expand
+        // to N single-primary DSSes. The group handler already supports
+        // `OptimizationMethod = "Genetic"` and creates one `GeneticExecutionContext`
+        // per DSS — the executor's per-`ExecuteAsync` `GeneticFitnessCache` ensures
+        // independent search spaces per primary.
+        //
+        // Routing decision uses the post-expansion count (we need to know if multi-primary
+        // would fan out), but the command itself receives the *raw* axis — the group
+        // handler is the canonical place to call ExpandMultiPrimary, matching the
+        // brute-force endpoint above which also passes raw. The `!` is safe inside the
+        // branch: ExpandMultiPrimary(null) returns an empty list, so reaching `Count > 1`
+        // implies SubscriptionAxis was non-null and non-empty.
+        if (OptimizationSetupHelper.ExpandMultiPrimary(request.SubscriptionAxis).Count > 1)
         {
             var groupCommand = new RunGroupOptimizationCommand
             {
                 StrategyName = request.StrategyName,
                 OptimizationMethod = "Genetic",
                 Axes = request.OptimizationAxes,
-                SubscriptionAxis = request.SubscriptionAxis,
+                SubscriptionAxis = request.SubscriptionAxis!,
                 BacktestSettings = backtestSettings,
                 MaxDegreeOfParallelism = request.MaxThreads > 0 ? request.MaxThreads : request.OptimizationSettings.MaxDegreeOfParallelism,
                 MaxTrialsToKeep = request.OptimizationSettings.MaxTrialsToKeep,

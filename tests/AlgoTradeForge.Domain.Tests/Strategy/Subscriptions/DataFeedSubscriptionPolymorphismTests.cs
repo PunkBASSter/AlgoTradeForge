@@ -143,16 +143,18 @@ public class DataFeedSubscriptionPolymorphismTests
     }
 
     [Fact]
-    public void Role_RoundTripsAsStringOnWire()
+    public void Role_WithDomainDefaultOptions_SerializesAsNumber()
     {
-        // JsonSerializerDefaults.Web doesn't enable enum-as-string by default. Confirm
-        // the wire shape (number vs string) so PR-B's WebApi contracts know what to expect.
+        // Pins the *Domain default* wire shape: with plain JsonSerializerDefaults.Web
+        // (no JsonStringEnumConverter), DataFeedRole serializes as int. The actual
+        // FE-bound wire contract uses Application's JsonDefaults.Api which adds the
+        // string converter — see DataFeedRoleWireShapeTests in Application.Tests for
+        // the FE-bound contract assertion.
         var sub = new TimeBarSubscription("BTC", "ex", DataFeedRole.Side, TimeFrame.Parse("1m"));
         var json = JsonSerializer.Serialize<DataFeedSubscription>(sub, Options);
         using var doc = JsonDocument.Parse(json);
 
         Assert.True(doc.RootElement.TryGetProperty("role", out var roleEl));
-        // Default System.Text.Json serializes enums as numbers (Side = 1).
         Assert.Equal(JsonValueKind.Number, roleEl.ValueKind);
         Assert.Equal((int)DataFeedRole.Side, roleEl.GetInt32());
     }

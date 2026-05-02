@@ -256,7 +256,7 @@ export interface BacktestSettingsInput {
 }
 
 export interface RunBacktestRequest {
-  dataSubscriptions: DataSubscriptionInput[];
+  dataSubscriptions: DataFeedSubscription[];
   backtestSettings: BacktestSettingsInput;
   strategyName: string;
   strategyParameters?: Record<string, unknown>;
@@ -282,7 +282,7 @@ export interface RunOptimizationRequest {
   backtestSettings: BacktestSettingsInput;
   optimizationSettings?: OptimizationSettingsInput;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
-  subscriptionAxis?: DataSubscription[][];
+  subscriptionAxis?: DataFeedSubscription[][];
   validate?: boolean;
   thresholdProfileName?: string;
   maxThreads?: number;
@@ -294,11 +294,67 @@ export type OptimizationAxisOverride =
   | { values: unknown[] }
   | { variants: Record<string, Record<string, OptimizationAxisOverride> | null> };
 
+/**
+ * @deprecated Use {@link DataFeedSubscription} (polymorphic). Kept for the migration window;
+ * callers building optimization/backtest requests should emit the new shape.
+ */
 export interface DataSubscription {
   assetName: string;
   exchange: string;
   timeFrame: string;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 4 (P4-9, P4-17..P4-19, TRD §9.2): polymorphic DataFeedSubscription.
+// Wire shape pinned by JsonDefaultsTests in Application.Tests:
+//   - kind discriminator: PascalCase ("TimeBar" | "AltBar" | "Tick" | "Side")
+//     — matches [JsonDerivedType] attributes on the DataFeedSubscription base.
+//   - role enum: PascalCase string ("Primary" | "Side") via JsonStringEnumConverter.
+//   - BE accepts integer fallback on read, but FE emits string.
+// ---------------------------------------------------------------------------
+
+export type DataFeedKind = "TimeBar" | "AltBar" | "Tick" | "Side";
+export type DataFeedRole = "Primary" | "Side";
+
+interface DataFeedSubscriptionBase {
+  kind: DataFeedKind;
+  assetName: string;
+  exchange: string;
+  role: DataFeedRole;
+}
+
+/** OHLCV time bar (1m, 5m, 1h, 1d, etc.). Drives the bar clock as Primary. */
+export interface TimeBarSubscription extends DataFeedSubscriptionBase {
+  kind: "TimeBar";
+  role: "Primary";
+  timeFrame: string; // canonical "1m" | "5m" | "1h" | etc.
+}
+
+/** Information-driven alt bar (EqV/EqT/EqD/EqI). FeedId per TRD §3.3 grammar. */
+export interface AltBarSubscription extends DataFeedSubscriptionBase {
+  kind: "AltBar";
+  role: "Primary";
+  feedId: string; // e.g. "EqV_1m_500m"
+}
+
+/** Raw aggregate-trade tick stream. Path-dependent primary. */
+export interface TickSubscription extends DataFeedSubscriptionBase {
+  kind: "Tick";
+  role: "Primary";
+}
+
+/** Side feed — top-level (e.g. "funding-rate") or alt-bar sidecar (e.g. "EqV_1m_500m.flow"). */
+export interface SideFeedSubscription extends DataFeedSubscriptionBase {
+  kind: "Side";
+  role: "Side";
+  feedId: string;
+}
+
+export type DataFeedSubscription =
+  | TimeBarSubscription
+  | AltBarSubscription
+  | TickSubscription
+  | SideFeedSubscription;
 
 export interface FitnessWeightsInput {
   sharpeWeight?: number;
@@ -326,7 +382,7 @@ export interface RunGeneticOptimizationRequest {
   optimizationSettings?: OptimizationSettingsInput;
   geneticSettings?: GeneticSettingsInput;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
-  subscriptionAxis?: DataSubscription[][];
+  subscriptionAxis?: DataFeedSubscription[][];
   validate?: boolean;
   thresholdProfileName?: string;
   maxThreads?: number;
@@ -335,7 +391,7 @@ export interface RunGeneticOptimizationRequest {
 export interface EvaluateOptimizationRequest {
   strategyName: string;
   optimizationAxes?: Record<string, OptimizationAxisOverride>;
-  subscriptionAxis?: DataSubscription[][];
+  subscriptionAxis?: DataFeedSubscription[][];
   optimizationSettings?: OptimizationSettingsInput;
   mode?: "BruteForce" | "Genetic";
   geneticSettings?: GeneticSettingsInput;

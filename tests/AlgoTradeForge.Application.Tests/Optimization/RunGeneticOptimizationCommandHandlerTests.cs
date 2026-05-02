@@ -178,11 +178,15 @@ public class RunGeneticOptimizationCommandHandlerTests
     }
 
     [Fact]
-    public async Task HandleAsync_MultiPrimaryDss_ThrowsNotSupported()
+    public async Task HandleAsync_MultiPrimaryDss_ThrowsNotSupported_DefenseInDepth()
     {
-        // Phase 4 (P4-14, TRD §9.6): genetic optimization across multiple primaries is
-        // not yet supported. The handler should reject up-front with a clear message.
-        // Full multi-primary genetic fan-out lands in a follow-up alongside FE coordination.
+        // Phase 4 (P4-14, TRD §9.6): the WebApi (`OptimizationEndpoints.RunGeneticOptimization`)
+        // routes multi-primary genetic requests to the group handler before they reach this
+        // single-DSS handler — so in production this exception is unreachable. The guard
+        // exists as defense in depth: a future internal caller (or a test harness) that
+        // skips the endpoint must still get a loud, predictable failure instead of silently
+        // running only the first primary. See `RunGroupOptimizationGeneticTests.HandleAsync_Genetic_MultiPrimaryDss_ProducesPerPrimaryChildRuns`
+        // for the production happy path.
         SetupStandardMocks();
         var handler = CreateHandler();
         var command = CreateCommand() with

@@ -278,6 +278,59 @@ public class RunGroupOptimizationGeneticTests
     }
 
     [Fact]
+    public async Task HandleAsync_Genetic_MultiPrimaryDss_ProducesPerPrimaryChildRuns()
+    {
+        // Phase 4 (P4-14b, TRD §9.6): a single DSS with multiple Role=Primary entries
+        // submitted in Genetic mode should fan out into N child runs, each driving its
+        // own GA (independent population, independent fitness cache via per-task
+        // GeneticOptimizationTaskExecutor.ExecuteAsync).
+        //
+        // The WebApi endpoint routes this via post-expansion count > 1 → group handler;
+        // this test proves the group handler handles the genetic path correctly.
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = new RunGroupOptimizationCommand
+        {
+            StrategyName = "TestStrategy",
+            OptimizationMethod = "Genetic",
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+            SubscriptionAxis =
+            [
+                [
+                    new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new SideFeedSubscription("BTCUSDT", "Binance", DataFeedRole.Side, "funding-rate"),
+                ],
+            ],
+            Axes = new Dictionary<string, OptimizationAxisOverride>
+            {
+                ["Period"] = new RangeOverride(10, 20, 5),
+            },
+            GeneticSettings = new GeneticConfig(),
+        };
+
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+
+        // Two fan-out child runs, each carrying its own primary + the shared side feed.
+        Assert.Equal(2, result.Runs.Count);
+        await _runRepository.Received(1).InsertOptimizationGroupAsync(
+            Arg.Is<OptimizationGroupRecord>(g =>
+                g.OptimizationMethod == "Genetic" && g.TotalRuns == 2),
+            Arg.Any<CancellationToken>());
+        // Each child placeholder is single-primary and Genetic
+        await _runRepository.Received(2).InsertOptimizationPlaceholderAsync(
+            Arg.Is<OptimizationRunRecord>(r =>
+                r.OptimizationMethod == "Genetic"
+                && r.DataSubscriptions.Count(s => s.Role == DataFeedRole.Primary) == 1),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task HandleAsync_BruteForce_SinglePrimary_ExpansionIsIdentity()
     {
         // Regression: single-primary DSS continues to produce a single child run after
