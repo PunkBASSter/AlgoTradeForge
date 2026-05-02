@@ -234,9 +234,9 @@ No EqI yet; tick storage and signed accumulator are independent surfaces.
 
 ### Type-system foundations
 
-- [ ] **P4-1** `TimeFrame` value type — `record struct TimeFrame(TimeSpan)` with `Code`/`Parse`. (TRD §9.1)
-- [ ] **P4-2** Migrate every callsite from P0-4 enumeration off raw-`TimeSpan` overloads.
-- [ ] **P4-3** Remove raw-`TimeSpan` overloads. (TRD §9.1)
+- [x] **P4-1** `TimeFrame` value type — `record struct TimeFrame(TimeSpan)` with `Code`/`Parse`. (TRD §9.1) — `src/AlgoTradeForge.Domain/Strategy/TimeFrame.cs` + `tests/AlgoTradeForge.Domain.Tests/Strategy/TimeFrameTests.cs` (8 tests).
+- [x] **P4-2** Migrate every callsite from P0-4 enumeration off raw-`TimeSpan` overloads. — `DataSubscription.TimeFrame` flipped from `TimeSpan` to `TimeFrame`. Implicit `TimeFrame → TimeSpan` operator added (the safe direction; reverse stays explicit) so `Resample(...)`, comparisons, and arithmetic on existing call sites continue to compile. Bulk-rewrote ~150 ctor callsites + 19 `OneMinute`/`FiveMinutes` test fixtures; production sites in `BacktestPreparer`, `StartLiveSessionCommandHandler`, `OptimizationSetupHelper` updated; `DonchianBreakout` / `PrevBarBreakout` strategies + private `ZigZagBreakoutStrategy` use `.Duration.TotalMilliseconds`. Live-API DTO wire shape preserved as `"hh:mm:ss"` via explicit `.Duration.ToString()` to avoid breaking FE consumers.
+- [x] **P4-3** Remove raw-`TimeSpan` overloads. (TRD §9.1) — Implicit since the type changed in place rather than added alongside; the only `TimeSpan`-typed surface that survives is the implicit-conversion operator on `TimeFrame` itself. Solution + private + Domain/Application/Infrastructure/WebApi/HistoryLoader tests all pass (1,827 tests across 5 projects).
 - [ ] **P4-4** Define `DataFeedSubscription` abstract record + `DataFeedKind` + `DataFeedRole` enums. (TRD §9.2)
 - [ ] **P4-5** Implement `TimeBarSubscription`, `AltBarSubscription`, `TickSubscription`, `SideFeedSubscription`. (TRD §9.2)
 - [ ] **P4-6** Wire polymorphic JSON discriminator via `System.Text.Json`. (TRD §9.2)

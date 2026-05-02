@@ -10,7 +10,7 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules;
 public sealed class StrategyContextTests
 {
     private static readonly DataSubscription DefaultSubscription =
-        new(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1));
+        new(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)));
 
     private static readonly Int64Bar SampleBar =
         new(1_700_000_000_000L, 5000L, 5100L, 4900L, 5050L, 100L);

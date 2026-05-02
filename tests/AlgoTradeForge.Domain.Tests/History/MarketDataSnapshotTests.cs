@@ -8,14 +8,14 @@ namespace AlgoTradeForge.Domain.Tests.History;
 public class MarketDataSnapshotTests
 {
     private static readonly CryptoAsset TestAsset = CryptoAsset.Create("BTCUSDT", "Binance", 2);
-    private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+    private static readonly TimeFrame OneMinute = new(TimeSpan.FromMinutes(1));
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private static TimeSeries<Int64Bar> MakeSeries(int count = 1)
     {
         var series = new TimeSeries<Int64Bar>();
         var startMs = Start.ToUnixTimeMilliseconds();
-        var stepMs = (long)OneMinute.TotalMilliseconds;
+        var stepMs = (long)OneMinute.Duration.TotalMilliseconds;
         for (var i = 0; i < count; i++)
             series.Add(new Int64Bar(startMs + i * stepMs, 100, 200, 50, 150, 1000));
         return series;
@@ -52,7 +52,7 @@ public class MarketDataSnapshotTests
     public void Indexer_MissingSubscription_ThrowsKeyNotFound()
     {
         var sub = new DataSubscription(TestAsset, OneMinute);
-        var missingSub = new DataSubscription(TestAsset, TimeSpan.FromHours(1));
+        var missingSub = new DataSubscription(TestAsset, new TimeFrame(TimeSpan.FromHours(1)));
         var snapshot = new MarketDataSnapshot(new Dictionary<DataSubscription, TimeSeries<Int64Bar>>
         {
             [sub] = MakeSeries()
@@ -79,7 +79,7 @@ public class MarketDataSnapshotTests
     public void TryGet_AbsentSubscription_ReturnsFalse()
     {
         var sub = new DataSubscription(TestAsset, OneMinute);
-        var missingSub = new DataSubscription(TestAsset, TimeSpan.FromHours(1));
+        var missingSub = new DataSubscription(TestAsset, new TimeFrame(TimeSpan.FromHours(1)));
         var snapshot = new MarketDataSnapshot(new Dictionary<DataSubscription, TimeSeries<Int64Bar>>
         {
             [sub] = MakeSeries()
@@ -93,7 +93,7 @@ public class MarketDataSnapshotTests
     public void Subscriptions_ReturnsAllKeys()
     {
         var sub1 = new DataSubscription(TestAsset, OneMinute);
-        var sub2 = new DataSubscription(TestAsset, TimeSpan.FromHours(1));
+        var sub2 = new DataSubscription(TestAsset, new TimeFrame(TimeSpan.FromHours(1)));
         var snapshot = new MarketDataSnapshot(new Dictionary<DataSubscription, TimeSeries<Int64Bar>>
         {
             [sub1] = MakeSeries(),

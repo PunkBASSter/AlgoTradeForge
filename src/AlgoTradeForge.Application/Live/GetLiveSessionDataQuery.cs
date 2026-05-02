@@ -128,7 +128,10 @@ public sealed class GetLiveSessionDataQueryHandler(
         // Build last bar per subscription
         var lastBars = BuildLastBars(snapshot, tickSize);
 
-        var timeFrame = primarySub?.TimeFrame.ToString() ?? "00:01:00";
+        // Preserve historical wire shape ("hh:mm:ss") rather than TimeFrame.Code ("1m") so
+        // existing FE consumers don't break on the Phase 4 type-system migration. Switch to
+        // TimeFrame.Code in a coordinated FE/BE update if/when desired.
+        var timeFrame = primarySub?.TimeFrame.Duration.ToString() ?? "00:01:00";
 
         var dto = new LiveSessionDataDto
         {
@@ -160,7 +163,7 @@ public sealed class GetLiveSessionDataQueryHandler(
         return snapshot.LastBarsPerSubscription
             .Select(entry => new LastBarDto(
                 entry.Subscription.Asset.Name,
-                entry.Subscription.TimeFrame.ToString(),
+                entry.Subscription.TimeFrame.Duration.ToString(),
                 entry.Bar.TimestampMs / 1000,
                 entry.Bar.Open * tickSize,
                 entry.Bar.High * tickSize,

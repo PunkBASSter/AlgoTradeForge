@@ -11,7 +11,7 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules.Regime;
 
 public sealed class RegimeDetectorModuleTests
 {
-    private static readonly DataSubscription DefaultSub = new(TestAssets.BtcUsdt, TimeSpan.FromHours(1));
+    private static readonly DataSubscription DefaultSub = new(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromHours(1)));
 
     private static IIndicatorFactory CreateMockFactory()
     {

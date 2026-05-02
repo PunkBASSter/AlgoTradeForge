@@ -79,7 +79,7 @@ public class RunBacktestCommandHandlerTests
         strategy.Version.Returns("1.0");
         strategy.DataSubscriptions.Returns(new List<DataSubscription>
         {
-            new(asset, TimeSpan.FromMinutes(1))
+            new(asset, new TimeFrame(TimeSpan.FromMinutes(1)))
         });
 
         _strategyFactory.Create("TestStrategy", Arg.Any<IIndicatorFactory>(), Arg.Any<IDictionary<string, object>?>())
@@ -327,7 +327,7 @@ public class RunBacktestCommandHandlerTests
         strategy.Version.Returns("1.0");
         strategy.DataSubscriptions.Returns(new List<DataSubscription>
         {
-            new(asset, TimeSpan.FromMinutes(1))
+            new(asset, new TimeFrame(TimeSpan.FromMinutes(1)))
         });
         // Block engine briefly on OnBarComplete — long enough for the test to cancel,
         // short enough that the engine reaches ct.ThrowIfCancellationRequested() between bars

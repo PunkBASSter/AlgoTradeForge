@@ -95,7 +95,7 @@ public class OptimizationBenchmarks
     // 1000 reject-path runs and the Mean would still look "stable".
     private void SanityCheckMedianTrial()
     {
-        var sub = new DataSubscription(_btc, TimeSpan.FromHours(1));
+        var sub = new DataSubscription(_btc, new TimeFrame(TimeSpan.FromHours(1)));
         var trialParams = new PrevBarBreakoutParams
         {
             DataSubscriptions = [sub],
@@ -140,7 +140,7 @@ public class OptimizationBenchmarks
                     while (partition.MoveNext())
                     {
                         var template = partition.Current;
-                        var sub = new DataSubscription(_btc, TimeSpan.FromHours(1));
+                        var sub = new DataSubscription(_btc, new TimeFrame(TimeSpan.FromHours(1)));
                         var trialParams = new PrevBarBreakoutParams
                         {
                             DataSubscriptions = [sub],

@@ -12,7 +12,7 @@ namespace AlgoTradeForge.Infrastructure.Tests.History;
 public class HistoryRepositoryTests
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+    private static readonly TimeFrame OneMinute = new(TimeSpan.FromMinutes(1));
     private static readonly CryptoAsset BtcUsdt = CryptoAsset.Create("BTCUSDT", "Binance", 2);
 
     private readonly IInt64BarLoader _loader;
@@ -29,7 +29,7 @@ public class HistoryRepositoryTests
     {
         var series = new TimeSeries<Int64Bar>();
         var startMs = Start.ToUnixTimeMilliseconds();
-        var stepMs = (long)OneMinute.TotalMilliseconds;
+        var stepMs = (long)OneMinute.Duration.TotalMilliseconds;
         for (var i = 0; i < count; i++)
             series.Add(new Int64Bar(startMs + i * stepMs, 100 + i, 200 + i, 50 + i, 150 + i, 1000));
         return series;
@@ -51,7 +51,7 @@ public class HistoryRepositoryTests
     [Fact]
     public void Load_HigherTimeframe_Resamples()
     {
-        var sub = new DataSubscription(BtcUsdt, TimeSpan.FromMinutes(5));
+        var sub = new DataSubscription(BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(5)));
         var raw = MakeMinuteSeries(10);
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>()).Returns(raw);
@@ -64,7 +64,7 @@ public class HistoryRepositoryTests
     [Fact]
     public void Load_LowerTimeframe_Throws()
     {
-        var sub = new DataSubscription(BtcUsdt, TimeSpan.FromSeconds(30));
+        var sub = new DataSubscription(BtcUsdt, new TimeFrame(TimeSpan.FromSeconds(30)));
 
         Assert.Throws<ArgumentException>(() =>
             _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31)));
@@ -86,10 +86,10 @@ public class HistoryRepositoryTests
     [Fact]
     public void Load_ResampledOhlcv_IsCorrect()
     {
-        var sub = new DataSubscription(BtcUsdt, TimeSpan.FromMinutes(5));
+        var sub = new DataSubscription(BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(5)));
         var series = new TimeSeries<Int64Bar>();
         var ms = Start.ToUnixTimeMilliseconds();
-        var step = (long)OneMinute.TotalMilliseconds;
+        var step = (long)OneMinute.Duration.TotalMilliseconds;
         series.Add(new Int64Bar(ms, 100, 110, 90, 105, 1000));
         series.Add(new Int64Bar(ms + step, 105, 115, 95, 108, 2000));
         series.Add(new Int64Bar(ms + 2 * step, 108, 120, 85, 112, 1500));

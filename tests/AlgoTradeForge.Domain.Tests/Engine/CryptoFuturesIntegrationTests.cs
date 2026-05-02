@@ -15,9 +15,9 @@ namespace AlgoTradeForge.Domain.Tests.Engine;
 public class CryptoFuturesIntegrationTests
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+    private static readonly TimeFrame OneMinute = new(TimeSpan.FromMinutes(1));
     private static readonly long StartMs = Start.ToUnixTimeMilliseconds();
-    private static readonly long StepMs = (long)OneMinute.TotalMilliseconds;
+    private static readonly long StepMs = (long)OneMinute.Duration.TotalMilliseconds;
 
     private static BacktestEngine CreateEngine() =>
         new(new BarMatcher(), new OrderValidator());
@@ -275,7 +275,7 @@ public class CryptoFuturesIntegrationTests
             _asset = asset;
             _buyOnBar = buyOnBar;
             _sellOnBar = sellOnBar;
-            DataSubscriptions.Add(new DataSubscription(asset, TimeSpan.FromMinutes(1)));
+            DataSubscriptions.Add(new DataSubscription(asset, new TimeFrame(TimeSpan.FromMinutes(1))));
         }
 
         public string Version => "1.0";
@@ -313,8 +313,8 @@ public class CryptoFuturesIntegrationTests
         {
             _spotAsset = spotAsset;
             _perpAsset = perpAsset;
-            DataSubscriptions.Add(new DataSubscription(spotAsset, TimeSpan.FromMinutes(1)));
-            DataSubscriptions.Add(new DataSubscription(perpAsset, TimeSpan.FromMinutes(1)));
+            DataSubscriptions.Add(new DataSubscription(spotAsset, new TimeFrame(TimeSpan.FromMinutes(1))));
+            DataSubscriptions.Add(new DataSubscription(perpAsset, new TimeFrame(TimeSpan.FromMinutes(1))));
         }
 
         public string Version => "1.0";
@@ -348,7 +348,7 @@ public class CryptoFuturesIntegrationTests
         public FeedQueryStrategy(Asset asset, Action<IFeedContext, int> onBar)
         {
             _onBar = onBar;
-            DataSubscriptions.Add(new DataSubscription(asset, TimeSpan.FromMinutes(1)));
+            DataSubscriptions.Add(new DataSubscription(asset, new TimeFrame(TimeSpan.FromMinutes(1))));
         }
 
         public string Version => "1.0";

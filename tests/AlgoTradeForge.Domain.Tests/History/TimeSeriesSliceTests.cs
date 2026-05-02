@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Strategy;
 using Xunit;
 
 namespace AlgoTradeForge.Domain.Tests.History;
@@ -6,13 +7,13 @@ namespace AlgoTradeForge.Domain.Tests.History;
 public class TimeSeriesSliceTests
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+    private static readonly TimeFrame OneMinute = new(TimeSpan.FromMinutes(1));
 
     private static TimeSeries<Int64Bar> MakeSeries(int count)
     {
         var series = new TimeSeries<Int64Bar>();
         var startMs = Start.ToUnixTimeMilliseconds();
-        var stepMs = (long)OneMinute.TotalMilliseconds;
+        var stepMs = (long)OneMinute.Duration.TotalMilliseconds;
         for (var i = 0; i < count; i++)
             series.Add(new Int64Bar(startMs + i * stepMs, 100 + i, 200 + i, 50 + i, 150 + i, 1000 + i));
         return series;

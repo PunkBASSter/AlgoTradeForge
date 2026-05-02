@@ -11,8 +11,8 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules.CrossAsset;
 
 public sealed class CrossAssetModuleTests
 {
-    private static readonly DataSubscription Sub1 = new(TestAssets.BtcUsdt, TimeSpan.FromHours(1));
-    private static readonly DataSubscription Sub2 = new(TestAssets.Aapl, TimeSpan.FromHours(1));
+    private static readonly DataSubscription Sub1 = new(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromHours(1)));
+    private static readonly DataSubscription Sub2 = new(TestAssets.Aapl, new TimeFrame(TimeSpan.FromHours(1)));
 
     private static IIndicatorFactory CreateMockFactory()
     {

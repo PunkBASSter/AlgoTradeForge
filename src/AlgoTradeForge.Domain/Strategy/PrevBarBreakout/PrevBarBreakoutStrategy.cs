@@ -52,7 +52,7 @@ public sealed class PrevBarBreakoutStrategy(
         _atr = Indicators.Create(new Atr(Params.AtrPeriod), DataSubscriptions[0]);
         RegisterIndicator(_atr);
 
-        _barIntervalMs = (long)DataSubscriptions[0].TimeFrame.TotalMilliseconds;
+        _barIntervalMs = (long)DataSubscriptions[0].TimeFrame.Duration.TotalMilliseconds;
     }
 
     protected override void OnContextUpdated(Int64Bar bar, DataSubscription sub)

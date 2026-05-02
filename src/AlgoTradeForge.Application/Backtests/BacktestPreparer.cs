@@ -1,11 +1,10 @@
-using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain;
-using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Engine;
+using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Strategy;
 using Microsoft.Extensions.Options;
@@ -63,13 +62,12 @@ public sealed class BacktestPreparer(
                     : await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
                       ?? throw new ArgumentException($"Asset '{sub.AssetName}' not found.");
 
-                TimeSpan timeFrame;
+                TimeFrame timeFrame;
                 if (string.IsNullOrEmpty(sub.TimeFrame))
                 {
-                    timeFrame = TimeSpan.FromMinutes(1);
+                    timeFrame = new TimeFrame(TimeSpan.FromMinutes(1));
                 }
-                else if (!TimeFrameFormatter.TryParseShorthand(sub.TimeFrame, out timeFrame)
-                         && !TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out timeFrame))
+                else if (!TimeFrame.TryParseLiberal(sub.TimeFrame, out timeFrame))
                 {
                     throw new ArgumentException($"Invalid TimeFrame format: '{sub.TimeFrame}'");
                 }
@@ -91,8 +89,12 @@ public sealed class BacktestPreparer(
         // builder can lazy-bind a primary sidecar if `feeds.json` lists one. For Phase 2b's
         // pre-Phase-4 callers, primary is always a TimeBar and time-bar feeds don't carry
         // sidecars; the binding is a no-op until Phase 4 lands AltBar primaries.
-        var primaryTimeFrameCode = primarySub.TimeFrame is { Length: > 0 } tf
-            ? TimeFrameFormatter.TryParseShorthand(tf, out _) ? tf : null
+        // Preserve only canonical-shorthand inputs verbatim — the feed-id grammar (TRD §3.3)
+        // requires the lowercase form, and `feeds.json` directories are named with it. A
+        // wire-form input ("00:01:00") would still be a valid TimeFrame but isn't a feed-id;
+        // bind only when the request payload itself was already in shorthand.
+        var primaryTimeFrameCode = TimeFrame.TryParse(primarySub.TimeFrame, out _)
+            ? primarySub.TimeFrame
             : null;
 
         var feedContext = feedContextBuilder?.Build(

@@ -53,7 +53,7 @@ public sealed class DonchianBreakoutStrategy(
 
         // Exit config
         _maxHoldBars = Params.MaxHoldBars;
-        _barIntervalMs = (long)DataSubscriptions[0].TimeFrame.TotalMilliseconds;
+        _barIntervalMs = (long)DataSubscriptions[0].TimeFrame.Duration.TotalMilliseconds;
     }
 
     protected override void OnContextUpdated(Int64Bar bar, DataSubscription sub)

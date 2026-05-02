@@ -121,7 +121,7 @@ public class StartLiveSessionCommandHandlerTests
 
         Assert.Single(strategy.DataSubscriptions);
         Assert.Equal(BtcUsdt, strategy.DataSubscriptions[0].Asset);
-        Assert.Equal(TimeSpan.FromMinutes(1), strategy.DataSubscriptions[0].TimeFrame);
+        Assert.Equal(new TimeFrame(TimeSpan.FromMinutes(1)), strategy.DataSubscriptions[0].TimeFrame);
     }
 
     [Fact]

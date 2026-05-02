@@ -14,8 +14,8 @@ namespace AlgoTradeForge.Application.Tests.Indicators;
 public class IndicatorFactoryTests
 {
     private static readonly Asset Aapl = TestAssets.Aapl;
-    private static readonly DataSubscription ExportableSub = new(Aapl, TimeSpan.FromMinutes(1), IsExportable: true);
-    private static readonly DataSubscription NonExportableSub = new(Aapl, TimeSpan.FromMinutes(1), IsExportable: false);
+    private static readonly DataSubscription ExportableSub = new(Aapl, new TimeFrame(TimeSpan.FromMinutes(1)), IsExportable: true);
+    private static readonly DataSubscription NonExportableSub = new(Aapl, new TimeFrame(TimeSpan.FromMinutes(1)), IsExportable: false);
 
     [Fact]
     public void PassthroughFactory_ReturnsSameInstance()
@@ -274,8 +274,8 @@ public class IndicatorFactoryTests
         var bus = new CapturingEventBus();
         var factory = new EmittingIndicatorFactory(bus);
 
-        var m1Sub = new DataSubscription(Aapl, TimeSpan.FromMinutes(1), IsExportable: true);
-        var h1Sub = new DataSubscription(Aapl, TimeSpan.FromHours(1), IsExportable: true);
+        var m1Sub = new DataSubscription(Aapl, new TimeFrame(TimeSpan.FromMinutes(1)), IsExportable: true);
+        var h1Sub = new DataSubscription(Aapl, new TimeFrame(TimeSpan.FromHours(1)), IsExportable: true);
 
         var strategy = new DualTfStrategy(new DualTfParams { DataSubscriptions = [m1Sub, h1Sub] }, factory);
 

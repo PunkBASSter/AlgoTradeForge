@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Persistence;
@@ -147,7 +146,7 @@ public sealed class OptimizationSetupHelper(
         var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
             ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
-        if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out var timeFrame))
+        if (!TimeFrame.TryParseLiberal(sub.TimeFrame, out var timeFrame))
             throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.AssetName}'.");
 
         var subscription = new DataSubscription(asset, timeFrame);
@@ -238,7 +237,7 @@ public sealed class OptimizationSetupHelper(
                 {
                     AssetName = AssetLookupName.From(s.Asset),
                     Exchange = s.Asset.Exchange,
-                    TimeFrame = TimeFrameFormatter.Format(s.TimeFrame),
+                    TimeFrame = s.TimeFrame.Code,
                 }).ToList(),
             BacktestSettings = settings,
             StartedAt = startedAt,

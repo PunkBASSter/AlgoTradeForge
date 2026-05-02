@@ -1,4 +1,3 @@
-using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Progress;
@@ -29,7 +28,7 @@ public sealed class StartLiveSessionCommandHandler(
             var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
                 ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
-            if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out var timeFrame))
+            if (!TimeFrame.TryParseLiberal(sub.TimeFrame, out var timeFrame))
                 throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.AssetName}'.");
 
             resolvedSubscriptions.Add(new DataSubscription(asset, timeFrame));

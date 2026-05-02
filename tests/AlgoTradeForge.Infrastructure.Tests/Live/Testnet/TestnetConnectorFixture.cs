@@ -48,7 +48,7 @@ public sealed class TestnetConnectorFixture : IAsyncLifetime
         {
             SessionId = SessionId,
             Strategy = Strategy,
-            Subscriptions = [new DataSubscription(Asset, TimeSpan.FromMinutes(1))],
+            Subscriptions = [new DataSubscription(Asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
             PrimaryAsset = Asset,
             InitialCash = initialCash,
             Routing = LiveEventRouting.All,

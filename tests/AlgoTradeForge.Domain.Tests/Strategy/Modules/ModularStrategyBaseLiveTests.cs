@@ -144,7 +144,7 @@ public sealed class ModularStrategyBaseLiveTests
             TrendFilterPeriod = 50, AtrPeriod = 14,
             MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
-            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
+            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)))],
         };
         var strategy = new Rsi2MeanReversionStrategy(p);
         strategy.OnInit();

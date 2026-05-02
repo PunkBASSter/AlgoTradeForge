@@ -59,7 +59,7 @@ public class BacktestBenchmarks
     [Benchmark]
     public BacktestResult Backtest_5y_Hourly()
     {
-        var sub = new DataSubscription(_btc, TimeSpan.FromHours(1));
+        var sub = new DataSubscription(_btc, new TimeFrame(TimeSpan.FromHours(1)));
         var strategy = new PrevBarBreakoutStrategy(new PrevBarBreakoutParams
         {
             DataSubscriptions = [sub],

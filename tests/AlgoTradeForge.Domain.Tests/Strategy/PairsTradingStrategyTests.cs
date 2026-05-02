@@ -38,8 +38,8 @@ public sealed class PairsTradingStrategyTests
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
         DataSubscriptions =
         [
-            new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1)),
-            new DataSubscription(TestAssets.Aapl, TimeSpan.FromMinutes(1)),
+            new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1))),
+            new DataSubscription(TestAssets.Aapl, new TimeFrame(TimeSpan.FromMinutes(1))),
         ],
     };
 
