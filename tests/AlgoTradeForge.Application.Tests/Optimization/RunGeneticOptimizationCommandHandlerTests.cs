@@ -176,4 +176,44 @@ public class RunGeneticOptimizationCommandHandlerTests
         await Assert.ThrowsAsync<ArgumentException>(
             () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
     }
+
+    [Fact]
+    public async Task HandleAsync_MultiPrimaryDss_ThrowsNotSupported()
+    {
+        // Phase 4 (P4-14, TRD §9.6): genetic optimization across multiple primaries is
+        // not yet supported. The handler should reject up-front with a clear message.
+        // Full multi-primary genetic fan-out lands in a follow-up alongside FE coordination.
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = CreateCommand() with
+        {
+            SubscriptionAxis =
+            [
+                [
+                    new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                ]
+            ]
+        };
+
+        var ex = await Assert.ThrowsAsync<NotSupportedException>(
+            () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
+        Assert.Contains("Genetic optimization across multiple primaries", ex.Message);
+        Assert.Contains("post-expansion DSS count = 2", ex.Message);
+    }
+
+    [Fact]
+    public async Task HandleAsync_SinglePrimaryDss_PassesThroughExpansion()
+    {
+        // P4-14 expansion is identity for single-primary DSS; the genetic single-primary
+        // happy path must still work after the expansion call lands.
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = CreateCommand(); // already single-primary
+
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(Guid.Empty, result.Id);
+        Assert.True(result.TotalCombinations > 0);
+    }
 }

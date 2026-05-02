@@ -21,16 +21,22 @@ public sealed class EvaluateOptimizationQueryHandler(
         // 2. Resolve parameter axes (pure computation, no scaling needed for counting)
         var resolvedAxes = axisResolver.Resolve(descriptor, query.Axes);
 
-        // 3. Build active axes — per-DSS group mode excludes subscription axis
-        var dssCount = query.SubscriptionAxis?.Count ?? 0;
+        // 3. Phase 4 (P4-14, TRD §9.6): expand multi-primary DSSes so the cost preview
+        //    reflects the post-expansion child-run count. A request with one DSS holding
+        //    two Role=Primary entries previews as 2 child runs × combosPerRun, matching
+        //    what the submission handler will actually enqueue.
+        var expandedAxis = OptimizationSetupHelper.ExpandMultiPrimary(query.SubscriptionAxis);
+
+        // 4. Build active axes — per-DSS group mode excludes subscription axis
+        var dssCount = expandedAxis.Count;
         var activeAxes = dssCount > 0
             ? OptimizationSetupHelper.FilterEmptyAxes(resolvedAxes)
             : OptimizationSetupHelper.AppendSubscriptionAxisAndFilter(resolvedAxes, 0);
 
-        // 4. Count combinations (per-run, not multiplied by DSS count)
+        // 5. Count combinations (per-run, not multiplied by DSS count)
         var totalCombinations = cartesianGenerator.EstimateCount(activeAxes);
 
-        // 5. Compute unique combinations after normalization (if strategy supports it)
+        // 6. Compute unique combinations after normalization (if strategy supports it)
         long? uniqueCombinations = null;
         var normalizer = NormalizingEnumerable.TryCreateNormalizer(descriptor.ParamsType);
         if (normalizer is not null && totalCombinations <= query.MaxCombinations)
@@ -44,10 +50,10 @@ public sealed class EvaluateOptimizationQueryHandler(
             uniqueCombinations = seen.Count;
         }
 
-        // 6. Compute effective dimensions
+        // 7. Compute effective dimensions
         var effectiveDimensions = GeneticConfigResolver.ComputeEffectiveDimensions(activeAxes);
 
-        // 7. Resolve genetic config if in genetic mode
+        // 8. Resolve genetic config if in genetic mode
         ResolvedGeneticConfigDto? geneticConfigDto = null;
         if (string.Equals(query.Mode, "Genetic", StringComparison.OrdinalIgnoreCase))
         {

@@ -4,6 +4,7 @@ using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Validation;
 using Microsoft.Extensions.Logging;
 
@@ -29,6 +30,15 @@ public sealed class RunValidationCommandHandler(
         if (optimization.Status != OptimizationRunStatus.Completed)
             throw new ArgumentException(
                 $"Optimization run '{command.OptimizationRunId}' has status '{optimization.Status}', expected 'Completed'.");
+
+        // Phase 4 (P4-16, TRD §9.6): validation requires exactly one Role=Primary subscription.
+        // After P4-14 expansion, every optimization run is single-primary by construction —
+        // this guard catches stale/corrupt records that predate the expansion.
+        var primaryCount = optimization.DataSubscriptions.Count(s => s.Role == DataFeedRole.Primary);
+        if (primaryCount != 1)
+            throw new ArgumentException(
+                $"Optimization run '{command.OptimizationRunId}' has {primaryCount} Role=Primary " +
+                "subscriptions; validation requires exactly one (TRD §9.6).");
 
         // 2. Resolve threshold profile (check repository for custom profiles, fall back to built-in)
         ValidationThresholdProfile profile;

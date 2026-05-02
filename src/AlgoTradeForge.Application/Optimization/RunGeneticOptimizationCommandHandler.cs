@@ -29,9 +29,21 @@ public sealed class RunGeneticOptimizationCommandHandler(
         var settings = command.BacktestSettings;
 
         // 2. Validate subscriptions (data loading deferred to executor)
-        var subscriptionAxis = command.SubscriptionAxis;
-        if (subscriptionAxis is not { Count: > 0 } || subscriptionAxis[0].Count == 0)
+        if (command.SubscriptionAxis is not { Count: > 0 } || command.SubscriptionAxis[0].Count == 0)
             throw new ArgumentException("At least one data subscription must be provided.");
+
+        // Phase 4 (P4-14, TRD §9.6): expand multi-primary DSSes into single-primary DSSes.
+        // Genetic only supports single-primary today — multi-primary fan-out would require
+        // |primaries| independent GA runs (separate populations + fitness caches), which
+        // ships with FE coordination in a follow-up. Reject the multi-primary case loudly
+        // here so the contract stays predictable.
+        var subscriptionAxis = OptimizationSetupHelper.ExpandMultiPrimary(command.SubscriptionAxis);
+        if (subscriptionAxis.Count > 1)
+            throw new NotSupportedException(
+                $"Genetic optimization across multiple primaries is not yet supported " +
+                $"(post-expansion DSS count = {subscriptionAxis.Count}). " +
+                "Submit one Role=Primary feed per request, or use brute-force optimization.");
+
         var primarySub = OptimizationSetupHelper.GetSubscriptions(subscriptionAxis);
 
         // 3. Resolve axes and GA config
@@ -67,9 +79,11 @@ public sealed class RunGeneticOptimizationCommandHandler(
         var startedAt = DateTimeOffset.UtcNow;
         var runId = Guid.NewGuid();
         var groupId = runId; // Genetic uses runId as jobId (single-DSS)
+        // Use the post-expansion subscriptionAxis so dedup keys are computed on the canonical
+        // single-primary shape — matches brute-force handler's behavior.
         var groupRunKey = RunKeyBuilder.BuildGroupKey(
             command.StrategyName, settings, "Genetic",
-            command.SubscriptionAxis, command.Axes);
+            subscriptionAxis, command.Axes);
         var maxParallelism = command.MaxDegreeOfParallelism > 0
             ? command.MaxDegreeOfParallelism
             : Environment.ProcessorCount;

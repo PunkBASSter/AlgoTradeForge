@@ -340,6 +340,54 @@ public sealed class OptimizationSetupHelper(
         return [firstGroup[0] with { AssetName = groupLabel }];
     }
 
+    /// <summary>
+    /// Phase 4 (P4-14): pre-splits multi-primary DSSes into single-primary DSSes carrying the
+    /// original <c>Role=Side</c> entries unchanged. A DSS with N <c>Role=Primary</c> entries
+    /// expands to N output DSSes, one per primary, each ordered as <c>[Primary_i, ...sides]</c>.
+    /// Single-primary DSSes pass through unchanged (identity transform).
+    /// <para>
+    /// Per TRD §9.6: <c>OptimizationInputs(Subscriptions)</c> may contain multiple
+    /// <c>Role=Primary</c> entries (the candidate set); the engine fans out across them ×
+    /// parameter grid. Per-primary <c>IParameterNormalizer</c> dedup is then automatic because
+    /// each output DSS becomes its own ComputeTask, with its own <see cref="NormalizingEnumerable"/>
+    /// instance (whose <c>SkippedCount</c> is per-instance state).
+    /// </para>
+    /// </summary>
+    public static List<List<DataFeedSubscription>> ExpandMultiPrimary(
+        IReadOnlyList<IReadOnlyList<DataFeedSubscription>>? axisGroups)
+    {
+        if (axisGroups is null || axisGroups.Count == 0)
+            return [];
+
+        var expanded = new List<List<DataFeedSubscription>>(axisGroups.Count);
+        for (var dssIdx = 0; dssIdx < axisGroups.Count; dssIdx++)
+        {
+            var dss = axisGroups[dssIdx];
+            var primaries = new List<DataFeedSubscription>();
+            var sides = new List<DataFeedSubscription>();
+            for (var i = 0; i < dss.Count; i++)
+            {
+                var sub = dss[i];
+                if (sub.Role == DataFeedRole.Primary) primaries.Add(sub);
+                else sides.Add(sub);
+            }
+
+            if (primaries.Count == 0)
+                throw new ArgumentException(
+                    $"SubscriptionAxis[{dssIdx}] has no Role=Primary entry. " +
+                    "Each DSS must carry at least one primary feed (the bar-clock driver).",
+                    nameof(axisGroups));
+
+            foreach (var primary in primaries)
+            {
+                var fanned = new List<DataFeedSubscription>(1 + sides.Count) { primary };
+                fanned.AddRange(sides);
+                expanded.Add(fanned);
+            }
+        }
+        return expanded;
+    }
+
     public static string CacheKey(Asset asset, TimeSpan timeFrame) =>
         $"{asset.Name}|{asset.Settlement}|{timeFrame}";
 

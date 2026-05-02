@@ -133,4 +133,131 @@ public sealed class OptimizationSetupHelperTests
         Assert.Equal("1m", resolved.TimeFrame.Code);  // sentinel
         Assert.Equal("ticks", resolved.FeedKey);
     }
+
+    // -------- Phase 4 (P4-14, TRD §9.6): ExpandMultiPrimary --------
+
+    [Fact]
+    public void ExpandMultiPrimary_NullInput_ReturnsEmpty()
+    {
+        var result = OptimizationSetupHelper.ExpandMultiPrimary(null);
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ExpandMultiPrimary_EmptyInput_ReturnsEmpty()
+    {
+        var result = OptimizationSetupHelper.ExpandMultiPrimary(new List<List<DataFeedSubscription>>());
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ExpandMultiPrimary_SinglePrimaryDss_PassesThroughIdentity()
+    {
+        var btc = new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+        List<List<DataFeedSubscription>> input = [[btc]];
+
+        var result = OptimizationSetupHelper.ExpandMultiPrimary(input);
+
+        var dss = Assert.Single(result);
+        Assert.Same(btc, dss[0]);
+    }
+
+    [Fact]
+    public void ExpandMultiPrimary_MultiPrimaryWithSharedSide_ExpandsToOnePerPrimary()
+    {
+        // [Primary(A), Primary(B), Side(X)] → [[A,X],[B,X]]
+        var primaryA = new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+        var primaryB = new AltBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, "EqV_1m_1000");
+        var sideX = new SideFeedSubscription("BTCUSDT", "Binance", DataFeedRole.Side, "funding-rate");
+        List<List<DataFeedSubscription>> input = [[primaryA, primaryB, sideX]];
+
+        var result = OptimizationSetupHelper.ExpandMultiPrimary(input);
+
+        Assert.Equal(2, result.Count);
+        // First expanded DSS: [primaryA, sideX]
+        Assert.Equal(2, result[0].Count);
+        Assert.Same(primaryA, result[0][0]);
+        Assert.Same(sideX, result[0][1]);
+        // Second expanded DSS: [primaryB, sideX]
+        Assert.Equal(2, result[1].Count);
+        Assert.Same(primaryB, result[1][0]);
+        Assert.Same(sideX, result[1][1]);
+    }
+
+    [Fact]
+    public void ExpandMultiPrimary_MixedCardinalities_ExpandsCorrectly()
+    {
+        // DSS 0: 3 primaries, 1 side → 3 expanded DSSes
+        // DSS 1: 1 primary, 0 sides   → 1 expanded DSS (identity)
+        // Total: 4 expanded DSSes in input order
+        var pA = new TimeBarSubscription("BTC", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+        var pB = new TimeBarSubscription("ETH", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+        var pC = new TimeBarSubscription("SOL", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+        var sX = new SideFeedSubscription("BTC", "Binance", DataFeedRole.Side, "funding-rate");
+        var pD = new TimeBarSubscription("XRP", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+
+        List<List<DataFeedSubscription>> input =
+        [
+            [pA, pB, pC, sX],
+            [pD],
+        ];
+
+        var result = OptimizationSetupHelper.ExpandMultiPrimary(input);
+
+        Assert.Equal(4, result.Count);
+        Assert.Same(pA, result[0][0]); Assert.Same(sX, result[0][1]);
+        Assert.Same(pB, result[1][0]); Assert.Same(sX, result[1][1]);
+        Assert.Same(pC, result[2][0]); Assert.Same(sX, result[2][1]);
+        Assert.Same(pD, result[3][0]);
+        Assert.Single(result[3]); // pD has no sides
+    }
+
+    [Fact]
+    public void ExpandMultiPrimary_DssWithNoPrimaries_ThrowsArgumentException()
+    {
+        // Side-only DSS is invalid — every DSS must drive its own bar clock.
+        var sX = new SideFeedSubscription("BTC", "Binance", DataFeedRole.Side, "funding-rate");
+        List<List<DataFeedSubscription>> input = [[sX]];
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            OptimizationSetupHelper.ExpandMultiPrimary(input));
+        Assert.Contains("Role=Primary", ex.Message);
+        Assert.Contains("[0]", ex.Message);
+    }
+
+    [Fact]
+    public void ExpandMultiPrimary_PrimariesWithEqualValues_StillProducesDistinctDsses()
+    {
+        // No input-side dedup — duplicate primaries each get their own DSS.
+        // Per-primary normalizer dedup is the param-grid's job, not the expansion's.
+        var p1 = new TimeBarSubscription("BTC", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+        var p2 = new TimeBarSubscription("BTC", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+        List<List<DataFeedSubscription>> input = [[p1, p2]];
+
+        var result = OptimizationSetupHelper.ExpandMultiPrimary(input);
+
+        Assert.Equal(2, result.Count);
+        Assert.Same(p1, result[0][0]);
+        Assert.Same(p2, result[1][0]);
+    }
+
+    [Fact]
+    public void ExpandMultiPrimary_SideOrderPreserved()
+    {
+        // Side feeds keep their original order (after the primary).
+        var pA = new TimeBarSubscription("BTC", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+        var s1 = new SideFeedSubscription("BTC", "Binance", DataFeedRole.Side, "funding-rate");
+        var s2 = new SideFeedSubscription("BTC", "Binance", DataFeedRole.Side, "open-interest");
+        var s3 = new SideFeedSubscription("BTC", "Binance", DataFeedRole.Side, "long-short-ratio");
+        List<List<DataFeedSubscription>> input = [[pA, s1, s2, s3]];
+
+        var result = OptimizationSetupHelper.ExpandMultiPrimary(input);
+
+        var dss = Assert.Single(result);
+        Assert.Equal(4, dss.Count);
+        Assert.Same(pA, dss[0]);
+        Assert.Same(s1, dss[1]);
+        Assert.Same(s2, dss[2]);
+        Assert.Same(s3, dss[3]);
+    }
 }

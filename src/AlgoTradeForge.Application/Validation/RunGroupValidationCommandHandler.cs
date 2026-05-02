@@ -4,6 +4,7 @@ using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Validation;
 using Microsoft.Extensions.Logging;
 
@@ -37,6 +38,19 @@ public sealed class RunGroupValidationCommandHandler(
         if (completedRuns.Count == 0)
             throw new ArgumentException(
                 $"Optimization group '{command.OptimizationGroupId}' has no completed child runs.");
+
+        // Phase 4 (P4-16, TRD §9.6): validation requires exactly one Role=Primary per child run.
+        // After P4-14 expansion, every optimization run is single-primary by construction — this
+        // guard catches stale/corrupt records that predate the expansion.
+        for (var i = 0; i < completedRuns.Count; i++)
+        {
+            var run = completedRuns[i];
+            var primaryCount = run.DataSubscriptions.Count(s => s.Role == DataFeedRole.Primary);
+            if (primaryCount != 1)
+                throw new ArgumentException(
+                    $"Optimization run '{run.Id}' (child {i} of group '{command.OptimizationGroupId}') " +
+                    $"has {primaryCount} Role=Primary subscriptions; validation requires exactly one (TRD §9.6).");
+        }
 
         // 3. Resolve threshold profile
         ValidationThresholdProfile profile;
