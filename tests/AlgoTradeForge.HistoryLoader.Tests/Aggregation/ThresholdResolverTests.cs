@@ -132,6 +132,59 @@ public sealed class ThresholdResolverTests
     }
 
     [Fact]
+    public void Resolve_PriceUnit_AbsoluteScalesByTickSizeOnly()
+    {
+        // P5-0 — Range/Renko threshold is a price magnitude (e.g. $50 per bar).
+        // No QuantityScale factor — distinct from base_asset/quote_asset.
+        var r = ThresholdResolver.Resolve(
+            thresholdUnit: "price",
+            inputMode: "absolute",
+            thresholdValue: 50m,
+            convenienceInput: null,
+            scale: SpotScale);
+
+        Assert.Equal(50m, r.Absolute);
+        Assert.Equal(5000, r.Scaled);            // 50 × ScaleFactor=100 (no QuantityScale factor)
+        Assert.Equal("50", r.FeedIdComponent);
+        Assert.Null(r.PreservedConvenienceInput);
+    }
+
+    [Fact]
+    public void Resolve_PriceUnit_ConvenienceSiSuffix_RoundTrips()
+    {
+        // "1k" price = $1000 range threshold.
+        var r = ThresholdResolver.Resolve(
+            thresholdUnit: "price",
+            inputMode: "convenience",
+            thresholdValue: null,
+            convenienceInput: "1k",
+            scale: SpotScale);
+
+        Assert.Equal(1000m, r.Absolute);
+        Assert.Equal(100_000, r.Scaled);         // 1000 × 100
+        Assert.Equal("1k", r.FeedIdComponent);
+        Assert.Equal("1k", r.PreservedConvenienceInput);
+    }
+
+    [Fact]
+    public void Resolve_PriceUnit_DoesNotMultiplyByQuantityScale()
+    {
+        // Regression guard: scaling MUST mirror price scaling, not base_asset / quote_asset.
+        // Use a non-unit QuantityScale so a bug ("price" branch falling through to
+        // base_asset's MoneyConvert.ToLong(absolute * QuantityScale)) would surface.
+        var perpScale = new ScaleContext(tickSize: 0.1m, quantityStepSize: 0.001m);   // ScaleFactor=10, QuantityScale=1000
+        var r = ThresholdResolver.Resolve(
+            thresholdUnit: "price",
+            inputMode: "absolute",
+            thresholdValue: 50m,
+            convenienceInput: null,
+            scale: perpScale);
+
+        Assert.Equal(50m, r.Absolute);
+        Assert.Equal(500, r.Scaled);             // 50 × ScaleFactor=10 ONLY (NOT × 1000)
+    }
+
+    [Fact]
     public void Resolve_BothInputModesRoundTripToSameAbsolute()
     {
         // P1b-38 — request `absolute` (1000) and `convenience` (`1k`) produce the same

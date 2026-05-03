@@ -256,12 +256,11 @@ No EqI yet; tick storage and signed accumulator are independent surfaces.
 - [x] **P4-14** Optimization: `OptimizationInputs.Subscriptions` (multi-primary; `Role=Primary` entries are fan-out candidates, `Role=Side` are shared side feeds) → fan-out across primaries × parameter grid. `IParameterNormalizer` dedup applies per-primary. (TRD §9.6) — `OptimizationSetupHelper.ExpandMultiPrimary` pre-splits multi-primary DSSes into single-primary DSSes carrying the original `Role=Side` entries. Wired into `RunGroupOptimizationCommandHandler` (brute-force fan-out: one child run + one `ComputeTask` per primary, single `OptimizationGroupRecord`). Per-primary dedup is automatic — each child gets its own `NormalizingEnumerable` (whose `SkippedCount` is per-instance state via `Interlocked`). `EvaluateOptimizationQueryHandler` applies the same expansion so cost-preview's `dssCount` reflects post-expansion fan-out. **Genetic:** scoped down — see P4-14b.
 - [x] **P4-14b** Genetic multi-primary fan-out — _shipped much smaller than originally planned._ Discovered the brute-force endpoint already routes through the unified group handler, and the group handler already supports `OptimizationMethod = "Genetic"` (creating one `GeneticExecutionContext` per DSS). The fix was a 3-line WebApi change at `OptimizationEndpoints.cs:187`: route on **post-expansion** count (`OptimizationSetupHelper.ExpandMultiPrimary(request.SubscriptionAxis).Count > 1`) instead of pre-expansion. Multi-primary single-DSS genetic now flows through the group handler → returns `OptimizationGroupSubmissionDto` with one child per primary. The genetic handler keeps its defensive `NotSupportedException` guard (only fires on direct calls in tests, never via WebApi). New test `HandleAsync_Genetic_MultiPrimaryDss_ProducesPerPrimaryChildRuns` in `RunGroupOptimizationGeneticTests.cs` proves the genetic group path handles multi-primary correctly.
 - [x] **P4-15** Test: optimization fan-out — `|primaries| × |combos|` runs; per-primary normalizer dedup intact. — `OptimizationSetupHelperTests` adds 8 `ExpandMultiPrimary_*` cases (identity / multi-primary with shared side / mixed cardinalities / no-primary throws / equal-value primaries still distinct / side-order preserved). `RunGroupOptimizationGeneticTests` adds 3 brute-force fan-out tests (single DSS multi-primary → 2 child runs, multi-DSS multi-primary cartesian, single-primary identity). `RunGeneticOptimizationCommandHandlerTests` pins multi-primary `NotSupportedException`. `NormalizingEnumerableTests.TwoInstances_DedupCountsAreIndependent` pins per-instance `SkippedCount`. `EvaluateOptimizationQueryHandlerTests.MultiPrimaryDss_DssCountReflectsExpansion` + `_ExpansionPreservesSideForEachChild`.
-- [x] **P4-16a** Validation — same `Primary` guard. (TRD §9.6) — `RunValidationCommandHandler` and `RunGroupValidationCommandHandler` both throw `ArgumentException` when an optimization run's persisted `DataSubscriptions` carries ≠ 1 `Role=Primary` entries. After P4-14 expansion every child run is single-primary by construction, so this is defense-in-depth against stale/corrupt records. `RunGroupValidationCommandHandlerTests.HandleAsync_OptimizationRunWithMultiPrimary_ThrowsArgumentException` pins the guard.
-- [ ] **P4-16b** Validation — range split server-side (walk-forward / OOS). (TRD §9.6) — _deferred. The current `ValidationTaskExecutor` operates on completed optimization trials via `ValidationPipeline` (verdict aggregation over trial trade P&L), not date-range chunked re-execution. Walk-forward / OOS is a new validation **mode** that does not exist today; lands separately with its own design (new pipeline shape + fidelity-equivalence proof for window splits)._
+- [x] **P4-16** Validation — same `Primary` guard. (TRD §9.6) — `RunValidationCommandHandler` and `RunGroupValidationCommandHandler` both throw `ArgumentException` when an optimization run's persisted `DataSubscriptions` carries ≠ 1 `Role=Primary` entries. After P4-14 expansion every child run is single-primary by construction, so this is defense-in-depth against stale/corrupt records. `RunGroupValidationCommandHandlerTests.HandleAsync_OptimizationRunWithMultiPrimary_ThrowsArgumentException` pins the guard.
 
 ### Run-launch UI
 
-**Recommended next bundle.** Backend contract is stable post-P4-14/15/16a; frontend can consume it without breaking changes. P4-19 + P4-14b are natural to land in the same PR since both touch the multi-primary launch flow.
+**Recommended next bundle.** Backend contract is stable post-P4-14/15/16; frontend can consume it without breaking changes. P4-19 + P4-14b are natural to land in the same PR since both touch the multi-primary launch flow.
 
 - [x] **P4-17** Backtest/Optimization launch — Primary dropdown sourced from `/api/data/.../feeds`; friendly labels (`EqV/1m:1k`); icons distinguish time vs alt. (TRD §10.2) — `frontend/components/features/launch/feed-picker.tsx` cascading exchange → asset → feed dropdowns via TanStack Query, friendly labels via `frontend/lib/data/feed-label.ts` (`formatFeedLabel`, `formatSi`), eligibility-filtered per `Role`. Sidecar-bearing alt bars render with a `•` indicator.
 - [x] **P4-18** Side-feed multi-select accepts alt bars. (TRD §10.2) — `MultiPrimaryPicker.ChipSection` with `role="Side"` accepts both top-level side feeds (`funding-rate`) and alt-bar sidecars (`<feedId>.flow`) — both flagged `kind="Side"` by Phase 3 catalog normalization.
@@ -271,14 +270,51 @@ No EqI yet; tick storage and signed accumulator are independent surfaces.
 
 ## Phase 5 — Range / Renko accumulators
 
-Path-dependent; require ticks or sub-minute time bars.
+Path-dependent; **tick-only in v1** (ADR D1 — time-bar Range collapses force a one-emit-per-record approximation that distorts `actual_overshoot_pct`). Time-bar Range/Renko deferred to a later phase. Original P5-1..P5-6 split into P5-0..P5-15 to separate threshold-unit / interface / accumulator / eligibility / docs / benchmark concerns. Design rationale: [`specs/031-alternative-bars/p5-design-decisions.md`](../specs/031-alternative-bars/p5-design-decisions.md) (ADR D1-D9).
 
-- [ ] **P5-1** Range bar accumulator (configurable price range per bar).
-- [ ] **P5-2** Test: Range emission on synthetic price path.
-- [ ] **P5-3** Renko bar accumulator (brick size).
-- [ ] **P5-4** Test: Renko emission on synthetic price path.
-- [ ] **P5-5** Eligibility entries in `aggregation-options` for `Range`/`Renko`. (TRD §7)
-- [ ] **P5-6** Decide whether realized-range belongs in `.flow` sidecar or a new sidecar kind. Output: ADR.
+### Threshold-unit extension
+
+- [x] **P5-0** Add `"price"` branch to `ThresholdResolver.Resolve`'s unit switch; scales via `scale.AmountToTicks(absolute)` (NOT `× QuantityScale` — threshold is a price magnitude). — `src/AlgoTradeForge.HistoryLoader.Application/Aggregation/ThresholdResolver.cs`.
+- [x] **P5-0a** Test: `ThresholdResolverTests` — `price` unit scales correctly across spot (`tickSize=0.01`, `QuantityScale=1`) and perp (`QuantityScale=1000`); convenience SI suffix (`100`, `1k`) round-trips; regression guard pins "no `× QuantityScale` factor".
+
+### ADR (lands early — referenced by subsequent tasks)
+
+- [x] **P5-1** ADR — `specs/031-alternative-bars/p5-design-decisions.md` recording: tick-only v1, 1× neutral Renko, no sidecar, multi-brick drain pattern, volume distribution rule. Replaces the originally-scoped P5-6 ADR with broader phase coverage.
+
+### Interface extension (additive DIM)
+
+- [x] **P5-2** Add `bool TryDrainQueued(out AggregatedBar emitted)` default-interface method on `IBarAccumulator` returning `false`. EqV/EqT/EqD/EqI/Range inherit the no-op; Renko overrides to drain its internal queue. P0-1 audit pre-cleared DIM dispatch on plugin assemblies.
+- [x] **P5-3** Pipeline drain loop: extracted `WriteBar` local helper around emit handler so the primary-emit + queue-drain paths share row-write + bookkeeping; sidecar emission stays inline (only fires for primary emits — drained bars carry no sidecar per ADR D7). `src/AlgoTradeForge.HistoryLoader.Application/Aggregation/AggregationPipeline.cs`.
+
+### Range accumulator
+
+- [x] **P5-4** `RangeAccumulator : IBarAccumulator` (~80 lines, mirrors `EqIAccumulator` skeleton — implements `IBarAccumulator` directly, does NOT extend `AccumulatorBase` because emission is OHLC-delta-driven not threshold-acc-driven). State: `_tsOpen`, `_open`, `_runningHigh`, `_runningLow`, `_close`, `_baseVolumeAcc`, `_threshold`. Emit when `(_runningHigh - _runningLow) ≥ _threshold`.
+- [x] **P5-5** Wire `"Range"` in `AccumulatorEntry.Open` — replaces the `NotSupportedException` branch.
+- [x] **P5-6** Test: `RangeAccumulatorTests` — synthetic tick streams (8 cases): no-emit / emits / single-record-crosses / exact-threshold / state-resets / trailing-discarded / volume-conservation / threshold-validation.
+
+### Renko accumulator
+
+- [x] **P5-7** `RenkoAccumulator : IBarAccumulator` with internal `Queue<AggregatedBar>`. State: `_lastBrickClose` (long), `_brickSize` (long), `_pendingVolume` (long), `_lastEmittedTs` (long, for strict-monotonic output ts), `_queue`. First call seeds `_lastBrickClose = tick.Close`. On `TryAdvance(tick)`: compute `n = (int)(|tick.Close - _lastBrickClose| / _brickSize)`; emit N clean rectangles (no wicks). Pending volume from prior no-emit ticks lands on the first brick of the chain; trigger tick volume distributes proportionally (last brick takes integer remainder); `Σ brick.vol = pending + tick.vol`.
+- [x] **P5-8** Wire `"Renko"` in `AccumulatorEntry.Open`.
+- [x] **P5-9** Test: `RenkoAccumulatorTests` (12 cases): seed-without-emitting / single-brick up & down / multi-brick-from-one-tick / reversal / pending-accumulation / volume-conservation / pending-on-first-brick / strict-monotonic-ts / exact-boundary / threshold-validation / overshoot-stays-zero.
+
+### Eligibility narrowing
+
+- [x] **P5-10** Tighten `EligibilityRules.ForSource`: time-bar / OHLC-only branches add explicit `IneligibleType` entries for `Range`/`Renko` with reason `"Range/Renko require a tick source for fidelity in v1."` (factored as `RangeRenkoRequiresTickReason` constant). Tick branch keeps `Allow(AllAltBarTypes, [])`. `AltBar`/`Side` branches already cover via `AllAltBarTypes`.
+- [x] **P5-11** Test: `EligibilityRulesTests` (5 new cases): TimeBarPerpWithCandleExt / TimeBarSpotWithCandleExt / TimeBarWithoutCandleExt / OhlcOnlyTimeBar all reject Range/Renko with the canonical reason; Tick branch confirms eligibility.
+
+### End-to-end verification
+
+- [x] **P5-12** `AggregationPipeline_RangeRenkoTests` (3 cases): Range from ticks emits expected bar count + manifest has `type.code=Range`, `threshold.unit=price`, `imbalance_reconstruction_method=null`, `sidecar=null`; same for Renko; multi-brick chain output ts is strictly monotonic.
+
+### Documentation
+
+- [x] **P5-13** TRD updates → v6: §1 lift Range/Renko from "reserve a slot" to first-class; §1 non-goals strike Range/Renko (now ships) and add new non-goals (time-bar Range/Renko, 2× reversal, sidecars); §3.3 grammar table strikes "future"; §3.4 threshold-units table adds Range/Renko rows (`unit=price`); §6.3 accumulator table adds Range/Renko rows + new "Range / Renko (Phase 5)" subsection covering path-dependence, tick-only restriction, brick mechanics, and volume-conservation invariant; §7 compatibility matrix row 1 strikes "future" prefix, row 4 (OHLC-only) eligibility shrinks to "none" with explicit reason. Cross-references the P5 ADR.
+- [x] **P5-14** Update this tracker — replace P5-1..P5-6 with the refined P5-0..P5-15 list; update Phase 5 status row in the summary table.
+
+### Benchmark
+
+- [x] **P5-15** Add `Aggregate_Range_FromTicks_1h` and `Aggregate_Renko_FromTicks_1h` scenarios to `AggregatorBenchmarks` mirroring P2a-9's synthetic tick generator (~150k deterministic ticks via Poisson interarrival, fixed seed). `benchmarks/AlgoTradeForge.Benchmarks/Benchmarks/AggregatorBenchmarks.cs`. Baseline capture (parent commit vs. branch using `scripts/perf/save-baseline.ps1` + `compare-baseline.ps1`) tracked separately as a process step before merge.
 
 ---
 
@@ -324,8 +360,8 @@ Resolve before the listed gating task. Promote to a `## Resolved` section once l
 | 2a | 10 + BAKE | 9 done · P2a-8 deferred (needs real ticks post-BAKE) · BAKE pending merge | One PR for collection (P2a-1..5); 24–48 h bake before aggregator work (P2a-6..10) |
 | 2b | 13 | 13 | P0-1/P0-2 decision (DIM vs receiver) — DIMs landed (P0-1 PASS) |
 | 3 | 19 | 0 | P3-10 (Q-1 resolved) |
-| 4 | 21 (was 19; P4-14 split adds 14b, P4-16 split adds 16b) | 20 done (P4-1..P4-16a + P4-14b + P4-17..P4-19); P4-16b walk-forward queued for separate design | P0-3 / P0-4 audits drive P4-2 / P4-9 |
-| 5 | 6 | 0 | — |
+| 4 | 20 (was 19; P4-14 split adds 14b) | 20 done (P4-1..P4-19) | P0-3 / P0-4 audits drive P4-2 / P4-9 |
+| 5 | 16 (was 6; refined into P5-0..P5-15) | 16 done (P5-0..P5-15); baseline-capture process step pending | Tick-only v1 per ADR D1 |
 | 6 | 6 | 0 | If needed |
 | X | 5 | 4 (X-3, X-5 in 1a; X-2, X-4 in 1b) | Cross-cutting; land with parent phase |
 | Q | 4 | — | Each gates a specific task above |

@@ -13,6 +13,13 @@ public static class EligibilityRules
     private static readonly string[] AllAltBarTypes =
         ["EqT", "EqV", "EqD", "EqI", "Range", "Renko"];
 
+    // Phase 5 (P5-10, ADR D1): Range/Renko require a tick source. Time-bar collapses force a
+    // one-emit-per-record approximation that distorts actual_overshoot_pct. Lifting requires
+    // either documenting the approximation or attaching intra-bar volume profile data —
+    // deferred to a later phase.
+    private const string RangeRenkoRequiresTickReason =
+        "Range/Renko require a tick source for fidelity in v1.";
+
     public sealed record EligibilityResult(
         IReadOnlyList<string> EligibleTypes,
         IReadOnlyList<IneligibleType> IneligibleTypes,
@@ -37,16 +44,28 @@ public static class EligibilityRules
             SourceKind.Tick => Allow(AllAltBarTypes, []),
 
             SourceKind.TimeBarWithVolume when hasCandleExt && IsPerpOrFuture(assetType) =>
-                Allow(["EqT", "EqV", "EqD", "EqI"], [],
+                Allow(["EqT", "EqV", "EqD", "EqI"],
+                    ineligible: [
+                        ("Range", RangeRenkoRequiresTickReason),
+                        ("Renko", RangeRenkoRequiresTickReason),
+                    ],
                     warning: AltBarWarnings.TimeBarEqIProxy),
 
             SourceKind.TimeBarWithVolume when hasCandleExt /* spot */ =>
                 Allow(["EqT", "EqV", "EqD"],
-                    ineligible: [("EqI", "EqI requires perp/future asset for taker-buy proxy.")]),
+                    ineligible: [
+                        ("EqI", "EqI requires perp/future asset for taker-buy proxy."),
+                        ("Range", RangeRenkoRequiresTickReason),
+                        ("Renko", RangeRenkoRequiresTickReason),
+                    ]),
 
             SourceKind.TimeBarWithVolume /* no candle-ext */ =>
                 Allow(["EqT", "EqV", "EqD"],
-                    ineligible: [("EqI", "EqI requires either a tick source or candle-ext on the time-bar source.")]),
+                    ineligible: [
+                        ("EqI", "EqI requires either a tick source or candle-ext on the time-bar source."),
+                        ("Range", RangeRenkoRequiresTickReason),
+                        ("Renko", RangeRenkoRequiresTickReason),
+                    ]),
 
             SourceKind.OhlcOnly =>
                 Allow([],
@@ -55,6 +74,8 @@ public static class EligibilityRules
                         ("EqV", "OHLC-only sources have no volume column."),
                         ("EqD", "OHLC-only sources have no volume column."),
                         ("EqI", "OHLC-only sources have no volume column."),
+                        ("Range", RangeRenkoRequiresTickReason),
+                        ("Renko", RangeRenkoRequiresTickReason),
                     ]),
 
             SourceKind.AltBar =>

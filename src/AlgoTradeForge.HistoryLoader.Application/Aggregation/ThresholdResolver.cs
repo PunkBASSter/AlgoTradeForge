@@ -73,8 +73,11 @@ public static class ThresholdResolver
             // EqD per-record contribution is (Close × Volume) in tick × quant units; threshold
             // in quote_asset (e.g. USD) projects via ScaleFactor × QuantityScale.
             "quote_asset" => scale.AmountToTicks(absolute * scale.QuantityScale),
+            // Phase 5 (Range/Renko): threshold is a price magnitude (e.g. "$50 per bar"). Scale
+            // mirrors how price is scaled — straight AmountToTicks, no * QuantityScale factor.
+            "price" => scale.AmountToTicks(absolute),
             _ => throw new ArgumentException(
-                $"Unrecognized threshold_unit '{thresholdUnit}' (allowed: base_asset, quote_asset, trades)."),
+                $"Unrecognized threshold_unit '{thresholdUnit}' (allowed: base_asset, quote_asset, trades, price)."),
         };
 
         if (scaled <= 0)

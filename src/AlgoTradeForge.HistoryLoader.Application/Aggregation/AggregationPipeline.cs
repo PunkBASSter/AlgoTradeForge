@@ -57,6 +57,18 @@ public sealed class AggregationPipeline
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(job);
+
+        // Phase 5 (ADR D1) defense-in-depth: EligibilityRules already rejects non-Tick
+        // Range/Renko, but a private-API caller bypassing eligibility would otherwise
+        // silently aggregate from time-bar OHLC and distort actual_overshoot_pct (the
+        // failure mode the tick-only restriction exists to prevent).
+        if (job.TypeCode is "Range" or "Renko" && job.Source.Kind != DataFeedKind.Tick)
+        {
+            throw new InvalidOperationException(
+                $"{job.TypeCode} requires a Tick source (got {job.Source.Kind}). " +
+                "Enforced at EligibilityRules; reaching the pipeline means a caller bypassed it.");
+        }
+
         var startedAt = _clock.GetUtcNow();
         var startTicks = _clock.GetTimestamp();
 
@@ -122,6 +134,25 @@ public sealed class AggregationPipeline
             sourceStream = join.Join(sourceStream);
         }
 
+        // Local helper: write one bar's CSV row + update per-bar bookkeeping. Used by both
+        // the primary emit path and the Phase-5 multi-brick drain loop. Captures rowBuffer,
+        // sink, firstBarTs, lastBarTs, barsEmitted, lastEmittedMonth from the enclosing scope.
+        void WriteBar(in AggregatedBar bar)
+        {
+            rowBuffer.Clear();
+            rowBuffer.Append(bar.TsMs.ToString(CultureInfo.InvariantCulture)).Append(',')
+                     .Append(bar.Open.ToString(CultureInfo.InvariantCulture)).Append(',')
+                     .Append(bar.High.ToString(CultureInfo.InvariantCulture)).Append(',')
+                     .Append(bar.Low.ToString(CultureInfo.InvariantCulture)).Append(',')
+                     .Append(bar.Close.ToString(CultureInfo.InvariantCulture)).Append(',')
+                     .Append(bar.Volume.ToString(CultureInfo.InvariantCulture));
+            sink.WriteRow(bar.TsMs, rowBuffer.ToString());
+            firstBarTs ??= bar.TsMs;
+            lastBarTs = bar.TsMs;
+            barsEmitted++;
+            lastEmittedMonth = MonthKey(bar.TsMs);
+        }
+
         foreach (var record in sourceStream)
         {
             ct.ThrowIfCancellationRequested();
@@ -133,14 +164,7 @@ public sealed class AggregationPipeline
 
             if (accumulator.TryAdvance(in record, out var bar))
             {
-                rowBuffer.Clear();
-                rowBuffer.Append(bar.TsMs.ToString(CultureInfo.InvariantCulture)).Append(',')
-                         .Append(bar.Open.ToString(CultureInfo.InvariantCulture)).Append(',')
-                         .Append(bar.High.ToString(CultureInfo.InvariantCulture)).Append(',')
-                         .Append(bar.Low.ToString(CultureInfo.InvariantCulture)).Append(',')
-                         .Append(bar.Close.ToString(CultureInfo.InvariantCulture)).Append(',')
-                         .Append(bar.Volume.ToString(CultureInfo.InvariantCulture));
-                sink.WriteRow(bar.TsMs, rowBuffer.ToString());
+                WriteBar(in bar);
 
                 if (sidecarSink is not null && accumulator.TryGetLastSidecarRow(out var sidecar))
                 {
@@ -153,10 +177,14 @@ public sealed class AggregationPipeline
                     sidecarSink.WriteRow(sidecar.TsMs, rowBuffer.ToString());
                 }
 
-                firstBarTs ??= bar.TsMs;
-                lastBarTs = bar.TsMs;
-                barsEmitted++;
-                lastEmittedMonth = MonthKey(bar.TsMs);
+                // Phase 5 (Renko): a single TryAdvance can stage multiple bricks. Drain the
+                // queue here. Drained bars carry no sidecar (ADR D7) — Range/Renko have no
+                // sidecar in v1, and EqI emits exactly one bar per TryAdvance so its drain
+                // queue stays empty.
+                while (accumulator.TryDrainQueued(out var queued))
+                {
+                    WriteBar(in queued);
+                }
             }
 
             // Throttle progress events to ~once per second to avoid drowning the SSE channel

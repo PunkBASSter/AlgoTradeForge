@@ -1,18 +1,18 @@
 # TRD: Alternative Bar Aggregations in AlgoTradeForge
 
-**Status:** Draft v5
+**Status:** Draft v6
 **Scope:** HistoryLoader + AlgoTradeForge main API + Web UI
 
 ---
 
 ## 1. Overview
 
-Add information-driven bars (`EqT`/`EqV`/`EqD`/`EqI`) and reserve a slot for path-dependent bars (Range, Renko). Aggregated feeds are persisted from existing HistoryLoader data (`1m`/`5m`/`1h`/`1d` OHLCV or raw ticks), exposed via REST, surfaced in a new **Data** tab, and selectable as primary OHLC for backtest/optimization/validation/debug runs.
+Add information-driven bars (`EqT`/`EqV`/`EqD`/`EqI`) and path-dependent bars (`Range`/`Renko`, tick-only in v1). Aggregated feeds are persisted from existing HistoryLoader data (`1m`/`5m`/`1h`/`1d` OHLCV or raw ticks), exposed via REST, surfaced in a new **Data** tab, and selectable as primary OHLC for backtest/optimization/validation/debug runs.
 
 `DataSubscription` is replaced cleanly — no back-compat shims.
 
 **Goals:** persisted reusable feeds, memory-bounded streaming aggregation, scalable storage convention, fidelity metadata per feed.
-**Non-goals (v1):** live tick streaming aggregation, Range/Renko, cross-exchange composites, migration of existing artifacts.
+**Non-goals (v1):** live tick streaming aggregation, time-bar Range/Renko (tick-only in v1 per Phase 5 ADR D1), 2× reversal Renko (1× neutral only), Range/Renko sidecars (D7), cross-exchange composites, migration of existing artifacts.
 
 ## 2. Glossary
 
@@ -62,7 +62,7 @@ aggregated/<TypeCode>_<SourceCode>_<Threshold>.flow/<YYYY>-<MM>[.p<NN>].csv     
 
 | Field | Values |
 |---|---|
-| `TypeCode` | `EqT`, `EqV`, `EqD`, `EqI`, future `Range`, `Renko` |
+| `TypeCode` | `EqT`, `EqV`, `EqD`, `EqI`, `Range`, `Renko` |
 | `SourceCode` | `1m`, `5m`, `15m`, `1h`, `4h`, `1d`, `ticks` |
 | `Threshold` | positive integer in **canonical display units** (the value the user enters); sub-unit values use the milli (`m`) / micro (`u`) suffixes — see §3.4 |
 
@@ -76,6 +76,8 @@ Display name uses SI: `EqV_1m_1000` ↔ `EqV/1m:1k`. Sub-unit thresholds: `EqV_1
 | EqV | base-asset volume | base units |
 | EqD | quote-asset volume | quote units |
 | EqI | abs cumulative signed quote volume | quote units |
+| Range | running high − low spread per bar | price |
+| Renko | brick height (constant per brick) | price |
 
 **Two representations of every threshold:**
 
@@ -398,6 +400,8 @@ public interface IBarAccumulator
 | EqV | base-vol acc (long), OHLC | `base_acc ≥ N` |
 | EqD | quote-vol acc (long), OHLC | `quote_acc ≥ N` |
 | EqI | signed acc (long; `is_buyer_maker` from ticks, `taker_buy` proxy from time bars), OHLC | `abs(signed_acc) ≥ N` |
+| Range | running OHLC since bar open, threshold = price delta (long, tick-scaled) | `(running_high − running_low) ≥ N` |
+| Renko | `last_brick_close` (long), pending vol (long), output queue, brick = price delta (long, tick-scaled) | `\|tick.close − last_brick_close\| ≥ N` per brick; one tick can emit `floor(\|Δ\|/N)` bricks |
 
 OHLC: time-bar source — first-open / max-high / min-low / last-close, where "first" and "last" are determined by the source reader's **chronological** enumeration across partition boundaries (§6.2), not file/iterator order. Bar `vol` is the sum of source `vol` (long+long, no conversion). Buy/sell columns originate from `candle-ext.taker_buy_vol` (`double`, side-feed convention §3.6); the aggregator converts at the sum site:
 ```
@@ -407,6 +411,13 @@ signed_acc += (2 * taker_buy_ticks - source_vol_long);   // EqI proxy
 Sidecar columns the aggregator emits (`buy_volume`, `sell_volume`, `signed_imbalance`, `realized_threshold`) are written as `double` per §3.6.
 
 **Tick source.** OHLC derived per-tick. Strict monotonicity: when two ticks arrive with identical exchange-stamped milliseconds, the emitted bar enforces `bar.ts_open = max(prev_bar.ts_open + 1, raw_ts)` to honor `Int64Bar.TimestampMs` strict monotonicity (§9.4). The +1 ms bump is recorded in the aggregator stats so degenerate clusters surface in fidelity reporting.
+
+**Range / Renko (Phase 5).** Both are path-dependent: emission depends on the running price trajectory, not a single source-record contribution. Phase 5 ships **tick-only** (eligibility narrows time-bar / OHLC-only sources via `EligibilityRules`). The threshold unit is `price` (a 4th `ThresholdResolver` unit), scaled via `ScaleContext.AmountToTicks(absolute)` — no `× QuantityScale` factor since the threshold is a price magnitude not a volume.
+
+- **Range.** OHLC + threshold; emit when `(running_high − running_low) ≥ N` since bar open. Single emit per `TryAdvance` (tick records have `H = L = price`, so multi-emit is impossible from one record). Realized range is reconstructible from bar OHLC (`H − L`) — no sidecar.
+- **Renko.** 1× neutral bricks (no 2× reversal in v1). Each brick is a clean rectangle: `open = previousBrickClose`, `close = open ± brick_size`, `high = max(open, close)`, `low = min(open, close)` — no wicks. A single tick can cross N brick boundaries; the accumulator returns brick 1 via `TryAdvance(out)` and the rest via `IBarAccumulator.TryDrainQueued(out)` (a default-interface method added in Phase 5; non-Renko accumulators inherit a no-op). Output `TsMs` is bumped `+1 ms` per subsequent brick within a chain to preserve `Int64Bar.TimestampMs` strict monotonicity. Volume from the trigger tick distributes proportionally across the chain (each brick gets `tick.volume / N`, last brick takes the integer remainder); pending volume from prior no-emit ticks lands on the first brick. Conservation invariant: `Σ brick.vol = Σ (consumed-into-bricks) tick.vol` — trailing pending volume from final no-emit ticks is discarded at finalize, mirroring Range's trailing partial-bar discard (§6.4 requires `realized_threshold ≥ N`). Direction is reconstructible from `sign(close − open)` — no sidecar.
+
+Phase 5 design rationale lives in [`specs/031-alternative-bars/p5-design-decisions.md`](../specs/031-alternative-bars/p5-design-decisions.md) (ADR D1-D9).
 
 ### 6.4 Overshoot
 
@@ -443,10 +454,10 @@ Sidecar columns the aggregator emits (`buy_volume`, `sell_volume`, `signed_imbal
 
 | Source kind | Asset class | Eligible | Notes |
 |---|---|---|---|
-| Tick | any | EqT, EqV, EqD, EqI, future Range/Renko | Highest fidelity. |
-| OHLCV_TimeBar **+ candle-ext** | Perp/Future | EqT, EqV, EqD, EqI* | EqI* = `m1_taker_buy_proxy`; UI warning. |
-| OHLCV_TimeBar (no candle-ext) | Spot | EqT, EqV, EqD | EqI requires tick source. |
-| OHLCV_TimeBar OHLC-only | any | future Range/Renko | No volume → volume types unbuildable. |
+| Tick | any | EqT, EqV, EqD, EqI, Range, Renko | Highest fidelity. |
+| OHLCV_TimeBar **+ candle-ext** | Perp/Future | EqT, EqV, EqD, EqI* | EqI* = `m1_taker_buy_proxy`; UI warning. Range/Renko require tick source (Phase 5 ADR D1). |
+| OHLCV_TimeBar (no candle-ext) | Spot | EqT, EqV, EqD | EqI requires tick source. Range/Renko require tick source. |
+| OHLCV_TimeBar OHLC-only | any | none | No volume → volume types unbuildable. Range/Renko require tick source. |
 | OHLCV_AltBar | any | none | No re-aggregation in v1; deferred to Phase 6 (§12 item 5). |
 | Side | any | none | Aggregate disabled. |
 
@@ -585,7 +596,7 @@ public readonly record struct DataFeedDescriptor(
 
 - **Backtest / Debug:** `BacktestInputs(Subscriptions)` — exactly one `Role=Primary` entry (index 0), zero or more `Role=Side`.
 - **Optimization:** `OptimizationInputs(Subscriptions)` — same shape, but **multiple** `Role=Primary` entries (the candidate set); engine fans out across them × parameter grid.
-- **Validation (walk-forward / OOS):** same shape as Backtest; range split server-side.
+- **Validation:** same shape as Backtest; consumes the persisted `DataSubscriptions` of the optimization run being validated and enforces the single-`Role=Primary` invariant defensively.
 
 ## 10. UI
 

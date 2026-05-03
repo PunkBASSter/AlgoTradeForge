@@ -30,6 +30,8 @@ public class AggregatorBenchmarks
     private AggregationJob _eqTJob = null!;
     private AggregationJob _eqVTickJob = null!;
     private AggregationJob _eqTTickJob = null!;
+    private AggregationJob _rangeTickJob = null!;
+    private AggregationJob _renkoTickJob = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -77,6 +79,15 @@ public class AggregatorBenchmarks
             thresholdAbsolute: 100_000m, thresholdScaled: 100_000, scale, _tickAssetDir);
         _eqTTickJob = MakeJob(tickSource, "EqT", outcomeFeedId: "EqT_ticks_500",
             thresholdAbsolute: 500m, thresholdScaled: 500, scale, _tickAssetDir);
+
+        // P5-15: Range/Renko tick scenarios. Threshold is a price magnitude (`unit=price`);
+        // synthetic walk drifts ±$5/tick, so a $50 threshold (5000 ticks under tickSize=0.01)
+        // produces a substantive bar count over 150k ticks. Empirical tuning may shift these
+        // if the bar-count distribution is too sparse on real BTCUSDT_perp data.
+        _rangeTickJob = MakeJob(tickSource, "Range", outcomeFeedId: "Range_ticks_50",
+            thresholdAbsolute: 50m, thresholdScaled: 5_000, scale, _tickAssetDir, unit: "price");
+        _renkoTickJob = MakeJob(tickSource, "Renko", outcomeFeedId: "Renko_ticks_50",
+            thresholdAbsolute: 50m, thresholdScaled: 5_000, scale, _tickAssetDir, unit: "price");
     }
 
     [GlobalCleanup]
@@ -115,9 +126,16 @@ public class AggregatorBenchmarks
     [Benchmark]
     public AggregationResult Aggregate_EqT_FromTicks_1h() => _pipeline.Run(_eqTTickJob);
 
+    [Benchmark]
+    public AggregationResult Aggregate_Range_FromTicks_1h() => _pipeline.Run(_rangeTickJob);
+
+    [Benchmark]
+    public AggregationResult Aggregate_Renko_FromTicks_1h() => _pipeline.Run(_renkoTickJob);
+
     private static AggregationJob MakeJob(
         DataFeedDescriptor source, string typeCode, string outcomeFeedId,
-        decimal thresholdAbsolute, long thresholdScaled, ScaleContext scale, string assetDir) =>
+        decimal thresholdAbsolute, long thresholdScaled, ScaleContext scale, string assetDir,
+        string unit = "base_asset") =>
         new(
             JobId: $"bench-{typeCode}-{outcomeFeedId}",
             Source: source,
@@ -126,7 +144,7 @@ public class AggregatorBenchmarks
             TypeCode: typeCode,
             ThresholdAbsolute: thresholdAbsolute,
             ThresholdScaled: thresholdScaled,
-            ThresholdUnit: "base_asset",
+            ThresholdUnit: unit,
             ThresholdInputMode: "absolute",
             ThresholdConvenienceInput: null,
             SourceScale: scale,

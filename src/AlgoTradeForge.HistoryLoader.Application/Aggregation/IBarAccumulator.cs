@@ -32,6 +32,25 @@ public interface IBarAccumulator
         row = default;
         return false;
     }
+
+    /// <summary>
+    /// Phase 5 (Renko) — drain a queued bar from a path-dependent accumulator that emitted
+    /// multiple bars from a single <see cref="TryAdvance"/> call. Returns <c>true</c> + the
+    /// next queued bar; <c>false</c> when the queue is empty.
+    /// </summary>
+    /// <remarks>
+    /// Default impl returns <c>false</c>. Single-emit accumulators (EqV/EqT/EqD/EqI/Range)
+    /// inherit the no-op. Renko enqueues bricks 2..N internally — <see cref="TryAdvance"/>
+    /// returns brick 1 via <c>out</c>, the pipeline drains the rest in a
+    /// <c>while (acc.TryDrainQueued(out var b)) { ... }</c> loop. A drained bar carries no
+    /// sidecar — sidecar emission is wired only after the primary <see cref="TryAdvance"/>
+    /// emit (Phase 5 D7: Range/Renko have no sidecars regardless).
+    /// </remarks>
+    bool TryDrainQueued(out AggregatedBar emitted)
+    {
+        emitted = default;
+        return false;
+    }
 }
 
 /// <summary>

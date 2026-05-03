@@ -57,8 +57,8 @@ public static class AccumulatorEntry
             "EqT" => new Accumulators.EqTAccumulator(threshold),
             "EqD" => new Accumulators.EqDAccumulator(threshold),
             "EqI" => new Accumulators.EqIAccumulator(threshold, accumulatorScale),
-            "Range" or "Renko" => throw new NotSupportedException(
-                $"{typeCode} accumulator lands in Phase 5."),
+            "Range" => new Accumulators.RangeAccumulator(threshold),
+            "Renko" => new Accumulators.RenkoAccumulator(threshold),
             _ => throw new ArgumentException(
                 $"Unknown alt-bar type code '{typeCode}' (allowed: EqT, EqV, EqD, EqI, Range, Renko).",
                 nameof(typeCode)),
