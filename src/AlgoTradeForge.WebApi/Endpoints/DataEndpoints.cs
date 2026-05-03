@@ -73,6 +73,12 @@ internal static class DataEndpoints
              HttpContext ctx, HistoryLoaderClient client, DataProxyCache cache) =>
                 DeleteFeed(exchange, asset, feedId, ctx, client, cache));
 
+        // Phase 6 — cancel an in-flight aggregation job. No cache invalidation needed: cancel
+        // doesn't write a manifest entry, so the catalog never saw the would-be feed.
+        g.MapDelete("/aggregations/{jobId}",
+            (string jobId, HttpContext ctx, HistoryLoaderClient client) =>
+                CancelAggregation(jobId, ctx, client));
+
         // ----- SSE pass-through -------------------------------------------
         g.MapGet("/aggregations/{jobId}/progress",
             (string jobId, HttpContext ctx, HistoryLoaderClient client) =>
@@ -237,6 +243,43 @@ internal static class DataEndpoints
             ctx.Response.StatusCode = (int)upstream.StatusCode;
             // 204 has no body; 4xx bodies are JSON ProblemDetails-like — forward both.
             if (upstream.Content.Headers.ContentLength is > 0 || upstream.StatusCode != System.Net.HttpStatusCode.NoContent)
+            {
+                ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
+                var bytes = await upstream.Content.ReadAsByteArrayAsync(ctx.RequestAborted);
+                if (bytes.Length > 0)
+                    await ctx.Response.Body.WriteAsync(bytes, ctx.RequestAborted);
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            await DataProxyProblem.Unavailable(ex.Message).ExecuteAsync(ctx);
+        }
+        catch (TaskCanceledException ex) when (!ctx.RequestAborted.IsCancellationRequested)
+        {
+            await DataProxyProblem.Timeout(ex.Message).ExecuteAsync(ctx);
+        }
+    }
+
+    /// <summary>
+    /// Phase 6 — proxies <c>DELETE /aggregations/{jobId}</c>. Forwards 204 / 404 / 409 byte-identical;
+    /// 5xx wrapped in ProblemDetails. No cache invalidation: cancel doesn't write a manifest entry.
+    /// </summary>
+    private static async Task CancelAggregation(string jobId, HttpContext ctx, HistoryLoaderClient client)
+    {
+        try
+        {
+            using var upstream = await client.DeleteAsync(
+                $"/api/v1/aggregations/{jobId}", ctx.RequestAborted);
+
+            if ((int)upstream.StatusCode >= 500)
+            {
+                var detail = await upstream.Content.ReadAsStringAsync(ctx.RequestAborted);
+                await DataProxyProblem.UpstreamError((int)upstream.StatusCode, detail).ExecuteAsync(ctx);
+                return;
+            }
+
+            ctx.Response.StatusCode = (int)upstream.StatusCode;
+            if (upstream.Content.Headers.ContentLength is > 0 || upstream.StatusCode != HttpStatusCode.NoContent)
             {
                 ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
                 var bytes = await upstream.Content.ReadAsByteArrayAsync(ctx.RequestAborted);

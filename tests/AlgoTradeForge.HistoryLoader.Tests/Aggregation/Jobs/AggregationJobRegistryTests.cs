@@ -302,6 +302,89 @@ public sealed class AggregationJobRegistryTests
         Assert.False(snap.Error.Retryable);
     }
 
+    // -------------------------------------------------------------------------
+    // P6-10 — TryRequestCancel + OnCancelled (Phase 6)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void TryRequestCancel_QueuedJob_FiresCts_LeavesStateUnchangedUntilWorkerObserves()
+    {
+        // Cancellation is cooperative — TryRequestCancel only fires the CTS. The state flips
+        // when the worker calls OnCancelled in response to the OperationCanceledException.
+        var (reg, queue, _) = BuildSubjects();
+        reg.TryEnqueue(NewJob("j1", "EqV_1m_1000"), queue);
+
+        var cts = reg.GetCancellationToken("j1");
+        Assert.False(cts.IsCancellationRequested);
+
+        Assert.IsType<CancelRequestOutcome.Requested>(reg.TryRequestCancel("j1"));
+        Assert.True(cts.IsCancellationRequested);                  // CTS fired
+
+        // State stays Queued until the worker explicitly calls OnCancelled (mirrors host_shutdown
+        // sequencing — the registry never auto-flips state from a cancel request alone).
+        Assert.Equal(AggregationJobState.Queued, reg.Get("j1")!.State);
+    }
+
+    [Fact]
+    public void OnCancelled_AfterTryRequestCancel_TransitionsToCancelled_AndCleansActiveByFeedId()
+    {
+        var (reg, queue, _) = BuildSubjects();
+        reg.TryEnqueue(NewJob("j1", "EqV_1m_1000"), queue);
+        reg.OnStarted("j1", "1m");
+        reg.TryRequestCancel("j1");
+        reg.OnCancelled("j1", "user_cancelled");
+
+        var snap = reg.Get("j1")!.Snapshot();
+        Assert.Equal(AggregationJobState.Cancelled, snap.State);
+        Assert.Equal("user_cancelled", snap.CancellationReason);
+        Assert.NotNull(snap.CompletedAt);
+
+        // Active-feed_id index cleared — a fresh enqueue of the same feed id can proceed.
+        Assert.Null(reg.CheckActiveFeedId("EqV_1m_1000"));
+
+        // Terminal event is a Cancelled record.
+        var events = reg.Get("j1")!.EventsAfter(0);
+        Assert.IsType<ProgressEvent.Cancelled>(events[^1].Event);
+    }
+
+    [Fact]
+    public void TryRequestCancel_TerminalJob_ReturnsAlreadyTerminal_WithObservedState()
+    {
+        var (reg, queue, _) = BuildSubjects();
+        reg.TryEnqueue(NewJob("j1", "EqV_1m_1000"), queue);
+        reg.OnStarted("j1", "1m");
+        reg.OnCompleted("j1", FakeResult("EqV_1m_1000"));
+
+        var outcome = reg.TryRequestCancel("j1");
+        var terminal = Assert.IsType<CancelRequestOutcome.AlreadyTerminal>(outcome);
+        Assert.Equal(AggregationJobState.Complete, terminal.State);
+    }
+
+    [Fact]
+    public void TryRequestCancel_UnknownJob_ReturnsUnknown()
+    {
+        // Reviewer Issue B1 — Unknown is distinct from AlreadyTerminal; the endpoint maps to
+        // 404 vs 409 respectively. The bool + out-state shape couldn't distinguish.
+        var (reg, _, _) = BuildSubjects();
+        Assert.IsType<CancelRequestOutcome.Unknown>(reg.TryRequestCancel("nonexistent"));
+    }
+
+    [Fact]
+    public void OnCancelled_AfterAlreadyTerminal_IsIdempotent_NoStateChange()
+    {
+        // Race scenario: host_shutdown OnErrored landed first; user cancel arrives later.
+        var (reg, queue, _) = BuildSubjects();
+        reg.TryEnqueue(NewJob("j1", "EqV_1m_1000"), queue);
+        reg.OnStarted("j1", "1m");
+        reg.OnErrored("j1", "host_shutdown", "shutdown", retryable: true);
+
+        reg.OnCancelled("j1", "user_cancelled");   // no-op
+
+        var snap = reg.Get("j1")!.Snapshot();
+        Assert.Equal(AggregationJobState.Error, snap.State);   // still error, not cancelled
+        Assert.Null(snap.CancellationReason);
+    }
+
     private static AggregationResult FakeResult(string feedId) =>
         new(JobId: "fake", OutcomeFeedId: feedId,
             BarCount: 100, PartitionsWritten: ["2024-03.csv"],

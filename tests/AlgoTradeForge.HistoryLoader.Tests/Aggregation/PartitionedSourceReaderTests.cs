@@ -103,13 +103,48 @@ public sealed class PartitionedSourceReaderTests : IDisposable
     }
 
     [Fact]
-    public void Read_NonTimeBarKind_Throws()
+    public void Read_SideKind_Throws()
     {
+        // Phase 6 added AltBar support; Side remains rejected (side feeds carry per-row
+        // analytical data, not OHLCV — re-aggregation isn't meaningful).
         var reader = new PartitionedSourceReader();
-        var altSource = new DataFeedDescriptor(_tempDir, "binance", "BTCUSDT",
-            "EqV_1m_1000", DataFeedKind.AltBar);
+        var sideSource = new DataFeedDescriptor(_tempDir, "binance", "BTCUSDT",
+            "taker-buy-ratio", DataFeedKind.Side);
 
-        Assert.Throws<NotSupportedException>(() => reader.Read(altSource).ToList());
+        Assert.Throws<NotSupportedException>(() => reader.Read(sideSource).ToList());
+    }
+
+    [Fact]
+    public void Read_AltBarSource_EnumeratesPartitionedCsvsChronologically()
+    {
+        // P6-13 — AltBar branch globs aggregated/<feedId>/*.csv in lex order (≡ chronological).
+        const string asset = "BTCUSDT";
+        var sourceFeedId = "EqV_1m_1000";
+        var dir = Path.Combine(_tempDir, "binance", asset, "aggregated", sourceFeedId);
+        Directory.CreateDirectory(dir);
+
+        // Two months of partitions; lex sort matches chronological.
+        File.WriteAllLines(Path.Combine(dir, "2024-05.csv"), [
+            "ts,o,h,l,c,vol",
+            "1714560000000,100,110,90,105,500",
+            "1714563600000,105,115,95,110,500",
+        ]);
+        File.WriteAllLines(Path.Combine(dir, "2024-06.csv"), [
+            "ts,o,h,l,c,vol",
+            "1717238400000,110,120,100,115,500",
+        ]);
+
+        var reader = new PartitionedSourceReader();
+        var records = reader.Read(new DataFeedDescriptor(
+            _tempDir, "binance", asset, sourceFeedId, DataFeedKind.AltBar)).ToList();
+
+        Assert.Equal(3, records.Count);
+        Assert.Equal(1714560000000, records[0].TsMs);
+        Assert.Equal(1714563600000, records[1].TsMs);
+        Assert.Equal(1717238400000, records[2].TsMs);
+        // Buy/Sell stay 0 — safe-trio doesn't read them.
+        Assert.All(records, r => Assert.Equal(0, r.BuyVolumeLong));
+        Assert.All(records, r => Assert.Equal(0, r.SellVolumeLong));
     }
 
     [Fact]

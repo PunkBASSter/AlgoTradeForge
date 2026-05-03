@@ -82,6 +82,13 @@ public sealed class AggregationWorkerHost : BackgroundService
         {
             await foreach (var job in reader.ReadAllAsync(stoppingToken))
             {
+                // Phase 6: link the host stopping token with the per-job CTS the registry vends
+                // for user cancels. The pipeline observes either source via its existing
+                // ct.ThrowIfCancellationRequested() — we distinguish the source in the catch
+                // below to route to OnCancelled vs OnErrored("host_shutdown").
+                var perJobToken = _registry.GetCancellationToken(job.JobId);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, perJobToken);
+
                 try
                 {
                     _registry.OnStarted(job.JobId, job.Source.FeedId);
@@ -92,9 +99,20 @@ public sealed class AggregationWorkerHost : BackgroundService
                     var result = pipeline.Run(
                         job,
                         onProgress: ev => RouteProgress(job.JobId, ev),
-                        ct: stoppingToken);
+                        ct: linkedCts.Token);
 
                     _registry.OnCompleted(job.JobId, result);
+                }
+                catch (OperationCanceledException) when (perJobToken.IsCancellationRequested)
+                {
+                    // User cancel via DELETE /api/v1/aggregations/{jobId}. Distinct terminal
+                    // state from host_shutdown — staging dir was already cleaned by the pipeline.
+                    _logger.LogInformation(
+                        "Aggregation worker {Pool}#{WorkerId} canceling job {JobId} on user request.",
+                        poolName, workerId, job.JobId);
+                    _registry.OnCancelled(job.JobId, "user_cancelled");
+                    // Do NOT rethrow — user cancel is a normal termination of THIS job, the worker
+                    // continues draining the queue.
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {

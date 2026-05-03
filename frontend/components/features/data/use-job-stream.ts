@@ -14,13 +14,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useDataJobsStore, type FeedJobKey } from "@/lib/stores/data-jobs-store";
 import { connectProgress, GoneError } from "@/lib/services/data-sse-client";
 import { useToast } from "@/components/ui/toast";
-import type { SseCompletePayload, SseErrorPayload, SseEventPayload } from "@/types/data-tab";
+import type { SseCancelledPayload, SseCompletePayload, SseErrorPayload, SseEventPayload } from "@/types/data-tab";
 
 export interface JobStreamObservation {
   /** Most recent payload — drives the progress UI. */
   latest: SseEventPayload | null;
   /** Most recent event type. */
-  type: "queued" | "started" | "progress" | "complete" | "error" | null;
+  type: "queued" | "started" | "progress" | "complete" | "error" | "cancelled" | null;
 }
 
 export function useJobStream(
@@ -61,6 +61,12 @@ export function useJobStream(
           } else if (type === "error") {
             const payload = data as SseErrorPayload;
             toast(`Aggregation failed: ${payload.message}`, "error");
+            clearJob(key);
+          } else if (type === "cancelled") {
+            // Phase 6 — distinct terminal state. Reason is "user_cancelled" today; future
+            // programmatic cancel paths may add others.
+            const payload = data as SseCancelledPayload;
+            toast(`Cancelled (${payload.reason})`, "info");
             clearJob(key);
           }
         },

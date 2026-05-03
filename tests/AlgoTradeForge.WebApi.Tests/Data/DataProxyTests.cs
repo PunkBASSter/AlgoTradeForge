@@ -106,6 +106,66 @@ public sealed class DataProxyTests
         Assert.Equal(2, ExactPathCallCount(factory, "/api/v1/exchanges"));
     }
 
+    // P6-14 — Cancel job proxy (Phase 6).
+
+    [Fact]
+    public async Task CancelJob_ForwardsDelete_AndReturns204_OnSuccess()
+    {
+        await using var factory = new DataProxyTestFactory();
+        var observedPath = "";
+        factory.Handler.RespondAsync(req =>
+        {
+            observedPath = req.RequestUri!.AbsolutePath;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
+        });
+
+        using var client = factory.CreateClient();
+        var resp = await client.DeleteAsync(
+            "/api/data/aggregations/abc123",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        Assert.Equal("/api/v1/aggregations/abc123", observedPath);
+    }
+
+    [Fact]
+    public async Task CancelJob_Forwards404_WhenJobUnknown()
+    {
+        await using var factory = new DataProxyTestFactory();
+        factory.Handler.RespondAsync(req => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
+        {
+            Content = new StringContent("""{"error":"job_not_found_or_expired","job_id":"missing"}""", Encoding.UTF8, "application/json"),
+        }));
+
+        using var client = factory.CreateClient();
+        var resp = await client.DeleteAsync(
+            "/api/data/aggregations/missing",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.Contains("job_not_found_or_expired", body);
+    }
+
+    [Fact]
+    public async Task CancelJob_Forwards409_WhenJobAlreadyTerminal()
+    {
+        await using var factory = new DataProxyTestFactory();
+        factory.Handler.RespondAsync(req => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict)
+        {
+            Content = new StringContent("""{"code":"job_already_terminal","job_id":"j1","state":"complete"}""", Encoding.UTF8, "application/json"),
+        }));
+
+        using var client = factory.CreateClient();
+        var resp = await client.DeleteAsync(
+            "/api/data/aggregations/j1",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Conflict, resp.StatusCode);
+        var body = await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.Contains("job_already_terminal", body);
+    }
+
     [Fact]
     public async Task DeleteFeed_InvalidatesCache()
     {

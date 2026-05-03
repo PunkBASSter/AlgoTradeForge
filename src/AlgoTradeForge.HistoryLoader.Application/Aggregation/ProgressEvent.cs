@@ -31,4 +31,15 @@ public abstract record ProgressEvent
         string Code,
         string Message,
         bool Retryable) : ProgressEvent;
+
+    /// <summary>
+    /// Phase 6 — terminal state distinct from <see cref="Error"/>. Emitted when the user
+    /// explicitly cancels via <c>DELETE /api/v1/aggregations/{jobId}</c>; the staging dir is
+    /// recursively deleted and no manifest entry is written. <see cref="Reason"/> distinguishes
+    /// <c>"user_cancelled"</c> (per-job CTS fired) from any future programmatic cancel paths.
+    /// </summary>
+    public sealed record Cancelled(
+        string JobId,
+        string Reason,
+        DateTimeOffset AtUtc) : ProgressEvent;
 }

@@ -47,10 +47,37 @@ public sealed class PartitionedSourceReader
         {
             DataFeedKind.TimeBar => ReadTimeBars(source, fromMs, toMs),
             DataFeedKind.Tick => ReadTicks(source, fromMs, toMs),
+            DataFeedKind.AltBar => ReadAltBars(source, fromMs, toMs),
             _ => throw new NotSupportedException(
-                $"Source reader supports TimeBar and Tick; got Kind={source.Kind}. " +
-                $"AltBar / Side sources are not re-aggregatable through this reader."),
+                $"Source reader supports TimeBar, Tick, and AltBar; got Kind={source.Kind}. " +
+                $"Side sources are not re-aggregatable through this reader."),
         };
+    }
+
+    // -------------------------------------------------------------------------
+    // Alt-bar path (Phase 6) — re-aggregation source. Same 6-col OHLCV shape as time bars,
+    // different storage layout (`aggregated/<feedId>/*.csv` instead of `candles/*_<feedId>.csv`).
+    // Eligibility narrows to safe-trio only (EqV/EqT/EqD same-family + larger-threshold).
+    // -------------------------------------------------------------------------
+
+    private static IEnumerable<SourceRecord> ReadAltBars(DataFeedDescriptor source, long fromMs, long toMs)
+    {
+        var dir = Path.Combine(source.DataRoot, source.Exchange, source.Asset, "aggregated", source.FeedId);
+        if (!Directory.Exists(dir))
+            yield break;
+
+        // Mirrors PartitionedCsvBarLoader's glob pattern. Lex sort matches chronological because
+        // partitions are calendar-stamped (YYYY-MM[.pNN].csv); part-numbered overflow files sort
+        // after their bare month within the same calendar.
+        foreach (var filePath in Directory
+                     .EnumerateFiles(dir, "*.csv", SearchOption.TopDirectoryOnly)
+                     .OrderBy(Path.GetFileName, StringComparer.Ordinal))
+        {
+            // The on-disk shape is identical to time bars (ts,o,h,l,c,vol) — reuse the parser
+            // verbatim. BuyVolumeLong/SellVolumeLong stay 0 (safe-trio aggregators don't read them).
+            foreach (var record in ReadTimeBarFile(filePath, fromMs, toMs))
+                yield return record;
+        }
     }
 
     // -------------------------------------------------------------------------

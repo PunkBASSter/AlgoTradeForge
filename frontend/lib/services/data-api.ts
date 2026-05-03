@@ -118,6 +118,17 @@ export const dataApi = {
   getJobSnapshot: (jobId: string, signal?: AbortSignal) =>
     fetch(`${BASE_URL}/api/data/aggregations/${encodeURIComponent(jobId)}`, { signal })
       .then(asJson<JobSnapshot>),
+
+  // Phase 6 — cancel an active job. 204 on success, 404 if job unknown / retention expired,
+  // 409 if already terminal. The job's SSE stream emits a `cancelled` terminal event before
+  // closing — useJobStream handles cleanup; callers don't need to clear state themselves.
+  cancelJob: async (jobId: string, signal?: AbortSignal): Promise<void> => {
+    const resp = await fetch(
+      `${BASE_URL}/api/data/aggregations/${encodeURIComponent(jobId)}`,
+      { method: "DELETE", signal },
+    );
+    if (!resp.ok) await asJson(resp);  // throws DataApiError carrying ProblemDetails body
+  },
 };
 
 export { DataApiError };

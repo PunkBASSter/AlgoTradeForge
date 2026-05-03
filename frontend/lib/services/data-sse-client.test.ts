@@ -131,4 +131,29 @@ describe("connectProgress", () => {
     const onopen = captured[0].init.onopen!;
     await expect(onopen(new Response("", { status: 410 }))).rejects.toThrow(GoneError);
   });
+
+  // P6-17 — Phase 6 cancelled event is recognized + treated as terminal.
+
+  it("dispatches cancelled event payload with reason field", () => {
+    const onEvent = vi.fn();
+    void connectProgress({
+      jobId: "j1",
+      signal: new AbortController().signal,
+      handlers: { onEvent, onError: () => {}, onClose: () => {} },
+    });
+
+    expect(() =>
+      captured[0].init.onmessage!({
+        id: "5",
+        event: "cancelled",
+        data: JSON.stringify({ job_id: "j1", reason: "user_cancelled", at_utc: "2026-05-04T10:00:00Z" }),
+      }),
+    ).toThrow(/terminal SSE event/);   // TerminalEventError closes the stream
+
+    expect(onEvent).toHaveBeenCalledOnce();
+    const [id, type, data] = onEvent.mock.calls[0];
+    expect(id).toBe(5);
+    expect(type).toBe("cancelled");
+    expect(data).toMatchObject({ reason: "user_cancelled" });
+  });
 });

@@ -20,6 +20,22 @@ public static class EligibilityRules
     private const string RangeRenkoRequiresTickReason =
         "Range/Renko require a tick source for fidelity in v1.";
 
+    // Phase 6 — re-aggregation safe-trio. EqV/EqT/EqD compose cleanly when the source is the
+    // same type with a smaller threshold (each accumulator's contribution math sums linearly
+    // across pre-aggregated bars). EqI loses internal trajectory; Range/Renko are inherently
+    // path-dependent on individual ticks.
+    private static readonly IReadOnlySet<string> SafeReaggregationTypes =
+        new HashSet<string>(StringComparer.Ordinal) { "EqV", "EqT", "EqD" };
+
+    private const string EqIReaggregationReason =
+        "EqI re-aggregation deferred — collapses internal signed trajectory and requires a .flow sidecar reader.";
+
+    private const string PathDependentReaggregationReason =
+        "Source type's bar shape is path-dependent on individual ticks; cannot be re-aggregated.";
+
+    private const string CrossFamilyReaggregationReason =
+        "Re-aggregation must stay within the same type family (EqV→EqV, EqT→EqT, EqD→EqD).";
+
     public sealed record EligibilityResult(
         IReadOnlyList<string> EligibleTypes,
         IReadOnlyList<IneligibleType> IneligibleTypes,
@@ -78,10 +94,7 @@ public static class EligibilityRules
                         ("Renko", RangeRenkoRequiresTickReason),
                     ]),
 
-            SourceKind.AltBar =>
-                Allow([],
-                    ineligible: AllAltBarTypes.Select(t =>
-                        (t, "Re-aggregation from alt-bar sources is not supported in v1 (Phase 6).")).ToArray()),
+            SourceKind.AltBar => AltBarReaggregation(source),
 
             SourceKind.Side =>
                 Allow([],
@@ -90,17 +103,70 @@ public static class EligibilityRules
 
             _ => Allow([], ineligible: [("Unknown", $"Unrecognized source kind: {source.Kind}")]),
         };
-
-        static EligibilityResult Allow(
-            string[] eligible,
-            (string code, string reason)[] ineligible,
-            string? warning = null) => new(
-                EligibleTypes: eligible,
-                IneligibleTypes: ineligible.Select(t => new IneligibleType(t.code, t.reason)).ToArray(),
-                Warnings: warning is null ? [] : [warning]);
     }
 
+    private static EligibilityResult Allow(
+        string[] eligible,
+        (string code, string reason)[] ineligible,
+        string? warning = null) => new(
+            EligibleTypes: eligible,
+            IneligibleTypes: ineligible.Select(t => new IneligibleType(t.code, t.reason)).ToArray(),
+            Warnings: warning is null ? [] : [warning]);
+
     private static bool IsPerpOrFuture(string assetType) => AssetTypes.IsFutures(assetType);
+
+    /// <summary>
+    /// Phase 6 — re-aggregation eligibility. The source is an existing alt-bar feed; we ask
+    /// "which output types could be built from this source?". Within the safe trio (EqV/EqT/EqD)
+    /// only the same type code is eligible (cross-family compositions don't preserve fidelity).
+    /// EqI/Range/Renko sources reject all output types with the appropriate reason.
+    /// Threshold ordering (must be strictly larger) is checked at the POST /aggregate endpoint —
+    /// eligibility doesn't see the requested threshold.
+    /// </summary>
+    private static EligibilityResult AltBarReaggregation(FeedDefinition source)
+    {
+        var sourceTypeCode = source.Type?.Code;
+
+        // Defense-in-depth: a malformed alt-bar entry without a Type field can't be re-aggregated
+        // (we can't tell what to compose). Manifest writer always populates Type.Code, so this
+        // path is unreachable for well-formed feeds.
+        if (string.IsNullOrEmpty(sourceTypeCode))
+        {
+            return Allow([],
+                ineligible: AllAltBarTypes.Select(t =>
+                    (t, "Source alt-bar entry is missing type metadata — cannot determine re-aggregation eligibility.")).ToArray());
+        }
+
+        if (sourceTypeCode is "Range" or "Renko")
+        {
+            return Allow([],
+                ineligible: AllAltBarTypes.Select(t =>
+                    (t, PathDependentReaggregationReason)).ToArray());
+        }
+
+        if (sourceTypeCode == "EqI")
+        {
+            return Allow([],
+                ineligible: AllAltBarTypes.Select(t =>
+                    (t, EqIReaggregationReason)).ToArray());
+        }
+
+        if (!SafeReaggregationTypes.Contains(sourceTypeCode))
+        {
+            // Unknown / future type — fail closed.
+            return Allow([],
+                ineligible: AllAltBarTypes.Select(t =>
+                    (t, $"Re-aggregation from source type '{sourceTypeCode}' is not supported.")).ToArray());
+        }
+
+        // Safe-trio source — only the same type code is eligible.
+        var eligible = new[] { sourceTypeCode };
+        var ineligible = AllAltBarTypes
+            .Where(t => t != sourceTypeCode)
+            .Select(t => (t, CrossFamilyReaggregationReason))
+            .ToArray();
+        return Allow(eligible, ineligible);
+    }
 
     private static SourceKind ResolveKind(FeedDefinition feed)
     {

@@ -132,19 +132,83 @@ public sealed class EligibilityRulesTests
         Assert.DoesNotContain(r.IneligibleTypes, e => e.Code == "Renko");
     }
 
-    [Fact]
-    public void AltBarSource_RangeRenkoIneligible_WithReaggregationReason()
+    // P6-12 — re-aggregation eligibility (Phase 6).
+
+    private static FeedDefinition AltBarDef(string typeCode) => new()
     {
-        // Re-aggregating from an alt-bar source surfaces the broader v1 restriction (Phase 6),
-        // not the tick-only reason — every alt-bar type code is blocked, not just Range/Renko.
+        Kind = "OHLCV_AltBar",
+        Columns = ["ts", "o", "h", "l", "c", "vol"],
+        Type = new AggregatedTypeInfo { Code = typeCode, Name = typeCode },
+    };
+
+    [Fact]
+    public void AltBarSource_EqV_AllowsLargerEqV_RejectsOthers()
+    {
+        // EqV source is safe-trio: only EqV can be re-aggregated from it (cross-family rejected).
+        var r = EligibilityRules.ForSource(AltBarDef("EqV"), "perpetual", hasCandleExt: false);
+
+        Assert.Single(r.EligibleTypes, t => t == "EqV");
+        Assert.Equal(5, r.IneligibleTypes.Count);
+        var eqtEntry = Assert.Single(r.IneligibleTypes, e => e.Code == "EqT");
+        Assert.Contains("same type family", eqtEntry.Reason);
+    }
+
+    [Fact]
+    public void AltBarSource_EqT_AllowsLargerEqT_RejectsOthers()
+    {
+        var r = EligibilityRules.ForSource(AltBarDef("EqT"), "perpetual", hasCandleExt: false);
+
+        Assert.Single(r.EligibleTypes, t => t == "EqT");
+        Assert.DoesNotContain(r.IneligibleTypes, e => e.Code == "EqT");
+    }
+
+    [Fact]
+    public void AltBarSource_EqD_AllowsLargerEqD_RejectsOthers()
+    {
+        var r = EligibilityRules.ForSource(AltBarDef("EqD"), "perpetual", hasCandleExt: false);
+
+        Assert.Single(r.EligibleTypes, t => t == "EqD");
+        Assert.DoesNotContain(r.IneligibleTypes, e => e.Code == "EqD");
+    }
+
+    [Fact]
+    public void AltBarSource_EqI_RejectsAll_WithFidelityReason()
+    {
+        // EqI source: signed-imbalance trajectory is collapsed; no re-aggregation in v1.
+        var r = EligibilityRules.ForSource(AltBarDef("EqI"), "perpetual", hasCandleExt: false);
+
+        Assert.Empty(r.EligibleTypes);
+        Assert.Equal(6, r.IneligibleTypes.Count);
+        Assert.All(r.IneligibleTypes, e => Assert.Contains("EqI re-aggregation deferred", e.Reason));
+    }
+
+    [Fact]
+    public void AltBarSource_Range_RejectsAll_WithPathDependentReason()
+    {
+        var r = EligibilityRules.ForSource(AltBarDef("Range"), "perpetual", hasCandleExt: false);
+
+        Assert.Empty(r.EligibleTypes);
+        Assert.All(r.IneligibleTypes, e => Assert.Contains("path-dependent", e.Reason));
+    }
+
+    [Fact]
+    public void AltBarSource_Renko_RejectsAll_WithPathDependentReason()
+    {
+        var r = EligibilityRules.ForSource(AltBarDef("Renko"), "perpetual", hasCandleExt: false);
+
+        Assert.Empty(r.EligibleTypes);
+        Assert.All(r.IneligibleTypes, e => Assert.Contains("path-dependent", e.Reason));
+    }
+
+    [Fact]
+    public void AltBarSource_MissingTypeMetadata_RejectsAllWithDiagnosticReason()
+    {
+        // Defense-in-depth: an alt-bar entry without populated Type field can't be re-aggregated.
         var def = new FeedDefinition { Kind = "OHLCV_AltBar", Columns = ["ts", "o", "h", "l", "c", "vol"] };
         var r = EligibilityRules.ForSource(def, "perpetual", hasCandleExt: false);
 
         Assert.Empty(r.EligibleTypes);
-        var rangeEntry = Assert.Single(r.IneligibleTypes, e => e.Code == "Range");
-        Assert.Contains("Re-aggregation from alt-bar sources", rangeEntry.Reason);
-        var renkoEntry = Assert.Single(r.IneligibleTypes, e => e.Code == "Renko");
-        Assert.Contains("Re-aggregation from alt-bar sources", renkoEntry.Reason);
+        Assert.All(r.IneligibleTypes, e => Assert.Contains("missing type metadata", e.Reason));
     }
 
     [Fact]

@@ -296,7 +296,7 @@ GET /api/v1/aggregations/{jobId}/progress       → SSE stream
 GET /api/v1/aggregations/{jobId}                → snapshot
 ```
 
-v1 is full-range only; partial / resumable aggregation (`from_ts`/`to_ts`) is deferred to Phase 6 (§12 item 3).
+v1 is full-range only; partial / resumable aggregation (`from_ts`/`to_ts`) is a future enhancement (§12 item 3).
 
 Snapshot:
 ```json
@@ -326,7 +326,9 @@ event: error       → { type, job_id, code, message, retryable }
 
 The `complete` payload is the canonical summary (also returned under `summary` in the snapshot once `state=complete`). `partitions_written_count` (in `progress`) is an integer running counter; `partitions_written` (in `complete` and §4 manifest) is the array of `YYYY-MM` strings — distinct names for distinct shapes.
 
-**Cancellation.** Out of scope in v1. To abort an in-flight job, restart HistoryLoader; the §4.1 startup sweep cleans staging dirs and orphan partitions, so restart is always safe (no half-built feeds visible to readers). Restart aborts **all** concurrent jobs, not just the targeted one — the FE Data tab should label these as "interrupted" rather than "failed" in v1, so users can distinguish self-cancellation from a host restart. A future `DELETE /aggregations/{jobId}` is reserved for Phase 6 alongside the durable queue.
+**Cancellation.** `DELETE /api/v1/aggregations/{jobId}` requests cancellation of a queued or running job (Phase 6). Returns `204 No Content` on success, `404 Not Found` for unknown / retention-expired jobs, `409 Conflict` (`code=job_already_terminal`) when the job has already completed/errored/been cancelled. The registry vends a per-job `CancellationTokenSource` to the worker on dequeue; the endpoint fires it under the per-feed-id lock. The pipeline observes `OperationCanceledException` at its per-record `ct.ThrowIfCancellationRequested()` checkpoint, disposes the partition sink, **deletes the staging dir** (no Promote, no manifest write), and the worker host emits `ProgressEvent.Cancelled` with `reason="user_cancelled"`. Restart-induced cancellations follow the prior path (`code=host_shutdown`, `retryable=true`); the FE Data tab distinguishes the two by reason.
+
+> **204 semantics.** `204 No Content` means *cancel observed at the registry* (per-job CTS fired), NOT *the run was aborted*. Cooperative cancellation has an inherent race: if the pipeline emits its last record in the gap between the DELETE request and the worker's next per-record cancellation check, `OnCompleted` may still win and the SSE terminal event will be `complete` rather than `cancelled`. The FE reconciles via SSE — the REST status is advisory.
 
 **Reconnect.** Standard SSE `Last-Event-ID` resumes from next event. Without it, server emits synthetic `started + progress` snapshot then resumes live. Terminal event retained 15 min; thereafter `progress` returns 410 Gone and FE falls back to the snapshot endpoint. FE persists `jobId` in `localStorage` keyed by `(exchange, asset, feedId)`.
 
@@ -442,11 +444,27 @@ Phase 5 design rationale lives in [`specs/031-alternative-bars/p5-design-decisio
 **Restart semantics (v1, in-memory only):**
 - In-flight job mid-write → §4.1 startup sweep cleans staging/orphans. Manifest never written → catalog reflects "feed missing" — consistent.
 - Queued-not-started jobs lost. FE's cached `jobId` returns 404; FE clears it and prompts re-submit.
-- Durable queue is Phase 6.
+- Queue stays in-memory permanently — durable persistence is intentionally out of scope.
 
 **Config (`aggregator.*`):** `maxConcurrentJobs=2`, `maxQueueDepth=64`, `jobRetentionMinutes=15`, `maxPartitionSizeMB=100`. Tuning via `AggregatorBenchmarks` (Phase 1b gate). Past 2–3 workers, shared-disk I/O contention dominates.
 
 **Tick-source concurrency.** The Phase 1b benchmarks (`EqV_1m_1000`, `EqT_1m_500`) exercise time-bar sources only. Tick aggregation (Phase 2a+) is materially more I/O-bound (5y BTCUSDT ≈ 500M records, §6.1) and should run effectively serially: Phase 2a adds a tick-source benchmark scenario and re-tunes `maxConcurrentJobs` accordingly (likely a separate `aggregator.maxConcurrentTickJobs=1` gate rather than lowering the global default and starving time-bar throughput).
+
+### 6.7 Re-aggregation from alt-bar sources (Phase 6)
+
+An aggregation job MAY use an existing `OHLCV_AltBar` feed as its source — e.g. compute `EqV_1m_2000` from a previously-built `EqV_1m_1000` rather than re-reading raw 1m time bars. This is materially faster (≈10× fewer source records than re-aggregating from time bars) and is fidelity-equivalent for the safe trio.
+
+**Scope (v1).** Same-type-family + strictly-larger threshold: `EqV → EqV`, `EqT → EqT`, `EqD → EqD`. Cross-family (e.g. `EqV → EqT`) is rejected at the eligibility layer.
+
+**Excluded.**
+- **EqI re-aggregation.** Source bar's net signed imbalance is recorded but the *internal trajectory* is gone (a +80k → +50k → +60k swing collapses to net +60k), so emit boundaries can drift from a raw-source aggregation. Also requires a `.flow` sidecar reader to recover buy/sell volumes. Deferred.
+- **Range / Renko re-aggregation.** Inherently invalid — bar shape is a function of intra-bar tick trajectory which is lost once aggregated.
+
+**Validation site.** `EligibilityRules.ForSource` returns the source-type-equal type as eligible (and the rest with a documented reason); the POST `/aggregate` endpoint additionally validates `requestedThresholdScaled > sourceThresholdScaled` (422 `code=invalid_re_aggregation`). The accumulator math is unchanged: feeding an `EqV_1000` bar (which contributes `r.Volume == 1000`) to an `EqV_2000` accumulator just emits cleanly after two records.
+
+**Reader.** `PartitionedSourceReader` adds a `DataFeedKind.AltBar` branch resolving `aggregated/{feedId}/*.csv` chronologically (mirrors `PartitionedCsvBarLoader`'s glob). The 6-col `ts,o,h,l,c,vol` parse logic is shared with the TimeBar path. `BuyVolumeLong`/`SellVolumeLong` stay 0 — the safe trio doesn't read them.
+
+**Manifest.** New entry's `source.feed` records the alt-bar source feedId (e.g. `EqV_1m_1000`) verbatim. `imbalance_reconstruction_method` stays `null` for non-EqI per the existing P1a-6 invariant.
 
 ## 7. Compatibility Matrix
 
@@ -458,7 +476,7 @@ Phase 5 design rationale lives in [`specs/031-alternative-bars/p5-design-decisio
 | OHLCV_TimeBar **+ candle-ext** | Perp/Future | EqT, EqV, EqD, EqI* | EqI* = `m1_taker_buy_proxy`; UI warning. Range/Renko require tick source (Phase 5 ADR D1). |
 | OHLCV_TimeBar (no candle-ext) | Spot | EqT, EqV, EqD | EqI requires tick source. Range/Renko require tick source. |
 | OHLCV_TimeBar OHLC-only | any | none | No volume → volume types unbuildable. Range/Renko require tick source. |
-| OHLCV_AltBar | any | none | No re-aggregation in v1; deferred to Phase 6 (§12 item 5). |
+| OHLCV_AltBar | any | EqV, EqT, EqD (same family, larger threshold only) | Phase 6 safe trio. EqI/Range/Renko sources reject all (path-dependence / signed-imbalance fidelity loss). |
 | Side | any | none | Aggregate disabled. |
 
 ## 8. Main API (proxy layer)
@@ -665,8 +683,6 @@ Aggregate click locks the command panel; status panel renders SSE progress (`Que
 
 **Phase 5 — Range / Renko accumulators.** Path-dependent; require ticks or sub-minute time bars.
 
-**Phase 6 (if needed) — Durable job queue.** Persist queue (e.g., SQLite); SSE replay from event log; survive restart.
-
 ## 11A. Test Coverage
 
 Per-phase test scope. Each bullet is a behavior, not a method — the named test fixture/class is a hint, not a contract. All run under the **single `dotnet` process at a time** rule (CLAUDE.md). xUnit + NSubstitute throughout.
@@ -736,6 +752,6 @@ Per-phase test scope. Each bullet is a behavior, not a method — the named test
 
 1. **Threshold convenience input UX.** ~~Open.~~ **Resolved in Phase 0** (see §11): store absolute in `feeds.json`; aggregation request carries explicit `input_mode` ∈ `{absolute, convenience}`; convenience input is preserved in `threshold.convenience_input` for traceability. Sketch wording ("1k 1m") is for FE display only — wire format is unambiguous.
 2. **Multi-instance HistoryLoader.** v1 single-instance via `IOptions<HistoryLoaderOptions>{ BaseUrl }`. YARP is the upgrade path.
-3. **Resumable / partial aggregations.** v1 always full-range; `from_ts`/`to_ts` are not in the v1 request schema. Phase 6 reintroduces them with real semantics (partitions are calendar-aligned and atomic per partition, so incremental rebuild is a natural extension).
+3. **Resumable / partial aggregations.** v1 always full-range; `from_ts`/`to_ts` are not in the v1 request schema. A future enhancement may reintroduce them (partitions are calendar-aligned and atomic per partition, so incremental rebuild is a natural extension) — independent of queue durability, which stays in-memory.
 4. **Plugin ABI for `IFeedContextReceiver`.** Confirm interface is public/stable so private-repo strategies compile unchanged. Validated by Phase 0 DIM audit.
-5. **Re-aggregation from alt-bar sources.** `EqV_2000` from existing `EqV_1000` (≈10× fewer source records than re-running over time bars). Deferred to Phase 6: requires an alt-bar source reader that respects variable bar duration and a fidelity-equivalence proof (re-aggregation must produce the same bar boundaries as a fresh aggregation modulo accumulator initialization).
+5. **Re-aggregation from alt-bar sources.** ~~Open.~~ **Resolved in Phase 6** for the safe trio (EqV/EqT/EqD with same-type-family + larger-threshold) — see §6.7. EqI re-aggregation deferred (requires `.flow` sidecar reader + path-dependency caveat). Range/Renko re-aggregation permanently rejected (bar shape is a function of intra-bar tick trajectory).

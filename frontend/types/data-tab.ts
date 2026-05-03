@@ -171,7 +171,7 @@ export interface JobSummary {
 // parses `data:` JSON into the matching shape. Sequence ids are integers monotonically
 // increasing within a single job (TRD §5.4); the FE persists the last seen id for resume.
 
-export type SseEventType = "queued" | "started" | "progress" | "complete" | "error";
+export type SseEventType = "queued" | "started" | "progress" | "complete" | "error" | "cancelled";
 
 export interface SseQueuedPayload {
   job_id: string;
@@ -200,9 +200,19 @@ export interface SseErrorPayload {
   message: string;
 }
 
+// Phase 6 — emitted when a job is cancelled via DELETE /aggregations/{jobId}. Distinct from
+// `error` so the UI can render "Cancelled" with the cancellation reason rather than a failure
+// message. `reason` is "user_cancelled" today; future programmatic cancel paths may add others.
+export interface SseCancelledPayload {
+  job_id: string;
+  reason: string;
+  at_utc: string;
+}
+
 export type SseEventPayload =
   | SseQueuedPayload
   | SseStartedPayload
   | SseProgressPayload
   | SseCompletePayload
-  | SseErrorPayload;
+  | SseErrorPayload
+  | SseCancelledPayload;

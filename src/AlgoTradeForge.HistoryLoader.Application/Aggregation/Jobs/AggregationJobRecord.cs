@@ -28,6 +28,21 @@ public sealed class AggregationJobRecord
     public ProgressEvent.Error? Error { get; set; }
 
     /// <summary>
+    /// Phase 6 — terminal cancellation reason (<c>"user_cancelled"</c>) when
+    /// <see cref="State"/> is <see cref="AggregationJobState.Cancelled"/>; <c>null</c> otherwise.
+    /// Mirrors the <see cref="Error"/> field shape (terminal-only payload).
+    /// </summary>
+    public string? CancellationReason { get; set; }
+
+    /// <summary>
+    /// Phase 6 — per-job cancellation token source. Linked into the worker's stopping token
+    /// at dequeue. <c>TryRequestCancel</c> calls <see cref="System.Threading.CancellationTokenSource.Cancel"/>;
+    /// the pipeline's per-record <c>ct.ThrowIfCancellationRequested()</c> observes it at the next
+    /// boundary. Disposed when the job reaches a terminal state.
+    /// </summary>
+    public CancellationTokenSource Cts { get; } = new();
+
+    /// <summary>
     /// Snapshot of events with sequence numbers strictly greater than <paramref name="afterSeq"/>.
     /// Pass <c>0</c> for "all events". The returned list is detached from internal state.
     /// </summary>
@@ -88,7 +103,8 @@ public sealed class AggregationJobRecord
         AggregationResult? result,
         ProgressEvent.Error? error,
         long barsEmitted,
-        ProgressEvent terminalEvent)
+        ProgressEvent terminalEvent,
+        string? cancellationReason = null)
     {
         lock (_eventsLock)
         {
@@ -96,6 +112,7 @@ public sealed class AggregationJobRecord
             Result = result;
             Error = error;
             BarsEmitted = barsEmitted;
+            CancellationReason = cancellationReason;
             State = state;   // visibility anchor — set last while holding the snapshot lock
             var seq = _events.Count + 1;
             _events.Add(new JobEvent(seq, terminalEvent));
@@ -105,6 +122,10 @@ public sealed class AggregationJobRecord
             ref _newEventSignal,
             new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
         prev.TrySetResult();
+
+        // Phase 6 — terminal state means no further cancellation requests can do anything
+        // useful; release the per-job CTS to avoid leaking handles for retained terminal records.
+        Cts.Dispose();
     }
 
     /// <summary>
@@ -127,7 +148,8 @@ public sealed class AggregationJobRecord
                 CurrentPartition: CurrentPartition,
                 BarsEmitted: BarsEmitted,
                 Result: Result,
-                Error: Error);
+                Error: Error,
+                CancellationReason: CancellationReason);
         }
     }
 }
@@ -145,4 +167,5 @@ public sealed record AggregationJobSnapshot(
     string? CurrentPartition,
     long BarsEmitted,
     AggregationResult? Result,
-    ProgressEvent.Error? Error);
+    ProgressEvent.Error? Error,
+    string? CancellationReason);

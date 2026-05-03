@@ -25,7 +25,7 @@ export interface ConnectProgressOptions {
   handlers: ProgressStreamHandlers;
 }
 
-const TERMINAL_EVENTS: ReadonlySet<SseEventType> = new Set(["complete", "error"]);
+const TERMINAL_EVENTS: ReadonlySet<SseEventType> = new Set(["complete", "error", "cancelled"]);
 
 /**
  * Subscribes to /api/data/aggregations/{jobId}/progress. Returns a Promise that resolves
@@ -112,7 +112,8 @@ export async function connectProgress(opts: ConnectProgressOptions): Promise<voi
 }
 
 function isKnownEventType(s: string): s is SseEventType {
-  return s === "queued" || s === "started" || s === "progress" || s === "complete" || s === "error";
+  return s === "queued" || s === "started" || s === "progress"
+    || s === "complete" || s === "error" || s === "cancelled";
 }
 
 /** Thrown internally to break out of fetch-event-source on terminal events. */

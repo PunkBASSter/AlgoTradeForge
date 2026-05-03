@@ -20,6 +20,11 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
 {
     private readonly ConcurrentDictionary<string, AggregationJobRecord> _byJobId = new();
     private readonly ConcurrentDictionary<string, string> _activeByFeedId = new();
+    // Reviewer Issue B5 — O(1) lookup of the most-recent terminal record per feed-id.
+    // Invariant: at most one terminal record per feed-id at any time, because each fresh
+    // enqueue evicts the prior terminal (TRD §6.5 path b/c). Set at MarkTerminal callsites
+    // (OnCompleted/OnErrored/OnCancelled); cleared at EvictTerminalForFeedIdIfPresent.
+    private readonly ConcurrentDictionary<string, string> _terminalByFeedId = new();
     private readonly ConcurrentDictionary<string, object> _feedLocks = new();
 
     private readonly TimeProvider _clock;
@@ -147,6 +152,7 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
                 terminalEvent: new ProgressEvent.Complete(result));
             // Drop active index — a fresh job for the same feed_id may now proceed.
             _activeByFeedId.TryRemove(record.Job.OutcomeFeedId, out _);
+            _terminalByFeedId[record.Job.OutcomeFeedId] = jobId;
         }
     }
 
@@ -165,8 +171,62 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
                 barsEmitted: record.BarsEmitted,
                 terminalEvent: err);
             _activeByFeedId.TryRemove(record.Job.OutcomeFeedId, out _);
+            _terminalByFeedId[record.Job.OutcomeFeedId] = jobId;
         }
     }
+
+    public CancelRequestOutcome TryRequestCancel(string jobId)
+    {
+        if (!_byJobId.TryGetValue(jobId, out var record))
+            return new CancelRequestOutcome.Unknown();
+
+        var feedLock = _feedLocks.GetOrAdd(record.Job.OutcomeFeedId, _ => new object());
+        lock (feedLock)
+        {
+            // Re-check inside the lock — a concurrent retention eviction in Get() could have
+            // pulled this record between TryGetValue and lock acquisition.
+            if (!_byJobId.ContainsKey(jobId))
+                return new CancelRequestOutcome.Unknown();
+
+            var observed = record.State;
+            if (observed.IsTerminal())
+                return new CancelRequestOutcome.AlreadyTerminal(observed);
+
+            // Fire the per-job CTS — pipeline observes at next ct.ThrowIfCancellationRequested().
+            // Worker host's catch routes to OnCancelled. Cts is disposed inside MarkTerminal —
+            // because we hold the per-feed-id lock and re-checked active state above, no other
+            // thread can have flipped to terminal+disposed in this window.
+            try { record.Cts.Cancel(); }
+            catch (ObjectDisposedException) { return new CancelRequestOutcome.AlreadyTerminal(record.State); }
+            return new CancelRequestOutcome.Requested();
+        }
+    }
+
+    public void OnCancelled(string jobId, string reason)
+    {
+        if (!_byJobId.TryGetValue(jobId, out var record)) return;
+        var feedLock = _feedLocks.GetOrAdd(record.Job.OutcomeFeedId, _ => new object());
+        lock (feedLock)
+        {
+            // Idempotent: if a host_shutdown OnErrored beat us here, don't double-flip.
+            if (record.State.IsTerminal()) return;
+
+            var ev = new ProgressEvent.Cancelled(jobId, reason, _clock.GetUtcNow());
+            record.MarkTerminal(
+                state: AggregationJobState.Cancelled,
+                completedAt: _clock.GetUtcNow(),
+                result: null,
+                error: null,
+                barsEmitted: record.BarsEmitted,
+                terminalEvent: ev,
+                cancellationReason: reason);
+            _activeByFeedId.TryRemove(record.Job.OutcomeFeedId, out _);
+            _terminalByFeedId[record.Job.OutcomeFeedId] = jobId;
+        }
+    }
+
+    public CancellationToken GetCancellationToken(string jobId) =>
+        _byJobId.TryGetValue(jobId, out var record) ? record.Cts.Token : CancellationToken.None;
 
     // -------------------------------------------------------------------------
     // Internals
@@ -174,15 +234,12 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
 
     private void EvictTerminalForFeedIdIfPresent(string feedId)
     {
-        // Slow scan, but the registry is small (few hundred entries at peak) and this happens
-        // only on enqueue. If profiling shows this hot, swap to a secondary terminal-by-feedId index.
-        foreach (var kvp in _byJobId)
-        {
-            if (kvp.Value.State.IsTerminal()
-                && string.Equals(kvp.Value.Job.OutcomeFeedId, feedId, StringComparison.Ordinal))
-            {
-                _byJobId.TryRemove(kvp.Key, out _);
-            }
-        }
+        // Reviewer Issue B5 — O(1) via the terminal-by-feed-id index. Invariant: at most one
+        // terminal record per feed-id at any time (every fresh enqueue evicts the prior terminal
+        // first, and no terminal-then-terminal transitions occur because the active index gates
+        // re-entry). A stale pointer to an already-evicted record is harmless: TryRemove returns
+        // false, and the index entry is reset on the next OnCompleted/OnErrored/OnCancelled.
+        if (_terminalByFeedId.TryRemove(feedId, out var terminalJobId))
+            _byJobId.TryRemove(terminalJobId, out _);
     }
 }

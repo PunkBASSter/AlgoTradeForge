@@ -318,14 +318,38 @@ Path-dependent; **tick-only in v1** (ADR D1 — time-bar Range collapses force a
 
 ---
 
-## Phase 6 — Durable job queue (if needed)
+## Phase 6 — Cancel + alt-bar re-aggregation
 
-- [ ] **P6-1** Durable queue store (likely SQLite via existing `SqliteRunRepository` infrastructure).
-- [ ] **P6-2** SSE replay from event log on reconnect after restart.
-- [ ] **P6-3** `DELETE /api/v1/aggregations/{jobId}` — cancel an in-flight job. (TRD §5.4)
-- [ ] **P6-4** `from_ts` / `to_ts` partial / resumable aggregation in request schema. (TRD §12 item 3)
-- [ ] **P6-5** Re-aggregation from alt-bar sources (e.g., `EqV_2000` from `EqV_1000`); requires variable-bar-duration source reader + fidelity-equivalence proof. (TRD §12 item 5)
-- [ ] **P6-6** Replace v1 "interrupted" UX label gap with real interrupted-state delivery from durable registry. (review issue #3)
+In-memory queue stays (no durability). Two independent capabilities bundled into one phase because their FE surfaces both touch the Data tab. Re-aggregation scope: **safe trio only** (EqV/EqT/EqD with same-type-family + larger-threshold). EqI re-aggregation deferred (sidecar reader + path-dependency caveat). Range/Renko remain permanently rejected.
+
+### Backend — cancel
+
+- [x] **P6-1** `Cancelled` value on `AggregationJobState` enum + `IsTerminal()` extension. New `ProgressEvent.Cancelled(JobId, Reason, AtUtc)` record. Extend `IAggregationJobRegistry` with `bool TryRequestCancel(jobId, out observedState)` + `void OnCancelled(jobId, reason)` + `CancellationToken GetCancellationToken(jobId)`. Add per-job `CancellationTokenSource` slot + `CancellationReason` field on `AggregationJobRecord` (disposed inside `MarkTerminal`).
+- [x] **P6-2** `AggregationJobRegistry` impl of `TryRequestCancel` + `OnCancelled`. Cancel under per-feed-id lock; `MarkTerminal` re-used for state transition; active-feed-id index cleared. Idempotent: `OnCancelled` no-ops when state is already terminal (host_shutdown race).
+- [x] **P6-3** `AggregationWorkerHost`: builds linked CTS per job (`CreateLinkedTokenSource(stoppingToken, perJobCts.Token)`); passes linked token into `pipeline.Run`. New branch in `OperationCanceledException` catch distinguishes user-cancel (`perJobToken.IsCancellationRequested` → `OnCancelled("user_cancelled")`, no rethrow) from host shutdown (`OnErrored("host_shutdown")`, rethrow).
+- [x] **P6-4** `AggregationPipeline.Run`: try/catch around the foreach. On `OperationCanceledException`, explicitly disposes `sink` + `sidecarSink` (idempotent), recursively deletes both staging dirs via `DeleteStagingDirSafely`, then rethrows. No Promote, no manifest write. Cleanup failures logged WARN; orphan sweep covers the residual case.
+- [x] **P6-5** `AggregationEndpoints.MapDelete("/api/v1/aggregations/{jobId}")` → 204 on success, 404 on unknown / retention-expired, 409 on already-terminal with `{code, job_id, state}`. `ProgressEvent.Cancelled` wired into `WriteSseFrameAsync` + the SSE drain's terminal detection + `GetSnapshot`'s new `cancellation: { reason, at_utc }` block.
+- [x] **P6-6** Main API proxy: `MapDelete("/aggregations/{jobId}")` in `DataEndpoints.cs` forwards to HistoryLoader via `HistoryLoaderClient.DeleteAsync`. Forwards 4xx byte-identical (404 / 409); 5xx wrapped via `DataProxyProblem.UpstreamError`. No cache invalidation (cancel doesn't write a manifest entry).
+
+### Backend — re-aggregation (safe trio: EqV/EqT/EqD)
+
+- [x] **P6-7** `PartitionedSourceReader`: new `DataFeedKind.AltBar` branch resolves `aggregated/{feedId}/*.csv` chronologically (mirrors `PartitionedCsvBarLoader`'s glob). Reuses `ReadTimeBarFile` parser verbatim — same 6-col shape. `BuyVolumeLong`/`SellVolumeLong` stay 0.
+- [x] **P6-8** `EligibilityRules.ForSource` `SourceKind.AltBar` branch: factored as `AltBarReaggregation(source)`. Reads `source.Type.Code` to discriminate; EqV/EqT/EqD → eligible only for same type code (cross-family rejected with `CrossFamilyReaggregationReason`); EqI → all rejected with `EqIReaggregationReason`; Range/Renko → all rejected with `PathDependentReaggregationReason`. Missing-type-metadata defense-in-depth path included. `Allow` helper promoted from local-static to file-scope-private.
+- [x] **P6-9** `AggregationEndpoints.PostAggregate`: detects `sourceFeed.Kind == "OHLCV_AltBar"` and routes `DataFeedKind.AltBar` through `DataFeedDescriptor`. Adds threshold-ordering validation post-eligibility (422 `code=invalid_re_aggregation` on `requestedThresholdScaled <= sourceThresholdScaled`). Outcome feed-id grammar uses the source's `SourceCode` (e.g. `EqV_1m_1000` → outcome `EqV_1m_2000`); manifest's `source.feed` records the actual alt-bar source.
+
+### Backend — tests
+
+- [x] **P6-10** `AggregationJobRegistryTests` cancel cases: `TryRequestCancel_QueuedJob_FiresCts_LeavesStateUnchangedUntilWorkerObserves`; `OnCancelled_AfterTryRequestCancel_TransitionsToCancelled_AndCleansActiveByFeedId`; `TryRequestCancel_TerminalJob_ReturnsFalse_WithObservedTerminalState`; `TryRequestCancel_UnknownJob_ReturnsFalse`; `OnCancelled_AfterAlreadyTerminal_IsIdempotent_NoStateChange`.
+- [x] **P6-11** `AggregationPipeline_Phase6Tests` (new): `Run_CancelMidStream_DeletesStagingDir_NoManifestWrite` — pre-cancelled token; asserts staging dir absent and `feeds.json` unchanged.
+- [x] **P6-12** `EligibilityRulesTests`: `AltBarSource_EqV_AllowsLargerEqV_RejectsOthers`; `AltBarSource_EqT_*` and `AltBarSource_EqD_*` parity; `AltBarSource_EqI_RejectsAll_WithFidelityReason`; `AltBarSource_Range_RejectsAll_WithPathDependentReason`; `AltBarSource_Renko_*` parity; `AltBarSource_MissingTypeMetadata_RejectsAllWithDiagnosticReason`.
+- [x] **P6-13** `PartitionedSourceReaderTests.Read_AltBarSource_EnumeratesPartitionedCsvsChronologically`. `AggregationPipeline_Phase6Tests` re-aggregation: `Run_EqV2000_FromEqV1000_ProducesHalfTheBars_WithDoubledVolume`; `Run_EqT200_FromEqT100_ProducesHalfTheBars`; `Run_EqDFromEqD_PreservesQuoteVolumeAccumulation`. Stale `Read_NonTimeBarKind_Throws` repurposed to `Read_SideKind_Throws`.
+- [x] **P6-14** `DataProxyTests`: `CancelJob_ForwardsDelete_AndReturns204_OnSuccess`; `CancelJob_Forwards404_WhenJobUnknown`; `CancelJob_Forwards409_WhenJobAlreadyTerminal`.
+
+### Frontend
+
+- [x] **P6-15** Cancel UI — `cancelled` added to `SseEventType` + `SseCancelledPayload` interface + discriminated union; `TERMINAL_EVENTS` set + `isKnownEventType` updated; `dataApi.cancelJob` REST method; `useJobStream` cancelled-event branch (toast `info` variant + `clearJob`); `JobProgressCard` Cancel button (visible only for `queued`/`started`/`progress`, optimistic disable + `Cancelling…` label, store-driven jobId, error toast on REST failure).
+- [x] **P6-16** Re-aggregation — `NewAggregateForm` Source field converted to `<select>` when `eligibleSources` prop is non-empty (renders static text otherwise to avoid single-option dropdown noise). Selected source drives the eligibility query (TanStack Query re-keys automatically). Outcome hint embeds the source's source-code component (e.g. `EqV_1m_2000`) for alt-bar re-aggregation. `data-sidebar.tsx` computes `eligibleSources` from `asset.feeds` filtered to safe-trio alt-bars (EqV/EqT/EqD).
+- [x] **P6-17** FE tests — `data-sse-client.test.ts` adds `dispatches cancelled event payload with reason field`; new `data-api.test.ts` covers 204/404/409/URL-encoding paths; new `job-progress.test.tsx` (9 cases) covers cancel-button visibility per state, click-disables-button, REST failure re-enables; new `new-aggregate-form.test.tsx` (4 cases) covers static-vs-dropdown rendering, dedup, source-change re-fetches eligibility.
 
 ---
 
@@ -343,10 +367,13 @@ Path-dependent; **tick-only in v1** (ADR D1 — time-bar Range collapses force a
 
 Resolve before the listed gating task. Promote to a `## Resolved` section once locked.
 
-- [ ] **Q-1** Horizontal virtualization library — gates **P3-10**.
-- [ ] **Q-2** "Interrupted" vs "failed" job UX in v1 — keep label-only or drop until P6-6? Gates Phase 3 UI copy. (TRD §5.4)
 - [ ] **Q-3** Minimum-threshold floor — `1u` canonical vs `max(1u, 1 tick)` to avoid scaled underflow on small-tick assets. Gates P1b-26 eligibility logic. (TRD §3.4)
 - [ ] **Q-4** Glob double-load risk — should the reader fail loudly when both `<YYYY-MM>.csv` and `<YYYY-MM>.p*.csv` exist for the same month? Gates P1a-29. (TRD §3.2)
+
+## Resolved
+
+- [x] **Q-1** Horizontal virtualization library — **TanStack Virtual** chosen for both axes. ADR: [`docs/adr/2026-05-virtualization-tanstack.md`](adr/2026-05-virtualization-tanstack.md). Locked by P3-10 / P3-13.
+- [x] **Q-2** "Interrupted" vs "failed" job UX — kept label-only treatment in Phase 3 UI copy (P3-17). Restart-cancelled jobs render as "interrupted" without server-side support; cancel endpoint stays out of v1 scope.
 
 ---
 
@@ -359,9 +386,9 @@ Resolve before the listed gating task. Promote to a `## Resolved` section once l
 | 1b | 44 | 38 done · 6 deferred (HTTP integration tests + sum-site conversion) | Bench gate (P1b-44) before merge |
 | 2a | 10 + BAKE | 9 done · P2a-8 deferred (needs real ticks post-BAKE) · BAKE pending merge | One PR for collection (P2a-1..5); 24–48 h bake before aggregator work (P2a-6..10) |
 | 2b | 13 | 13 | P0-1/P0-2 decision (DIM vs receiver) — DIMs landed (P0-1 PASS) |
-| 3 | 19 | 0 | P3-10 (Q-1 resolved) |
+| 3 | 19 | 18 done · P3-2 deferred (auth scheme) | Q-1 resolved (TanStack Virtual ADR) |
 | 4 | 20 (was 19; P4-14 split adds 14b) | 20 done (P4-1..P4-19) | P0-3 / P0-4 audits drive P4-2 / P4-9 |
 | 5 | 16 (was 6; refined into P5-0..P5-15) | 16 done (P5-0..P5-15); baseline-capture process step pending | Tick-only v1 per ADR D1 |
-| 6 | 6 | 0 | If needed |
+| 6 | 17 | 17 done (P6-1..P6-17) | Cancel + safe-trio re-aggregation; in-memory queue stays |
 | X | 5 | 4 (X-3, X-5 in 1a; X-2, X-4 in 1b) | Cross-cutting; land with parent phase |
-| Q | 4 | — | Each gates a specific task above |
+| Q | 4 | 2 (Q-1, Q-2 resolved); Q-3, Q-4 still open | Each gates a specific task above |

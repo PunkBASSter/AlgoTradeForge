@@ -153,53 +153,72 @@ public sealed class AggregationPipeline
             lastEmittedMonth = MonthKey(bar.TsMs);
         }
 
-        foreach (var record in sourceStream)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            sourceRecordsConsumed++;
-            if (streamingMedian is not null)
-                streamingMedian.Add(record.Volume);
-            else
-                volumeSamples!.Add(record.Volume);
-
-            if (accumulator.TryAdvance(in record, out var bar))
+            foreach (var record in sourceStream)
             {
-                WriteBar(in bar);
+                ct.ThrowIfCancellationRequested();
+                sourceRecordsConsumed++;
+                if (streamingMedian is not null)
+                    streamingMedian.Add(record.Volume);
+                else
+                    volumeSamples!.Add(record.Volume);
 
-                if (sidecarSink is not null && accumulator.TryGetLastSidecarRow(out var sidecar))
+                if (accumulator.TryAdvance(in record, out var bar))
                 {
-                    rowBuffer.Clear();
-                    rowBuffer.Append(sidecar.TsMs.ToString(CultureInfo.InvariantCulture)).Append(',')
-                             .Append(sidecar.SignedImbalance.ToString("R", CultureInfo.InvariantCulture)).Append(',')
-                             .Append(sidecar.BuyVolume.ToString("R", CultureInfo.InvariantCulture)).Append(',')
-                             .Append(sidecar.SellVolume.ToString("R", CultureInfo.InvariantCulture)).Append(',')
-                             .Append(sidecar.RealizedThreshold.ToString("R", CultureInfo.InvariantCulture));
-                    sidecarSink.WriteRow(sidecar.TsMs, rowBuffer.ToString());
+                    WriteBar(in bar);
+
+                    if (sidecarSink is not null && accumulator.TryGetLastSidecarRow(out var sidecar))
+                    {
+                        rowBuffer.Clear();
+                        rowBuffer.Append(sidecar.TsMs.ToString(CultureInfo.InvariantCulture)).Append(',')
+                                 .Append(sidecar.SignedImbalance.ToString("R", CultureInfo.InvariantCulture)).Append(',')
+                                 .Append(sidecar.BuyVolume.ToString("R", CultureInfo.InvariantCulture)).Append(',')
+                                 .Append(sidecar.SellVolume.ToString("R", CultureInfo.InvariantCulture)).Append(',')
+                                 .Append(sidecar.RealizedThreshold.ToString("R", CultureInfo.InvariantCulture));
+                        sidecarSink.WriteRow(sidecar.TsMs, rowBuffer.ToString());
+                    }
+
+                    // Phase 5 (Renko): a single TryAdvance can stage multiple bricks. Drain the
+                    // queue here. Drained bars carry no sidecar (ADR D7) — Range/Renko have no
+                    // sidecar in v1, and EqI emits exactly one bar per TryAdvance so its drain
+                    // queue stays empty.
+                    while (accumulator.TryDrainQueued(out var queued))
+                    {
+                        WriteBar(in queued);
+                    }
                 }
 
-                // Phase 5 (Renko): a single TryAdvance can stage multiple bricks. Drain the
-                // queue here. Drained bars carry no sidecar (ADR D7) — Range/Renko have no
-                // sidecar in v1, and EqI emits exactly one bar per TryAdvance so its drain
-                // queue stays empty.
-                while (accumulator.TryDrainQueued(out var queued))
+                // Throttle progress events to ~once per second to avoid drowning the SSE channel
+                // on fast-source jobs. The clock seam (P1b-15) makes this testable.
+                var nowTicks = _clock.GetTimestamp();
+                if (onProgress is not null &&
+                    (nowTicks - lastProgressTicks) > _clock.TimestampFrequency)
                 {
-                    WriteBar(in queued);
+                    onProgress(new ProgressEvent.Progress(
+                        job.JobId,
+                        CurrentPartition: lastEmittedMonth,
+                        BarsEmitted: barsEmitted,
+                        ElapsedMs: (long)((nowTicks - startTicks) / (double)_clock.TimestampFrequency * 1000)));
+                    lastProgressTicks = nowTicks;
                 }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // Phase 6 — cooperative cancellation. The using-var on `sink` will dispose at scope
+            // exit anyway, but we Dispose() explicitly first so the directory delete doesn't
+            // race a still-open handle. PartitionedSinkWriter.Dispose() is idempotent.
+            try { sink.Dispose(); } catch (Exception ex) { _logger.LogWarning(ex, "Sink dispose during cancel cleanup failed (ignored): jobId={JobId}", job.JobId); }
+            try { sidecarSink?.Dispose(); } catch (Exception ex) { _logger.LogWarning(ex, "Sidecar sink dispose during cancel cleanup failed (ignored): jobId={JobId}", job.JobId); }
 
-            // Throttle progress events to ~once per second to avoid drowning the SSE channel
-            // on fast-source jobs. The clock seam (P1b-15) makes this testable.
-            var nowTicks = _clock.GetTimestamp();
-            if (onProgress is not null &&
-                (nowTicks - lastProgressTicks) > _clock.TimestampFrequency)
-            {
-                onProgress(new ProgressEvent.Progress(
-                    job.JobId,
-                    CurrentPartition: lastEmittedMonth,
-                    BarsEmitted: barsEmitted,
-                    ElapsedMs: (long)((nowTicks - startTicks) / (double)_clock.TimestampFrequency * 1000)));
-                lastProgressTicks = nowTicks;
-            }
+            DeleteStagingDirSafely(stagingDir, job.JobId);
+            if (sidecarStagingDir is not null)
+                DeleteStagingDirSafely(sidecarStagingDir, job.JobId);
+
+            // Rethrow so the worker host's catch handler routes to the correct terminal state
+            // (OnCancelled vs OnErrored("host_shutdown") based on which token fired).
+            throw;
         }
 
         var stats = accumulator.Finalize();
@@ -318,6 +337,23 @@ public sealed class AggregationPipeline
     private static string MonthKey(long tsMs) =>
         DateTimeOffset.FromUnixTimeMilliseconds(tsMs).UtcDateTime
             .ToString("yyyy-MM", CultureInfo.InvariantCulture);
+
+    private void DeleteStagingDirSafely(string stagingDir, string jobId)
+    {
+        try
+        {
+            if (Directory.Exists(stagingDir))
+                Directory.Delete(stagingDir, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            // StartupSweepService picks up any orphan .staging-* dirs on next boot, so a failed
+            // best-effort cleanup here is non-fatal — log loud and move on.
+            _logger.LogWarning(ex,
+                "Cancel cleanup failed to delete staging dir '{StagingDir}' (jobId={JobId}); StartupSweep will reclaim it on next boot.",
+                stagingDir, jobId);
+        }
+    }
 
     private static double ComputeMedian(List<long> samples)
     {

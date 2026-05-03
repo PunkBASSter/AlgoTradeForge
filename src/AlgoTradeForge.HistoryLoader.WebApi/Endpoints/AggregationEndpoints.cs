@@ -23,6 +23,7 @@ internal static class AggregationEndpoints
         v1.MapPost("/exchanges/{exchange}/assets/{asset}/aggregate", PostAggregate);
         v1.MapGet("/aggregations/{jobId}", GetSnapshot);
         v1.MapGet("/aggregations/{jobId}/progress", GetProgressSse);
+        v1.MapDelete("/aggregations/{jobId}", CancelAggregation);
         v1.MapDelete("/exchanges/{exchange}/assets/{asset}/feeds/{feedId}", DeleteFeed);
 
         return app;
@@ -106,8 +107,54 @@ internal static class AggregationEndpoints
             return Unprocessable("invalid_threshold", ex.Message);
         }
 
-        // 5. Outcome feed-id (422 on grammar error)
-        var outcomeFeedIdRaw = $"{body.TypeCode}_{body.SourceFeedId}_{threshold.FeedIdComponent}";
+        // 4b. Phase 6 — AltBar source: validate strictly-larger threshold ordering. Same-type-family
+        // already enforced by the eligibility check above (which restricts EligibleTypes to the
+        // source's type code only). Threshold ordering can't be checked at the eligibility layer
+        // because eligibility is requested-threshold-agnostic.
+        var sourceIsAltBar = string.Equals(sourceFeed.Kind, "OHLCV_AltBar", StringComparison.Ordinal);
+        AltBarFeedId? sourceParsed = null;
+        if (sourceIsAltBar)
+        {
+            // B4: parse the source feed-id once and reuse it for both the threshold-ordering
+            // check below and the outcome-source-code derivation in step 5.
+            if (!AltBarFeedId.TryParse(body.SourceFeedId, out sourceParsed, out var sourceParseErr))
+                return Unprocessable("invalid_source_feed_id",
+                    $"source_feed_id '{body.SourceFeedId}' is marked as OHLCV_AltBar but does not parse: {sourceParseErr}");
+
+            // Resolve source threshold to the same scaled units the new accumulator uses, so we
+            // compare apples-to-apples. The threshold unit is implicit per type (base_asset for
+            // EqV, trades for EqT, quote_asset for EqD); ThresholdResolver handles the math.
+            ThresholdResolver.Resolved sourceThreshold;
+            try
+            {
+                sourceThreshold = ThresholdResolver.Resolve(
+                    body.ThresholdUnit,
+                    inputMode: "absolute",
+                    thresholdValue: sourceParsed!.Threshold.AbsoluteValue,
+                    convenienceInput: null,
+                    scale: scale);
+            }
+            catch (ArgumentException ex)
+            {
+                return Unprocessable("invalid_re_aggregation",
+                    $"Failed to resolve source threshold for ordering check: {ex.Message}");
+            }
+
+            if (threshold.Scaled <= sourceThreshold.Scaled)
+            {
+                return Unprocessable("invalid_re_aggregation",
+                    $"Re-aggregation threshold must be strictly larger than the source's. " +
+                    $"Source '{body.SourceFeedId}' has threshold {sourceParsed.Threshold.ToCanonicalString()} " +
+                    $"(scaled {sourceThreshold.Scaled}); requested threshold scaled to {threshold.Scaled}.");
+            }
+        }
+
+        // 5. Outcome feed-id (422 on grammar error). For an AltBar source, the outcome's
+        // SourceCode is the SOURCE's SourceCode (e.g. EqV_1m_1000 + threshold 2000 → EqV_1m_2000),
+        // not the source's full feed-id. The manifest's source.feed field records the actual
+        // source (EqV_1m_1000) so the chain is traceable.
+        var outcomeSourceCode = sourceParsed?.SourceCode ?? body.SourceFeedId;
+        var outcomeFeedIdRaw = $"{body.TypeCode}_{outcomeSourceCode}_{threshold.FeedIdComponent}";
         if (!FeedIdValidator.TryValidateAltBar(outcomeFeedIdRaw, out var parsed, out var parseErr))
             return Unprocessable("invalid_feed_id", parseErr!);
 
@@ -145,9 +192,16 @@ internal static class AggregationEndpoints
         // 8. Enqueue (race-protected: TryEnqueue rechecks 423 internally).
         // Phase 2a: tick sources route to a separate queue + worker pool to keep their I/O
         // load from blocking CPU-bound time-bar aggregations at the queue head.
-        var sourceKind = string.Equals(body.SourceFeedId, FeedNames.Ticks, StringComparison.Ordinal)
-            ? DataFeedKind.Tick
-            : DataFeedKind.TimeBar;
+        // Phase 6: AltBar sources route via the time-bar queue (same I/O profile — bounded
+        // pre-aggregated rows) but the descriptor's Kind directs PartitionedSourceReader
+        // to the aggregated/<feedId>/ glob instead of candles/.
+        DataFeedKind sourceKind;
+        if (string.Equals(body.SourceFeedId, FeedNames.Ticks, StringComparison.Ordinal))
+            sourceKind = DataFeedKind.Tick;
+        else if (sourceIsAltBar)
+            sourceKind = DataFeedKind.AltBar;
+        else
+            sourceKind = DataFeedKind.TimeBar;
 
         var job = new AggregationJob(
             JobId: Guid.NewGuid().ToString("N"),
@@ -302,6 +356,41 @@ internal static class AggregationEndpoints
     }
 
     // -------------------------------------------------------------------------
+    // DELETE /api/v1/aggregations/{jobId}  (Phase 6 — cancel)
+    // -------------------------------------------------------------------------
+
+    /// <remarks>
+    /// Reviewer Issue B2 — 204 means "cancel observed at the registry" (per-job CTS fired),
+    /// NOT "the run was aborted". Cooperative cancellation has an inherent race: if the
+    /// pipeline emits its last record in the gap between this call and the worker's next
+    /// per-record cancellation check, OnCompleted may still win and the SSE terminal event
+    /// will be <c>complete</c> rather than <c>cancelled</c>. The FE reconciles via SSE — the
+    /// REST status is advisory.
+    /// </remarks>
+    private static IResult CancelAggregation(string jobId, IAggregationJobRegistry registry)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+            return Unprocessable("invalid_job_id", "job_id is required.");
+
+        // Reviewer Issue B1 — single tri-state call. The prior pattern (Get + TryRequestCancel
+        // with bool + out-state) had a TOCTOU window where a concurrent retention eviction
+        // between the two calls would surface a misleading 409 with observedState=Queued.
+        return registry.TryRequestCancel(jobId) switch
+        {
+            CancelRequestOutcome.Requested => Results.NoContent(),
+            CancelRequestOutcome.Unknown =>
+                Results.NotFound(new { error = "job_not_found_or_expired", job_id = jobId }),
+            CancelRequestOutcome.AlreadyTerminal terminal => Results.Json(new
+            {
+                code = "job_already_terminal",
+                job_id = jobId,
+                state = terminal.State.ToString().ToLowerInvariant(),
+            }, statusCode: StatusCodes.Status409Conflict),
+            _ => Results.Problem("unknown cancel outcome"),
+        };
+    }
+
+    // -------------------------------------------------------------------------
     // GET /api/v1/aggregations/{jobId}
     // -------------------------------------------------------------------------
 
@@ -332,6 +421,9 @@ internal static class AggregationEndpoints
                 : null,
             error = snap.Error is { } err
                 ? new { code = err.Code, message = err.Message, retryable = err.Retryable }
+                : null,
+            cancellation = snap.State == AggregationJobState.Cancelled && snap.CancellationReason is not null
+                ? new { reason = snap.CancellationReason, at_utc = snap.CompletedAt }
                 : null,
         });
     }
@@ -391,7 +483,7 @@ internal static class AggregationEndpoints
             {
                 await WriteSseFrameAsync(context, je.Sequence, je.Event, context.RequestAborted);
                 lastSentSeq = je.Sequence;
-                if (je.Event is ProgressEvent.Complete or ProgressEvent.Error)
+                if (je.Event is ProgressEvent.Complete or ProgressEvent.Error or ProgressEvent.Cancelled)
                     return;
             }
 
@@ -419,11 +511,12 @@ internal static class AggregationEndpoints
     {
         var (eventType, payload) = ev switch
         {
-            ProgressEvent.Queued q   => ("queued",   (object)new { job_id = q.JobId, feed_id = q.FeedId, queued_at = q.QueuedAt, queue_position = q.QueuePosition }),
-            ProgressEvent.Started s  => ("started",  new { job_id = s.JobId, feed_id = s.FeedId, started_at = s.StartedAt, source_feed_id = s.SourceFeedId }),
-            ProgressEvent.Progress p => ("progress", new { job_id = p.JobId, current_partition = p.CurrentPartition, bars_emitted = p.BarsEmitted, elapsed_ms = p.ElapsedMs }),
-            ProgressEvent.Complete c => ("complete", CompletePayload(c.Result)),
-            ProgressEvent.Error e    => ("error",    new { job_id = e.JobId, code = e.Code, message = e.Message, retryable = e.Retryable }),
+            ProgressEvent.Queued q     => ("queued",    (object)new { job_id = q.JobId, feed_id = q.FeedId, queued_at = q.QueuedAt, queue_position = q.QueuePosition }),
+            ProgressEvent.Started s    => ("started",   new { job_id = s.JobId, feed_id = s.FeedId, started_at = s.StartedAt, source_feed_id = s.SourceFeedId }),
+            ProgressEvent.Progress p   => ("progress",  new { job_id = p.JobId, current_partition = p.CurrentPartition, bars_emitted = p.BarsEmitted, elapsed_ms = p.ElapsedMs }),
+            ProgressEvent.Complete c   => ("complete",  CompletePayload(c.Result)),
+            ProgressEvent.Error e      => ("error",     new { job_id = e.JobId, code = e.Code, message = e.Message, retryable = e.Retryable }),
+            ProgressEvent.Cancelled cn => ("cancelled", new { job_id = cn.JobId, reason = cn.Reason, at_utc = cn.AtUtc }),
             _ => throw new InvalidOperationException($"Unrecognized progress event: {ev.GetType().Name}"),
         };
 
