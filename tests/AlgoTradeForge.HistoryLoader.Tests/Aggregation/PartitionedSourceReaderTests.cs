@@ -147,6 +147,78 @@ public sealed class PartitionedSourceReaderTests : IDisposable
         Assert.All(records, r => Assert.Equal(0, r.SellVolumeLong));
     }
 
+    // -------------------------------------------------------------------------
+    // Q-4 — bare-vs-pNN collision detection
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Read_AltBarSource_BareAndPartNumberedSameMonth_Throws()
+    {
+        // The writer never produces this state on a successful job (atomic-rename bare→p01
+        // before opening p02), so it indicates operator manipulation, partial migration, or
+        // a writer bug. Reader fails loudly rather than silently double-loading rows.
+        const string asset = "BTCUSDT";
+        var sourceFeedId = "EqV_1m_1000";
+        var dir = Path.Combine(_tempDir, "binance", asset, "aggregated", sourceFeedId);
+        Directory.CreateDirectory(dir);
+        File.WriteAllLines(Path.Combine(dir, "2024-06.csv"),
+            ["ts,o,h,l,c,vol", "1717238400000,100,110,90,105,500"]);
+        File.WriteAllLines(Path.Combine(dir, "2024-06.p01.csv"),
+            ["ts,o,h,l,c,vol", "1717238460000,105,115,95,110,500"]);
+
+        var reader = new PartitionedSourceReader();
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            reader.Read(new DataFeedDescriptor(_tempDir, "binance", asset, sourceFeedId, DataFeedKind.AltBar)).ToList());
+        Assert.Contains("2024-06", ex.Message);
+        Assert.Contains("2024-06.csv", ex.Message);
+        Assert.Contains("2024-06.p01.csv", ex.Message);
+    }
+
+    [Fact]
+    public void Read_AltBarSource_MultiplePartNumbersForSameMonth_DoesNotThrow()
+    {
+        // Normal overflow case — multiple .pNN files per month is the documented writer scheme.
+        // Only bare-AND-pNN co-existence is a violation.
+        const string asset = "BTCUSDT";
+        var sourceFeedId = "EqV_1m_1000";
+        var dir = Path.Combine(_tempDir, "binance", asset, "aggregated", sourceFeedId);
+        Directory.CreateDirectory(dir);
+        File.WriteAllLines(Path.Combine(dir, "2024-06.p01.csv"),
+            ["ts,o,h,l,c,vol", "1717238400000,100,110,90,105,500"]);
+        File.WriteAllLines(Path.Combine(dir, "2024-06.p02.csv"),
+            ["ts,o,h,l,c,vol", "1717238460000,105,115,95,110,500"]);
+
+        var reader = new PartitionedSourceReader();
+        var records = reader.Read(new DataFeedDescriptor(_tempDir, "binance", asset, sourceFeedId, DataFeedKind.AltBar)).ToList();
+        Assert.Equal(2, records.Count);
+    }
+
+    [Fact]
+    public void Read_AltBarSource_StagingDirSibling_DoesNotTripCheck()
+    {
+        // .staging-* dirs are excluded from *.csv glob (they're directories, not files), so
+        // their presence alongside a bare-month file must NOT trigger the collision check.
+        const string asset = "BTCUSDT";
+        var sourceFeedId = "EqV_1m_1000";
+        var dir = Path.Combine(_tempDir, "binance", asset, "aggregated", sourceFeedId);
+        Directory.CreateDirectory(dir);
+        File.WriteAllLines(Path.Combine(dir, "2024-06.csv"),
+            ["ts,o,h,l,c,vol", "1717238400000,100,110,90,105,500"]);
+        Directory.CreateDirectory(Path.Combine(dir, ".staging-jobX"));
+
+        var reader = new PartitionedSourceReader();
+        var records = reader.Read(new DataFeedDescriptor(_tempDir, "binance", asset, sourceFeedId, DataFeedKind.AltBar)).ToList();
+        Assert.Single(records);
+    }
+
+    // Note: a time-bar Q-4 test (`Read_TimeBar_BareAndPartNumberedSameMonth_Throws`) was
+    // intentionally NOT added. Time-bar partitions are written by the candle ingestor with no
+    // .pNN overflow scheme, and the reader's per-FeedId glob `*_{FeedId}.csv` doesn't even
+    // match a hypothetical `<YYYY-MM>_{FeedId}.pNN.csv` file (the trailing `.csv` is preceded
+    // by `.pNN`, not `_{FeedId}`). The defense in PartitionFilenameParser still correctly
+    // recognizes the time-bar `.pNN` shape — that's defense-in-depth for a future writer
+    // change — but no production path can produce a collision today.
+
     [Fact]
     public void Read_MissingDir_YieldsNothing()
     {

@@ -91,7 +91,7 @@ internal static class AggregationEndpoints
         }
 
         // 4. Threshold resolution (422 on conversion error)
-        var scale = BuildScaleContext(assetConfig.DecimalDigits);
+        var scale = AssetScaleContextFactory.FromDecimalDigits(assetConfig.DecimalDigits);
         ThresholdResolver.Resolved threshold;
         try
         {
@@ -551,19 +551,4 @@ internal static class AggregationEndpoints
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
     };
 
-    /// <summary>
-    /// Builds the scale context for a job's source AND accumulator (both passed identically into
-    /// <see cref="AggregationJob"/>). Phase 1b uses the asset's <c>DecimalDigits</c> for tick
-    /// size and lets <see cref="ScaleContext"/> default the quantity scale — so the
-    /// <c>ScaleTagAssertion</c> at accumulator-open is a structural guard for future phases
-    /// (Phase 2 tick sources, Phase 2b candle-ext join) where source and accumulator scales
-    /// can diverge. The tests in <c>ScaleTagAssertionTests</c> exercise the divergence path
-    /// directly; in production today both scales are identical and the assertion always passes.
-    /// </summary>
-    private static ScaleContext BuildScaleContext(int decimalDigits)
-    {
-        var scaleFactor = (decimal)Math.Pow(10, decimalDigits);
-        var tickSize = 1m / scaleFactor;
-        return new ScaleContext(tickSize);
-    }
 }

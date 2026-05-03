@@ -197,4 +197,52 @@ public sealed class StartupSweepTests : IDisposable
         Assert.False(Directory.Exists(feedDir));
         Assert.Single(_logger.Warnings);
     }
+
+    // -------------------------------------------------------------------------
+    // Q-4 — bare-vs-pNN collision: sweeper logs WARN but does NOT delete.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Sweep_FeedDirHasBareAndPartNumberedCollision_LogsWarn_DoesNotDelete()
+    {
+        // Operator-induced or migration-induced state: bare and .pNN co-exist for the same
+        // month under a known feed. The sweeper observes, logs WARN with both paths, and
+        // leaves both files in place — auto-delete would risk masking the underlying bug.
+        var assetDir = AssetDir("BTCUSDT_Collision");
+        var feedDir = Path.Combine(assetDir, "aggregated", "EqV_1m_1000");
+        Directory.CreateDirectory(feedDir);
+        File.WriteAllText(Path.Combine(feedDir, "2026-05.csv"), "ts,o,h,l,c,vol\n");
+        File.WriteAllText(Path.Combine(feedDir, "2026-05.p01.csv"), "ts,o,h,l,c,vol\n");
+
+        _schema.Load(assetDir).Returns(MetadataWith("EqV_1m_1000"));
+
+        BuildSweeper().Sweep(assetDir);
+
+        // Both files survive — sweeper does not auto-delete on collision.
+        Assert.True(File.Exists(Path.Combine(feedDir, "2026-05.csv")));
+        Assert.True(File.Exists(Path.Combine(feedDir, "2026-05.p01.csv")));
+
+        // WARN logged, mentions the colliding paths.
+        Assert.Contains(_logger.Warnings, w =>
+            w.Message.Contains("collision", StringComparison.OrdinalIgnoreCase) &&
+            w.Message.Contains(Path.GetFullPath(feedDir), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Sweep_FeedDirHasOnlyPartNumberedFiles_DoesNotLogCollision()
+    {
+        // Normal overflow case (.p01 + .p02) must NOT trigger the WARN.
+        var assetDir = AssetDir("BTCUSDT_NormalOverflow");
+        var feedDir = Path.Combine(assetDir, "aggregated", "EqV_1m_1000");
+        Directory.CreateDirectory(feedDir);
+        File.WriteAllText(Path.Combine(feedDir, "2026-05.p01.csv"), "ts,o,h,l,c,vol\n");
+        File.WriteAllText(Path.Combine(feedDir, "2026-05.p02.csv"), "ts,o,h,l,c,vol\n");
+
+        _schema.Load(assetDir).Returns(MetadataWith("EqV_1m_1000"));
+
+        BuildSweeper().Sweep(assetDir);
+
+        Assert.DoesNotContain(_logger.Warnings, w =>
+            w.Message.Contains("collision", StringComparison.OrdinalIgnoreCase));
+    }
 }

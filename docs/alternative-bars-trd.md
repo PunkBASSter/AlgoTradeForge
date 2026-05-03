@@ -53,6 +53,8 @@ Reader globs `aggregated/<feedId>/*.csv` (sidecars use the analogous `aggregated
 
 **Cross-volume rename hazard.** Staging dirs (`.staging-<jobId>/`, §4.1) and `*.tmp` files live on the same volume as their target `aggregated/<feedId>/`. Cross-volume moves are not atomic on NTFS — co-locating them keeps every rename in-volume.
 
+**Reader invariant (Q-4).** A single month is either bare (`<YYYY-MM>.csv`) or part-numbered (`<YYYY-MM>.pNN.csv`), never both. Readers reject the bare-and-pNN collision with `InvalidDataException` (`PartitionedSourceReader.ReadAltBars/ReadTimeBars` and `PartitionedCsvBarLoader.EnumerateChronologicalFiles`, the latter covering both `Load` and `GetLastTimestamp`) — unreachable from a single successful job (writer atomic-renames bare→p01 before opening p02), so this state indicates operator manipulation, partial migration, or a writer bug. The startup sweep (`AggregatedDirSweeper`) logs a WARN at boot for early operator visibility but does not auto-delete (avoid masking real bugs). Multiple `.pNN` files for the same month is the documented overflow scheme and is **not** a violation.
+
 ### 3.3 Naming grammar
 
 ```
@@ -86,7 +88,18 @@ Display name uses SI: `EqV_1m_1000` ↔ `EqV/1m:1k`. Sub-unit thresholds: `EqV_1
 | Display | FeedId, filename, API, `feeds.json`, UI | human canonical (`1000` for 1000 BTC, `500m` for 0.5 BTC) |
 | Scaled | accumulator runtime only | `ScaleContext.QuantityScale` (base) or `PriceScale` (quote) |
 
-**Sub-unit thresholds.** The display form accepts SI suffixes both upward (`k`, `M`, `G`) and downward (`m` = 1e−3, `u` = 1e−6). The wire payload (`threshold` in the §5.4 request, `threshold.value` in the manifest) carries the **integer mantissa** and an explicit suffix (or unit-tag) so no `.`-bearing string ever lands in a filename or feedId. Server resolves `(mantissa, suffix) → scaled long` once at accumulator construction. Minimum effective threshold is `1u` of the canonical unit; below that the eligibility endpoint rejects the request.
+**Sub-unit thresholds.** The display form accepts SI suffixes both upward (`k`, `M`, `G`) and downward (`m` = 1e−3, `u` = 1e−6). The wire payload (`threshold` in the §5.4 request, `threshold.value` in the manifest) carries the **integer mantissa** and an explicit suffix (or unit-tag) so no `.`-bearing string ever lands in a filename or feedId. Server resolves `(mantissa, suffix) → scaled long` once at accumulator construction.
+
+**Minimum effective threshold (Q-3).** The smallest representable threshold depends on both the unit AND the asset's scale (`ScaleContext.TickSize`, `ScaleContext.QuantityScale`). Anything smaller would scale to `0L` and degenerate the aggregator into a 1:1 bar-per-record copy of the source. `ThresholdResolver.MinimumAbsolute(unit, scale)` returns the per-asset floor; the POST `/aggregate` endpoint rejects sub-floor requests with an actionable 422 message including the floor value and a SI-suffix hint (e.g. `"minimum is 0.0001 base — use convenience input '100u' or larger"`). Per-unit floors:
+
+| Unit | Floor (absolute) | Rationale |
+|---|---|---|
+| `base_asset` | `1 / QuantityScale` | smallest `x` with `ToLong(x · QuantityScale) ≥ 1` |
+| `quote_asset` | `TickSize / QuantityScale` | smallest `x` with `ToLong(x · QuantityScale · ScaleFactor) ≥ 1` |
+| `trades` | `1` | scale-independent integer count |
+| `price` | `TickSize` | smallest `x` with `ToLong(x · ScaleFactor) ≥ 1` |
+
+The `/aggregation-options` endpoint reports a single conservative `threshold_bounds.min` = max-of-per-unit-minima for FE forward-compatibility (matches the existing wire shape). A future enhancement may align with the TRD §5.3 per-eligible-type bounds shape (each `eligible_types[*]` entry carrying its own `threshold_min`/`threshold_max`/`threshold_default`); until then the server's 422 response is the single source of truth on per-asset boundaries.
 
 Application layer applies `scale.AmountToTicks(displayThreshold)` once at accumulator construction. FeedId/filename/manifest never carry scaled longs. Scale-tag equality is asserted at accumulator entry **for primary-bar inputs**. Side feeds are unscaled `double` (§3.6); the aggregator handles `double → long` conversion explicitly at the sum site. Misalignment on a primary-bar input is a write-time validation failure. Storage is `long` (qty/price on primary bars) + `double` (side feeds and analytical sidecar); no `decimal` anywhere.
 

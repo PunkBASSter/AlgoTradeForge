@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Domain.History;
 
@@ -135,8 +136,57 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
             ? $"*_{feed.FeedId}.csv"
             : "*.csv";
 
-        return Directory.EnumerateFiles(dir, pattern, SearchOption.TopDirectoryOnly)
-            .OrderBy(Path.GetFileName, StringComparer.Ordinal);
+        var files = Directory.EnumerateFiles(dir, pattern, SearchOption.TopDirectoryOnly)
+            .OrderBy(Path.GetFileName, StringComparer.Ordinal)
+            .ToList();
+
+        // Q-4 — fail loudly if a month appears as both bare and .pNN. Same defense as
+        // PartitionedSourceReader (HistoryLoader.Application); duplicated here because the two
+        // layers don't share a project. Only the (bare && pNN) co-existence is a violation —
+        // multiple .pNN files for one month is the normal overflow case.
+        EnsureNoDuplicateMonthPartitions(files);
+
+        return files;
+    }
+
+    private static readonly Regex AltBarOrSidecarPattern =
+        new(@"^(?<month>\d{4}-\d{2})(?:\.p(?<part>\d{2}))?\.csv$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex TimeBarPattern =
+        new(@"^(?<month>\d{4}-\d{2})_[^.]+(?:\.p(?<part>\d{2}))?\.csv$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static void EnsureNoDuplicateMonthPartitions(IEnumerable<string> filePaths)
+    {
+        var byMonth = new Dictionary<string, (string? Bare, List<string> PartNumbered)>(StringComparer.Ordinal);
+        foreach (var path in filePaths)
+        {
+            var fileName = Path.GetFileName(path);
+            var m = AltBarOrSidecarPattern.Match(fileName);
+            if (!m.Success) m = TimeBarPattern.Match(fileName);
+            if (!m.Success) continue;
+
+            var month = m.Groups["month"].Value;
+            var isPart = m.Groups["part"].Success;
+            if (!byMonth.TryGetValue(month, out var entry))
+                entry = (null, new List<string>());
+            if (isPart) entry.PartNumbered.Add(path);
+            else entry = (path, entry.PartNumbered);
+            byMonth[month] = entry;
+        }
+
+        var collisions = byMonth
+            .Where(kvp => kvp.Value.Bare is not null && kvp.Value.PartNumbered.Count > 0)
+            .ToList();
+        if (collisions.Count == 0) return;
+
+        var details = string.Join("; ", collisions.Select(kvp =>
+            $"month {kvp.Key}: bare='{kvp.Value.Bare}' AND partNumbered=[{string.Join(", ", kvp.Value.PartNumbered)}]"));
+        throw new InvalidDataException(
+            $"Partition layout violation: bare <YYYY-MM>.csv and <YYYY-MM>.pNN.csv co-exist for the same month. " +
+            "This is unreachable from a single successful job (writer atomic-renames bare→p01 before opening p02), " +
+            "so this state indicates operator manipulation, partial migration, or a writer bug. " +
+            $"Details: {details}");
     }
 
     private static string? ReadLastDataLine(string filePath)

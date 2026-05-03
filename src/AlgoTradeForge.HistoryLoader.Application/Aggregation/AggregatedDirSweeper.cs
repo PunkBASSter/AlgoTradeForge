@@ -61,6 +61,30 @@ public sealed class AggregatedDirSweeper(
                     "Startup sweep: deleted orphan staging dir {Path}",
                     Path.GetFullPath(stagingDir));
             }
+
+            // Q-4 — observability for the bare-vs-pNN collision case. The reader will throw
+            // InvalidDataException at next read, but logging at startup gives operators a heads-up
+            // before any aggregation job is attempted. Do NOT auto-delete: which file is the
+            // truth depends on context the sweeper can't determine without operator input, and
+            // auto-delete would mask the underlying writer/migration bug.
+            DetectBareAndPartitionCollisions(feedDir);
+        }
+    }
+
+    private void DetectBareAndPartitionCollisions(string feedDir)
+    {
+        var files = Directory.EnumerateFiles(feedDir, "*.csv", SearchOption.TopDirectoryOnly).ToList();
+        try
+        {
+            PartitionFilenameParser.EnsureNoDuplicateMonthPartitions(files);
+        }
+        catch (InvalidDataException ex)
+        {
+            logger.LogWarning(
+                "Startup sweep: bare-and-partNumbered partition collision in feed dir {Path}. " +
+                "Reader will reject reads from this feed until the orphan files are reconciled. {Detail}",
+                Path.GetFullPath(feedDir),
+                ex.Message);
         }
     }
 }

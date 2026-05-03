@@ -367,13 +367,14 @@ In-memory queue stays (no durability). Two independent capabilities bundled into
 
 Resolve before the listed gating task. Promote to a `## Resolved` section once locked.
 
-- [ ] **Q-3** Minimum-threshold floor — `1u` canonical vs `max(1u, 1 tick)` to avoid scaled underflow on small-tick assets. Gates P1b-26 eligibility logic. (TRD §3.4)
-- [ ] **Q-4** Glob double-load risk — should the reader fail loudly when both `<YYYY-MM>.csv` and `<YYYY-MM>.p*.csv` exist for the same month? Gates P1a-29. (TRD §3.2)
+_(none open — Q-3 and Q-4 resolved; see Resolved section below.)_
 
 ## Resolved
 
 - [x] **Q-1** Horizontal virtualization library — **TanStack Virtual** chosen for both axes. ADR: [`docs/adr/2026-05-virtualization-tanstack.md`](adr/2026-05-virtualization-tanstack.md). Locked by P3-10 / P3-13.
 - [x] **Q-2** "Interrupted" vs "failed" job UX — kept label-only treatment in Phase 3 UI copy (P3-17). Restart-cancelled jobs render as "interrupted" without server-side support; cancel endpoint stays out of v1 scope.
+- [x] **Q-3** Per-unit minimum-threshold floor enforced server-side via `ThresholdResolver.MinimumAbsolute(unit, scale)` — computed from public `ScaleContext` surface (`TickSize`, `QuantityScale`); `ScaleFactor` stays internal. POST `/aggregate` returns 422 with an actionable message including the per-asset floor and a SI-suffix hint. `/aggregation-options` returns the max-of-per-unit-minima as a single conservative `threshold_bounds.min` for FE forward-compatibility. The TRD §5.3-aligned per-eligible-type bounds shape (`eligible_types[*].threshold_min/max/default`) is a separate enhancement, not gating Q-3.
+- [x] **Q-4** Reader-side `PartitionFilenameParser.EnsureNoDuplicateMonthPartitions` check applied in `PartitionedSourceReader.ReadAltBars`/`ReadTimeBars` (HistoryLoader.Application) and `PartitionedCsvBarLoader.EnumerateChronologicalFiles` (Infrastructure, covers both `Load` and `GetLastTimestamp`). Throws `InvalidDataException` on bare-and-pNN collision per month. `AggregatedDirSweeper` logs WARN at startup but never deletes — operator-investigated. Tick path skipped (no overflow scheme); the parallel implementations in Application + Infrastructure exist because the two layers don't share a project.
 
 ---
 
@@ -391,4 +392,4 @@ Resolve before the listed gating task. Promote to a `## Resolved` section once l
 | 5 | 16 (was 6; refined into P5-0..P5-15) | 16 done (P5-0..P5-15); baseline-capture process step pending | Tick-only v1 per ADR D1 |
 | 6 | 17 | 17 done (P6-1..P6-17) | Cancel + safe-trio re-aggregation; in-memory queue stays |
 | X | 5 | 4 (X-3, X-5 in 1a; X-2, X-4 in 1b) | Cross-cutting; land with parent phase |
-| Q | 4 | 2 (Q-1, Q-2 resolved); Q-3, Q-4 still open | Each gates a specific task above |
+| Q | 4 | 4 (all resolved) | Each gates a specific task above |

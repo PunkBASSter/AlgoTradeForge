@@ -69,9 +69,16 @@ public sealed class PartitionedSourceReader
         // Mirrors PartitionedCsvBarLoader's glob pattern. Lex sort matches chronological because
         // partitions are calendar-stamped (YYYY-MM[.pNN].csv); part-numbered overflow files sort
         // after their bare month within the same calendar.
-        foreach (var filePath in Directory
-                     .EnumerateFiles(dir, "*.csv", SearchOption.TopDirectoryOnly)
-                     .OrderBy(Path.GetFileName, StringComparer.Ordinal))
+        var files = Directory
+            .EnumerateFiles(dir, "*.csv", SearchOption.TopDirectoryOnly)
+            .OrderBy(Path.GetFileName, StringComparer.Ordinal)
+            .ToList();
+
+        // Q-4 — fail loudly if a month appears as both bare and .pNN. Unreachable from a single
+        // successful job (writer atomicity); see PartitionFilenameParser for context.
+        PartitionFilenameParser.EnsureNoDuplicateMonthPartitions(files);
+
+        foreach (var filePath in files)
         {
             // The on-disk shape is identical to time bars (ts,o,h,l,c,vol) — reuse the parser
             // verbatim. BuyVolumeLong/SellVolumeLong stay 0 (safe-trio aggregators don't read them).
@@ -95,9 +102,14 @@ public sealed class PartitionedSourceReader
         // months format as YYYY-MM and any future part-numbered overflow files (.pNN) sort after
         // their bare month within the same calendar.
         var pattern = $"*_{source.FeedId}.csv";
-        foreach (var filePath in Directory
-                     .EnumerateFiles(dir, pattern, SearchOption.TopDirectoryOnly)
-                     .OrderBy(Path.GetFileName, StringComparer.Ordinal))
+        var files = Directory
+            .EnumerateFiles(dir, pattern, SearchOption.TopDirectoryOnly)
+            .OrderBy(Path.GetFileName, StringComparer.Ordinal)
+            .ToList();
+
+        PartitionFilenameParser.EnsureNoDuplicateMonthPartitions(files);
+
+        foreach (var filePath in files)
         {
             foreach (var record in ReadTimeBarFile(filePath, fromMs, toMs))
                 yield return record;

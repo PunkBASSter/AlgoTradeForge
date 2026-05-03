@@ -404,6 +404,46 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     }
 
     // -------------------------------------------------------------------------
+    // Q-4 — bare-vs-pNN collision detection (mirrors PartitionedSourceReader's
+    // defense; the two loaders live in different layers and cannot share code).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Load_AltBar_BareAndPartNumberedSameMonth_Throws()
+    {
+        WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-05.csv",
+            [$"{Ts(2026,5,5)},10,20,5,15,1000"]);
+        WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-05.p01.csv",
+            [$"{Ts(2026,5,20)},20,30,15,25,2000"]);
+
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            _loader.Load(
+                AltBarDescriptor("Binance", "BTCUSDT", "EqV_1m_1000"),
+                new DateOnly(2026, 4, 1), new DateOnly(2026, 5, 31)));
+        Assert.Contains("2026-05", ex.Message);
+    }
+
+    [Fact]
+    public void GetLastTimestamp_AltBar_BareAndPartNumberedSameMonth_Throws()
+    {
+        // GetLastTimestamp uses the same EnumerateChronologicalFiles path; the collision
+        // check is inherited automatically.
+        WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-05.csv",
+            [$"{Ts(2026,5,5)},10,20,5,15,1000"]);
+        WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-05.p01.csv",
+            [$"{Ts(2026,5,20)},20,30,15,25,2000"]);
+
+        Assert.Throws<InvalidDataException>(() =>
+            _loader.GetLastTimestamp(AltBarDescriptor("Binance", "BTCUSDT", "EqV_1m_1000")));
+    }
+
+    // Note: no time-bar Q-4 test. Time-bar partitions have no .pNN overflow scheme today
+    // (only the aggregation pipeline uses .pNN), and the loader's per-FeedId glob
+    // `*_{FeedId}.csv` does not match `<YYYY-MM>_{FeedId}.pNN.csv`. The collision check is
+    // still wired through this code path (defense-in-depth for a future writer change), but
+    // no production scenario can trigger it.
+
+    // -------------------------------------------------------------------------
     // P4-13 — Glob resolution coverage for Tick + Side (sidecar / top-level).
     // The loader's CSV schema is OHLCV-shaped; we verify path resolution only,
     // so test fixtures plant OHLCV rows in the per-Kind locations. (Real tick
