@@ -90,13 +90,18 @@ public sealed class AggregationPipeline
         var sidecarFeedId = isEqI ? job.OutcomeFeedId + ".flow" : null;
         var sidecarFeedDir = isEqI ? Path.Combine(job.AssetDir, "aggregated", sidecarFeedId!) : null;
         string? sidecarStagingDir = null;
-        PartitionedSinkWriter? sidecarSink = null;
         if (isEqI)
         {
             Directory.CreateDirectory(sidecarFeedDir!);
             sidecarStagingDir = _overwriter.PrepareStagingDir(sidecarFeedDir!, job.JobId);
-            sidecarSink = new PartitionedSinkWriter(sidecarStagingDir, bytesBudget, SidecarHeader);
         }
+        // Using declaration so any exception path (not just OperationCanceledException) closes
+        // the FileStream — otherwise on Windows the staging dir can't be cleaned and
+        // StartupSweepService inherits a leaked handle. The explicit Dispose() further down is
+        // load-bearing for partition-rename ordering before Promote and is idempotent here.
+        using PartitionedSinkWriter? sidecarSink = isEqI
+            ? new PartitionedSinkWriter(sidecarStagingDir!, bytesBudget, SidecarHeader)
+            : null;
 
         // Source record volume samples — drives `median_source_record_value` on finalize.
         // Time-bar path keeps the exact median (small N, ~25 MB worst case for 5y of 1m).

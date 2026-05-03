@@ -74,8 +74,14 @@ public static class ThresholdResolver
         if (absolute < floor)
         {
             var hint = SuggestSiSuffix(floor);
+            // Echo the original convenience-input string when present — preserves what the
+            // user actually typed for log/UI replay; the resolved decimal alone (e.g. 0.000005)
+            // doesn't tell the user that they wrote "5u".
+            var inputDisplay = preservedConvenienceInput is not null
+                ? $"{absolute} ({preservedConvenienceInput}) {thresholdUnit}"
+                : $"{absolute} {thresholdUnit}";
             throw new ArgumentException(
-                $"Threshold {absolute} {thresholdUnit} is below this asset's minimum of {floor} {thresholdUnit}" +
+                $"Threshold {inputDisplay} is below this asset's minimum of {floor} {thresholdUnit}" +
                 (hint is null ? "." : $" (use convenience input '{hint}' or larger)."));
         }
 
@@ -135,6 +141,29 @@ public static class ThresholdResolver
     }
 
     /// <summary>
+    /// The threshold unit implied by an alt-bar type code (TRD §3.3 / §6.3). Re-aggregation
+    /// eligibility already restricts the type-code chain (EqV→EqV, etc.), but the wire schema
+    /// lets the user submit <c>threshold_unit</c> independently — endpoints check the submitted
+    /// unit against this mapping so the comparison in the AltBar-source ordering branch
+    /// (and the accumulator math itself) is apples-to-apples.
+    /// </summary>
+    public static string GetImplicitUnit(string typeCode)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(typeCode);
+        return typeCode switch
+        {
+            "EqV" => "base_asset",
+            "EqT" => "trades",
+            "EqD" => "quote_asset",
+            "EqI" => "base_asset",
+            "Range" => "price",
+            "Renko" => "price",
+            _ => throw new ArgumentException(
+                $"Unrecognized type_code '{typeCode}' (allowed: EqV, EqT, EqD, EqI, Range, Renko)."),
+        };
+    }
+
+    /// <summary>
     /// Picks the smallest SI suffix where <paramref name="value"/> renders as a positive integer
     /// mantissa, matching the <see cref="HistoryLoader.Domain.ThresholdValue"/> grammar. Returns
     /// <c>null</c> when no suffix produces an integer mantissa (caller falls back to the bare
@@ -145,17 +174,17 @@ public static class ThresholdResolver
     {
         if (value <= 0m) return null;
 
-        // Try suffixes in order of magnitude (smallest first). For each, the mantissa is
-        // value / multiplier. We want the FIRST one where mantissa is an integer ≥ 1 — that's
-        // the most natural way to express the floor.
+        // Try suffixes largest-first so the FIRST integer-mantissa match yields the SMALLEST
+        // mantissa — which is the most natural form (e.g. "1m" rather than "1000u" for 0.001;
+        // "1k" rather than "1000" for 1000).
         (string Suffix, decimal Multiplier)[] candidates =
         [
-            ("u", 0.000001m),
-            ("m", 0.001m),
-            ("",  1m),
-            ("k", 1_000m),
-            ("M", 1_000_000m),
             ("G", 1_000_000_000m),
+            ("M", 1_000_000m),
+            ("k", 1_000m),
+            ("",  1m),
+            ("m", 0.001m),
+            ("u", 0.000001m),
         ];
 
         foreach (var (suffix, mult) in candidates)

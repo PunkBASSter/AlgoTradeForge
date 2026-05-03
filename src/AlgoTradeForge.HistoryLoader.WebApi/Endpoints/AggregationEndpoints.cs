@@ -90,6 +90,19 @@ internal static class AggregationEndpoints
             return Unprocessable("type_ineligible", reason);
         }
 
+        // 3b. Threshold-unit family check. Eligibility above pins the type-code chain (e.g. for an
+        // AltBar source, only the source's own type-code is eligible) — so once type-code is
+        // accepted, threshold_unit is determined. Validating here turns the AltBar-source
+        // ordering check below into an apples-to-apples comparison; without this, a user could
+        // submit unit=quote_asset against an EqV source and the source's own threshold would be
+        // re-resolved in a foreign unit family, making the ordering math meaningless.
+        var implicitUnit = ThresholdResolver.GetImplicitUnit(body.TypeCode);
+        if (!string.Equals(body.ThresholdUnit, implicitUnit, StringComparison.Ordinal))
+        {
+            return Unprocessable("invalid_threshold_unit",
+                $"type_code '{body.TypeCode}' requires threshold_unit='{implicitUnit}'; got '{body.ThresholdUnit}'.");
+        }
+
         // 4. Threshold resolution (422 on conversion error)
         var scale = AssetScaleContextFactory.FromDecimalDigits(assetConfig.DecimalDigits);
         ThresholdResolver.Resolved threshold;
