@@ -10,7 +10,8 @@
             "cwd": "${workspaceFolder}/src/AlgoTradeForge.WebApi",
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
-                "ASPNETCORE_URLS": "http://localhost:5000"
+                "ASPNETCORE_URLS": "http://localhost:5000",
+                "HistoryLoader__BaseUrl": "http://localhost:5051"
             },
             "preLaunchTask": "build-backend",
             "serverReadyAction": {
@@ -29,9 +30,24 @@
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "ASPNETCORE_URLS": "http://localhost:5000",
-                "DIAG_LOG_FILE": "${workspaceFolder}/optimization-diag.log"
+                "DIAG_LOG_FILE": "${workspaceFolder}/optimization-diag.log",
+                "HistoryLoader__BaseUrl": "http://localhost:5051"
             },
             "preLaunchTask": "build-backend"
+        },
+        {
+            "name": "HistoryLoader: WebApi",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/AlgoTradeForge.HistoryLoader.WebApi/bin/Debug/net10.0/AlgoTradeForge.HistoryLoader.WebApi.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/AlgoTradeForge.HistoryLoader.WebApi",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:5051",
+                "HistoryLoader__DataRoot": "C:\\Users\\Andrew\\AppData\\Local\\AlgoTradeForge\\HistoryTest"
+            },
+            "preLaunchTask": "build-history-loader"
         },
         {
             "name": "CandleIngestor",
@@ -62,12 +78,12 @@
     "compounds": [
         {
             "name": "Full Stack: Backend + Frontend",
-            "configurations": ["Backend: WebApi", "Frontend: npm run dev"],
+            "configurations": ["HistoryLoader: WebApi", "Backend: WebApi", "Frontend: npm run dev"],
             "stopAll": true
         },
         {
             "name": "Full Stack: Backend + Frontend (with log)",
-            "configurations": ["Backend: WebApi (with log)", "Frontend: npm run dev"],
+            "configurations": ["HistoryLoader: WebApi", "Backend: WebApi (with log)", "Frontend: npm run dev"],
             "stopAll": true
         }
     ]

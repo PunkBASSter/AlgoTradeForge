@@ -70,7 +70,7 @@ export function FeedPicker({
 
   const selectedAsset: AssetCatalogEntry | null = useMemo(() => {
     if (!value?.asset || !assetsQuery.data) return null;
-    return assetsQuery.data.assets.find((a) => a.asset === value.asset) ?? null;
+    return assetsQuery.data.assets.find((a) => a.symbol === value.asset) ?? null;
   }, [value?.asset, assetsQuery.data]);
 
   const eligibleFeeds: FeedCatalogEntry[] = useMemo(() => {
@@ -190,10 +190,10 @@ export function FeedPicker({
           </option>
           {assetsQuery.data?.assets
             .slice()
-            .sort((a, b) => a.asset.localeCompare(b.asset))
+            .sort((a, b) => a.display_name.localeCompare(b.display_name))
             .map((a) => (
-              <option key={a.asset} value={a.asset}>
-                {a.asset} {a.type ? `(${a.type})` : ""}
+              <option key={a.symbol} value={a.symbol}>
+                {a.display_name} {a.type ? `(${a.type})` : ""}
               </option>
             ))}
         </select>

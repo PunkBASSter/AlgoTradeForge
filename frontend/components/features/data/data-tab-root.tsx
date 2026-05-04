@@ -78,7 +78,7 @@ export function DataTabRoot() {
           // resumes the SSE stream via `Last-Event-ID` (P3-18). The active selection
           // identifies which exchange + asset this job belongs to.
           if (selection.exchange && selection.asset) {
-            const key = makeFeedJobKey(selection.exchange, selection.asset.asset, outcomeHint);
+            const key = makeFeedJobKey(selection.exchange, selection.asset.symbol, outcomeHint);
             setJob(key, jobId);
           }
         }}

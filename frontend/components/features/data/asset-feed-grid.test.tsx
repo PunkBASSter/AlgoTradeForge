@@ -51,13 +51,16 @@ const alt = (id: string, type: string, threshold: number, sidecar: string | null
 });
 
 function makeAssets(rowCount: number, feedsPerAsset: FeedCatalogEntry[]): AssetCatalogEntry[] {
-  return Array.from({ length: rowCount }, (_, i) => ({
-    exchange: "binance",
-    asset: `ASSET${i.toString().padStart(4, "0")}`,
-    asset_class: "crypto-perp",
-    type: "CryptoPerpetual",
-    feeds: feedsPerAsset,
-  }));
+  return Array.from({ length: rowCount }, (_, i) => {
+    const id = `ASSET${i.toString().padStart(4, "0")}`;
+    return {
+      exchange: "binance",
+      symbol: id,
+      display_name: id,
+      type: "CryptoPerpetual",
+      feeds: feedsPerAsset,
+    };
+  });
 }
 
 describe("AssetFeedGrid", () => {

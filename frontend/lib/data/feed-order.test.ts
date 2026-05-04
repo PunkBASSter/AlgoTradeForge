@@ -37,16 +37,24 @@ describe("compareFeed", () => {
     items.sort(compareFeed);
     expect(items.map((f) => f.id)).toEqual(["funding-rate", "liquidations", "open-interest"]);
   });
+
+  it("orders time bars by interval duration ascending, not lexically", () => {
+    // Lex order would put "1d" before "1h" before "1m" (alphabetic 'd' < 'h' < 'm') — the
+    // opposite of what users expect. Verify the new duration parser produces 1m → 1h → 1d.
+    const items = [tb("1d", "1d"), tb("1m", "1m"), tb("1h", "1h"), tb("4h", "4h"), tb("15m", "15m"), tb("5m", "5m")];
+    items.sort(compareFeed);
+    expect(items.map((f) => f.id)).toEqual(["1m", "5m", "15m", "1h", "4h", "1d"]);
+  });
 });
 
 describe("unionFeedColumns", () => {
   it("returns the ordered union of feeds across visible assets", () => {
     const a1: AssetCatalogEntry = {
-      exchange: "binance", asset: "BTCUSDT_perp", asset_class: "crypto-perp", type: "CryptoPerpetual",
+      exchange: "binance", symbol: "BTCUSDT_perp", display_name: "BTCUSDT", type: "CryptoPerpetual",
       feeds: [tb("1m", "1m"), alt("EqV_1m_1000", "EqV", 1000), tick],
     };
     const a2: AssetCatalogEntry = {
-      exchange: "binance", asset: "ETHUSDT_perp", asset_class: "crypto-perp", type: "CryptoPerpetual",
+      exchange: "binance", symbol: "ETHUSDT_perp", display_name: "ETHUSDT", type: "CryptoPerpetual",
       feeds: [tb("1m", "1m"), tb("5m", "5m"), side("funding-rate")],
     };
     const cols = unionFeedColumns([a1, a2]);
@@ -59,11 +67,11 @@ describe("unionFeedColumns", () => {
 
   it("first occurrence wins for duplicate feed ids — same schema invariant", () => {
     const a1: AssetCatalogEntry = {
-      exchange: "binance", asset: "A", asset_class: "x", type: "x",
+      exchange: "binance", symbol: "A", display_name: "A", type: "x",
       feeds: [alt("EqV_1m_1000", "EqV", 1000, "EqV_1m_1000.flow")],
     };
     const a2: AssetCatalogEntry = {
-      exchange: "binance", asset: "B", asset_class: "x", type: "x",
+      exchange: "binance", symbol: "B", display_name: "B", type: "x",
       feeds: [alt("EqV_1m_1000", "EqV", 1000, null)],   // somehow no sidecar — wrong but test the rule
     };
     const cols = unionFeedColumns([a1, a2]);

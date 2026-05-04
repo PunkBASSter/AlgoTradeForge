@@ -29,16 +29,32 @@ function bucket(f: FeedCatalogEntry): number {
 }
 
 /**
+ * Parses a Binance-style interval string into seconds for chronological sorting.
+ * Lex sort is wrong for the natural set: "1d" < "1h" < "1m" alphabetically would
+ * order daily bars before hourly before minute — the opposite of what users expect.
+ * This parser handles `\d+[smhd]` (e.g. "30s", "1m", "15m", "4h", "1d"); anything
+ * else returns Number.MAX_SAFE_INTEGER so unparseable entries fall to the end of
+ * the bucket rather than colliding at 0.
+ */
+function intervalSeconds(s: string | null | undefined): number {
+  if (!s) return Number.MAX_SAFE_INTEGER;
+  const match = /^(\d+)([smhd])$/.exec(s);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  const n = Number(match[1]);
+  switch (match[2]) {
+    case "s": return n;
+    case "m": return n * 60;
+    case "h": return n * 3600;
+    case "d": return n * 86_400;
+    default:  return Number.MAX_SAFE_INTEGER;
+  }
+}
+
+/**
  * Stable-ish comparator for the column order. Within a bucket:
- *  - Time bars: by `interval` lexically (lowercase: "1m" < "5m" < "1h", which works
- *    because all intervals share a single suffix character — m, h, d).
+ *  - Time bars: by interval **duration** ascending (1m → 5m → 1h → 1d).
  *  - Alt bars: by `type_code` then `threshold_value` ascending (TRD §3.3).
  *  - Side feeds: by `id` lexically.
- *
- * NOTE: lexical interval sort is good enough for the canonical set
- * ("1m","3m","5m","15m","30m","1h","4h","1d") because these all begin with a digit;
- * "10m" would sort before "1m" but isn't in our supported set. Add a numeric tier
- * here if/when sub-minute or 10m+ intervals land.
  */
 export function compareFeed(a: FeedCatalogEntry, b: FeedCatalogEntry): number {
   const ba = bucket(a);
@@ -46,6 +62,8 @@ export function compareFeed(a: FeedCatalogEntry, b: FeedCatalogEntry): number {
   if (ba !== bb) return ba - bb;
 
   if (ba === 1) {
+    const dur = intervalSeconds(a.interval) - intervalSeconds(b.interval);
+    if (dur !== 0) return dur;
     return (a.interval ?? a.id).localeCompare(b.interval ?? b.id);
   }
   if (ba === 2) {

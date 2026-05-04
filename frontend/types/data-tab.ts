@@ -21,8 +21,11 @@ export interface AssetListResponse {
 
 export interface AssetCatalogEntry {
   exchange: string;
-  asset: string;
-  asset_class: string;
+  // Directory name on disk (e.g. "BTCUSDT_perp"). Used as the URL path segment in
+  // /api/data/exchanges/{exchange}/assets/{asset}/... endpoints — keep verbatim.
+  symbol: string;
+  // Human-readable label (e.g. "BTCUSDT"). Use this for any user-visible rendering.
+  display_name: string;
   type: string;
   feeds: FeedCatalogEntry[];
 }

@@ -146,9 +146,9 @@ export function AssetFeedGrid({
                     zIndex: 1,
                   }}
                   className="border-r border-border-subtle px-2 flex items-center bg-bg-surface text-sm font-mono text-text-primary truncate"
-                  title={asset.asset}
+                  title={asset.display_name}
                 >
-                  {asset.asset}
+                  {asset.display_name}
                 </div>
 
                 {colVirt.getVirtualItems().map((c) => (

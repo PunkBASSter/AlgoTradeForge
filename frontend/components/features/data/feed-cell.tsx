@@ -1,16 +1,23 @@
 "use client";
 
-// Single-cell renderer for the asset×feed grid (P3-14).
-//   `+`  — feed-column is absent on this asset; click opens the new-aggregate form.
-//   `−`  — feed is present AND deletable (OHLCV_AltBar only). Click opens delete confirm.
-//   ·    — sidecar-bearing aggregated cell renders an indicator dot.
-//   (blank) — feed present but not deletable (time bars, ticks, side feeds).
+// Single-cell renderer for the asset×feed grid.
+//   `+`  — feed is present on this asset. Two visual variants:
+//          • Aggregation-eligible source (TimeBar / AltBar / aggregated / Tick): wrapped in
+//            a bordered frame and hovers to an accent-blue outline. Click opens the
+//            new-aggregate sidebar with this feed pre-selected as the source.
+//          • Other present feeds (Side, sidecar): bare `+`. Click opens the feed-status
+//            sidebar.
+//   `−`  — feed is absent. Click opens the new-aggregate form for the column (used when
+//          a target alt-bar column is missing for this asset).
+//   ·    — sidecar-bearing aggregated cell renders an additional indicator dot.
 //
-// Sidebar interactions are wired in S10 via the Zustand store; this stage's component
-// is pure-presentational so the asset-feed-grid test can assert DOM count cleanly.
+// The +/− glyphs are inverted from the underlying button affordance (+ doesn't mean "add",
+// it means "the data is present"). The frame on the aggregation-eligible variant is the
+// affordance hint that the cell is *interactive for aggregation* — without it, users can't
+// tell which `+` cells lead to the create form vs the read-only status view.
 
 import type { CSSProperties } from "react";
-import type { AssetCatalogEntry, FeedCatalogEntry } from "@/types/data-tab";
+import type { AssetCatalogEntry, FeedCatalogEntry, FeedKind } from "@/types/data-tab";
 
 interface Props {
   asset: AssetCatalogEntry;
@@ -20,13 +27,19 @@ interface Props {
   onView?: (asset: AssetCatalogEntry, feed: FeedCatalogEntry) => void;
 }
 
+// Feed kinds that can act as a source for new alt-bar aggregation. Side feeds and
+// (sidecar-only) aggregated entries are excluded — they're informational, not source data.
+const AGGREGATION_SOURCE_KINDS: ReadonlySet<FeedKind> = new Set([
+  "OHLCV_TimeBar",
+  "OHLCV_AltBar",
+  "aggregated",
+  "Tick",
+]);
+
 export function FeedCell({ asset, feedColumn, style, onAdd, onView }: Props) {
   const present = asset.feeds.find((f) => f.id === feedColumn.id);
+  const isAggregationSource = AGGREGATION_SOURCE_KINDS.has(feedColumn.kind);
 
-  // Absent: render `+` affordance for alt-bar-eligible source feeds. Time-bar columns
-  // are always present per asset (the "all assets share the schema" invariant), so the
-  // empty case is uncommon for time bars; we still render `+` defensively for any
-  // missing column.
   if (!present) {
     return (
       <button
@@ -34,15 +47,41 @@ export function FeedCell({ asset, feedColumn, style, onAdd, onView }: Props) {
         onClick={() => onAdd?.(asset, feedColumn)}
         style={style}
         className="absolute flex items-center justify-center text-text-muted hover:bg-bg-hover hover:text-accent-blue transition-colors text-sm"
-        aria-label={`Aggregate ${feedColumn.id} for ${asset.asset}`}
+        aria-label={`No ${feedColumn.id} for ${asset.display_name} — click to create`}
       >
-        +
+        −
       </button>
     );
   }
 
-  const isDeletable = feedColumn.kind === "OHLCV_AltBar" || feedColumn.kind === "aggregated";
   const hasSidecar = present.sidecar !== null;
+
+  // Aggregation-eligible sources get a framed `+` so users can distinguish "click to start
+  // an aggregation from this source" from "click to view this informational feed".
+  if (isAggregationSource) {
+    return (
+      <button
+        type="button"
+        onClick={() => onAdd?.(asset, present)}
+        style={style}
+        className="absolute flex items-center justify-center gap-1 text-text-secondary transition-colors text-sm group"
+        aria-label={`Aggregate from ${feedColumn.id} on ${asset.display_name}`}
+      >
+        <span
+          className="inline-flex items-center justify-center w-5 h-5 rounded border border-border-subtle group-hover:border-accent-blue group-hover:bg-bg-hover group-hover:text-accent-blue transition-colors"
+        >
+          +
+        </span>
+        {hasSidecar && (
+          <span
+            aria-label="has sidecar"
+            title="Sidecar (.flow) feed available"
+            className="inline-block w-1.5 h-1.5 rounded-full bg-accent-blue"
+          />
+        )}
+      </button>
+    );
+  }
 
   return (
     <button
@@ -50,9 +89,9 @@ export function FeedCell({ asset, feedColumn, style, onAdd, onView }: Props) {
       onClick={() => onView?.(asset, present)}
       style={style}
       className="absolute flex items-center justify-center gap-1 text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors text-sm"
-      aria-label={`View ${feedColumn.id} on ${asset.asset}`}
+      aria-label={`View ${feedColumn.id} on ${asset.display_name}`}
     >
-      <span>{isDeletable ? "−" : ""}</span>
+      <span>+</span>
       {hasSidecar && (
         <span
           aria-label="has sidecar"

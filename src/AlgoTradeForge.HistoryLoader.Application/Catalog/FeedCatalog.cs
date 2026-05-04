@@ -69,7 +69,27 @@ public sealed class FeedCatalog : IFeedCatalog
         if (asset is null) return null;
         var assetDir = BackfillOrchestrator.ResolveAssetDir(_options.CurrentValue.DataRoot, asset);
         var manifest = _schemaManager.Load(assetDir);
-        return manifest?.Feeds.TryGetValue(feedId, out var def) == true ? def : null;
+        if (manifest is null) return null;
+
+        // Declared feeds (Side / Tick / explicit AltBar) live in `manifest.Feeds`.
+        if (manifest.Feeds.TryGetValue(feedId, out var def))
+            return def;
+
+        // Synthesize a FeedDefinition for candle intervals so downstream consumers — most
+        // importantly the /aggregation-options endpoint — can call EligibilityRules.ForSource
+        // on a 1m/1h/1d source. Without this, the endpoint 404s and the new-aggregate form's
+        // Type dropdown stays disabled. Mirrors the catalog-side projection in
+        // BuildAssetEntries that surfaces these as OHLCV_TimeBar columns.
+        if (manifest.Candles?.Intervals.Contains(feedId) == true)
+        {
+            return new FeedDefinition
+            {
+                Kind = "OHLCV_TimeBar",
+                Interval = feedId,
+            };
+        }
+
+        return null;
     }
 
     // -------------------------------------------------------------------------
@@ -106,15 +126,43 @@ public sealed class FeedCatalog : IFeedCatalog
         {
             var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
             var manifest = _schemaManager.Load(assetDir);
-            var feeds = (manifest?.Feeds ?? new Dictionary<string, FeedDefinition>())
-                .Select(kvp => MapFeed(kvp.Key, kvp.Value))
+
+            var declaredFeedDict = manifest?.Feeds ?? new Dictionary<string, FeedDefinition>();
+            var declaredFeeds = declaredFeedDict.Select(kvp => MapFeed(kvp.Key, kvp.Value));
+
+            // Time-bar candles live in `manifest.Candles.Intervals`, separate from the `feeds`
+            // dictionary (the candle pipeline is built-in; side feeds are pluggable). Synthesize
+            // a FeedCatalogEntry per declared interval so the Data grid surfaces them as columns
+            // and they're available as alt-bar source feeds. The on-disk CSVs already exist —
+            // this is purely the read-time projection that was missing. Skip intervals already
+            // claimed by a declared feed id so we never emit duplicates.
+            var candleFeeds = (manifest?.Candles?.Intervals ?? [])
+                .Where(interval => !declaredFeedDict.ContainsKey(interval))
+                .Select(interval => new FeedCatalogEntry(
+                    Id: interval,
+                    Kind: "OHLCV_TimeBar",
+                    Interval: interval,
+                    TypeCode: null,
+                    ThresholdValue: null,
+                    ThresholdUnit: null,
+                    FirstBarTs: null,
+                    LastBarTs: null,
+                    Sidecar: null));
+
+            var feeds = candleFeeds
+                .Concat(declaredFeeds)
                 .OrderBy(f => f, FeedOrder.Instance)
                 .ToArray();
 
             yield return new AssetCatalogEntry(
                 Exchange: asset.Exchange,
                 Symbol: AssetPathConvention.DirectoryName(asset.Symbol, asset.Type),
-                DisplayName: asset.Symbol,
+                // Disambiguate spot vs perpetual/future labels. `asset.Symbol` alone collapses
+                // BTCUSDT-spot and BTCUSDT-perp into identical user-facing rows. Suffix the
+                // type for derivatives so the row is self-describing without making spot
+                // labels noisy. Mirrors the directory-name convention (`BTCUSDT_perp`) but
+                // uses a hyphen for human-readability.
+                DisplayName: AssetTypes.IsFutures(asset.Type) ? $"{asset.Symbol}-perp" : asset.Symbol,
                 Type: asset.Type,
                 Feeds: feeds);
         }
@@ -122,13 +170,30 @@ public sealed class FeedCatalog : IFeedCatalog
 
     private static FeedCatalogEntry MapFeed(string id, FeedDefinition def)
     {
-        // Legacy entries leave Kind null but populate Interval — treat those as time bars
-        // so the FE doesn't see an empty kind on legacy feeds.
-        var kind = def.Kind ?? (def.Interval is not null ? "OHLCV_TimeBar" : "Side");
+        // Kind heuristic for entries in `manifest.Feeds` (auxiliary side feeds, ticks):
+        //   1. Explicit `def.Kind` always wins.
+        //   2. "ticks" by id convention → Tick.
+        //   3. Everything else → Side.
+        // The `Interval` field on declared feeds is the *polling cadence* (e.g., "15m"
+        // for ls-ratio-global), NOT a candle interval. True OHLCV time bars are declared
+        // only via `manifest.Candles.Intervals` and synthesized in BuildAssetEntries
+        // above — never via the Feeds dictionary. So we MUST NOT promote a declared feed
+        // to OHLCV_TimeBar based on its Interval field.
+        string kind;
+        if (def.Kind is not null)
+            kind = def.Kind;
+        else if (string.Equals(id, "ticks", StringComparison.Ordinal))
+            kind = "Tick";
+        else
+            kind = "Side";
+
         return new FeedCatalogEntry(
             Id: id,
             Kind: kind,
-            Interval: def.Interval,
+            // Normalize empty-string interval to null so the FE comparator's interval-aware
+            // sort doesn't treat "" as duration 0. Cadence is preserved verbatim for Side
+            // feeds (FE may surface it as a tooltip, etc.).
+            Interval: string.IsNullOrEmpty(def.Interval) ? null : def.Interval,
             TypeCode: def.Type?.Code,
             ThresholdValue: def.Threshold?.Value,
             ThresholdUnit: def.Threshold?.Unit,
