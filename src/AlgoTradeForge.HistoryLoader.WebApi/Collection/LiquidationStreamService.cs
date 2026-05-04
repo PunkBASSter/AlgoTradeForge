@@ -74,8 +74,12 @@ internal sealed class LiquidationStreamService(
                 // Normal disconnect (e.g. server-side close) — reset and reconnect
                 attempts = 0;
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (
+                stoppingToken.IsCancellationRequested)
             {
+                // Real shutdown — exit the loop cleanly. HttpClient/WebSocket timeouts also throw
+                // OperationCanceledException without any caller cancellation; those fall through
+                // to the generic handler below and trigger reconnect with backoff.
                 break;
             }
             catch (Exception ex)
@@ -123,8 +127,12 @@ internal sealed class LiquidationStreamService(
             using var response = await client.GetAsync($"{baseUrl}/fapi/v1/ping", ct);
             return true;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (
+            !(ex is OperationCanceledException && ct.IsCancellationRequested))
         {
+            // HttpClient.Timeout (a TaskCanceledException) is also an OperationCanceledException
+            // — without the `ct.IsCancellationRequested` qualifier, timeout would escape and
+            // crash the BG service. Probe is best-effort; any non-shutdown exception → unreachable.
             return false;
         }
     }
@@ -211,8 +219,11 @@ internal sealed class LiquidationStreamService(
                 st.lastTs = record.TimestampMs;
                 statusTracker[assetDir] = st;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (
+                !(ex is OperationCanceledException && ct.IsCancellationRequested))
             {
+                // Per-message handler. Real shutdown propagates; a stray TaskCanceledException
+                // from an HTTP/WS timeout inside the handler must not kill the stream loop.
                 logger.LogError(ex, "Failed to process liquidation message");
             }
 

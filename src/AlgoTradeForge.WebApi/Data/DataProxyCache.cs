@@ -26,7 +26,11 @@ namespace AlgoTradeForge.WebApi.Data;
 /// </remarks>
 public sealed class DataProxyCache(IDistributedCache cache)
 {
-    private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(5);
+    // Absolute (not sliding) TTL: a steady stream of catalog reads otherwise refreshes the
+    // entry indefinitely, masking out-of-band manifest changes (collector appends, completed
+    // aggregation jobs) for far longer than 5 s. With absolute, every entry dies on schedule
+    // regardless of read pressure — worst-case staleness is bounded by Ttl.
+    private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(2);
 
     /// <summary>Keys held by the catalog cache. Used by <see cref="InvalidateAffectedAsync"/>.</summary>
     public const string KeyAllExchanges = "data-proxy:exchanges:all";
@@ -61,7 +65,7 @@ public sealed class DataProxyCache(IDistributedCache cache)
         {
             var serialized = JsonSerializer.SerializeToUtf8Bytes(entry);
             await cache.SetAsync(cacheKey, serialized,
-                new DistributedCacheEntryOptions { SlidingExpiration = Ttl }, ct);
+                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = Ttl }, ct);
         }
         return entry;
     }

@@ -57,7 +57,15 @@ export function useJobStream(
             toast(`Built ${payload.feed_id} (overshoot ${overshoot}%)`, "success");
             clearJob(key);
             // Re-fetch the affected exchange's asset list so the new column appears.
-            queryClient.invalidateQueries({ queryKey: ["data", "exchange-assets", exchange] });
+            const queryKey = ["data", "exchange-assets", exchange];
+            queryClient.invalidateQueries({ queryKey });
+            // The main WebApi proxy holds a short absolute-TTL cache (~2 s) of the catalog
+            // payload. The first invalidate above will hit that cache and return stale data;
+            // schedule a follow-up invalidate just past the TTL window so the next refetch
+            // bypasses the proxy cache and surfaces the new feed column.
+            setTimeout(() => {
+              queryClient.invalidateQueries({ queryKey });
+            }, 2500);
           } else if (type === "error") {
             const payload = data as SseErrorPayload;
             toast(`Aggregation failed: ${payload.message}`, "error");

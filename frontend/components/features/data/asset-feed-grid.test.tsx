@@ -130,8 +130,10 @@ describe("AssetFeedGrid", () => {
 
     const { container } = render(<AssetFeedGrid assets={assets} />);
 
-    // The body scroll container is the only div with overflow-auto.
-    const scrollEl = container.querySelector(".overflow-auto") as HTMLDivElement;
+    // The body scroll container is the only div with overflow-x-auto. (Vertical scroll
+    // is delegated to the window now — the body itself doesn't scroll on the y-axis, so
+    // the legacy `overflow-auto` class is gone.)
+    const scrollEl = container.querySelector(".overflow-x-auto") as HTMLDivElement;
     expect(scrollEl).toBeTruthy();
 
     // Header inner wrapper: the div with translateX style sits inside the

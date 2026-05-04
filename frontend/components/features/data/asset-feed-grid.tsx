@@ -13,21 +13,18 @@ import { FeedCell } from "./feed-cell";
 
 interface Props {
   assets: AssetCatalogEntry[];
-  height?: number;       // px; defaults to 480
   rowHeight?: number;    // px; defaults to 36
   colWidth?: number;     // px; defaults to 132
   onAdd?: (asset: AssetCatalogEntry, sourceFeed: FeedCatalogEntry) => void;
   onView?: (asset: AssetCatalogEntry, feed: FeedCatalogEntry) => void;
 }
 
-const DEFAULT_HEIGHT = 480;
 const DEFAULT_ROW_HEIGHT = 36;
 const DEFAULT_COL_WIDTH = 132;
 const ROW_HEADER_WIDTH = 160;     // pixel width of the asset-name header column
 
 export function AssetFeedGrid({
   assets,
-  height = DEFAULT_HEIGHT,
   rowHeight = DEFAULT_ROW_HEIGHT,
   colWidth = DEFAULT_COL_WIDTH,
   onAdd,
@@ -45,15 +42,22 @@ export function AssetFeedGrid({
   // the canonical pattern for two-axis virtualization with a sticky row/column.
   const [scrollLeft, setScrollLeft] = useState(0);
 
-  // `initialRect` lets the virtualizer render its first frame at the prop-supplied size
-  // before ResizeObserver delivers a real measurement. In production this avoids a flash
-  // of empty-grid; in jsdom (where ResizeObserver is polyfilled but layout is not), it's
+  // `initialRect` lets the virtualizer render its first frame at a sensible size before
+  // ResizeObserver delivers a real measurement. In production this avoids a flash of
+  // empty-grid; in jsdom (where ResizeObserver is polyfilled but layout is not), it's
   // load-bearing for tests to render any cells at all.
-  const initialRect = { width: 1200, height };
+  const initialRect = { width: 1200, height: 800 };
 
+  // Row virtualization tracks the window — the grid no longer caps its own height, so all
+  // rows live in document flow and the page itself scrolls. Without this switch, rowVirt
+  // would never mount more than the initial ~13 rows because its scroll container's
+  // height matches its content (no scroll → no scroll position changes → no row mounting).
   const rowVirt = useVirtualizer({
     count: assets.length,
-    getScrollElement: () => scrollEl,
+    getScrollElement: () =>
+      typeof document !== "undefined"
+        ? (document.scrollingElement as HTMLElement | null) ?? document.documentElement
+        : null,
     estimateSize: () => rowHeight,
     overscan: 8,
     initialRect,
@@ -112,12 +116,13 @@ export function AssetFeedGrid({
         </div>
       </div>
 
-      {/* Body — both axes virtualized. */}
+      {/* Body — column-axis virtualized inside a horizontally-scrolling container; rows
+          live in document flow and the page scrolls vertically. The body has no fixed
+          height so all rows are layout-eligible (rowVirt still windows what mounts). */}
       <div
         ref={setScrollEl}
         onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
-        className="overflow-auto"
-        style={{ height }}
+        className="overflow-x-auto"
       >
         <div
           style={{
