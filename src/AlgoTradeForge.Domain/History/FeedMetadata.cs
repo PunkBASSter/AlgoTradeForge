@@ -126,8 +126,19 @@ public sealed class FidelityInfo
     public double? NFactor { get; init; }
 
     /// <summary>
-    /// "tick_signed" | "m1_taker_buy_proxy" | <c>null</c> (non-EqI). The JSON property
-    /// MUST be present even when null on non-EqI feeds — absence indicates a malformed
+    /// One of the following, set per imbalance accumulator's <c>SidecarSchema</c>:
+    /// <list type="bullet">
+    ///   <item><c>tick_signed</c> — EqI from tick source.</item>
+    ///   <item><c>m1_taker_buy_proxy</c> — EqI from time-bar source via <c>taker_buy_vol</c>.</item>
+    ///   <item><c>tick_signed_dollar</c> — EqID from tick source.</item>
+    ///   <item><c>m1_taker_buy_quote_proxy</c> — EqID from time-bar source via <c>taker_buy_quote_vol</c>.</item>
+    ///   <item><c>tick_signed_count</c> — EqIT from tick source.</item>
+    ///   <item><c>m1_taker_buy_count_proxy</c> — EqIT from time-bar source via the
+    ///         <c>taker_buy_trade_count</c> proxy (itself derived as <c>round(trade_count × taker_buy_vol / vol)</c>
+    ///         at ingest time, since Binance kline doesn't carry the count directly).</item>
+    ///   <item><c>null</c> — non-imbalance feeds (EqV, EqT, EqD, Range, Renko).</item>
+    /// </list>
+    /// The JSON property MUST be present even when null — absence indicates a malformed
     /// manifest. Forced serialization via the <see cref="JsonIgnoreAttribute"/> override.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]

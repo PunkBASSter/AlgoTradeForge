@@ -16,6 +16,8 @@ public sealed class AltBarFeedIdTests
     [InlineData("EqT_5m_500",        "EqT", "5m",   500L,   '\0')]
     [InlineData("EqD_1h_1000000",    "EqD", "1h",   1000000L, '\0')]
     [InlineData("EqI_ticks_500000",  "EqI", "ticks", 500000L, '\0')]
+    [InlineData("EqID_ticks_5000",   "EqID", "ticks", 5000L,  '\0')]
+    [InlineData("EqIT_1m_1000",      "EqIT", "1m",   1000L,  '\0')]
     [InlineData("Range_1m_50",       "Range", "1m", 50L,    '\0')]
     [InlineData("Renko_1d_10",       "Renko", "1d", 10L,    '\0')]
     public void Parse_RoundTripsIntegerThresholds(
@@ -41,6 +43,8 @@ public sealed class AltBarFeedIdTests
     [InlineData("EqV_1m_1u",        1L,  'u',  "0.000001")] // minimum effective threshold
     [InlineData("EqD_1h_2M",        2L,  'M',  "2000000")]
     [InlineData("EqD_1h_1G",        1L,  'G',  "1000000000")]
+    [InlineData("EqID_ticks_5M",    5L,  'M',  "5000000")]   // dollar-imbalance: $5M threshold
+    [InlineData("EqIT_1m_1k",       1L,  'k',  "1000")]      // tick-count-imbalance: 1k count threshold
     public void Parse_HandlesSiSuffixes(string input, long mantissa, char suffix, string absoluteValueRaw)
     {
         var absoluteValue = decimal.Parse(absoluteValueRaw, CultureInfo.InvariantCulture);
@@ -65,6 +69,27 @@ public sealed class AltBarFeedIdTests
         Assert.Equal(500000L, parsed.Threshold.Mantissa);
         Assert.Equal("EqI_ticks_500000", parsed.FeedId);
         Assert.Equal("EqI_ticks_500000.flow", parsed.DirectoryName);
+    }
+
+    [Fact]
+    public void Parse_DetectsFlowSidecar_EqID()
+    {
+        var parsed = AltBarFeedId.Parse("EqID_ticks_5M.flow");
+
+        Assert.True(parsed.IsSidecar);
+        Assert.Equal("EqID", parsed.TypeCode);
+        Assert.Equal("EqID_ticks_5M", parsed.FeedId);
+        Assert.Equal("EqID_ticks_5M.flow", parsed.DirectoryName);
+    }
+
+    [Fact]
+    public void Parse_DetectsFlowSidecar_EqIT()
+    {
+        var parsed = AltBarFeedId.Parse("EqIT_1m_1k.flow");
+
+        Assert.True(parsed.IsSidecar);
+        Assert.Equal("EqIT", parsed.TypeCode);
+        Assert.Equal("EqIT_1m_1k", parsed.FeedId);
     }
 
     [Fact]

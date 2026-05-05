@@ -9,6 +9,19 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 // Sign convention: positive signed_imbalance => buy-aggressive predominance.
 internal sealed class EqIAccumulator : IBarAccumulator
 {
+    /// <summary>
+    /// Sidecar declaration. Static so eligibility/wiring layers can reference the schema
+    /// without instantiating the accumulator (e.g. when pre-validating a job's outcome shape).
+    /// </summary>
+    public static SidecarSchema Schema { get; } = new(
+        Header: "ts,signed_imbalance,buy_volume,sell_volume,realized_threshold",
+        Columns: ["signed_imbalance", "buy_volume", "sell_volume", "realized_threshold"],
+        FidelityMethodTagTickSource: "tick_signed",
+        FidelityMethodTagTimeBarSource: "m1_taker_buy_proxy",
+        TimeBarJoinMode: CandleExtJoinMode.TakerBuyVolume);
+
+    public SidecarSchema? SidecarSchema => Schema;
+
     private readonly long _threshold;
     private readonly double _quantityScale;
 

@@ -22,6 +22,24 @@ describe("parseAltBarFeedId", () => {
     expect(r).toMatchObject({ typeCode: "EqI", sourceCode: "ticks", threshold: "500", isSidecar: true });
   });
 
+  it("parses EqID (Dollar Imbalance Bars) — tick + sidecar variants", () => {
+    expect(parseAltBarFeedId("EqID_ticks_5M")).toEqual({
+      typeCode: "EqID", sourceCode: "ticks", threshold: "5M", isSidecar: false,
+    });
+    expect(parseAltBarFeedId("EqID_ticks_5M.flow")).toMatchObject({
+      typeCode: "EqID", isSidecar: true,
+    });
+  });
+
+  it("parses EqIT (Tick-count Imbalance Bars) — time-bar + sidecar variants", () => {
+    expect(parseAltBarFeedId("EqIT_1m_1k")).toEqual({
+      typeCode: "EqIT", sourceCode: "1m", threshold: "1k", isSidecar: false,
+    });
+    expect(parseAltBarFeedId("EqIT_1m_1k.flow")).toMatchObject({
+      typeCode: "EqIT", isSidecar: true,
+    });
+  });
+
   it("returns null for unknown type codes (closed set)", () => {
     expect(parseAltBarFeedId("Bogus_1m_1000")).toBeNull();
   });

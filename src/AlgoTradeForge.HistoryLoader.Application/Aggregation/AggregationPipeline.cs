@@ -15,10 +15,6 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 public sealed class AggregationPipeline
 {
     private const string OutputHeader = "ts,o,h,l,c,vol";
-    private const string SidecarHeader = "ts,signed_imbalance,buy_volume,sell_volume,realized_threshold";
-
-    private static readonly string[] SidecarColumns =
-        ["signed_imbalance", "buy_volume", "sell_volume", "realized_threshold"];
 
     private readonly PartitionedSourceReader _reader;
     private readonly ISchemaManager _schemaManager;
@@ -68,19 +64,22 @@ public sealed class AggregationPipeline
         var stagingDir = _overwriter.PrepareStagingDir(feedDir, job.JobId);
 
         var accumulator = AccumulatorEntry.Open(
-            job.TypeCode, job.ThresholdScaled, job.SourceScale, job.AccumulatorScale);
+            job.TypeCode, job.ThresholdScaled, job.SourceScale, job.AccumulatorScale, job.Source.Kind);
 
         long bytesBudget = (long)job.MaxPartitionSizeMB * 1024 * 1024;
         using var sink = new PartitionedSinkWriter(stagingDir, bytesBudget, OutputHeader);
 
-        // EqI publishes a sidecar (.flow) sibling dir alongside the bar dir. Both stage in
-        // parallel; both promote atomically; the manifest writes both entries under one
-        // exclusive lock at finalize so readers never see a half-registered EqI feed.
-        var isEqI = string.Equals(job.TypeCode, "EqI", StringComparison.Ordinal);
-        var sidecarFeedId = isEqI ? job.OutcomeFeedId + ".flow" : null;
-        var sidecarFeedDir = isEqI ? Path.Combine(job.AssetDir, "aggregated", sidecarFeedId!) : null;
+        // Imbalance-family accumulators (EqI, EqID, EqIT) publish a sidecar (.flow) sibling
+        // dir alongside the bar dir. Both stage in parallel; both promote atomically; the
+        // manifest writes both entries under one exclusive lock at finalize so readers never
+        // see a half-registered imbalance feed. Schema (header, columns, fidelity tags) is
+        // owned by the accumulator — pipeline is shape-agnostic.
+        var sidecarSchema = accumulator.SidecarSchema;
+        var hasSidecar = sidecarSchema is not null;
+        var sidecarFeedId = hasSidecar ? job.OutcomeFeedId + ".flow" : null;
+        var sidecarFeedDir = hasSidecar ? Path.Combine(job.AssetDir, "aggregated", sidecarFeedId!) : null;
         string? sidecarStagingDir = null;
-        if (isEqI)
+        if (hasSidecar)
         {
             Directory.CreateDirectory(sidecarFeedDir!);
             sidecarStagingDir = _overwriter.PrepareStagingDir(sidecarFeedDir!, job.JobId);
@@ -89,8 +88,8 @@ public sealed class AggregationPipeline
         // the staging dir can't be cleaned and StartupSweepService inherits a leaked handle.
         // The explicit Dispose() below is load-bearing for partition-rename ordering before
         // Promote and is idempotent.
-        using PartitionedSinkWriter? sidecarSink = isEqI
-            ? new PartitionedSinkWriter(sidecarStagingDir!, bytesBudget, SidecarHeader)
+        using PartitionedSinkWriter? sidecarSink = hasSidecar
+            ? new PartitionedSinkWriter(sidecarStagingDir!, bytesBudget, sidecarSchema!.Header)
             : null;
 
         // Source record volume samples drive `median_source_record_value` on finalize.
@@ -116,15 +115,19 @@ public sealed class AggregationPipeline
         long sourceRecordsConsumed = 0;
         string? lastEmittedMonth = null;
 
-        // Time-bar EqI joins candle-ext for its m1_taker_buy_proxy reconstruction. Spot/
-        // no-candle-ext layouts are rejected by eligibility, so reaching here with a missing
-        // dir means partial coverage → drop unjoined records.
+        // Time-bar imbalance accumulators join candle-ext to populate the imbalance fields on
+        // SourceRecord (which column the joiner reads is determined by sidecarSchema.TimeBarJoinMode).
+        // Spot / no-candle-ext layouts are rejected by eligibility, so reaching here with a
+        // missing dir means partial coverage → drop unjoined records.
         IEnumerable<SourceRecord> sourceStream = _reader.Read(job.Source);
         if (monoSource is not null)
             sourceStream = monoSource.Read(sourceStream);
-        if (isEqI && job.Source.Kind == DataFeedKind.TimeBar)
+        if (hasSidecar &&
+            sidecarSchema!.TimeBarJoinMode != CandleExtJoinMode.None &&
+            job.Source.Kind == DataFeedKind.TimeBar)
         {
-            var join = new CandleExtJoiningSource(job.AssetDir, job.Source.FeedId, job.SourceScale);
+            var join = new CandleExtJoiningSource(
+                job.AssetDir, job.Source.FeedId, job.SourceScale, sidecarSchema.TimeBarJoinMode);
             sourceStream = join.Join(sourceStream);
         }
 
@@ -284,20 +287,23 @@ public sealed class AggregationPipeline
                 MaxOvershootPct = stats.MaxOvershootPct,
                 MedianSourceRecordValue = medianSourceRecordValue,
                 NFactor = nFactor,
-                // EqI sets the reconstruction method per its source kind; every other type
-                // keeps it null but the field must be present (the manifest validator pins this).
-                ImbalanceReconstructionMethod = isEqI
-                    ? (job.Source.Kind == DataFeedKind.Tick ? "tick_signed" : "m1_taker_buy_proxy")
+                // Imbalance accumulators set the reconstruction method per their schema +
+                // source kind; every other type keeps it null. The field must be present
+                // (the manifest validator pins this).
+                ImbalanceReconstructionMethod = hasSidecar
+                    ? (isTickSource
+                        ? sidecarSchema!.FidelityMethodTagTickSource
+                        : sidecarSchema!.FidelityMethodTagTimeBarSource)
                     : null,
             },
             FirstBarTs: firstBarTs?.ToString(CultureInfo.InvariantCulture),
             LastBarTs: barsEmitted > 0 ? lastBarTs.ToString(CultureInfo.InvariantCulture) : null,
-            Sidecar: sidecarFeedId);    // overridden by EnsureAltBarWithSidecar for EqI; null for others
+            Sidecar: sidecarFeedId);    // overridden by EnsureAltBarWithSidecar; null for non-imbalance feeds
 
-        if (isEqI)
+        if (hasSidecar)
         {
             _schemaManager.EnsureAltBarWithSidecar(
-                job.AssetDir, job.OutcomeFeedId, spec, sidecarFeedId!, SidecarColumns);
+                job.AssetDir, job.OutcomeFeedId, spec, sidecarFeedId!, [.. sidecarSchema!.Columns]);
         }
         else
         {
@@ -365,6 +371,8 @@ public sealed class AggregationPipeline
         "EqV" => "EqualVolume",
         "EqD" => "EqualDollar",
         "EqI" => "EqualImbalance",
+        "EqID" => "EqualDollarImbalance",
+        "EqIT" => "EqualTickImbalance",
         "Range" => "Range",
         "Renko" => "Renko",
         _ => typeCode,

@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain;
+using AlgoTradeForge.Domain.History;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
@@ -36,10 +37,16 @@ public static class AccumulatorEntry
         string typeCode,
         long threshold,
         ScaleContext sourceScale,
-        ScaleContext accumulatorScale)
+        ScaleContext accumulatorScale,
+        DataFeedKind sourceKind = DataFeedKind.Tick)
     {
         ArgumentException.ThrowIfNullOrEmpty(typeCode);
         ScaleTagAssertion.Assert(sourceScale, accumulatorScale);
+
+        // EqID/EqIT need the source kind to pick their contribution path: tick path computes
+        // signed dollars / ±1; time-bar path consumes pre-aggregated quote-volume / trade
+        // counts populated by CandleExtJoiningSource.
+        var useTimeBar = sourceKind == DataFeedKind.TimeBar;
 
         return typeCode switch
         {
@@ -47,10 +54,12 @@ public static class AccumulatorEntry
             "EqT" => new Accumulators.EqTAccumulator(threshold),
             "EqD" => new Accumulators.EqDAccumulator(threshold),
             "EqI" => new Accumulators.EqIAccumulator(threshold, accumulatorScale),
+            "EqID" => new Accumulators.EqIDAccumulator(threshold, accumulatorScale, useTimeBar),
+            "EqIT" => new Accumulators.EqITAccumulator(threshold, useTimeBar),
             "Range" => new Accumulators.RangeAccumulator(threshold),
             "Renko" => new Accumulators.RenkoAccumulator(threshold),
             _ => throw new ArgumentException(
-                $"Unknown alt-bar type code '{typeCode}' (allowed: EqT, EqV, EqD, EqI, Range, Renko).",
+                $"Unknown alt-bar type code '{typeCode}' (allowed: EqT, EqV, EqD, EqI, EqID, EqIT, Range, Renko).",
                 nameof(typeCode)),
         };
     }

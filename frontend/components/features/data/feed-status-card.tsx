@@ -1,8 +1,8 @@
 "use client";
 
 // Read-only CodeMirror viewer for a feed's `feeds.json` entry. When the manifest's
-// imbalance_reconstruction_method is "m1_taker_buy_proxy", shows the EqI banner using
-// server-supplied copy from /aggregation-options.
+// imbalance_reconstruction_method is one of the *_proxy values (EqI / EqID / EqIT on
+// time-bar), shows the matching server-supplied banner from /aggregation-options.
 
 import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -11,7 +11,7 @@ import { EditorView } from "@codemirror/view";
 import { json } from "@codemirror/lang-json";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { dataApi } from "@/lib/services/data-api";
-import { pickEqiBanner } from "@/lib/data/eqi-banner";
+import { pickProxyBanner } from "@/lib/data/eqi-banner";
 
 interface Props {
   exchange: string;
@@ -40,11 +40,12 @@ export function FeedStatusCard({ exchange, asset, feedId }: Props) {
     return JSON.stringify(status.data.definition, null, 2);
   }, [status.data]);
 
-  const isProxyFeed =
-    status.data?.definition.fidelity?.imbalance_reconstruction_method ===
-    "m1_taker_buy_proxy";
-  const banner = isProxyFeed && eligibility.data
-    ? pickEqiBanner(eligibility.data.warnings)
+  // Pick the banner copy that matches this feed's reconstruction method. Returns null for
+  // tick-source methods (no warning needed) and for non-imbalance feeds.
+  const reconstructionMethod =
+    status.data?.definition.fidelity?.imbalance_reconstruction_method ?? null;
+  const banner = eligibility.data
+    ? pickProxyBanner(eligibility.data.warnings, reconstructionMethod)
     : null;
 
   useEffect(() => {

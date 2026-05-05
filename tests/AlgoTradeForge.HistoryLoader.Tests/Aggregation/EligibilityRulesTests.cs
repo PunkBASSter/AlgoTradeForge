@@ -16,38 +16,48 @@ public sealed class EligibilityRulesTests
         var def = new FeedDefinition { Kind = "Tick", Columns = ["ts", "price", "qty", "is_buyer_maker"] };
         var r = EligibilityRules.ForSource(def, "perpetual", hasCandleExt: false);
 
-        Assert.Equal(["EqT", "EqV", "EqD", "EqI", "Range", "Renko"], r.EligibleTypes.ToArray());
+        Assert.Equal(["EqT", "EqV", "EqD", "EqI", "EqID", "EqIT", "Range", "Renko"], r.EligibleTypes.ToArray());
         Assert.Empty(r.IneligibleTypes);
     }
 
     [Fact]
-    public void TimeBarPerpWithCandleExt_AllVolumeTypesPlusEqI_WithWarning()
+    public void TimeBarPerpWithCandleExt_AllVolumeTypesPlusImbalance_WithWarnings()
     {
         var def = TimeBar("ts", "o", "h", "l", "c", "vol");
         var r = EligibilityRules.ForSource(def, "perpetual", hasCandleExt: true);
 
-        Assert.Equal(["EqT", "EqV", "EqD", "EqI"], r.EligibleTypes.ToArray());
-        Assert.Single(r.Warnings);   // m1_taker_buy_proxy fidelity warning
+        // EqI / EqID / EqIT all eligible on perp time-bar with candle-ext (each has its own
+        // proxy fidelity tag); Range/Renko remain tick-only.
+        Assert.Equal(["EqT", "EqV", "EqD", "EqI", "EqID", "EqIT"], r.EligibleTypes.ToArray());
+        Assert.Equal(3, r.Warnings.Count);   // EqI proxy + EqID proxy + EqIT approximation
+        Assert.Contains(AltBarWarnings.TimeBarEqIProxy, r.Warnings);
+        Assert.Contains(AltBarWarnings.TimeBarEqIDProxy, r.Warnings);
+        Assert.Contains(AltBarWarnings.TimeBarTibApproximation, r.Warnings);
     }
 
     [Fact]
-    public void TimeBarSpotWithCandleExt_EqIIneligible()
+    public void TimeBarSpotWithCandleExt_AllImbalanceIneligible()
     {
         var def = TimeBar("ts", "o", "h", "l", "c", "vol");
         var r = EligibilityRules.ForSource(def, "spot", hasCandleExt: true);
 
+        // Spot rejects every imbalance variant (perp-only proxies); EqV/EqT/EqD still work.
         Assert.Equal(["EqT", "EqV", "EqD"], r.EligibleTypes.ToArray());
         Assert.Single(r.IneligibleTypes, e => e.Code == "EqI");
+        Assert.Single(r.IneligibleTypes, e => e.Code == "EqID");
+        Assert.Single(r.IneligibleTypes, e => e.Code == "EqIT");
     }
 
     [Fact]
-    public void TimeBarWithoutCandleExt_EqIIneligible()
+    public void TimeBarWithoutCandleExt_AllImbalanceIneligible()
     {
         var def = TimeBar("ts", "o", "h", "l", "c", "vol");
         var r = EligibilityRules.ForSource(def, "perpetual", hasCandleExt: false);
 
         Assert.Equal(["EqT", "EqV", "EqD"], r.EligibleTypes.ToArray());
         Assert.Single(r.IneligibleTypes, e => e.Code == "EqI");
+        Assert.Single(r.IneligibleTypes, e => e.Code == "EqID");
+        Assert.Single(r.IneligibleTypes, e => e.Code == "EqIT");
     }
 
     [Fact]
@@ -57,8 +67,8 @@ public sealed class EligibilityRulesTests
         var r = EligibilityRules.ForSource(def, "perpetual", hasCandleExt: true);
 
         Assert.Empty(r.EligibleTypes);
-        // All six alt-bar codes ineligible; reasons all reference re-aggregation.
-        Assert.Equal(6, r.IneligibleTypes.Count);
+        // All eight alt-bar codes ineligible; reasons all reference re-aggregation.
+        Assert.Equal(8, r.IneligibleTypes.Count);
     }
 
     [Fact]
@@ -68,7 +78,7 @@ public sealed class EligibilityRulesTests
         var r = EligibilityRules.ForSource(def, "perpetual", hasCandleExt: true);
 
         Assert.Empty(r.EligibleTypes);
-        Assert.Equal(6, r.IneligibleTypes.Count);
+        Assert.Equal(8, r.IneligibleTypes.Count);
     }
 
     // P5-11 — Range/Renko narrowing (ADR P5-1 D1: tick-only in v1).
@@ -148,7 +158,7 @@ public sealed class EligibilityRulesTests
         var r = EligibilityRules.ForSource(AltBarDef("EqV"), "perpetual", hasCandleExt: false);
 
         Assert.Single(r.EligibleTypes, t => t == "EqV");
-        Assert.Equal(5, r.IneligibleTypes.Count);
+        Assert.Equal(7, r.IneligibleTypes.Count);
         var eqtEntry = Assert.Single(r.IneligibleTypes, e => e.Code == "EqT");
         Assert.Contains("same type family", eqtEntry.Reason);
     }
@@ -178,8 +188,30 @@ public sealed class EligibilityRulesTests
         var r = EligibilityRules.ForSource(AltBarDef("EqI"), "perpetual", hasCandleExt: false);
 
         Assert.Empty(r.EligibleTypes);
-        Assert.Equal(6, r.IneligibleTypes.Count);
+        Assert.Equal(8, r.IneligibleTypes.Count);
         Assert.All(r.IneligibleTypes, e => Assert.Contains("EqI re-aggregation deferred", e.Reason));
+    }
+
+    [Fact]
+    public void AltBarSource_EqID_RejectsAll_WithImbalanceReason()
+    {
+        // Same fidelity argument as EqI: dollar-imbalance trajectory is also collapsed.
+        var r = EligibilityRules.ForSource(AltBarDef("EqID"), "perpetual", hasCandleExt: false);
+
+        Assert.Empty(r.EligibleTypes);
+        Assert.Equal(8, r.IneligibleTypes.Count);
+        Assert.All(r.IneligibleTypes, e => Assert.Contains("Imbalance re-aggregation deferred", e.Reason));
+    }
+
+    [Fact]
+    public void AltBarSource_EqIT_RejectsAll_WithImbalanceReason()
+    {
+        // Tick-count imbalance: same trajectory-loss argument.
+        var r = EligibilityRules.ForSource(AltBarDef("EqIT"), "perpetual", hasCandleExt: false);
+
+        Assert.Empty(r.EligibleTypes);
+        Assert.Equal(8, r.IneligibleTypes.Count);
+        Assert.All(r.IneligibleTypes, e => Assert.Contains("Imbalance re-aggregation deferred", e.Reason));
     }
 
     [Fact]

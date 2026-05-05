@@ -16,10 +16,11 @@ import type { AggregateRequest, FeedCatalogEntry } from "@/types/data-tab";
 import { parseAltBarFeedId } from "@/lib/data/alt-bar-feed-id";
 
 function thresholdUnitFor(typeCode: string): AggregateRequest["threshold_unit"] {
-  // EqT counts records; EqD is in quote currency; EqV/EqI/Range/Renko share the
-  // base_asset axis on the wire.
-  if (typeCode === "EqT") return "trades";
-  if (typeCode === "EqD") return "quote_asset";
+  // EqT / EqIT count records (both threshold on trade counts); EqD / EqID are in quote
+  // currency (notional dollars); EqV / EqI / Range / Renko share the base_asset axis on
+  // the wire.
+  if (typeCode === "EqT" || typeCode === "EqIT") return "trades";
+  if (typeCode === "EqD" || typeCode === "EqID") return "quote_asset";
   return "base_asset";
 }
 

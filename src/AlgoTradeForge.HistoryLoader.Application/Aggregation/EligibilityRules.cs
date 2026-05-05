@@ -10,7 +10,19 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 public static class EligibilityRules
 {
     private static readonly string[] AllAltBarTypes =
-        ["EqT", "EqV", "EqD", "EqI", "Range", "Renko"];
+        ["EqT", "EqV", "EqD", "EqI", "EqID", "EqIT", "Range", "Renko"];
+
+    private static readonly IReadOnlySet<string> ImbalanceTypes =
+        new HashSet<string>(StringComparer.Ordinal) { "EqI", "EqID", "EqIT" };
+
+    private const string EqIDSpotIneligibleReason =
+        "EqID requires perp/future asset for taker-buy-quote proxy.";
+    private const string EqITSpotIneligibleReason =
+        "EqIT requires perp/future asset for taker-buy-trade-count proxy.";
+    private const string EqIDNoCandleExtReason =
+        "EqID requires either a tick source or candle-ext on the time-bar source.";
+    private const string EqITNoCandleExtReason =
+        "EqIT requires either a tick source or candle-ext on the time-bar source.";
 
     // Range/Renko require a tick source: time-bar collapses force a one-emit-per-record
     // approximation that distorts actual_overshoot_pct.
@@ -25,6 +37,9 @@ public static class EligibilityRules
 
     private const string EqIReaggregationReason =
         "EqI re-aggregation deferred — collapses internal signed trajectory and requires a .flow sidecar reader.";
+
+    private const string ImbalanceReaggregationReason =
+        "Imbalance re-aggregation deferred — collapses internal signed trajectory and requires a .flow sidecar reader.";
 
     private const string PathDependentReaggregationReason =
         "Source type's bar shape is path-dependent on individual ticks; cannot be re-aggregated.";
@@ -56,17 +71,23 @@ public static class EligibilityRules
             SourceKind.Tick => Allow(AllAltBarTypes, []),
 
             SourceKind.TimeBarWithVolume when hasCandleExt && IsPerpOrFuture(assetType) =>
-                Allow(["EqT", "EqV", "EqD", "EqI"],
+                Allow(["EqT", "EqV", "EqD", "EqI", "EqID", "EqIT"],
                     ineligible: [
                         ("Range", RangeRenkoRequiresTickReason),
                         ("Renko", RangeRenkoRequiresTickReason),
                     ],
-                    warning: AltBarWarnings.TimeBarEqIProxy),
+                    warnings: [
+                        AltBarWarnings.TimeBarEqIProxy,
+                        AltBarWarnings.TimeBarEqIDProxy,
+                        AltBarWarnings.TimeBarTibApproximation,
+                    ]),
 
             SourceKind.TimeBarWithVolume when hasCandleExt /* spot */ =>
                 Allow(["EqT", "EqV", "EqD"],
                     ineligible: [
                         ("EqI", "EqI requires perp/future asset for taker-buy proxy."),
+                        ("EqID", EqIDSpotIneligibleReason),
+                        ("EqIT", EqITSpotIneligibleReason),
                         ("Range", RangeRenkoRequiresTickReason),
                         ("Renko", RangeRenkoRequiresTickReason),
                     ]),
@@ -75,6 +96,8 @@ public static class EligibilityRules
                 Allow(["EqT", "EqV", "EqD"],
                     ineligible: [
                         ("EqI", "EqI requires either a tick source or candle-ext on the time-bar source."),
+                        ("EqID", EqIDNoCandleExtReason),
+                        ("EqIT", EqITNoCandleExtReason),
                         ("Range", RangeRenkoRequiresTickReason),
                         ("Renko", RangeRenkoRequiresTickReason),
                     ]),
@@ -86,6 +109,8 @@ public static class EligibilityRules
                         ("EqV", "OHLC-only sources have no volume column."),
                         ("EqD", "OHLC-only sources have no volume column."),
                         ("EqI", "OHLC-only sources have no volume column."),
+                        ("EqID", "OHLC-only sources have no volume column."),
+                        ("EqIT", "OHLC-only sources have no volume column."),
                         ("Range", RangeRenkoRequiresTickReason),
                         ("Renko", RangeRenkoRequiresTickReason),
                     ]),
@@ -104,10 +129,11 @@ public static class EligibilityRules
     private static EligibilityResult Allow(
         string[] eligible,
         (string code, string reason)[] ineligible,
-        string? warning = null) => new(
+        string? warning = null,
+        string[]? warnings = null) => new(
             EligibleTypes: eligible,
             IneligibleTypes: ineligible.Select(t => new IneligibleType(t.code, t.reason)).ToArray(),
-            Warnings: warning is null ? [] : [warning]);
+            Warnings: warnings ?? (warning is null ? [] : [warning]));
 
     private static bool IsPerpOrFuture(string assetType) => AssetTypes.IsFutures(assetType);
 
@@ -134,11 +160,13 @@ public static class EligibilityRules
                     (t, PathDependentReaggregationReason)).ToArray());
         }
 
-        if (sourceTypeCode == "EqI")
+        if (ImbalanceTypes.Contains(sourceTypeCode))
         {
+            var reason = sourceTypeCode == "EqI"
+                ? EqIReaggregationReason
+                : ImbalanceReaggregationReason;
             return Allow([],
-                ineligible: AllAltBarTypes.Select(t =>
-                    (t, EqIReaggregationReason)).ToArray());
+                ineligible: AllAltBarTypes.Select(t => (t, reason)).ToArray());
         }
 
         if (!SafeReaggregationTypes.Contains(sourceTypeCode))

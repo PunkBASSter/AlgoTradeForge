@@ -347,6 +347,8 @@ public sealed class ThresholdResolverTests
     [InlineData("EqT", "trades")]
     [InlineData("EqD", "quote_asset")]
     [InlineData("EqI", "base_asset")]
+    [InlineData("EqID", "quote_asset")]
+    [InlineData("EqIT", "trades")]
     [InlineData("Range", "price")]
     [InlineData("Renko", "price")]
     public void GetImplicitUnit_ReturnsExpectedForAllTypes(string typeCode, string expectedUnit)
@@ -378,7 +380,7 @@ public sealed class ThresholdResolverTests
         // Round-trip: every implicit unit must round-trip through MinimumAbsolute and Resolve
         // without throwing "unrecognized threshold_unit". Catches drift between the type-code
         // table and ThresholdResolver's switch.
-        foreach (var typeCode in new[] { "EqV", "EqT", "EqD", "EqI", "Range", "Renko" })
+        foreach (var typeCode in new[] { "EqV", "EqT", "EqD", "EqI", "EqID", "EqIT", "Range", "Renko" })
         {
             var unit = ThresholdResolver.GetImplicitUnit(typeCode);
             // Must not throw — this is the pin.

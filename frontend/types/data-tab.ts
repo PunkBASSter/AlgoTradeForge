@@ -93,7 +93,14 @@ export interface FidelityInfo {
   max_overshoot_pct: number;
   median_source_record_value: number;
   n_factor: number;
-  imbalance_reconstruction_method: "tick_signed" | "m1_taker_buy_proxy" | null;
+  imbalance_reconstruction_method:
+    | "tick_signed"             // EqI from tick source
+    | "m1_taker_buy_proxy"      // EqI from time-bar source
+    | "tick_signed_dollar"      // EqID from tick source
+    | "m1_taker_buy_quote_proxy"// EqID from time-bar source
+    | "tick_signed_count"       // EqIT from tick source
+    | "m1_taker_buy_count_proxy"// EqIT from time-bar source (double proxy: count itself derived from taker_buy_vol ratio at ingest time)
+    | null;                     // Non-imbalance feeds (EqV, EqT, EqD, Range, Renko)
 }
 
 export interface AggregationOptionsResponse {

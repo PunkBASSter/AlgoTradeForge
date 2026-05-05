@@ -12,9 +12,17 @@ public interface IBarAccumulator
     AggregationStats Finalize();
 
     /// <summary>
-    /// EqI accumulators emit a sidecar row alongside each primary bar. The pipeline calls this
-    /// immediately after a successful <see cref="TryAdvance"/> emit; non-EqI accumulators
-    /// leave the default impl returning <c>false</c>.
+    /// Sidecar declaration. Non-null when the accumulator emits a sidecar row alongside each
+    /// primary bar (EqI, EqID, EqIT). The pipeline uses this to provision the sidecar staging
+    /// dir, write the sidecar CSV header/rows, tag the manifest's fidelity reconstruction
+    /// method, and pre-join candle-ext on time-bar sources. Default null = no sidecar.
+    /// </summary>
+    SidecarSchema? SidecarSchema => null;
+
+    /// <summary>
+    /// Imbalance accumulators populate this immediately after a successful <see cref="TryAdvance"/>
+    /// emit. The pipeline reads it exactly once per emit; non-imbalance accumulators inherit
+    /// the default false-returning impl.
     /// </summary>
     bool TryGetLastSidecarRow(out SidecarRow row)
     {
@@ -37,7 +45,10 @@ public interface IBarAccumulator
 /// <summary>
 /// One row out of the source reader (a time-bar from <c>candles/</c> or a tick from
 /// <c>ticks/</c>). All long-typed fields are tick-scaled per <see cref="AlgoTradeForge.Domain.ScaleContext"/>.
-/// <c>BuyVolumeLong</c> / <c>SellVolumeLong</c> are populated only for EqI flows (0 otherwise).
+/// <c>BuyVolumeLong</c> / <c>SellVolumeLong</c> are populated by the EqI / EqID flows
+/// (base-asset units for EqI tick path and EqI time-bar; quote-asset units for EqID).
+/// <c>BuyTradeCountLong</c> / <c>SellTradeCountLong</c> are populated by the EqIT time-bar
+/// flow only. All four imbalance fields default to 0 so non-imbalance accumulators ignore them.
 /// </summary>
 public readonly record struct SourceRecord(
     long TsMs,
@@ -47,7 +58,9 @@ public readonly record struct SourceRecord(
     long Close,
     long Volume,
     long BuyVolumeLong = 0L,
-    long SellVolumeLong = 0L);
+    long SellVolumeLong = 0L,
+    long BuyTradeCountLong = 0L,
+    long SellTradeCountLong = 0L);
 
 /// <summary>
 /// Aggregated bar output — same 6-long shape as <c>Int64Bar</c> for storage compatibility.
@@ -61,9 +74,18 @@ public readonly record struct AggregatedBar(
     long Volume);
 
 /// <summary>
-/// Sidecar row emitted alongside an EqI bar. Side-feed convention: columns are <c>double</c>,
-/// raw base-asset units (no scaling). <see cref="TsMs"/> joins 1:1 to the primary bar's
+/// Sidecar row emitted alongside an imbalance bar. Side-feed convention: columns are
+/// <c>double</c>, raw units (no scaling). <see cref="TsMs"/> joins 1:1 to the primary bar's
 /// <c>ts</c>.
+/// <para>
+/// Field names are generic; the per-type meaning is determined by the index into
+/// <see cref="SidecarSchema.Columns"/>:
+/// </para>
+/// <list type="bullet">
+///   <item>EqI: buy/sell are base-asset volumes; signed = buy − sell.</item>
+///   <item>EqID: buy/sell are quote-asset (dollar) volumes; signed = buy − sell.</item>
+///   <item>EqIT: buy/sell are trade counts; signed = buy − sell counts.</item>
+/// </list>
 /// </summary>
 public readonly record struct SidecarRow(
     long TsMs,
@@ -98,4 +120,40 @@ public sealed class NoOpBarAccumulator : IBarAccumulator
 
     public AggregationStats Finalize() =>
         new(BarsEmitted: 0, MeanOvershootPct: 0d, MaxOvershootPct: 0d);
+}
+
+/// <summary>
+/// Per-accumulator sidecar declaration. Owned by the accumulator (not the pipeline) so each
+/// imbalance variant carries its own column shape and fidelity tags. The pipeline is
+/// schema-agnostic: it reads <see cref="Header"/>, <see cref="Columns"/>, and the fidelity
+/// tags off this record, and dispatches the candle-ext join based on
+/// <see cref="TimeBarJoinMode"/>.
+/// </summary>
+/// <param name="Header">CSV header line written at the top of every sidecar partition.</param>
+/// <param name="Columns">Column-name array stored in <c>feeds.json</c>'s sidecar entry.</param>
+/// <param name="FidelityMethodTagTickSource">Manifest <c>imbalance_reconstruction_method</c> when the source is Tick.</param>
+/// <param name="FidelityMethodTagTimeBarSource">Manifest <c>imbalance_reconstruction_method</c> when the source is TimeBar.</param>
+/// <param name="TimeBarJoinMode">How the pipeline should populate <see cref="SourceRecord"/> from candle-ext for time-bar sources before feeding the accumulator.</param>
+public sealed record SidecarSchema(
+    string Header,
+    IReadOnlyList<string> Columns,
+    string FidelityMethodTagTickSource,
+    string FidelityMethodTagTimeBarSource,
+    CandleExtJoinMode TimeBarJoinMode);
+
+/// <summary>
+/// How the pipeline joins candle-ext into the source-record stream for time-bar sources.
+/// Defines which extra column the joiner reads and which <see cref="SourceRecord"/> fields
+/// it populates.
+/// </summary>
+public enum CandleExtJoinMode
+{
+    /// <summary>No candle-ext join (accumulator uses tick sources only or has no proxy).</summary>
+    None,
+    /// <summary>Read <c>taker_buy_vol</c> → <c>BuyVolumeLong</c>/<c>SellVolumeLong</c> in base-asset units (EqI proxy).</summary>
+    TakerBuyVolume,
+    /// <summary>Read <c>taker_buy_quote_vol</c> → <c>BuyVolumeLong</c>/<c>SellVolumeLong</c> in quote-asset units (EqID proxy).</summary>
+    TakerBuyQuoteVolume,
+    /// <summary>Read <c>taker_buy_trade_count</c> + <c>trade_count</c> → <c>BuyTradeCountLong</c>/<c>SellTradeCountLong</c> (EqIT proxy).</summary>
+    TakerBuyTradeCount,
 }

@@ -38,10 +38,26 @@ internal static class BinanceKlineParser
             if (!BinanceJsonHelper.TryParseDouble(row[10], out var takerBuyQuoteVol))
                 continue;
 
+            // Binance kline does NOT carry per-side trade counts. We synthesize
+            // taker_buy_trade_count as a volume-weighted proxy: assumes equal-sized trades
+            // within the bar, so trade_count is split by the taker_buy_vol / vol ratio.
+            // EqIT-on-time-bar consumes this column; the FE surfaces a yellow banner
+            // (AltBarWarnings.TimeBarTibApproximation) flagging the assumption. Clamped to
+            // [0, trade_count] to keep downstream invariants intact.
+            double takerBuyTradeCount = 0d;
+            if ((double)volume > 0d)
+            {
+                var proxy = Math.Round(tradeCount * takerBuyVolume / (double)volume,
+                    MidpointRounding.AwayFromZero);
+                if (proxy < 0d) proxy = 0d;
+                if (proxy > tradeCount) proxy = tradeCount;
+                takerBuyTradeCount = proxy;
+            }
+
             records[i++] = new CandleRecord(
                 timestampMs, open, high, low, close, volume)
             {
-                ExtValues = [quoteVolume, tradeCount, takerBuyVolume, takerBuyQuoteVol]
+                ExtValues = [quoteVolume, tradeCount, takerBuyVolume, takerBuyQuoteVol, takerBuyTradeCount]
             };
         }
 
