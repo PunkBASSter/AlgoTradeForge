@@ -26,8 +26,8 @@ public sealed class EqIAccumulatorTests
     public void Constructor_NonPositiveThreshold_Throws()
     {
         var scale = Scale();
-        Assert.Throws<ArgumentOutOfRangeException>(() => new EqIAccumulator(0, scale));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new EqIAccumulator(-1, scale));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new EqIVAccumulator(0, scale));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new EqIVAccumulator(-1, scale));
     }
 
     // ----- P2b-7 sign convention --------------------------------------------
@@ -40,7 +40,7 @@ public sealed class EqIAccumulatorTests
         //   buy_volume_raw = qty / QuantityScale  (back-converted to base-asset doubles)
         //   sell_volume_raw = 0
         //   signed_imbalance = buy - sell > 0
-        var acc = new EqIAccumulator(threshold: 1000, Scale());
+        var acc = new EqIVAccumulator(threshold: 1000, Scale());
 
         Assert.False(acc.TryAdvance(Tick(1000, 5_000_000, 400, isBuy: true), out _));
         Assert.False(acc.TryAdvance(Tick(2000, 5_000_010, 400, isBuy: true), out _));
@@ -65,7 +65,7 @@ public sealed class EqIAccumulatorTests
     {
         // Mirror of the buy fixture: is_buyer_maker=1 → SellVolumeLong = qty.
         // signed_acc = -qty cumulatively → emits when abs ≥ threshold.
-        var acc = new EqIAccumulator(threshold: 1000, Scale());
+        var acc = new EqIVAccumulator(threshold: 1000, Scale());
 
         Assert.False(acc.TryAdvance(Tick(1000, 5_000_000, 400, isBuy: false), out _));
         Assert.False(acc.TryAdvance(Tick(2000, 5_000_010, 400, isBuy: false), out _));
@@ -96,7 +96,7 @@ public sealed class EqIAccumulatorTests
         //   sell_volume  = 600 / 10000             = 0.06 BTC
         //   signed_imb   = 0.17 - 0.06             = 0.11
         //   realized_thr = |signed_imb|            = 0.11
-        var acc = new EqIAccumulator(threshold: 1000, Scale());
+        var acc = new EqIVAccumulator(threshold: 1000, Scale());
 
         Assert.False(acc.TryAdvance(Tick(1000, 100, 800, isBuy: true), out _));
         Assert.False(acc.TryAdvance(Tick(2000, 100, 600, isBuy: false), out _));
@@ -116,7 +116,7 @@ public sealed class EqIAccumulatorTests
     {
         // After a bar emits, the accumulator must reset: a follow-up sub-threshold record does
         // NOT immediately emit again on top of the prior signed_acc carry-over.
-        var acc = new EqIAccumulator(threshold: 1000, Scale());
+        var acc = new EqIVAccumulator(threshold: 1000, Scale());
 
         Assert.True(acc.TryAdvance(Tick(0, 100, 1500, isBuy: true), out _));
         Assert.False(acc.TryAdvance(Tick(1000, 100, 100, isBuy: true), out _));    // 100 < 1000
@@ -134,7 +134,7 @@ public sealed class EqIAccumulatorTests
         // The pipeline reads the sidecar exactly once per TryAdvance emit. A second read with
         // no intervening emit must return false — otherwise the same sidecar row could leak into
         // a later partition's CSV (subtle bug in pipeline ordering refactors).
-        var acc = new EqIAccumulator(threshold: 1000, Scale());
+        var acc = new EqIVAccumulator(threshold: 1000, Scale());
         Assert.True(acc.TryAdvance(Tick(0, 100, 1500, isBuy: true), out _));
         Assert.True(acc.TryGetLastSidecarRow(out _));
         Assert.False(acc.TryGetLastSidecarRow(out _));    // already consumed
@@ -143,7 +143,7 @@ public sealed class EqIAccumulatorTests
     [Fact]
     public void TryGetLastSidecarRow_BeforeAnyEmit_ReturnsFalse()
     {
-        var acc = new EqIAccumulator(threshold: 1000, Scale());
+        var acc = new EqIVAccumulator(threshold: 1000, Scale());
         Assert.False(acc.TryGetLastSidecarRow(out _));
     }
 
@@ -155,7 +155,7 @@ public sealed class EqIAccumulatorTests
         // Time-bar proxy fixture: per-record contributions where Volume = total source vol
         // and BuyVolumeLong = ToLong(taker_buy_double * QuantityScale). Sell = Volume - Buy.
         // Thus signed_acc = Buy - Sell = 2*Buy - Volume, matching TRD §6.3 formula.
-        var acc = new EqIAccumulator(threshold: 600, Scale());
+        var acc = new EqIVAccumulator(threshold: 600, Scale());
 
         // Bar 1: vol=400, taker_buy_long=300 → buy=300 sell=100 signed=+200
         // Bar 2: vol=400, taker_buy_long=350 → buy=350 sell=50  signed=+300; total +500 (no emit)

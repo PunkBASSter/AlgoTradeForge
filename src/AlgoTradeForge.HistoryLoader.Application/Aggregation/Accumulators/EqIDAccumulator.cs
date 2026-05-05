@@ -5,7 +5,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 /// <summary>
 /// Equal-Dollar-Imbalance accumulator. Accumulates signed buy/sell <i>quote-asset</i> volume
 /// (notional dollars) and emits a bar each time <c>abs(signed_dollar_acc) ≥ threshold</c>.
-/// Sibling of <see cref="EqIAccumulator"/> (volume-imbalance) and
+/// Sibling of <see cref="EqIVAccumulator"/> (volume-imbalance) and
 /// <see cref="EqITAccumulator"/> (tick-count imbalance). Implements Lopez de Prado's
 /// <i>Dollar Imbalance Bar</i> from <i>Advances in Financial Machine Learning</i>.
 /// </summary>

@@ -3,7 +3,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 /// <summary>
 /// Equal-Tick-count-Imbalance accumulator. Accumulates signed buy/sell <i>trade counts</i>
 /// (each trade contributes ±1 regardless of size) and emits a bar each time
-/// <c>abs(signed_count_acc) ≥ threshold</c>. Sibling of <see cref="EqIAccumulator"/> (volume
+/// <c>abs(signed_count_acc) ≥ threshold</c>. Sibling of <see cref="EqIVAccumulator"/> (volume
 /// imbalance) and <see cref="EqIDAccumulator"/> (dollar imbalance). Implements Lopez de Prado's
 /// <i>Tick Imbalance Bar</i> from <i>Advances in Financial Machine Learning</i>.
 /// </summary>

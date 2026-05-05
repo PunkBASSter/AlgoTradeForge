@@ -73,7 +73,7 @@ public sealed class ScaleTagAssertionTests
     {
         // Phase 2b: EqIV is now supported (P2b-1). The accumulator type is internal — test via
         // behavior, not type assertion: feed a 100%-buy fixture and confirm a sidecar row exists
-        // after emission, which only EqIAccumulator produces.
+        // after emission, which only EqIVAccumulator produces.
         var scale = new ScaleContext(tickSize: 0.01m, quantityStepSize: 0.0001m);
 
         var acc = AccumulatorEntry.Open("EqIV", threshold: 1000, scale, scale);

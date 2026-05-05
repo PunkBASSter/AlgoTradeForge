@@ -53,7 +53,7 @@ public static class AccumulatorEntry
             "EqV" => new Accumulators.EqVAccumulator(threshold),
             "EqT" => new Accumulators.EqTAccumulator(threshold),
             "EqD" => new Accumulators.EqDAccumulator(threshold),
-            "EqIV" => new Accumulators.EqIAccumulator(threshold, accumulatorScale),
+            "EqIV" => new Accumulators.EqIVAccumulator(threshold, accumulatorScale),
             "EqID" => new Accumulators.EqIDAccumulator(threshold, accumulatorScale, useTimeBar),
             "EqIT" => new Accumulators.EqITAccumulator(threshold, useTimeBar),
             "Range" => new Accumulators.RangeAccumulator(threshold),

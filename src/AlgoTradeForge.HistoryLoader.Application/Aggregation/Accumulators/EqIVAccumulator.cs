@@ -7,7 +7,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 // qty) and time-bar proxy (CandleExtJoiningSource splits Volume by taker_buy_vol). The
 // accumulator itself is path-agnostic; the pipeline tags the manifest by source kind.
 // Sign convention: positive signed_imbalance => buy-aggressive predominance.
-internal sealed class EqIAccumulator : IBarAccumulator
+internal sealed class EqIVAccumulator : IBarAccumulator
 {
     /// <summary>
     /// Sidecar declaration. Static so eligibility/wiring layers can reference the schema
@@ -43,7 +43,7 @@ internal sealed class EqIAccumulator : IBarAccumulator
     private SidecarRow _lastSidecarRow;
     private bool _hasLastSidecar;
 
-    public EqIAccumulator(long threshold, ScaleContext scale)
+    public EqIVAccumulator(long threshold, ScaleContext scale)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(threshold);
         _threshold = threshold;
