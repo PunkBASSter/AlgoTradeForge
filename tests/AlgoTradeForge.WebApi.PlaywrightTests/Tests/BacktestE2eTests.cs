@@ -9,11 +9,15 @@ public sealed class BacktestE2eTests(PlaywrightFixture fixture) : PlaywrightTest
     private const string BacktestConfig = """
         {
           "strategyName": "BuyAndHold",
-          "dataSubscription": {
-            "assetName": "BTCUSDT",
-            "exchange": "Binance",
-            "timeFrame": "01:00:00"
-          },
+          "dataSubscriptions": [
+            {
+              "kind": "TimeBar",
+              "assetName": "BTCUSDT",
+              "exchange": "Binance",
+              "role": "Primary",
+              "timeFrame": "1h"
+            }
+          ],
           "backtestSettings": {
             "initialCash": 10000,
             "startTime": "2025-01-01T00:00:00Z",

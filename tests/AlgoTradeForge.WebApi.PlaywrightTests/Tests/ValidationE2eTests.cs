@@ -1,5 +1,6 @@
 using AlgoTradeForge.WebApi.PlaywrightTests.Infrastructure;
 using AlgoTradeForge.WebApi.PlaywrightTests.Pages;
+using Microsoft.Playwright;
 
 namespace AlgoTradeForge.WebApi.PlaywrightTests.Tests;
 
@@ -19,7 +20,7 @@ public sealed class ValidationE2eTests(PlaywrightFixture fixture) : PlaywrightTe
         await Page.WaitForURLAsync("**/all/validation", new() { Timeout = 10_000 });
 
         // Page heading should render
-        await Page.GetByText("Validation Runs")
+        await Page.GetByRole(AriaRole.Heading, new() { Name = "Validation Runs" })
             .WaitForAsync(new() { Timeout = 10_000 });
 
         // Empty state should render (no validation runs in test DB)
