@@ -142,4 +142,55 @@ public class BacktestInputsTests
         Assert.NotEqual(a, b);
     }
 
+    // -------------------------------------------------------------------------
+    // T16 — BacktestInputsFormatter.Key role-ordinal stability. The wire JSON renders
+    // DataFeedRole as "Primary"/"Side" via JsonStringEnumConverter, but persisted run-key
+    // hashes must use the integer ordinal so a future enum-naming change in JSON layout
+    // doesn't invalidate every cached run.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Key_PrimaryRole_RendersOrdinalZero_NotEnumName()
+    {
+        var key = BacktestInputsFormatter.Key(PrimaryTimeBar());
+        Assert.EndsWith(":0", key);
+        Assert.DoesNotContain("Primary", key);
+    }
+
+    [Fact]
+    public void Key_SideRole_RendersOrdinalOne_NotEnumName()
+    {
+        var key = BacktestInputsFormatter.Key(Side("funding-rate"));
+        Assert.EndsWith(":1", key);
+        Assert.DoesNotContain("Side", key);
+    }
+
+    [Fact]
+    public void Key_TimeBarPrimary_HasFullColonDelimitedShape()
+    {
+        var key = BacktestInputsFormatter.Key(PrimaryTimeBar());
+        // Shape: asset:exchange:feed:role-ordinal
+        Assert.Equal("BTC:ex:1m:0", key);
+    }
+
+    [Fact]
+    public void Key_AltBarPrimary_UsesFeedIdSegment()
+    {
+        var key = BacktestInputsFormatter.Key(PrimaryAltBar());
+        Assert.Equal("BTC:ex:EqV_1m_500m:0", key);
+    }
+
+    [Fact]
+    public void Key_TickPrimary_UsesTicksSentinel()
+    {
+        var key = BacktestInputsFormatter.Key(PrimaryTick());
+        Assert.Equal("BTC:ex:ticks:0", key);
+    }
+
+    [Fact]
+    public void Key_SideFeed_UsesFeedIdSegment()
+    {
+        var key = BacktestInputsFormatter.Key(Side("funding-rate"));
+        Assert.Equal("BTC:ex:funding-rate:1", key);
+    }
 }

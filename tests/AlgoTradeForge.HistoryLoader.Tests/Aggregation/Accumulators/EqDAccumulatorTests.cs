@@ -51,4 +51,44 @@ public sealed class EqDAccumulatorTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new EqDAccumulator(threshold: 0));
     }
+
+    [Fact]
+    public void TryAdvance_HighVolumePerp_DoesNotOverflowOnSingleRecord()
+    {
+        // Tick-scaled high-volume perp: ~$50k price × 10^5 scale = 5e9, qty 5e9.
+        // Per-record product = 2.5e19, which overflows long (max ~9.22e18) but fits in Int128.
+        // Before the Int128 widening, _thresholdAcc would wrap negative on the first record and
+        // the threshold check would never fire.
+        const long bigClose = 5_000_000_000L;
+        const long bigVolume = 5_000_000_000L;
+        const long threshold = 1_000_000_000_000_000_000L;   // 1e18
+
+        var acc = new EqDAccumulator(threshold);
+        var emitted = acc.TryAdvance(Rec(1000, bigClose, bigClose, bigClose, bigClose, bigVolume), out var bar);
+
+        Assert.True(emitted, "Single-record product (2.5e19) is far above threshold (1e18); must emit.");
+        Assert.Equal(1000, bar.TsMs);
+        Assert.Equal(bigVolume, bar.Volume);
+    }
+
+    [Fact]
+    public void TryAdvance_MultipleHighVolumeRecords_AccumulatesWithoutWrap()
+    {
+        // Three records each contributing ~3.3e18 (just under long.MaxValue/3 ≈ 3.07e18).
+        // Cumulative sum is ~9.9e18, which would overflow long when summed but fits Int128.
+        // Threshold at 9e18 ensures emission must happen on or before record 3 — pre-fix,
+        // _thresholdAcc would wrap to negative on record 3's add and never trip the threshold.
+        const long c = 1_000_000_000L;             // 1e9 close
+        const long v = 3_300_000_000L;             // 3.3e9 volume → contribution ~3.3e18
+        const long threshold = 9_000_000_000_000_000_000L;   // 9e18
+
+        var acc = new EqDAccumulator(threshold);
+        Assert.False(acc.TryAdvance(Rec(1000, c, c, c, c, v), out _));
+        Assert.False(acc.TryAdvance(Rec(2000, c, c, c, c, v), out _));
+        var emitted = acc.TryAdvance(Rec(3000, c, c, c, c, v), out var bar);
+
+        Assert.True(emitted, "Cumulative ~9.9e18 must trip the 9e18 threshold; pre-fix overflow would prevent this.");
+        Assert.Equal(1000, bar.TsMs);
+        Assert.Equal(3 * v, bar.Volume);
+    }
 }

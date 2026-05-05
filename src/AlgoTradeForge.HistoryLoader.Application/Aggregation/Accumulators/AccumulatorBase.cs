@@ -20,7 +20,10 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 /// </remarks>
 internal abstract class AccumulatorBase : IBarAccumulator
 {
-    private readonly long _threshold;
+    // Int128 to keep EqD's Close*Volume product safe. For high-volume perps the per-record
+    // product can approach 10^14 and the running sum easily wraps a long. EqV/EqT contributions
+    // widen implicitly from long. .NET 7+ has first-class Int128 with native arithmetic.
+    private readonly Int128 _threshold;
 
     private bool _barEmpty = true;
     private long _tsOpen;
@@ -28,7 +31,7 @@ internal abstract class AccumulatorBase : IBarAccumulator
     private long _high;
     private long _low;
     private long _close;
-    private long _thresholdAcc;
+    private Int128 _thresholdAcc;
     private long _baseVolumeAcc;
 
     private long _barsEmitted;
@@ -43,9 +46,11 @@ internal abstract class AccumulatorBase : IBarAccumulator
 
     /// <summary>
     /// The per-source-record contribution to the threshold accumulator.
-    /// EqV → <c>r.Volume</c>; EqT → <c>1</c>; EqD → <c>r.Close * r.Volume</c>.
+    /// EqV → <c>r.Volume</c>; EqT → <c>1</c>; EqD → <c>(Int128)r.Close * r.Volume</c>.
+    /// Returning <see cref="Int128"/> bounds EqD's price-times-quantity product before it can
+    /// overflow the running sum.
     /// </summary>
-    protected abstract long ThresholdContribution(in SourceRecord r);
+    protected abstract Int128 ThresholdContribution(in SourceRecord r);
 
     public bool TryAdvance(in SourceRecord r, out AggregatedBar emitted)
     {
@@ -74,8 +79,9 @@ internal abstract class AccumulatorBase : IBarAccumulator
         {
             emitted = new AggregatedBar(_tsOpen, _open, _high, _low, _close, _baseVolumeAcc);
 
-            // Overshoot is on the threshold accumulator, not on base volume.
-            var overshootPct = (double)(_thresholdAcc - _threshold) / _threshold * 100d;
+            // Overshoot is on the threshold accumulator, not on base volume. Int128→double
+            // is direct (lossy at extreme magnitudes — acceptable for telemetry).
+            var overshootPct = (double)(_thresholdAcc - _threshold) / (double)_threshold * 100d;
             _overshootSum += overshootPct;
             if (overshootPct > _maxOvershoot) _maxOvershoot = overshootPct;
             _barsEmitted++;

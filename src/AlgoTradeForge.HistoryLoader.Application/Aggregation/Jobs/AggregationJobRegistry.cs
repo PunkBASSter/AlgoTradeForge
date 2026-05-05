@@ -225,8 +225,17 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
         }
     }
 
-    public CancellationToken GetCancellationToken(string jobId) =>
-        _byJobId.TryGetValue(jobId, out var record) ? record.Cts.Token : CancellationToken.None;
+    public CancellationToken GetCancellationToken(string jobId)
+    {
+        if (!_byJobId.TryGetValue(jobId, out var record))
+            return CancellationToken.None;
+        // Cts is disposed inside MarkTerminal under the events lock. A worker that asks for
+        // the token after the record went terminal (e.g. dequeue racing host shutdown that
+        // already errored the job) would otherwise crash on Cts.Token. Mirrors the precedent
+        // at TryRequestCancel above.
+        try { return record.Cts.Token; }
+        catch (ObjectDisposedException) { return CancellationToken.None; }
+    }
 
     // -------------------------------------------------------------------------
     // Internals

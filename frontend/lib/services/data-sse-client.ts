@@ -4,13 +4,25 @@
 // matching the existing apiClient pattern.
 
 import { fetchEventSource } from "@microsoft/fetch-event-source";
-import type { SseEventPayload, SseEventType } from "@/types/data-tab";
+import type {
+  SseEventEnvelope,
+  SseEventType,
+  SseQueuedPayload,
+  SseStartedPayload,
+  SseProgressPayload,
+  SseCompletePayload,
+  SseErrorPayload,
+  SseCancelledPayload,
+} from "@/types/data-tab";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
 export interface ProgressStreamHandlers {
-  /** Per-event callback. `id` is the upstream's monotonic seq for resume; persist it. */
-  onEvent: (id: number, type: SseEventType, data: SseEventPayload) => void;
+  /**
+   * Per-event callback. `id` is the upstream's monotonic seq for resume; persist it.
+   * `env` is a discriminated union — narrow `env.data` via `if (env.type === "...")`.
+   */
+  onEvent: (id: number, env: SseEventEnvelope) => void;
   /** Network or upstream error (4xx/5xx during open, or stream interruption). */
   onError: (err: Error) => void;
   /** Stream closed normally (terminal event arrived or caller aborted). */
@@ -65,22 +77,46 @@ export async function connectProgress(opts: ConnectProgressOptions): Promise<voi
       },
       onmessage: (msg) => {
         // Per HTML SSE spec, `event:` defaults to "message" if absent. Our server always
-        // sets it to one of {queued, started, progress, complete, error}. Defensive: skip
-        // any frame we don't recognize rather than throwing — keeps long streams resilient.
+        // sets it to one of {queued, started, progress, complete, error, cancelled}.
+        // Defensive: skip any frame we don't recognize rather than throwing — keeps long
+        // streams resilient.
         const type = (msg.event ?? "message") as SseEventType;
         if (!isKnownEventType(type)) return;
         const id = Number(msg.id);
         if (!Number.isFinite(id)) return;
 
-        let data: SseEventPayload;
+        // Single cast site for the type→payload map. A future consumer that adds an
+        // `assert(env.type === "complete")` check on a non-complete payload will still
+        // be type-safe because TS narrows the union at the consumer; this switch only
+        // assigns the JSON-parsed object to the right discriminator branch.
+        let env: SseEventEnvelope;
         try {
-          data = JSON.parse(msg.data) as SseEventPayload;
+          switch (type) {
+            case "queued":
+              env = { type, data: JSON.parse(msg.data) as SseQueuedPayload };
+              break;
+            case "started":
+              env = { type, data: JSON.parse(msg.data) as SseStartedPayload };
+              break;
+            case "progress":
+              env = { type, data: JSON.parse(msg.data) as SseProgressPayload };
+              break;
+            case "complete":
+              env = { type, data: JSON.parse(msg.data) as SseCompletePayload };
+              break;
+            case "error":
+              env = { type, data: JSON.parse(msg.data) as SseErrorPayload };
+              break;
+            case "cancelled":
+              env = { type, data: JSON.parse(msg.data) as SseCancelledPayload };
+              break;
+          }
         } catch {
           // Malformed payload — skip this frame, keep stream alive.
           return;
         }
 
-        handlers.onEvent(id, type, data);
+        handlers.onEvent(id, env);
 
         // Terminal events: surface to caller via onClose by aborting the iterator. We do
         // this AFTER calling onEvent so the consumer sees the complete/error payload.

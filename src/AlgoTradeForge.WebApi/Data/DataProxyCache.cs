@@ -4,7 +4,7 @@ using Microsoft.Extensions.Caching.Distributed;
 namespace AlgoTradeForge.WebApi.Data;
 
 /// <summary>
-/// 5-second sliding TTL cache (TRD §8) for catalog GETs proxied to HistoryLoader. Stores
+/// 2-second absolute TTL cache (TRD §8) for catalog GETs proxied to HistoryLoader. Stores
 /// upstream response body BYTES + Content-Type so the proxy round-trips byte-identical
 /// (P3-9 contract). Catalog endpoints only — per-feed status / aggregation-options /
 /// per-job snapshot are NOT cached because they change rapidly.
@@ -14,7 +14,7 @@ namespace AlgoTradeForge.WebApi.Data;
 /// Invalidation is write-through: <see cref="InvalidateAffectedAsync"/> is called from the
 /// POST/DELETE proxy after upstream success but before the response flushes (S3). Main API
 /// can't subscribe to HistoryLoader's in-process <c>ManifestChanged</c> event across the
-/// process boundary, so the 5-s TTL is the safety net for state changes the proxy can't see
+/// process boundary, so the 2-s TTL is the safety net for state changes the proxy can't see
 /// (collector-driven appends from the HistoryLoader's BackgroundServices).
 /// </para>
 /// <para>
@@ -28,8 +28,10 @@ public sealed class DataProxyCache(IDistributedCache cache)
 {
     // Absolute (not sliding) TTL: a steady stream of catalog reads otherwise refreshes the
     // entry indefinitely, masking out-of-band manifest changes (collector appends, completed
-    // aggregation jobs) for far longer than 5 s. With absolute, every entry dies on schedule
-    // regardless of read pressure — worst-case staleness is bounded by Ttl.
+    // aggregation jobs) for far longer than the budget. With absolute, every entry dies on
+    // schedule regardless of read pressure — worst-case staleness is bounded by Ttl.
+    // Frontend post-completion refetch (use-job-stream.ts setTimeout) is paced to Ttl + ~500ms
+    // so the cache-bypass refetch sees fresh data.
     private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(2);
 
     /// <summary>Keys held by the catalog cache. Used by <see cref="InvalidateAffectedAsync"/>.</summary>
@@ -42,7 +44,7 @@ public sealed class DataProxyCache(IDistributedCache cache)
     /// Get-or-fetch: returns the cached entry if present, otherwise calls
     /// <paramref name="fetchUpstream"/> and stores the result on a 2xx response. Non-2xx
     /// responses are returned to the caller WITHOUT caching (so a transient 5xx doesn't
-    /// stick in cache for 5 s).
+    /// stick in cache for 2 s).
     /// </summary>
     public async Task<CachedEntry> GetOrFetchAsync(
         string cacheKey,

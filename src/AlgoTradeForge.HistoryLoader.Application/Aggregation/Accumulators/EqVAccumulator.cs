@@ -10,5 +10,5 @@ internal sealed class EqVAccumulator : AccumulatorBase
 {
     public EqVAccumulator(long threshold) : base(threshold) { }
 
-    protected override long ThresholdContribution(in SourceRecord r) => r.Volume;
+    protected override Int128 ThresholdContribution(in SourceRecord r) => r.Volume;
 }

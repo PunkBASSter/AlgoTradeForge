@@ -17,7 +17,7 @@ import { useJobStream, type JobStreamObservation } from "./use-job-stream";
 import { useDataJobsStore, type FeedJobKey } from "@/lib/stores/data-jobs-store";
 import { dataApi, DataApiError } from "@/lib/services/data-api";
 import { useToast } from "@/components/ui/toast";
-import type { JobState, SseProgressPayload, SseQueuedPayload } from "@/types/data-tab";
+import type { JobState } from "@/types/data-tab";
 
 interface Props {
   jobKey: FeedJobKey;
@@ -77,15 +77,13 @@ export function JobProgressCard({ jobKey, exchange, outcomeHint }: Props) {
   }, [isCancelling, jobKey, clearJob]);
 
   let line = "Connecting…";
-  if (obs.type === "queued") {
-    const q = obs.latest as SseQueuedPayload;
-    line = `Queued (#${q.queue_position})`;
-  } else if (obs.type === "started") {
+  if (obs.latest?.type === "queued") {
+    line = `Queued (#${obs.latest.data.queue_position})`;
+  } else if (obs.latest?.type === "started") {
     line = "Aggregating…";
-  } else if (obs.type === "progress") {
-    const p = obs.latest as SseProgressPayload;
-    const partition = p.current_partition ?? "—";
-    line = `Aggregating ${partition} … ${p.bars_emitted.toLocaleString()} bars`;
+  } else if (obs.latest?.type === "progress") {
+    const partition = obs.latest.data.current_partition ?? "—";
+    line = `Aggregating ${partition} … ${obs.latest.data.bars_emitted.toLocaleString()} bars`;
   }
 
   // Cancel button visible only for non-terminal observations AND only once we know the jobId.

@@ -75,10 +75,11 @@ public sealed class MonotonicTickSourceTests
     }
 
     [Fact]
-    public void Read_OutOfOrderInput_BumpsToMonotonic()
+    public void Read_OutOfOrderInput_BumpsToMonotonic_AndCountsAsRegression()
     {
         // Out-of-order arrival shouldn't happen from Binance but the decorator must handle it.
-        // Input: [10, 5, 20, 15] → output: [10, 11, 20, 21], bumps = 2
+        // Strictly-decreasing ticks count as regressions, not equal-ts cluster bumps.
+        // Input: [10, 5, 20, 15] → output: [10, 11, 20, 21], regressions = 2, bumps = 0
         var input = new[] { Tick(10), Tick(5), Tick(20), Tick(15) };
 
         var src = new MonotonicTickSource();
@@ -88,7 +89,63 @@ public sealed class MonotonicTickSourceTests
         Assert.Equal(11, output[1].TsMs);
         Assert.Equal(20, output[2].TsMs);
         Assert.Equal(21, output[3].TsMs);
+        Assert.Equal(0L, src.BumpCount);
+        Assert.Equal(2L, src.RegressionCount);
+    }
+
+    [Fact]
+    public void Read_DistinguishesEqualTimestampClustersFromRegressions()
+    {
+        // Cluster (==): tick 2 shares ts with tick 1 → BumpCount++.
+        // Regression (<): tick 4 has ts < ts of tick 3 → RegressionCount++.
+        // Input: [10, 10, 20, 15] → output: [10, 11, 20, 21]
+        var input = new[] { Tick(10), Tick(10), Tick(20), Tick(15) };
+
+        var src = new MonotonicTickSource();
+        var output = src.Read(input).ToList();
+
+        Assert.Equal(10, output[0].TsMs);
+        Assert.Equal(11, output[1].TsMs);
+        Assert.Equal(20, output[2].TsMs);
+        Assert.Equal(21, output[3].TsMs);
+        Assert.Equal(1L, src.BumpCount);
+        Assert.Equal(1L, src.RegressionCount);
+    }
+
+    [Fact]
+    public void Read_PureClusters_OnlyBumpCountIncrements()
+    {
+        var input = new[] { Tick(100), Tick(100), Tick(100) };
+
+        var src = new MonotonicTickSource();
+        _ = src.Read(input).ToList();
+
         Assert.Equal(2L, src.BumpCount);
+        Assert.Equal(0L, src.RegressionCount);
+    }
+
+    [Fact]
+    public void Read_PureRegressions_OnlyRegressionCountIncrements()
+    {
+        // Strictly decreasing — every tick after the first regresses.
+        var input = new[] { Tick(100), Tick(50), Tick(25) };
+
+        var src = new MonotonicTickSource();
+        _ = src.Read(input).ToList();
+
+        Assert.Equal(0L, src.BumpCount);
+        Assert.Equal(2L, src.RegressionCount);
+    }
+
+    [Fact]
+    public void Read_RegressionCountResetsBetweenEnumerations()
+    {
+        var src = new MonotonicTickSource();
+        _ = src.Read(new[] { Tick(20), Tick(10) }).ToList();
+        Assert.Equal(1L, src.RegressionCount);
+
+        _ = src.Read(new[] { Tick(10), Tick(20) }).ToList();
+        Assert.Equal(0L, src.RegressionCount);
     }
 
     [Fact]

@@ -126,6 +126,14 @@ public sealed class BuildInfo
     /// clustered exchange activity (volatility windows).
     /// </summary>
     public long? MonotonicBumps { get; init; }
+
+    /// <summary>
+    /// Count of strictly out-of-order tick records the source decorator recovered from
+    /// (raw ts &lt; prev). Distinct from <see cref="MonotonicBumps"/>: non-zero values here
+    /// indicate a real upstream ordering defect (ingestor bug, pagination misorder), not
+    /// benign equal-millisecond clustering. Always absent for time-bar source jobs.
+    /// </summary>
+    public long? MonotonicRegressions { get; init; }
 }
 
 public sealed class FidelityInfo

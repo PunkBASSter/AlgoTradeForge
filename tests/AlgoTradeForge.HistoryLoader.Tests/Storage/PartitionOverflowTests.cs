@@ -166,4 +166,33 @@ public sealed class PartitionOverflowTests : IDisposable
 
         writer.Dispose();
     }
+
+    // -------------------------------------------------------------------------
+    // T6 — oversize-first-row guard. The rollover check at PartitionedSinkWriter.cs:76 is
+    // gated on `_bytesInCurrent > _headerBytes.Length` so a single row larger than the
+    // entire byte budget cannot loop forever recreating empty partitions. The first row
+    // is admitted unconditionally; subsequent rows respect the budget normally.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Writer_FirstRowExceedsBudget_AdmitsRow_DoesNotInfiniteLoop()
+    {
+        var feedDir = FeedDir("EqV_oversize");
+        // Row payload is ~30+ bytes (timestamp + OHLCV); set budget below header alone so
+        // a naive `>budget` check would refuse to ever advance.
+        const long impossiblyTinyBudget = 8;
+
+        using (var writer = new PartitionedSinkWriter(feedDir, maxPartitionBytes: impossiblyTinyBudget, headerLine: "ts,o,h,l,c,vol"))
+        {
+            // Must complete (does not loop or throw) — the empty-partition guard waives the
+            // rollover for the first data row.
+            writer.WriteRow(Apr15Ms(0), $"{Apr15Ms(0)},1,2,0,1,5");
+            // Second row triggers a normal rollover because the partition now has data.
+            writer.WriteRow(Apr15Ms(1), $"{Apr15Ms(1)},1,2,0,1,5");
+        }
+
+        // Bare partition was promoted on the second row (overflow detected post-first-write).
+        Assert.True(File.Exists(Path.Combine(feedDir, "2026-04.p01.csv")));
+        Assert.True(File.Exists(Path.Combine(feedDir, "2026-04.p02.csv")));
+    }
 }

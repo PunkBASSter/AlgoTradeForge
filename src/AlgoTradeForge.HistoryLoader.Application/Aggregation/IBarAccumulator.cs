@@ -117,17 +117,21 @@ public readonly record struct SidecarRow(
 /// <param name="MeanOvershootPct">Mean per-bar overshoot of the threshold accumulator at emission, in percent.</param>
 /// <param name="MaxOvershootPct">Max per-bar overshoot of the threshold accumulator at emission, in percent.</param>
 /// <param name="MonotonicBumps">
-/// Phase 2a: count of source-side <c>+1 ms</c> timestamp bumps applied to enforce strict
-/// monotonicity (TRD §6.3). Always 0 for time-bar sources; non-zero for tick sources whenever
-/// multiple aggregated trades share a millisecond. Set by <c>AggregationPipeline</c> after
-/// pipe-out from the accumulator (the bump is a property of the source stream, not the
-/// accumulator math).
+/// Phase 2a: count of source-side <c>+1 ms</c> timestamp bumps applied to equal-timestamp
+/// clusters (TRD §6.3). Always 0 for time-bar sources; non-zero for tick sources whenever
+/// multiple aggregated trades share a millisecond. Benign — expected at high volume.
+/// </param>
+/// <param name="MonotonicRegressions">
+/// Count of strictly out-of-order tick records (raw ts &lt; prev) the source decorator
+/// recovered from. Non-zero indicates a real upstream ordering defect (ingestor bug,
+/// pagination misorder); surfaced in fidelity stats so operators can detect it.
 /// </param>
 public sealed record AggregationStats(
     long BarsEmitted,
     double MeanOvershootPct,
     double MaxOvershootPct,
-    long MonotonicBumps = 0);
+    long MonotonicBumps = 0,
+    long MonotonicRegressions = 0);
 
 /// <summary>
 /// Phase 1a placeholder. The interface is wired through the pipeline so Phase 1b can

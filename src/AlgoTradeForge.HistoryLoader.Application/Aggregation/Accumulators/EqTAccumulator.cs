@@ -10,5 +10,5 @@ internal sealed class EqTAccumulator : AccumulatorBase
 {
     public EqTAccumulator(long threshold) : base(threshold) { }
 
-    protected override long ThresholdContribution(in SourceRecord r) => 1;
+    protected override Int128 ThresholdContribution(in SourceRecord r) => Int128.One;
 }

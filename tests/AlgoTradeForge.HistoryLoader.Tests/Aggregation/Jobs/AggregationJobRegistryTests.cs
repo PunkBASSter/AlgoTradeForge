@@ -385,6 +385,81 @@ public sealed class AggregationJobRegistryTests
         Assert.Null(snap.CancellationReason);
     }
 
+    // -------------------------------------------------------------------------
+    // GetCancellationToken — defensive against MarkTerminal disposing the per-job CTS while
+    // a worker (or a stale caller) reads the token. Pre-fix the lock-free Token getter could
+    // throw ObjectDisposedException; the catch-and-return-None contract is what the worker
+    // host relies on to never crash.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void GetCancellationToken_AfterTerminal_ReturnsNoneDoesNotThrow()
+    {
+        var (reg, queue, _) = BuildSubjects();
+        reg.TryEnqueue(NewJob("j1", "EqV_1m_1000"), queue);
+        reg.OnStarted("j1", "1m");
+        reg.OnCompleted("j1", FakeResult("EqV_1m_1000"));   // disposes the CTS inside MarkTerminal
+
+        // Stale post-terminal reader (e.g. worker host that captured jobId pre-completion):
+        // must not throw, must return CancellationToken.None.
+        var token = reg.GetCancellationToken("j1");
+        Assert.Equal(CancellationToken.None, token);
+    }
+
+    [Fact]
+    public void GetCancellationToken_UnknownJob_ReturnsNone()
+    {
+        var (reg, _, _) = BuildSubjects();
+        Assert.Equal(CancellationToken.None, reg.GetCancellationToken("nonexistent"));
+    }
+
+    [Fact]
+    public async Task GetCancellationToken_ConcurrentWithMarkTerminal_NeverThrows()
+    {
+        // Stress the dispose race: one thread completes/errors jobs (which dispose the CTS),
+        // another thread reads the cancellation token. Pre-fix the reader would occasionally
+        // hit ObjectDisposedException on Cts.Token getter when the dispose side won the race.
+        const int iterations = 200;
+        var (reg, queue, _) = BuildSubjects(queueCapacity: iterations + 8);
+
+        var caught = 0;
+
+        for (var i = 0; i < iterations; i++)
+        {
+            var jobId = $"j{i}";
+            var feedId = $"EqV_1m_{i}";
+            reg.TryEnqueue(NewJob(jobId, feedId), queue);
+            reg.OnStarted(jobId, "1m");
+
+            using var barrier = new Barrier(participantCount: 2);
+
+            var reader = Task.Run(() =>
+            {
+                barrier.SignalAndWait();
+                // Hammer the getter — only a single getter call needs to win the race.
+                for (var k = 0; k < 32; k++)
+                {
+                    try { _ = reg.GetCancellationToken(jobId); }
+                    catch (ObjectDisposedException) { Interlocked.Increment(ref caught); break; }
+                }
+            }, TestContext.Current.CancellationToken);
+
+            var terminator = Task.Run(() =>
+            {
+                barrier.SignalAndWait();
+                // Half complete, half error — both paths call MarkTerminal which disposes Cts.
+                if (i % 2 == 0)
+                    reg.OnCompleted(jobId, FakeResult(feedId));
+                else
+                    reg.OnErrored(jobId, "test", "err", retryable: false);
+            }, TestContext.Current.CancellationToken);
+
+            await Task.WhenAll(reader, terminator);
+        }
+
+        Assert.Equal(0, caught);
+    }
+
     private static AggregationResult FakeResult(string feedId) =>
         new(JobId: "fake", OutcomeFeedId: feedId,
             BarCount: 100, PartitionsWritten: ["2024-03.csv"],

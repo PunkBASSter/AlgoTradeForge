@@ -19,5 +19,7 @@ internal sealed class EqDAccumulator : AccumulatorBase
 {
     public EqDAccumulator(long threshold) : base(threshold) { }
 
-    protected override long ThresholdContribution(in SourceRecord r) => r.Close * r.Volume;
+    // (Int128)r.Close * r.Volume promotes the multiplication to Int128 before it can overflow
+    // long; for high-volume perps the product can approach 10^14 per record.
+    protected override Int128 ThresholdContribution(in SourceRecord r) => (Int128)r.Close * r.Volume;
 }

@@ -370,6 +370,95 @@ data: {"bars_emitted":42,"current_partition":"2024-01"}
     }
 
     // -------------------------------------------------------------------------
+    // T5 — DataProxyCache TTL is ABSOLUTE (not sliding). The 2-second window is hard-coded
+    // and must expire on schedule even under continuous read pressure. The frontend's
+    // post-completion refetch (use-job-stream.ts setTimeout(2500)) depends on this.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CatalogCache_AbsoluteTtl_ExpiresOnSchedule_NotSliding()
+    {
+        await using var factory = new DataProxyTestFactory();
+        factory.Handler.Respond(_ => JsonResp("""{"exchanges":[]}"""u8.ToArray()));
+
+        using var client = factory.CreateClient();
+
+        // Pre-warm + immediate re-read inside the TTL window — must hit cache (1 upstream call).
+        await client.GetByteArrayAsync("/api/data/exchanges", TestContext.Current.CancellationToken);
+        await client.GetByteArrayAsync("/api/data/exchanges", TestContext.Current.CancellationToken);
+        Assert.Equal(1, ExactPathCallCount(factory, "/api/v1/exchanges"));
+
+        // Wait past the 2-second absolute TTL. If the implementation flipped to sliding,
+        // the second read above would have refreshed the entry and this would still hit cache.
+        await Task.Delay(TimeSpan.FromMilliseconds(2_300), TestContext.Current.CancellationToken);
+
+        await client.GetByteArrayAsync("/api/data/exchanges", TestContext.Current.CancellationToken);
+        Assert.Equal(2, ExactPathCallCount(factory, "/api/v1/exchanges"));
+    }
+
+    // -------------------------------------------------------------------------
+    // T11 — SSE proxy forwards the caller's Last-Event-ID header to upstream verbatim,
+    // so HistoryLoader can replay events past that sequence number for resume (TRD §5.4).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task SseProxy_ForwardsLastEventIdHeader_ToUpstream()
+    {
+        string? observedLastEventId = null;
+        await using var factory = new DataProxyTestFactory();
+        factory.Handler.Respond(req =>
+        {
+            observedLastEventId = req.Headers.TryGetValues("Last-Event-ID", out var values)
+                ? string.Join(",", values)
+                : null;
+            var resp = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent("event: ping\ndata: {}\n\n"u8.ToArray()),
+            };
+            resp.Content.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream");
+            return resp;
+        });
+
+        using var client = factory.CreateClient();
+        var req = new HttpRequestMessage(HttpMethod.Get, "/api/data/aggregations/j1/progress");
+        req.Headers.TryAddWithoutValidation("Last-Event-ID", "42");
+        var resp = await client.SendAsync(req, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        Assert.Equal("42", observedLastEventId);
+    }
+
+    // -------------------------------------------------------------------------
+    // T12 — POST aggregate that upstream answers with 500 must wrap in ProblemDetails with
+    // a stable `code` field. 4xx is forwarded byte-identical (domain payload), but 5xx is
+    // server-internal and gets the proxy's stable error envelope.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PostAggregate_Upstream500_WrapsAsProblemDetails_PreservesStatus()
+    {
+        await using var factory = new DataProxyTestFactory();
+        factory.Handler.Respond(_ =>
+        {
+            var r = new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = new StringContent("internal boom", Encoding.UTF8, "text/plain"),
+            };
+            return r;
+        });
+
+        using var client = factory.CreateClient();
+        var resp = await client.PostAsJsonAsync(
+            "/api/data/exchanges/binance/assets/BTCUSDT_perp/aggregate",
+            new { source_feed_id = "1m", type_code = "EqV" },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.InternalServerError, resp.StatusCode);
+        var doc = await resp.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal("upstream_error", doc.GetProperty("code").GetString());
+    }
+
+    // -------------------------------------------------------------------------
     // Negative-cache test — confirms aggregation-options is NOT cached
     // -------------------------------------------------------------------------
 

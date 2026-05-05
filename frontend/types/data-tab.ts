@@ -94,6 +94,9 @@ export interface BuildInfo {
   partitions_written: string[];
   max_partition_size_mb: number;
   monotonic_bumps?: number | null;
+  // Strictly out-of-order tick records the source decorator recovered from. Distinct from
+  // monotonic_bumps (benign equal-ms clustering). Non-zero indicates an upstream defect.
+  monotonic_regressions?: number | null;
 }
 
 export interface FidelityInfo {
@@ -219,3 +222,15 @@ export type SseEventPayload =
   | SseCompletePayload
   | SseErrorPayload
   | SseCancelledPayload;
+
+// Discriminated union over the SSE event type. Lets consumers narrow `data` automatically
+// off `env.type` without `as` casts. The single `JSON.parse → as` cast lives in
+// data-sse-client.ts inside the type-discriminated switch, so payload/discriminator drift
+// from the server surfaces in one place rather than at every consumer site.
+export type SseEventEnvelope =
+  | { type: "queued"; data: SseQueuedPayload }
+  | { type: "started"; data: SseStartedPayload }
+  | { type: "progress"; data: SseProgressPayload }
+  | { type: "complete"; data: SseCompletePayload }
+  | { type: "error"; data: SseErrorPayload }
+  | { type: "cancelled"; data: SseCancelledPayload };

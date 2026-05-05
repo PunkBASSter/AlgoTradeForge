@@ -36,19 +36,22 @@ public sealed class AggregationPipeline
     private readonly OverwritePathWriter _overwriter;
     private readonly TimeProvider _clock;
     private readonly ILogger<AggregationPipeline> _logger;
+    private readonly ILogger<MonotonicTickSource> _monoLogger;
 
     public AggregationPipeline(
         PartitionedSourceReader reader,
         ISchemaManager schemaManager,
         OverwritePathWriter overwriter,
         TimeProvider clock,
-        ILogger<AggregationPipeline>? logger = null)
+        ILogger<AggregationPipeline>? logger = null,
+        ILogger<MonotonicTickSource>? monoLogger = null)
     {
         _reader = reader;
         _schemaManager = schemaManager;
         _overwriter = overwriter;
         _clock = clock;
         _logger = logger ?? NullLogger<AggregationPipeline>.Instance;
+        _monoLogger = monoLogger ?? NullLogger<MonotonicTickSource>.Instance;
     }
 
     public AggregationResult Run(
@@ -112,8 +115,8 @@ public sealed class AggregationPipeline
         var streamingMedian = isTickSource ? new StreamingMedianEstimator() : null;
 
         // Strict-monotonic ts decorator (TRD §6.3 / P2a-6) wraps the reader for tick sources;
-        // bump count is read out post-iteration and surfaced in stats + manifest.
-        var monoSource = isTickSource ? new MonotonicTickSource() : null;
+        // bump and regression counts are read out post-iteration and surfaced in stats + manifest.
+        var monoSource = isTickSource ? new MonotonicTickSource(_monoLogger) : null;
 
         long barsEmitted = 0;
         long? firstBarTs = null;
@@ -227,11 +230,15 @@ public sealed class AggregationPipeline
         }
 
         var stats = accumulator.Finalize();
-        // Phase 2a: source-side bump count (always 0 for time-bar) gets folded into stats here.
-        // The decorator owns the count because it's a property of the source stream, not the
-        // accumulator math.
+        // Phase 2a: source-side bump + regression counts (always 0 for time-bar) get folded
+        // into stats here. The decorator owns both because they're properties of the source
+        // stream, not the accumulator math.
         if (monoSource is not null)
-            stats = stats with { MonotonicBumps = monoSource.BumpCount };
+            stats = stats with
+            {
+                MonotonicBumps = monoSource.BumpCount,
+                MonotonicRegressions = monoSource.RegressionCount,
+            };
 
         // Force any in-progress partition file to atomic-rename to its final name before promote.
         sink.Dispose();
@@ -287,6 +294,7 @@ public sealed class AggregationPipeline
                 PartitionsWritten = partitions,
                 MaxPartitionSizeMB = job.MaxPartitionSizeMB,
                 MonotonicBumps = isTickSource ? stats.MonotonicBumps : null,
+                MonotonicRegressions = isTickSource ? stats.MonotonicRegressions : null,
             },
             Fidelity: new FidelityInfo
             {

@@ -64,7 +64,7 @@ describe("connectProgress", () => {
     expect(captured[0].url).toMatch(/\/api\/data\/aggregations\/job-12-abc\/progress$/);
   });
 
-  it("dispatches parsed event payloads to onEvent with id + type", () => {
+  it("dispatches parsed event envelopes to onEvent with id + discriminated payload", () => {
     const onEvent = vi.fn();
     void connectProgress({
       jobId: "j1",
@@ -79,10 +79,10 @@ describe("connectProgress", () => {
     });
 
     expect(onEvent).toHaveBeenCalledOnce();
-    const [id, type, data] = onEvent.mock.calls[0];
+    const [id, env] = onEvent.mock.calls[0];
     expect(id).toBe(1);
-    expect(type).toBe("progress");
-    expect(data).toMatchObject({ bars_emitted: 42 });
+    expect(env.type).toBe("progress");
+    expect(env.data).toMatchObject({ bars_emitted: 42 });
   });
 
   it("ignores frames with unknown event types (resilient to upstream evolution)", () => {
@@ -151,9 +151,9 @@ describe("connectProgress", () => {
     ).toThrow(/terminal SSE event/);   // TerminalEventError closes the stream
 
     expect(onEvent).toHaveBeenCalledOnce();
-    const [id, type, data] = onEvent.mock.calls[0];
+    const [id, env] = onEvent.mock.calls[0];
     expect(id).toBe(5);
-    expect(type).toBe("cancelled");
-    expect(data).toMatchObject({ reason: "user_cancelled" });
+    expect(env.type).toBe("cancelled");
+    expect(env.data).toMatchObject({ reason: "user_cancelled" });
   });
 });

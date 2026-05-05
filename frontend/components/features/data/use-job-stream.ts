@@ -14,12 +14,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useDataJobsStore, type FeedJobKey } from "@/lib/stores/data-jobs-store";
 import { connectProgress, GoneError } from "@/lib/services/data-sse-client";
 import { useToast } from "@/components/ui/toast";
-import type { SseCancelledPayload, SseCompletePayload, SseErrorPayload, SseEventPayload } from "@/types/data-tab";
+import type { SseEventEnvelope } from "@/types/data-tab";
 
 export interface JobStreamObservation {
-  /** Most recent payload — drives the progress UI. */
-  latest: SseEventPayload | null;
-  /** Most recent event type. */
+  /** Most recent envelope — drives the progress UI. Narrow via `latest.type`. */
+  latest: SseEventEnvelope | null;
+  /** Most recent event type. Same as `latest?.type ?? null`; kept for ergonomic null handling. */
   type: "queued" | "started" | "progress" | "complete" | "error" | "cancelled" | null;
 }
 
@@ -47,14 +47,13 @@ export function useJobStream(
       lastEventId: job.lastEventId > 0 ? job.lastEventId : undefined,
       signal: ctrl.signal,
       handlers: {
-        onEvent: (id, type, data) => {
+        onEvent: (id, env) => {
           recordEvent(key, id);
-          onObservationRef.current?.({ latest: data, type });
+          onObservationRef.current?.({ latest: env, type: env.type });
 
-          if (type === "complete") {
-            const payload = data as SseCompletePayload;
-            const overshoot = payload.fidelity.actual_overshoot_pct.toFixed(2);
-            toast(`Built ${payload.feed_id} (overshoot ${overshoot}%)`, "success");
+          if (env.type === "complete") {
+            const overshoot = env.data.fidelity.actual_overshoot_pct.toFixed(2);
+            toast(`Built ${env.data.feed_id} (overshoot ${overshoot}%)`, "success");
             clearJob(key);
             // Re-fetch the affected exchange's asset list so the new column appears.
             const queryKey = ["data", "exchange-assets", exchange];
@@ -66,15 +65,13 @@ export function useJobStream(
             setTimeout(() => {
               queryClient.invalidateQueries({ queryKey });
             }, 2500);
-          } else if (type === "error") {
-            const payload = data as SseErrorPayload;
-            toast(`Aggregation failed: ${payload.message}`, "error");
+          } else if (env.type === "error") {
+            toast(`Aggregation failed: ${env.data.message}`, "error");
             clearJob(key);
-          } else if (type === "cancelled") {
+          } else if (env.type === "cancelled") {
             // Phase 6 — distinct terminal state. Reason is "user_cancelled" today; future
             // programmatic cancel paths may add others.
-            const payload = data as SseCancelledPayload;
-            toast(`Cancelled (${payload.reason})`, "info");
+            toast(`Cancelled (${env.data.reason})`, "info");
             clearJob(key);
           }
         },
