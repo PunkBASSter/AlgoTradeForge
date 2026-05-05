@@ -37,7 +37,7 @@ public sealed class EqTAccumulatorTests
         for (var i = 0; i < 11; i++)
             acc.TryAdvance(Rec(i * 1000, 100, 110, 90, 105, 50), out _);
 
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(2, stats.BarsEmitted);   // 5+5; the 11th is trailing
         Assert.Equal(0d, stats.MeanOvershootPct);   // EqT always lands on threshold exactly
         Assert.Equal(0d, stats.MaxOvershootPct);

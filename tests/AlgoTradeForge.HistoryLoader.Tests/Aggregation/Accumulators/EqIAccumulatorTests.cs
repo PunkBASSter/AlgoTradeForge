@@ -122,7 +122,7 @@ public sealed class EqIAccumulatorTests
         Assert.False(acc.TryAdvance(Tick(1000, 100, 100, isBuy: true), out _));    // 100 < 1000
 
         // Stats: one emit; mean_overshoot reflects (1500 - 1000)/1000 = 50%.
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(1, stats.BarsEmitted);
         Assert.Equal(50d, stats.MeanOvershootPct, 5);
         Assert.Equal(50d, stats.MaxOvershootPct, 5);

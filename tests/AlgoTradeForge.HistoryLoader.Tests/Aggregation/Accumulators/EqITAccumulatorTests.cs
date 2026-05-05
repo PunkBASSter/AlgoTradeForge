@@ -119,7 +119,7 @@ public sealed class EqITAccumulatorTests
         Assert.True(acc.TryAdvance(BuyTick(2000, 100, 50), out _));     // +2 → emit
         Assert.False(acc.TryAdvance(BuyTick(3000, 100, 50), out _));    // counter reset; +1 only
 
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(1, stats.BarsEmitted);
         Assert.Equal(0d, stats.MeanOvershootPct, 5);   // exactly hit threshold (no overshoot)
     }

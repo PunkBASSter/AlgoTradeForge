@@ -7,7 +7,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 //
 // Volume distribution: trigger tick's volume split tick.Volume / N per brick (last brick takes
 // remainder). Pending volume from prior no-emit ticks is added to the first brick of the
-// chain. Trailing pending volume from final no-emit ticks is discarded at Finalize.
+// chain. Trailing pending volume from final no-emit ticks is discarded at Complete.
 //
 // Strict-monotonic output ts: Int64Bar.TimestampMs requires strictly increasing timestamps,
 // so a multi-brick chain bumps +1 ms per subsequent brick. These bumps are internal and not
@@ -107,7 +107,7 @@ internal sealed class RenkoAccumulator : IBarAccumulator
         return false;
     }
 
-    public AggregationStats Finalize()
+    public AggregationStats Complete()
     {
         // Renko bricks are exactly brick_size by construction — overshoot is always 0% (kept
         // at 0 rather than NaN so manifest fidelity stays well-formed).

@@ -25,7 +25,7 @@ public sealed class RangeAccumulatorTests
         Assert.False(acc.TryAdvance(Tick(1200, 98, 5), out _));
         Assert.False(acc.TryAdvance(Tick(1300, 103, 5), out _));
 
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(0, stats.BarsEmitted);
     }
 
@@ -48,7 +48,7 @@ public sealed class RangeAccumulatorTests
         Assert.Equal(16, bar.Volume);          // 4 + 4 + 4 + 4
 
         // Realized range = 12, threshold = 10 → overshoot 20%.
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(1, stats.BarsEmitted);
         Assert.Equal(20d, stats.MaxOvershootPct, 5);
         Assert.Equal(20d, stats.MeanOvershootPct, 5);
@@ -66,7 +66,7 @@ public sealed class RangeAccumulatorTests
         Assert.True(emitted);
         Assert.Equal(40, bar.High - bar.Low);
         // Overshoot = (40 - 10) / 10 * 100 = 300%.
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(300d, stats.MaxOvershootPct, 5);
     }
 
@@ -80,7 +80,7 @@ public sealed class RangeAccumulatorTests
         Assert.True(acc.TryAdvance(Tick(2000, 110, 1), out var bar));
 
         Assert.Equal(10, bar.High - bar.Low);
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(0d, stats.MaxOvershootPct);
         Assert.Equal(0d, stats.MeanOvershootPct);
     }
@@ -107,7 +107,7 @@ public sealed class RangeAccumulatorTests
         Assert.Equal(112, bar2.Low);
         Assert.Equal(15, bar2.Volume);
 
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(2, stats.BarsEmitted);
     }
 
@@ -124,7 +124,7 @@ public sealed class RangeAccumulatorTests
         acc.TryAdvance(Tick(3000, 112, 1), out _);
         acc.TryAdvance(Tick(4000, 115, 1), out _);
 
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(1, stats.BarsEmitted);
     }
 

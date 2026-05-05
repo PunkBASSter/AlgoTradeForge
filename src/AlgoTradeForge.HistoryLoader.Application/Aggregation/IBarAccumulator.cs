@@ -9,7 +9,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 public interface IBarAccumulator
 {
     bool TryAdvance(in SourceRecord record, out AggregatedBar emitted);
-    AggregationStats Finalize();
+    AggregationStats Complete();
 
     /// <summary>
     /// Sidecar declaration. Non-null when the accumulator emits a sidecar row alongside each
@@ -95,7 +95,7 @@ public readonly record struct SidecarRow(
     double RealizedThreshold);
 
 /// <summary>
-/// Per-job aggregation stats returned by <see cref="IBarAccumulator.Finalize"/>.
+/// Per-job aggregation stats returned by <see cref="IBarAccumulator.Complete"/>.
 /// <c>MonotonicBumps</c> counts equal-ts clusters bumped +1ms (benign at high volume);
 /// <c>MonotonicRegressions</c> counts strictly out-of-order ticks recovered (indicates an
 /// upstream ordering defect).
@@ -118,7 +118,7 @@ public sealed class NoOpBarAccumulator : IBarAccumulator
         return false;
     }
 
-    public AggregationStats Finalize() =>
+    public AggregationStats Complete() =>
         new(BarsEmitted: 0, MeanOvershootPct: 0d, MaxOvershootPct: 0d);
 }
 

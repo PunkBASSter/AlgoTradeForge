@@ -18,7 +18,7 @@ public sealed class RenkoAccumulatorTests
         Assert.False(acc.TryAdvance(Tick(1000, 100, 5), out var bar));
         Assert.False(acc.TryDrainQueued(out _));
 
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(0, stats.BarsEmitted);
     }
 
@@ -242,7 +242,7 @@ public sealed class RenkoAccumulatorTests
             }
         }
 
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(1, stats.BarsEmitted);
         Assert.Equal(12, bricksTotal);                // tick 1+2 vol consumed; tick 3's 99 lost
         var ticksTotal = 5L + 7L + 99L;               // 111
@@ -258,7 +258,7 @@ public sealed class RenkoAccumulatorTests
         acc.TryAdvance(Tick(2000, 130, 30), out _);
         while (acc.TryDrainQueued(out _)) { }
 
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(3, stats.BarsEmitted);
         Assert.Equal(0d, stats.MeanOvershootPct);
         Assert.Equal(0d, stats.MaxOvershootPct);

@@ -41,7 +41,7 @@ public sealed class EqVAccumulatorTests
         Assert.True(emitted);
         Assert.Equal(5000, bar.Volume);
         // Overshoot = (5000 - 1000) / 1000 * 100 = 400%
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(1, stats.BarsEmitted);
         Assert.Equal(400d, stats.MaxOvershootPct, 5);
         Assert.Equal(400d, stats.MeanOvershootPct, 5);
@@ -57,7 +57,7 @@ public sealed class EqVAccumulatorTests
             acc.TryAdvance(Rec(i * 1000, 100, 110, 90, 105, 400), out _);
         acc.TryAdvance(Rec(7000, 100, 110, 90, 105, 400), out _);   // trailing, no emit
 
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(2, stats.BarsEmitted);
         Assert.Equal(20d, stats.MeanOvershootPct, 5);
         Assert.Equal(20d, stats.MaxOvershootPct, 5);
@@ -74,7 +74,7 @@ public sealed class EqVAccumulatorTests
         Assert.True(acc.TryAdvance(Rec(3000, 109, 110, 105, 110, 250), out var bar));
 
         Assert.Equal(1000, bar.Volume);
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(0d, stats.MaxOvershootPct);
         Assert.Equal(0d, stats.MeanOvershootPct);
     }

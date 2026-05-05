@@ -124,7 +124,7 @@ public sealed class EqIDAccumulatorTests
         Assert.True(acc.TryAdvance(Tick(0, 10_000, 200, isBuy: true), out _));      // 200×10000 = 2e6 → emit
         Assert.False(acc.TryAdvance(Tick(1000, 10_000, 50, isBuy: true), out _));   // 50×10000 = 5e5 < 1e6
 
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(1, stats.BarsEmitted);
         Assert.Equal(100d, stats.MeanOvershootPct, 5);   // (2e6 - 1e6)/1e6 = 100%
     }

@@ -124,7 +124,7 @@ internal sealed class EqIVAccumulator : IBarAccumulator
         return false;
     }
 
-    public AggregationStats Finalize()
+    public AggregationStats Complete()
     {
         var mean = _barsEmitted > 0 ? _overshootSum / _barsEmitted : 0d;
         return new AggregationStats(_barsEmitted, mean, _maxOvershoot);

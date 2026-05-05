@@ -40,7 +40,7 @@ public sealed class EqDAccumulatorTests
         Assert.Equal(300, bar.Volume);   // base volume sum (3 × 100), NOT quote volume
 
         // Overshoot = (33,000 - 30,000) / 30,000 * 100 = 10%
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
         Assert.Equal(1, stats.BarsEmitted);
         Assert.Equal(10d, stats.MaxOvershootPct, 5);
         Assert.Equal(10d, stats.MeanOvershootPct, 5);

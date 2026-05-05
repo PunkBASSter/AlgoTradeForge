@@ -4,7 +4,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 // quantity per source record via ThresholdContribution; the base handles OHLC tracking,
 // base-volume summation, threshold detection, overshoot bookkeeping, and bar reset.
 // Trailing partial bars (records consumed without crossing the threshold) are discarded at
-// Finalize — emitted bars must satisfy realized_threshold >= N.
+// Complete — emitted bars must satisfy realized_threshold >= N.
 internal abstract class AccumulatorBase : IBarAccumulator
 {
     // Int128 keeps EqD's Close*Volume product safe — per-record values can approach 10^14 on
@@ -77,7 +77,7 @@ internal abstract class AccumulatorBase : IBarAccumulator
         return false;
     }
 
-    public AggregationStats Finalize()
+    public AggregationStats Complete()
     {
         var mean = _barsEmitted > 0 ? _overshootSum / _barsEmitted : 0d;
         return new AggregationStats(_barsEmitted, mean, _maxOvershoot);

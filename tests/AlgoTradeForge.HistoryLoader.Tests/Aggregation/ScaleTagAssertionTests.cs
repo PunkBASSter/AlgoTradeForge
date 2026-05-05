@@ -87,11 +87,11 @@ public sealed class ScaleTagAssertionTests
     }
 
     [Fact]
-    public void NoOpBarAccumulator_FinalizeReturnsZeroStats()
+    public void NoOpBarAccumulator_CompleteReturnsZeroStats()
     {
         var acc = new NoOpBarAccumulator();
 
-        var stats = acc.Finalize();
+        var stats = acc.Complete();
 
         Assert.Equal(0, stats.BarsEmitted);
         Assert.Equal(0d, stats.MeanOvershootPct);

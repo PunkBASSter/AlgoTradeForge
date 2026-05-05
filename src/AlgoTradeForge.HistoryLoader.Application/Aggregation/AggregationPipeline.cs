@@ -215,7 +215,7 @@ public sealed class AggregationPipeline
             throw;
         }
 
-        var stats = accumulator.Finalize();
+        var stats = accumulator.Complete();
         // Source-side bump + regression counts (0 for time-bar) get folded into stats here.
         // The decorator owns both because they're properties of the source stream, not the
         // accumulator math.
