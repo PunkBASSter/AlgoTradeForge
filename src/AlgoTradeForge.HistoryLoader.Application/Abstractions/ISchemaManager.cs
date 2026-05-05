@@ -14,7 +14,7 @@ public interface ISchemaManager
     void EnsureAltBarFeed(string assetDir, string feedId, AltBarFeedSpec spec);
 
     /// <summary>
-    /// Atomic two-entry write for EqI: parent alt-bar entry + its analytical <c>.flow</c> sidecar
+    /// Atomic two-entry write for EqIV: parent alt-bar entry + its analytical <c>.flow</c> sidecar
     /// entry under a single exclusive lock so readers see either both-present or both-absent.
     /// The parent's <see cref="AltBarFeedSpec.Sidecar"/> is overridden to <paramref name="sidecarFeedId"/>.
     /// </summary>

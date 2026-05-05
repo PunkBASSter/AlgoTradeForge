@@ -73,7 +73,7 @@ describe("AssetFeedGrid", () => {
       tb("1m", "1m"), tb("5m", "5m"), tb("15m", "15m"), tb("1h", "1h"), tb("4h", "4h"),
       alt("EqV_1m_1000", "EqV", 1000), alt("EqV_1m_5000", "EqV", 5000),
       alt("EqV_5m_1000", "EqV", 1000), alt("EqT_1m_500", "EqT", 500),
-      alt("EqI_ticks_500", "EqI", 500, "EqI_ticks_500.flow"),
+      alt("EqIV_ticks_500", "EqIV", 500, "EqIV_ticks_500.flow"),
       alt("EqD_1m_100k", "EqD", 100000), alt("EqD_5m_100k", "EqD", 100000),
       alt("EqV_15m_5000", "EqV", 5000), alt("EqV_1h_5000", "EqV", 5000),
       alt("EqT_5m_500", "EqT", 500), alt("EqT_15m_500", "EqT", 500),
@@ -95,10 +95,10 @@ describe("AssetFeedGrid", () => {
     expect(cellButtons.length / (500 * 20)).toBeLessThan(0.05);
   });
 
-  it("renders sidecar indicator dot for EqI feeds with non-null sidecar (P3-14)", () => {
+  it("renders sidecar indicator dot for EqIV feeds with non-null sidecar (P3-14)", () => {
     const feeds: FeedCatalogEntry[] = [
       tb("1m", "1m"),
-      alt("EqI_ticks_500", "EqI", 500, "EqI_ticks_500.flow"),
+      alt("EqIV_ticks_500", "EqIV", 500, "EqIV_ticks_500.flow"),
     ];
     const assets = makeAssets(2, feeds);
 
@@ -106,7 +106,7 @@ describe("AssetFeedGrid", () => {
 
     // The sidecar dot has aria-label="has sidecar".
     const dots = container.querySelectorAll('[aria-label="has sidecar"]');
-    expect(dots.length).toBe(2);   // one per asset row, only on the EqI column
+    expect(dots.length).toBe(2);   // one per asset row, only on the EqIV column
   });
 
   it("does not crash on an empty asset list", () => {
@@ -175,7 +175,7 @@ describe("AssetFeedGrid", () => {
       { id: "funding-rate", kind: "Side", interval: null, type_code: null, threshold_value: null, sidecar: null },
       { id: "ticks", kind: "Tick", interval: null, type_code: null, threshold_value: null, sidecar: null },
       alt("EqV_1m_5000", "EqV", 5000),
-      alt("EqI_ticks_500", "EqI", 500),
+      alt("EqIV_ticks_500", "EqIV", 500),
       tb("5m", "5m"),
       tb("1m", "1m"),
       alt("EqV_1m_1000", "EqV", 1000),
@@ -192,7 +192,7 @@ describe("AssetFeedGrid", () => {
 
     expect(labels).toEqual([
       "1m", "5m",
-      "EqI_ticks_500", "EqV_1m_1000", "EqV_1m_5000",
+      "EqIV_ticks_500", "EqV_1m_1000", "EqV_1m_5000",
       "ticks",
       "funding-rate",
     ]);

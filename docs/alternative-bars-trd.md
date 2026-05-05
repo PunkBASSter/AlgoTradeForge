@@ -7,7 +7,7 @@
 
 ## 1. Overview
 
-Add information-driven bars (`EqT`/`EqV`/`EqD`/`EqI`) and path-dependent bars (`Range`/`Renko`, tick-only in v1). Aggregated feeds are persisted from existing HistoryLoader data (`1m`/`5m`/`1h`/`1d` OHLCV or raw ticks), exposed via REST, surfaced in a new **Data** tab, and selectable as primary OHLC for backtest/optimization/validation/debug runs.
+Add information-driven bars (`EqT`/`EqV`/`EqD`/`EqIV`) and path-dependent bars (`Range`/`Renko`, tick-only in v1). Aggregated feeds are persisted from existing HistoryLoader data (`1m`/`5m`/`1h`/`1d` OHLCV or raw ticks), exposed via REST, surfaced in a new **Data** tab, and selectable as primary OHLC for backtest/optimization/validation/debug runs.
 
 `DataSubscription` is replaced cleanly — no back-compat shims.
 
@@ -22,7 +22,7 @@ Add information-driven bars (`EqT`/`EqV`/`EqD`/`EqI`) and path-dependent bars (`
 | Aggregated feed | Persisted output: an alt-bar series. |
 | Threshold (N) | Aggregation parameter (volume/ticks/dollars/imbalance per bar). |
 | Overshoot | Per-bar excess over N due to source granularity. |
-| Bar type code | `EqT`, `EqV`, `EqD`, `EqI`, future `Range`, `Renko`. |
+| Bar type code | `EqT`, `EqV`, `EqD`, `EqIV`, future `Range`, `Renko`. |
 | Feed ID | Stable identifier within `(exchange, asset)`; URL path component, partition dir name. |
 
 ## 3. Storage Convention
@@ -36,8 +36,8 @@ History/binance/BTCUSDT_perp/
 ├── funding-rate/2019-09_8h.csv                        # existing side feed
 ├── aggregated/
 │   ├── EqV_1m_1000/2019-09.csv, …
-│   ├── EqI_ticks_500000/2019-09.csv, …
-│   └── EqI_ticks_500000.flow/2019-09.csv, …           # sidecar FeedSeries (sibling of bar dir, under aggregated/)
+│   ├── EqIV_ticks_500000/2019-09.csv, …
+│   └── EqIV_ticks_500000.flow/2019-09.csv, …           # sidecar FeedSeries (sibling of bar dir, under aggregated/)
 └── feeds.json
 ```
 
@@ -64,7 +64,7 @@ aggregated/<TypeCode>_<SourceCode>_<Threshold>.flow/<YYYY>-<MM>[.p<NN>].csv     
 
 | Field | Values |
 |---|---|
-| `TypeCode` | `EqT`, `EqV`, `EqD`, `EqI`, `Range`, `Renko` |
+| `TypeCode` | `EqT`, `EqV`, `EqD`, `EqIV`, `Range`, `Renko` |
 | `SourceCode` | `1m`, `5m`, `15m`, `1h`, `4h`, `1d`, `ticks` |
 | `Threshold` | positive integer in **canonical display units** (the value the user enters); sub-unit values use the milli (`m`) / micro (`u`) suffixes — see §3.4 |
 
@@ -77,7 +77,7 @@ Display name uses SI: `EqV_1m_1000` ↔ `EqV/1m:1k`. Sub-unit thresholds: `EqV_1
 | EqT | tick count | trades |
 | EqV | base-asset volume | base units |
 | EqD | quote-asset volume | quote units |
-| EqI | abs cumulative signed quote volume | quote units |
+| EqIV | abs cumulative signed quote volume | quote units |
 | Range | running high − low spread per bar | price |
 | Renko | brick height (constant per brick) | price |
 
@@ -124,20 +124,20 @@ ts, signed_imbalance, buy_volume, sell_volume, realized_threshold
 | Column | CSV encoding | Read-API | Notes |
 |---|---|---|---|
 | `ts` | int (epoch ms) | `long` | Joins 1:1 to bar `ts`. |
-| `signed_imbalance` | double | `double` | EqI only; empty ⇒ `NaN`. |
+| `signed_imbalance` | double | `double` | EqIV only; empty ⇒ `NaN`. |
 | `buy_volume` / `sell_volume` | double (or empty) | `double` | Raw base-asset units, side-feed convention (§3.6). From `taker_buy_*` (time-bar) or `is_buyer_maker` (tick). Empty ⇒ `NaN`. |
-| `realized_threshold` | double | `double` | Accumulator value at close (≥ N; `abs(.) ≥ N` for EqI). Never empty. |
+| `realized_threshold` | double | `double` | Accumulator value at close (≥ N; `abs(.) ≥ N` for EqIV). Never empty. |
 
 Sidecar columns are `double` on disk per the side-feed convention (§3.6). Per-bar values are bounded by realistic exchange magnitudes — well within 2^53. Cumulative aggregation across bars is the consumer's responsibility (downstream cumulants must guard the 2^53 boundary themselves).
 
-EqI feeds MUST publish a sidecar (≥ `signed_imbalance`, `realized_threshold`). Other types MAY publish when source provides taker-buy split. Sidecar's `feeds.json` entry sets `nullable_columns: true` to opt into empty-cell→`NaN` parsing.
+EqIV feeds MUST publish a sidecar (≥ `signed_imbalance`, `realized_threshold`). Other types MAY publish when source provides taker-buy split. Sidecar's `feeds.json` entry sets `nullable_columns: true` to opt into empty-cell→`NaN` parsing.
 
 **Tick storage (Phase 2 prerequisite):**
 ```
 History/.../ticks/<YYYY>-<MM>-<DD>.csv      # daily; ~50 MB / ~30 files per month
 ts, price, qty, is_buyer_maker, agg_id
 ```
-All `long` except `is_buyer_maker` (`int 0/1`). `is_buyer_maker=1` → sell-aggressor (EqI: −qty); `=0` → buy-aggressor (+qty). `agg_id` is the **ingestor**'s resume-on-crash key (last-written Binance trade ID per day-partition, used to de-dupe on reconnect). Aggregator runs are full-range in v1 (§5.4) and restart from scratch on crash; the §4.1 sweep deletes staging dirs so no partial bars survive.
+All `long` except `is_buyer_maker` (`int 0/1`). `is_buyer_maker=1` → sell-aggressor (EqIV: −qty); `=0` → buy-aggressor (+qty). `agg_id` is the **ingestor**'s resume-on-crash key (last-written Binance trade ID per day-partition, used to de-dupe on reconnect). Aggregator runs are full-range in v1 (§5.4) and restart from scratch on crash; the §4.1 sweep deletes staging dirs so no partial bars survive.
 
 ### 3.6 Numeric type convention
 
@@ -177,11 +177,11 @@ Single per-asset manifest extends the existing `feeds.json`:
         "estimated_overshoot_pct": 2.5, "actual_overshoot_pct": 2.42,
         "max_overshoot_pct": 18.7, "median_source_record_value": 0.5,
         "n_factor": 2000,
-        "imbalance_reconstruction_method": null    // MUST be present even on non-EqI feeds (§4 rule)
+        "imbalance_reconstruction_method": null    // MUST be present even on non-EqIV feeds (§4 rule)
       },
       "first_bar_ts": "...", "last_bar_ts": "...", "sidecar": null
     },
-    "EqI_ticks_500000.flow": {
+    "EqIV_ticks_500000.flow": {
       "kind": "side", "nullable_columns": true,
       "columns": ["signed_imbalance", "buy_volume", "sell_volume", "realized_threshold"]
     }
@@ -192,7 +192,7 @@ Single per-asset manifest extends the existing `feeds.json`:
 - `kind: "aggregated"` → bar loader. `kind: "side"` (incl. `.flow`) → `CsvFeedSeriesLoader`.
 - `build.partitions_written` records calendar coverage (months touched). File enumeration is glob-driven (§3.2); this field is for diagnostics, summary endpoints, and SSE `complete` payloads — not for read-path file discovery.
 - `sidecar` → companion FeedSeries feed-id (auto-bound, §9.4); `null` if none.
-- `fidelity.imbalance_reconstruction_method` ∈ `{ "tick_signed", "m1_taker_buy_proxy", null }`. Time-bar EqI → proxy + UI warning. Non-EqI feeds set this to `null` **explicitly** (the field MUST be present); absence indicates a malformed manifest.
+- `fidelity.imbalance_reconstruction_method` ∈ `{ "tick_signed", "m1_taker_buy_proxy", null }`. Time-bar EqIV → proxy + UI warning. Non-EqIV feeds set this to `null` **explicitly** (the field MUST be present); absence indicates a malformed manifest.
 - `estimated_overshoot_pct = 100 / (2 × n_factor)`, `n_factor = threshold / median_source_record_value`. For tick sources, expect `actual_overshoot_pct ≤ 0.05%`.
 
 ### 4.1 Atomicity & cleanup
@@ -274,12 +274,12 @@ Drives the FE form (Type dropdown, N validator, warning banners, button-enabled 
       "threshold_min": 1, "threshold_max": 1000000000, "threshold_default": 1000,
       "format_hint": "base-asset units; SI suffixes 'k', 'M' accepted",
       "warnings": [] },
-    { "code": "EqI", "display_name": "Equal Imbalance",
+    { "code": "EqIV", "display_name": "Equal Imbalance",
       "threshold_unit": "quote_asset",
       "threshold_min": 1000, "threshold_max": 100000000000, "threshold_default": 500000,
       "warnings": [
         { "code": "imbalance_proxy",
-          "message": "Time-bar EqI uses the taker-buy proxy; rebuild from `ticks` for magnitude-sensitive use." }] }
+          "message": "Time-bar EqIV uses the taker-buy proxy; rebuild from `ticks` for magnitude-sensitive use." }] }
   ],
   "ineligible_reason": null
 }
@@ -392,8 +392,8 @@ Sketch: `docs/alternative-bars-ui.png`.
 PartitionedSourceReader → BarAccumulator → PartitionedSinkWriter → FeedsJsonFinalizer
 ```
 
-- **Source reader:** chronological enumeration across partition boundaries. EqI from time bars joins `candle-ext` 1:1 by `ts` (perp/future only — spot has no `candle-ext`, EqI rejected at eligibility). Tick sources have intrinsic `is_buyer_maker`, never join.
-- **Partial coverage:** for joined-source types (EqI from time bars), bars outside `candles/` ∩ `candle-ext/` are not emitted. Non-joined types (EqT/EqV/EqD from time bars, any type from ticks) use the source feed's range alone. Resolved range surfaced in the §5.4 summary.
+- **Source reader:** chronological enumeration across partition boundaries. EqIV from time bars joins `candle-ext` 1:1 by `ts` (perp/future only — spot has no `candle-ext`, EqIV rejected at eligibility). Tick sources have intrinsic `is_buyer_maker`, never join.
+- **Partial coverage:** for joined-source types (EqIV from time bars), bars outside `candles/` ∩ `candle-ext/` are not emitted. Non-joined types (EqT/EqV/EqD from time bars, any type from ticks) use the source feed's range alone. Resolved range surfaced in the §5.4 summary.
 - **Memory:** O(1) accumulator, O(write_buffer) per partition.
 - **Pipelined** via `System.Threading.Channels`. **Batched I/O:** 10k-row reads, 5k-bar flushes.
 - **Atomic writes:** `*.tmp` then rename per partition; `feeds.json` last.
@@ -414,14 +414,14 @@ public interface IBarAccumulator
 | EqT | tick counter, OHLC | `counter ≥ N` |
 | EqV | base-vol acc (long), OHLC | `base_acc ≥ N` |
 | EqD | quote-vol acc (long), OHLC | `quote_acc ≥ N` |
-| EqI | signed acc (long; `is_buyer_maker` from ticks, `taker_buy` proxy from time bars), OHLC | `abs(signed_acc) ≥ N` |
+| EqIV | signed acc (long; `is_buyer_maker` from ticks, `taker_buy` proxy from time bars), OHLC | `abs(signed_acc) ≥ N` |
 | Range | running OHLC since bar open, threshold = price delta (long, tick-scaled) | `(running_high − running_low) ≥ N` |
 | Renko | `last_brick_close` (long), pending vol (long), output queue, brick = price delta (long, tick-scaled) | `\|tick.close − last_brick_close\| ≥ N` per brick; one tick can emit `floor(\|Δ\|/N)` bricks |
 
 OHLC: time-bar source — first-open / max-high / min-low / last-close, where "first" and "last" are determined by the source reader's **chronological** enumeration across partition boundaries (§6.2), not file/iterator order. Bar `vol` is the sum of source `vol` (long+long, no conversion). Buy/sell columns originate from `candle-ext.taker_buy_vol` (`double`, side-feed convention §3.6); the aggregator converts at the sum site:
 ```
 taker_buy_ticks = MoneyConvert.ToLong(taker_buy_vol_double * QuantityScale);
-signed_acc += (2 * taker_buy_ticks - source_vol_long);   // EqI proxy
+signed_acc += (2 * taker_buy_ticks - source_vol_long);   // EqIV proxy
 ```
 Sidecar columns the aggregator emits (`buy_volume`, `sell_volume`, `signed_imbalance`, `realized_threshold`) are written as `double` per §3.6.
 
@@ -470,14 +470,14 @@ An aggregation job MAY use an existing `OHLCV_AltBar` feed as its source — e.g
 **Scope (v1).** Same-type-family + strictly-larger threshold: `EqV → EqV`, `EqT → EqT`, `EqD → EqD`. Cross-family (e.g. `EqV → EqT`) is rejected at the eligibility layer.
 
 **Excluded.**
-- **EqI re-aggregation.** Source bar's net signed imbalance is recorded but the *internal trajectory* is gone (a +80k → +50k → +60k swing collapses to net +60k), so emit boundaries can drift from a raw-source aggregation. Also requires a `.flow` sidecar reader to recover buy/sell volumes. Deferred.
+- **EqIV re-aggregation.** Source bar's net signed imbalance is recorded but the *internal trajectory* is gone (a +80k → +50k → +60k swing collapses to net +60k), so emit boundaries can drift from a raw-source aggregation. Also requires a `.flow` sidecar reader to recover buy/sell volumes. Deferred.
 - **Range / Renko re-aggregation.** Inherently invalid — bar shape is a function of intra-bar tick trajectory which is lost once aggregated.
 
 **Validation site.** `EligibilityRules.ForSource` returns the source-type-equal type as eligible (and the rest with a documented reason); the POST `/aggregate` endpoint additionally validates `requestedThresholdScaled > sourceThresholdScaled` (422 `code=invalid_re_aggregation`). The accumulator math is unchanged: feeding an `EqV_1000` bar (which contributes `r.Volume == 1000`) to an `EqV_2000` accumulator just emits cleanly after two records.
 
 **Reader.** `PartitionedSourceReader` adds a `DataFeedKind.AltBar` branch resolving `aggregated/{feedId}/*.csv` chronologically (mirrors `PartitionedCsvBarLoader`'s glob). The 6-col `ts,o,h,l,c,vol` parse logic is shared with the TimeBar path. `BuyVolumeLong`/`SellVolumeLong` stay 0 — the safe trio doesn't read them.
 
-**Manifest.** New entry's `source.feed` records the alt-bar source feedId (e.g. `EqV_1m_1000`) verbatim. `imbalance_reconstruction_method` stays `null` for non-EqI per the existing P1a-6 invariant.
+**Manifest.** New entry's `source.feed` records the alt-bar source feedId (e.g. `EqV_1m_1000`) verbatim. `imbalance_reconstruction_method` stays `null` for non-EqIV per the existing P1a-6 invariant.
 
 ## 7. Compatibility Matrix
 
@@ -485,11 +485,11 @@ An aggregation job MAY use an existing `OHLCV_AltBar` feed as its source — e.g
 
 | Source kind | Asset class | Eligible | Notes |
 |---|---|---|---|
-| Tick | any | EqT, EqV, EqD, EqI, Range, Renko | Highest fidelity. |
-| OHLCV_TimeBar **+ candle-ext** | Perp/Future | EqT, EqV, EqD, EqI* | EqI* = `m1_taker_buy_proxy`; UI warning. Range/Renko require tick source (Phase 5 ADR D1). |
-| OHLCV_TimeBar (no candle-ext) | Spot | EqT, EqV, EqD | EqI requires tick source. Range/Renko require tick source. |
+| Tick | any | EqT, EqV, EqD, EqIV, Range, Renko | Highest fidelity. |
+| OHLCV_TimeBar **+ candle-ext** | Perp/Future | EqT, EqV, EqD, EqIV* | EqIV* = `m1_taker_buy_proxy`; UI warning. Range/Renko require tick source (Phase 5 ADR D1). |
+| OHLCV_TimeBar (no candle-ext) | Spot | EqT, EqV, EqD | EqIV requires tick source. Range/Renko require tick source. |
 | OHLCV_TimeBar OHLC-only | any | none | No volume → volume types unbuildable. Range/Renko require tick source. |
-| OHLCV_AltBar | any | EqV, EqT, EqD (same family, larger threshold only) | Phase 6 safe trio. EqI/Range/Renko sources reject all (path-dependence / signed-imbalance fidelity loss). |
+| OHLCV_AltBar | any | EqV, EqT, EqD (same family, larger threshold only) | Phase 6 safe trio. EqIV/Range/Renko sources reject all (path-dependence / signed-imbalance fidelity loss). |
 | Side | any | none | Aggregate disabled. |
 
 ## 8. Main API (proxy layer)
@@ -643,7 +643,7 @@ Cells: `+` (clickable, opens right sidebar) or `−`. Sidecar-bearing aggregated
 
 Aggregate click locks the command panel; status panel renders SSE progress (`Queued (#N)` → `Aggregating <YYYY>-<MM> … X%`). Rest of tab stays interactive. On success: column appears, `−` flips to `+`, toast with `actual_overshoot_pct`. On failure: status panel shows `ProblemDetails`; command panel re-enables.
 
-**Warnings:** time-bar EqI shows yellow banner ("taker-buy proxy underestimates intra-bar churn; rebuild from `ticks` for magnitude-sensitive use"). Built feed's Status card carries the same banner.
+**Warnings:** time-bar EqIV shows yellow banner ("taker-buy proxy underestimates intra-bar churn; rebuild from `ticks` for magnitude-sensitive use"). Built feed's Status card carries the same banner.
 
 ### 10.2 Backtest / Optimization launch
 
@@ -678,13 +678,13 @@ Aggregate click locks the command panel; status panel renders SSE progress (`Que
 - Tick reader; `feeds.json` `ticks` registration.
 - Aggregator tick-source mode (chronological across daily partitions).
 - Validation: re-run `EqV`/`EqD`/`EqT` from ticks on BTCUSDT_perp × 1y; confirm `actual_overshoot_pct ≤ 0.05%` vs. time-bar baseline.
-- **No EqI yet** (intentional split; tick storage + signed accumulator are independent surfaces).
+- **No EqIV yet** (intentional split; tick storage + signed accumulator are independent surfaces).
 
-**Phase 2b — EqI + sidecar + `IFeedContext` extension.**
-- Signed accumulator, EqI with `tick_signed`/`m1_taker_buy_proxy` tagging.
+**Phase 2b — EqIV + sidecar + `IFeedContext` extension.**
+- Signed accumulator, EqIV with `tick_signed`/`m1_taker_buy_proxy` tagging.
 - `.flow` sidecar writer + reader (post-Q3 `CsvFeedSeriesLoader`).
 - `IFeedContext.TryGetPrimarySidecar` + `PrimarySidecarSchema` (DIM, fallback per Phase 0).
-- UI fidelity warning for time-bar EqI.
+- UI fidelity warning for time-bar EqIV.
 
 **Phase 3 — Main API proxy + Data Tab UI.**
 - `/api/data/*` mirrors, typed `HistoryLoaderClient`, event-driven cache invalidation, SSE pass-through.
@@ -713,7 +713,7 @@ Per-phase test scope. Each bullet is a behavior, not a method — the named test
 - **Scale-tag assertion (§3.4).** Mismatched `ScaleContext` between source feed and accumulator entry throws at write-time. Verify the assertion is wired even though Phase 1a's "accumulator" is a no-op.
 - **`CsvFeedSeriesLoader` NaN parsing.** `nullable_columns: true` in manifest → empty cells parse to `NaN`. `nullable_columns: false` (or unset) → empty cell throws. Pin the gating behavior.
 - **Legacy `CsvInt64BarLoader` removed.** Solution-wide grep test (a `dotnet test`-runnable assertion over `Type.GetType("CsvInt64BarLoader, ...")` returning null) prevents accidental re-introduction.
-- **Manifest required-field validation.** A non-EqI feed entry that omits `fidelity.imbalance_reconstruction_method` (the §4 "MUST be present even on non-EqI feeds" rule) round-trips as a manifest validation error at write time AND read time. Pin the rule on both sides — the writer is correct today, but a future refactor that loosens deserialization would silently re-allow malformed manifests.
+- **Manifest required-field validation.** A non-EqIV feed entry that omits `fidelity.imbalance_reconstruction_method` (the §4 "MUST be present even on non-EqIV feeds" rule) round-trips as a manifest validation error at write time AND read time. Pin the rule on both sides — the writer is correct today, but a future refactor that loosens deserialization would silently re-allow malformed manifests.
 
 ### Phase 1b — aggregation pipeline + REST + queue
 
@@ -735,10 +735,10 @@ Per-phase test scope. Each bullet is a behavior, not a method — the named test
 - **Tick-source EqT/EqV/EqD parity.** Re-run the Phase 1b accumulator scenarios against a tick source that aggregates back to the same 1m baseline; assert `actual_overshoot_pct ≤ 0.05%` (the §11 Phase 2a validation criterion encoded as an automated test, not a manual one).
 - **`agg_id` resume.** Crash mid-day-partition; resume reader; assert no duplicate ticks consumed and no ticks skipped at the boundary.
 
-### Phase 2b — EqI + sidecar + IFeedContext
+### Phase 2b — EqIV + sidecar + IFeedContext
 
-- **EqI tick-signed.** Drive ticks with a known buy/sell mix; assert `signed_acc` accumulates `+qty` on `is_buyer_maker=0` and `-qty` on `is_buyer_maker=1`; bar emits at `abs(signed_acc) ≥ N`.
-- **EqI taker-buy proxy.** Same scenario via `candle-ext.taker_buy_vol`; assert `signed_imbalance = 2 * taker_buy - vol`; assert manifest `imbalance_reconstruction_method = "m1_taker_buy_proxy"`.
+- **EqIV tick-signed.** Drive ticks with a known buy/sell mix; assert `signed_acc` accumulates `+qty` on `is_buyer_maker=0` and `-qty` on `is_buyer_maker=1`; bar emits at `abs(signed_acc) ≥ N`.
+- **EqIV taker-buy proxy.** Same scenario via `candle-ext.taker_buy_vol`; assert `signed_imbalance = 2 * taker_buy - vol`; assert manifest `imbalance_reconstruction_method = "m1_taker_buy_proxy"`.
 - **Sidecar zero-cost (§9.4 lazy load).** Strategy that does **not** call `TryGetPrimarySidecar` triggers no sidecar `CsvFeedSeriesLoader.Load` (verify via mocked loader, `Received(0)`).
 - **Sidecar binding correctness.** `feeds.json` `sidecar` field auto-binds; mismatched/missing sidecar yields a clear error at engine init, not silent NaN-soup at runtime.
 - ~~**`ReadOnlySpan<double>` field-storage compile-time check.**~~ Removed: `ref struct` field-storage prohibition is a C# language rule enforced by the compiler unconditionally. A negative-compile test would only re-verify the language spec, not anything project-specific.
@@ -767,4 +767,4 @@ Per-phase test scope. Each bullet is a behavior, not a method — the named test
 2. **Multi-instance HistoryLoader.** v1 single-instance via `IOptions<HistoryLoaderOptions>{ BaseUrl }`. YARP is the upgrade path.
 3. **Resumable / partial aggregations.** v1 always full-range; `from_ts`/`to_ts` are not in the v1 request schema. A future enhancement may reintroduce them (partitions are calendar-aligned and atomic per partition, so incremental rebuild is a natural extension) — independent of queue durability, which stays in-memory.
 4. **Plugin ABI for `IFeedContextReceiver`.** Confirm interface is public/stable so private-repo strategies compile unchanged. Validated by Phase 0 DIM audit.
-5. **Re-aggregation from alt-bar sources.** ~~Open.~~ **Resolved in Phase 6** for the safe trio (EqV/EqT/EqD with same-type-family + larger-threshold) — see §6.7. EqI re-aggregation deferred (requires `.flow` sidecar reader + path-dependency caveat). Range/Renko re-aggregation permanently rejected (bar shape is a function of intra-bar tick trajectory).
+5. **Re-aggregation from alt-bar sources.** ~~Open.~~ **Resolved in Phase 6** for the safe trio (EqV/EqT/EqD with same-type-family + larger-threshold) — see §6.7. EqIV re-aggregation deferred (requires `.flow` sidecar reader + path-dependency caveat). Range/Renko re-aggregation permanently rejected (bar shape is a function of intra-bar tick trajectory).

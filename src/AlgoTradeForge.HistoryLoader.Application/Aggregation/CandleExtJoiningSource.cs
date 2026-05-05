@@ -8,7 +8,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 /// <c>candle-ext</c> feed. Produces <see cref="SourceRecord"/>s with the appropriate
 /// imbalance fields populated for the requested <see cref="CandleExtJoinMode"/>:
 /// <list type="bullet">
-///   <item><see cref="CandleExtJoinMode.TakerBuyVolume"/> (EqI proxy): reads
+///   <item><see cref="CandleExtJoinMode.TakerBuyVolume"/> (EqIV proxy): reads
 ///         <c>taker_buy_vol</c>; writes <c>BuyVolumeLong</c>/<c>SellVolumeLong</c> in
 ///         base-asset-tick units (qty × QuantityScale).</item>
 ///   <item><see cref="CandleExtJoinMode.TakerBuyQuoteVolume"/> (EqID proxy): reads
@@ -299,7 +299,7 @@ public sealed class CandleExtJoiningSource
         private static string DescribeMissingRemediation(CandleExtJoinMode mode) => mode switch
         {
             CandleExtJoinMode.TakerBuyVolume =>
-                "Time-bar EqI requires it for the m1_taker_buy_proxy reconstruction.",
+                "Time-bar EqIV requires it for the m1_taker_buy_proxy reconstruction.",
             CandleExtJoinMode.TakerBuyQuoteVolume =>
                 "Time-bar EqID requires it for the m1_taker_buy_quote_proxy reconstruction.",
             CandleExtJoinMode.TakerBuyTradeCount =>

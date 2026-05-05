@@ -166,7 +166,7 @@ public sealed class PartitionedSourceReader
                 throw MalformedCell(filePath, rowIndex, "price", parts[1]);
             if (!long.TryParse(parts[2], out var qty))
                 throw MalformedCell(filePath, rowIndex, "qty", parts[2]);
-            // is_buyer_maker drives EqI's signed contribution: 0 = buy-aggressive (+qty), 1 = sell-aggressive (-qty).
+            // is_buyer_maker drives EqIV's signed contribution: 0 = buy-aggressive (+qty), 1 = sell-aggressive (-qty).
             if (!int.TryParse(parts[3], out var isBuyerMaker) || (isBuyerMaker != 0 && isBuyerMaker != 1))
                 throw MalformedCell(filePath, rowIndex, "is_buyer_maker", parts[3]);
             // agg_id is unused outside the ingestor's resume path.

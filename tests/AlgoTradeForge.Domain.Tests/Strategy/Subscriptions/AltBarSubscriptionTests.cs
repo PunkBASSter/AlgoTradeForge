@@ -23,7 +23,7 @@ public class AltBarSubscriptionTests
     [InlineData("EqV_5m_500m")]
     [InlineData("EqT_1h_500")]
     [InlineData("EqD_1m_1k")]
-    [InlineData("EqI_ticks_1M")]
+    [InlineData("EqIV_ticks_1M")]
     public void FeedId_ConformsToSection33Grammar(string feedId)
     {
         var sub = new AltBarSubscription("BTC", "ex", DataFeedRole.Primary, feedId);

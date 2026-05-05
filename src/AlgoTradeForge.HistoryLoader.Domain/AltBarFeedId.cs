@@ -16,7 +16,7 @@ public sealed record AltBarFeedId(
     public static readonly IReadOnlySet<string> AllowedTypeCodes =
         new HashSet<string>(StringComparer.Ordinal)
         {
-            "EqT", "EqV", "EqD", "EqI", "EqID", "EqIT", "Range", "Renko",
+            "EqT", "EqV", "EqD", "EqIV", "EqID", "EqIT", "Range", "Renko",
         };
 
     /// <summary>Allowed source codes: every interval string plus <c>"ticks"</c>.</summary>

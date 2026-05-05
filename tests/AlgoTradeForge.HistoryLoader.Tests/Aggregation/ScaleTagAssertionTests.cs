@@ -69,14 +69,14 @@ public sealed class ScaleTagAssertionTests
     }
 
     [Fact]
-    public void Open_EqI_ReturnsEqIAccumulator()
+    public void Open_EqIV_ReturnsEqIAccumulator()
     {
-        // Phase 2b: EqI is now supported (P2b-1). The accumulator type is internal — test via
+        // Phase 2b: EqIV is now supported (P2b-1). The accumulator type is internal — test via
         // behavior, not type assertion: feed a 100%-buy fixture and confirm a sidecar row exists
         // after emission, which only EqIAccumulator produces.
         var scale = new ScaleContext(tickSize: 0.01m, quantityStepSize: 0.0001m);
 
-        var acc = AccumulatorEntry.Open("EqI", threshold: 1000, scale, scale);
+        var acc = AccumulatorEntry.Open("EqIV", threshold: 1000, scale, scale);
         Assert.NotNull(acc);
 
         // Cross 1000 with one all-buy contribution; expect emission + sidecar row.

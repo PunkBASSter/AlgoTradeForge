@@ -46,7 +46,7 @@ public sealed class FeedDefinition
     public string? FirstBarTs { get; init; }
     public string? LastBarTs { get; init; }
 
-    /// <summary>Sibling feed-id pointing to the analytical sidecar (e.g. <c>"EqI_ticks_500000.flow"</c>).</summary>
+    /// <summary>Sibling feed-id pointing to the analytical sidecar (e.g. <c>"EqIV_ticks_500000.flow"</c>).</summary>
     public string? Sidecar { get; init; }
 
     /// <summary>
@@ -71,7 +71,7 @@ public sealed class AutoApplyDefinition
 
 public sealed class AggregatedTypeInfo
 {
-    public required string Code { get; init; }     // "EqV" | "EqT" | "EqD" | "EqI" | "Range" | "Renko"
+    public required string Code { get; init; }     // "EqV" | "EqT" | "EqD" | "EqIV" | "Range" | "Renko"
     public string? Name { get; init; }              // "EqualVolume", "EqualImbalance", ...
 }
 
@@ -128,8 +128,8 @@ public sealed class FidelityInfo
     /// <summary>
     /// One of the following, set per imbalance accumulator's <c>SidecarSchema</c>:
     /// <list type="bullet">
-    ///   <item><c>tick_signed</c> — EqI from tick source.</item>
-    ///   <item><c>m1_taker_buy_proxy</c> — EqI from time-bar source via <c>taker_buy_vol</c>.</item>
+    ///   <item><c>tick_signed</c> — EqIV from tick source.</item>
+    ///   <item><c>m1_taker_buy_proxy</c> — EqIV from time-bar source via <c>taker_buy_vol</c>.</item>
     ///   <item><c>tick_signed_dollar</c> — EqID from tick source.</item>
     ///   <item><c>m1_taker_buy_quote_proxy</c> — EqID from time-bar source via <c>taker_buy_quote_vol</c>.</item>
     ///   <item><c>tick_signed_count</c> — EqIT from tick source.</item>

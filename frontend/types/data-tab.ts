@@ -31,7 +31,7 @@ export interface FeedCatalogEntry {
   interval: string | null;
   type_code: string | null;
   threshold_value: number | null;
-  /** Non-null for sidecar-bearing alt bars (EqI); null otherwise. */
+  /** Non-null for sidecar-bearing alt bars (EqIV); null otherwise. */
   sidecar: string | null;
 }
 
@@ -94,8 +94,8 @@ export interface FidelityInfo {
   median_source_record_value: number;
   n_factor: number;
   imbalance_reconstruction_method:
-    | "tick_signed"             // EqI from tick source
-    | "m1_taker_buy_proxy"      // EqI from time-bar source
+    | "tick_signed"             // EqIV from tick source
+    | "m1_taker_buy_proxy"      // EqIV from time-bar source
     | "tick_signed_dollar"      // EqID from tick source
     | "m1_taker_buy_quote_proxy"// EqID from time-bar source
     | "tick_signed_count"       // EqIT from tick source

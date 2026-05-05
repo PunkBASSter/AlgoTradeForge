@@ -66,7 +66,7 @@ public sealed class AggregationPipeline_EqITTests : IDisposable
         params (long ts, double quoteVol, long tradeCount, double takerBuyVol, double takerBuyQuoteVol)[] rows)
     {
         // Old (pre-Phase D) schema: no taker_buy_trade_count column. Used to assert
-        // EqIT-on-TimeBar fails loud against legacy partitions, while EqI continues to work.
+        // EqIT-on-TimeBar fails loud against legacy partitions, while EqIV continues to work.
         var dir = Path.Combine(AssetDir(asset), "candle-ext");
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, $"{month}_{interval}.csv");

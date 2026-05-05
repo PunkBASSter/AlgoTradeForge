@@ -37,7 +37,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 /// divides by <c>QuantityScale × ScaleFactor</c> (i.e. <c>QuantityScale / TickSize</c>).
 /// </para>
 /// <para>
-/// Sign convention (mirrors EqI): positive <c>signed_dollar_imbalance</c> ⇒ buy-aggressive
+/// Sign convention (mirrors EqIV): positive <c>signed_dollar_imbalance</c> ⇒ buy-aggressive
 /// notional predominance; negative ⇒ sell-aggressive.
 /// </para>
 /// </remarks>

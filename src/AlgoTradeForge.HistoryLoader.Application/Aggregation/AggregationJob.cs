@@ -37,5 +37,5 @@ public sealed record AggregationResult(
     double MedianSourceRecordValue,
     double NFactor,
     double DurationSeconds,
-    /// <summary>Companion <c>.flow</c> sidecar feed-id for EqI runs; <c>null</c> for non-EqI types.</summary>
+    /// <summary>Companion <c>.flow</c> sidecar feed-id for EqIV runs; <c>null</c> for non-EqIV types.</summary>
     string? SidecarFeedId = null);

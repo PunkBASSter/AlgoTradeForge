@@ -105,12 +105,12 @@ public sealed class StartupSweepTests : IDisposable
         // A .flow sidecar dir is its own feed-id in feeds.json. If absent from the
         // manifest, treat as orphan (just like a bar feed dir).
         var assetDir = AssetDir("BTCUSDT_OrphanFlow");
-        var orphanFlow = Path.Combine(assetDir, "aggregated", "EqI_ticks_500000.flow");
+        var orphanFlow = Path.Combine(assetDir, "aggregated", "EqIV_ticks_500000.flow");
         Directory.CreateDirectory(orphanFlow);
         File.WriteAllText(Path.Combine(orphanFlow, "2026-04.csv"),
             "ts,signed_imbalance,buy_volume,sell_volume,realized_threshold\n");
 
-        // Manifest has neither EqI_ticks_500000 nor its .flow sidecar.
+        // Manifest has neither EqIV_ticks_500000 nor its .flow sidecar.
         _schema.Load(assetDir).Returns(MetadataWith());
 
         BuildSweeper().Sweep(assetDir);

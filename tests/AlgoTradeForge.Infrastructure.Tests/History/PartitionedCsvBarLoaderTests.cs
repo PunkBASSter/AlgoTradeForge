@@ -472,12 +472,12 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     public void Load_Side_Sidecar_RoutesToAggregatedFlowDir()
     {
         // .flow sidecar lives under aggregated/<feedId>.flow/ — same parent dir as the
-        // primary EqI bar feed, so reader path resolution treats them as siblings.
-        WriteSidecarCsv("Binance", "BTCUSDT_perp", "EqI_ticks_500000.flow", "2026-04.csv",
+        // primary EqIV bar feed, so reader path resolution treats them as siblings.
+        WriteSidecarCsv("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", "2026-04.csv",
             [$"{Ts(2026,4,1)},10,10,10,10,500"]);
 
         var series = _loader.Load(
-            SideDescriptor("Binance", "BTCUSDT_perp", "EqI_ticks_500000.flow"),
+            SideDescriptor("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow"),
             new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
 
         var bar = Assert.Single(series);
@@ -505,15 +505,15 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     [Fact]
     public void Load_Side_Sidecar_DoesNotConflictWithParentBarDir()
     {
-        // Plant both the parent EqI bar dir AND the sidecar dir as siblings. Loading the
+        // Plant both the parent EqIV bar dir AND the sidecar dir as siblings. Loading the
         // sidecar must not pick up the parent's bars (different feed-id, different glob).
-        WriteAggregatedCsv("Binance", "BTCUSDT_perp", "EqI_ticks_500000", "2026-04.csv",
+        WriteAggregatedCsv("Binance", "BTCUSDT_perp", "EqIV_ticks_500000", "2026-04.csv",
             [$"{Ts(2026,4,1)},999,999,999,999,99999"]);
-        WriteSidecarCsv("Binance", "BTCUSDT_perp", "EqI_ticks_500000.flow", "2026-04.csv",
+        WriteSidecarCsv("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", "2026-04.csv",
             [$"{Ts(2026,4,1)},1,1,1,1,1"]);
 
         var sidecarSeries = _loader.Load(
-            SideDescriptor("Binance", "BTCUSDT_perp", "EqI_ticks_500000.flow"),
+            SideDescriptor("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow"),
             new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
 
         var bar = Assert.Single(sidecarSeries);

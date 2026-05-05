@@ -18,8 +18,8 @@ describe("parseAltBarFeedId", () => {
   });
 
   it("flags the .flow sidecar suffix", () => {
-    const r = parseAltBarFeedId("EqI_ticks_500.flow");
-    expect(r).toMatchObject({ typeCode: "EqI", sourceCode: "ticks", threshold: "500", isSidecar: true });
+    const r = parseAltBarFeedId("EqIV_ticks_500.flow");
+    expect(r).toMatchObject({ typeCode: "EqIV", sourceCode: "ticks", threshold: "500", isSidecar: true });
   });
 
   it("parses EqID (Dollar Imbalance Bars) — tick + sidecar variants", () => {

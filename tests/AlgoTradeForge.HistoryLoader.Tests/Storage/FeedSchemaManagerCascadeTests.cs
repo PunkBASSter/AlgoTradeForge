@@ -22,7 +22,7 @@ public sealed class FeedSchemaManagerCascadeTests : IDisposable
     private static AltBarFeedSpec ParentSpec(string sidecarFeedId) => new(
         Kind: "OHLCV_AltBar",
         Columns: ["ts", "o", "h", "l", "c", "vol"],
-        Type: new AggregatedTypeInfo { Code = "EqI", Name = "EqualImbalance" },
+        Type: new AggregatedTypeInfo { Code = "EqIV", Name = "EqualImbalance" },
         Source: new AggregatedSourceInfo { Feed = "1m", RecordCount = 1000 },
         Threshold: new ThresholdInfo
         {
@@ -37,7 +37,7 @@ public sealed class FeedSchemaManagerCascadeTests : IDisposable
     private static AltBarFeedSpec SidecarSpec() => new(
         Kind: "Side",
         Columns: ["ts", "signed_imbalance", "buy_volume", "sell_volume", "realized_threshold"],
-        Type: new AggregatedTypeInfo { Code = "EqI" },
+        Type: new AggregatedTypeInfo { Code = "EqIV" },
         Source: new AggregatedSourceInfo { Feed = "1m" },
         Threshold: new ThresholdInfo { Value = 500m, Unit = "base_asset", InputMode = "absolute" },
         Build: new BuildInfo { ToolVersion = "test" },
@@ -51,18 +51,18 @@ public sealed class FeedSchemaManagerCascadeTests : IDisposable
     {
         var manager = new FeedSchemaManager();
         var assetDir = AssetDir("BTCUSDT_perp");
-        manager.EnsureAltBarFeed(assetDir, "EqI_1m_500", ParentSpec("EqI_1m_500.flow"));
-        manager.EnsureAltBarFeed(assetDir, "EqI_1m_500.flow", SidecarSpec());
+        manager.EnsureAltBarFeed(assetDir, "EqIV_1m_500", ParentSpec("EqIV_1m_500.flow"));
+        manager.EnsureAltBarFeed(assetDir, "EqIV_1m_500.flow", SidecarSpec());
 
         var before = manager.Load(assetDir)!;
-        Assert.Contains("EqI_1m_500", before.Feeds);
-        Assert.Contains("EqI_1m_500.flow", before.Feeds);
+        Assert.Contains("EqIV_1m_500", before.Feeds);
+        Assert.Contains("EqIV_1m_500.flow", before.Feeds);
 
-        manager.RemoveFeedAndSidecar(assetDir, "EqI_1m_500", "EqI_1m_500.flow");
+        manager.RemoveFeedAndSidecar(assetDir, "EqIV_1m_500", "EqIV_1m_500.flow");
 
         var after = manager.Load(assetDir)!;
-        Assert.DoesNotContain("EqI_1m_500", after.Feeds);
-        Assert.DoesNotContain("EqI_1m_500.flow", after.Feeds);
+        Assert.DoesNotContain("EqIV_1m_500", after.Feeds);
+        Assert.DoesNotContain("EqIV_1m_500.flow", after.Feeds);
     }
 
     [Fact]
@@ -100,13 +100,13 @@ public sealed class FeedSchemaManagerCascadeTests : IDisposable
     {
         var manager = new FeedSchemaManager();
         var assetDir = AssetDir("BTCUSDT_perp");
-        manager.EnsureAltBarFeed(assetDir, "EqI_1m_500", ParentSpec("EqI_1m_500.flow"));
-        manager.EnsureAltBarFeed(assetDir, "EqI_1m_500.flow", SidecarSpec());
+        manager.EnsureAltBarFeed(assetDir, "EqIV_1m_500", ParentSpec("EqIV_1m_500.flow"));
+        manager.EnsureAltBarFeed(assetDir, "EqIV_1m_500.flow", SidecarSpec());
 
         var changeCount = 0;
         manager.ManifestChanged += _ => changeCount++;
 
-        manager.RemoveFeedAndSidecar(assetDir, "EqI_1m_500", "EqI_1m_500.flow");
+        manager.RemoveFeedAndSidecar(assetDir, "EqIV_1m_500", "EqIV_1m_500.flow");
 
         Assert.Equal(1, changeCount);   // single rewrite → single event
     }

@@ -37,8 +37,8 @@ These are blockers. Every audit produces a written decision in `specs/` or this 
 ### Manifest schema
 
 - [x] **P1a-5** Extend `feeds.json` schema with `kind`, `type`, `source`, `threshold` (incl. `input_mode` per P0-5), `build`, `fidelity`, `first_bar_ts`, `last_bar_ts`, `sidecar`. Schema only — no aggregator. (TRD §4) — _depends on P0-5._
-- [x] **P1a-6** Enforce `fidelity.imbalance_reconstruction_method` MUST be present (null on non-EqI) at write AND read. (TRD §4 rule)
-- [x] **P1a-7** Test: manifest required-field validation — non-EqI without `imbalance_reconstruction_method` errors at both ends.
+- [x] **P1a-6** Enforce `fidelity.imbalance_reconstruction_method` MUST be present (null on non-EqIV) at write AND read. (TRD §4 rule)
+- [x] **P1a-7** Test: manifest required-field validation — non-EqIV without `imbalance_reconstruction_method` errors at both ends.
 
 ### Manifest writer + atomicity
 
@@ -110,9 +110,9 @@ Time-bar source aggregation only. Tick sources are Phase 2a.
 - [x] **P1b-5** Test: `EqT` accumulator parity.
 - [x] **P1b-6** Implement `EqD` accumulator — quote-vol long acc + OHLC. (TRD §6.3) — `EqDAccumulator : AccumulatorBase` (close × volume approximation; candle-ext join in Phase 2b).
 - [x] **P1b-7** Test: `EqD` accumulator parity.
-- [-] **P1b-8** Side-feed `double → long` conversion at sum site (`MoneyConvert.ToLong(value * QuantityScale)`); only conversion path. (TRD §3.6, §6.3) — _no conversion needed in Phase 1b: candle CSVs are already pre-scaled longs and EqD's product is pure long arithmetic. The sum site lands in Phase 2b's EqI accumulator where `taker_buy_quote_vol` arrives as `double` from the side feed (documented on `EqDAccumulator`)._
+- [-] **P1b-8** Side-feed `double → long` conversion at sum site (`MoneyConvert.ToLong(value * QuantityScale)`); only conversion path. (TRD §3.6, §6.3) — _no conversion needed in Phase 1b: candle CSVs are already pre-scaled longs and EqD's product is pure long arithmetic. The sum site lands in Phase 2b's EqIV accumulator where `taker_buy_quote_vol` arrives as `double` from the side feed (documented on `EqDAccumulator`)._
 - [-] **P1b-9** Test: sum-site conversion path — mock `MoneyConvert.ToLong`, verify call count = 1 per source bar. — _deferred with P1b-8._
-- [x] **P1b-10** Implement `PartitionedSourceReader` — chronological enumeration across partition boundaries; optional 1:1 join with `candle-ext` by `ts`. (TRD §6.2) — _candle-ext join reserved for Phase 2b's EqI proxy._
+- [x] **P1b-10** Implement `PartitionedSourceReader` — chronological enumeration across partition boundaries; optional 1:1 join with `candle-ext` by `ts`. (TRD §6.2) — _candle-ext join reserved for Phase 2b's EqIV proxy._
 - [x] **P1b-11** Wire streaming pipeline: `PartitionedSourceReader → BarAccumulator → PartitionedSinkWriter → FeedsJsonFinalizer` — `AggregationPipeline.Run`. _Channel use moved to progress flow only (per-job `ProgressEvent` channel for SSE); the inner record path is sync since the accumulator is fast and the sink is single-threaded by design (TRD §6.2)._
 - [x] **P1b-12** Test: streaming memory bound — 1000 records under 1 MB allocation delta. BDN `[MemoryDiagnoser]` cross-check deferred to P1b-42 via `AggregatorBenchmarks`.
 - [x] **P1b-13** Track per-bar overshoot; persist running mean + max in manifest `fidelity` block. (TRD §6.4)
@@ -167,7 +167,7 @@ Time-bar source aggregation only. Tick sources are Phase 2a.
 
 ## Phase 2a — Tick infrastructure
 
-No EqI yet; tick storage and signed accumulator are independent surfaces.
+No EqIV yet; tick storage and signed accumulator are independent surfaces.
 
 - [x] **P2a-1** Tick ingestion — daily partitions `History/.../ticks/<YYYY>-<MM>-<DD>.csv` with schema `ts, price, qty, is_buyer_maker, agg_id`. (TRD §3.5) — `BinanceFuturesClient.AggregateTrades` partial + `BinanceAggTradeParser` + `DailyTickCsvWriter` + `AggTradeFeedCollector` + `TicksCollectorService` (5 min PeriodicTimer) + DI wiring.
 - [x] **P2a-2** `agg_id` resume-on-crash — last-written Binance trade ID per day-partition; de-dup on reconnect. (TRD §3.5) — `DailyTickCsvWriter.ResumeFrom` reads tail with chunked-backwards scan; torn-row repair via `FileStream.SetLength`; `_lastAggIdByDay` cache rejects replays. Collector advances `fromMs = lastTsMs` (inclusive) so multi-tick-per-ms boundary clusters are re-fetched and dedupped by id, not skipped by ts+1.
@@ -183,21 +183,21 @@ No EqI yet; tick storage and signed accumulator are independent surfaces.
 
 ---
 
-## Phase 2b — EqI + sidecar + `IFeedContext` extension
+## Phase 2b — EqIV + sidecar + `IFeedContext` extension
 
 - [x] **P2b-1** Implement signed accumulator — tick path (`is_buyer_maker`) and time-bar proxy path (`taker_buy`); emit at `abs(signed_acc) ≥ N`. (TRD §6.3) — `EqIAccumulator` (long signed-acc + raw-double buy/sell for sidecar). `SourceRecord` gains `BuyVolumeLong`/`SellVolumeLong`; tick reader populates from `is_buyer_maker`; `CandleExtJoiningSource` decorates time-bar source for the proxy path.
-- [x] **P2b-2** EqI eligibility checks — ticks always eligible; time-bar EqI requires `candle-ext` (perp/future only). (TRD §7) — already encoded in `EligibilityRules.ForSource` (pre-existing); P2b ships compatible accumulator.
+- [x] **P2b-2** EqIV eligibility checks — ticks always eligible; time-bar EqIV requires `candle-ext` (perp/future only). (TRD §7) — already encoded in `EligibilityRules.ForSource` (pre-existing); P2b ships compatible accumulator.
 - [x] **P2b-3** Tag `fidelity.imbalance_reconstruction_method ∈ {tick_signed, m1_taker_buy_proxy}`. (TRD §4) — `AggregationPipeline` selects by `Source.Kind` (Tick → `tick_signed`, TimeBar → `m1_taker_buy_proxy`).
 - [x] **P2b-4** `.flow` sidecar writer — schema `ts, signed_imbalance, buy_volume, sell_volume, realized_threshold` (all double, `nullable_columns: true`). (TRD §3.5) — Pipeline-side `PartitionedSinkWriter` opens a sibling staging dir under `aggregated/<feedId>.flow/`.
 - [x] **P2b-5** `.flow` sidecar reader via `CsvFeedSeriesLoader`. (TRD §3.5) — `feedName: aggregated/<feedId>.flow`, `nullable_columns: true` propagated from manifest.
-- [x] **P2b-6** Sidecar manifest entry registered alongside parent EqI entry; `sidecar` field on parent points to it. (TRD §4) — `ISchemaManager.EnsureAltBarWithSidecar` writes both atomically under one exclusive lock.
-- [x] **P2b-7** Test: EqI tick-signed — `EqIAccumulatorTests` (100%-buy positive sidecar, 100%-sell negative, mixed cancellation) + `AggregationPipeline_EqITests.Run_TickEqI_AllBuy_ManifestTaggedTickSigned`.
-- [x] **P2b-8** Test: EqI taker-buy proxy — `AggregationPipeline_EqITests.Run_TimeBarEqI_TakerBuyProxy_FormulaMatchesTrd` (100%-taker-buy fixture asserts positive signed and `signed = 2*taker_buy − vol`); manifest tag pinned by `Run_TimeBarEqI_AllTakerBuy_PositiveSignedImbalance_ManifestTagged`.
+- [x] **P2b-6** Sidecar manifest entry registered alongside parent EqIV entry; `sidecar` field on parent points to it. (TRD §4) — `ISchemaManager.EnsureAltBarWithSidecar` writes both atomically under one exclusive lock.
+- [x] **P2b-7** Test: EqIV tick-signed — `EqIAccumulatorTests` (100%-buy positive sidecar, 100%-sell negative, mixed cancellation) + `AggregationPipeline_EqITests.Run_TickEqIV_AllBuy_ManifestTaggedTickSigned`.
+- [x] **P2b-8** Test: EqIV taker-buy proxy — `AggregationPipeline_EqITests.Run_TimeBarEqIV_TakerBuyProxy_FormulaMatchesTrd` (100%-taker-buy fixture asserts positive signed and `signed = 2*taker_buy − vol`); manifest tag pinned by `Run_TimeBarEqIV_AllTakerBuy_PositiveSignedImbalance_ManifestTagged`.
 - [x] **P2b-9** `IFeedContext.TryGetPrimarySidecar` + `PrimarySidecarSchema` (DIM, fallback to P0-2 `ISidecarReceiver` if needed). (TRD §9.4) — default-interface methods on `IFeedContext`; `BacktestFeedContext` overrides for backtest path. `GetPrimarySignedImbalance()` convenience helper lands as default-method too.
 - [x] **P2b-10** Engine binds `TryGetPrimarySidecar` to FeedSeries named by primary's `sidecar` field (lazy load). (TRD §9.4) — `BacktestFeedContext.RegisterPrimarySidecarLazy` + `EnsurePrimarySidecarMaterialized`. `IFeedContextBuilder.Build` gains `primaryFeedName` param; `FeedContextBuilder` skips eager `.flow` load and registers lazy when primary's manifest entry has `Sidecar`. Cursor catches up to `_latestAdvanceTs` on first materialization so mid-run access doesn't replay history.
 - [x] **P2b-11** Test: sidecar zero-cost — `BacktestFeedContextSidecarTests.TryGetPrimarySidecar_WhenStrategyNeverAccesses_LoaderNotInvoked` + `_FirstAccess_InvokesLoaderExactlyOnce`.
 - [x] **P2b-12** Test: sidecar binding correctness — `BacktestFeedContextSidecarTests.TryGetPrimarySidecar_LoaderReturnsNull_ThrowsInvalidOperationException` (loud failure at first access, not silent `NaN`).
-- [x] **P2b-13** UI yellow-banner warning copy for time-bar EqI (consumed by Phase 3 Data tab + Status card). (TRD §10.1) — `AltBarWarnings.TimeBarEqIProxy` constant; `EligibilityRules` returns it via the eligibility-options endpoint so the FE relays the canonical wording without composing copy.
+- [x] **P2b-13** UI yellow-banner warning copy for time-bar EqIV (consumed by Phase 3 Data tab + Status card). (TRD §10.1) — `AltBarWarnings.TimeBarEqIProxy` constant; `EligibilityRules` returns it via the eligibility-options endpoint so the FE relays the canonical wording without composing copy.
 
 ---
 
@@ -226,7 +226,7 @@ No EqI yet; tick storage and signed accumulator are independent surfaces.
 - [x] **P3-16** Right sidebar — New aggregate bar card (Source / Type / N / Aggregate). N input accepts SI suffixes; Type filtered by eligibility. — `NewAggregateForm` + `lib/data/si-suffix.ts` (case-sensitive: lowercase `m` = milli, uppercase `M` = mega per TRD §3.4). Type dropdown sourced from `/aggregation-options` `eligible_types`; submits with `input_mode=convenience` so server preserves the original suffix string in `convenience_input`.
 - [x] **P3-17** SSE progress UI — `Queued (#N)` → `Aggregating <YYYY>-<MM> … X%`. Success: column appears, toast with `actual_overshoot_pct`. Failure: `ProblemDetails` rendered. — `JobProgressCard` + `useJobStream` hook. SSE client uses `@microsoft/fetch-event-source` (native EventSource doesn't support `Last-Event-ID` injection from localStorage).
 - [x] **P3-18** `localStorage` persistence of `jobId` keyed by `(exchange, asset, feedId)` + `Last-Event-ID` resume. — `useDataJobsStore` with `zustand/middleware`'s `persist` (`partialize` keeps only the `jobs` map; functions never serialized). Composite key `${exchange}|${asset}|${outcomeFeedIdHint}` allows multiple in-flight jobs per asset. `purgeStale` on hydrate drops entries >24h old (server retention is ~10min anyway). 410 Gone on resume → `clearJob` to stop reconnect loops.
-- [x] **P3-19** Time-bar EqI yellow banner on the form AND on the built feed's Status card (uses P2b-13 copy). — `lib/data/eqi-banner.ts` `pickEqiBanner(warnings)` filters by the substring `"taker-buy proxy"` and returns the server-supplied string verbatim. Form pulls from `/aggregation-options.warnings`; Status card pulls from same endpoint when manifest's `imbalance_reconstruction_method == "m1_taker_buy_proxy"`. Zero client-side string composition (`eqi-banner.test.tsx` pins this).
+- [x] **P3-19** Time-bar EqIV yellow banner on the form AND on the built feed's Status card (uses P2b-13 copy). — `lib/data/eqi-banner.ts` `pickEqiBanner(warnings)` filters by the substring `"taker-buy proxy"` and returns the server-supplied string verbatim. Form pulls from `/aggregation-options.warnings`; Status card pulls from same endpoint when manifest's `imbalance_reconstruction_method == "m1_taker_buy_proxy"`. Zero client-side string composition (`eqi-banner.test.tsx` pins this).
 
 ---
 
@@ -283,7 +283,7 @@ Path-dependent; **tick-only in v1** (ADR D1 — time-bar Range collapses force a
 
 ### Interface extension (additive DIM)
 
-- [x] **P5-2** Add `bool TryDrainQueued(out AggregatedBar emitted)` default-interface method on `IBarAccumulator` returning `false`. EqV/EqT/EqD/EqI/Range inherit the no-op; Renko overrides to drain its internal queue. P0-1 audit pre-cleared DIM dispatch on plugin assemblies.
+- [x] **P5-2** Add `bool TryDrainQueued(out AggregatedBar emitted)` default-interface method on `IBarAccumulator` returning `false`. EqV/EqT/EqD/EqIV/Range inherit the no-op; Renko overrides to drain its internal queue. P0-1 audit pre-cleared DIM dispatch on plugin assemblies.
 - [x] **P5-3** Pipeline drain loop: extracted `WriteBar` local helper around emit handler so the primary-emit + queue-drain paths share row-write + bookkeeping; sidecar emission stays inline (only fires for primary emits — drained bars carry no sidecar per ADR D7). `src/AlgoTradeForge.HistoryLoader.Application/Aggregation/AggregationPipeline.cs`.
 
 ### Range accumulator
@@ -320,7 +320,7 @@ Path-dependent; **tick-only in v1** (ADR D1 — time-bar Range collapses force a
 
 ## Phase 6 — Cancel + alt-bar re-aggregation
 
-In-memory queue stays (no durability). Two independent capabilities bundled into one phase because their FE surfaces both touch the Data tab. Re-aggregation scope: **safe trio only** (EqV/EqT/EqD with same-type-family + larger-threshold). EqI re-aggregation deferred (sidecar reader + path-dependency caveat). Range/Renko remain permanently rejected.
+In-memory queue stays (no durability). Two independent capabilities bundled into one phase because their FE surfaces both touch the Data tab. Re-aggregation scope: **safe trio only** (EqV/EqT/EqD with same-type-family + larger-threshold). EqIV re-aggregation deferred (sidecar reader + path-dependency caveat). Range/Renko remain permanently rejected.
 
 ### Backend — cancel
 
@@ -334,14 +334,14 @@ In-memory queue stays (no durability). Two independent capabilities bundled into
 ### Backend — re-aggregation (safe trio: EqV/EqT/EqD)
 
 - [x] **P6-7** `PartitionedSourceReader`: new `DataFeedKind.AltBar` branch resolves `aggregated/{feedId}/*.csv` chronologically (mirrors `PartitionedCsvBarLoader`'s glob). Reuses `ReadTimeBarFile` parser verbatim — same 6-col shape. `BuyVolumeLong`/`SellVolumeLong` stay 0.
-- [x] **P6-8** `EligibilityRules.ForSource` `SourceKind.AltBar` branch: factored as `AltBarReaggregation(source)`. Reads `source.Type.Code` to discriminate; EqV/EqT/EqD → eligible only for same type code (cross-family rejected with `CrossFamilyReaggregationReason`); EqI → all rejected with `EqIReaggregationReason`; Range/Renko → all rejected with `PathDependentReaggregationReason`. Missing-type-metadata defense-in-depth path included. `Allow` helper promoted from local-static to file-scope-private.
+- [x] **P6-8** `EligibilityRules.ForSource` `SourceKind.AltBar` branch: factored as `AltBarReaggregation(source)`. Reads `source.Type.Code` to discriminate; EqV/EqT/EqD → eligible only for same type code (cross-family rejected with `CrossFamilyReaggregationReason`); EqIV → all rejected with `EqIReaggregationReason`; Range/Renko → all rejected with `PathDependentReaggregationReason`. Missing-type-metadata defense-in-depth path included. `Allow` helper promoted from local-static to file-scope-private.
 - [x] **P6-9** `AggregationEndpoints.PostAggregate`: detects `sourceFeed.Kind == "OHLCV_AltBar"` and routes `DataFeedKind.AltBar` through `DataFeedDescriptor`. Adds threshold-ordering validation post-eligibility (422 `code=invalid_re_aggregation` on `requestedThresholdScaled <= sourceThresholdScaled`). Outcome feed-id grammar uses the source's `SourceCode` (e.g. `EqV_1m_1000` → outcome `EqV_1m_2000`); manifest's `source.feed` records the actual alt-bar source.
 
 ### Backend — tests
 
 - [x] **P6-10** `AggregationJobRegistryTests` cancel cases: `TryRequestCancel_QueuedJob_FiresCts_LeavesStateUnchangedUntilWorkerObserves`; `OnCancelled_AfterTryRequestCancel_TransitionsToCancelled_AndCleansActiveByFeedId`; `TryRequestCancel_TerminalJob_ReturnsFalse_WithObservedTerminalState`; `TryRequestCancel_UnknownJob_ReturnsFalse`; `OnCancelled_AfterAlreadyTerminal_IsIdempotent_NoStateChange`.
 - [x] **P6-11** `AggregationPipeline_Phase6Tests` (new): `Run_CancelMidStream_DeletesStagingDir_NoManifestWrite` — pre-cancelled token; asserts staging dir absent and `feeds.json` unchanged.
-- [x] **P6-12** `EligibilityRulesTests`: `AltBarSource_EqV_AllowsLargerEqV_RejectsOthers`; `AltBarSource_EqT_*` and `AltBarSource_EqD_*` parity; `AltBarSource_EqI_RejectsAll_WithFidelityReason`; `AltBarSource_Range_RejectsAll_WithPathDependentReason`; `AltBarSource_Renko_*` parity; `AltBarSource_MissingTypeMetadata_RejectsAllWithDiagnosticReason`.
+- [x] **P6-12** `EligibilityRulesTests`: `AltBarSource_EqV_AllowsLargerEqV_RejectsOthers`; `AltBarSource_EqT_*` and `AltBarSource_EqD_*` parity; `AltBarSource_EqIV_RejectsAll_WithFidelityReason`; `AltBarSource_Range_RejectsAll_WithPathDependentReason`; `AltBarSource_Renko_*` parity; `AltBarSource_MissingTypeMetadata_RejectsAllWithDiagnosticReason`.
 - [x] **P6-13** `PartitionedSourceReaderTests.Read_AltBarSource_EnumeratesPartitionedCsvsChronologically`. `AggregationPipeline_Phase6Tests` re-aggregation: `Run_EqV2000_FromEqV1000_ProducesHalfTheBars_WithDoubledVolume`; `Run_EqT200_FromEqT100_ProducesHalfTheBars`; `Run_EqDFromEqD_PreservesQuoteVolumeAccumulation`. Stale `Read_NonTimeBarKind_Throws` repurposed to `Read_SideKind_Throws`.
 - [x] **P6-14** `DataProxyTests`: `CancelJob_ForwardsDelete_AndReturns204_OnSuccess`; `CancelJob_Forwards404_WhenJobUnknown`; `CancelJob_Forwards409_WhenJobAlreadyTerminal`.
 

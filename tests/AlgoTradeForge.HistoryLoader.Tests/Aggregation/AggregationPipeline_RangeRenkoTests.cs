@@ -113,7 +113,7 @@ public sealed class AggregationPipeline_RangeRenkoTests : IDisposable
         Assert.Equal("absolute", entry.Threshold.InputMode);
         Assert.Null(entry.Sidecar);
         Assert.NotNull(entry.Fidelity);
-        Assert.Null(entry.Fidelity!.ImbalanceReconstructionMethod);    // non-EqI stays null
+        Assert.Null(entry.Fidelity!.ImbalanceReconstructionMethod);    // non-EqIV stays null
 
         // Partition CSV exists and starts with the header.
         var feedDir = Path.Combine(AssetDir(asset), "aggregated", "Range_ticks_50");

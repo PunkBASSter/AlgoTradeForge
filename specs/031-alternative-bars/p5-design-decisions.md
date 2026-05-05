@@ -4,7 +4,7 @@
 
 ## Context
 
-Phase 4 (Subscription redesign) just landed; the alt-bar pipeline now supports four type codes (`EqV`, `EqT`, `EqD`, `EqI`) end-to-end. Phase 5 adds two more: `Range` (price-spread bars) and `Renko` (constant-brick bars). Both are **path-dependent** — emission is decided by the running price trajectory, not by a single source-record contribution.
+Phase 4 (Subscription redesign) just landed; the alt-bar pipeline now supports four type codes (`EqV`, `EqT`, `EqD`, `EqIV`) end-to-end. Phase 5 adds two more: `Range` (price-spread bars) and `Renko` (constant-brick bars). Both are **path-dependent** — emission is decided by the running price trajectory, not by a single source-record contribution.
 
 The original P5 task list (P5-1..P5-6) collapsed several decisions into one ADR. This document widens the scope: it pins the accumulator semantics, the threshold-unit choice, the sidecar question, the multi-emit interface extension, and the source-kind restrictions before code is written.
 
@@ -72,12 +72,12 @@ Renko's path-dependence means a single tick can emit 0, 1, or many bricks. The e
 bool TryDrainQueued(out AggregatedBar emitted)
 ```
 
-**Default impl returns `false`**, so EqV/EqT/EqD/EqI inherit no-op behaviour automatically. Renko enqueues bricks 2..N internally; `TryAdvance` returns brick 1 via `out`, and the pipeline drains the rest in a `while (acc.TryDrainQueued(...))` loop after each emit.
+**Default impl returns `false`**, so EqV/EqT/EqD/EqIV inherit no-op behaviour automatically. Renko enqueues bricks 2..N internally; `TryAdvance` returns brick 1 via `out`, and the pipeline drains the rest in a `while (acc.TryDrainQueued(...))` loop after each emit.
 
 **Why this shape:**
 - Additive — no breakage to existing accumulators (P0-1 audit pre-cleared DIM dispatch on plugin assemblies)
 - Pipeline diff is ~6 lines around the existing emit handler
-- Mirrors the existing `TryGetLastSidecarRow` DIM pattern (lives on the same interface, returns `false` for non-EqI)
+- Mirrors the existing `TryGetLastSidecarRow` DIM pattern (lives on the same interface, returns `false` for non-EqIV)
 - Alternative (`IEnumerable<AggregatedBar>` return type) breaks every accumulator's signature
 
 ### D7. No sidecar for either type
@@ -106,7 +106,7 @@ Both Range and Renko thresholds are price magnitudes (e.g., $50 per bar, 100 tic
 
 ### D9. `imbalance_reconstruction_method` manifest field stays null for Range/Renko
 
-The manifest's `fidelity.imbalance_reconstruction_method` (P1a-6 invariant) is an EqI-specific tag. For Range/Renko it stays `null`. The validator at write/read enforces this implicitly (the field is required, but `null` is the only valid value for non-EqI types — no change needed).
+The manifest's `fidelity.imbalance_reconstruction_method` (P1a-6 invariant) is an EqIV-specific tag. For Range/Renko it stays `null`. The validator at write/read enforces this implicitly (the field is required, but `null` is the only valid value for non-EqIV types — no change needed).
 
 We do **not** add a parallel `range_reconstruction_method` or `renko_reconstruction_method` field in v1 — they'd always be `"tick"` (D1) and would be removed when we eventually add time-bar variants. Wait until there's >1 method to introduce the field.
 
@@ -123,5 +123,5 @@ We do **not** add a parallel `range_reconstruction_method` or `renko_reconstruct
 - **TRD §7** — eligibility matrix; P5-13 narrows row 1 ("future Range/Renko" → "Range/Renko") and row 4 (no Range/Renko on OHLC-only)
 - **TRD §15** — non-goals; P5-13 strikes the Range/Renko line
 - **P0-5 ADR** — threshold wire schema (`input_mode`, `convenience_input`); D8 adds `"price"` to the unit set
-- **P1a-6 / P1b-3** — `fidelity.imbalance_reconstruction_method` invariant (always present, null for non-EqI); D9 confirms unchanged
+- **P1a-6 / P1b-3** — `fidelity.imbalance_reconstruction_method` invariant (always present, null for non-EqIV); D9 confirms unchanged
 - **P2b-9 / Phase 2b** — `IFeedContext.TryGetPrimarySidecar`; D7 leaves untouched

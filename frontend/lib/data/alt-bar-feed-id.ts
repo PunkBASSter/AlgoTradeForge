@@ -4,7 +4,7 @@
 // Keep both parsers in lockstep — when the C# allowed sets change, mirror them here.
 
 export const ALLOWED_TYPE_CODES = new Set([
-  "EqT", "EqV", "EqD", "EqI", "EqID", "EqIT", "Range", "Renko",
+  "EqT", "EqV", "EqD", "EqIV", "EqID", "EqIT", "Range", "Renko",
 ] as const);
 
 export const ALLOWED_SOURCE_CODES = new Set([

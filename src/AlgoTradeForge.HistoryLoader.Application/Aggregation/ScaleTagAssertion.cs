@@ -53,13 +53,13 @@ public static class AccumulatorEntry
             "EqV" => new Accumulators.EqVAccumulator(threshold),
             "EqT" => new Accumulators.EqTAccumulator(threshold),
             "EqD" => new Accumulators.EqDAccumulator(threshold),
-            "EqI" => new Accumulators.EqIAccumulator(threshold, accumulatorScale),
+            "EqIV" => new Accumulators.EqIAccumulator(threshold, accumulatorScale),
             "EqID" => new Accumulators.EqIDAccumulator(threshold, accumulatorScale, useTimeBar),
             "EqIT" => new Accumulators.EqITAccumulator(threshold, useTimeBar),
             "Range" => new Accumulators.RangeAccumulator(threshold),
             "Renko" => new Accumulators.RenkoAccumulator(threshold),
             _ => throw new ArgumentException(
-                $"Unknown alt-bar type code '{typeCode}' (allowed: EqT, EqV, EqD, EqI, EqID, EqIT, Range, Renko).",
+                $"Unknown alt-bar type code '{typeCode}' (allowed: EqT, EqV, EqD, EqIV, EqID, EqIT, Range, Renko).",
                 nameof(typeCode)),
         };
     }

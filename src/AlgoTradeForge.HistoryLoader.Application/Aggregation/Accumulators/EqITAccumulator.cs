@@ -38,7 +38,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 /// <para>
 /// Sign convention: positive <c>signed_count_imbalance</c> ⇒ more buy-aggressor trades than
 /// sell-aggressor; negative ⇒ more sell-aggressors. Surfaces participation imbalance
-/// independent of trade size, complementing EqI's volume-weighted and EqID's notional-weighted
+/// independent of trade size, complementing EqIV's volume-weighted and EqID's notional-weighted
 /// views.
 /// </para>
 /// </remarks>
@@ -113,7 +113,7 @@ internal sealed class EqITAccumulator : IBarAccumulator
         else
         {
             // Tick path: each record is a single trade. Aggressor side determined by which of
-            // BuyVolumeLong / SellVolumeLong is non-zero (mirroring EqI's tick-source convention).
+            // BuyVolumeLong / SellVolumeLong is non-zero (mirroring EqIV's tick-source convention).
             // A tied/zero record contributes 0 — degenerate ticks shouldn't drive emission.
             var signedQty = r.BuyVolumeLong - r.SellVolumeLong;
             buyDelta = signedQty > 0 ? 1L : 0L;

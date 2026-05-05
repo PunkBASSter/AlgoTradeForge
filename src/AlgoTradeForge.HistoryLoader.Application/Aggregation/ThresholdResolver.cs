@@ -134,13 +134,13 @@ public static class ThresholdResolver
             "EqV" => "base_asset",
             "EqT" => "trades",
             "EqD" => "quote_asset",
-            "EqI" => "base_asset",
+            "EqIV" => "base_asset",
             "EqID" => "quote_asset",
             "EqIT" => "trades",
             "Range" => "price",
             "Renko" => "price",
             _ => throw new ArgumentException(
-                $"Unrecognized type_code '{typeCode}' (allowed: EqV, EqT, EqD, EqI, EqID, EqIT, Range, Renko)."),
+                $"Unrecognized type_code '{typeCode}' (allowed: EqV, EqT, EqD, EqIV, EqID, EqIT, Range, Renko)."),
         };
     }
 

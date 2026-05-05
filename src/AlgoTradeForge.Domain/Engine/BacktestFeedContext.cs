@@ -11,7 +11,7 @@ public sealed class BacktestFeedContext : IFeedContext
 {
     private readonly Dictionary<string, FeedEntry> _feeds = [];
 
-    // Primary bar feed's sidecar (e.g. EqI's <feedId>.flow). Loader held in a closure and
+    // Primary bar feed's sidecar (e.g. EqIV's <feedId>.flow). Loader held in a closure and
     // invoked at most once on first access; until then we own the schema but pay no I/O.
     private DataFeedSchema? _primarySidecarSchema;
     private string? _primarySidecarFeedKey;

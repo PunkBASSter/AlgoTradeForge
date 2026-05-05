@@ -82,7 +82,7 @@ public sealed class StrategySubscriptionFactoryTests
     [InlineData("EqV_1m_500m", "1m")]
     [InlineData("EqT_5m_1k", "5m")]
     [InlineData("EqD_1h_2M", "1h")]
-    [InlineData("EqI_15m_500", "15m")]
+    [InlineData("EqIV_15m_500", "15m")]
     public void ResolveSourceTimeFrame_TimeBarSourceCode_ReturnsParsedTimeFrame(
         string feedId, string expectedCode)
     {

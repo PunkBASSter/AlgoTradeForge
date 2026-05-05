@@ -3,7 +3,7 @@ import { pickEqiBanner, pickProxyBanner } from "./eqi-banner";
 
 // The canonical server-side copies live in:
 //   src/AlgoTradeForge.HistoryLoader.Application/Aggregation/AltBarWarnings.cs
-//   public const string TimeBarEqIProxy           = "Time-bar EqI uses the taker-buy proxy: …";
+//   public const string TimeBarEqIProxy           = "Time-bar EqIV uses the taker-buy proxy: …";
 //   public const string TimeBarEqIDProxy          = "Time-bar EqID uses the per-minute taker-buy-quote sum: …";
 //   public const string TimeBarTibApproximation   = "Time-bar EqIT uses a count proxy derived from `taker_buy_vol / vol × trade_count` — …";
 //
@@ -12,7 +12,7 @@ import { pickEqiBanner, pickProxyBanner } from "./eqi-banner";
 // substring (defined inside `eqi-banner.ts`) so minor copy edits stay backwards
 // compatible — but removing the substring fails the test loudly.
 const EQI_COPY =
-  "Time-bar EqI uses the taker-buy proxy: it underestimates intra-bar churn. " +
+  "Time-bar EqIV uses the taker-buy proxy: it underestimates intra-bar churn. " +
   "Rebuild from `ticks` for magnitude-sensitive use.";
 const EQID_COPY =
   "Time-bar EqID uses the per-minute taker-buy-quote sum: it underestimates intra-bar " +
@@ -22,19 +22,19 @@ const EQIT_COPY =
   "it assumes equal-sized trades within each minute. Rebuild from `ticks` for accurate " +
   "participation imbalance.";
 
-describe("pickEqiBanner (legacy entry point — EqI only)", () => {
-  it("returns the EqI proxy warning verbatim from the server array", () => {
+describe("pickEqiBanner (legacy entry point — EqIV only)", () => {
+  it("returns the EqIV proxy warning verbatim from the server array", () => {
     const result = pickEqiBanner([EQI_COPY]);
     expect(result).toBe(EQI_COPY);
   });
 
-  it("returns null when no EqI proxy warning is present", () => {
+  it("returns null when no EqIV proxy warning is present", () => {
     expect(pickEqiBanner([])).toBeNull();
     expect(pickEqiBanner(["unrelated warning"])).toBeNull();
   });
 
-  it("ignores non-EqI warnings even when they're imbalance-related", () => {
-    // The legacy entry point matches only the EqI substring — EqID/EqIT warnings should
+  it("ignores non-EqIV warnings even when they're imbalance-related", () => {
+    // The legacy entry point matches only the EqIV substring — EqID/EqIT warnings should
     // pass through untouched. Form-page consumers that need the full set should call
     // pickProxyBanner with a method tag.
     expect(pickEqiBanner([EQID_COPY, EQIT_COPY])).toBeNull();
@@ -42,7 +42,7 @@ describe("pickEqiBanner (legacy entry point — EqI only)", () => {
 
   it("matches by the 'taker-buy proxy' substring (TRD §10.1 detection key)", () => {
     const reworded =
-      "Time-bar EqI: the taker-buy proxy reconstruction is approximate.";
+      "Time-bar EqIV: the taker-buy proxy reconstruction is approximate.";
     expect(pickEqiBanner([reworded])).toBe(reworded);
   });
 });
@@ -50,7 +50,7 @@ describe("pickEqiBanner (legacy entry point — EqI only)", () => {
 describe("pickProxyBanner (per-method dispatch)", () => {
   const allWarnings = [EQI_COPY, EQID_COPY, EQIT_COPY];
 
-  it("dispatches m1_taker_buy_proxy → EqI banner", () => {
+  it("dispatches m1_taker_buy_proxy → EqIV banner", () => {
     expect(pickProxyBanner(allWarnings, "m1_taker_buy_proxy")).toBe(EQI_COPY);
   });
 
@@ -74,7 +74,7 @@ describe("pickProxyBanner (per-method dispatch)", () => {
 
   it("returns null when the matching banner string is absent from the warnings array", () => {
     // Backend forgot to send the EqID copy even though method tag is set: don't fall
-    // back to EqI's banner — discriminate strictly.
+    // back to EqIV's banner — discriminate strictly.
     expect(pickProxyBanner([EQI_COPY], "m1_taker_buy_quote_proxy")).toBeNull();
   });
 });

@@ -90,6 +90,6 @@ The manifest writer rejects:
 - `input_mode == "convenience"` AND `convenience_input == null` (or empty).
 - `input_mode == "absolute"` AND `convenience_input != null`.
 - `threshold_unit ∉ { "base_asset", "quote_asset", "trades" }`.
-- Inconsistency between `type_code` and `threshold_unit` (e.g., `EqT` MUST pair with `"trades"`; `EqV` with `"base_asset"`; `EqD`/`EqI` with `"quote_asset"`) — pinned per TRD §3.4 table.
+- Inconsistency between `type_code` and `threshold_unit` (e.g., `EqT` MUST pair with `"trades"`; `EqV` with `"base_asset"`; `EqD`/`EqIV` with `"quote_asset"`) — pinned per TRD §3.4 table.
 
 These rules are wired in P1a-5; the eligibility endpoint (Phase 1b P1b-26) surfaces them as 422 + `ProblemDetails`.

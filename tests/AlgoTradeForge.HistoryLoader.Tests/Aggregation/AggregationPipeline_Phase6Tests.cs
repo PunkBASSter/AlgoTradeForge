@@ -158,7 +158,7 @@ public sealed class AggregationPipeline_Phase6Tests : IDisposable
         Assert.NotNull(manifest);
         var entry = Assert.Contains("EqV_1m_2000", manifest!.Feeds);
         Assert.Equal(sourceFeedId, entry.Source!.Feed);
-        Assert.Null(entry.Fidelity!.ImbalanceReconstructionMethod);   // non-EqI stays null
+        Assert.Null(entry.Fidelity!.ImbalanceReconstructionMethod);   // non-EqIV stays null
     }
 
     [Fact]

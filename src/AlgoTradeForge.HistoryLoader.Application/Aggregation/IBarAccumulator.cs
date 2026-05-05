@@ -13,7 +13,7 @@ public interface IBarAccumulator
 
     /// <summary>
     /// Sidecar declaration. Non-null when the accumulator emits a sidecar row alongside each
-    /// primary bar (EqI, EqID, EqIT). The pipeline uses this to provision the sidecar staging
+    /// primary bar (EqIV, EqID, EqIT). The pipeline uses this to provision the sidecar staging
     /// dir, write the sidecar CSV header/rows, tag the manifest's fidelity reconstruction
     /// method, and pre-join candle-ext on time-bar sources. Default null = no sidecar.
     /// </summary>
@@ -45,8 +45,8 @@ public interface IBarAccumulator
 /// <summary>
 /// One row out of the source reader (a time-bar from <c>candles/</c> or a tick from
 /// <c>ticks/</c>). All long-typed fields are tick-scaled per <see cref="AlgoTradeForge.Domain.ScaleContext"/>.
-/// <c>BuyVolumeLong</c> / <c>SellVolumeLong</c> are populated by the EqI / EqID flows
-/// (base-asset units for EqI tick path and EqI time-bar; quote-asset units for EqID).
+/// <c>BuyVolumeLong</c> / <c>SellVolumeLong</c> are populated by the EqIV / EqID flows
+/// (base-asset units for EqIV tick path and EqIV time-bar; quote-asset units for EqID).
 /// <c>BuyTradeCountLong</c> / <c>SellTradeCountLong</c> are populated by the EqIT time-bar
 /// flow only. All four imbalance fields default to 0 so non-imbalance accumulators ignore them.
 /// </summary>
@@ -82,7 +82,7 @@ public readonly record struct AggregatedBar(
 /// <see cref="SidecarSchema.Columns"/>:
 /// </para>
 /// <list type="bullet">
-///   <item>EqI: buy/sell are base-asset volumes; signed = buy − sell.</item>
+///   <item>EqIV: buy/sell are base-asset volumes; signed = buy − sell.</item>
 ///   <item>EqID: buy/sell are quote-asset (dollar) volumes; signed = buy − sell.</item>
 ///   <item>EqIT: buy/sell are trade counts; signed = buy − sell counts.</item>
 /// </list>
@@ -150,7 +150,7 @@ public enum CandleExtJoinMode
 {
     /// <summary>No candle-ext join (accumulator uses tick sources only or has no proxy).</summary>
     None,
-    /// <summary>Read <c>taker_buy_vol</c> → <c>BuyVolumeLong</c>/<c>SellVolumeLong</c> in base-asset units (EqI proxy).</summary>
+    /// <summary>Read <c>taker_buy_vol</c> → <c>BuyVolumeLong</c>/<c>SellVolumeLong</c> in base-asset units (EqIV proxy).</summary>
     TakerBuyVolume,
     /// <summary>Read <c>taker_buy_quote_vol</c> → <c>BuyVolumeLong</c>/<c>SellVolumeLong</c> in quote-asset units (EqID proxy).</summary>
     TakerBuyQuoteVolume,

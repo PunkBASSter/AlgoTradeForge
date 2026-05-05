@@ -17,7 +17,7 @@ namespace AlgoTradeForge.Domain.Tests.Engine;
 /// </summary>
 public sealed class BacktestFeedContextSidecarTests
 {
-    private static DataFeedSchema FlowSchema(string feedKey = "EqI_ticks_500000.flow") =>
+    private static DataFeedSchema FlowSchema(string feedKey = "EqIV_ticks_500000.flow") =>
         new(feedKey, ["signed_imbalance", "buy_volume", "sell_volume", "realized_threshold"]);
 
     private static FeedSeries SidecarSeries() => new(
@@ -41,7 +41,7 @@ public sealed class BacktestFeedContextSidecarTests
         Func<FeedSeries?> loader = () => { loaderInvocations++; return SidecarSeries(); };
 
         var ctx = new BacktestFeedContext();
-        ctx.RegisterPrimarySidecarLazy("EqI_ticks_500000.flow", FlowSchema(), loader);
+        ctx.RegisterPrimarySidecarLazy("EqIV_ticks_500000.flow", FlowSchema(), loader);
 
         // Run a typical engine cycle: AdvanceTo / Reset multiple times. Strategy doesn't query
         // the sidecar — exactly the "no flow data needed" path.
@@ -66,7 +66,7 @@ public sealed class BacktestFeedContextSidecarTests
         Func<FeedSeries?> loader = () => { loaderInvocations++; return SidecarSeries(); };
 
         var ctx = new BacktestFeedContext();
-        ctx.RegisterPrimarySidecarLazy("EqI_ticks_500000.flow", FlowSchema(), loader);
+        ctx.RegisterPrimarySidecarLazy("EqIV_ticks_500000.flow", FlowSchema(), loader);
 
         // Without AdvanceTo, the cursor is at 0 — no row materialized → returns false but
         // still invokes the loader to materialize the FeedSeries entry on first call.
@@ -90,20 +90,20 @@ public sealed class BacktestFeedContextSidecarTests
         // better than silent NaN-everywhere in the strategy's bar handler.
         var ctx = new BacktestFeedContext();
         ctx.RegisterPrimarySidecarLazy(
-            "EqI_ticks_500000.flow", FlowSchema(),
+            "EqIV_ticks_500000.flow", FlowSchema(),
             seriesLoader: () => null);
 
         var ex = Assert.Throws<InvalidOperationException>(() =>
             ctx.TryGetPrimarySidecar(out _));
 
-        Assert.Contains("EqI_ticks_500000.flow", ex.Message);
+        Assert.Contains("EqIV_ticks_500000.flow", ex.Message);
         Assert.Contains("Re-aggregate", ex.Message);
     }
 
     [Fact]
     public void DefaultIFeedContext_TryGetPrimarySidecar_ReturnsFalse()
     {
-        // Default-interface method: strategies running against a non-EqI context (no sidecar
+        // Default-interface method: strategies running against a non-EqIV context (no sidecar
         // ever registered) get a clean false with no I/O. NullFeedContext exercises the same
         // default — pin both paths.
         IFeedContext null_ = NullFeedContext.Instance;
@@ -127,7 +127,7 @@ public sealed class BacktestFeedContextSidecarTests
         var loaderInvocations = 0;
         var ctx = new BacktestFeedContext();
         ctx.RegisterPrimarySidecarLazy(
-            "EqI_x.flow", FlowSchema(),
+            "EqIV_x.flow", FlowSchema(),
             seriesLoader: () => { loaderInvocations++; return SidecarSeries(); });
 
         IFeedContext face = ctx;

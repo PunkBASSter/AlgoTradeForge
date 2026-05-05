@@ -50,7 +50,7 @@ internal sealed class EqIAccumulator : IBarAccumulator
         _quantityScale = (double)scale.QuantityScale;
         if (_quantityScale <= 0d)
             throw new ArgumentException(
-                "EqI requires a positive QuantityScale on the source/accumulator scale context " +
+                "EqIV requires a positive QuantityScale on the source/accumulator scale context " +
                 "(used to back-convert buy/sell long → raw base-asset double for the sidecar).",
                 nameof(scale));
     }

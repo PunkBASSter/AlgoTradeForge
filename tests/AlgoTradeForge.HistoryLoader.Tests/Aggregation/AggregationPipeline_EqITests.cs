@@ -8,10 +8,10 @@ using Xunit;
 namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
 
 /// <summary>
-/// Phase 2b — end-to-end EqI pipeline coverage. Two source paths (TRD §6.3):
+/// Phase 2b — end-to-end EqIV pipeline coverage. Two source paths (TRD §6.3):
 /// <list type="bullet">
-///   <item>P2b-7: tick-source EqI, manifest tag <c>tick_signed</c>.</item>
-///   <item>P2b-8: time-bar EqI via <c>candle-ext</c> proxy, manifest tag
+///   <item>P2b-7: tick-source EqIV, manifest tag <c>tick_signed</c>.</item>
+///   <item>P2b-8: time-bar EqIV via <c>candle-ext</c> proxy, manifest tag
 ///         <c>m1_taker_buy_proxy</c>; sign convention pinned with 100%-taker-buy fixture.</item>
 /// </list>
 /// Beyond the accumulator unit tests, this fixture covers the pipeline-level invariants:
@@ -80,8 +80,8 @@ public sealed class AggregationPipeline_EqITests : IDisposable
             JobId: "job-eqi-test",
             Source: new DataFeedDescriptor(_tempDir, "binance", asset, sourceFeedId, sourceKind),
             AssetDir: AssetDir(asset),
-            OutcomeFeedId: $"EqI_{sourceFeedId}_{thresholdAbs}",
-            TypeCode: "EqI",
+            OutcomeFeedId: $"EqIV_{sourceFeedId}_{thresholdAbs}",
+            TypeCode: "EqIV",
             ThresholdAbsolute: thresholdAbs,
             ThresholdScaled: thresholdScaled,
             ThresholdUnit: "base_asset",
@@ -100,11 +100,11 @@ public sealed class AggregationPipeline_EqITests : IDisposable
             TimeProvider.System);
 
     // -----------------------------------------------------------------------
-    // P2b-8 — time-bar EqI taker-buy proxy
+    // P2b-8 — time-bar EqIV taker-buy proxy
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Run_TimeBarEqI_AllTakerBuy_PositiveSignedImbalance_ManifestTagged()
+    public void Run_TimeBarEqIV_AllTakerBuy_PositiveSignedImbalance_ManifestTagged()
     {
         const string asset = "BTCUSDT_perp";
 
@@ -128,16 +128,16 @@ public sealed class AggregationPipeline_EqITests : IDisposable
             ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.BarCount);
-        Assert.Equal("EqI_1m_1000.flow", result.SidecarFeedId);
+        Assert.Equal("EqIV_1m_1000.flow", result.SidecarFeedId);
 
         var manifest = new FeedSchemaManager().Load(AssetDir(asset))!;
 
-        var parent = manifest.Feeds["EqI_1m_1000"];
-        Assert.Equal("EqI", parent.Type!.Code);
-        Assert.Equal("EqI_1m_1000.flow", parent.Sidecar);
+        var parent = manifest.Feeds["EqIV_1m_1000"];
+        Assert.Equal("EqIV", parent.Type!.Code);
+        Assert.Equal("EqIV_1m_1000.flow", parent.Sidecar);
         Assert.Equal("m1_taker_buy_proxy", parent.Fidelity!.ImbalanceReconstructionMethod);
 
-        var sidecarDef = manifest.Feeds["EqI_1m_1000.flow"];
+        var sidecarDef = manifest.Feeds["EqIV_1m_1000.flow"];
         Assert.Equal("Side", sidecarDef.Kind);
         Assert.True(sidecarDef.NullableColumns ?? false);
         Assert.Equal(
@@ -145,7 +145,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
             sidecarDef.Columns);
 
         // Sidecar partition file written.
-        var sidecarPartition = Path.Combine(AssetDir(asset), "aggregated", "EqI_1m_1000.flow", "2024-01.csv");
+        var sidecarPartition = Path.Combine(AssetDir(asset), "aggregated", "EqIV_1m_1000.flow", "2024-01.csv");
         Assert.True(File.Exists(sidecarPartition));
 
         // Verify sidecar row content: 100% taker-buy → signed_imbalance == buy_volume.
@@ -164,7 +164,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
     }
 
     [Fact]
-    public void Run_TimeBarEqI_TakerBuyProxy_FormulaMatchesTrd()
+    public void Run_TimeBarEqIV_TakerBuyProxy_FormulaMatchesTrd()
     {
         // TRD §6.3 formula: signed_imbalance = 2 * taker_buy - vol (per record, summed).
         // Test fixture: source vols = 400 each, taker_buy = 0.03 (300 long) — so per-record
@@ -189,7 +189,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
         Assert.Equal(1, result.BarCount);
 
         // Read sidecar row to confirm formula.
-        var sidecarPath = Path.Combine(AssetDir(asset), "aggregated", "EqI_1m_600.flow", "2024-01.csv");
+        var sidecarPath = Path.Combine(AssetDir(asset), "aggregated", "EqIV_1m_600.flow", "2024-01.csv");
         var lines = File.ReadAllLines(sidecarPath);
         var parts = lines[1].Split(',');
         var buyDouble    = double.Parse(parts[2], CultureInfo.InvariantCulture);
@@ -207,9 +207,9 @@ public sealed class AggregationPipeline_EqITests : IDisposable
     }
 
     [Fact]
-    public void Run_TimeBarEqI_NoCandleExt_NoBarsEmitted()
+    public void Run_TimeBarEqIV_NoCandleExt_NoBarsEmitted()
     {
-        // Partial coverage (TRD §6.2): time-bar EqI with no candle-ext on disk yields zero
+        // Partial coverage (TRD §6.2): time-bar EqIV with no candle-ext on disk yields zero
         // bars (every source record is dropped at the join). Manifest still written so the
         // run is not silently lost.
         const string asset = "BTCUSDT_perp_no_ext";
@@ -227,16 +227,16 @@ public sealed class AggregationPipeline_EqITests : IDisposable
 
         // Manifest still includes both entries (parent + empty sidecar) — atomic write.
         var manifest = new FeedSchemaManager().Load(AssetDir(asset))!;
-        Assert.Contains("EqI_1m_100", manifest.Feeds);
-        Assert.Contains("EqI_1m_100.flow", manifest.Feeds);
+        Assert.Contains("EqIV_1m_100", manifest.Feeds);
+        Assert.Contains("EqIV_1m_100.flow", manifest.Feeds);
     }
 
     // -----------------------------------------------------------------------
-    // P2b-7 — tick-source EqI
+    // P2b-7 — tick-source EqIV
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Run_TickEqI_AllBuy_ManifestTaggedTickSigned()
+    public void Run_TickEqIV_AllBuy_ManifestTaggedTickSigned()
     {
         // 100%-buy tick fixture. is_buyer_maker=0 → +qty. Threshold 1000.
         const string asset = "BTCUSDT_ticks";
@@ -252,15 +252,15 @@ public sealed class AggregationPipeline_EqITests : IDisposable
             ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.BarCount);
-        Assert.Equal("EqI_ticks_1000.flow", result.SidecarFeedId);
+        Assert.Equal("EqIV_ticks_1000.flow", result.SidecarFeedId);
 
         var manifest = new FeedSchemaManager().Load(AssetDir(asset))!;
-        var parent = manifest.Feeds["EqI_ticks_1000"];
+        var parent = manifest.Feeds["EqIV_ticks_1000"];
         Assert.Equal("tick_signed", parent.Fidelity!.ImbalanceReconstructionMethod);
-        Assert.Equal("EqI_ticks_1000.flow", parent.Sidecar);
+        Assert.Equal("EqIV_ticks_1000.flow", parent.Sidecar);
 
         // Sidecar row sanity: all-buy → positive signed_imbalance.
-        var sidecarPath = Path.Combine(AssetDir(asset), "aggregated", "EqI_ticks_1000.flow", "2024-03.csv");
+        var sidecarPath = Path.Combine(AssetDir(asset), "aggregated", "EqIV_ticks_1000.flow", "2024-03.csv");
         Assert.True(File.Exists(sidecarPath));
         var lines = File.ReadAllLines(sidecarPath);
         var parts = lines[1].Split(',');
@@ -269,7 +269,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
     }
 
     [Fact]
-    public void Run_TickEqI_AllSell_NegativeSignedImbalance()
+    public void Run_TickEqIV_AllSell_NegativeSignedImbalance()
     {
         const string asset = "BTCUSDT_ticks_sell";
         WriteTicks(asset, "2024-03-15",
@@ -284,7 +284,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
 
         Assert.Equal(1, result.BarCount);
 
-        var sidecarPath = Path.Combine(AssetDir(asset), "aggregated", "EqI_ticks_1000.flow", "2024-03.csv");
+        var sidecarPath = Path.Combine(AssetDir(asset), "aggregated", "EqIV_ticks_1000.flow", "2024-03.csv");
         var lines = File.ReadAllLines(sidecarPath);
         var parts = lines[1].Split(',');
         var signed = double.Parse(parts[1], CultureInfo.InvariantCulture);

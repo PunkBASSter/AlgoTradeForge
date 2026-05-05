@@ -1,7 +1,7 @@
 "use client";
 
 // Read-only CodeMirror viewer for a feed's `feeds.json` entry. When the manifest's
-// imbalance_reconstruction_method is one of the *_proxy values (EqI / EqID / EqIT on
+// imbalance_reconstruction_method is one of the *_proxy values (EqIV / EqID / EqIT on
 // time-bar), shows the matching server-supplied banner from /aggregation-options.
 
 import { useEffect, useMemo, useRef } from "react";
@@ -28,7 +28,7 @@ export function FeedStatusCard({ exchange, asset, feedId }: Props) {
     queryFn: ({ signal }) => dataApi.getFeedStatus(exchange, asset, feedId, signal),
   });
 
-  // Canonical source of `warnings[]` for the EqI banner. Harmless for alt bars (returns
+  // Canonical source of `warnings[]` for the EqIV banner. Harmless for alt bars (returns
   // empty arrays); always fetch.
   const eligibility = useQuery({
     queryKey: ["data", "aggregation-options", exchange, asset, feedId],

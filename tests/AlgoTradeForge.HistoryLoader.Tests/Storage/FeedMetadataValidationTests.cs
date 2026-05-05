@@ -103,7 +103,7 @@ public sealed class FeedMetadataValidationTests : IDisposable
     {
         var assetDir = AssetDir("BTCUSDT_GoodAggregated");
 
-        // The TRD §4 rule is satisfied by an EXPLICIT null — non-EqI feeds set
+        // The TRD §4 rule is satisfied by an EXPLICIT null — non-EqIV feeds set
         // imbalanceReconstructionMethod to null and the field MUST be present.
         const string wellFormed = """
         {
@@ -141,9 +141,9 @@ public sealed class FeedMetadataValidationTests : IDisposable
         const string wellFormed = """
         {
           "feeds": {
-            "EqI_ticks_500000": {
+            "EqIV_ticks_500000": {
               "kind": "aggregated",
-              "type": { "code": "EqI", "name": "EqualImbalance" },
+              "type": { "code": "EqIV", "name": "EqualImbalance" },
               "source": { "feed": "ticks" },
               "threshold": { "value": 500000, "unit": "quote_asset", "inputMode": "absolute" },
               "fidelity": {
@@ -160,7 +160,7 @@ public sealed class FeedMetadataValidationTests : IDisposable
 
         Assert.NotNull(metadata);
         Assert.Equal("tick_signed",
-            metadata!.Feeds["EqI_ticks_500000"].Fidelity!.ImbalanceReconstructionMethod);
+            metadata!.Feeds["EqIV_ticks_500000"].Fidelity!.ImbalanceReconstructionMethod);
     }
 
     // -------------------------------------------------------------------------

@@ -15,7 +15,7 @@ public sealed class AltBarFeedIdTests
     [InlineData("EqV_1m_1000",       "EqV", "1m",   1000L,  '\0')]
     [InlineData("EqT_5m_500",        "EqT", "5m",   500L,   '\0')]
     [InlineData("EqD_1h_1000000",    "EqD", "1h",   1000000L, '\0')]
-    [InlineData("EqI_ticks_500000",  "EqI", "ticks", 500000L, '\0')]
+    [InlineData("EqIV_ticks_500000",  "EqIV", "ticks", 500000L, '\0')]
     [InlineData("EqID_ticks_5000",   "EqID", "ticks", 5000L,  '\0')]
     [InlineData("EqIT_1m_1000",      "EqIT", "1m",   1000L,  '\0')]
     [InlineData("Range_1m_50",       "Range", "1m", 50L,    '\0')]
@@ -61,14 +61,14 @@ public sealed class AltBarFeedIdTests
     [Fact]
     public void Parse_DetectsFlowSidecar()
     {
-        var parsed = AltBarFeedId.Parse("EqI_ticks_500000.flow");
+        var parsed = AltBarFeedId.Parse("EqIV_ticks_500000.flow");
 
         Assert.True(parsed.IsSidecar);
-        Assert.Equal("EqI", parsed.TypeCode);
+        Assert.Equal("EqIV", parsed.TypeCode);
         Assert.Equal("ticks", parsed.SourceCode);
         Assert.Equal(500000L, parsed.Threshold.Mantissa);
-        Assert.Equal("EqI_ticks_500000", parsed.FeedId);
-        Assert.Equal("EqI_ticks_500000.flow", parsed.DirectoryName);
+        Assert.Equal("EqIV_ticks_500000", parsed.FeedId);
+        Assert.Equal("EqIV_ticks_500000.flow", parsed.DirectoryName);
     }
 
     [Fact]

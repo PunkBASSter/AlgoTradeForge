@@ -24,12 +24,12 @@ internal static class FeedMetadataValidator
                 throw new FeedMetadataValidationException(
                     $"Feed '{feedId}' (kind=aggregated) is missing the required 'fidelity' block.");
 
-            // imbalanceReconstructionMethod must be present even on non-EqI feeds (explicit null OK);
-            // absence vs null distinguishes a malformed manifest from a valid non-EqI entry.
+            // imbalanceReconstructionMethod must be present even on non-EqIV feeds (explicit null OK);
+            // absence vs null distinguishes a malformed manifest from a valid non-EqIV entry.
             if (!fidelity.ContainsKey("imbalanceReconstructionMethod"))
                 throw new FeedMetadataValidationException(
                     $"Feed '{feedId}': fidelity.imbalanceReconstructionMethod must be present " +
-                    "(use null for non-EqI feeds; field absence indicates a malformed manifest).");
+                    "(use null for non-EqIV feeds; field absence indicates a malformed manifest).");
         }
     }
 }

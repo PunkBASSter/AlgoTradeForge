@@ -139,8 +139,8 @@ describe("formatFeedLabel", () => {
 
   it("renders Side feeds verbatim by id", () => {
     expect(formatFeedLabel(feed({ kind: "Side", id: "funding-rate" }))).toBe("funding-rate");
-    expect(formatFeedLabel(feed({ kind: "Side", id: "EqI_1m_500_signed.flow" }))).toBe(
-      "EqI_1m_500_signed.flow",
+    expect(formatFeedLabel(feed({ kind: "Side", id: "EqIV_1m_500_signed.flow" }))).toBe(
+      "EqIV_1m_500_signed.flow",
     );
   });
 });

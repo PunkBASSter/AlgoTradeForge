@@ -25,11 +25,11 @@ describe("compareFeed", () => {
   it("orders alt bars by type_code then threshold ascending (TRD §3.3)", () => {
     const items = [
       alt("EqV_1m_5000", "EqV", 5000),
-      alt("EqI_ticks_500", "EqI", 500),
+      alt("EqIV_ticks_500", "EqIV", 500),
       alt("EqV_1m_1000", "EqV", 1000),
     ];
     items.sort(compareFeed);
-    expect(items.map((f) => f.id)).toEqual(["EqI_ticks_500", "EqV_1m_1000", "EqV_1m_5000"]);
+    expect(items.map((f) => f.id)).toEqual(["EqIV_ticks_500", "EqV_1m_1000", "EqV_1m_5000"]);
   });
 
   it("orders side feeds lexically by id", () => {

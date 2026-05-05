@@ -8,7 +8,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 public static class AltBarWarnings
 {
     public const string TimeBarEqIProxy =
-        "Time-bar EqI uses the taker-buy proxy: it underestimates intra-bar churn. " +
+        "Time-bar EqIV uses the taker-buy proxy: it underestimates intra-bar churn. " +
         "Rebuild from `ticks` for magnitude-sensitive use.";
 
     public const string TimeBarEqIDProxy =

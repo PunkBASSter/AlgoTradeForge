@@ -9,7 +9,7 @@ import type { FidelityInfo } from "@/types/data-tab";
 // without false positives, but we don't depend on the full sentence so copy edits don't
 // break detection.
 const PROXY_BANNER_KEYS = {
-  TakerBuyVolume: "taker-buy proxy",                  // EqI on time-bar
+  TakerBuyVolume: "taker-buy proxy",                  // EqIV on time-bar
   TakerBuyQuoteVolume: "per-minute taker-buy-quote",  // EqID on time-bar
   TakerBuyTradeCount: "count proxy derived from",     // EqIT on time-bar
 } as const;
@@ -33,7 +33,7 @@ function methodToKind(
 }
 
 /**
- * Returns the EqI time-bar-proxy warning verbatim, or `null` if no such warning is
+ * Returns the EqIV time-bar-proxy warning verbatim, or `null` if no such warning is
  * present. Kept as a thin wrapper over `pickProxyBanner` so the existing call sites
  * (form preview, before any feed exists) keep working.
  */

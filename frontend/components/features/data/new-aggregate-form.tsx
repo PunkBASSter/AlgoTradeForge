@@ -1,7 +1,7 @@
 "use client";
 
 // New-aggregate form. Source / Type / N / Aggregate. The Type dropdown is filtered by
-// the eligibility-options endpoint; the EqI banner copy is pulled byte-identical from
+// the eligibility-options endpoint; the EqIV banner copy is pulled byte-identical from
 // the same endpoint's `warnings[]`. N input accepts SI suffixes (case-sensitive: k/M/G
 // for positive powers, m/u for negative).
 
@@ -17,7 +17,7 @@ import { parseAltBarFeedId } from "@/lib/data/alt-bar-feed-id";
 
 function thresholdUnitFor(typeCode: string): AggregateRequest["threshold_unit"] {
   // EqT / EqIT count records (both threshold on trade counts); EqD / EqID are in quote
-  // currency (notional dollars); EqV / EqI / Range / Renko share the base_asset axis on
+  // currency (notional dollars); EqV / EqIV / Range / Renko share the base_asset axis on
   // the wire.
   if (typeCode === "EqT" || typeCode === "EqIT") return "trades";
   if (typeCode === "EqD" || typeCode === "EqID") return "quote_asset";
@@ -52,7 +52,7 @@ export function NewAggregateForm({ exchange, asset, sourceFeed, eligibleSources,
     ...(eligibleSources ?? []).filter((f) => f.id !== sourceFeed.id),
   ];
 
-  // Drives both the type dropdown and the EqI banner. Re-keys on selectedSourceId so
+  // Drives both the type dropdown and the EqIV banner. Re-keys on selectedSourceId so
   // picking a different source re-fetches the eligibility set.
   const eligibility = useQuery({
     queryKey: ["data", "aggregation-options", exchange, asset, selectedSourceId],

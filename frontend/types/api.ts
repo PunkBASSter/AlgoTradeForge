@@ -325,7 +325,7 @@ export interface TimeBarSubscription extends DataFeedSubscriptionBase {
   timeFrame: string;
 }
 
-/** Information-driven alt bar (EqV/EqT/EqD/EqI). */
+/** Information-driven alt bar (EqV/EqT/EqD/EqIV). */
 export interface AltBarSubscription extends DataFeedSubscriptionBase {
   kind: "AltBar";
   role: "Primary";

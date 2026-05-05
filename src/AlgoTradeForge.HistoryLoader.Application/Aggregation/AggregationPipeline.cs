@@ -69,7 +69,7 @@ public sealed class AggregationPipeline
         long bytesBudget = (long)job.MaxPartitionSizeMB * 1024 * 1024;
         using var sink = new PartitionedSinkWriter(stagingDir, bytesBudget, OutputHeader);
 
-        // Imbalance-family accumulators (EqI, EqID, EqIT) publish a sidecar (.flow) sibling
+        // Imbalance-family accumulators (EqIV, EqID, EqIT) publish a sidecar (.flow) sibling
         // dir alongside the bar dir. Both stage in parallel; both promote atomically; the
         // manifest writes both entries under one exclusive lock at finalize so readers never
         // see a half-registered imbalance feed. Schema (header, columns, fidelity tags) is
@@ -176,7 +176,7 @@ public sealed class AggregationPipeline
                     }
 
                     // Renko: a single TryAdvance can stage multiple bricks; drain the queue.
-                    // Drained bars carry no sidecar (Range/Renko have none, and EqI emits
+                    // Drained bars carry no sidecar (Range/Renko have none, and EqIV emits
                     // exactly one bar per TryAdvance so its drain queue stays empty).
                     while (accumulator.TryDrainQueued(out var queued))
                     {
@@ -370,7 +370,7 @@ public sealed class AggregationPipeline
         "EqT" => "EqualTick",
         "EqV" => "EqualVolume",
         "EqD" => "EqualDollar",
-        "EqI" => "EqualImbalance",
+        "EqIV" => "EqualImbalance",
         "EqID" => "EqualDollarImbalance",
         "EqIT" => "EqualTickImbalance",
         "Range" => "Range",

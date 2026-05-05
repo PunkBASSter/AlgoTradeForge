@@ -26,7 +26,7 @@ public interface IFeedContext
     // null/test impls) keep compiling without modification.
 
     /// <summary>
-    /// Returns the latest sidecar row for the strategy's primary bar feed (e.g. EqI's
+    /// Returns the latest sidecar row for the strategy's primary bar feed (e.g. EqIV's
     /// <c>.flow</c> companion). Returns <c>false</c> when the primary has no sidecar
     /// or the sidecar has no data at the current bar's timestamp. Lazy-loaded: a strategy
     /// that never calls this triggers zero loader hits.
@@ -45,7 +45,7 @@ public interface IFeedContext
     DataFeedSchema? PrimarySidecarSchema => null;
 
     /// <summary>
-    /// Convenience accessor for the EqI sidecar's <c>signed_imbalance</c> column. Returns
+    /// Convenience accessor for the EqIV sidecar's <c>signed_imbalance</c> column. Returns
     /// <see cref="double.NaN"/> when the primary has no sidecar, no row at the current ts,
     /// or the sidecar lacks a <c>signed_imbalance</c> column.
     /// </summary>

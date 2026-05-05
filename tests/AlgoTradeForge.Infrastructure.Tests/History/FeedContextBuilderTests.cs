@@ -209,7 +209,7 @@ public class FeedContextBuilderTests : IDisposable
     [Fact]
     public void Build_OnlyPrimaryAndSidecar_NoEagerSideFeeds_ReturnsContextWithSidecarBound()
     {
-        // Regression: an asset whose feeds.json contains ONLY an EqI alt-bar primary + its
+        // Regression: an asset whose feeds.json contains ONLY an EqIV alt-bar primary + its
         // .flow sidecar (no funding-rate, no OI, no other eager side feeds) must still get a
         // non-null IFeedContext with the sidecar lazy-bound. Previously this returned null
         // because the eager-load counter (`loaded`) stayed at 0 and the lazy sidecar
@@ -221,13 +221,13 @@ public class FeedContextBuilderTests : IDisposable
         {
             Feeds = new Dictionary<string, object>
             {
-                ["EqI_ticks_500000"] = new
+                ["EqIV_ticks_500000"] = new
                 {
                     Kind     = "OHLCV_AltBar",
                     Columns  = new[] { "ts", "o", "h", "l", "c", "vol" },
-                    Sidecar  = "EqI_ticks_500000.flow",
+                    Sidecar  = "EqIV_ticks_500000.flow",
                 },
-                ["EqI_ticks_500000.flow"] = new
+                ["EqIV_ticks_500000.flow"] = new
                 {
                     Kind            = "Side",
                     Columns         = new[] { "signed_imbalance", "buy_volume", "sell_volume", "realized_threshold" },
@@ -239,11 +239,11 @@ public class FeedContextBuilderTests : IDisposable
         var result = _builder.Build(
             _testDataRoot, asset,
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
-            primaryFeedName: "EqI_ticks_500000");
+            primaryFeedName: "EqIV_ticks_500000");
 
         Assert.NotNull(result);
         Assert.NotNull(result!.PrimarySidecarSchema);
-        Assert.Equal("EqI_ticks_500000.flow", result.PrimarySidecarSchema!.FeedKey);
+        Assert.Equal("EqIV_ticks_500000.flow", result.PrimarySidecarSchema!.FeedKey);
         Assert.Equal(
             new[] { "signed_imbalance", "buy_volume", "sell_volume", "realized_threshold" },
             result.PrimarySidecarSchema.ColumnNames);
