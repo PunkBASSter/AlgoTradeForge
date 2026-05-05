@@ -304,14 +304,9 @@ export interface DataSubscription {
   timeFrame: string;
 }
 
-// ---------------------------------------------------------------------------
-// Phase 4 (P4-9, P4-17..P4-19, TRD §9.2): polymorphic DataFeedSubscription.
-// Wire shape pinned by JsonDefaultsTests in Application.Tests:
-//   - kind discriminator: PascalCase ("TimeBar" | "AltBar" | "Tick" | "Side")
-//     — matches [JsonDerivedType] attributes on the DataFeedSubscription base.
-//   - role enum: PascalCase string ("Primary" | "Side") via JsonStringEnumConverter.
-//   - BE accepts integer fallback on read, but FE emits string.
-// ---------------------------------------------------------------------------
+// Polymorphic DataFeedSubscription wire shape (pinned by JsonDefaultsTests):
+//   - `kind` discriminator: PascalCase ("TimeBar" | "AltBar" | "Tick" | "Side").
+//   - `role` enum: PascalCase string ("Primary" | "Side").
 
 export type DataFeedKind = "TimeBar" | "AltBar" | "Tick" | "Side";
 export type DataFeedRole = "Primary" | "Side";
@@ -323,27 +318,27 @@ interface DataFeedSubscriptionBase {
   role: DataFeedRole;
 }
 
-/** OHLCV time bar (1m, 5m, 1h, 1d, etc.). Drives the bar clock as Primary. */
+/** OHLCV time bar (1m, 5m, 1h, 1d, etc.). */
 export interface TimeBarSubscription extends DataFeedSubscriptionBase {
   kind: "TimeBar";
   role: "Primary";
-  timeFrame: string; // canonical "1m" | "5m" | "1h" | etc.
+  timeFrame: string;
 }
 
-/** Information-driven alt bar (EqV/EqT/EqD/EqI). FeedId per TRD §3.3 grammar. */
+/** Information-driven alt bar (EqV/EqT/EqD/EqI). */
 export interface AltBarSubscription extends DataFeedSubscriptionBase {
   kind: "AltBar";
   role: "Primary";
-  feedId: string; // e.g. "EqV_1m_500m"
+  feedId: string;
 }
 
-/** Raw aggregate-trade tick stream. Path-dependent primary. */
+/** Raw aggregate-trade tick stream. */
 export interface TickSubscription extends DataFeedSubscriptionBase {
   kind: "Tick";
   role: "Primary";
 }
 
-/** Side feed — top-level (e.g. "funding-rate") or alt-bar sidecar (e.g. "EqV_1m_500m.flow"). */
+/** Top-level side feed (e.g. "funding-rate") or alt-bar sidecar ("…flow"). */
 export interface SideFeedSubscription extends DataFeedSubscriptionBase {
   kind: "Side";
   role: "Side";

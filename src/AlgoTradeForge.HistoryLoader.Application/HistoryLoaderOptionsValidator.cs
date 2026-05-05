@@ -23,7 +23,6 @@ public sealed class HistoryLoaderOptionsValidator : IValidateOptions<HistoryLoad
         if (options.CircuitBreakerCooldownMinutes <= 0)
             failures.Add("CircuitBreakerCooldownMinutes must be greater than 0.");
 
-        // Aggregator knobs (TRD §6.5).
         if (options.Aggregator.MaxPartitionSizeMB <= 0)
             failures.Add("Aggregator.MaxPartitionSizeMB must be greater than 0.");
         if (options.Aggregator.MaxConcurrentJobs <= 0)

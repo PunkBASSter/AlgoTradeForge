@@ -81,7 +81,7 @@ public sealed class GeneticOptimizationTaskExecutor(
         foreach (var sub in ctx.Subscriptions)
             await helper.ResolveAndCacheAsync(sub, resolvedSubs, dataCache, fromDate, toDate, ct);
 
-        // Phase 4 dual-key carrier (TRD §9.3): see OptimizationTaskExecutor for rationale.
+        // Dual-key carrier (see OptimizationTaskExecutor).
         var feedSubs = ctx.Subscriptions.ToList();
 
         // 2. Set up trial infrastructure
@@ -264,7 +264,7 @@ public sealed class GeneticOptimizationTaskExecutor(
                             }
                             trialCts.CancelAfter(trialTimeout);
 
-                            // Inject resolved subscriptions (dual-key per Phase 4 / TRD §9.3)
+                            // Inject resolved subscriptions (dual-key carrier)
                             var mutableValues = new Dictionary<string, object>(combos[i].Values)
                             {
                                 ["DataSubscriptions"] = resolvedSubs,

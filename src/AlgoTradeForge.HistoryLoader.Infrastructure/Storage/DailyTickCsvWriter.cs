@@ -7,37 +7,23 @@ namespace AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 /// <summary>
 /// Writes Binance aggregate trades to daily-partitioned CSVs at
 /// <c>{assetDir}/ticks/&lt;YYYY-MM-DD&gt;.csv</c> with schema
-/// <c>ts,price,qty,is_buyer_maker,agg_id</c> (TRD §3.5).
+/// <c>ts,price,qty,is_buyer_maker,agg_id</c>.
 /// </summary>
 /// <remarks>
-/// <para>
 /// Dedup is by <c>agg_id</c>, not <c>ts</c> — multiple aggregated trades commonly share a
-/// millisecond timestamp during high-volatility bursts. The collector advances by
-/// <c>fromMs = lastTsMs</c> (inclusive) on resume; this writer drops any trade whose
-/// <c>agg_id</c> is at-or-below the cached last-written id for that day.
+/// millisecond. <see cref="ResumeFrom"/> truncates a torn last row to its last clean <c>\n</c>
+/// before parsing.
+/// <para>
+/// One <see cref="StreamWriter"/>+<see cref="FileStream"/> is cached for the active day to
+/// avoid ~40 file-open syscalls/sec at sustained tick rates. A day swap or
+/// <see cref="ResumeFrom"/> on the same day disposes the cache first (Windows file-share
+/// rules forbid a second handle even within one process). Per-row Flush goes to OS buffer
+/// (no fsync); torn-row repair in <see cref="ResumeFrom"/> is the crash-safety net.
 /// </para>
 /// <para>
-/// Crash recovery: on first <see cref="ResumeFrom"/> call, the tail of the latest daily
-/// partition is parsed. If the last row is malformed (torn write — process killed mid-line
-/// before the trailing <c>\n</c>), the file is truncated to the last clean <c>\n</c> boundary
-/// and the resume returns the previous (clean) row's id pair.
-/// </para>
-/// <para>
-/// <b>Active-day stream cache.</b> One <see cref="StreamWriter"/> + <see cref="FileStream"/>
-/// is kept open for the day currently being written. A swap to a new day flushes + disposes
-/// the previous handle, then opens fresh. <see cref="ResumeFrom"/> for the same day disposes
-/// the cache first (Windows file-share rules forbid a second handle even within one process).
-/// At ~150k ticks/h sustained per asset, this eliminates ~40 file-open syscalls/sec; the
-/// trade-off is per-row <see cref="StreamWriter.Flush"/> for crash-safety (managed→OS buffer,
-/// no fsync; <see cref="ResumeFrom"/>'s torn-row repair remains the safety net).
-/// </para>
-/// <para>
-/// <b>Bounded dedup cache.</b> The agg_id dedup table is an LRU capped at
-/// <see cref="MaxDedupCacheSize"/> entries — covers UTC-boundary churn (current + previous
-/// day) plus headroom for backfill jobs running across a few historical days. Older entries
-/// fall out; if a backfill targets an evicted day, <see cref="ResumeFrom"/> reseeds the
-/// entry from disk before the next <c>Write</c>. Prevents the slow leak that would otherwise
-/// accumulate one entry per (asset × day) ever written.
+/// The agg_id dedup table is an LRU capped at <see cref="MaxDedupCacheSize"/> — covers
+/// UTC-boundary churn plus a few backfill days. Evicted days reseed via <see cref="ResumeFrom"/>
+/// on next write. Prevents an unbounded (asset × day) leak.
 /// </para>
 /// </remarks>
 internal sealed class DailyTickCsvWriter : ITickFeedWriter, IDisposable
@@ -48,12 +34,12 @@ internal sealed class DailyTickCsvWriter : ITickFeedWriter, IDisposable
 
     private readonly object _gate = new();
 
-    // Active-day stream cache (M1).
+    // Active-day stream cache.
     private string? _activeDayKey;
     private FileStream? _activeFs;
     private StreamWriter? _activeSw;
 
-    // LRU-bounded dedup cache (M2). LinkedList head = most-recently-touched.
+    // LRU dedup cache; head = most-recently-touched.
     private readonly LinkedList<KeyValuePair<string, long>> _dedupLru = new();
     private readonly Dictionary<string, LinkedListNode<KeyValuePair<string, long>>> _dedupIndex = new();
 
@@ -70,13 +56,11 @@ internal sealed class DailyTickCsvWriter : ITickFeedWriter, IDisposable
 
         lock (_gate)
         {
-            // Dedup by agg_id within this day. Binance ids are monotonic per-symbol so a
-            // <= comparison correctly skips both replays and out-of-order arrivals.
+            // Binance agg_ids are monotonic per-symbol; <= correctly skips replays and out-of-order arrivals.
             long aggId = (long)record.Values[3];
             if (TryGetLastAggId(dedupKey, out var lastAggId) && aggId <= lastAggId)
                 return;
 
-            // Swap the cached writer if this Write targets a different day than the cache holds.
             if (_activeDayKey != dedupKey)
             {
                 DisposeActiveCache();
@@ -105,15 +89,13 @@ internal sealed class DailyTickCsvWriter : ITickFeedWriter, IDisposable
                 _activeSw.Write(',');
                 _activeSw.WriteLine(aggId.ToString(CultureInfo.InvariantCulture));          // agg_id
 
-                // Flush to OS buffer for crash-safety. Not fsync — torn writes still possible,
-                // but ResumeFrom's tail-repair handles that case.
+                // Flush to OS buffer (not fsync); ResumeFrom's torn-row repair is the safety net.
                 _activeSw.Flush();
 
                 SetLastAggId(dedupKey, aggId);
             }
             catch
             {
-                // Don't leave a broken handle in the cache slot.
                 DisposeActiveCache();
                 throw;
             }
@@ -140,22 +122,21 @@ internal sealed class DailyTickCsvWriter : ITickFeedWriter, IDisposable
 
         lock (_gate)
         {
-            // If the cache holds the same day, dispose it before opening the read handle —
-            // Windows file-share rules will reject FileAccess.ReadWrite while an Append+Write
-            // handle is open on the same path even within one process.
+            // Dispose the active-day cache before opening the read handle — Windows file-share
+            // rules reject FileAccess.ReadWrite while an Append+Write handle is open on the same
+            // path even within one process.
             if (_activeDayKey == dedupKey)
                 DisposeActiveCache();
 
             using var fs = new FileStream(latestFile, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
 
-            // Two attempts: first read the tail; if torn, truncate and retry once.
+            // Two attempts: read the tail; if torn, truncate and retry once.
             for (int attempt = 0; attempt < 2; attempt++)
             {
                 var (line, startOffset) = ReadLastLineWithOffset(fs);
                 if (line is null)
                     return null;
 
-                // Header line — file has only a header, no data yet.
                 if (line.StartsWith("ts,", StringComparison.Ordinal)
                     || line.Equals("ts", StringComparison.OrdinalIgnoreCase))
                     return null;
@@ -169,7 +150,7 @@ internal sealed class DailyTickCsvWriter : ITickFeedWriter, IDisposable
                     return new TickResumeState(aggId, ts);
                 }
 
-                // Torn write: drop the malformed bytes and re-read.
+                // Torn write: drop malformed trailing bytes and re-read.
                 fs.SetLength(startOffset);
                 fs.Flush();
             }
@@ -186,10 +167,10 @@ internal sealed class DailyTickCsvWriter : ITickFeedWriter, IDisposable
         }
     }
 
-    /// <summary>Disposes any cached active-day writer + stream. Caller must hold <see cref="_gate"/>.</summary>
+    /// <summary>Disposes the cached active-day writer. Caller must hold <see cref="_gate"/>.</summary>
     private void DisposeActiveCache()
     {
-        try { _activeSw?.Flush(); } catch { /* swallow — we're cleaning up */ }
+        try { _activeSw?.Flush(); } catch { /* cleanup path */ }
         _activeSw?.Dispose();
         _activeFs?.Dispose();
         _activeSw = null;
@@ -197,7 +178,6 @@ internal sealed class DailyTickCsvWriter : ITickFeedWriter, IDisposable
         _activeDayKey = null;
     }
 
-    /// <summary>Reads dedup state for a day from the LRU. Caller must hold <see cref="_gate"/>.</summary>
     private bool TryGetLastAggId(string dedupKey, out long aggId)
     {
         if (_dedupIndex.TryGetValue(dedupKey, out var node))
@@ -209,10 +189,6 @@ internal sealed class DailyTickCsvWriter : ITickFeedWriter, IDisposable
         return false;
     }
 
-    /// <summary>
-    /// Updates dedup state for a day, moving the entry to LRU front. Evicts the oldest entry
-    /// when capacity is exceeded. Caller must hold <see cref="_gate"/>.
-    /// </summary>
     private void SetLastAggId(string dedupKey, long aggId)
     {
         if (_dedupIndex.TryGetValue(dedupKey, out var node))
@@ -235,17 +211,15 @@ internal sealed class DailyTickCsvWriter : ITickFeedWriter, IDisposable
     }
 
     /// <summary>
-    /// Returns the last newline-terminated (or unterminated, in the torn case) line of
-    /// <paramref name="fs"/>, along with the byte offset where that line begins. Trailing
-    /// <c>\r</c>/<c>\n</c>s are stripped from the returned line; the offset still points to
-    /// the first byte of the line content (after any preceding <c>\n</c>).
+    /// Returns the last (possibly torn) line and the byte offset where its content starts.
+    /// Trailing <c>\r</c>/<c>\n</c> are stripped from the returned line.
     /// </summary>
     private static (string? Line, long StartOffset) ReadLastLineWithOffset(FileStream fs)
     {
         if (fs.Length == 0)
             return (null, 0);
 
-        // Strip trailing newlines to find the inclusive end byte of the last meaningful line.
+        // Strip trailing newlines to find the end byte of the last meaningful line.
         long endOffset = fs.Length;
         while (endOffset > 0)
         {
@@ -259,7 +233,7 @@ internal sealed class DailyTickCsvWriter : ITickFeedWriter, IDisposable
         if (endOffset == 0)
             return (null, 0);
 
-        // Scan backward in chunks for the previous '\n' — that byte+1 is the line's start.
+        // Scan backward in chunks for the previous '\n'; that byte+1 starts the line.
         const int chunkSize = 256;
         var buffer = new byte[chunkSize];
         long startOffset = endOffset;
@@ -290,7 +264,6 @@ internal sealed class DailyTickCsvWriter : ITickFeedWriter, IDisposable
             startOffset = readFrom;
         }
 
-        // Read [startOffset, endOffset) as the line content.
         int len = (int)(endOffset - startOffset);
         var lineBytes = new byte[len];
         fs.Position = startOffset;

@@ -1,9 +1,9 @@
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
 
 /// <summary>
-/// Lifecycle states for an aggregation job (TRD §5.4 / §6.5). Terminal states are
-/// <see cref="Complete"/>, <see cref="Error"/>, and <see cref="Cancelled"/>; all retain in
-/// the registry for <c>JobRetentionMinutes</c> before SSE replay returns 410 Gone.
+/// Lifecycle states for an aggregation job. Terminal states (<see cref="Complete"/>,
+/// <see cref="Error"/>, <see cref="Cancelled"/>) are retained in the registry for
+/// <c>JobRetentionMinutes</c>, after which SSE replay returns 410 Gone.
 /// </summary>
 public enum AggregationJobState
 {

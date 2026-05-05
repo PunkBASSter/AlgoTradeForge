@@ -37,10 +37,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Shared JSON options for FE-facing API (camelCase + case-insensitive)
 builder.Services.AddSingleton(JsonDefaults.Api);
 
-// Apply the canonical JSON policy (camelCase + case-insensitive from Web defaults,
-// AllowNamedFloatingPointLiterals for NaN/Infinity round-trip, JsonStringEnumConverter for
-// stable enum wire shape). The framework hands us an existing options instance pre-loaded
-// with Web defaults, so we only apply the deltas. Single source of truth: JsonDefaults.Apply.
+// Single source of truth for wire JSON policy (camelCase, NaN/Infinity round-trip, string enums).
 builder.Services.ConfigureHttpJsonOptions(options => JsonDefaults.Apply(options.SerializerOptions));
 
 // Add OpenAPI/Swagger
@@ -120,7 +117,7 @@ builder.Services.AddSingleton<IAssetRepository, FileSystemAssetRepository>();
 // Debug WebSocket handler (instance class for constructor-injected JSON options)
 builder.Services.AddSingleton<DebugWebSocketHandler>();
 
-// History-loader proxy (Phase 3 / TRD §8): typed HttpClient over the sibling WebApi.
+// History-loader proxy: typed HttpClient over the sibling WebApi.
 builder.Services.AddHistoryLoaderClient(builder.Configuration);
 builder.Services.AddSingleton<DataProxyCache>();
 

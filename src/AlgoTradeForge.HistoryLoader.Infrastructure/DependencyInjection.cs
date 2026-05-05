@@ -119,7 +119,6 @@ public static class DependencyInjection
         services.AddSingleton<ISchemaManager, FeedSchemaManager>();
         services.AddSingleton<IFeedStatusStore, FeedStatusManager>();
 
-        // Phase 1a: alt-bar aggregation foundation
         services.AddSingleton<AggregatedDirSweeper>();
 
         return services;

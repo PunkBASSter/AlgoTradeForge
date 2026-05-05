@@ -39,9 +39,8 @@ public sealed class RunGroupValidationCommandHandler(
             throw new ArgumentException(
                 $"Optimization group '{command.OptimizationGroupId}' has no completed child runs.");
 
-        // Phase 4 (P4-16, TRD §9.6): validation requires exactly one Role=Primary per child run.
-        // After P4-14 expansion, every optimization run is single-primary by construction — this
-        // guard catches stale/corrupt records that predate the expansion.
+        // Validation requires exactly one Role=Primary per child run. Post-expansion runs are
+        // single-primary by construction; this guard catches stale records pre-dating expansion.
         for (var i = 0; i < completedRuns.Count; i++)
         {
             var run = completedRuns[i];
@@ -49,7 +48,7 @@ public sealed class RunGroupValidationCommandHandler(
             if (primaryCount != 1)
                 throw new ArgumentException(
                     $"Optimization run '{run.Id}' (child {i} of group '{command.OptimizationGroupId}') " +
-                    $"has {primaryCount} Role=Primary subscriptions; validation requires exactly one (TRD §9.6).");
+                    $"has {primaryCount} Role=Primary subscriptions; validation requires exactly one.");
         }
 
         // 3. Resolve threshold profile

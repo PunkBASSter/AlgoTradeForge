@@ -11,9 +11,8 @@ public sealed class BacktestFeedContext : IFeedContext
 {
     private readonly Dictionary<string, FeedEntry> _feeds = [];
 
-    // Phase 2b — primary bar feed's sidecar (e.g. EqI's <feedId>.flow). The loader is held
-    // in a closure and invoked at most once on first access. Until then, we own the schema
-    // (read out of feeds.json at engine setup) but pay no I/O.
+    // Primary bar feed's sidecar (e.g. EqI's <feedId>.flow). Loader held in a closure and
+    // invoked at most once on first access; until then we own the schema but pay no I/O.
     private DataFeedSchema? _primarySidecarSchema;
     private string? _primarySidecarFeedKey;
     private Func<FeedSeries?>? _primarySidecarLoader;
@@ -30,19 +29,12 @@ public sealed class BacktestFeedContext : IFeedContext
     }
 
     /// <summary>
-    /// Phase 2b — registers the primary bar feed's analytical sidecar with a deferred loader
-    /// (TRD §9.4). The series isn't loaded until a strategy calls
-    /// <see cref="IFeedContext.TryGetPrimarySidecar"/> or accesses
-    /// <see cref="IFeedContext.PrimarySidecarSchema"/> in a way that requires the data —
-    /// strategies that ignore the sidecar pay zero loader cost (P2b-11).
+    /// Registers the primary bar feed's analytical sidecar with a deferred loader. The series
+    /// isn't loaded until a strategy first accesses it — strategies that ignore the sidecar
+    /// pay zero loader cost. <paramref name="seriesLoader"/> returning <c>null</c> indicates
+    /// the on-disk sidecar is empty/missing despite the manifest pointer; surfaced as an
+    /// engine-init error rather than silent <c>NaN</c> at runtime.
     /// </summary>
-    /// <param name="feedKey">Sidecar feed-id (e.g. <c>"EqI_ticks_500000.flow"</c>).</param>
-    /// <param name="schema">Pre-resolved schema; column indices are usable at OnInit time without forcing a load.</param>
-    /// <param name="seriesLoader">
-    /// Returns the loaded <see cref="FeedSeries"/> on first call; <c>null</c> when the on-disk
-    /// sidecar is empty or missing despite the manifest pointer (P2b-12 surfaces that case as
-    /// an engine-init error rather than silent <c>NaN</c> at runtime).
-    /// </param>
     public void RegisterPrimarySidecarLazy(
         string feedKey,
         DataFeedSchema schema,
@@ -70,9 +62,8 @@ public sealed class BacktestFeedContext : IFeedContext
         foreach (var entry in _feeds.Values)
             AdvanceEntry(entry, timestampMs);
 
-        // Sidecar tracks the primary bar's ts the same way side feeds do — but only if the
-        // strategy has materialized it (TryGetPrimarySidecar called at least once). Strategies
-        // that don't touch it stay zero-cost.
+        // Sidecar advances only after materialization — strategies that don't touch it
+        // stay zero-cost.
         if (_primarySidecarEntry is not null)
             AdvanceEntry(_primarySidecarEntry, timestampMs);
     }
@@ -129,8 +120,6 @@ public sealed class BacktestFeedContext : IFeedContext
             ? entry.Schema
             : throw new InvalidOperationException($"No feed '{feedKey}' registered.");
 
-    // ---- Phase 2b: primary sidecar overrides --------------------------------
-
     /// <summary>
     /// Schema is known up-front (read out of feeds.json at engine setup) so strategies can
     /// resolve column indices in <c>OnInit</c> without forcing the loader to run.
@@ -139,8 +128,6 @@ public sealed class BacktestFeedContext : IFeedContext
 
     public bool TryGetPrimarySidecar(out ReadOnlySpan<double> values)
     {
-        // Lazy materialization: the loader runs at most once. After that, the sidecar entry
-        // behaves like any other registered feed (cursor advances via AdvanceTo, HasData flips).
         EnsurePrimarySidecarMaterialized();
 
         if (_primarySidecarEntry is { HasData: true } entry)
@@ -164,7 +151,7 @@ public sealed class BacktestFeedContext : IFeedContext
         if (series is null)
         {
             // Manifest pointed at this sidecar but no data on disk — surface loudly at first
-            // strategy access rather than silently returning NaN forever (P2b-12).
+            // strategy access rather than silently returning NaN forever.
             throw new InvalidOperationException(
                 $"Primary sidecar '{_primarySidecarFeedKey}' is registered in feeds.json but its " +
                 "data could not be loaded (no partitions matched, or all partitions empty). " +

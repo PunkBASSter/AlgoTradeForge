@@ -30,11 +30,9 @@ public sealed class RunGroupOptimizationCommandHandler(
     {
         var isGenetic = command.OptimizationMethod == "Genetic";
 
-        // 0. Phase 4 (P4-14, TRD §9.6): pre-split multi-primary DSSes into single-primary
-        //    DSSes. After expansion, every downstream slot (group key, dedup, DSS loop,
-        //    persistence) sees one primary per child run. Per-primary normalizer dedup
-        //    falls out automatically because each child run gets its own ComputeTask + its
-        //    own NormalizingEnumerable instance.
+        // Pre-split multi-primary DSSes so every downstream slot (group key, dedup, DSS loop,
+        // persistence) sees one primary per child run. Per-primary normalizer dedup is then
+        // automatic — each child run gets its own ComputeTask + NormalizingEnumerable instance.
         if (command.SubscriptionAxis is not { Count: > 0 })
             throw new ArgumentException("At least one SubscriptionAxis group must be provided.");
         var expandedAxis = OptimizationSetupHelper.ExpandMultiPrimary(command.SubscriptionAxis);
@@ -84,10 +82,8 @@ public sealed class RunGroupOptimizationCommandHandler(
 
         var settings = command.BacktestSettings;
 
-        // 3. Validate subscriptions (data loading deferred to executor at execution time)
-        //    The subscription axis is already expanded above (step 0) so each entry is a
-        //    single-primary DSS. dssCount reflects the post-expansion count, which is
-        //    what downstream loop, persistence, and progress aggregation expect.
+        // 3. Validate subscriptions (data loading deferred to executor at execution time).
+        //    Use post-expansion shape — one primary per child run.
         var subscriptionAxis = expandedAxis;
         var dssCount = subscriptionAxis.Count;
 

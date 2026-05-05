@@ -108,9 +108,7 @@ export default function BacktestReportPage({
 
   const handleRerun = () => {
     const config: RunBacktestRequest = {
-      // P4-9/P4-17: rerun-from-report assumes the original was a TimeBar primary, since
-      // legacy backtests pre-Phase-4 only used time bars. Once polymorphic feed display
-      // lands on the report page, this will read kind/role from the response shape.
+      // Rerun assumes a TimeBar primary; legacy reports lack the kind/role discriminator.
       dataSubscriptions: [{
         kind: "TimeBar",
         role: "Primary",

@@ -1,13 +1,7 @@
-// Reviewer Issue F1 — canonical parser for the alt-bar feed-id grammar (TRD §3.3),
-// mirroring the C# `AltBarFeedId.TryParse` in
-// `src/AlgoTradeForge.HistoryLoader.Domain/AltBarFeedId.cs`. Both sides use a positional
-// 3-component split on `_` plus an optional trailing `.flow` sidecar suffix:
-//
-//   <TypeCode>_<SourceCode>_<Threshold>[.flow]
-//
-// Replaces the prior ad-hoc `id.split("_")[1]`, which silently broke if the grammar ever
-// grew a fourth segment (e.g. multi-segment SourceCode). Keep both parsers in lockstep:
-// when the C# allowed sets change, mirror them here.
+// Canonical parser for the alt-bar feed-id grammar, mirroring the C#
+// `AltBarFeedId.TryParse` in `src/AlgoTradeForge.HistoryLoader.Domain/AltBarFeedId.cs`.
+// Grammar: <TypeCode>_<SourceCode>_<Threshold>[.flow]
+// Keep both parsers in lockstep — when the C# allowed sets change, mirror them here.
 
 export const ALLOWED_TYPE_CODES = new Set([
   "EqT", "EqV", "EqD", "EqI", "Range", "Renko",

@@ -4,10 +4,8 @@ using AlgoTradeForge.Domain.History;
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
 /// <summary>
-/// Self-contained input for one aggregation run (TRD §6.5). Constructed by the endpoint
-/// once it has resolved the request payload (P0-5 wire schema → canonical units, eligibility,
-/// scale context). Carries everything the pipeline needs without re-reading config or
-/// re-parsing the request.
+/// Self-contained input for one aggregation run. Built by the endpoint after resolving the
+/// request payload to canonical units; the pipeline never re-reads config.
 /// </summary>
 public sealed record AggregationJob(
     string JobId,
@@ -25,10 +23,7 @@ public sealed record AggregationJob(
     int MaxPartitionSizeMB,
     string ToolVersion);
 
-/// <summary>
-/// Pipeline output (TRD §6.4). Snapshotted at finalize and lifted into the manifest by the
-/// pipeline's <c>EnsureAltBarFeed</c> call before this is returned to the worker.
-/// </summary>
+/// <summary>Pipeline output snapshotted at finalize.</summary>
 public sealed record AggregationResult(
     string JobId,
     string OutcomeFeedId,
@@ -42,8 +37,5 @@ public sealed record AggregationResult(
     double MedianSourceRecordValue,
     double NFactor,
     double DurationSeconds,
-    /// <summary>
-    /// Phase 2b — companion <c>.flow</c> sidecar feed-id for EqI runs (TRD §5.4 SSE
-    /// <c>complete</c> payload). <c>null</c> for non-EqI types.
-    /// </summary>
+    /// <summary>Companion <c>.flow</c> sidecar feed-id for EqI runs; <c>null</c> for non-EqI types.</summary>
     string? SidecarFeedId = null);

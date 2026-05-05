@@ -4,20 +4,11 @@ using AlgoTradeForge.Domain.Strategy.Subscriptions;
 namespace AlgoTradeForge.Application.Backtests;
 
 /// <summary>
-/// Explicit input shape for an optimization run (TRD §9.6): a single ordered list of
-/// <see cref="DataFeedSubscription"/> where every <c>Role=Primary</c> entry is a fan-out
-/// candidate and every <c>Role=Side</c> entry is a shared side feed attached to every
-/// trial. Each <c>(primary, parameter combination)</c> pair becomes one trial; per-primary
-/// <c>IParameterNormalizer</c> deduplication still applies. Same shape as
-/// <see cref="BacktestInputs"/>, scaled up to multiple primaries.
+/// Feed subscriptions for an optimization run. Each <c>Role=Primary</c> entry is a fan-out
+/// candidate; each <c>Role=Side</c> entry is a shared side feed attached to every trial.
 /// </summary>
 public sealed record OptimizationInputs
 {
-    /// <summary>
-    /// All feed subscriptions in canonical order. Must contain at least one <c>Role=Primary</c>
-    /// entry (the candidate set the engine fans out across). <c>Role=Side</c> entries are
-    /// shared side feeds attached to every trial.
-    /// </summary>
     public IReadOnlyList<DataFeedSubscription> Subscriptions { get; }
 
     public OptimizationInputs(IReadOnlyList<DataFeedSubscription> subscriptions)

@@ -31,14 +31,13 @@ public sealed class RunValidationCommandHandler(
             throw new ArgumentException(
                 $"Optimization run '{command.OptimizationRunId}' has status '{optimization.Status}', expected 'Completed'.");
 
-        // Phase 4 (P4-16, TRD §9.6): validation requires exactly one Role=Primary subscription.
-        // After P4-14 expansion, every optimization run is single-primary by construction —
-        // this guard catches stale/corrupt records that predate the expansion.
+        // Validation requires exactly one Role=Primary. Post-expansion runs are single-primary
+        // by construction; this guard catches stale records pre-dating expansion.
         var primaryCount = optimization.DataSubscriptions.Count(s => s.Role == DataFeedRole.Primary);
         if (primaryCount != 1)
             throw new ArgumentException(
                 $"Optimization run '{command.OptimizationRunId}' has {primaryCount} Role=Primary " +
-                "subscriptions; validation requires exactly one (TRD §9.6).");
+                "subscriptions; validation requires exactly one.");
 
         // 2. Resolve threshold profile (check repository for custom profiles, fall back to built-in)
         ValidationThresholdProfile profile;

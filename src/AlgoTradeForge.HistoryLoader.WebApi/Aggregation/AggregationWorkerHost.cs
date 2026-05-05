@@ -7,12 +7,8 @@ using Microsoft.Extensions.Options;
 namespace AlgoTradeForge.HistoryLoader.WebApi.Aggregation;
 
 /// <summary>
-/// Hosted worker pool that drains the aggregation job queues (TRD §6.5). Phase 1b ran a single
-/// pool draining the time-bar queue (<see cref="IAggregationJobQueue"/>) sized by
-/// <c>aggregator.maxConcurrentJobs</c>. Phase 2a (P2a-10) adds a second pool draining
-/// <see cref="IAggregationTickJobQueue"/> sized by <c>aggregator.maxConcurrentTickJobs</c>;
-/// the split prevents I/O-heavy tick jobs from blocking CPU-heavy time-bar jobs at the queue
-/// head.
+/// Hosted worker pools that drain the aggregation job queues. Two separate pools (time-bar and
+/// tick) prevent I/O-heavy tick jobs from blocking CPU-heavy time-bar jobs at the queue head.
 /// </summary>
 public sealed class AggregationWorkerHost : BackgroundService
 {
@@ -82,10 +78,10 @@ public sealed class AggregationWorkerHost : BackgroundService
         {
             await foreach (var job in reader.ReadAllAsync(stoppingToken))
             {
-                // Phase 6: link the host stopping token with the per-job CTS the registry vends
-                // for user cancels. The pipeline observes either source via its existing
-                // ct.ThrowIfCancellationRequested() — we distinguish the source in the catch
-                // below to route to OnCancelled vs OnErrored("host_shutdown").
+                // Link the host stopping token with the per-job CTS for user cancels. The
+                // pipeline observes either source via ct.ThrowIfCancellationRequested(); the
+                // catch below distinguishes which source fired to route OnCancelled vs
+                // OnErrored("host_shutdown").
                 var perJobToken = _registry.GetCancellationToken(job.JobId);
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, perJobToken);
 
@@ -105,14 +101,12 @@ public sealed class AggregationWorkerHost : BackgroundService
                 }
                 catch (OperationCanceledException) when (perJobToken.IsCancellationRequested)
                 {
-                    // User cancel via DELETE /api/v1/aggregations/{jobId}. Distinct terminal
-                    // state from host_shutdown — staging dir was already cleaned by the pipeline.
+                    // User cancel — distinct terminal state from host_shutdown. Don't rethrow:
+                    // the worker continues draining the queue.
                     _logger.LogInformation(
                         "Aggregation worker {Pool}#{WorkerId} canceling job {JobId} on user request.",
                         poolName, workerId, job.JobId);
                     _registry.OnCancelled(job.JobId, "user_cancelled");
-                    // Do NOT rethrow — user cancel is a normal termination of THIS job, the worker
-                    // continues draining the queue.
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {

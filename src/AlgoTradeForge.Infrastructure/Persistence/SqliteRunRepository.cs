@@ -18,11 +18,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private bool _initialized;
 
-    // Persistence shares the canonical JSON policy so subscriptions_json (and every other
-    // serialized blob) round-trips with the same shape as the wire — same camelCase, same
-    // NaN/Infinity handling, same string enum encoding. Copy constructor (rather than
-    // referencing JsonDefaults.Api directly) so persistence keeps an independent mutable
-    // instance per the JsonSerializerOptions immutable-after-first-use contract.
+    // Independent copy of the wire policy (JsonSerializerOptions is immutable after first use).
     private static readonly JsonSerializerOptions JsonOptions = new(JsonDefaults.Api);
 
     /// <summary>All backtest_runs columns except equity_curve_json, for list queries.</summary>
@@ -211,8 +207,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         }
         if (query.TimeFrame is not null)
         {
-            // BacktestRunQuery.TimeFrame is the legacy filter name; SQL maps it to the new
-            // primary_feed column which holds TimeFrame.Code OR alt-bar FeedId OR "ticks".
+            // BacktestRunQuery.TimeFrame is the legacy filter name; primary_feed holds
+            // TimeFrame.Code OR alt-bar FeedId OR "ticks".
             conditions.Add("br.primary_feed = $primaryFeed");
             parameters.Add(new SqliteParameter("$primaryFeed", query.TimeFrame));
         }
@@ -733,17 +729,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
 
     // ── Helpers ────────────────────────────────────────────────────────
 
-    // Polymorphic primary → row mapping. These two helpers are the ONLY mapping from a
-    // DataFeedSubscription to the denormalized index columns; SQL-layer sorts/filters that
-    // need to inspect the primary feed code or kind go through them.
-
-    /// <summary>
-    /// Canonical feed code stored in <c>primary_feed</c>: <see cref="TimeFrame.Code"/> for
-    /// time bars (e.g. "1m"), <c>FeedId</c> for alt bars (e.g. "EqV_1m_500m"), the literal
-    /// "ticks" for tick subscriptions, or the side feed's <c>FeedId</c>. The column is named
-    /// <c>primary_feed</c> (not <c>timeframe</c>) precisely because it is no longer a time
-    /// frame in general — alt-bar primaries land here with their FeedId.
-    /// </summary>
+    /// <summary>Canonical feed code stored in <c>primary_feed</c>.</summary>
     private static string PrimaryFeedCode(DataFeedSubscription sub) => sub switch
     {
         TimeBarSubscription tb => tb.TimeFrame.Code,
@@ -753,11 +739,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         _ => sub.GetType().Name,
     };
 
-    /// <summary>
-    /// String discriminator stored in <c>primary_kind</c>. Mirrors the JSON polymorphic
-    /// discriminator in <see cref="DataFeedSubscription"/> so ops queries
-    /// (<c>WHERE primary_kind = 'AltBar'</c>) read naturally.
-    /// </summary>
+    /// <summary>String discriminator stored in <c>primary_kind</c>.</summary>
     private static string PrimaryKindCode(DataFeedSubscription sub) => sub switch
     {
         TimeBarSubscription => "TimeBar",
@@ -773,9 +755,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             ? null
             : reader.GetString(reader.GetOrdinal("optimization_run_id"));
 
-        // subscriptions_json is NOT NULL by schema — every row carries the polymorphic blob
-        // written at insert time. A null/empty deserialization here means corruption, not
-        // a legacy row, so we let the throw propagate rather than silently fall back.
+        // subscriptions_json is NOT NULL by schema; null deserialization indicates corruption.
         var subscriptionsJson = reader.GetString(reader.GetOrdinal("subscriptions_json"));
         var dataSubscriptions = JsonSerializer.Deserialize<List<DataFeedSubscription>>(
             subscriptionsJson, JsonOptions)
@@ -858,9 +838,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             ? startedAt
             : DateTimeOffset.Parse(completedAtRaw, CultureInfo.InvariantCulture);
 
-        // subscriptions_json is NOT NULL by schema — every row carries the polymorphic blob
-        // written at insert time. A null/empty deserialization here means corruption, not
-        // a legacy row, so we let the throw propagate rather than silently fall back.
+        // subscriptions_json is NOT NULL by schema; null deserialization indicates corruption.
         var subscriptionsJson = reader.GetString(reader.GetOrdinal("subscriptions_json"));
         var dataSubscriptions = JsonSerializer.Deserialize<List<DataFeedSubscription>>(
             subscriptionsJson, JsonOptions)

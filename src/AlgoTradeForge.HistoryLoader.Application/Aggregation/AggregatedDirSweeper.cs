@@ -4,19 +4,10 @@ using Microsoft.Extensions.Logging;
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
 /// <summary>
-/// Crash-recovery sweep for the <c>aggregated/</c> directory under one asset (TRD §4.1).
-/// Removes:
-/// <list type="bullet">
-///   <item>Every <c>*.tmp</c> file under any <c>aggregated/&lt;feedId&gt;/</c> or
-///         <c>aggregated/&lt;feedId&gt;.flow/</c>.</item>
-///   <item>Any <c>aggregated/&lt;feedId&gt;/</c> directory whose <c>feedId</c> is absent
-///         from <c>feeds.json</c> (orphan partitions left by an interrupted overwrite).</item>
-///   <item>Any <c>.staging-&lt;jobId&gt;/</c> sub-directory inside a known feed (Phase 1a:
-///         all are deleted unconditionally; Phase 1b adds a "is the job still running?"
-///         check via the in-memory job registry).</item>
-/// </list>
-/// Asymmetry: a <c>feeds.json</c> entry without a corresponding directory is preserved.
-/// Only the directory side is destructive.
+/// Crash-recovery sweep for the <c>aggregated/</c> directory of one asset. Deletes orphan
+/// <c>*.tmp</c> files, unknown feed directories (not in <c>feeds.json</c>), and
+/// <c>.staging-*</c> subdirs. A <c>feeds.json</c> entry without a directory is preserved —
+/// only the directory side is destructive.
 /// </summary>
 public sealed class AggregatedDirSweeper(
     ISchemaManager schemaManager,
@@ -45,7 +36,6 @@ public sealed class AggregatedDirSweeper(
                 continue;
             }
 
-            // Known feedId — clean *.tmp + .staging-* inside it.
             foreach (var tmpFile in Directory.EnumerateFiles(feedDir, "*.tmp", SearchOption.AllDirectories).ToList())
             {
                 File.Delete(tmpFile);
@@ -62,11 +52,8 @@ public sealed class AggregatedDirSweeper(
                     Path.GetFullPath(stagingDir));
             }
 
-            // Q-4 — observability for the bare-vs-pNN collision case. The reader will throw
-            // InvalidDataException at next read, but logging at startup gives operators a heads-up
-            // before any aggregation job is attempted. Do NOT auto-delete: which file is the
-            // truth depends on context the sweeper can't determine without operator input, and
-            // auto-delete would mask the underlying writer/migration bug.
+            // Log-only: do NOT auto-delete bare/pNN collisions — which file is correct
+            // depends on operator context, and auto-delete would mask a writer/migration bug.
             DetectBareAndPartitionCollisions(feedDir);
         }
     }

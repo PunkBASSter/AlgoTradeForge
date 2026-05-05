@@ -4,26 +4,22 @@ using AlgoTradeForge.HistoryLoader.Domain;
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
 /// <summary>
-/// Encodes the TRD §7 source/type compatibility matrix used by
-/// <c>GET .../feeds/{feedId}/aggregation-options</c> and the <c>POST /aggregate</c>
-/// validation step. Pure function; no I/O.
+/// Source/type compatibility matrix used by <c>GET .../feeds/{feedId}/aggregation-options</c>
+/// and the <c>POST /aggregate</c> validation step. Pure function; no I/O.
 /// </summary>
 public static class EligibilityRules
 {
     private static readonly string[] AllAltBarTypes =
         ["EqT", "EqV", "EqD", "EqI", "Range", "Renko"];
 
-    // Phase 5 (P5-10, ADR D1): Range/Renko require a tick source. Time-bar collapses force a
-    // one-emit-per-record approximation that distorts actual_overshoot_pct. Lifting requires
-    // either documenting the approximation or attaching intra-bar volume profile data —
-    // deferred to a later phase.
+    // Range/Renko require a tick source: time-bar collapses force a one-emit-per-record
+    // approximation that distorts actual_overshoot_pct.
     private const string RangeRenkoRequiresTickReason =
         "Range/Renko require a tick source for fidelity in v1.";
 
-    // Phase 6 — re-aggregation safe-trio. EqV/EqT/EqD compose cleanly when the source is the
-    // same type with a smaller threshold (each accumulator's contribution math sums linearly
-    // across pre-aggregated bars). EqI loses internal trajectory; Range/Renko are inherently
-    // path-dependent on individual ticks.
+    // Re-aggregation safe-trio. EqV/EqT/EqD compose cleanly when the source is the same type
+    // with a smaller threshold (contributions sum linearly across pre-aggregated bars). EqI
+    // loses internal trajectory; Range/Renko are path-dependent on individual ticks.
     private static readonly IReadOnlySet<string> SafeReaggregationTypes =
         new HashSet<string>(StringComparer.Ordinal) { "EqV", "EqT", "EqD" };
 
@@ -115,21 +111,15 @@ public static class EligibilityRules
 
     private static bool IsPerpOrFuture(string assetType) => AssetTypes.IsFutures(assetType);
 
-    /// <summary>
-    /// Phase 6 — re-aggregation eligibility. The source is an existing alt-bar feed; we ask
-    /// "which output types could be built from this source?". Within the safe trio (EqV/EqT/EqD)
-    /// only the same type code is eligible (cross-family compositions don't preserve fidelity).
-    /// EqI/Range/Renko sources reject all output types with the appropriate reason.
-    /// Threshold ordering (must be strictly larger) is checked at the POST /aggregate endpoint —
-    /// eligibility doesn't see the requested threshold.
-    /// </summary>
+    // Re-aggregation eligibility from an existing alt-bar source. Within the safe trio
+    // (EqV/EqT/EqD) only the same type code is eligible. EqI/Range/Renko sources reject all
+    // output types. Threshold ordering is checked at the POST /aggregate endpoint.
     private static EligibilityResult AltBarReaggregation(FeedDefinition source)
     {
         var sourceTypeCode = source.Type?.Code;
 
-        // Defense-in-depth: a malformed alt-bar entry without a Type field can't be re-aggregated
-        // (we can't tell what to compose). Manifest writer always populates Type.Code, so this
-        // path is unreachable for well-formed feeds.
+        // Defense-in-depth: malformed alt-bar entry without Type field can't be re-aggregated.
+        // Manifest writer always populates Type.Code, so this is unreachable for well-formed feeds.
         if (string.IsNullOrEmpty(sourceTypeCode))
         {
             return Allow([],
@@ -159,7 +149,6 @@ public static class EligibilityRules
                     (t, $"Re-aggregation from source type '{sourceTypeCode}' is not supported.")).ToArray());
         }
 
-        // Safe-trio source — only the same type code is eligible.
         var eligible = new[] { sourceTypeCode };
         var ineligible = AllAltBarTypes
             .Where(t => t != sourceTypeCode)

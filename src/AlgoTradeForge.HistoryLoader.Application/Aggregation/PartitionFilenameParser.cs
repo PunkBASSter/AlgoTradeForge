@@ -3,26 +3,14 @@ using System.Text.RegularExpressions;
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
 /// <summary>
-/// Q-4 — month-key extraction + bare-vs-partNumbered collision detection for the partitioned
-/// CSV layout (TRD §3.2). The writer (<see cref="PartitionedSinkWriter"/>) atomic-renames a
+/// Month-key extraction + bare-vs-partNumbered collision detection. The writer atomic-renames
 /// bare <c>&lt;YYYY-MM&gt;.csv</c> to <c>.p01.csv</c> before opening <c>.p02.csv</c>, so a
-/// single successful job NEVER produces both forms for the same month. Any reader that
-/// observes both is looking at corruption — operator manipulation, a partial migration, or
-/// a writer-invariant break — and silent double-loading would skew downstream aggregation.
+/// single successful job NEVER produces both forms for the same month — observing both
+/// indicates corruption (operator edit, partial migration, or writer bug).
+/// Accepts <c>&lt;YYYY-MM&gt;[.pNN].csv</c> (alt-bar/sidecar) and
+/// <c>&lt;YYYY-MM&gt;_&lt;suffix&gt;[.pNN].csv</c> (time-bar with FeedId suffix); other names
+/// return <see langword="false"/> from <see cref="TryParse"/> rather than throw.
 /// </summary>
-/// <remarks>
-/// Accepts both naming shapes:
-/// <list type="bullet">
-///   <item><c>&lt;YYYY-MM&gt;[.pNN].csv</c> — alt-bar partitions and side-feed sidecars
-///         (TRD §3.2 / §3.5).</item>
-///   <item><c>&lt;YYYY-MM&gt;_&lt;feedSuffix&gt;[.pNN].csv</c> — time-bar partitions where
-///         the FeedId (e.g. <c>1m</c>, <c>5m</c>) is appended after the month (TRD §9.3).</item>
-/// </list>
-/// Filenames that match neither shape return <see langword="false"/> from
-/// <see cref="TryParse"/> — they're skipped from collision analysis rather than throwing,
-/// so a future filename addition (e.g. a new sibling artifact in the same directory) doesn't
-/// crash existing readers.
-/// </remarks>
 public static class PartitionFilenameParser
 {
     private static readonly Regex AltBarOrSidecarPattern =
@@ -34,9 +22,8 @@ public static class PartitionFilenameParser
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// Extracts the <c>YYYY-MM</c> month key and optional part-number from a partition file
-    /// name (no path, just the bare filename). Returns <see langword="false"/> for names that
-    /// don't match either supported shape.
+    /// Extracts the <c>YYYY-MM</c> month key and optional part-number from a bare filename.
+    /// Returns <see langword="false"/> for unrecognized shapes.
     /// </summary>
     public static bool TryParse(string fileName, out string monthKey, out int? partNumber)
     {
@@ -57,16 +44,12 @@ public static class PartitionFilenameParser
     }
 
     /// <summary>
-    /// Throws <see cref="InvalidDataException"/> if any month appears as both a bare partition
-    /// and one or more part-numbered partitions in <paramref name="filePaths"/>. Multiple
-    /// part-numbered files for the same month (the normal overflow case) do NOT throw.
-    /// Filenames that don't match the partition grammar are ignored — the check only flags
-    /// real bare-vs-pNN collisions, never spurious failures from unrelated siblings.
+    /// Throws <see cref="InvalidDataException"/> if any month has both a bare partition AND
+    /// part-numbered partitions. Multiple part-numbered files alone (normal overflow) do NOT
+    /// throw. Unrecognized filenames are ignored.
     /// </summary>
     public static void EnsureNoDuplicateMonthPartitions(IEnumerable<string> filePaths)
     {
-        // Group by month key; for each month, track whether a bare partition exists AND collect
-        // the partNumbered paths. Only the (bare && pNN) co-existence is a violation.
         var byMonth = new Dictionary<string, (string? Bare, List<string> PartNumbered)>(StringComparer.Ordinal);
         foreach (var path in filePaths)
         {

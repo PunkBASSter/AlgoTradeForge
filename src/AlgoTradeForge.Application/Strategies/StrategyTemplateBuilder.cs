@@ -179,13 +179,11 @@ public static class StrategyTemplateBuilder
             .ToList();
     }
 
-    // Role conventions in templates (TRD §9.2 + plan PR-A):
+    // Role conventions in templates:
     //   • BuildSubscriptions (single backtest list): index 0 = Primary, index 1+ = Side.
-    //   • BuildOptimizationGroups / BuildPairSubscriptionGroups / BuildSubscriptionGroups
-    //     (axis groups for optimization fan-out): every entry is Role=Primary because each
-    //     entry within a group is a *fan-out candidate primary* (P4-14) — the optimizer runs
-    //     `|primaries| × |combos|` per group. Side feeds in optimization templates are not
-    //     yet expressible from the template builder; users add them via JSON edits.
+    //   • Optimization axis groups: every entry is Role=Primary (fan-out candidate primaries —
+    //     the optimizer runs |primaries| × |combos| per group). Side feeds in optimization
+    //     templates require manual JSON edits.
     private static Dictionary<string, object> Subscription(
         string assetName, string exchange, string timeFrame, int role) => new()
     {

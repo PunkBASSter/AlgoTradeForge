@@ -1,7 +1,6 @@
-// Phase 3 — SSE client wrapping @microsoft/fetch-event-source. Native EventSource doesn't
-// support custom headers, but we need to inject `Last-Event-ID` from localStorage on first
-// connect (P3-18 resume). fetch-event-source also propagates AbortController cleanly,
-// matching the existing apiClient pattern.
+// SSE client wrapping @microsoft/fetch-event-source. Native EventSource doesn't support
+// custom headers, but we need to inject `Last-Event-ID` from localStorage on first
+// connect for resume. fetch-event-source also propagates AbortController cleanly.
 
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import type {
@@ -40,18 +39,14 @@ export interface ConnectProgressOptions {
 const TERMINAL_EVENTS: ReadonlySet<SseEventType> = new Set(["complete", "error", "cancelled"]);
 
 /**
- * Subscribes to /api/data/aggregations/{jobId}/progress. Returns a Promise that resolves
- * when the stream closes (either by terminal event or caller abort) and rejects on errors
- * that the handlers can't recover from.
- *
- * Resume contract: when `lastEventId` is provided, the upstream replays events past that id
- * (server-side log retention permitting). On 410 Gone (retention expired), `onError` is
- * called with a tagged error so the caller can clearJob() and stop reconnecting.
+ * Subscribes to /api/data/aggregations/{jobId}/progress. Resolves when the stream
+ * closes; rejects on unrecoverable errors. When `lastEventId` is provided, the upstream
+ * replays events past that id. 410 Gone surfaces as a tagged GoneError so the caller
+ * can clearJob and stop reconnecting.
  */
 export async function connectProgress(opts: ConnectProgressOptions): Promise<void> {
   const { jobId, lastEventId, signal, handlers } = opts;
 
-  // fetchEventSource expects header values as strings.
   const headers: Record<string, string> = {};
   if (lastEventId !== undefined) headers["Last-Event-ID"] = String(lastEventId);
 
@@ -61,8 +56,8 @@ export async function connectProgress(opts: ConnectProgressOptions): Promise<voi
       method: "GET",
       headers,
       signal,
-      // Disable auto-retry: we manage reconnection at the hook level via the persisted
-      // jobId + lastEventId. fetch-event-source's built-in retry would race with our store.
+      // We manage reconnect at the hook level via persisted jobId + lastEventId;
+      // fetch-event-source's built-in retry would race the store.
       openWhenHidden: true,
       onopen: async (response) => {
         if (response.status === 410) {
@@ -73,22 +68,15 @@ export async function connectProgress(opts: ConnectProgressOptions): Promise<voi
             `SSE open failed: HTTP ${response.status} ${response.statusText}`,
           );
         }
-        // 200 OK — fetch-event-source proceeds to read the body.
       },
       onmessage: (msg) => {
-        // Per HTML SSE spec, `event:` defaults to "message" if absent. Our server always
-        // sets it to one of {queued, started, progress, complete, error, cancelled}.
-        // Defensive: skip any frame we don't recognize rather than throwing — keeps long
-        // streams resilient.
+        // Defensive: skip unrecognized event types rather than throwing — keeps long
+        // streams resilient if the server adds new events.
         const type = (msg.event ?? "message") as SseEventType;
         if (!isKnownEventType(type)) return;
         const id = Number(msg.id);
         if (!Number.isFinite(id)) return;
 
-        // Single cast site for the type→payload map. A future consumer that adds an
-        // `assert(env.type === "complete")` check on a non-complete payload will still
-        // be type-safe because TS narrows the union at the consumer; this switch only
-        // assigns the JSON-parsed object to the right discriminator branch.
         let env: SseEventEnvelope;
         try {
           switch (type) {
@@ -112,26 +100,22 @@ export async function connectProgress(opts: ConnectProgressOptions): Promise<voi
               break;
           }
         } catch {
-          // Malformed payload — skip this frame, keep stream alive.
-          return;
+          return;   // malformed payload — skip frame, keep stream alive
         }
 
         handlers.onEvent(id, env);
 
-        // Terminal events: surface to caller via onClose by aborting the iterator. We do
-        // this AFTER calling onEvent so the consumer sees the complete/error payload.
+        // Throw AFTER onEvent so the consumer sees the terminal payload; throwing makes
+        // fetch-event-source close cleanly without retry.
         if (TERMINAL_EVENTS.has(type)) {
-          // Throwing FatalError makes fetch-event-source close cleanly without retry.
           throw new TerminalEventError();
         }
       },
       onerror: (err) => {
-        // Bubble up; fetch-event-source's default retry-loop would otherwise pin us forever.
+        // Bubble up; the default retry-loop would otherwise pin us forever.
         throw err;
       },
-      onclose: () => {
-        // Server closed without a terminal event — treat as graceful close.
-      },
+      onclose: () => {},
     },
   ).then(
     () => handlers.onClose(),

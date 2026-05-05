@@ -1,8 +1,8 @@
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
 /// <summary>
-/// Progress events emitted by <see cref="AggregationPipeline"/> and forwarded to the SSE
-/// consumer (TRD §5.4). One sealed type per state — pattern-match on subtype at the consumer.
+/// Progress events emitted by the aggregation pipeline and forwarded to the SSE consumer.
+/// One sealed subtype per state — pattern-match on subtype at the consumer.
 /// </summary>
 public abstract record ProgressEvent
 {
@@ -33,10 +33,9 @@ public abstract record ProgressEvent
         bool Retryable) : ProgressEvent;
 
     /// <summary>
-    /// Phase 6 — terminal state distinct from <see cref="Error"/>. Emitted when the user
-    /// explicitly cancels via <c>DELETE /api/v1/aggregations/{jobId}</c>; the staging dir is
-    /// recursively deleted and no manifest entry is written. <see cref="Reason"/> distinguishes
-    /// <c>"user_cancelled"</c> (per-job CTS fired) from any future programmatic cancel paths.
+    /// Terminal state distinct from <see cref="Error"/>. Emitted when the user cancels via
+    /// <c>DELETE /api/v1/aggregations/{jobId}</c>; staging dir is deleted and no manifest entry
+    /// is written. <see cref="Reason"/> identifies the cancel source (e.g. <c>"user_cancelled"</c>).
     /// </summary>
     public sealed record Cancelled(
         string JobId,

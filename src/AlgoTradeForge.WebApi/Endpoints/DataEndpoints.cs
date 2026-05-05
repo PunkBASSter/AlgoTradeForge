@@ -7,32 +7,17 @@ using Microsoft.Net.Http.Headers;
 namespace AlgoTradeForge.WebApi.Endpoints;
 
 /// <summary>
-/// Phase 3 — main API proxy for HistoryLoader §5 endpoints, mounted under <c>/api/data/*</c>
-/// (TRD §8). Single-source-of-truth for the FE: it never sees the upstream URL.
+/// Main API proxy for HistoryLoader endpoints, mounted under <c>/api/data/*</c>. The FE
+/// never sees the upstream URL. 5xx / connection failures are translated to ProblemDetails;
+/// upstream 4xx is forwarded byte-identical (FE differentiates 404 / 422 / 423 / 409).
 /// </summary>
-/// <remarks>
-/// <para>
-/// Stage breakdown (this file accumulates across stages):
-/// <list type="bullet">
-///   <item>S2: catalog GETs + 5-s TTL cache + status / aggregation-options / snapshot passthrough.</item>
-///   <item>S3: <c>POST /aggregate</c> + <c>DELETE /feeds/{id}</c> with write-through cache invalidation.</item>
-///   <item>S4: <c>GET /aggregations/{jobId}/progress</c> SSE pass-through.</item>
-/// </list>
-/// </para>
-/// <para>
-/// All endpoints run upstream calls through the typed <see cref="HistoryLoaderClient"/>;
-/// 5xx and connection failures are translated by <see cref="DataProxyProblem"/>. Upstream
-/// 4xx (422 / 423 / 409) is forwarded byte-identical because those carry domain-meaningful
-/// payloads the FE differentiates.
-/// </para>
-/// </remarks>
 internal static class DataEndpoints
 {
     public static IEndpointRouteBuilder MapDataEndpoints(this IEndpointRouteBuilder app)
     {
         var g = app.MapGroup("/api/data");
 
-        // ----- Catalog GETs (cached 5 s) ----------------------------------
+        // Catalog GETs — short-TTL cached.
         g.MapGet("/exchanges",
             (HttpContext ctx, HistoryLoaderClient client, DataProxyCache cache) =>
                 ProxyCachedGet(ctx, client, cache, "/api/v1/exchanges", DataProxyCache.KeyAllExchanges));
@@ -47,7 +32,7 @@ internal static class DataEndpoints
             (HttpContext ctx, HistoryLoaderClient client, DataProxyCache cache) =>
                 ProxyCachedGet(ctx, client, cache, "/api/v1/assets", DataProxyCache.KeyAllAssets));
 
-        // ----- Per-feed endpoints (NOT cached: change rapidly) ------------
+        // Per-feed endpoints — uncached (change rapidly).
         g.MapGet("/exchanges/{exchange}/assets/{asset}/feeds/{feedId}/status",
             (string exchange, string asset, string feedId, HttpContext ctx, HistoryLoaderClient client) =>
                 ProxyPassthroughGet(ctx, client,
@@ -62,7 +47,7 @@ internal static class DataEndpoints
             (string jobId, HttpContext ctx, HistoryLoaderClient client) =>
                 ProxyPassthroughGet(ctx, client, $"/api/v1/aggregations/{jobId}"));
 
-        // ----- Mutations: write-through cache invalidation ----------------
+        // Mutations — write-through cache invalidation.
         g.MapPost("/exchanges/{exchange}/assets/{asset}/aggregate",
             (string exchange, string asset,
              HttpContext ctx, HistoryLoaderClient client, DataProxyCache cache) =>
@@ -73,13 +58,11 @@ internal static class DataEndpoints
              HttpContext ctx, HistoryLoaderClient client, DataProxyCache cache) =>
                 DeleteFeed(exchange, asset, feedId, ctx, client, cache));
 
-        // Phase 6 — cancel an in-flight aggregation job. No cache invalidation needed: cancel
-        // doesn't write a manifest entry, so the catalog never saw the would-be feed.
+        // Cancel in-flight job — no cache invalidation; cancel never wrote a manifest entry.
         g.MapDelete("/aggregations/{jobId}",
             (string jobId, HttpContext ctx, HistoryLoaderClient client) =>
                 CancelAggregation(jobId, ctx, client));
 
-        // ----- SSE pass-through -------------------------------------------
         g.MapGet("/aggregations/{jobId}/progress",
             (string jobId, HttpContext ctx, HistoryLoaderClient client) =>
                 ProxySse(jobId, ctx, client));
@@ -88,9 +71,8 @@ internal static class DataEndpoints
     }
 
     /// <summary>
-    /// Forwards the upstream SSE stream byte-for-byte. <see cref="IHttpResponseBodyFeature.DisableBuffering"/>
-    /// is critical: without it Kestrel buffers small writes and individual events sit until
-    /// connection close (which never happens on a long-lived stream).
+    /// Forwards the upstream SSE stream byte-for-byte. <c>DisableBuffering</c> is required —
+    /// Kestrel otherwise buffers small writes and individual events sit until connection close.
     /// </summary>
     private static async Task ProxySse(string jobId, HttpContext ctx, HistoryLoaderClient client)
     {
@@ -115,8 +97,7 @@ internal static class DataEndpoints
 
         try
         {
-            // 410 Gone: upstream's job retention expired. Forward the body verbatim — the FE
-            // uses it as a signal to clearJob() and stop reconnecting.
+            // 410 Gone — upstream retention expired; FE uses it to clearJob() and stop reconnecting.
             if (upstream.StatusCode == HttpStatusCode.Gone)
             {
                 ctx.Response.StatusCode = (int)HttpStatusCode.Gone;
@@ -126,8 +107,7 @@ internal static class DataEndpoints
                 return;
             }
 
-            // Upstream 5xx during stream open — translate. Past this point we're in body-stream
-            // territory and can't switch to ProblemDetails (headers already sent below).
+            // 5xx must be translated before any body-stream headers are sent.
             if ((int)upstream.StatusCode >= 500)
             {
                 var detail = await upstream.Content.ReadAsStringAsync(ctx.RequestAborted);
@@ -135,7 +115,7 @@ internal static class DataEndpoints
                 return;
             }
 
-            // Other non-2xx (404 job not found, 422 invalid path) — forward verbatim.
+            // Other non-2xx (404, 422) — forward verbatim.
             if (!upstream.IsSuccessStatusCode)
             {
                 ctx.Response.StatusCode = (int)upstream.StatusCode;
@@ -145,8 +125,8 @@ internal static class DataEndpoints
                 return;
             }
 
-            // Happy path: stream upstream → client. Set SSE headers, disable buffering, flush
-            // once so client sees Content-Type before the first event lands.
+            // Stream upstream → client. Flush once so the client sees Content-Type
+            // before the first event arrives.
             ctx.Response.StatusCode = 200;
             ctx.Response.Headers[HeaderNames.ContentType] = "text/event-stream";
             ctx.Response.Headers[HeaderNames.CacheControl] = "no-cache";
@@ -155,7 +135,7 @@ internal static class DataEndpoints
             await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 
             await using var stream = await upstream.Content.ReadAsStreamAsync(ctx.RequestAborted);
-            // Small buffer keeps SSE frames moving promptly (latency over throughput).
+            // Small buffer favors SSE latency over throughput.
             await stream.CopyToAsync(ctx.Response.Body, bufferSize: 4096, ctx.RequestAborted);
         }
         finally
@@ -165,11 +145,8 @@ internal static class DataEndpoints
     }
 
     /// <summary>
-    /// Forwards <c>POST /aggregate</c>. On 2xx upstream: invalidate catalog cache BEFORE
-    /// flushing the response (so any reader arriving microseconds after 202 cache-misses).
-    /// Rewrite <c>Location</c> header to a proxy URL so the FE never sees the upstream path.
-    /// 4xx (422/423/409/503) bodies forwarded byte-identical — they carry domain-meaningful
-    /// payloads the FE differentiates.
+    /// Forwards <c>POST /aggregate</c>. On 2xx upstream: invalidate catalog cache before
+    /// flushing the response, and rewrite the Location header to the proxy URL.
     /// </summary>
     private static async Task PostAggregate(
         string exchange, string asset,
@@ -188,13 +165,11 @@ internal static class DataEndpoints
                 return;
             }
 
-            // Cache invalidation precedes any response writes so a concurrent reader arriving
-            // immediately after 202/204 doesn't hit the stale catalog cache.
+            // Invalidate before writing the response so a reader arriving right after 202
+            // doesn't hit the stale catalog cache.
             if (upstream.IsSuccessStatusCode)
                 await cache.InvalidateAffectedAsync(exchange, asset, ctx.RequestAborted);
 
-            // Forward status + body + the X-Job-Id header verbatim. Rewrite Location to the
-            // proxy URL so the FE only ever sees /api/data/* (TRD §8 invariant).
             ctx.Response.StatusCode = (int)upstream.StatusCode;
             ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
 
@@ -217,10 +192,7 @@ internal static class DataEndpoints
         }
     }
 
-    /// <summary>
-    /// Forwards <c>DELETE /feeds/{feedId}</c>. On 204: invalidate catalog cache, then flush.
-    /// 4xx (404 / 422 / 423 / 403 for non-AltBar kinds) forwarded byte-identical.
-    /// </summary>
+    /// <summary>Forwards <c>DELETE /feeds/{feedId}</c>; invalidates catalog cache on 204.</summary>
     private static async Task DeleteFeed(
         string exchange, string asset, string feedId,
         HttpContext ctx, HistoryLoaderClient client, DataProxyCache cache)
@@ -241,7 +213,6 @@ internal static class DataEndpoints
                 await cache.InvalidateAffectedAsync(exchange, asset, ctx.RequestAborted);
 
             ctx.Response.StatusCode = (int)upstream.StatusCode;
-            // 204 has no body; 4xx bodies are JSON ProblemDetails-like — forward both.
             if (upstream.Content.Headers.ContentLength is > 0 || upstream.StatusCode != System.Net.HttpStatusCode.NoContent)
             {
                 ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
@@ -260,10 +231,7 @@ internal static class DataEndpoints
         }
     }
 
-    /// <summary>
-    /// Phase 6 — proxies <c>DELETE /aggregations/{jobId}</c>. Forwards 204 / 404 / 409 byte-identical;
-    /// 5xx wrapped in ProblemDetails. No cache invalidation: cancel doesn't write a manifest entry.
-    /// </summary>
+    /// <summary>Proxies <c>DELETE /aggregations/{jobId}</c>; no cache invalidation.</summary>
     private static async Task CancelAggregation(string jobId, HttpContext ctx, HistoryLoaderClient client)
     {
         try
@@ -297,11 +265,7 @@ internal static class DataEndpoints
         }
     }
 
-    /// <summary>
-    /// Rewrites an upstream <c>Location</c> header that points at <c>/api/v1/aggregations/...</c>
-    /// to its proxy equivalent <c>/api/data/aggregations/...</c>. Other paths are returned
-    /// unchanged (defensive — should never happen in practice).
-    /// </summary>
+    /// <summary>Rewrites <c>/api/v1/...</c> Location headers to <c>/api/data/...</c>.</summary>
     private static string RewriteLocation(Uri upstreamLocation)
     {
         var path = upstreamLocation.IsAbsoluteUri ? upstreamLocation.AbsolutePath : upstreamLocation.OriginalString;
@@ -311,10 +275,6 @@ internal static class DataEndpoints
         return path;
     }
 
-    /// <summary>
-    /// Cached GET. Returns the cache entry on hit (5-s sliding TTL); on miss, fetches
-    /// upstream and stores 2xx responses. 4xx/5xx are returned without caching.
-    /// </summary>
     private static async Task ProxyCachedGet(
         HttpContext ctx, HistoryLoaderClient client, DataProxyCache cache,
         string upstreamPath, string cacheKey)
@@ -338,11 +298,6 @@ internal static class DataEndpoints
         }
     }
 
-    /// <summary>
-    /// Passthrough GET (no caching). Upstream body is forwarded byte-identical for 2xx; 4xx
-    /// upstream is forwarded as-is (FE differentiates 404 / 422 / 423 / 409). 5xx is wrapped
-    /// in ProblemDetails per <see cref="DataProxyProblem"/>.
-    /// </summary>
     private static async Task ProxyPassthroughGet(
         HttpContext ctx, HistoryLoaderClient client, string upstreamPath)
     {

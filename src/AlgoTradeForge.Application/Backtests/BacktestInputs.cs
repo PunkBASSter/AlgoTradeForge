@@ -4,17 +4,11 @@ using AlgoTradeForge.Domain.Strategy.Subscriptions;
 namespace AlgoTradeForge.Application.Backtests;
 
 /// <summary>
-/// Explicit input shape for one backtest trial (TRD §9.3): a single ordered list of
-/// <see cref="DataFeedSubscription"/> where index 0 is the primary (drives the bar clock)
-/// and indices 1+ are side feeds (pulled via <c>IFeedContext</c> at the current primary
-/// timestamp).
+/// Ordered feed subscriptions for one backtest trial. Index 0 is the primary (drives the bar
+/// clock); indices 1+ are side feeds.
 /// </summary>
 public sealed record BacktestInputs
 {
-    /// <summary>
-    /// All feed subscriptions in canonical order. Index 0 is the primary (drives the bar clock);
-    /// subsequent entries are side feeds. Must be non-empty.
-    /// </summary>
     public IReadOnlyList<DataFeedSubscription> Subscriptions { get; }
 
     public BacktestInputs(IReadOnlyList<DataFeedSubscription> subscriptions)

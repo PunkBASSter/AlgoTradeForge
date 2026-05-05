@@ -4,32 +4,7 @@ using AlgoTradeForge.Domain.History;
 
 namespace AlgoTradeForge.Infrastructure.History;
 
-/// <summary>
-/// Loads <see cref="Int64Bar"/> series from partitioned CSV storage with per-<see cref="DataFeedKind"/>
-/// path resolution (TRD §9.3, §9.5). Header on every supported file: <c>ts,o,h,l,c,vol</c>.
-/// </summary>
-/// <remarks>
-/// Path / glob resolution by kind:
-/// <list type="bullet">
-///   <item><see cref="DataFeedKind.TimeBar"/> →
-///         <c>{root}/{ex}/{asset}/candles/&lt;YYYY-MM&gt;_{FeedId}.csv</c>.
-///         The per-FeedId suffix avoids the prior <c>*_*.csv</c> glob from picking up
-///         <c>2026-04_5m.csv</c> while loading <c>1m</c> (P1a-30 regression).</item>
-///   <item><see cref="DataFeedKind.AltBar"/> →
-///         <c>{root}/{ex}/{asset}/aggregated/{FeedId}/*.csv</c>.
-///         Lex sort matches chronological because part numbers are zero-padded
-///         (<c>2026-04.csv</c> &lt; <c>2026-05.p01.csv</c> &lt; <c>2026-05.p02.csv</c>).</item>
-///   <item><see cref="DataFeedKind.Tick"/> →
-///         <c>{root}/{ex}/{asset}/ticks/*.csv</c>. Phase 2a fills this.</item>
-///   <item><see cref="DataFeedKind.Side"/> with sidecar FeedId (suffix <c>.flow</c>) →
-///         <c>{root}/{ex}/{asset}/aggregated/{FeedId}/*.csv</c>. Sibling of the parent
-///         alt-bar dir (TRD §9.3, §3.2).</item>
-///   <item><see cref="DataFeedKind.Side"/> with top-level FeedId (e.g. <c>funding-rate</c>,
-///         <c>candle-ext</c>) → <c>{root}/{ex}/{asset}/{FeedId}/*.csv</c>. Side feeds are
-///         normally read by <see cref="CsvFeedSeriesLoader"/>; the path resolver covers
-///         the case for completeness so a future caller doesn't crash.</item>
-/// </list>
-/// </remarks>
+/// <summary>Loads <see cref="Int64Bar"/> series from partitioned CSV storage. Header: <c>ts,o,h,l,c,vol</c>.</summary>
 public sealed class PartitionedCsvBarLoader : IInt64BarLoader
 {
     public TimeSeries<Int64Bar> Load(DataFeedDescriptor feed, DateOnly from, DateOnly to)
@@ -90,7 +65,7 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
         if (!Directory.Exists(dir))
             return null;
 
-        // Last file by lex order = chronologically latest (zero-padded part numbers preserve ordering).
+        // Lex order = chronological because part numbers are zero-padded.
         var lastFile = EnumerateChronologicalFiles(feed, dir).LastOrDefault();
         if (lastFile is null)
             return null;
@@ -106,20 +81,13 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
         return null;
     }
 
-    // -------------------------------------------------------------------------
-    // Path / glob resolution
-    // -------------------------------------------------------------------------
-
     private static string ResolveFeedDir(DataFeedDescriptor feed) =>
         feed.Kind switch
         {
             DataFeedKind.TimeBar => Path.Combine(feed.DataRoot, feed.Exchange, feed.Asset, "candles"),
             DataFeedKind.AltBar  => Path.Combine(feed.DataRoot, feed.Exchange, feed.Asset, "aggregated", feed.FeedId),
             DataFeedKind.Tick    => Path.Combine(feed.DataRoot, feed.Exchange, feed.Asset, "ticks"),
-            // TRD §9.3 distinguishes two Side cases by FeedId convention:
-            //   - sidecar (FeedId ending in `.flow`) → aggregated/{FeedId}/
-            //   - top-level (e.g. funding-rate, candle-ext) → {FeedId}/
-            // Auto-detection keeps FeedId semantically pure (no path baggage in the field).
+            // Side feeds: ".flow" sidecars live under aggregated/, others (funding-rate, candle-ext) at top level.
             DataFeedKind.Side    => feed.FeedId.EndsWith(".flow", StringComparison.Ordinal)
                 ? Path.Combine(feed.DataRoot, feed.Exchange, feed.Asset, "aggregated", feed.FeedId)
                 : Path.Combine(feed.DataRoot, feed.Exchange, feed.Asset, feed.FeedId),
@@ -128,10 +96,8 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
 
     private static IEnumerable<string> EnumerateChronologicalFiles(DataFeedDescriptor feed, string dir)
     {
-        // TimeBar uses a per-FeedId glob to avoid picking up sibling intervals — e.g. when
-        // loading "1m", do NOT also pick up "2026-04_5m.csv" or "2026-04_1h.csv". Other kinds
-        // use a permissive *.csv glob (alt bars live in their own subdir, ticks have no other
-        // siblings, and Side is a single feed dir).
+        // TimeBar must use a per-FeedId glob to avoid picking up sibling intervals
+        // (loading "1m" must not match "2026-04_5m.csv"). Other kinds isolate by subdir.
         var pattern = feed.Kind == DataFeedKind.TimeBar
             ? $"*_{feed.FeedId}.csv"
             : "*.csv";
@@ -140,12 +106,7 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
             .OrderBy(Path.GetFileName, StringComparer.Ordinal)
             .ToList();
 
-        // Q-4 — fail loudly if a month appears as both bare and .pNN. Same defense as
-        // PartitionedSourceReader (HistoryLoader.Application); duplicated here because the two
-        // layers don't share a project. Only the (bare && pNN) co-existence is a violation —
-        // multiple .pNN files for one month is the normal overflow case.
         EnsureNoDuplicateMonthPartitions(files);
-
         return files;
     }
 
@@ -156,6 +117,8 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
         new(@"^(?<month>\d{4}-\d{2})_[^.]+(?:\.p(?<part>\d{2}))?\.csv$",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    // Reject the (bare && .pNN) co-existence for the same month. A successful writer atomically
+    // renames bare→p01 before opening p02, so this state implies operator error or partial migration.
     private static void EnsureNoDuplicateMonthPartitions(IEnumerable<string> filePaths)
     {
         var byMonth = new Dictionary<string, (string? Bare, List<string> PartNumbered)>(StringComparer.Ordinal);
@@ -183,10 +146,7 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
         var details = string.Join("; ", collisions.Select(kvp =>
             $"month {kvp.Key}: bare='{kvp.Value.Bare}' AND partNumbered=[{string.Join(", ", kvp.Value.PartNumbered)}]"));
         throw new InvalidDataException(
-            $"Partition layout violation: bare <YYYY-MM>.csv and <YYYY-MM>.pNN.csv co-exist for the same month. " +
-            "This is unreachable from a single successful job (writer atomic-renames bare→p01 before opening p02), " +
-            "so this state indicates operator manipulation, partial migration, or a writer bug. " +
-            $"Details: {details}");
+            $"Partition layout violation: bare <YYYY-MM>.csv and <YYYY-MM>.pNN.csv co-exist for the same month. Details: {details}");
     }
 
     private static string? ReadLastDataLine(string filePath)
@@ -204,9 +164,4 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
         }
         return lastLine;
     }
-
-    // The legacy `IntervalToString(TimeSpan)` private helper is replaced by
-    // `AlgoTradeForge.Domain.Engine.TimeFrameFormatter.Format(TimeSpan)`. The conversion now
-    // happens at the call site (CsvDataSource / HistoryRepository) when constructing
-    // `DataFeedDescriptor.FeedId`; the loader itself only consumes the string id.
 }

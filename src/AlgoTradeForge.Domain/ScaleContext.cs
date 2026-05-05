@@ -5,11 +5,9 @@ public readonly record struct ScaleContext
     public decimal TickSize { get; }
 
     /// <summary>
-    /// Multiplier converting raw base-asset quantities (e.g. <c>candle-ext.taker_buy_vol</c>,
-    /// tick <c>qty</c>) to tick-scaled <see cref="long"/> at the aggregator's sum site
-    /// (TRD §3.4 / §6.3): <c>MoneyConvert.ToLong(value * QuantityScale)</c>.
-    /// Distinct from <see cref="TickSize"/> (price-tick scale) and from order-size handling
-    /// (which stays <see cref="decimal"/> per CLAUDE.md "Int64 Money Convention").
+    /// Multiplier converting raw base-asset quantities (e.g. tick <c>qty</c>) to tick-scaled
+    /// <see cref="long"/> at the aggregator's sum site. Distinct from <see cref="TickSize"/>
+    /// (price-tick scale) and from order-size handling (which stays <see cref="decimal"/>).
     /// Equals <c>1 / asset.QuantityStepSize</c> when set, otherwise <c>1</c> (identity).
     /// </summary>
     public decimal QuantityScale { get; }

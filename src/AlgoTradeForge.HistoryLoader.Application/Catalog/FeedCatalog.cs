@@ -57,8 +57,7 @@ public sealed class FeedCatalog : IFeedCatalog
 
     public AssetCatalogEntry? GetAsset(string exchange, string assetSymbol)
     {
-        // Don't cache the per-asset slice independently — the assets-by-exchange entry already
-        // has it, and computing both burns memory for the same data.
+        // No separate cache — the assets-by-exchange entry already contains this slice.
         return BuildAssetEntries(exchange).FirstOrDefault(a =>
             string.Equals(a.Symbol, assetSymbol, StringComparison.Ordinal));
     }
@@ -75,11 +74,9 @@ public sealed class FeedCatalog : IFeedCatalog
         if (manifest.Feeds.TryGetValue(feedId, out var def))
             return def;
 
-        // Synthesize a FeedDefinition for candle intervals so downstream consumers — most
-        // importantly the /aggregation-options endpoint — can call EligibilityRules.ForSource
-        // on a 1m/1h/1d source. Without this, the endpoint 404s and the new-aggregate form's
-        // Type dropdown stays disabled. Mirrors the catalog-side projection in
-        // BuildAssetEntries that surfaces these as OHLCV_TimeBar columns.
+        // Synthesize a FeedDefinition for candle intervals so the /aggregation-options endpoint
+        // can resolve eligibility on a 1m/1h/1d source. Without this, the endpoint 404s and the
+        // new-aggregate form's Type dropdown stays disabled.
         if (manifest.Candles?.Intervals.Contains(feedId) == true)
         {
             return new FeedDefinition
@@ -130,12 +127,10 @@ public sealed class FeedCatalog : IFeedCatalog
             var declaredFeedDict = manifest?.Feeds ?? new Dictionary<string, FeedDefinition>();
             var declaredFeeds = declaredFeedDict.Select(kvp => MapFeed(kvp.Key, kvp.Value));
 
-            // Time-bar candles live in `manifest.Candles.Intervals`, separate from the `feeds`
-            // dictionary (the candle pipeline is built-in; side feeds are pluggable). Synthesize
-            // a FeedCatalogEntry per declared interval so the Data grid surfaces them as columns
-            // and they're available as alt-bar source feeds. The on-disk CSVs already exist —
-            // this is purely the read-time projection that was missing. Skip intervals already
-            // claimed by a declared feed id so we never emit duplicates.
+            // Time-bar candles live in manifest.Candles.Intervals, separate from the feeds
+            // dictionary. Surface them as catalog entries so the Data grid shows them and they
+            // become available as alt-bar source feeds. Skip intervals already claimed by a
+            // declared feed id to avoid duplicates.
             var candleFeeds = (manifest?.Candles?.Intervals ?? [])
                 .Where(interval => !declaredFeedDict.ContainsKey(interval))
                 .Select(interval => new FeedCatalogEntry(
@@ -157,11 +152,8 @@ public sealed class FeedCatalog : IFeedCatalog
             yield return new AssetCatalogEntry(
                 Exchange: asset.Exchange,
                 Symbol: AssetPathConvention.DirectoryName(asset.Symbol, asset.Type),
-                // Disambiguate spot vs perpetual/future labels. `asset.Symbol` alone collapses
-                // BTCUSDT-spot and BTCUSDT-perp into identical user-facing rows. Suffix the
-                // type for derivatives so the row is self-describing without making spot
-                // labels noisy. Mirrors the directory-name convention (`BTCUSDT_perp`) but
-                // uses a hyphen for human-readability.
+                // Disambiguate spot vs perpetual labels — asset.Symbol alone collapses
+                // BTCUSDT-spot and BTCUSDT-perp into identical rows.
                 DisplayName: AssetTypes.IsFutures(asset.Type) ? $"{asset.Symbol}-perp" : asset.Symbol,
                 Type: asset.Type,
                 Feeds: feeds);
@@ -170,15 +162,9 @@ public sealed class FeedCatalog : IFeedCatalog
 
     private static FeedCatalogEntry MapFeed(string id, FeedDefinition def)
     {
-        // Kind heuristic for entries in `manifest.Feeds` (auxiliary side feeds, ticks):
-        //   1. Explicit `def.Kind` always wins.
-        //   2. "ticks" by id convention → Tick.
-        //   3. Everything else → Side.
-        // The `Interval` field on declared feeds is the *polling cadence* (e.g., "15m"
-        // for ls-ratio-global), NOT a candle interval. True OHLCV time bars are declared
-        // only via `manifest.Candles.Intervals` and synthesized in BuildAssetEntries
-        // above — never via the Feeds dictionary. So we MUST NOT promote a declared feed
-        // to OHLCV_TimeBar based on its Interval field.
+        // Kind for entries in manifest.Feeds: explicit def.Kind wins; id "ticks" → Tick;
+        // otherwise Side. Note: def.Interval here is polling cadence, not a candle interval —
+        // true OHLCV time bars come only from manifest.Candles.Intervals.
         string kind;
         if (def.Kind is not null)
             kind = def.Kind;
@@ -190,9 +176,7 @@ public sealed class FeedCatalog : IFeedCatalog
         return new FeedCatalogEntry(
             Id: id,
             Kind: kind,
-            // Normalize empty-string interval to null so the FE comparator's interval-aware
-            // sort doesn't treat "" as duration 0. Cadence is preserved verbatim for Side
-            // feeds (FE may surface it as a tooltip, etc.).
+            // Normalize empty interval to null so the FE comparator doesn't treat "" as duration 0.
             Interval: string.IsNullOrEmpty(def.Interval) ? null : def.Interval,
             TypeCode: def.Type?.Code,
             ThresholdValue: def.Threshold?.Value,
@@ -203,8 +187,8 @@ public sealed class FeedCatalog : IFeedCatalog
     }
 
     /// <summary>
-    /// Display order: time bars first (sorted by interval), then alt bars (by type then
-    /// threshold ascending), then ticks, then side feeds (TRD §5.1 / TRD §10.1 column order).
+    /// Display order: time bars (by interval), then alt bars (by type, then threshold ascending),
+    /// then ticks, then side feeds.
     /// </summary>
     private sealed class FeedOrder : IComparer<FeedCatalogEntry>
     {

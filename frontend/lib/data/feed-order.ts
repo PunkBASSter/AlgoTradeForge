@@ -1,17 +1,13 @@
-// Phase 3 — column ordering for the asset×feed grid (P3-12). The TRD §3.3 grammar
-// parser lives on the C# side; on the wire we get structured fields (kind, type_code,
-// threshold_value) on each FeedCatalogEntry, so the FE just sorts on those.
-//
-// Display rule (TRD §10.1):
-//   1. Time bars (canonical, by interval ascending)
-//   2. Aggregated alt bars (grouped by type_code, then threshold_value ascending)
+// Column ordering for the asset×feed grid:
+//   1. Time bars (by interval ascending)
+//   2. Aggregated alt bars (by type_code then threshold_value)
 //   3. Ticks
-//   4. Side feeds (rightmost, dimmed in the cell renderer)
+//   4. Side feeds
 
 import type { AssetCatalogEntry, FeedCatalogEntry } from "@/types/data-tab";
 
-// Bucket lower = leftmost. Distinct from the kind itself so we can branch tie-breakers
-// per bucket without re-deriving the kind every comparison.
+// Lower bucket = leftmost. Distinct from `kind` so per-bucket tie-breakers branch
+// without re-deriving the kind every comparison.
 function bucket(f: FeedCatalogEntry): number {
   switch (f.kind) {
     case "OHLCV_TimeBar":
@@ -29,12 +25,9 @@ function bucket(f: FeedCatalogEntry): number {
 }
 
 /**
- * Parses a Binance-style interval string into seconds for chronological sorting.
- * Lex sort is wrong for the natural set: "1d" < "1h" < "1m" alphabetically would
- * order daily bars before hourly before minute — the opposite of what users expect.
- * This parser handles `\d+[smhd]` (e.g. "30s", "1m", "15m", "4h", "1d"); anything
- * else returns Number.MAX_SAFE_INTEGER so unparseable entries fall to the end of
- * the bucket rather than colliding at 0.
+ * Interval string → seconds for chronological sorting. Lex sort orders "1d" < "1h" <
+ * "1m" — the opposite of what users expect. Unparseable inputs return MAX_SAFE_INTEGER
+ * so they fall to the end of the bucket rather than colliding at 0.
  */
 function intervalSeconds(s: string | null | undefined): number {
   if (!s) return Number.MAX_SAFE_INTEGER;
@@ -51,10 +44,8 @@ function intervalSeconds(s: string | null | undefined): number {
 }
 
 /**
- * Stable-ish comparator for the column order. Within a bucket:
- *  - Time bars: by interval **duration** ascending (1m → 5m → 1h → 1d).
- *  - Alt bars: by `type_code` then `threshold_value` ascending (TRD §3.3).
- *  - Side feeds: by `id` lexically.
+ * Column-order comparator. Within a bucket: time bars by duration; alt bars by
+ * type_code then threshold_value; side feeds by id.
  */
 export function compareFeed(a: FeedCatalogEntry, b: FeedCatalogEntry): number {
   const ba = bucket(a);
@@ -75,12 +66,8 @@ export function compareFeed(a: FeedCatalogEntry, b: FeedCatalogEntry): number {
 }
 
 /**
- * Returns the ordered union of feed entries across visible assets — one column per
- * unique feed `id`. The first occurrence's metadata wins (all assets in the same
- * exchange share the same feed schema, so this is safe).
- *
- * The grid renders these as columns; each cell looks up the asset's local feed by id
- * to decide whether to render `+` (absent) or `−` (present, and an alt-bar so deletable).
+ * Ordered union of feed entries across visible assets — one column per unique feed
+ * `id`. First occurrence's metadata wins (assets in the same exchange share schema).
  */
 export function unionFeedColumns(assets: AssetCatalogEntry[]): FeedCatalogEntry[] {
   const seen = new Map<string, FeedCatalogEntry>();

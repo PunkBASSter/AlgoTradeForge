@@ -1,14 +1,7 @@
-// Phase 3 — persistent jobId tracking for SSE resume (P3-18). Stores
-// `(exchange|asset|feedIdHint) -> { jobId, lastEventId, updatedAt }` in localStorage.
-//
-// Why persist: a user submits a long aggregate, refreshes the page, and expects to see
-// the in-flight progress card immediately. Without persistence, the FE would lose the
-// jobId and the SSE stream would never reconnect.
-//
-// Why composite key: an asset can have multiple in-flight jobs (one per outcome feed).
-// Keying by `(exchange|asset|outcomeFeedIdHint)` avoids overwriting one job's state with
-// another's. The `outcomeFeedIdHint` is composed FE-side from typeCode + sourceFeedId +
-// thresholdInput so we can dedup before the server returns its canonical outcome id.
+// Persistent jobId tracking for SSE resume across page reloads. Composite key
+// `(exchange|asset|outcomeFeedIdHint)` lets one asset have multiple in-flight jobs
+// without collision; the FE-composed outcome hint dedups before the server returns its
+// canonical outcome id.
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -35,7 +28,8 @@ interface DataJobsStore {
   purgeStale: (maxAgeMs: number) => void;
 }
 
-const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;   // 24h — server retention is ~10m, so 24h is generous
+// 24h: server retention is ~10m, so anything older will 410 on resume anyway.
+const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 const STORAGE_VERSION = 1;
 
 export const useDataJobsStore = create<DataJobsStore>()(
@@ -62,7 +56,7 @@ export const useDataJobsStore = create<DataJobsStore>()(
         }),
       clearJob: (key) =>
         set((s) => {
-          // Functional rather than `delete s.jobs[key]` so persistence sees a new object.
+          // New object reference so persistence middleware sees a change.
           const next = { ...s.jobs };
           delete next[key];
           return { jobs: next };
@@ -80,11 +74,8 @@ export const useDataJobsStore = create<DataJobsStore>()(
     {
       name: "alt-bars:jobs",
       version: STORAGE_VERSION,
-      // Only persist the jobs map — `setJob`/`clearJob`/etc are functions (not serializable).
       partialize: (s) => ({ jobs: s.jobs }),
       onRehydrateStorage: () => (state) => {
-        // Drop entries older than 24h on hydrate (server retention is ~10min anyway, so
-        // resuming past that returns 410 Gone — better to clear up front).
         state?.purgeStale(STALE_THRESHOLD_MS);
       },
     },

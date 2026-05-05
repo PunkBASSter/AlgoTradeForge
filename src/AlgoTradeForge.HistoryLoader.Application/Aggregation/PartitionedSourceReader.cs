@@ -3,30 +3,18 @@ using AlgoTradeForge.Domain.History;
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
 /// <summary>
-/// Lazily yields <see cref="SourceRecord"/>s from a partitioned CSV feed in chronological
-/// order (TRD §6.2). Mirrors the path / glob resolution of <c>PartitionedCsvBarLoader</c> but
-/// streams record-by-record so the aggregator's peak working set stays bounded regardless of
-/// source span (P1b-12 memory contract).
+/// Lazily yields <see cref="SourceRecord"/>s from a partitioned CSV feed in chronological order.
+/// Mirrors <c>PartitionedCsvBarLoader</c>'s path/glob resolution but streams record-by-record
+/// to keep the aggregator's peak working set bounded regardless of source span. Supports
+/// time-bar (monthly), tick (daily), and alt-bar (re-aggregation) sources.
 /// </summary>
-/// <remarks>
-/// Phase 1b shipped time-bar sources only (monthly partitions, 6-column OHLCV). Phase 2a adds
-/// the tick path: daily partitions (<c>ticks/&lt;YYYY-MM-DD&gt;.csv</c>), 5-column rows
-/// (<c>ts,price,qty,is_buyer_maker,agg_id</c>), mapped to <see cref="SourceRecord"/> with
-/// <c>Open=High=Low=Close=price</c> and <c>Volume=qty</c>. <c>is_buyer_maker</c> and
-/// <c>agg_id</c> are dropped at this layer — the EqI accumulator (Phase 2b) reads them via
-/// a separate signed-aware reader.
-///
-/// The optional <c>candle-ext</c> 1:1 join (TRD §6.2 last sentence) is reserved for Phase 2b's
-/// EqI proxy and not exposed here yet.
-/// </remarks>
 public sealed class PartitionedSourceReader
 {
     /// <summary>
-    /// Yields source records inside <paramref name="from"/>..<paramref name="to"/> inclusive.
-    /// Filters by ts in milliseconds. Malformed rows (wrong column count, un-parseable cells)
-    /// throw <see cref="FormatException"/> with file/row/column context — silent skipping would
-    /// shift downstream threshold-equivalence boundaries and produce structurally different
-    /// alt-bars than the user expects (P1b-0a parity with the side-feed loader).
+    /// Yields source records inside <paramref name="from"/>..<paramref name="to"/> inclusive
+    /// (ts in milliseconds). Malformed rows throw <see cref="FormatException"/> with file/row/
+    /// column context — silent skipping would shift threshold boundaries and produce structurally
+    /// different alt-bars than the user expects.
     /// </summary>
     public IEnumerable<SourceRecord> Read(
         DataFeedDescriptor source,
@@ -54,42 +42,28 @@ public sealed class PartitionedSourceReader
         };
     }
 
-    // -------------------------------------------------------------------------
-    // Alt-bar path (Phase 6) — re-aggregation source. Same 6-col OHLCV shape as time bars,
-    // different storage layout (`aggregated/<feedId>/*.csv` instead of `candles/*_<feedId>.csv`).
-    // Eligibility narrows to safe-trio only (EqV/EqT/EqD same-family + larger-threshold).
-    // -------------------------------------------------------------------------
-
     private static IEnumerable<SourceRecord> ReadAltBars(DataFeedDescriptor source, long fromMs, long toMs)
     {
         var dir = Path.Combine(source.DataRoot, source.Exchange, source.Asset, "aggregated", source.FeedId);
         if (!Directory.Exists(dir))
             yield break;
 
-        // Mirrors PartitionedCsvBarLoader's glob pattern. Lex sort matches chronological because
-        // partitions are calendar-stamped (YYYY-MM[.pNN].csv); part-numbered overflow files sort
-        // after their bare month within the same calendar.
+        // Lex sort = chronological: partitions are calendar-stamped and pNN files sort after their bare month.
         var files = Directory
             .EnumerateFiles(dir, "*.csv", SearchOption.TopDirectoryOnly)
             .OrderBy(Path.GetFileName, StringComparer.Ordinal)
             .ToList();
 
-        // Q-4 — fail loudly if a month appears as both bare and .pNN. Unreachable from a single
-        // successful job (writer atomicity); see PartitionFilenameParser for context.
         PartitionFilenameParser.EnsureNoDuplicateMonthPartitions(files);
 
         foreach (var filePath in files)
         {
-            // The on-disk shape is identical to time bars (ts,o,h,l,c,vol) — reuse the parser
-            // verbatim. BuyVolumeLong/SellVolumeLong stay 0 (safe-trio aggregators don't read them).
+            // Same 6-col OHLCV shape as time bars; reuse parser. BuyVolumeLong/SellVolumeLong
+            // stay 0 — safe-trio aggregators don't read them.
             foreach (var record in ReadTimeBarFile(filePath, fromMs, toMs))
                 yield return record;
         }
     }
-
-    // -------------------------------------------------------------------------
-    // Time-bar path (Phase 1b) — monthly partitions, 6-column OHLCV
-    // -------------------------------------------------------------------------
 
     private static IEnumerable<SourceRecord> ReadTimeBars(DataFeedDescriptor source, long fromMs, long toMs)
     {
@@ -97,10 +71,7 @@ public sealed class PartitionedSourceReader
         if (!Directory.Exists(dir))
             yield break;
 
-        // Per-FeedId glob avoids cross-interval contamination (P1a-29 / P1a-30 regression):
-        // loading "1m" must NOT pick up "2026-04_5m.csv". Lex sort matches chronological because
-        // months format as YYYY-MM and any future part-numbered overflow files (.pNN) sort after
-        // their bare month within the same calendar.
+        // Per-FeedId glob prevents cross-interval contamination — loading "1m" must NOT pick up "2026-04_5m.csv".
         var pattern = $"*_{source.FeedId}.csv";
         var files = Directory
             .EnumerateFiles(dir, pattern, SearchOption.TopDirectoryOnly)
@@ -154,17 +125,13 @@ public sealed class PartitionedSourceReader
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Tick path (Phase 2a) — daily partitions, 5-column [ts,price,qty,is_buyer_maker,agg_id]
-    // -------------------------------------------------------------------------
-
     private static IEnumerable<SourceRecord> ReadTicks(DataFeedDescriptor source, long fromMs, long toMs)
     {
         var dir = Path.Combine(source.DataRoot, source.Exchange, source.Asset, "ticks");
         if (!Directory.Exists(dir))
             yield break;
 
-        // Daily files lex-sort ≡ chronologically by ISO date (YYYY-MM-DD).
+        // Daily files lex-sort = chronological (ISO date YYYY-MM-DD).
         foreach (var filePath in Directory
                      .EnumerateFiles(dir, "????-??-??.csv", SearchOption.TopDirectoryOnly)
                      .OrderBy(Path.GetFileName, StringComparer.Ordinal))
@@ -199,21 +166,16 @@ public sealed class PartitionedSourceReader
                 throw MalformedCell(filePath, rowIndex, "price", parts[1]);
             if (!long.TryParse(parts[2], out var qty))
                 throw MalformedCell(filePath, rowIndex, "qty", parts[2]);
-            // is_buyer_maker drives EqI's per-tick signed contribution (TRD §3.5):
-            // is_buyer_maker=0 → buy-aggressive (+qty); =1 → sell-aggressive (-qty).
-            // Populated unconditionally — EqV/EqT/EqD ignore the new SourceRecord fields, so
-            // the cost is one branch + one struct field write per tick (no measurable overhead
-            // vs. the parse cost itself).
+            // is_buyer_maker drives EqI's signed contribution: 0 = buy-aggressive (+qty), 1 = sell-aggressive (-qty).
             if (!int.TryParse(parts[3], out var isBuyerMaker) || (isBuyerMaker != 0 && isBuyerMaker != 1))
                 throw MalformedCell(filePath, rowIndex, "is_buyer_maker", parts[3]);
-            // agg_id intentionally not parsed — used only by the ingestor's resume-on-crash path.
+            // agg_id is unused outside the ingestor's resume path.
 
             if (ts < fromMs || ts > toMs) continue;
 
             var buyLong = isBuyerMaker == 0 ? qty : 0L;
             var sellLong = isBuyerMaker == 1 ? qty : 0L;
 
-            // Per-tick OHLC: price for all four fields; qty for volume.
             yield return new SourceRecord(
                 ts, price, price, price, price, qty,
                 BuyVolumeLong: buyLong, SellVolumeLong: sellLong);

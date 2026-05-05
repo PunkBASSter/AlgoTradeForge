@@ -1,41 +1,17 @@
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 
-/// <summary>
-/// Renko-bar accumulator (TRD §6.3, Phase 5). 1× neutral bricks (no 2× reversal); each brick is
-/// a clean rectangle <c>[lastBrickClose, lastBrickClose ± brick_size]</c> with no wicks
-/// (ADR P5-1 D3, D4). One source tick can trigger 0, 1, or many bricks; multi-brick chains
-/// emit the first brick via <see cref="TryAdvance"/> and the remainder via the
-/// <see cref="IBarAccumulator.TryDrainQueued"/> DIM (ADR D6).
-/// </summary>
-/// <remarks>
-/// <para>
-/// First call seeds <c>_lastBrickClose = tick.Close</c> and stores the tick's volume as
-/// pending (no brick emits since delta is zero). Subsequent ticks measure
-/// <c>n = (int)(|tick.Close − _lastBrickClose| / _brickSize)</c> bricks; the per-brick close
-/// is computed from <c>_lastBrickClose</c> stepping in the direction of price movement.
-/// </para>
-/// <para>
-/// <b>Volume distribution (ADR D5):</b> the trigger tick's volume is split <c>tick.Volume / N</c>
-/// per brick (last brick takes the integer remainder). Pending volume from prior no-emit ticks
-/// is added to the first brick of the chain. Conservation invariant:
-/// <c>Σ brick.vol = Σ (consumed-into-bricks) tick.vol</c> — i.e. trailing pending volume from
-/// the final no-emit ticks is discarded at <see cref="Finalize"/>, mirroring how
-/// <see cref="RangeAccumulator"/> drops trailing partial bars (TRD §6.4: emitted bars require
-/// realized_threshold ≥ N).
-/// </para>
-/// <para>
-/// <b>Strict-monotonic output ts:</b> <c>Int64Bar.TimestampMs</c> requires strictly increasing
-/// timestamps. A multi-brick chain triggered by a single tick would otherwise share the tick's
-/// <c>TsMs</c>, so we maintain <c>_lastEmittedTs</c> and bump <c>+1 ms</c> per subsequent brick.
-/// The bumps are internal — the existing <see cref="AggregationStats.MonotonicBumps"/> is a
-/// source-side metric and we don't conflate the two.
-/// </para>
-/// <para>
-/// <b>No sidecar:</b> per ADR D7, Renko publishes no sidecar in v1. <c>direction</c> is
-/// reconstructible from <c>sign(close − open)</c>; wick data is intentionally discarded by the
-/// clean-rectangle invariant (D4).
-/// </para>
-/// </remarks>
+// Renko-bar accumulator. 1x neutral bricks (no 2x reversal); each brick is a clean rectangle
+// [lastBrickClose, lastBrickClose +/- brick_size] with no wicks. One source tick can trigger
+// 0, 1, or many bricks; multi-brick chains emit the first brick via TryAdvance and the
+// remainder via TryDrainQueued.
+//
+// Volume distribution: trigger tick's volume split tick.Volume / N per brick (last brick takes
+// remainder). Pending volume from prior no-emit ticks is added to the first brick of the
+// chain. Trailing pending volume from final no-emit ticks is discarded at Finalize.
+//
+// Strict-monotonic output ts: Int64Bar.TimestampMs requires strictly increasing timestamps,
+// so a multi-brick chain bumps +1 ms per subsequent brick. These bumps are internal and not
+// conflated with AggregationStats.MonotonicBumps (a source-side metric).
 internal sealed class RenkoAccumulator : IBarAccumulator
 {
     private readonly long _brickSize;
@@ -88,8 +64,8 @@ internal sealed class RenkoAccumulator : IBarAccumulator
             var brickHigh = direction > 0 ? brickClose : brickOpen;
             var brickLow = direction > 0 ? brickOpen : brickClose;
 
-            // Volume: brick 0 carries pending + first share; bricks 1..n-2 get a per-brick share;
-            // brick n-1 takes the integer remainder (preserves Σ brick.vol = pending + r.Volume).
+            // Volume split preserves Σ brick.vol = pending + r.Volume: brick 0 carries pending
+            // + first share; brick n-1 takes the integer remainder; the rest get per-brick share.
             long vol;
             if (i == 0)
                 vol = _pendingVolume + (n == 1 ? lastBrickVol : perBrickVol);
@@ -98,8 +74,7 @@ internal sealed class RenkoAccumulator : IBarAccumulator
             else
                 vol = perBrickVol;
 
-            // Strict-monotonic ts: max(_lastEmittedTs + 1, tick.TsMs). First brick of a chain
-            // typically lands at the tick's ts; subsequent bricks bump +1 each.
+            // Strict-monotonic ts: max(_lastEmittedTs + 1, tick.TsMs).
             var nextTs = _lastEmittedTs + 1;
             var ts = r.TsMs > nextTs ? r.TsMs : nextTs;
 
@@ -115,7 +90,6 @@ internal sealed class RenkoAccumulator : IBarAccumulator
                 _queue.Enqueue(brick);
         }
 
-        // All of pending + r.Volume is now distributed across the chain.
         _pendingVolume = 0;
         emitted = firstBrick;
         return true;
@@ -135,8 +109,8 @@ internal sealed class RenkoAccumulator : IBarAccumulator
 
     public AggregationStats Finalize()
     {
-        // Renko bricks are exactly brick_size by construction — overshoot is always 0%.
-        // Keep the field at 0 rather than NaN so manifest fidelity stays well-formed.
+        // Renko bricks are exactly brick_size by construction — overshoot is always 0% (kept
+        // at 0 rather than NaN so manifest fidelity stays well-formed).
         return new AggregationStats(_barsEmitted, MeanOvershootPct: 0d, MaxOvershootPct: 0d);
     }
 }

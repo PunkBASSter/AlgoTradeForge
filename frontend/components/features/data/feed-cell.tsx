@@ -1,20 +1,10 @@
 "use client";
 
 // Single-cell renderer for the asset×feed grid.
-//   `+`  — feed is present on this asset. Two visual variants:
-//          • Aggregation-eligible source (TimeBar / AltBar / aggregated / Tick): wrapped in
-//            a bordered frame and hovers to an accent-blue outline. Click opens the
-//            new-aggregate sidebar with this feed pre-selected as the source.
-//          • Other present feeds (Side, sidecar): bare `+`. Click opens the feed-status
-//            sidebar.
-//   `−`  — feed is absent. Click opens the new-aggregate form for the column (used when
-//          a target alt-bar column is missing for this asset).
-//   ·    — sidecar-bearing aggregated cell renders an additional indicator dot.
-//
-// The +/− glyphs are inverted from the underlying button affordance (+ doesn't mean "add",
-// it means "the data is present"). The frame on the aggregation-eligible variant is the
-// affordance hint that the cell is *interactive for aggregation* — without it, users can't
-// tell which `+` cells lead to the create form vs the read-only status view.
+//   `+` framed   — aggregation-eligible source (click opens create form).
+//   `+` bare     — present feed; click opens status view.
+//   `−`          — feed absent; click opens create form for that column.
+//   dot          — sidecar feed indicator.
 
 import type { CSSProperties } from "react";
 import type { AssetCatalogEntry, FeedCatalogEntry, FeedKind } from "@/types/data-tab";
@@ -27,8 +17,7 @@ interface Props {
   onView?: (asset: AssetCatalogEntry, feed: FeedCatalogEntry) => void;
 }
 
-// Feed kinds that can act as a source for new alt-bar aggregation. Side feeds and
-// (sidecar-only) aggregated entries are excluded — they're informational, not source data.
+// Side feeds and sidecar-only entries are excluded — informational, not source data.
 const AGGREGATION_SOURCE_KINDS: ReadonlySet<FeedKind> = new Set([
   "OHLCV_TimeBar",
   "OHLCV_AltBar",
@@ -56,8 +45,6 @@ export function FeedCell({ asset, feedColumn, style, onAdd, onView }: Props) {
 
   const hasSidecar = present.sidecar !== null;
 
-  // Aggregation-eligible sources get a framed `+` so users can distinguish "click to start
-  // an aggregation from this source" from "click to view this informational feed".
   if (isAggregationSource) {
     return (
       <button

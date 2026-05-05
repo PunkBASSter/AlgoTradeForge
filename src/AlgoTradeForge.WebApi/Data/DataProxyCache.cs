@@ -4,47 +4,25 @@ using Microsoft.Extensions.Caching.Distributed;
 namespace AlgoTradeForge.WebApi.Data;
 
 /// <summary>
-/// 2-second absolute TTL cache (TRD §8) for catalog GETs proxied to HistoryLoader. Stores
-/// upstream response body BYTES + Content-Type so the proxy round-trips byte-identical
-/// (P3-9 contract). Catalog endpoints only — per-feed status / aggregation-options /
-/// per-job snapshot are NOT cached because they change rapidly.
+/// Short-TTL cache for catalog GETs proxied to HistoryLoader. Stores raw upstream bytes +
+/// Content-Type so the proxy round-trips byte-identical. Catalog endpoints only — per-feed
+/// status, aggregation options, per-job snapshots are not cached.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Invalidation is write-through: <see cref="InvalidateAffectedAsync"/> is called from the
-/// POST/DELETE proxy after upstream success but before the response flushes (S3). Main API
-/// can't subscribe to HistoryLoader's in-process <c>ManifestChanged</c> event across the
-/// process boundary, so the 2-s TTL is the safety net for state changes the proxy can't see
-/// (collector-driven appends from the HistoryLoader's BackgroundServices).
-/// </para>
-/// <para>
-/// Cache value envelope is a small JSON tuple <c>{contentType, body}</c> where <c>body</c>
-/// is base64-encoded raw bytes from upstream. We pay one round-trip through JSON for the
-/// envelope but the inner body stays opaque — no Content-Type rewrite, no JSON re-serialization,
-/// no naming-policy drift.
-/// </para>
-/// </remarks>
 public sealed class DataProxyCache(IDistributedCache cache)
 {
-    // Absolute (not sliding) TTL: a steady stream of catalog reads otherwise refreshes the
-    // entry indefinitely, masking out-of-band manifest changes (collector appends, completed
-    // aggregation jobs) for far longer than the budget. With absolute, every entry dies on
-    // schedule regardless of read pressure — worst-case staleness is bounded by Ttl.
-    // Frontend post-completion refetch (use-job-stream.ts setTimeout) is paced to Ttl + ~500ms
-    // so the cache-bypass refetch sees fresh data.
+    // Absolute (not sliding) TTL — sliding would let constant read pressure mask out-of-band
+    // manifest changes (collector appends, completed jobs) indefinitely. Frontend pacing
+    // (use-job-stream.ts) waits Ttl + ~500ms before its cache-bypass refetch.
     private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(2);
 
-    /// <summary>Keys held by the catalog cache. Used by <see cref="InvalidateAffectedAsync"/>.</summary>
     public const string KeyAllExchanges = "data-proxy:exchanges:all";
     public const string KeyAllAssets = "data-proxy:assets:all";
     public static string KeyAssetsByExchange(string exchange) =>
         $"data-proxy:exchanges:{exchange}:assets";
 
     /// <summary>
-    /// Get-or-fetch: returns the cached entry if present, otherwise calls
-    /// <paramref name="fetchUpstream"/> and stores the result on a 2xx response. Non-2xx
-    /// responses are returned to the caller WITHOUT caching (so a transient 5xx doesn't
-    /// stick in cache for 2 s).
+    /// Returns the cached entry if present, otherwise calls <paramref name="fetchUpstream"/>
+    /// and caches only on a 2xx response (transient 5xx never sticks).
     /// </summary>
     public async Task<CachedEntry> GetOrFetchAsync(
         string cacheKey,
@@ -73,24 +51,16 @@ public sealed class DataProxyCache(IDistributedCache cache)
     }
 
     /// <summary>
-    /// Removes the three catalog cache keys after a POST aggregate / DELETE feed has succeeded
-    /// upstream. Called BEFORE writing the response so a reader that arrives milliseconds after
-    /// 202/204 cache-misses and re-reads from HistoryLoader.
+    /// Drops the catalog keys after an upstream write succeeds, before flushing the response,
+    /// so a reader arriving immediately after the 202/204 cache-misses and re-reads upstream.
     /// </summary>
     public async Task InvalidateAffectedAsync(string exchange, string asset, CancellationToken ct)
     {
-        _ = asset;  // future: per-asset granularity if catalog payload split that fine
+        _ = asset;  // future: per-asset granularity if catalog payload splits that fine
         await cache.RemoveAsync(KeyAllExchanges, ct);
         await cache.RemoveAsync(KeyAssetsByExchange(exchange), ct);
         await cache.RemoveAsync(KeyAllAssets, ct);
     }
 
-    /// <summary>
-    /// Cached representation of an upstream response: status + content-type + body bytes.
-    /// Body is the raw upstream payload; the proxy writes it back unmodified (P3-9).
-    /// </summary>
-    /// <param name="StatusCode">HTTP status (always 2xx for cached entries).</param>
-    /// <param name="ContentType">Verbatim from upstream.</param>
-    /// <param name="Body">Raw upstream bytes; replayed without modification.</param>
     public sealed record CachedEntry(int StatusCode, string ContentType, byte[] Body);
 }

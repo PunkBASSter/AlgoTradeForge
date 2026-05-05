@@ -1,14 +1,8 @@
 "use client";
 
-// Phase 4 (P4-17) — catalog-fed cascading dropdowns for picking ONE DataFeedSubscription.
-// Replaces the legacy DssBuilder text inputs. Used inline by:
-//   - BacktestForm (single Primary slot)
-//   - MultiPrimaryPicker (chip-builder for Optimization Primary candidates)
-//   - SideFeedPicker (Side slot variant)
-//
-// Cascade: exchange → asset → feed. The feed list is filtered by role-eligibility
-// (Primary slots see TimeBar/AltBar/Tick; Side slots see Side feeds incl. alt-bar
-// sidecars). Sorting matches the Data tab's column order via lib/data/feed-order.ts.
+// Catalog-fed cascading dropdowns (exchange → asset → feed) for picking ONE
+// DataFeedSubscription. The feed list is filtered by role-eligibility (Primary slots
+// see TimeBar/AltBar/Tick; Side slots see Side feeds incl. alt-bar sidecars).
 
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -62,9 +56,7 @@ export function FeedPicker({
 
   const assetsQuery = useQuery({
     queryKey: ["data", "exchange-assets", value?.exchange ?? ""],
-    queryFn: ({ signal }) =>
-      // Narrowed: we only enable this query when value.exchange is set.
-      dataApi.getAssetsByExchange(value!.exchange, signal),
+    queryFn: ({ signal }) => dataApi.getAssetsByExchange(value!.exchange, signal),
     enabled: !!value?.exchange,
   });
 
@@ -81,10 +73,9 @@ export function FeedPicker({
       .sort(compareFeed);
   }, [selectedAsset, role, excludeFeedIds]);
 
-  // Auto-clear feed selection when its asset/exchange changes upstream and the previously
-  // selected feedId is no longer in the eligible list. The `!value.feedId` short-circuit
-  // prevents re-entry once we've already cleared (otherwise the empty-id check would
-  // re-trigger on every render where eligibleFeeds is stable).
+  // Clear the feed selection when the previously chosen feedId is no longer in the
+  // eligible list (e.g. asset changed). The `!value.feedId` guard avoids re-firing
+  // once we've already cleared.
   useEffect(() => {
     if (!value || !selectedAsset) return;
     if (!value.feedId) return;
@@ -148,7 +139,6 @@ export function FeedPicker({
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2" role="group" aria-label="Feed picker">
-      {/* Exchange */}
       <div>
         <label className="block text-xs font-medium uppercase tracking-wider text-text-muted mb-1">
           Exchange
@@ -169,7 +159,6 @@ export function FeedPicker({
         </select>
       </div>
 
-      {/* Asset */}
       <div>
         <label className="block text-xs font-medium uppercase tracking-wider text-text-muted mb-1">
           Asset
@@ -199,7 +188,6 @@ export function FeedPicker({
         </select>
       </div>
 
-      {/* Feed */}
       <div>
         <label className="block text-xs font-medium uppercase tracking-wider text-text-muted mb-1">
           Feed

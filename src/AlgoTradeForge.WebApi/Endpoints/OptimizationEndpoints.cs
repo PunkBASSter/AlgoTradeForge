@@ -183,20 +183,11 @@ public static class OptimizationEndpoints
         };
         var inputJson = JsonSerializer.Serialize(request, JsonOptions);
 
-        // Phase 4 (P4-14b, TRD §9.6): route through group handler when *post-expansion*
-        // produces >1 child runs. This catches both classic multi-DSS requests AND
-        // single-DSS-multi-primary requests (`[[Primary(A), Primary(B)]]`), which expand
-        // to N single-primary DSSes. The group handler already supports
-        // `OptimizationMethod = "Genetic"` and creates one `GeneticExecutionContext`
-        // per DSS — the executor's per-`ExecuteAsync` `GeneticFitnessCache` ensures
-        // independent search spaces per primary.
-        //
-        // Routing decision uses the post-expansion count (we need to know if multi-primary
-        // would fan out), but the command itself receives the *raw* axis — the group
-        // handler is the canonical place to call ExpandMultiPrimary, matching the
-        // brute-force endpoint above which also passes raw. The `!` is safe inside the
-        // branch: ExpandMultiPrimary(null) returns an empty list, so reaching `Count > 1`
-        // implies SubscriptionAxis was non-null and non-empty.
+        // Route through group handler when post-expansion yields >1 child runs. Catches both
+        // multi-DSS requests and single-DSS-multi-primary requests that fan out to N DSSes.
+        // The command receives the raw axis; the group handler calls ExpandMultiPrimary
+        // (matching the brute-force path). `!` is safe: reaching `Count > 1` implies the
+        // axis was non-null (ExpandMultiPrimary(null) returns empty).
         if (OptimizationSetupHelper.ExpandMultiPrimary(request.SubscriptionAxis).Count > 1)
         {
             var groupCommand = new RunGroupOptimizationCommand
@@ -619,9 +610,8 @@ public static class OptimizationEndpoints
             }
             catch (JsonException ex)
             {
-                // Malformed JSON — fall back to empty. Pre-P4-10 rows don't carry the `kind`
-                // discriminator and will land here. Log so ops sees the corruption rather
-                // than silently returning an empty subscriptions array.
+                // Legacy rows without the `kind` discriminator land here — log instead of
+                // silently returning an empty subscriptions array.
                 logger.LogWarning(ex,
                     "Legacy or malformed subscriptions_json for optimization group {GroupId}; returning empty subscriptions.",
                     group.Id);

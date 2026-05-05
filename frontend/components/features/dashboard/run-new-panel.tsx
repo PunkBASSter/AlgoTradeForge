@@ -102,9 +102,8 @@ export function RunNewPanel({
   const [evaluation, setEvaluation] = useState<OptimizationEvaluation | null>(null);
   const [evaluating, setEvaluating] = useState(false);
   const evaluationCacheRef = useRef<Map<string, OptimizationEvaluation>>(new Map());
-  // Phase 4 (P4-17/18/19): polymorphic primary + side selections. One DSS containing
-  // [...primaries, ...sides] becomes the canonical subscriptionAxis on the wire — the
-  // server-side ExpandMultiPrimary fans the multi-primary case into N child runs (TRD §9.6).
+  // One DSS containing [...primaries, ...sides] is sent as subscriptionAxis on the
+  // wire; the server's ExpandMultiPrimary fans the multi-primary case into N child runs.
   // Backtest/Live restrict primaries to length === 1 via the picker UI.
   const [primaries, setPrimaries] = useState<DataFeedSubscription[]>([]);
   const [sides, setSides] = useState<DataFeedSubscription[]>([]);
@@ -139,18 +138,14 @@ export function RunNewPanel({
 
   // Handle editor doc changes: check cache, clear or restore evaluation, sync pickers
   const handleDocChange = useCallback((text: string) => {
-    // Sync picker state from editor (unless the editor change was triggered BY a picker).
-    // Phase 4: subscriptionAxis on the wire is DataFeedSubscription[][]. Each inner DSS
-    // splits by `role` into primaries + sides for picker display; the server-side
-    // ExpandMultiPrimary handles multi-primary fan-out at submit time.
+    // Sync picker state from the editor unless the editor change was triggered BY the
+    // pickers (suppressEditorSyncRef). Multi-DSS JSON (legacy hand-edited shape) is
+    // flattened — every primary across DSSes becomes a fan-out candidate.
     if (!suppressEditorSyncRef.current) {
       try {
         const obj = JSON.parse(text) as Record<string, unknown>;
         const axis = obj.subscriptionAxis as DataFeedSubscription[][] | undefined;
         if (axis && Array.isArray(axis) && axis.length > 0) {
-          // Flatten across DSSes — every primary in any DSS becomes a fan-out candidate.
-          // Multi-DSS request shape was historical; the new flow puts all primaries +
-          // sides in a single DSS, but reading legacy multi-DSS JSON should still work.
           const flat = axis.flat();
           const nextPrimaries = flat.filter((s) => s.role === "Primary");
           const nextSides = flat.filter((s) => s.role === "Side");
@@ -177,8 +172,8 @@ export function RunNewPanel({
     setEvaluation(null);
   }, [isOptimization]);
 
-  // Push picker state into the editor's subscriptionAxis, kept as a single DSS containing
-  // [...primaries, ...sides]. Server-side ExpandMultiPrimary fans the multi-primary case.
+  // Pushes picker state into the editor's subscriptionAxis as a single DSS containing
+  // [...primaries, ...sides].
   const syncEditorFromPickers = useCallback(
     (nextPrimaries: DataFeedSubscription[], nextSides: DataFeedSubscription[]) => {
       const view = editorViewRef.current;
@@ -220,9 +215,8 @@ export function RunNewPanel({
     [primaries, syncEditorFromPickers],
   );
 
-  // Single-primary (Backtest/Live): wraps the multi-list shape behind FeedPicker's
-  // selection state. We synthesize FeedPickerSelection from the current primary so the
-  // dropdowns reflect the picked value when the panel reopens.
+  // Single-primary (Backtest/Live): synthesize FeedPickerSelection from the current
+  // primary so the dropdowns reflect the picked value when the panel reopens.
   const singlePrimarySelection: FeedPickerSelection | null = useMemo(() => {
     if (primaries.length === 0) return null;
     const sub = primaries[0];
@@ -530,9 +524,9 @@ export function RunNewPanel({
       } else {
         let runId: string;
         if (mode === "backtest") {
-          // Power-user escape hatch: the FeedPicker only emits a single DSS for backtest
-          // mode, so this multi-DSS branch fires only when the user hand-edits the JSON
-          // editor to add multiple DSSes. Each becomes its own backtest submission.
+          // Power-user escape hatch: the FeedPicker only emits one DSS, so this branch
+          // fires when the user hand-edits the JSON to add multiple DSSes. Each
+          // becomes its own backtest submission.
           const btReq = parsed as RunBacktestRequest & { subscriptionAxis?: DataFeedSubscription[][] };
           if (btReq.subscriptionAxis && btReq.subscriptionAxis.length > 1) {
             const results: string[] = [];

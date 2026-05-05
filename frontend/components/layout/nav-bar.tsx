@@ -44,9 +44,7 @@ export function NavBar() {
   // Only show strategy-scoped mode tabs on strategy pages.
   const showTabs = strategy !== null && mode !== null;
 
-  // Data tab is strategy-agnostic: visible on every page (TRD §10.1, P3-11).
-  // It lives in its own group, left of the strategy tabs, so it stays visible even on
-  // routes that don't carry a strategy (e.g. `/`, `/data`).
+  // Data tab is strategy-agnostic: stays visible on routes without a strategy.
   const isOnDataTab = pathname.startsWith("/data");
 
   return (
@@ -59,7 +57,6 @@ export function NavBar() {
           AlgoTradeForge
         </Link>
 
-        {/* Always-visible Data tab (P3-11). Sits left of the strategy tabs. */}
         <nav className="flex items-center gap-1" role="tablist" aria-label="Global tabs">
           <Link
             href="/data"

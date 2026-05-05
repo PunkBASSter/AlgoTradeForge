@@ -2,9 +2,8 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
 
 /// <summary>
 /// Mutable in-registry view of one aggregation job. State mutation is gated by the registry's
-/// per-feed_id lock; event-log mutation is gated by the record's own <see cref="_eventsLock"/>
-/// so the SSE handler can take a stable events snapshot without waiting on registry mutations
-/// for unrelated jobs.
+/// per-feed_id lock; event-log mutation is gated by the record's own <c>_eventsLock</c> so
+/// SSE handlers can snapshot events without contending with registry mutations for unrelated jobs.
 /// </summary>
 public sealed class AggregationJobRecord
 {
@@ -27,24 +26,18 @@ public sealed class AggregationJobRecord
     public AggregationResult? Result { get; set; }
     public ProgressEvent.Error? Error { get; set; }
 
-    /// <summary>
-    /// Phase 6 — terminal cancellation reason (<c>"user_cancelled"</c>) when
-    /// <see cref="State"/> is <see cref="AggregationJobState.Cancelled"/>; <c>null</c> otherwise.
-    /// Mirrors the <see cref="Error"/> field shape (terminal-only payload).
-    /// </summary>
+    /// <summary>Terminal cancellation reason; populated only when <see cref="State"/> is <see cref="AggregationJobState.Cancelled"/>.</summary>
     public string? CancellationReason { get; set; }
 
     /// <summary>
-    /// Phase 6 — per-job cancellation token source. Linked into the worker's stopping token
-    /// at dequeue. <c>TryRequestCancel</c> calls <see cref="System.Threading.CancellationTokenSource.Cancel"/>;
-    /// the pipeline's per-record <c>ct.ThrowIfCancellationRequested()</c> observes it at the next
-    /// boundary. Disposed when the job reaches a terminal state.
+    /// Per-job cancellation token source linked into the worker's stopping token at dequeue.
+    /// Disposed when the job reaches a terminal state.
     /// </summary>
     public CancellationTokenSource Cts { get; } = new();
 
     /// <summary>
     /// Snapshot of events with sequence numbers strictly greater than <paramref name="afterSeq"/>.
-    /// Pass <c>0</c> for "all events". The returned list is detached from internal state.
+    /// Pass <c>0</c> for all events. The returned list is detached from internal state.
     /// </summary>
     public IReadOnlyList<JobEvent> EventsAfter(int afterSeq)
     {
@@ -52,7 +45,7 @@ public sealed class AggregationJobRecord
         {
             if (afterSeq <= 0)
                 return _events.ToArray();
-            // Events are appended in monotonic sequence order; binary-search-ish skip.
+            // Events are appended in monotonic sequence order; scan backward and stop at the cut.
             var result = new List<JobEvent>();
             for (var i = _events.Count - 1; i >= 0; i--)
             {
@@ -65,13 +58,11 @@ public sealed class AggregationJobRecord
     }
 
     /// <summary>
-    /// Awaits the next event after the current one. Returns a <see cref="Task"/> that completes
-    /// when <see cref="AppendEvent"/> next fires. Each call to <see cref="AppendEvent"/> swaps
-    /// in a fresh signal, so re-await for subsequent events.
+    /// Task that completes when <see cref="AppendEvent"/> next fires. Each append swaps in a
+    /// fresh signal, so re-read for subsequent events.
     /// </summary>
     public Task NextEventSignal => Volatile.Read(ref _newEventSignal).Task;
 
-    /// <summary>Latest assigned sequence number (0 if no events yet).</summary>
     public int LastSequence
     {
         get { lock (_eventsLock) return _events.Count == 0 ? 0 : _events[^1].Sequence; }
@@ -93,8 +84,7 @@ public sealed class AggregationJobRecord
 
     /// <summary>
     /// Atomic terminal-state transition. Populates Result/Error/CompletedAt under the events
-    /// lock BEFORE flipping <see cref="State"/>, then appends the terminal event. Combined with
-    /// the lock taken by <see cref="Snapshot"/>, this ensures a snapshot can never observe
+    /// lock BEFORE flipping <see cref="State"/>, so concurrent snapshots cannot observe
     /// (State==Complete &amp;&amp; Result==null) or (State==Error &amp;&amp; Error==null).
     /// </summary>
     internal void MarkTerminal(
@@ -123,15 +113,14 @@ public sealed class AggregationJobRecord
             new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
         prev.TrySetResult();
 
-        // Phase 6 — terminal state means no further cancellation requests can do anything
-        // useful; release the per-job CTS to avoid leaking handles for retained terminal records.
+        // Release the per-job CTS — terminal records can be retained for retention window
+        // and further cancel calls are no-ops.
         Cts.Dispose();
     }
 
     /// <summary>
-    /// Returns an immutable snapshot suitable for API responses. Takes the events lock so the
-    /// State / Result / Error / CompletedAt fields are read consistently with respect to a
-    /// concurrent <see cref="MarkTerminal"/> — no torn read of State-without-payload.
+    /// Immutable snapshot for API responses. Takes the events lock so State / Result / Error /
+    /// CompletedAt are read consistently against a concurrent <see cref="MarkTerminal"/>.
     /// </summary>
     public AggregationJobSnapshot Snapshot()
     {

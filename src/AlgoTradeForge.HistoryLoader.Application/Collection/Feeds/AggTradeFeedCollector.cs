@@ -5,13 +5,12 @@ using Microsoft.Extensions.Logging;
 namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 
 /// <summary>
-/// Collects Binance USDT-M Futures aggregate trades into daily-partitioned CSVs (TRD §3.5).
+/// Collects Binance USDT-M Futures aggregate trades into daily-partitioned CSVs.
 /// </summary>
 /// <remarks>
-/// Does <strong>not</strong> extend <see cref="GenericFeedCollectorBase"/> because that base
-/// assumes monthly partitions and timestamp-based resume. Tick collection partitions daily
-/// and resumes by <c>(agg_id, ts)</c>, with the writer dedupping by <c>agg_id</c> rather
-/// than <c>ts</c> (multiple aggregated trades regularly share a millisecond).
+/// Does NOT extend <see cref="GenericFeedCollectorBase"/>: that base assumes monthly partitions
+/// and timestamp-based resume. Ticks partition daily and resume by <c>(agg_id, ts)</c>, with the
+/// writer dedupping by <c>agg_id</c> (multiple trades regularly share a millisecond).
 /// </remarks>
 public sealed class AggTradeFeedCollector(
     IFeedFetcherFactory feedFetcherFactory,
@@ -25,7 +24,7 @@ public sealed class AggTradeFeedCollector(
 
     public string FeedName => FeedNames.Ticks;
 
-    // Perp-only for Phase 2a. Spot tick ingestion is a Phase 2a follow-up.
+    // Perp-only for now; spot tick ingestion is a follow-up.
     public bool SupportsSpot => false;
 
     public async Task CollectAsync(
@@ -39,9 +38,9 @@ public sealed class AggTradeFeedCollector(
         // Schema first so concurrent readers see the feed entry even before the first row lands.
         schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null);
 
-        // Resume protocol: re-fetch the boundary millisecond (inclusive) and let the writer's
-        // agg_id dedup drop already-persisted records. This handles the case of multiple ticks
-        // sharing a single millisecond, where ts+1 advancement would silently skip records.
+        // Re-fetch the boundary ms (inclusive) and let the writer's agg_id dedup drop
+        // already-persisted records — ts+1 advancement would silently skip ticks that share a
+        // millisecond.
         var resume = tickWriter.ResumeFrom(assetDir);
         if (resume is { } r && r.LastTsMs >= fromMs)
             fromMs = r.LastTsMs;

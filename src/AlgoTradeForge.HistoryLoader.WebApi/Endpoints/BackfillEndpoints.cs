@@ -56,9 +56,8 @@ internal static class BackfillEndpoints
             catch (Exception ex) when (
                 !(ex is OperationCanceledException && ct.IsCancellationRequested))
             {
-                // HttpClient timeouts inside the orchestrator surface as TaskCanceledException
-                // (an OperationCanceledException). Without the `ct.IsCancellationRequested` qualifier
-                // the legacy filter let those escape and the unobserved task would crash the host.
+                // HttpClient timeouts surface as TaskCanceledException (an OCE); without the
+                // ct.IsCancellationRequested qualifier the unobserved-task crash would kill the host.
                 logger.LogError(ex, "Backfill failed for {Symbol}", asset.Symbol);
             }
         }, ct);

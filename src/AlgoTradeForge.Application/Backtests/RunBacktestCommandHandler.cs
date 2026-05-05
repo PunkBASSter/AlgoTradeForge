@@ -153,10 +153,8 @@ public sealed class RunBacktestCommandHandler(
                 StrategyVersion = setup.Strategy.Version,
                 Parameters = command.StrategyParameters?.AsReadOnly()
                     ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-                // Persist the original wire shape — `setup.Strategy.DataSubscriptions` is the
-                // resolved (Asset, TimeFrame) form which collapses AltBar/Tick/Side back to
-                // TimeBar and erases FeedId. PR-A only resolves TimeBar today, but using the
-                // command's list keeps the audit record correct once PR-C lifts the guard.
+                // Persist the wire shape; setup.Strategy.DataSubscriptions is the resolved
+                // (Asset, TimeFrame) form which would erase FeedId for AltBar/Tick/Side feeds.
                 DataSubscriptions = command.DataSubscriptions,
                 BacktestSettings = command.BacktestSettings,
                 StartedAt = startedAt,
@@ -208,10 +206,8 @@ public sealed class RunBacktestCommandHandler(
                 StrategyVersion = setup.Strategy.Version,
                 Parameters = command.StrategyParameters?.AsReadOnly()
                     ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-                // Persist the original wire shape — `setup.Strategy.DataSubscriptions` is the
-                // resolved (Asset, TimeFrame) form which collapses AltBar/Tick/Side back to
-                // TimeBar and erases FeedId. PR-A only resolves TimeBar today, but using the
-                // command's list keeps the audit record correct once PR-C lifts the guard.
+                // Persist the wire shape; setup.Strategy.DataSubscriptions is the resolved
+                // (Asset, TimeFrame) form which would erase FeedId for AltBar/Tick/Side feeds.
                 DataSubscriptions = command.DataSubscriptions,
                 BacktestSettings = command.BacktestSettings,
                 StartedAt = startedAt,

@@ -9,35 +9,18 @@ internal sealed partial class BinanceFuturesClient
     private const int AggTradeWeight = 20;
 
     /// <summary>
-    /// Fetches aggregate trades (ticks) from the Binance USDT-M Futures API for the given
-    /// <paramref name="symbol"/> over the half-open time range
-    /// [<paramref name="fromMs"/>, <paramref name="toMs"/>).
+    /// Fetches aggregate trades for [<paramref name="fromMs"/>, <paramref name="toMs"/>).
+    /// First page is time-bounded; subsequent pages use <c>fromId</c> pagination so we walk
+    /// every trade even when &gt;1000 share a single millisecond (a <c>ts+1</c> cursor would
+    /// drop overflow). <c>fromId</c>-bounded responses ignore <c>endTime</c>, so trades past
+    /// <paramref name="toMs"/> are trimmed client-side.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Each <see cref="FeedRecord"/> contains four values: price (index 0), qty (index 1),
-    /// is_buyer_maker (index 2: 0 or 1), agg_id (index 3).
-    /// </para>
-    /// <para>
-    /// <b>Pagination strategy.</b> The first page is fetched by time bounds
-    /// (<c>startTime</c>/<c>endTime</c>). Subsequent pages use <c>fromId</c> pagination —
-    /// Binance ignores time bounds when <c>fromId</c> is present, but more importantly, a
-    /// single millisecond can hold &gt;1000 trades during volatility bursts. The previous
-    /// <c>cursor = batch[^1].TimestampMs + 1</c> approach silently dropped overflow trades
-    /// in that ms; <c>fromId = lastAggId + 1</c> guarantees we walk every trade.
-    /// </para>
-    /// <para>
-    /// Because <c>fromId</c>-bounded responses ignore <c>endTime</c>, this method trims
-    /// records past <paramref name="toMs"/> client-side before yielding.
-    /// </para>
-    /// </remarks>
     public async IAsyncEnumerable<FeedRecord> FetchAggTradesAsync(
         string symbol,
         long fromMs,
         long toMs,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        // First page: time-bounded.
         ct.ThrowIfCancellationRequested();
         var firstBatch = await FetchAggTradeBatchByTimeWithRetryAsync(symbol, fromMs, toMs, ct)
             .ConfigureAwait(false);
@@ -57,8 +40,6 @@ internal sealed partial class BinanceFuturesClient
         if (firstBatch.Length < AggTradeLimit || lastAggId is null)
             yield break;
 
-        // Subsequent pages: fromId-bounded. Walks every trade past the previous batch's tail
-        // even when 1000+ trades share a single millisecond.
         while (lastAggId is { } prevLastId)
         {
             ct.ThrowIfCancellationRequested();
@@ -68,9 +49,9 @@ internal sealed partial class BinanceFuturesClient
             if (batch.Length == 0)
                 yield break;
 
-            // Sanity: aggIds must be strictly monotonic. If the next batch's first id does not
-            // exceed the previous tail, suspect a per-symbol id reset (rare — Binance has done
-            // this on delisting/relisting). Bail loudly rather than loop.
+            // aggIds must be strictly monotonic. If the next batch's first id doesn't exceed
+            // the previous tail, suspect a per-symbol id reset (rare — Binance has done this on
+            // delisting/relisting). Bail rather than loop.
             long firstAggId = (long)batch[0].Values[3];
             if (firstAggId <= prevLastId)
                 yield break;
@@ -90,10 +71,6 @@ internal sealed partial class BinanceFuturesClient
             lastAggId = newLastAggId;
         }
     }
-
-    // -------------------------------------------------------------------------
-    // Private helpers — aggregate trades
-    // -------------------------------------------------------------------------
 
     private Task<FeedRecord[]> FetchAggTradeBatchByTimeWithRetryAsync(
         string symbol,

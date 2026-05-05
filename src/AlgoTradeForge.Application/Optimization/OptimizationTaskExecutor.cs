@@ -83,9 +83,8 @@ public sealed class OptimizationTaskExecutor(
         foreach (var sub in ctx.Subscriptions)
             await helper.ResolveAndCacheAsync(sub, resolvedSubs, dataCache, fromDate, toDate, ct);
 
-        // Phase 4 dual-key carrier (TRD §9.3): keep the polymorphic originals alongside the
-        // strategy-side projection so ExecuteTrial can round-trip AltBar FeedIds into the run
-        // record and use kind-aware cache lookups.
+        // Dual-key carrier — keep the polymorphic originals alongside the strategy-side
+        // projection so ExecuteTrial can round-trip AltBar FeedIds and use kind-aware cache lookups.
         var feedSubs = ctx.Subscriptions.ToList();
 
         // 2. Set up trial infrastructure

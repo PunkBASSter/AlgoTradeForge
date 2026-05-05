@@ -5,9 +5,8 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
 
 /// <summary>
 /// Bounded <see cref="Channel{T}"/> implementation of <see cref="IAggregationTickJobQueue"/>.
-/// Shape mirrors <see cref="AggregationJobQueue"/> intentionally — same capacity knob
-/// (<c>maxQueueDepth</c>), same DropWrite-disabled semantics — so the only behavioral
-/// difference is which worker pool drains it.
+/// Mirrors <see cref="AggregationJobQueue"/>; the only behavioral difference is which worker
+/// pool drains it.
 /// </summary>
 public sealed class AggregationTickJobQueue : IAggregationTickJobQueue
 {
@@ -21,7 +20,7 @@ public sealed class AggregationTickJobQueue : IAggregationTickJobQueue
         _channel = Channel.CreateBounded<AggregationJob>(new BoundedChannelOptions(capacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
-            // MaxConcurrentTickJobs=1 (TRD §6.5) → exactly one worker drains this channel.
+            // MaxConcurrentTickJobs=1 → exactly one worker drains this channel.
             SingleReader = true,
             SingleWriter = false,
         });

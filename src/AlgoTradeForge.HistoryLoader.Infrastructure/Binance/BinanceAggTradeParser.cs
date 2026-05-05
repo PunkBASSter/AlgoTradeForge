@@ -4,9 +4,9 @@ using AlgoTradeForge.HistoryLoader.Domain;
 namespace AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 
 /// <summary>
-/// Parses Binance USDT-M Futures <c>/fapi/v1/aggTrades</c> response into <see cref="FeedRecord"/>s.
-/// JSON shape per element: <c>{a:aggId, p:price, q:qty, f:firstId, l:lastId, T:ts, m:isBuyerMaker, M:bestMatch}</c>.
-/// Output value order matches column order <c>[price, qty, is_buyer_maker, agg_id]</c> (TRD §3.5).
+/// Parses Binance USDT-M Futures <c>/fapi/v1/aggTrades</c> JSON into <see cref="FeedRecord"/>s.
+/// Each element: <c>{a:aggId, p:price, q:qty, T:ts, m:isBuyerMaker, ...}</c>; output values are
+/// <c>[price, qty, is_buyer_maker, agg_id]</c>.
 /// </summary>
 internal static class BinanceAggTradeParser
 {
@@ -24,10 +24,8 @@ internal static class BinanceAggTradeParser
             long aggId = element.GetProperty("a").GetInt64();
             bool isBuyerMaker = element.GetProperty("m").GetBoolean();
 
-            // Malformed numeric fields are loud failures (matches PartitionedSourceReader.MalformedCell
-            // and the P1b-0a tightening of CsvFeedSeriesLoader). The retry helper at
-            // BinanceRetryHelper.FetchWithRetryAsync calls this parser outside its try/catch, so the
-            // exception propagates to the collector without retry — a persistent schema break shouldn't
+            // Malformed numeric fields throw — BinanceRetryHelper calls this parser outside its
+            // try/catch so the exception bypasses retry; a persistent schema break shouldn't
             // hammer Binance.
             if (!BinanceJsonHelper.TryParseDouble(element, "p", out var price))
                 throw MalformedField(aggId, "p", element);

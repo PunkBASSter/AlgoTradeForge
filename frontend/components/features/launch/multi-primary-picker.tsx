@@ -1,14 +1,12 @@
 "use client";
 
-// Phase 4 (P4-18, P4-19) — chip-based multi-select wrapper around FeedPicker for the
-// Optimization launch flow. The user adds N Role=Primary candidates that fan out into
-// |primaries| × |combos| trials server-side (TRD §9.6). Side feeds attach as a parallel
-// list and are shared across every primary trial.
+// Chip-based multi-select wrapper around FeedPicker for the Optimization launch flow.
+// The user adds N Role=Primary candidates that fan out into |primaries| × |combos|
+// trials server-side. Side feeds are shared across every primary trial.
 //
-// Submit shape: a single DSS containing all primary chips + all side chips, mapped onto
-// `subscriptionAxis: [[...primaries, ...sides]]`. The OptimizationEndpoints handler calls
-// ExpandMultiPrimary which splits the multi-primary DSS into N single-primary DSSes
-// before enqueuing — see RunGroupOptimizationCommandHandler.cs.
+// Submit shape: a single DSS containing all primary chips + all side chips on
+// `subscriptionAxis: [[...primaries, ...sides]]`. The server's ExpandMultiPrimary
+// splits this into N single-primary DSSes before enqueuing.
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -89,10 +87,8 @@ function ChipSection({
   const [adding, setAdding] = useState(false);
   const [pending, setPending] = useState<FeedPickerSelection | null>(null);
 
-  // Prevent the user from adding the same feed twice in this list (e.g. two BTC/1h
-  // primaries would dedup at the server but the chip list would be confusing). Keyed
-  // by exchange|asset|feedId since a single asset's "1h" and another asset's "1h" are
-  // distinct fan-out candidates.
+  // Prevent adding the same feed twice in this list. Keyed by exchange|asset|feedId
+  // since a single asset's "1h" and another asset's "1h" are distinct candidates.
   const existingKeys = new Set(
     items.map(subToKey),
   );
@@ -100,8 +96,6 @@ function ChipSection({
   const commit = () => {
     if (!pending?.subscription) return;
     if (existingKeys.has(subToKey(pending.subscription))) {
-      // Silently swallow duplicate add. Could surface a toast, but the empty-list nudge
-      // makes the situation discoverable enough.
       setPending(null);
       setAdding(false);
       return;
@@ -134,7 +128,6 @@ function ChipSection({
         )}
       </div>
 
-      {/* Chips */}
       {items.length > 0 ? (
         <ul className="flex flex-wrap gap-2" aria-label={`${title} list`}>
           {items.map((sub, i) => (
@@ -163,7 +156,6 @@ function ChipSection({
         <p className="text-xs italic text-text-muted">{emptyHint}</p>
       )}
 
-      {/* Add row */}
       {adding ? (
         <div className="space-y-2 rounded-md border border-border-subtle bg-bg-base p-2">
           <FeedPicker
@@ -211,8 +203,6 @@ function ChipSection({
   );
 }
 
-// ---- subscription helpers (local) --------------------------------------------------
-
 function subToFeedId(sub: DataFeedSubscription): string {
   switch (sub.kind) {
     case "TimeBar": return sub.timeFrame;
@@ -227,13 +217,11 @@ function subToKey(sub: DataFeedSubscription): string {
 }
 
 function subToShortLabel(sub: DataFeedSubscription): string {
-  // Render a compact label in the chip — friendlier than the raw feed id.
   switch (sub.kind) {
     case "TimeBar": return sub.timeFrame;
     case "AltBar":
-      // Reuse formatFeedLabel by synthesizing a minimal catalog entry. Avoids re-parsing
-      // the §3.3 grammar in the FE — formatFeedLabel falls back to feed.id when metadata
-      // is absent, so we just hand it the id.
+      // Reuse formatFeedLabel by synthesizing a minimal catalog entry; it falls back to
+      // feed.id when metadata is absent, so handing it the id is enough.
       return formatFeedLabel({
         id: sub.feedId,
         kind: "OHLCV_AltBar",

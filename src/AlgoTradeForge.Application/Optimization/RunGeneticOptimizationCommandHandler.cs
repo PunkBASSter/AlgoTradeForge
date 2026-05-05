@@ -32,11 +32,8 @@ public sealed class RunGeneticOptimizationCommandHandler(
         if (command.SubscriptionAxis is not { Count: > 0 } || command.SubscriptionAxis[0].Count == 0)
             throw new ArgumentException("At least one data subscription must be provided.");
 
-        // Phase 4 (P4-14, TRD §9.6): expand multi-primary DSSes into single-primary DSSes.
-        // Genetic only supports single-primary today — multi-primary fan-out would require
-        // |primaries| independent GA runs (separate populations + fitness caches), which
-        // ships with FE coordination in a follow-up. Reject the multi-primary case loudly
-        // here so the contract stays predictable.
+        // Genetic supports single-primary only — multi-primary fan-out would need |primaries|
+        // independent GA runs (separate populations + fitness caches). Expand and reject.
         var subscriptionAxis = OptimizationSetupHelper.ExpandMultiPrimary(command.SubscriptionAxis);
         if (subscriptionAxis.Count > 1)
             throw new NotSupportedException(
@@ -79,8 +76,7 @@ public sealed class RunGeneticOptimizationCommandHandler(
         var startedAt = DateTimeOffset.UtcNow;
         var runId = Guid.NewGuid();
         var groupId = runId; // Genetic uses runId as jobId (single-DSS)
-        // Use the post-expansion subscriptionAxis so dedup keys are computed on the canonical
-        // single-primary shape — matches brute-force handler's behavior.
+        // Use the post-expansion shape so dedup keys match the brute-force handler.
         var groupRunKey = RunKeyBuilder.BuildGroupKey(
             command.StrategyName, settings, "Genetic",
             subscriptionAxis, command.Axes);

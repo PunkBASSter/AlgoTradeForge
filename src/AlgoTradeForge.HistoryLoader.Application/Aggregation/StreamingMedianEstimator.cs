@@ -1,31 +1,17 @@
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
 /// <summary>
-/// Single-pass online median estimator using the P² algorithm (Jain &amp; Chlamtac, 1985)
-/// with 5 markers at quantile positions <c>{0, 0.25, 0.5, 0.75, 1.0}</c>. State footprint is
-/// ~120 bytes regardless of sample count — replaces the unbounded <c>List&lt;long&gt;</c>
-/// median path in <see cref="AggregationPipeline"/> for tick-source jobs (TRD §6.4 fidelity
-/// block; preserves the time-bar exact-median path for backwards-compat with Phase 1b
-/// manifests).
+/// Single-pass online median estimator using the P² algorithm (Jain &amp; Chlamtac, 1985) with
+/// 5 markers at quantile positions <c>{0, 0.25, 0.5, 0.75, 1.0}</c>. State footprint is ~120
+/// bytes regardless of sample count. Below 5 samples falls back to an exact sort-and-pick.
+/// Accuracy at p=0.5 is typically within 1% of the true sample median for unimodal distributions.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Accuracy at <c>p=0.5</c> is typically within 1% of the true sample median for unimodal
-/// distributions. The manifest consumer uses the median to compute
-/// <c>n_factor = threshold / median</c>, itself a fidelity *estimate*, so an approximate
-/// median is acceptable.
-/// </para>
-/// <para>
-/// Below 5 samples the estimator falls back to an exact sort-and-pick on the buffered points;
-/// at 5+ samples the markers are seeded and the streaming update runs.
-/// </para>
-/// </remarks>
 public sealed class StreamingMedianEstimator
 {
     private const double P = 0.5;
 
     private readonly double[] _q = new double[5];   // marker heights
-    private readonly double[] _n = new double[5];   // marker positions (1-indexed by paper)
+    private readonly double[] _n = new double[5];   // actual marker positions
     private readonly double[] _np = new double[5];  // desired marker positions
     private readonly double[] _dn = new double[5];  // desired position increments per sample
     private long _count;
@@ -102,7 +88,6 @@ public sealed class StreamingMedianEstimator
 
     private void Initialize()
     {
-        // Sort the seed samples — they become the initial heights of the 5 markers.
         Array.Sort(_q);
         for (int i = 0; i < 5; i++)
             _n[i] = i + 1;

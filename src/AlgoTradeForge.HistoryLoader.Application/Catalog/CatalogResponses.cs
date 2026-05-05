@@ -1,15 +1,10 @@
 namespace AlgoTradeForge.HistoryLoader.Application.Catalog;
 
-/// <summary>Response shape for <c>GET /api/v1/exchanges</c> (TRD §5.1).</summary>
 public sealed record ExchangeListResponse(IReadOnlyList<ExchangeSummary> Exchanges);
 
 public sealed record ExchangeSummary(string Name, int AssetCount);
 
-/// <summary>
-/// Response shape for <c>GET /api/v1/exchanges/{exchange}/assets</c> and
-/// <c>GET /api/v1/assets</c>. Each asset carries the configured metadata plus its
-/// per-asset feed inventory merged from <c>feeds.json</c>.
-/// </summary>
+/// <summary>Per-asset feed inventory merged from configured assets and their <c>feeds.json</c>.</summary>
 public sealed record AssetListResponse(IReadOnlyList<AssetCatalogEntry> Assets);
 
 public sealed record AssetCatalogEntry(

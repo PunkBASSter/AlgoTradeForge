@@ -5,10 +5,9 @@ using Microsoft.Extensions.Options;
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
 /// <summary>
-/// On HistoryLoader boot, walks every <c>{dataRoot}/{exchange}/{asset}/</c> directory
-/// and runs <see cref="AggregatedDirSweeper.Sweep"/> on each one. Must be registered
-/// BEFORE the feed-collection hosted services so any orphan staging directories from
-/// an interrupted aggregation are gone before workers start (TRD §4.1).
+/// On boot, runs <see cref="AggregatedDirSweeper.Sweep"/> over every asset dir. MUST be
+/// registered before feed-collection hosted services so orphan staging dirs from interrupted
+/// aggregations are cleared before workers start.
 /// </summary>
 public sealed class StartupSweepService(
     AggregatedDirSweeper sweeper,

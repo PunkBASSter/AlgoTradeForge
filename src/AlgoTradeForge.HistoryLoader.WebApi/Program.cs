@@ -28,8 +28,8 @@ builder.Services.Configure<HistoryLoaderOptions>(
     builder.Configuration.GetSection("HistoryLoader"));
 builder.Services.AddSingleton<IValidateOptions<HistoryLoaderOptions>, HistoryLoaderOptionsValidator>();
 
-// API-side JSON convention: snake_case to match TRD §5.4 wire schema. Distinct from the
-// camelCase used by FeedSchemaManager for on-disk feeds.json (its own JsonOptions).
+// API JSON: snake_case wire schema. Distinct from the camelCase FeedSchemaManager uses for
+// on-disk feeds.json (its own JsonOptions).
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
     o.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower;
@@ -39,10 +39,8 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 
 builder.Services.AddHealthChecks();
 
-// Infrastructure services (Binance clients, CSV writers, rate limiting, etc.)
 builder.Services.AddHistoryLoaderInfrastructure();
 
-// Feed collectors
 builder.Services.AddSingleton<IFeedCollector, CandleFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, FundingRateFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, MarkPriceFeedCollector>();
@@ -54,17 +52,15 @@ builder.Services.AddSingleton<IFeedCollector, LsRatioTopPositionsFeedCollector>(
 builder.Services.AddSingleton<IFeedCollector, LiquidationFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, AggTradeFeedCollector>();
 
-// Settings writer (persists discovered feed dates back to appsettings.json)
+// Persists discovered feed dates back to appsettings.json
 var appSettingsPath = Path.Combine(builder.Environment.ContentRootPath, "appsettings.json");
 builder.Services.AddSingleton<ISettingsWriter>(sp =>
     new AppSettingsWriter(appSettingsPath, sp.GetRequiredService<ILogger<AppSettingsWriter>>()));
 
-// Collection services
 builder.Services.AddSingleton<ICollectionCircuitBreaker, CollectionCircuitBreaker>();
 builder.Services.AddSingleton<SymbolCollector>();
 builder.Services.AddSingleton<BackfillOrchestrator>();
 
-// Aggregation pipeline DI (Phase 1b — TRD §6.5).
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IFeedCatalog, FeedCatalog>();
@@ -76,8 +72,8 @@ builder.Services.AddScoped<OverwritePathWriter>();
 builder.Services.AddScoped<AggregationPipeline>();
 builder.Services.AddHostedService<AggregationWorkerHost>();
 
-// Aggregation startup sweep — MUST run before any collector hosted service so any
-// orphan staging/tmp left by a prior crash is gone before workers start (TRD §4.1).
+// Sweep MUST run before any collector hosted service so orphan staging/tmp left by a prior
+// crash is gone before workers start.
 builder.Services.AddHostedService<StartupSweepService>();
 
 builder.Services.AddHostedService<KlineCollectorService>();

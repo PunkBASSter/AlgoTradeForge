@@ -1,10 +1,7 @@
-// JSON case convention: the on-disk `feeds.json` schema is camelCase
-// (`signConvention`, `imbalanceReconstructionMethod`, `nullableColumns`, …) via
-// `JsonNamingPolicy.CamelCase` in `FeedSchemaManager`. The TRD §4 examples show
-// snake_case purely for readability — they're illustrative, not normative on case.
-// Don't add `[JsonPropertyName]` attributes to "fix" individual properties; that
-// would create a heterogeneous schema where some keys are camelCase and others
-// snake_case.
+// JSON case convention: the on-disk `feeds.json` schema is camelCase via
+// `JsonNamingPolicy.CamelCase` in `FeedSchemaManager`. Don't add `[JsonPropertyName]`
+// attributes to "fix" individual properties — that creates a heterogeneous schema where
+// some keys are camelCase and others snake_case.
 
 using System.Text.Json.Serialization;
 
@@ -21,22 +18,12 @@ public sealed class FeedMetadata
     public CandleConfig? Candles { get; init; }
 }
 
-/// <remarks>
-/// Phase 4+: split into a polymorphic hierarchy
-/// (<c>TimeBarFeedDef</c> / <c>AltBarFeedDef</c> / <c>TickFeedDef</c> / <c>SideFeedDef</c>)
-/// mirroring the <c>DataFeedSubscription</c> pattern from TRD §9.2, with a
-/// <c>JsonPolymorphic</c> discriminator on <see cref="Kind"/>. Held as a single
-/// all-optional class in Phase 1a so the disk schema migration is purely additive
-/// (no manifest rewrite needed for legacy entries). The polymorphic split becomes
-/// load-bearing once Phase 1b/2b add build / fidelity / sidecar fields that only
-/// apply to one variant.
-/// </remarks>
 public sealed class FeedDefinition
 {
     /// <summary>
-    /// Optional discriminator. Legacy time-bar feeds leave this null and rely on <see cref="Interval"/>.
-    /// New feeds set <c>"OHLCV_TimeBar" | "OHLCV_AltBar" | "Tick" | "Side" | "aggregated"</c>
-    /// (TRD §4 / §5.1).
+    /// Optional discriminator. Legacy time-bar feeds leave this null and rely on
+    /// <see cref="Interval"/>. New feeds set
+    /// <c>"OHLCV_TimeBar" | "OHLCV_AltBar" | "Tick" | "Side" | "aggregated"</c>.
     /// </summary>
     public string? Kind { get; init; }
 
@@ -50,8 +37,6 @@ public sealed class FeedDefinition
 
     public AutoApplyDefinition? AutoApply { get; init; }
 
-    // ---- Aggregated alt-bar fields (TRD §4) ----------------------------------
-
     public AggregatedTypeInfo? Type { get; init; }
     public AggregatedSourceInfo? Source { get; init; }
     public ThresholdInfo? Threshold { get; init; }
@@ -64,11 +49,9 @@ public sealed class FeedDefinition
     /// <summary>Sibling feed-id pointing to the analytical sidecar (e.g. <c>"EqI_ticks_500000.flow"</c>).</summary>
     public string? Sidecar { get; init; }
 
-    // ---- Side-feed flag ------------------------------------------------------
-
     /// <summary>
-    /// When <c>true</c>, <see cref="Infrastructure.History.CsvFeedSeriesLoader"/> parses
-    /// empty cells as <c>NaN</c> instead of throwing (TRD §3.5 sidecar columns).
+    /// When <c>true</c>, <c>CsvFeedSeriesLoader</c> parses empty cells as <c>NaN</c>
+    /// instead of throwing.
     /// </summary>
     public bool? NullableColumns { get; init; }
 }
@@ -86,8 +69,6 @@ public sealed class AutoApplyDefinition
     public string? SignConvention { get; init; }
 }
 
-// ---- Aggregated alt-bar nested records (TRD §4) -----------------------------
-
 public sealed class AggregatedTypeInfo
 {
     public required string Code { get; init; }     // "EqV" | "EqT" | "EqD" | "EqI" | "Range" | "Renko"
@@ -104,7 +85,7 @@ public sealed class AggregatedSourceInfo
 
 public sealed class ThresholdInfo
 {
-    public required decimal Value { get; init; }   // absolute, canonical units (P0-5)
+    public required decimal Value { get; init; }   // absolute, canonical units
     public required string Unit { get; init; }     // "base_asset" | "quote_asset" | "trades"
     public required string InputMode { get; init; } // "absolute" | "convenience"
     public string? ConvenienceInput { get; init; }
@@ -120,10 +101,10 @@ public sealed class BuildInfo
     public int? MaxPartitionSizeMB { get; init; }
 
     /// <summary>
-    /// Phase 2a (TRD §6.3): cumulative count of <c>+1 ms</c> bumps applied to enforce
-    /// strict-monotonic <c>bar.ts_open</c> on tick-source aggregations. Always 0 (or absent)
-    /// for time-bar source jobs. High values relative to source record count indicate
-    /// clustered exchange activity (volatility windows).
+    /// Cumulative count of <c>+1 ms</c> bumps applied to enforce strict-monotonic
+    /// <c>bar.ts_open</c> on tick-source aggregations. Always 0 (or absent) for time-bar
+    /// source jobs. High values relative to source record count indicate clustered
+    /// exchange activity (volatility windows).
     /// </summary>
     public long? MonotonicBumps { get; init; }
 
@@ -145,10 +126,9 @@ public sealed class FidelityInfo
     public double? NFactor { get; init; }
 
     /// <summary>
-    /// "tick_signed" | "m1_taker_buy_proxy" | <c>null</c> (non-EqI).
-    /// Per TRD §4 the JSON property MUST be present even when null on non-EqI feeds —
-    /// absence indicates a malformed manifest. Always serialized via <see cref="JsonIgnoreAttribute"/>
-    /// override below.
+    /// "tick_signed" | "m1_taker_buy_proxy" | <c>null</c> (non-EqI). The JSON property
+    /// MUST be present even when null on non-EqI feeds — absence indicates a malformed
+    /// manifest. Forced serialization via the <see cref="JsonIgnoreAttribute"/> override.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? ImbalanceReconstructionMethod { get; init; }

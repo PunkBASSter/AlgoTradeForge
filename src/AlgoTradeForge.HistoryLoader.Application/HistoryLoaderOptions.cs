@@ -19,28 +19,22 @@ public sealed class HistoryLoaderOptions
     public AggregatorOptions Aggregator { get; init; } = new();
 }
 
-/// <summary>
-/// Phase 1a / 1b alt-bar aggregation knobs. Defaults match TRD §6.5.
-/// <see cref="MaxConcurrentJobs"/>, <see cref="MaxQueueDepth"/>, <see cref="JobRetentionMinutes"/>
-/// land in Phase 1b alongside the job queue + worker host; <see cref="MaxPartitionSizeMB"/> is
-/// the only knob the Phase 1a <c>PartitionedSinkWriter</c> reads today.
-/// </summary>
+/// <summary>Alt-bar aggregation knobs.</summary>
 public sealed class AggregatorOptions
 {
-    /// <summary>Soft per-partition byte budget. Past this size the writer rolls into
-    /// <c>&lt;YYYY&gt;-&lt;MM&gt;.p&lt;NN&gt;.csv</c> (TRD §3.2). Default 100 MB.</summary>
+    /// <summary>Soft per-partition byte budget. Past this size the writer rolls into <c>&lt;YYYY&gt;-&lt;MM&gt;.p&lt;NN&gt;.csv</c>.</summary>
     public int MaxPartitionSizeMB { get; init; } = 100;
 
-    /// <summary>Max parallel time-bar aggregations. Phase 1b. Default 2.</summary>
+    /// <summary>Max parallel time-bar aggregations.</summary>
     public int MaxConcurrentJobs { get; init; } = 2;
 
-    /// <summary>Max parallel tick-source aggregations (separate gate; tick I/O dominates). Phase 2a.</summary>
+    /// <summary>Max parallel tick-source aggregations (separate gate so I/O-heavy tick jobs don't block CPU-bound time-bar jobs).</summary>
     public int MaxConcurrentTickJobs { get; init; } = 1;
 
-    /// <summary>Bounded job-queue capacity. Phase 1b. Default 64.</summary>
+    /// <summary>Bounded job-queue capacity.</summary>
     public int MaxQueueDepth { get; init; } = 64;
 
-    /// <summary>Terminal-state job retention before eviction. Phase 1b. Default 15 min.</summary>
+    /// <summary>Terminal-state job retention before eviction (minutes).</summary>
     public int JobRetentionMinutes { get; init; } = 15;
 }
 

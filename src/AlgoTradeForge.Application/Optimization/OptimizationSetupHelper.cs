@@ -147,15 +147,13 @@ public sealed class OptimizationSetupHelper(
         var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
             ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
-        // Phase 4 (TRD §9.3): polymorphic dispatch by subtype. The strategy-side slot uses a
-        // placeholder TimeFrame for non-TimeBar primaries; the polymorphic loader receives the
-        // original DataFeedSubscription so AltBar/Tick paths reach the right DataFeedDescriptor.
+        // Strategy-side slot gets a placeholder TimeFrame for non-TimeBar primaries; the
+        // polymorphic loader receives the original DataFeedSubscription.
         var subscription = StrategySubscriptionFactory.FromPrimary(sub, asset);
         target.Add(subscription);
 
-        // Cache key is kind-aware: BacktestInputsFormatter.Key encodes asset:exchange:feed:role
-        // so two AltBar feeds at the same nominal source (e.g. EqV_1m_1000 vs EqV_1m_5000)
-        // hash distinctly.
+        // Kind-aware cache key — distinguishes alt-bar feeds at the same source
+        // (e.g. EqV_1m_1000 vs EqV_1m_5000) and Primary vs Side roles.
         var key = BacktestInputsFormatter.Key(sub);
         if (!dataCache.ContainsKey(key))
         {
@@ -177,9 +175,8 @@ public sealed class OptimizationSetupHelper(
     {
         var trialWatch = Stopwatch.StartNew();
 
-        // 1. Extract trial subscriptions. Dual-key carrier (Phase 4 / TRD §9.3): FeedSubscriptions
-        //    holds the polymorphic originals (used for cache lookup + run record reconstruction);
-        //    DataSubscriptions holds the strategy-side projection (used for strategy wiring).
+        // Dual-key carrier: FeedSubscriptions holds the polymorphic originals (cache lookup +
+        // run record fidelity); DataSubscriptions holds the strategy-side projection.
         var trialSubscriptions = combination.Values.TryGetValue("DataSubscriptions", out var subObj)
             && subObj is List<DataSubscription> group
             ? group
@@ -189,9 +186,8 @@ public sealed class OptimizationSetupHelper(
             && feedObj is List<DataFeedSubscription> feedGroup
             ? feedGroup
             : throw new InvalidOperationException(
-                "Trial missing FeedSubscriptions axis carrier — required for kind-aware cache " +
-                "lookup and run record fidelity. Both executors must inject this alongside " +
-                "DataSubscriptions (Phase 4 dual-key carrier).");
+                "Trial missing FeedSubscriptions axis carrier. Both executors must inject this " +
+                "alongside DataSubscriptions.");
 
         // 2. Scale QuoteAsset params using this trial's actual asset
         var trialAsset = trialSubscriptions[0].Asset;
@@ -245,8 +241,8 @@ public sealed class OptimizationSetupHelper(
             StrategyName = strategyName,
             StrategyVersion = strategy.Version,
             Parameters = combination.Values, // Store original unscaled values
-            // Phase 4: persist the polymorphic originals so AltBar/Tick FeedIds round-trip
-            // through the run record (no more lossy TimeBar coercion).
+            // Persist the polymorphic originals so AltBar/Tick FeedIds round-trip through the
+            // run record (no lossy TimeBar coercion).
             DataSubscriptions = trialFeedSubscriptions,
             BacktestSettings = settings,
             StartedAt = startedAt,
@@ -315,17 +311,9 @@ public sealed class OptimizationSetupHelper(
     }
 
     /// <summary>
-    /// Returns a 1-element list whose single subscription is a clone of the first axis
-    /// group's first subscription, with <c>AssetName</c> overridden to a composite display
-    /// label (e.g. <c>"BTCUSDT+ETHUSDT"</c> for the first group, suffixed with
-    /// <c>" (+N more)"</c> when more axis groups follow). The other fields (Exchange, Role,
-    /// kind-specific payload such as TimeFrame/FeedId) are preserved verbatim.
-    /// <para>
-    /// Intended for status/log surfaces only — the synthesized <c>AssetName</c> is a
-    /// human-readable label, NOT a valid asset lookup key, so the returned record must
-    /// never be passed back through <c>IAssetRepository.GetByNameAsync</c>. Per-DSS
-    /// resolution (which uses real asset names) lives on each child run.
-    /// </para>
+    /// Display-only summary subscription with a composite <c>AssetName</c> label
+    /// (e.g. <c>"BTCUSDT+ETHUSDT (+N more)"</c>). The label is NOT a valid asset lookup key —
+    /// never pass the result back through <c>IAssetRepository.GetByNameAsync</c>.
     /// </summary>
     public static IReadOnlyList<DataFeedSubscription> GetSubscriptions(
         List<List<DataFeedSubscription>>? axisGroups)
@@ -341,17 +329,10 @@ public sealed class OptimizationSetupHelper(
     }
 
     /// <summary>
-    /// Phase 4 (P4-14): pre-splits multi-primary DSSes into single-primary DSSes carrying the
-    /// original <c>Role=Side</c> entries unchanged. A DSS with N <c>Role=Primary</c> entries
-    /// expands to N output DSSes, one per primary, each ordered as <c>[Primary_i, ...sides]</c>.
-    /// Single-primary DSSes pass through unchanged (identity transform).
-    /// <para>
-    /// Per TRD §9.6: <c>OptimizationInputs(Subscriptions)</c> may contain multiple
-    /// <c>Role=Primary</c> entries (the candidate set); the engine fans out across them ×
-    /// parameter grid. Per-primary <c>IParameterNormalizer</c> dedup is then automatic because
-    /// each output DSS becomes its own ComputeTask, with its own <see cref="NormalizingEnumerable"/>
-    /// instance (whose <c>SkippedCount</c> is per-instance state).
-    /// </para>
+    /// Pre-splits multi-primary DSSes into single-primary DSSes. A DSS with N primaries
+    /// expands to N DSSes ordered <c>[Primary_i, ...sides]</c>; single-primary DSSes pass
+    /// through unchanged. Each output DSS becomes its own ComputeTask, so per-primary
+    /// <see cref="NormalizingEnumerable"/> dedup state stays isolated.
     /// </summary>
     public static List<List<DataFeedSubscription>> ExpandMultiPrimary(
         IReadOnlyList<IReadOnlyList<DataFeedSubscription>>? axisGroups)

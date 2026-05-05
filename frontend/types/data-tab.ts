@@ -1,10 +1,5 @@
-// Phase 3 — Data tab types. Mirrors HistoryLoader §5 catalog/status/aggregation-options
-// payloads on the wire. The main API proxies these byte-identical (P3-9 contract), so the
-// FE consumes snake_case verbatim from upstream — DO NOT add a camelCase converter.
-
-// ---------------------------------------------------------------------------
-// Catalog (TRD §5.1)
-// ---------------------------------------------------------------------------
+// Data tab wire types. Proxied byte-identical from HistoryLoader, so the FE consumes
+// snake_case verbatim — DO NOT add a camelCase converter.
 
 export interface ExchangeListResponse {
   exchanges: ExchangeSummary[];
@@ -21,10 +16,9 @@ export interface AssetListResponse {
 
 export interface AssetCatalogEntry {
   exchange: string;
-  // Directory name on disk (e.g. "BTCUSDT_perp"). Used as the URL path segment in
-  // /api/data/exchanges/{exchange}/assets/{asset}/... endpoints — keep verbatim.
+  /** On-disk directory name (e.g. "BTCUSDT_perp"). Used verbatim in URL path segments. */
   symbol: string;
-  // Human-readable label (e.g. "BTCUSDT"). Use this for any user-visible rendering.
+  /** Human-readable label (e.g. "BTCUSDT") for user-visible rendering. */
   display_name: string;
   type: string;
   feeds: FeedCatalogEntry[];
@@ -33,13 +27,11 @@ export interface AssetCatalogEntry {
 export interface FeedCatalogEntry {
   id: string;
   kind: FeedKind;
-  // Time bars carry interval ("1m", "5m", "1h", ...). Alt bars / ticks / side leave it null.
+  /** Time bars only ("1m", "5m", ...). Alt bars / ticks / side are null. */
   interval: string | null;
-  // Alt-bar fields surface for sorting (TRD §3.3 / column comparator).
   type_code: string | null;
   threshold_value: number | null;
-  // Sidecar-bearing alt bars (EqI) carry a non-null sidecar pointer; the FE renders an
-  // indicator dot for these (P3-14). null for non-sidecar feeds.
+  /** Non-null for sidecar-bearing alt bars (EqI); null otherwise. */
   sidecar: string | null;
 }
 
@@ -50,13 +42,9 @@ export type FeedKind =
   | "Side"
   | "aggregated";
 
-// ---------------------------------------------------------------------------
-// Per-feed status + eligibility (TRD §5.2 / §5.3)
-// ---------------------------------------------------------------------------
-
 export interface FeedStatusResponse {
   feed_id: string;
-  // Verbatim feeds.json entry — opaque to the FE, rendered in CodeMirror (P3-15).
+  /** Verbatim feeds.json entry; rendered as JSON, opaque to the FE. */
   definition: FeedDefinition;
 }
 
@@ -64,7 +52,6 @@ export interface FeedDefinition {
   kind?: string;
   interval?: string;
   columns?: string[];
-  // Aggregated alt-bar fields (TRD §4)
   type?: { code: string; name: string } | null;
   source?: { feed: string; record_count: number } | null;
   threshold?: ThresholdInfo | null;
@@ -75,7 +62,7 @@ export interface FeedDefinition {
   sidecar?: string | null;
   nullable_columns?: boolean | null;
   auto_apply?: { type: string; rate_column: string; sign_convention?: string | null } | null;
-  // Forward-compatibility — unknown keys are tolerated by the JSON renderer.
+  /** Forward-compatibility: unknown keys flow through to the JSON renderer. */
   [key: string]: unknown;
 }
 
@@ -94,8 +81,9 @@ export interface BuildInfo {
   partitions_written: string[];
   max_partition_size_mb: number;
   monotonic_bumps?: number | null;
-  // Strictly out-of-order tick records the source decorator recovered from. Distinct from
-  // monotonic_bumps (benign equal-ms clustering). Non-zero indicates an upstream defect.
+  /** Strictly out-of-order tick records the source decorator recovered from. Distinct
+   *  from monotonic_bumps (benign equal-ms clustering); non-zero implies an upstream
+   *  defect. */
   monotonic_regressions?: number | null;
 }
 
@@ -117,14 +105,10 @@ export interface AggregationOptionsResponse {
   warnings: string[];
 }
 
-// ---------------------------------------------------------------------------
-// Aggregate request + 202/423/409/422 responses (TRD §5.4)
-// ---------------------------------------------------------------------------
-
 export interface AggregateRequest {
   source_feed_id: string;
   type_code: string;
-  // Threshold is null when input_mode == "convenience" (server parses convenience_input).
+  /** Null when input_mode == "convenience" (server parses convenience_input). */
   threshold: number | null;
   threshold_unit: "base_asset" | "quote_asset" | "trades";
   input_mode: "absolute" | "convenience";
@@ -143,10 +127,6 @@ export interface AggregateLockedResponse {
   existing_job_id: string;
   existing_job_state: "queued" | "running";
 }
-
-// ---------------------------------------------------------------------------
-// Job snapshot + SSE event union (TRD §5.4)
-// ---------------------------------------------------------------------------
 
 export type JobState = "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -173,9 +153,8 @@ export interface JobSummary {
   sidecar_feed_id: string | null;
 }
 
-// SSE event payload union. The frame's `event:` field carries the discriminator; the FE
-// parses `data:` JSON into the matching shape. Sequence ids are integers monotonically
-// increasing within a single job (TRD §5.4); the FE persists the last seen id for resume.
+// Sequence ids are integers monotonically increasing within a single job; the FE
+// persists the last seen id for resume.
 
 export type SseEventType = "queued" | "started" | "progress" | "complete" | "error" | "cancelled";
 
@@ -206,9 +185,8 @@ export interface SseErrorPayload {
   message: string;
 }
 
-// Phase 6 — emitted when a job is cancelled via DELETE /aggregations/{jobId}. Distinct from
-// `error` so the UI can render "Cancelled" with the cancellation reason rather than a failure
-// message. `reason` is "user_cancelled" today; future programmatic cancel paths may add others.
+// Distinct from `error` so the UI can render "Cancelled" with reason rather than a
+// failure message. `reason` is "user_cancelled" today.
 export interface SseCancelledPayload {
   job_id: string;
   reason: string;
@@ -223,10 +201,9 @@ export type SseEventPayload =
   | SseErrorPayload
   | SseCancelledPayload;
 
-// Discriminated union over the SSE event type. Lets consumers narrow `data` automatically
-// off `env.type` without `as` casts. The single `JSON.parse → as` cast lives in
-// data-sse-client.ts inside the type-discriminated switch, so payload/discriminator drift
-// from the server surfaces in one place rather than at every consumer site.
+// Discriminated union — narrow `data` automatically off `env.type`. The sole
+// `JSON.parse → as` cast lives in data-sse-client.ts inside the type switch, so server
+// drift surfaces in one place.
 export type SseEventEnvelope =
   | { type: "queued"; data: SseQueuedPayload }
   | { type: "started"; data: SseStartedPayload }

@@ -61,9 +61,8 @@ public sealed class BacktestPreparer(
 
         if (strategy.DataSubscriptions.Count == 0)
         {
-            // Phase 4 (TRD §9.3): polymorphic dispatch by DataFeedSubscription subtype. Side
-            // entries are bound via FeedContextBuilder (below) — they are FeedSeries, not
-            // TimeSeries<Int64Bar>, and don't enter strategy.DataSubscriptions / seriesArray.
+            // Side entries are bound via FeedContextBuilder below; they are FeedSeries, not
+            // TimeSeries<Int64Bar>, so they don't enter strategy.DataSubscriptions/seriesArray.
             var primaries = new List<(DataFeedSubscription FeedSub, Asset SubAsset, DataSubscription StrategySub)>();
             for (var i = 0; i < command.DataSubscriptions.Count; i++)
             {
@@ -89,10 +88,8 @@ public sealed class BacktestPreparer(
         }
         else
         {
-            // Strategy pre-declared its subscriptions; this branch is TimeBar-only by contract.
-            // The legacy Load(DataSubscription, ...) overload only knows TimeBar — guard against
-            // a future strategy pre-declaring an alt-bar/tick primary via DataSubscription.FeedKey,
-            // which would silently coerce to a 1m TimeBar load.
+            // Pre-declared subscriptions: legacy Load(DataSubscription, ...) only knows TimeBar.
+            // Reject non-TimeBar FeedKeys to prevent silent coercion to a 1m load.
             seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
             for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
             {
@@ -106,10 +103,8 @@ public sealed class BacktestPreparer(
             }
         }
 
-        // Phase 4 (TRD §9.3) — propagate the primary's feed-id so FeedContextBuilder can
-        // lazy-bind a sidecar if `feeds.json` lists one. TimeBar primaries pass their
-        // canonical TimeFrame.Code; AltBar primaries pass their FeedId. Tick/Side never
-        // sidecar (they are themselves the source / a side feed).
+        // Propagate the primary's feed-id so FeedContextBuilder can lazy-bind a sidecar from
+        // feeds.json. Tick/Side never sidecar (they are themselves source / side).
         var primaryTimeFrameCode = primarySub switch
         {
             TimeBarSubscription tb => tb.TimeFrame.Code,

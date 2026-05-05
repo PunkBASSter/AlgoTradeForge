@@ -7,10 +7,8 @@ using Microsoft.Extensions.Options;
 namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 
 /// <summary>
-/// Drives periodic backfill + catch-up of the Binance aggregate-trades (ticks) feed
-/// for every configured futures asset (TRD §3.5, P2a-1). 5-minute cadence keeps the
-/// catch-up window short during normal operation; the per-asset writer's <c>agg_id</c>
-/// dedup makes overlapping cycles idempotent.
+/// Periodic catch-up of the Binance aggregate-trades feed for configured futures assets.
+/// 5-minute cadence; the writer's <c>agg_id</c> dedup makes overlapping cycles idempotent.
 /// </summary>
 internal sealed class TicksCollectorService(
     SymbolCollector symbolCollector,

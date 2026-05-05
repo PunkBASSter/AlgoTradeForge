@@ -1,9 +1,8 @@
 "use client";
 
-// Phase 3 — both-axis virtualized asset×feed grid (P3-12, P3-13). Two `useVirtualizer`
-// instances share a single scroll container so scroll state is consistent. P3-13 caps
-// DOM cell count: at 500 assets × 20 feeds (10k cells) only a small viewport-window of
-// cells should mount.
+// Both-axis virtualized asset×feed grid. Two `useVirtualizer` instances share a single
+// scroll container so scroll state stays consistent. At 500 assets × 20 feeds only a
+// viewport-window of cells mounts.
 
 import { useMemo, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -31,27 +30,20 @@ export function AssetFeedGrid({
   onView,
 }: Props) {
   const columns = useMemo(() => unionFeedColumns(assets), [assets]);
-  // `useState`-tracked scroll element (not useRef) so the virtualizers re-evaluate when
-  // the element mounts. With useRef, ref.current changes don't trigger re-render and the
-  // virtualizers never see the element on first commit.
+  // `useState` (not useRef) so virtualizers re-evaluate when the element mounts; ref
+  // mutations don't trigger re-render.
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
-  // Native onScroll handler tracks the body's horizontal scroll offset so the header row
-  // (rendered outside the scroll container) and the asset-name column (logically pinned)
-  // can apply transforms. TanStack Virtual's internal observeElementOffset is non-public,
-  // and `virtualizer.scrollOffset` isn't reactive on render — JS-driven transforms are
-  // the canonical pattern for two-axis virtualization with a sticky row/column.
+  // Tracks the body's horizontal scroll offset so the header row and pinned asset-name
+  // column can transform in sync. `virtualizer.scrollOffset` isn't reactive on render.
   const [scrollLeft, setScrollLeft] = useState(0);
 
-  // `initialRect` lets the virtualizer render its first frame at a sensible size before
-  // ResizeObserver delivers a real measurement. In production this avoids a flash of
-  // empty-grid; in jsdom (where ResizeObserver is polyfilled but layout is not), it's
-  // load-bearing for tests to render any cells at all.
+  // Lets the virtualizer render its first frame before ResizeObserver delivers a real
+  // measurement. Load-bearing in jsdom where layout is not polyfilled.
   const initialRect = { width: 1200, height: 800 };
 
-  // Row virtualization tracks the window — the grid no longer caps its own height, so all
-  // rows live in document flow and the page itself scrolls. Without this switch, rowVirt
-  // would never mount more than the initial ~13 rows because its scroll container's
-  // height matches its content (no scroll → no scroll position changes → no row mounting).
+  // Row virtualization tracks the window — the grid lives in document flow and the page
+  // scrolls vertically. Without this, rowVirt's scroll container height equals its
+  // content height (no scroll → no row mounting beyond the initial window).
   const rowVirt = useVirtualizer({
     count: assets.length,
     getScrollElement: () =>
@@ -74,13 +66,8 @@ export function AssetFeedGrid({
   const totalRowSize = rowVirt.getTotalSize();
   const totalColSize = colVirt.getTotalSize();
 
-  // We don't virtualize the asset-name column separately — there's only one cell per row
-  // and rowVirt already gates which rows mount. Stickiness comes from a per-cell
-  // translateX(scrollLeft) further down (see the asset-name cell render).
-
   return (
     <div className="flex flex-col">
-      {/* Header row — feed-id labels above each column. Renders the same virtual cols. */}
       <div
         className="flex border-b border-border-subtle bg-bg-surface"
         style={{ height: rowHeight }}
@@ -92,11 +79,9 @@ export function AssetFeedGrid({
           asset \ feed
         </div>
         <div className="relative overflow-hidden flex-1" style={{ height: rowHeight }}>
-          {/* Inner wrapper translates inversely with the body's scrollLeft so the header
-              columns visually track the cells beneath them. `willChange: transform` hints
-              the browser to promote this layer for smooth scrolling. */}
+          {/* Inner wrapper translates inversely with body scrollLeft so headers track
+              the cells beneath. */}
           <div style={{ transform: `translateX(${-scrollLeft}px)`, willChange: "transform" }}>
-            {/* Header columns: render the SAME virtual items as the body so they align. */}
             {colVirt.getVirtualItems().map((c) => (
               <div
                 key={c.key}
@@ -116,9 +101,8 @@ export function AssetFeedGrid({
         </div>
       </div>
 
-      {/* Body — column-axis virtualized inside a horizontally-scrolling container; rows
-          live in document flow and the page scrolls vertically. The body has no fixed
-          height so all rows are layout-eligible (rowVirt still windows what mounts). */}
+      {/* Body: column-axis virtualized in a horizontally-scrolling container; rows live
+          in document flow so the page scrolls vertically. */}
       <div
         ref={setScrollEl}
         onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
@@ -135,10 +119,8 @@ export function AssetFeedGrid({
             const asset = assets[r.index];
             return (
               <div key={r.key}>
-                {/* Asset-name cell: forward-translate by scrollLeft so it stays pinned to
-                    the viewport's left edge as the body scrolls right. zIndex layers it
-                    above the feed cells that pass beneath. bg-bg-surface (opaque) so feed
-                    cells don't bleed through. */}
+                {/* Forward-translate by scrollLeft to pin the asset-name cell to the
+                    viewport's left edge while the body scrolls right. */}
                 <div
                   style={{
                     position: "absolute",

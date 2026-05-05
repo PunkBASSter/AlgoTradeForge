@@ -6,18 +6,11 @@ namespace AlgoTradeForge.WebApi.Contracts;
 
 /// <summary>
 /// Deserializes/serializes <c>subscriptionAxis</c> as a 2D array of subscription groups:
-/// <c>[[{sub1}, {sub2}], [{sub3}, {sub4}]]</c>.
-/// Every strategy uses the same format — single-subscription strategies simply have
-/// one subscription per group: <c>[[{sub1}], [{sub2}]]</c>.
+/// <c>[[{sub1}, {sub2}], [{sub3}, {sub4}]]</c>. Single-subscription strategies have one
+/// subscription per group: <c>[[{sub1}], [{sub2}]]</c>. STJ handles the polymorphic
+/// <see cref="DataFeedSubscription"/> dispatch via the <c>"kind"</c> discriminator; this
+/// converter only enforces the outer 2D shape.
 /// </summary>
-/// <remarks>
-/// The inner element shape is the polymorphic <see cref="DataFeedSubscription"/> hierarchy
-/// (TRD §9.2): the wire carries a <c>"kind"</c> discriminator that STJ uses to dispatch to
-/// the concrete record (<c>TimeBarSubscription</c> / <c>AltBarSubscription</c> /
-/// <c>TickSubscription</c> / <c>SideFeedSubscription</c>). The 2D-array shape guard stays
-/// in this converter — STJ's polymorphism handles per-element discrimination, but the outer
-/// nesting is a contract assertion that fails fast with a clear message.
-/// </remarks>
 public sealed class SubscriptionAxisConverter : JsonConverter<List<List<DataFeedSubscription>>?>
 {
     public override List<List<DataFeedSubscription>>? Read(

@@ -3,16 +3,12 @@ using AlgoTradeForge.HistoryLoader.Domain;
 namespace AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 
 /// <summary>
-/// P1b-0b — gate every API-boundary feed-id through <see cref="AltBarFeedId.TryParse"/> /
-/// <see cref="AltBarFeedId.AllowedSourceCodes"/> before it can flow into a
-/// <c>DataFeedDescriptor</c> or path-resolution step. The grammar's character sets
-/// (<c>EqT|EqV|EqD|EqI|Range|Renko</c>, <c>1m|5m|...|ticks</c>, digits + SI suffix) make
-/// path-traversal injection (<c>..\..\evil</c>) impossible by construction — any string that
-/// passes <see cref="AltBarFeedId.TryParse"/> is structurally safe.
+/// Gates every API-boundary feed-id through the alt-bar grammar before it can flow into a
+/// <c>DataFeedDescriptor</c> or path-resolution step. The grammar's character sets make
+/// path-traversal injection (<c>..\..\evil</c>) impossible by construction.
 /// </summary>
 internal static class FeedIdValidator
 {
-    /// <summary>Validates an outcome alt-bar feed-id (e.g. "EqV_1m_1000", "EqI_ticks_500.flow").</summary>
     public static bool TryValidateAltBar(string feedId, out AltBarFeedId? parsed, out string? error)
     {
         if (AltBarFeedId.TryParse(feedId, out parsed, out error))
@@ -21,9 +17,8 @@ internal static class FeedIdValidator
     }
 
     /// <summary>
-    /// Validates a source feed-id — accepts the alt-bar grammar's source-code allowlist
-    /// (<c>1m</c> ... <c>1d</c>, <c>ticks</c>) plus configured side-feed names. Side feeds
-    /// don't have a positional grammar so we accept any non-traversal string for them.
+    /// Validates a source feed-id. Side feeds have no positional grammar, so any non-traversal
+    /// string is accepted; the catalog lookup that follows verifies existence.
     /// </summary>
     public static bool TryValidateSourceFeedId(string sourceFeedId, out string? error)
     {
@@ -33,8 +28,6 @@ internal static class FeedIdValidator
             error = "source_feed_id is required.";
             return false;
         }
-        // Reject any path-separator or parent-dir tokens regardless of the configured-feed
-        // allowlist. The catalog lookup that follows will additionally verify the feed exists.
         if (sourceFeedId.Contains("..") || sourceFeedId.Contains('/') || sourceFeedId.Contains('\\'))
         {
             error = $"source_feed_id '{sourceFeedId}' contains illegal path characters.";
@@ -45,7 +38,7 @@ internal static class FeedIdValidator
 
     /// <summary>
     /// Validates an exchange / asset path component. ASP.NET routing decodes <c>%2F</c> /
-    /// <c>%5C</c> back to slashes which would otherwise reach the loader; reject explicitly.
+    /// <c>%5C</c> back to slashes that would otherwise reach the loader.
     /// </summary>
     public static bool TryValidatePathComponent(string value, out string? error)
     {

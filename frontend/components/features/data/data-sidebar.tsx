@@ -1,15 +1,8 @@
 "use client";
 
-// Data tab sidebar host. Renders inline as a flex sibling of the main grid (NOT a
-// fixed-position overlay) so both stay visible at small viewports — at FullHD or
-// laptop widths the SlideOver overlay used to drift off-screen on top of the
-// already-wide grid. Inline layout means the grid auto-resizes to fill the remaining
-// width when the panel opens, and shrinks back when it closes.
-//
-// Phase 6 — for "create" mode, computes the row's safe-trio alt-bar feeds (EqV/EqT/EqD)
-// and threads them as `eligibleSources` so the form's Source dropdown can offer
-// re-aggregation. The actual eligibility (type-family + threshold-ordering) is checked
-// server-side via /aggregation-options when the user picks a source.
+// Data tab sidebar. Renders inline as a flex sibling of the main grid (not a
+// fixed-position overlay) so the grid auto-resizes to fill remaining width when the
+// panel opens and shrinks back when it closes.
 
 import { useEffect, useMemo, useRef } from "react";
 import { useDataSelectionStore } from "@/lib/stores/data-selection-store";
@@ -34,8 +27,8 @@ export function DataSidebar({ onJobAccepted }: Props) {
 
   const title = mode === "view" ? "Feed status" : mode === "create" ? "New aggregate bar" : "";
 
-  // Phase 6 — alt-bar feeds in this row eligible as re-aggregation sources. Same-type-family
-  // narrowing happens server-side; the FE just surfaces the candidates.
+  // Alt-bar feeds in this row eligible as re-aggregation sources. Same-type-family
+  // narrowing happens server-side; the FE just surfaces candidates.
   const eligibleSources = useMemo<FeedCatalogEntry[]>(() => {
     if (!asset || !feed) return [];
     return asset.feeds.filter((f) =>
@@ -46,10 +39,8 @@ export function DataSidebar({ onJobAccepted }: Props) {
     );
   }, [asset, feed]);
 
-  // Escape-to-close + initial focus on open. We keep the modal-style affordance even
-  // though the panel no longer overlays the page, so keyboard users can dismiss it
-  // without reaching for the mouse. We deliberately do NOT trap Tab — the panel is now
-  // part of the page flow and Tab should naturally move between grid and panel.
+  // Escape-to-close + initial focus on open. Tab is intentionally NOT trapped — the
+  // panel is part of page flow so Tab moves naturally between grid and panel.
   useEffect(() => {
     if (!open) return;
     previousFocusRef.current = document.activeElement as HTMLElement | null;
@@ -80,7 +71,7 @@ export function DataSidebar({ onJobAccepted }: Props) {
       role="dialog"
       aria-label={title}
       // shrink-0 stops the flex parent from collapsing the panel when the grid is wider
-      // than the available space; w-md gives a stable 28rem column.
+      // than the available space.
       className="shrink-0 w-[28rem] border-l border-border-default bg-bg-surface flex flex-col"
     >
       <div className="flex items-center justify-between border-b border-border-default px-4 py-4">

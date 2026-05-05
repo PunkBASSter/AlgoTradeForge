@@ -8,21 +8,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
 /// <summary>
-/// One-shot batch pipeline (TRD §6.2): reads source records chronologically, feeds an
-/// accumulator, writes emitted bars to a partitioned sink, promotes the staging dir
-/// atomically, and finalizes the manifest entry. A single instance handles one job.
+/// One-shot batch pipeline: reads source records chronologically, feeds an accumulator, writes
+/// emitted bars to a partitioned sink, promotes the staging dir atomically, and finalizes the
+/// manifest entry. A single instance handles one job.
 /// </summary>
-/// <remarks>
-/// Memory model (P1b-12): peak working set is bounded by the partition writer's internal
-/// buffer plus a <see cref="List{T}"/> of source-record volumes (used to compute the
-/// post-hoc median for the manifest <c>fidelity</c> block). For Phase 1b time-bar sources
-/// (max ~2.6M entries over 5y of 1m), the median list is &lt;25 MB. Phase 2a will switch
-/// to a streaming median estimator before tick sources arrive.
-///
-/// Progress reporting goes through the optional <c>onProgress</c> callback. Phase 1b's worker
-/// host wraps this with a <c>ChannelWriter&lt;ProgressEvent&gt;</c> for SSE; tests can
-/// observe events via a list-appender.
-/// </remarks>
 public sealed class AggregationPipeline
 {
     private const string OutputHeader = "ts,o,h,l,c,vol";
@@ -61,10 +50,9 @@ public sealed class AggregationPipeline
     {
         ArgumentNullException.ThrowIfNull(job);
 
-        // Phase 5 (ADR D1) defense-in-depth: EligibilityRules already rejects non-Tick
-        // Range/Renko, but a private-API caller bypassing eligibility would otherwise
-        // silently aggregate from time-bar OHLC and distort actual_overshoot_pct (the
-        // failure mode the tick-only restriction exists to prevent).
+        // Defense-in-depth: EligibilityRules rejects non-Tick Range/Renko, but a private-API
+        // caller bypassing eligibility would silently aggregate from time-bar OHLC and distort
+        // actual_overshoot_pct.
         if (job.TypeCode is "Range" or "Renko" && job.Source.Kind != DataFeedKind.Tick)
         {
             throw new InvalidOperationException(
@@ -76,7 +64,6 @@ public sealed class AggregationPipeline
         var startTicks = _clock.GetTimestamp();
 
         var feedDir = Path.Combine(job.AssetDir, "aggregated", job.OutcomeFeedId);
-        // Stage path is created by the writer; promote happens atomically once the run completes.
         Directory.CreateDirectory(feedDir);
         var stagingDir = _overwriter.PrepareStagingDir(feedDir, job.JobId);
 
@@ -86,9 +73,9 @@ public sealed class AggregationPipeline
         long bytesBudget = (long)job.MaxPartitionSizeMB * 1024 * 1024;
         using var sink = new PartitionedSinkWriter(stagingDir, bytesBudget, OutputHeader);
 
-        // Phase 2b: EqI publishes a sidecar (.flow) sibling dir alongside the bar dir.
-        // Both stage in parallel; both promote atomically; the manifest writes both entries
-        // under one exclusive lock at finalize so readers never see a half-registered EqI feed.
+        // EqI publishes a sidecar (.flow) sibling dir alongside the bar dir. Both stage in
+        // parallel; both promote atomically; the manifest writes both entries under one
+        // exclusive lock at finalize so readers never see a half-registered EqI feed.
         var isEqI = string.Equals(job.TypeCode, "EqI", StringComparison.Ordinal);
         var sidecarFeedId = isEqI ? job.OutcomeFeedId + ".flow" : null;
         var sidecarFeedDir = isEqI ? Path.Combine(job.AssetDir, "aggregated", sidecarFeedId!) : null;
@@ -98,24 +85,23 @@ public sealed class AggregationPipeline
             Directory.CreateDirectory(sidecarFeedDir!);
             sidecarStagingDir = _overwriter.PrepareStagingDir(sidecarFeedDir!, job.JobId);
         }
-        // Using declaration so any exception path (not just OperationCanceledException) closes
-        // the FileStream — otherwise on Windows the staging dir can't be cleaned and
-        // StartupSweepService inherits a leaked handle. The explicit Dispose() further down is
-        // load-bearing for partition-rename ordering before Promote and is idempotent here.
+        // Using declaration so any exception path closes the FileStream — otherwise on Windows
+        // the staging dir can't be cleaned and StartupSweepService inherits a leaked handle.
+        // The explicit Dispose() below is load-bearing for partition-rename ordering before
+        // Promote and is idempotent.
         using PartitionedSinkWriter? sidecarSink = isEqI
             ? new PartitionedSinkWriter(sidecarStagingDir!, bytesBudget, SidecarHeader)
             : null;
 
-        // Source record volume samples — drives `median_source_record_value` on finalize.
-        // Time-bar path keeps the exact median (small N, ~25 MB worst case for 5y of 1m).
-        // Tick path swaps in a P²-streaming estimator so 5y of perp ticks (~500M records)
-        // doesn't blow allocations (Phase 2a, see <see cref="StreamingMedianEstimator"/>).
+        // Source record volume samples drive `median_source_record_value` on finalize.
+        // Time-bar path keeps the exact median (small N). Tick path uses a P²-streaming
+        // estimator so 5y of perp ticks (~500M records) doesn't blow allocations.
         var isTickSource = job.Source.Kind == DataFeedKind.Tick;
         var volumeSamples = isTickSource ? null : new List<long>(capacity: 1024);
         var streamingMedian = isTickSource ? new StreamingMedianEstimator() : null;
 
-        // Strict-monotonic ts decorator (TRD §6.3 / P2a-6) wraps the reader for tick sources;
-        // bump and regression counts are read out post-iteration and surfaced in stats + manifest.
+        // Strict-monotonic ts decorator wraps tick sources; bump and regression counts are
+        // read out post-iteration and surfaced in stats + manifest.
         var monoSource = isTickSource ? new MonotonicTickSource(_monoLogger) : null;
 
         long barsEmitted = 0;
@@ -130,9 +116,9 @@ public sealed class AggregationPipeline
         long sourceRecordsConsumed = 0;
         string? lastEmittedMonth = null;
 
-        // Phase 2b: time-bar EqI joins candle-ext for its m1_taker_buy_proxy reconstruction
-        // (TRD §6.2). Spot/no-candle-ext layouts are rejected at eligibility (§7), so reaching
-        // here with a missing dir means partial coverage → drop unjoined records (TRD §6.2).
+        // Time-bar EqI joins candle-ext for its m1_taker_buy_proxy reconstruction. Spot/
+        // no-candle-ext layouts are rejected by eligibility, so reaching here with a missing
+        // dir means partial coverage → drop unjoined records.
         IEnumerable<SourceRecord> sourceStream = _reader.Read(job.Source);
         if (monoSource is not null)
             sourceStream = monoSource.Read(sourceStream);
@@ -143,8 +129,7 @@ public sealed class AggregationPipeline
         }
 
         // Local helper: write one bar's CSV row + update per-bar bookkeeping. Used by both
-        // the primary emit path and the Phase-5 multi-brick drain loop. Captures rowBuffer,
-        // sink, firstBarTs, lastBarTs, barsEmitted, lastEmittedMonth from the enclosing scope.
+        // the primary emit path and the Renko multi-brick drain loop.
         void WriteBar(in AggregatedBar bar)
         {
             rowBuffer.Clear();
@@ -187,10 +172,9 @@ public sealed class AggregationPipeline
                         sidecarSink.WriteRow(sidecar.TsMs, rowBuffer.ToString());
                     }
 
-                    // Phase 5 (Renko): a single TryAdvance can stage multiple bricks. Drain the
-                    // queue here. Drained bars carry no sidecar (ADR D7) — Range/Renko have no
-                    // sidecar in v1, and EqI emits exactly one bar per TryAdvance so its drain
-                    // queue stays empty.
+                    // Renko: a single TryAdvance can stage multiple bricks; drain the queue.
+                    // Drained bars carry no sidecar (Range/Renko have none, and EqI emits
+                    // exactly one bar per TryAdvance so its drain queue stays empty).
                     while (accumulator.TryDrainQueued(out var queued))
                     {
                         WriteBar(in queued);
@@ -198,7 +182,7 @@ public sealed class AggregationPipeline
                 }
 
                 // Throttle progress events to ~once per second to avoid drowning the SSE channel
-                // on fast-source jobs. The clock seam (P1b-15) makes this testable.
+                // on fast-source jobs.
                 var nowTicks = _clock.GetTimestamp();
                 if (onProgress is not null &&
                     (nowTicks - lastProgressTicks) > _clock.TimestampFrequency)
@@ -214,9 +198,8 @@ public sealed class AggregationPipeline
         }
         catch (OperationCanceledException)
         {
-            // Phase 6 — cooperative cancellation. The using-var on `sink` will dispose at scope
-            // exit anyway, but we Dispose() explicitly first so the directory delete doesn't
-            // race a still-open handle. PartitionedSinkWriter.Dispose() is idempotent.
+            // Dispose explicitly first so the directory delete doesn't race a still-open handle
+            // on Windows. PartitionedSinkWriter.Dispose() is idempotent.
             try { sink.Dispose(); } catch (Exception ex) { _logger.LogWarning(ex, "Sink dispose during cancel cleanup failed (ignored): jobId={JobId}", job.JobId); }
             try { sidecarSink?.Dispose(); } catch (Exception ex) { _logger.LogWarning(ex, "Sidecar sink dispose during cancel cleanup failed (ignored): jobId={JobId}", job.JobId); }
 
@@ -230,9 +213,9 @@ public sealed class AggregationPipeline
         }
 
         var stats = accumulator.Finalize();
-        // Phase 2a: source-side bump + regression counts (always 0 for time-bar) get folded
-        // into stats here. The decorator owns both because they're properties of the source
-        // stream, not the accumulator math.
+        // Source-side bump + regression counts (0 for time-bar) get folded into stats here.
+        // The decorator owns both because they're properties of the source stream, not the
+        // accumulator math.
         if (monoSource is not null)
             stats = stats with
             {
@@ -257,7 +240,6 @@ public sealed class AggregationPipeline
         if (sidecarSink is not null)
             _overwriter.Promote(sidecarFeedDir!, sidecarStagingDir!);
 
-        // Compute fidelity stats (TRD §6.4).
         var medianSourceRecordValue = streamingMedian is not null
             ? streamingMedian.Median
             : ComputeMedian(volumeSamples!);
@@ -268,7 +250,6 @@ public sealed class AggregationPipeline
 
         var elapsedSeconds = (_clock.GetTimestamp() - startTicks) / (double)_clock.TimestampFrequency;
 
-        // Manifest write.
         var spec = new AltBarFeedSpec(
             Kind: "OHLCV_AltBar",
             Columns: ["ts", "o", "h", "l", "c", "vol"],
@@ -303,8 +284,8 @@ public sealed class AggregationPipeline
                 MaxOvershootPct = stats.MaxOvershootPct,
                 MedianSourceRecordValue = medianSourceRecordValue,
                 NFactor = nFactor,
-                // EqI sets the reconstruction method per its source kind (TRD §4 / §6.3);
-                // every other type keeps it null but the field MUST be present (validator pins this).
+                // EqI sets the reconstruction method per its source kind; every other type
+                // keeps it null but the field must be present (the manifest validator pins this).
                 ImbalanceReconstructionMethod = isEqI
                     ? (job.Source.Kind == DataFeedKind.Tick ? "tick_signed" : "m1_taker_buy_proxy")
                     : null,
@@ -371,7 +352,6 @@ public sealed class AggregationPipeline
     private static double ComputeMedian(List<long> samples)
     {
         if (samples.Count == 0) return 0d;
-        // In-place sort is fine — the list is owned by this run and discarded after.
         samples.Sort();
         var n = samples.Count;
         return n % 2 == 1

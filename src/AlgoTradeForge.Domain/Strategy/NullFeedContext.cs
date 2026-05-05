@@ -2,10 +2,7 @@ using AlgoTradeForge.Domain.History;
 
 namespace AlgoTradeForge.Domain.Strategy;
 
-/// <summary>
-/// No-op feed context for strategies with no auxiliary data subscriptions.
-/// Follows the same singleton pattern as <see cref="NullEventBus"/> / <see cref="NullDebugProbe"/>.
-/// </summary>
+/// <summary>No-op feed context for strategies with no auxiliary data subscriptions.</summary>
 public sealed class NullFeedContext : IFeedContext
 {
     public static readonly NullFeedContext Instance = new();

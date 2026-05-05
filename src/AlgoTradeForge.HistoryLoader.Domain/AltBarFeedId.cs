@@ -3,9 +3,9 @@ using System.Globalization;
 namespace AlgoTradeForge.HistoryLoader.Domain;
 
 /// <summary>
-/// Positional parser/serializer for the alt-bar feed-id grammar (TRD §3.3):
-///   <c>&lt;TypeCode&gt;_&lt;SourceCode&gt;_&lt;Threshold&gt;</c>, optionally suffixed with <c>.flow</c>
-///   when referring to the analytical sidecar of an aggregated bar feed.
+/// Positional parser/serializer for the alt-bar feed-id grammar:
+/// <c>&lt;TypeCode&gt;_&lt;SourceCode&gt;_&lt;Threshold&gt;</c>, optionally suffixed with
+/// <c>.flow</c> for the analytical sidecar of an aggregated bar feed.
 /// </summary>
 public sealed record AltBarFeedId(
     string TypeCode,
@@ -13,16 +13,13 @@ public sealed record AltBarFeedId(
     ThresholdValue Threshold,
     bool IsSidecar)
 {
-    /// <summary>Allowed type codes (TRD §3.3).</summary>
     public static readonly IReadOnlySet<string> AllowedTypeCodes =
         new HashSet<string>(StringComparer.Ordinal)
         {
             "EqT", "EqV", "EqD", "EqI", "Range", "Renko",
         };
 
-    /// <summary>
-    /// Allowed source codes: every <see cref="IntervalParser"/> string plus <c>"ticks"</c>.
-    /// </summary>
+    /// <summary>Allowed source codes: every interval string plus <c>"ticks"</c>.</summary>
     public static readonly IReadOnlySet<string> AllowedSourceCodes =
         new HashSet<string>(StringComparer.Ordinal)
         {
@@ -33,10 +30,7 @@ public sealed record AltBarFeedId(
     public string FeedId =>
         $"{TypeCode}_{SourceCode}_{Threshold.ToCanonicalString()}";
 
-    /// <summary>
-    /// The directory name under <c>aggregated/</c> — i.e. <see cref="FeedId"/>
-    /// with a trailing <c>.flow</c> when this id refers to a sidecar.
-    /// </summary>
+    /// <summary>Directory name under <c>aggregated/</c> — <see cref="FeedId"/> plus <c>.flow</c> for sidecars.</summary>
     public string DirectoryName =>
         IsSidecar ? FeedId + ".flow" : FeedId;
 
@@ -48,11 +42,10 @@ public sealed record AltBarFeedId(
     }
 
     /// <summary>
-    /// X-5: The grammar is positional. <c>EqV_1m_500m</c> is unambiguous because we parse
-    /// component-2 as the source-code (matched against <see cref="AllowedSourceCodes"/>) and
-    /// component-3 as the threshold mantissa+suffix (digits plus an optional <c>k|M|G|m|u</c>).
-    /// The reader should NOT try to disambiguate by scanning right-to-left or by content;
-    /// the underscores are the only separators that matter.
+    /// Strictly positional parse. <c>EqV_1m_500m</c> is unambiguous: component 2 is the
+    /// source-code (matched against <see cref="AllowedSourceCodes"/>) and component 3 is the
+    /// threshold mantissa+suffix. Do not disambiguate by scanning right-to-left or by content —
+    /// underscores are the only separators that matter.
     /// </summary>
     public static bool TryParse(string text, out AltBarFeedId? result, out string? error)
     {
@@ -106,16 +99,14 @@ public sealed record AltBarFeedId(
 }
 
 /// <summary>
-/// A threshold expressed as integer mantissa + optional SI suffix (TRD §3.4).
-/// Sub-unit thresholds (<c>m</c> = 10⁻³, <c>u</c> = 10⁻⁶) are representable without
-/// putting a decimal point into the on-disk feed-id.
+/// Threshold expressed as integer mantissa + optional SI suffix. Sub-unit thresholds
+/// (<c>m</c> = 10⁻³, <c>u</c> = 10⁻⁶) are representable without a decimal point in the feed-id.
 /// </summary>
 public readonly record struct ThresholdValue(long Mantissa, char Suffix)
 {
-    /// <summary>The empty/no-suffix marker.</summary>
     public const char NoSuffix = '\0';
 
-    /// <summary>The absolute value in canonical units.</summary>
+    /// <summary>Absolute value in canonical units.</summary>
     public decimal AbsoluteValue => Mantissa * SuffixMultiplier(Suffix);
 
     public static decimal SuffixMultiplier(char suffix) => suffix switch

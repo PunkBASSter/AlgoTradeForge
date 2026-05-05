@@ -1,5 +1,5 @@
-// Phase 3 — Data tab API client. Hits /api/data/* on the main WebApi (which proxies to
-// HistoryLoader). Mirrors the endpoint shape one-for-one so the surface is easy to scan.
+// Data tab API client. Hits /api/data/* on the main WebApi (which proxies to
+// HistoryLoader).
 
 import type {
   AggregateAcceptedResponse,
@@ -28,15 +28,13 @@ class DataApiError extends Error {
 
 async function asJson<T>(resp: Response): Promise<T> {
   if (resp.ok) return (await resp.json()) as T;
-  // ProblemDetails / domain-error body — surface the `code` field (FE branches on it).
+  // Surface ProblemDetails `code` so callers can branch on it; tolerate non-JSON bodies.
   let body: unknown = null;
   let code: string | undefined;
   try {
     body = await resp.json();
     code = (body as { code?: string }).code;
-  } catch {
-    // Non-JSON response (e.g. plain-text 504); fall through with body=null.
-  }
+  } catch { /* non-JSON body */ }
   throw new DataApiError(
     resp.status,
     code,
@@ -46,7 +44,6 @@ async function asJson<T>(resp: Response): Promise<T> {
 }
 
 export const dataApi = {
-  // -------- Catalog --------
   getExchanges: (signal?: AbortSignal) =>
     fetch(`${BASE_URL}/api/data/exchanges`, { signal }).then(asJson<ExchangeListResponse>),
 
@@ -59,7 +56,6 @@ export const dataApi = {
   getAssets: (signal?: AbortSignal) =>
     fetch(`${BASE_URL}/api/data/assets`, { signal }).then(asJson<AssetListResponse>),
 
-  // -------- Per-feed status / eligibility --------
   getFeedStatus: (
     exchange: string,
     asset: string,
@@ -82,7 +78,6 @@ export const dataApi = {
       { signal },
     ).then(asJson<AggregationOptionsResponse>),
 
-  // -------- Aggregate / delete --------
   postAggregate: async (
     exchange: string,
     asset: string,
@@ -111,23 +106,22 @@ export const dataApi = {
       `${BASE_URL}/api/data/exchanges/${encodeURIComponent(exchange)}/assets/${encodeURIComponent(asset)}/feeds/${encodeURIComponent(feedId)}`,
       { method: "DELETE", signal },
     );
-    if (!resp.ok) await asJson(resp);  // throws DataApiError
+    if (!resp.ok) await asJson(resp);
   },
 
-  // -------- Job snapshot --------
   getJobSnapshot: (jobId: string, signal?: AbortSignal) =>
     fetch(`${BASE_URL}/api/data/aggregations/${encodeURIComponent(jobId)}`, { signal })
       .then(asJson<JobSnapshot>),
 
-  // Phase 6 — cancel an active job. 204 on success, 404 if job unknown / retention expired,
-  // 409 if already terminal. The job's SSE stream emits a `cancelled` terminal event before
-  // closing — useJobStream handles cleanup; callers don't need to clear state themselves.
+  // Cancel an active job: 204 success, 404 unknown/retention expired, 409 already
+  // terminal. The SSE stream emits a `cancelled` terminal event before closing; callers
+  // don't need to clear state — useJobStream handles it.
   cancelJob: async (jobId: string, signal?: AbortSignal): Promise<void> => {
     const resp = await fetch(
       `${BASE_URL}/api/data/aggregations/${encodeURIComponent(jobId)}`,
       { method: "DELETE", signal },
     );
-    if (!resp.ok) await asJson(resp);  // throws DataApiError carrying ProblemDetails body
+    if (!resp.ok) await asJson(resp);
   },
 };
 

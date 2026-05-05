@@ -56,16 +56,11 @@ public sealed class FeedContextBuilder(
 
         foreach (var (feedName, def) in metadata.Feeds)
         {
-            // Phase 2b — analytical sidecars (.flow) are NOT eager-loaded. They cost the same
-            // CSV-parse work as any other side feed but are only consumed by strategies that
-            // ask for the primary's flow data. Lazy registration happens below if the
-            // strategy's primary references this sidecar (TRD §9.4 zero-cost contract).
+            // .flow sidecars are lazy-loaded below only if a strategy's primary references them.
             if (feedName.EndsWith(".flow", StringComparison.Ordinal))
                 continue;
 
-            // Aggregated alt-bar entries are bar feeds, not side feeds — engine reads them via
-            // the bar loader path, not via the FeedSeries loader. Skip to avoid trying to parse
-            // OHLC longs as side-feed doubles (which would throw on the first row).
+            // OHLCV/Tick entries are bar feeds, read via the bar loader path — not as side feeds.
             if (string.Equals(def.Kind, "OHLCV_AltBar", StringComparison.Ordinal) ||
                 string.Equals(def.Kind, "aggregated", StringComparison.Ordinal) ||
                 string.Equals(def.Kind, "OHLCV_TimeBar", StringComparison.Ordinal) ||
@@ -99,10 +94,7 @@ public sealed class FeedContextBuilder(
             loaded++;
         }
 
-        // Phase 2b — primary sidecar lazy binding. We expect the manifest pointer (parent's
-        // Sidecar field) to reference a `<feedId>.flow` entry in the same feeds.json. If the
-        // sidecar entry is missing (broken manifest), surface at engine init via the lazy
-        // loader's null return (BacktestFeedContext.EnsurePrimarySidecarMaterialized throws).
+        // Primary's sidecar (.flow) is registered lazily — only materialized when the strategy reads it.
         if (primaryFeedName is not null
             && metadata.Feeds.TryGetValue(primaryFeedName, out var primaryDef)
             && !string.IsNullOrEmpty(primaryDef.Sidecar))
@@ -116,9 +108,8 @@ public sealed class FeedContextBuilder(
                     "must list both atomically (see ISchemaManager.EnsureAltBarWithSidecar).");
             }
 
-            // Sidecar files live under `<assetDir>/aggregated/<sidecarFeedId>/<YYYY-MM>.csv`
-            // (TRD §3.1, sibling of the parent bar dir). The loader combines its `feedName`
-            // arg into the path verbatim, so we prepend the `aggregated/` segment here.
+            // Sidecar files live under <assetDir>/aggregated/<sidecarFeedId>/. The loader
+            // appends feedName to the path verbatim, so the "aggregated/" segment goes here.
             var sidecarFeedNameOnDisk = Path.Combine("aggregated", sidecarFeedId);
             var sidecarSchema = new DataFeedSchema(sidecarFeedId, sidecarDef.Columns, AutoApply: null);
             context.RegisterPrimarySidecarLazy(
@@ -133,10 +124,8 @@ public sealed class FeedContextBuilder(
             sidecarRegistered = true;
         }
 
-        // A registered lazy sidecar is real binding — it counts even though no eager side feed
-        // loaded. Without this, an asset whose feeds.json contains only an EqI primary + its
-        // .flow sidecar (no funding-rate / OI / etc.) would silently lose its sidecar binding
-        // and the strategy would receive a null IFeedContext.
+        // A registered lazy sidecar counts as a binding — without this, an asset with only a
+        // primary + .flow sidecar (no other side feeds) would return a null IFeedContext.
         return (loaded > 0 || sidecarRegistered) ? context : null;
     }
 }

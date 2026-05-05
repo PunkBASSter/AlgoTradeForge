@@ -4,26 +4,17 @@ using Microsoft.Extensions.Options;
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
 
 /// <summary>
-/// In-memory <see cref="IAggregationJobRegistry"/>. Two indexes:
-/// <list type="bullet">
-///   <item><c>_byJobId</c> — every job ever submitted (until lazy retention eviction).</item>
-///   <item><c>_activeByFeedId</c> — only active (queued/running) jobs. Removed at terminal
-///         transition so duplicate-feed_id submissions after completion proceed.</item>
-/// </list>
+/// In-memory <see cref="IAggregationJobRegistry"/>. Mutation paths use per-feed_id locks
+/// rather than a global lock so jobs targeting different feeds don't contend. Three indexes:
+/// <c>_byJobId</c> (all jobs until retention eviction), <c>_activeByFeedId</c> (queued/running,
+/// removed on terminal), <c>_terminalByFeedId</c> (most recent terminal per feed, O(1) eviction).
+/// Invariant: at most one terminal record per feed-id at any time — fresh enqueues evict the
+/// prior terminal first, and the active index gates re-entry.
 /// </summary>
-/// <remarks>
-/// Mutation paths take a single lock keyed by <c>feed_id</c> rather than a global lock — two
-/// jobs targeting different feeds enqueue and update progress without contention. Reads
-/// (<see cref="Get"/>, snapshot in handlers) are lock-free against the dictionaries.
-/// </remarks>
 public sealed class AggregationJobRegistry : IAggregationJobRegistry
 {
     private readonly ConcurrentDictionary<string, AggregationJobRecord> _byJobId = new();
     private readonly ConcurrentDictionary<string, string> _activeByFeedId = new();
-    // Reviewer Issue B5 — O(1) lookup of the most-recent terminal record per feed-id.
-    // Invariant: at most one terminal record per feed-id at any time, because each fresh
-    // enqueue evicts the prior terminal (TRD §6.5 path b/c). Set at MarkTerminal callsites
-    // (OnCompleted/OnErrored/OnCancelled); cleared at EvictTerminalForFeedIdIfPresent.
     private readonly ConcurrentDictionary<string, string> _terminalByFeedId = new();
     private readonly ConcurrentDictionary<string, object> _feedLocks = new();
 
@@ -41,7 +32,7 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
         var feedLock = _feedLocks.GetOrAdd(job.OutcomeFeedId, _ => new object());
         lock (feedLock)
         {
-            // Active-feed_id check — 423.
+            // 423 — active job already owns this feed-id.
             if (_activeByFeedId.TryGetValue(job.OutcomeFeedId, out var existingJobId)
                 && _byJobId.TryGetValue(existingJobId, out var existing)
                 && existing.State.IsActive())
@@ -49,15 +40,10 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
                 return new EnqueueOutcome.FeedAlreadyLocked(existing.Job.JobId, existing.State);
             }
 
-            // Terminal-with-same-feed_id eviction (TRD §6.5 paths b/c of P1b-30):
-            // any prior terminal record for this feed_id is evicted on fresh enqueue regardless
-            // of its retention status. Within-retention → still evicted (path b); past-retention
-            // would have been evicted already on the prior Get if anyone looked, but evict here
-            // to be safe (path c).
+            // Always evict any prior terminal record for this feed-id, regardless of retention.
             EvictTerminalForFeedIdIfPresent(job.OutcomeFeedId);
 
-            // Queue write before recording: if the queue is full we want zero registry
-            // mutation. Channel.TryWrite is non-blocking so this lock window stays short.
+            // Queue first so a full queue leaves zero registry mutation.
             if (!queue.TryWrite(job))
             {
                 return new EnqueueOutcome.QueueFull();
@@ -95,9 +81,7 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
         if (!_byJobId.TryGetValue(jobId, out var record))
             return null;
 
-        // Lazy retention eviction: terminal records past the retention window vanish from
-        // Get(). Caller distinguishes "never existed" from "evicted" by calling this after
-        // the SSE consumer drops — for that the SSE handler keeps the record reference alive.
+        // Lazy retention eviction — terminal records past their retention window vanish here.
         if (record.State.IsTerminal()
             && record.CompletedAt is { } completedAt
             && _clock.GetUtcNow() - completedAt > _retention)
@@ -140,9 +124,8 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
         var feedLock = _feedLocks.GetOrAdd(record.Job.OutcomeFeedId, _ => new object());
         lock (feedLock)
         {
-            // Populate result/payload BEFORE flipping State so a snapshot reader (which takes
-            // the record's events lock — see Snapshot()) never observes
-            // (State == Complete && Result == null). State is the visibility anchor.
+            // MarkTerminal populates payload before flipping State (visibility anchor) so
+            // snapshot readers cannot observe (State==Complete && Result==null).
             record.MarkTerminal(
                 state: AggregationJobState.Complete,
                 completedAt: _clock.GetUtcNow(),
@@ -150,7 +133,6 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
                 error: null,
                 barsEmitted: result.BarCount,
                 terminalEvent: new ProgressEvent.Complete(result));
-            // Drop active index — a fresh job for the same feed_id may now proceed.
             _activeByFeedId.TryRemove(record.Job.OutcomeFeedId, out _);
             _terminalByFeedId[record.Job.OutcomeFeedId] = jobId;
         }
@@ -183,8 +165,8 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
         var feedLock = _feedLocks.GetOrAdd(record.Job.OutcomeFeedId, _ => new object());
         lock (feedLock)
         {
-            // Re-check inside the lock — a concurrent retention eviction in Get() could have
-            // pulled this record between TryGetValue and lock acquisition.
+            // Re-check under lock — retention eviction in Get() could have run between
+            // TryGetValue and lock acquisition.
             if (!_byJobId.ContainsKey(jobId))
                 return new CancelRequestOutcome.Unknown();
 
@@ -192,10 +174,8 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
             if (observed.IsTerminal())
                 return new CancelRequestOutcome.AlreadyTerminal(observed);
 
-            // Fire the per-job CTS — pipeline observes at next ct.ThrowIfCancellationRequested().
-            // Worker host's catch routes to OnCancelled. Cts is disposed inside MarkTerminal —
-            // because we hold the per-feed-id lock and re-checked active state above, no other
-            // thread can have flipped to terminal+disposed in this window.
+            // The per-feed-id lock + active-state recheck guarantees Cts is not disposed here,
+            // but defend against the race anyway.
             try { record.Cts.Cancel(); }
             catch (ObjectDisposedException) { return new CancelRequestOutcome.AlreadyTerminal(record.State); }
             return new CancelRequestOutcome.Requested();
@@ -208,7 +188,7 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
         var feedLock = _feedLocks.GetOrAdd(record.Job.OutcomeFeedId, _ => new object());
         lock (feedLock)
         {
-            // Idempotent: if a host_shutdown OnErrored beat us here, don't double-flip.
+            // Idempotent — if a host_shutdown OnErrored beat us here, don't double-flip.
             if (record.State.IsTerminal()) return;
 
             var ev = new ProgressEvent.Cancelled(jobId, reason, _clock.GetUtcNow());
@@ -229,25 +209,16 @@ public sealed class AggregationJobRegistry : IAggregationJobRegistry
     {
         if (!_byJobId.TryGetValue(jobId, out var record))
             return CancellationToken.None;
-        // Cts is disposed inside MarkTerminal under the events lock. A worker that asks for
-        // the token after the record went terminal (e.g. dequeue racing host shutdown that
-        // already errored the job) would otherwise crash on Cts.Token. Mirrors the precedent
-        // at TryRequestCancel above.
+        // Cts may have been disposed inside MarkTerminal if the record went terminal between
+        // dequeue and this call (e.g. dequeue racing host shutdown).
         try { return record.Cts.Token; }
         catch (ObjectDisposedException) { return CancellationToken.None; }
     }
 
-    // -------------------------------------------------------------------------
-    // Internals
-    // -------------------------------------------------------------------------
-
     private void EvictTerminalForFeedIdIfPresent(string feedId)
     {
-        // Reviewer Issue B5 — O(1) via the terminal-by-feed-id index. Invariant: at most one
-        // terminal record per feed-id at any time (every fresh enqueue evicts the prior terminal
-        // first, and no terminal-then-terminal transitions occur because the active index gates
-        // re-entry). A stale pointer to an already-evicted record is harmless: TryRemove returns
-        // false, and the index entry is reset on the next OnCompleted/OnErrored/OnCancelled.
+        // O(1) via the terminal-by-feed-id index. A stale pointer is harmless: TryRemove
+        // returns false and the index is repopulated on the next terminal transition.
         if (_terminalByFeedId.TryRemove(feedId, out var terminalJobId))
             _byJobId.TryRemove(terminalJobId, out _);
     }

@@ -1,8 +1,7 @@
 "use client";
 
-// Per-exchange expandable card (TRD §10.1). Collapsed by default to keep the page light;
-// expanding fetches the per-exchange asset list (cached 5s on the server). The grid
-// (P3-12) is mounted lazily so virtualization doesn't allocate when the card is closed.
+// Per-exchange expandable card. Collapsed by default; expanding fetches the asset list.
+// The grid is mounted lazily so virtualization doesn't allocate when closed.
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";

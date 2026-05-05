@@ -44,9 +44,9 @@ internal static class CatalogEndpoints
 
                 var eligibility = EligibilityRules.ForSource(def, entry.Type, hasCandleExt);
 
-                // Anonymous-object property names pass through verbatim — System.Text.Json's
-                // PropertyNamingPolicy only rewrites declared CLR member names. Spell snake_case
-                // explicitly here so the wire shape matches the TRD §5 schema.
+                // Anonymous-object property names pass through verbatim — STJ's
+                // PropertyNamingPolicy only rewrites declared CLR member names; spell snake_case
+                // explicitly to match the wire schema.
                 return Results.Json(new
                 {
                     feed_id = feedId,
@@ -62,10 +62,9 @@ internal static class CatalogEndpoints
     }
 
     /// <summary>
-    /// TRD §5.3 follow-up: per-eligible-type, per-unit bounds are deferred. Until that wire
-    /// shape lands, return the canonical 1-unit floor — `ThresholdResolver` enforces the
-    /// actual per-unit, per-asset minimum at request time, so this value is purely
-    /// informational on the form side.
+    /// Per-eligible-type, per-unit bounds are deferred. Returns the canonical 1-unit floor;
+    /// <c>ThresholdResolver</c> enforces the real per-unit, per-asset minimum at request time,
+    /// so this is purely informational for the form side.
     /// </summary>
     private static decimal MinimumThresholdAbsolute() => 1m;
 }

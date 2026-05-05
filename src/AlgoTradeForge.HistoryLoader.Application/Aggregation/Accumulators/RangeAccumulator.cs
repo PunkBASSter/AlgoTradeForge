@@ -1,25 +1,8 @@
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 
-/// <summary>
-/// Range-bar accumulator (TRD §6.3, Phase 5). Emits a bar when the running
-/// <c>high − low</c> spread crosses the configured price threshold. Distinct from EqV/EqT/EqD
-/// in that emission is OHLC-delta-driven, not threshold-accumulator-driven, so this class
-/// implements <see cref="IBarAccumulator"/> directly rather than extending
-/// <see cref="AccumulatorBase"/>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Phase 5 ships <b>tick-only</b> Range (ADR D1: time-bar Range collapses force a one-emit-per-record
-/// approximation that distorts <c>actual_overshoot_pct</c>). For tick sources, every record has
-/// <c>high == low == close == price</c>, so each tick incrementally expands the bar's running
-/// extremes until the spread crosses the threshold.
-/// </para>
-/// <para>
-/// Sign convention (P5-1 ADR D2): emission rule is <c>(running_high − running_low) ≥ range_size</c>.
-/// Realized range at emission is reported via overshoot stats; sidecar publication is
-/// intentionally absent (ADR D7 — <c>realized_range</c> is reconstructible from primary OHLC).
-/// </para>
-/// </remarks>
+// Range-bar accumulator. Emits a bar when running (high - low) crosses the price threshold.
+// Tick-only — time-bar collapses would distort actual_overshoot_pct. No sidecar:
+// realized_range is reconstructible from primary OHLC.
 internal sealed class RangeAccumulator : IBarAccumulator
 {
     private readonly long _threshold;
@@ -67,7 +50,6 @@ internal sealed class RangeAccumulator : IBarAccumulator
         {
             emitted = new AggregatedBar(_tsOpen, _open, _runningHigh, _runningLow, _close, _baseVolumeAcc);
 
-            // Overshoot is on the realized range vs threshold (both same long price-tick units).
             var overshootPct = (double)(realizedRange - _threshold) / _threshold * 100d;
             _overshootSum += overshootPct;
             if (overshootPct > _maxOvershoot) _maxOvershoot = overshootPct;

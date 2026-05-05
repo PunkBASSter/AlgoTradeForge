@@ -1,13 +1,11 @@
 "use client";
 
-// Phase 3 — hook that wires an active jobId to an SSE connection. Resumes from
-// `lastEventId` in the persistent store; on terminal event, dispatches a toast and
-// clears the entry. On 410 Gone (server retention expired), clears the entry to stop
-// reconnect attempts.
+// Wires an active jobId to an SSE connection. Resumes from `lastEventId` in the
+// persistent store; on terminal event toasts and clears the entry. On 410 Gone (server
+// retention expired) clears to stop reconnect attempts.
 //
-// Owner: each non-cleared entry in `useDataJobsStore.jobs` is owned by one
-// `useJobStream(key)` instance — the DataTabRoot iterates the store and mounts one
-// per entry.
+// Each non-cleared entry in `useDataJobsStore.jobs` is owned by exactly one
+// `useJobStream(key)` instance.
 
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -55,13 +53,11 @@ export function useJobStream(
             const overshoot = env.data.fidelity.actual_overshoot_pct.toFixed(2);
             toast(`Built ${env.data.feed_id} (overshoot ${overshoot}%)`, "success");
             clearJob(key);
-            // Re-fetch the affected exchange's asset list so the new column appears.
             const queryKey = ["data", "exchange-assets", exchange];
             queryClient.invalidateQueries({ queryKey });
-            // The main WebApi proxy holds a short absolute-TTL cache (~2 s) of the catalog
-            // payload. The first invalidate above will hit that cache and return stale data;
-            // schedule a follow-up invalidate just past the TTL window so the next refetch
-            // bypasses the proxy cache and surfaces the new feed column.
+            // The WebApi proxy holds a ~2s absolute-TTL cache of the catalog payload —
+            // the first invalidate hits it and returns stale data. Schedule a follow-up
+            // past the TTL so the next refetch bypasses the proxy cache.
             setTimeout(() => {
               queryClient.invalidateQueries({ queryKey });
             }, 2500);
@@ -69,31 +65,25 @@ export function useJobStream(
             toast(`Aggregation failed: ${env.data.message}`, "error");
             clearJob(key);
           } else if (env.type === "cancelled") {
-            // Phase 6 — distinct terminal state. Reason is "user_cancelled" today; future
-            // programmatic cancel paths may add others.
             toast(`Cancelled (${env.data.reason})`, "info");
             clearJob(key);
           }
         },
         onError: (err) => {
           if (err instanceof GoneError) {
-            // Job retention expired — server can't replay events for this id. Clear
-            // the entry so we don't keep reconnecting forever.
+            // Server retention expired; stop reconnecting.
             clearJob(key);
             return;
           }
-          // Other errors: surface but don't clear — user can retry by refreshing.
+          // Other errors: surface but don't clear so the user can retry.
           toast(err.message, "error");
         },
-        onClose: () => {
-          // Stream closed normally. If the terminal event already cleared the job,
-          // there's nothing more to do.
-        },
+        onClose: () => {},
       },
     });
 
     return () => ctrl.abort();
-    // job?.jobId is the right dependency — recordEvent / clearJob / toast / qc are stable refs.
+    // recordEvent / clearJob / toast / qc are stable refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.jobId]);
 }

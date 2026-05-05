@@ -2,36 +2,11 @@ using AlgoTradeForge.Domain;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 
-/// <summary>
-/// Equal-Imbalance accumulator (TRD §6.3, Phase 2b). Accumulates signed buy/sell volume
-/// and emits a bar each time <c>abs(signed_acc) ≥ threshold</c>. Distinct from EqV/EqT/EqD
-/// in that the threshold accumulator is signed and the emission condition is two-sided.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Two source-record paths feed the same accumulator (TRD §3.5):
-/// <list type="bullet">
-///   <item><b>Tick</b>: <c>is_buyer_maker == 0 → BuyVolumeLong = qty</c>;
-///         <c>== 1 → SellVolumeLong = qty</c>. Manifest tag: <c>tick_signed</c>.</item>
-///   <item><b>Time-bar proxy</b>: <see cref="CandleExtJoiningSource"/> populates
-///         <c>BuyVolumeLong = ToLong(taker_buy_vol_double * QuantityScale)</c> and
-///         <c>SellVolumeLong = Volume - BuyVolumeLong</c>. Manifest tag: <c>m1_taker_buy_proxy</c>.</item>
-/// </list>
-/// The accumulator itself is path-agnostic; the pipeline tags the manifest based on
-/// <see cref="DataFeedDescriptor.Kind"/>.
-/// </para>
-/// <para>
-/// Sidecar emission (TRD §3.5 / §3.6): per emit, a <see cref="SidecarRow"/> carries
-/// <c>signed_imbalance</c>, <c>buy_volume</c>, <c>sell_volume</c>, and
-/// <c>realized_threshold</c> as <b>doubles</b> in raw base-asset units (side-feed convention).
-/// Conversion <c>long → double</c> happens here at emit, dividing by
-/// <see cref="ScaleContext.QuantityScale"/>.
-/// </para>
-/// <para>
-/// Sign convention (pinned by P2b-7 100%-buy and P2b-8 100%-taker-buy fixtures):
-/// positive <c>signed_imbalance</c> ⇒ buy-aggressive predominance; negative ⇒ sell-aggressive.
-/// </para>
-/// </remarks>
+// Equal-Imbalance accumulator. Accumulates signed buy/sell volume and emits a bar each time
+// abs(signed_acc) >= threshold. Two source paths feed it: tick (is_buyer_maker drives signed
+// qty) and time-bar proxy (CandleExtJoiningSource splits Volume by taker_buy_vol). The
+// accumulator itself is path-agnostic; the pipeline tags the manifest by source kind.
+// Sign convention: positive signed_imbalance => buy-aggressive predominance.
 internal sealed class EqIAccumulator : IBarAccumulator
 {
     private readonly long _threshold;
@@ -43,9 +18,9 @@ internal sealed class EqIAccumulator : IBarAccumulator
     private long _high;
     private long _low;
     private long _close;
-    private long _signedAccLong;        // BuyLong - SellLong cumulative for the in-flight bar; drives emission
-    private long _buyAccLong;           // For sidecar buy_volume back-conversion
-    private long _sellAccLong;          // For sidecar sell_volume back-conversion
+    private long _signedAccLong;
+    private long _buyAccLong;
+    private long _sellAccLong;
     private long _baseVolumeAcc;
 
     private long _barsEmitted;
@@ -89,23 +64,20 @@ internal sealed class EqIAccumulator : IBarAccumulator
             _close = r.Close;
         }
 
-        // EqI contributions. Tick: one of Buy/Sell is the qty, the other is 0. Time-bar (proxy):
-        // both are non-zero per record (split of vol).
         _buyAccLong += r.BuyVolumeLong;
         _sellAccLong += r.SellVolumeLong;
         _signedAccLong += (r.BuyVolumeLong - r.SellVolumeLong);
         _baseVolumeAcc += r.Volume;
 
-        // Math.Abs(long) throws on long.MinValue rather than silently wrapping. In practice
-        // the threshold check guarantees we emit and reset long before _signedAccLong could
-        // approach 2^63, but the explicit throw beats overflow-to-negative if a future caller
-        // ever feeds pathological inputs.
+        // Math.Abs(long) throws on long.MinValue rather than silently wrapping. The threshold
+        // check guarantees we reset well before _signedAccLong could approach 2^63, but the
+        // explicit throw beats overflow-to-negative on pathological inputs.
         var absSigned = Math.Abs(_signedAccLong);
         if (absSigned >= _threshold)
         {
             emitted = new AggregatedBar(_tsOpen, _open, _high, _low, _close, _baseVolumeAcc);
 
-            // Side-feed convention §3.6: sidecar columns are doubles in raw base-asset units.
+            // Side-feed convention: sidecar columns are doubles in raw base-asset units.
             var buyDouble = _buyAccLong / _quantityScale;
             var sellDouble = _sellAccLong / _quantityScale;
             var signedDouble = buyDouble - sellDouble;
@@ -113,7 +85,6 @@ internal sealed class EqIAccumulator : IBarAccumulator
             _lastSidecarRow = new SidecarRow(_tsOpen, signedDouble, buyDouble, sellDouble, realized);
             _hasLastSidecar = true;
 
-            // Overshoot is on the absolute signed accumulator vs the threshold (both same units).
             var overshootPct = (double)(absSigned - _threshold) / _threshold * 100d;
             _overshootSum += overshootPct;
             if (overshootPct > _maxOvershoot) _maxOvershoot = overshootPct;
@@ -132,9 +103,6 @@ internal sealed class EqIAccumulator : IBarAccumulator
         if (_hasLastSidecar)
         {
             row = _lastSidecarRow;
-            // One-shot — pipeline reads exactly once after a successful TryAdvance emit. Resetting
-            // here prevents accidental re-write into a later partition's CSV if the call site
-            // misorders.
             _hasLastSidecar = false;
             return true;
         }

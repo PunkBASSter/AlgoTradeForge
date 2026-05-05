@@ -11,9 +11,8 @@ public interface IFeedContext
 {
     /// <summary>
     /// Returns the latest record at or before the current bar's timestamp.
-    /// The returned span aliases a shared row buffer — the type system enforces
-    /// "do not hold across bars" since <see cref="ReadOnlySpan{T}"/> is a <c>ref struct</c>
-    /// and cannot be stored in fields, captured by closures, or boxed (TRD §9.4).
+    /// The returned span aliases a shared row buffer — the ref-struct lifetime prevents
+    /// the caller from holding it across bars.
     /// </summary>
     bool TryGetLatest(string feedKey, out ReadOnlySpan<double> values);
 
@@ -23,22 +22,15 @@ public interface IFeedContext
     /// <summary>Access the feed schema (column names) for index resolution during OnInit.</summary>
     DataFeedSchema GetSchema(string feedKey);
 
-    // ---- Phase 2b: primary-bar analytical sidecar (TRD §9.4) -----------------
-    //
     // Default-interface methods so existing IFeedContext impls (private-repo strategies,
-    // null/test impls) keep compiling without modification. Phase 0's DIM audit (P0-1)
-    // verified plugin-assembly dispatch under net10.0/AssemblyLoadContext.Default.
+    // null/test impls) keep compiling without modification.
 
     /// <summary>
     /// Returns the latest sidecar row for the strategy's primary bar feed (e.g. EqI's
     /// <c>.flow</c> companion). Returns <c>false</c> when the primary has no sidecar
-    /// or the sidecar has no data at the current bar's timestamp.
+    /// or the sidecar has no data at the current bar's timestamp. Lazy-loaded: a strategy
+    /// that never calls this triggers zero loader hits.
     /// </summary>
-    /// <remarks>
-    /// Lazy-loaded: a strategy that never calls this triggers zero loader hits (P2b-11).
-    /// The returned span aliases a shared row buffer; the ref-struct lifetime prevents the
-    /// caller from holding it across bars (TRD §9.4 — Phase 4 P4-9 lock).
-    /// </remarks>
     bool TryGetPrimarySidecar(out ReadOnlySpan<double> values)
     {
         values = ReadOnlySpan<double>.Empty;

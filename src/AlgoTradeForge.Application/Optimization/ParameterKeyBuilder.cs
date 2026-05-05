@@ -45,9 +45,8 @@ internal static class ParameterKeyBuilder
                 sb.Append(']');
                 break;
             case List<DataFeedSubscription> feedSubs:
-                // Phase 4 (TRD §9.3): kind-aware key for polymorphic carriers.
-                // BacktestInputsFormatter.Key encodes asset:exchange:feed:role so AltBar/Tick
-                // carriers don't alias with TimeBar carriers at the same nominal interval.
+                // Kind-aware key — asset:exchange:feed:role so AltBar/Tick carriers don't
+                // alias with TimeBar carriers at the same nominal interval.
                 sb.Append('[');
                 for (var si = 0; si < feedSubs.Count; si++)
                 {

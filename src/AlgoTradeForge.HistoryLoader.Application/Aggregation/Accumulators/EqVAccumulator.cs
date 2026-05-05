@@ -1,11 +1,8 @@
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 
-/// <summary>
-/// Equal-Volume accumulator (TRD §6.3). Emits a bar each time the base-volume sum reaches
-/// or exceeds <c>threshold</c>. Threshold and contribution are both in the source's
-/// quantity-scaled <c>long</c> units (no <c>MoneyConvert</c> needed at the sum site —
-/// <see cref="SourceRecord.Volume"/> arrives pre-scaled from the source reader).
-/// </summary>
+// Equal-Volume accumulator. Emits a bar each time the base-volume sum reaches or exceeds
+// threshold. Threshold and contribution are both in the source's quantity-scaled long units;
+// SourceRecord.Volume arrives pre-scaled, so no MoneyConvert is needed at the sum site.
 internal sealed class EqVAccumulator : AccumulatorBase
 {
     public EqVAccumulator(long threshold) : base(threshold) { }

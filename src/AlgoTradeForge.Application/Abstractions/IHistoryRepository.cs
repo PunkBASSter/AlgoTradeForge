@@ -10,11 +10,8 @@ public interface IHistoryRepository
     TimeSeries<Int64Bar> Load(DataSubscription subscription, DateOnly from, DateOnly to);
 
     /// <summary>
-    /// Phase 4 (TRD §9.3) polymorphic loader for the new <see cref="DataFeedSubscription"/>
-    /// surface. Dispatches by subtype to a kind-specific <c>DataFeedDescriptor</c> and
-    /// delegates to <c>IInt64BarLoader</c>. <see cref="SideFeedSubscription"/> is rejected
-    /// here — side feeds are <c>FeedSeries</c>, not <c>TimeSeries&lt;Int64Bar&gt;</c>; they
-    /// flow through <c>IFeedContextBuilder</c>.
+    /// Polymorphic loader for <see cref="DataFeedSubscription"/>. Rejects
+    /// <c>SideFeedSubscription</c> — side feeds flow through <see cref="IFeedContextBuilder"/>.
     /// </summary>
     TimeSeries<Int64Bar> Load(Asset asset, DataFeedSubscription subscription, DateOnly from, DateOnly to);
 }

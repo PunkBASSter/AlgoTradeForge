@@ -1,12 +1,5 @@
 "use client";
 
-// Phase 3 — Data tab top-level client component (P3-11). Lists exchanges with
-// expandable per-exchange cards. The asset×feed grid (P3-12/13/14) renders inside
-// each expanded card; the right sidebar (P3-15/16/19) hosts the Status + new-aggregate
-// cards once a cell is selected. In-flight aggregation jobs (P3-17/18) render as
-// floating progress cards above the exchange list and resume from localStorage on
-// page reload.
-
 import { useQuery } from "@tanstack/react-query";
 import { dataApi } from "@/lib/services/data-api";
 import { ExchangeCard } from "./exchange-card";
@@ -21,13 +14,11 @@ export function DataTabRoot() {
     queryFn: ({ signal }) => dataApi.getExchanges(signal),
   });
 
-  // Active jobs (resumed from localStorage on mount). Each non-cleared entry mounts a
-  // JobProgressCard which connects/reconnects an SSE stream via `useJobStream`.
+  // Resumed from localStorage on mount; each entry mounts a JobProgressCard that
+  // connects/reconnects its SSE stream.
   const activeJobs = useDataJobsStore((s) => s.jobs);
   const setJob = useDataJobsStore((s) => s.setJob);
 
-  // Sidebar selection state — used to thread the FE-composed outcome hint from the
-  // form's submit-success callback into the persistent jobs store.
   const selection = useDataSelectionStore();
 
   return (
@@ -74,9 +65,8 @@ export function DataTabRoot() {
       </main>
       <DataSidebar
         onJobAccepted={(jobId, outcomeHint) => {
-          // Persist the jobId keyed by `(exchange|asset|outcomeHint)` so a page refresh
-          // resumes the SSE stream via `Last-Event-ID` (P3-18). The active selection
-          // identifies which exchange + asset this job belongs to.
+          // Key by `(exchange|asset|outcomeHint)` so a page refresh resumes the SSE
+          // stream via `Last-Event-ID`.
           if (selection.exchange && selection.asset) {
             const key = makeFeedJobKey(selection.exchange, selection.asset.symbol, outcomeHint);
             setJob(key, jobId);

@@ -8,35 +8,15 @@ using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 namespace AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 
 /// <summary>
-/// <para>
-/// Per-<c>(exchange, asset)</c> synchronized writer for <c>feeds.json</c>:
-/// <list type="bullet">
-///   <item>Shared lock for <see cref="Load"/>; multiple readers run concurrently.</item>
-///   <item>Exclusive lock for <see cref="EnsureSchema"/> / <see cref="EnsureCandleConfig"/>;
-///         the read-merge-write happens entirely inside the lock so parallel writers on
-///         distinct feed-ids of the same asset don't lose each other's entries.</item>
-///   <item><c>*.tmp</c> + atomic rename on every write — same-volume by construction
-///         since the temp file lives in the same directory as the target.</item>
-/// </list>
-/// </para>
-/// <para>
-/// Different <c>(exchange, asset)</c> directories use independent locks, so cross-asset
-/// writes proceed in parallel.
-/// </para>
+/// Per-<c>feeds.json</c> synchronized writer. Shared lock for <see cref="Load"/>; exclusive
+/// read-merge-write under one lock so parallel writers on distinct feed-ids of the same asset
+/// don't lose each other's entries. Each write is <c>*.tmp</c> + same-volume rename. Different
+/// asset directories use independent locks so cross-asset writes proceed in parallel.
 /// </summary>
 internal sealed class FeedSchemaManager : ISchemaManager
 {
-    /// <summary>
-    /// Per-<c>feeds.json</c>-path locks. Keyed by absolute path so two writers targeting
-    /// the same asset directory share a lock; different assets use independent locks.
-    /// </summary>
     private readonly ConcurrentDictionary<string, ReaderWriterLockSlim> _locks = new();
 
-    /// <summary>
-    /// Raised after a successful manifest mutation. The argument is the asset directory
-    /// absolute path (parent of <c>feeds.json</c>). Subscribers (Phase 1b catalog/eligibility
-    /// caches) use this to invalidate per-asset cache keys without polling.
-    /// </summary>
     public event Action<string>? ManifestChanged;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -73,9 +53,9 @@ internal sealed class FeedSchemaManager : ISchemaManager
         rwl.EnterWriteLock();
         try
         {
-            // Read-merge-write under exclusive lock: re-read so concurrent earlier writers
-            // are visible. Without this re-read, two parallel writers could each load the
-            // pre-write state, merge their own entry, and overwrite each other.
+            // Re-read inside the lock so a concurrent earlier writer's entries are visible —
+            // otherwise two parallel writers each merge against pre-write state and clobber
+            // each other.
             var existing = LoadUnsafe(path) ?? new FeedMetadata();
 
             AutoApplyDefinition? autoApplyDef = autoApply is not null
@@ -177,9 +157,8 @@ internal sealed class FeedSchemaManager : ISchemaManager
         {
             var existing = LoadUnsafe(path) ?? new FeedMetadata();
 
-            // Override the parent's Sidecar field — both entries are tied together by this
-            // pointer; the caller supplies the spec but we own the linkage so the contract
-            // "Sidecar field references a live sidecar entry in this same write" stays exact.
+            // Override the parent's Sidecar field; we own the linkage so the contract
+            // "Sidecar references a live sidecar entry in this same write" stays exact.
             var parentEntry = new FeedDefinition
             {
                 Kind            = parentSpec.Kind,
@@ -306,8 +285,6 @@ internal sealed class FeedSchemaManager : ISchemaManager
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
 
-    // -------------------------------------------------------------------------
-
     private ReaderWriterLockSlim GetLock(string path) =>
         _locks.GetOrAdd(path, _ => new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion));
 
@@ -321,8 +298,8 @@ internal sealed class FeedSchemaManager : ISchemaManager
 
         var json = File.ReadAllText(path);
 
-        // Parse first as JsonNode so we can run JSON-aware validation that distinguishes
-        // "property absent" from "property == null". JsonSerializer collapses both into null.
+        // Parse as JsonNode first so the validator can distinguish "property absent" from
+        // "property == null" — JsonSerializer collapses both into null.
         var node = JsonNode.Parse(json);
         FeedMetadataValidator.ValidateOrThrow(node);
 
@@ -337,9 +314,8 @@ internal sealed class FeedSchemaManager : ISchemaManager
 
         var json = JsonSerializer.Serialize(metadata, JsonOptions);
 
-        // Defensive: parse back and run the same validator the read path applies. Catches
-        // schema-evolution bugs where a future refactor drops the
-        // imbalanceReconstructionMethod presence guarantee on the write side.
+        // Re-validate before the on-disk write so a future refactor that drops a presence
+        // guarantee (e.g. imbalanceReconstructionMethod) fails loudly here, not at read time.
         var node = JsonNode.Parse(json);
         FeedMetadataValidator.ValidateOrThrow(node);
 

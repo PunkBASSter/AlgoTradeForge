@@ -29,7 +29,7 @@ internal static class AggregationEndpoints
         return app;
     }
 
-    /// <summary>Request body for <c>POST /aggregate</c> (TRD §5.4).</summary>
+    /// <summary>Request body for <c>POST /aggregate</c>.</summary>
     public sealed record AggregateRequest(
         string SourceFeedId,
         string TypeCode,
@@ -38,10 +38,6 @@ internal static class AggregationEndpoints
         string InputMode,
         string? ConvenienceInput,
         bool OverwriteExisting);
-
-    // -------------------------------------------------------------------------
-    // POST /api/v1/exchanges/{exchange}/assets/{asset}/aggregate
-    // -------------------------------------------------------------------------
 
     private static IResult PostAggregate(
         string exchange,
@@ -54,7 +50,7 @@ internal static class AggregationEndpoints
         IAggregationJobQueue queue,
         IAggregationTickJobQueue tickQueue)
     {
-        // 1. Path / input validation (422)
+        // Path / input validation (422)
         if (!FeedIdValidator.TryValidatePathComponent(exchange, out var pathErr1))
             return Unprocessable("invalid_path", pathErr1!);
         if (!FeedIdValidator.TryValidatePathComponent(asset, out var pathErr2))
@@ -64,7 +60,7 @@ internal static class AggregationEndpoints
         if (string.IsNullOrEmpty(body.TypeCode) || !AltBarFeedId.AllowedTypeCodes.Contains(body.TypeCode))
             return Unprocessable("invalid_type_code", $"type_code must be one of: {string.Join(", ", AltBarFeedId.AllowedTypeCodes)}");
 
-        // 2. Resolve configured asset
+        // Resolve configured asset
         var config = options.CurrentValue;
         var assetConfig = config.Assets.FirstOrDefault(a =>
             string.Equals(a.Exchange, exchange, StringComparison.OrdinalIgnoreCase) &&
@@ -72,7 +68,7 @@ internal static class AggregationEndpoints
         if (assetConfig is null)
             return Results.NotFound(new { error = "asset_not_configured", exchange, asset });
 
-        // 3. Source feed eligibility (422)
+        // Source feed eligibility (422)
         var sourceFeed = catalog.GetFeed(exchange, asset, body.SourceFeedId);
         if (sourceFeed is null)
             return Unprocessable("source_feed_not_found", $"source_feed_id '{body.SourceFeedId}' is not present in feeds.json.");
@@ -90,12 +86,9 @@ internal static class AggregationEndpoints
             return Unprocessable("type_ineligible", reason);
         }
 
-        // 3b. Threshold-unit family check. Eligibility above pins the type-code chain (e.g. for an
-        // AltBar source, only the source's own type-code is eligible) — so once type-code is
-        // accepted, threshold_unit is determined. Validating here turns the AltBar-source
-        // ordering check below into an apples-to-apples comparison; without this, a user could
-        // submit unit=quote_asset against an EqV source and the source's own threshold would be
-        // re-resolved in a foreign unit family, making the ordering math meaningless.
+        // Threshold-unit family check. Without this, a user could submit unit=quote_asset
+        // against an EqV source and the AltBar ordering check below would compare across
+        // unit families.
         var implicitUnit = ThresholdResolver.GetImplicitUnit(body.TypeCode);
         if (!string.Equals(body.ThresholdUnit, implicitUnit, StringComparison.Ordinal))
         {
@@ -103,7 +96,7 @@ internal static class AggregationEndpoints
                 $"type_code '{body.TypeCode}' requires threshold_unit='{implicitUnit}'; got '{body.ThresholdUnit}'.");
         }
 
-        // 4. Threshold resolution (422 on conversion error)
+        // Threshold resolution (422 on conversion error)
         var scale = AssetScaleContextFactory.FromDecimalDigits(assetConfig.DecimalDigits);
         ThresholdResolver.Resolved threshold;
         try
@@ -120,23 +113,20 @@ internal static class AggregationEndpoints
             return Unprocessable("invalid_threshold", ex.Message);
         }
 
-        // 4b. Phase 6 — AltBar source: validate strictly-larger threshold ordering. Same-type-family
-        // already enforced by the eligibility check above (which restricts EligibleTypes to the
-        // source's type code only). Threshold ordering can't be checked at the eligibility layer
-        // because eligibility is requested-threshold-agnostic.
+        // AltBar source: enforce strictly-larger threshold ordering. Same-type-family is
+        // already enforced by eligibility (EligibleTypes restricted to the source's type code);
+        // threshold ordering is requested-threshold-dependent so it lands here.
         var sourceIsAltBar = string.Equals(sourceFeed.Kind, "OHLCV_AltBar", StringComparison.Ordinal);
         AltBarFeedId? sourceParsed = null;
         if (sourceIsAltBar)
         {
-            // B4: parse the source feed-id once and reuse it for both the threshold-ordering
-            // check below and the outcome-source-code derivation in step 5.
+            // Parse the source feed-id once; reused below for outcome-source-code derivation.
             if (!AltBarFeedId.TryParse(body.SourceFeedId, out sourceParsed, out var sourceParseErr))
                 return Unprocessable("invalid_source_feed_id",
                     $"source_feed_id '{body.SourceFeedId}' is marked as OHLCV_AltBar but does not parse: {sourceParseErr}");
 
-            // Resolve source threshold to the same scaled units the new accumulator uses, so we
-            // compare apples-to-apples. The threshold unit is implicit per type (base_asset for
-            // EqV, trades for EqT, quote_asset for EqD); ThresholdResolver handles the math.
+            // Resolve source threshold to the same scaled units the new accumulator uses so the
+            // ordering compare is apples-to-apples.
             ThresholdResolver.Resolved sourceThreshold;
             try
             {
@@ -162,10 +152,9 @@ internal static class AggregationEndpoints
             }
         }
 
-        // 5. Outcome feed-id (422 on grammar error). For an AltBar source, the outcome's
-        // SourceCode is the SOURCE's SourceCode (e.g. EqV_1m_1000 + threshold 2000 → EqV_1m_2000),
-        // not the source's full feed-id. The manifest's source.feed field records the actual
-        // source (EqV_1m_1000) so the chain is traceable.
+        // Outcome feed-id. For an AltBar source, the outcome's SourceCode is the SOURCE's
+        // SourceCode (EqV_1m_1000 + threshold 2000 → EqV_1m_2000), not the full feed-id; the
+        // manifest's source.feed records the actual source so the chain stays traceable.
         var outcomeSourceCode = sourceParsed?.SourceCode ?? body.SourceFeedId;
         var outcomeFeedIdRaw = $"{body.TypeCode}_{outcomeSourceCode}_{threshold.FeedIdComponent}";
         if (!FeedIdValidator.TryValidateAltBar(outcomeFeedIdRaw, out var parsed, out var parseErr))
@@ -173,7 +162,7 @@ internal static class AggregationEndpoints
 
         var outcomeFeedId = parsed!.FeedId;
 
-        // 6. Active-job conflict check (423) — precedes 409 per TRD §5.4 line 337.
+        // Active-job conflict check (423) — must precede the 409 on-disk-exists check.
         var active = registry.CheckActiveFeedId(outcomeFeedId);
         if (active is not null)
         {
@@ -186,7 +175,7 @@ internal static class AggregationEndpoints
             }, statusCode: StatusCodes.Status423Locked);
         }
 
-        // 7. On-disk feed-exists check (409)
+        // On-disk feed-exists check (409)
         var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, assetConfig);
         if (!body.OverwriteExisting)
         {
@@ -202,12 +191,10 @@ internal static class AggregationEndpoints
             }
         }
 
-        // 8. Enqueue (race-protected: TryEnqueue rechecks 423 internally).
-        // Phase 2a: tick sources route to a separate queue + worker pool to keep their I/O
-        // load from blocking CPU-bound time-bar aggregations at the queue head.
-        // Phase 6: AltBar sources route via the time-bar queue (same I/O profile — bounded
-        // pre-aggregated rows) but the descriptor's Kind directs PartitionedSourceReader
-        // to the aggregated/<feedId>/ glob instead of candles/.
+        // Enqueue (race-protected: TryEnqueue rechecks 423 internally). Tick sources route to a
+        // separate queue + worker pool so their I/O load doesn't block CPU-bound time-bar
+        // aggregations at the queue head. AltBar sources reuse the time-bar queue but the
+        // descriptor's Kind redirects PartitionedSourceReader to aggregated/<feedId>/.
         DataFeedKind sourceKind;
         if (string.Equals(body.SourceFeedId, FeedNames.Ticks, StringComparison.Ordinal))
             sourceKind = DataFeedKind.Tick;
@@ -261,9 +248,8 @@ internal static class AggregationEndpoints
     }
 
     /// <summary>
-    /// Wraps an <see cref="IResult"/> with the <c>Location</c> + <c>X-Job-Id</c> headers
-    /// (TRD §5.4 line 290) — minimal-API <see cref="Results.Json"/> doesn't expose a header
-    /// hook directly.
+    /// Wraps an <see cref="IResult"/> with <c>Location</c> + <c>X-Job-Id</c> headers — minimal
+    /// API <see cref="Results.Json"/> has no direct header hook.
     /// </summary>
     private sealed class AcceptedWithHeaders(string jobId, string location, IResult inner) : IResult
     {
@@ -274,10 +260,6 @@ internal static class AggregationEndpoints
             await inner.ExecuteAsync(httpContext);
         }
     }
-
-    // -------------------------------------------------------------------------
-    // DELETE /api/v1/exchanges/{exchange}/assets/{asset}/feeds/{feedId}
-    // -------------------------------------------------------------------------
 
     private static IResult DeleteFeed(
         string exchange,
@@ -307,7 +289,7 @@ internal static class AggregationEndpoints
             return Results.NotFound(new { error = "feed_not_found", feed_id = feedId });
 
         // Only OHLCV_AltBar feeds are user-deletable. Time bars / ticks / side feeds are
-        // collector-managed and cannot be removed via the public API (TRD §5.5).
+        // collector-managed and cannot be removed via this endpoint.
         if (!string.Equals(def.Kind, "OHLCV_AltBar", StringComparison.Ordinal))
         {
             return Results.Json(new
@@ -320,8 +302,7 @@ internal static class AggregationEndpoints
         }
 
         // Race guard: a job currently aggregating into this feedId would re-write the manifest
-        // entry milliseconds after we delete it. 422 / 404 / 403 fire on input-shape errors
-        // regardless of job state — 423 must precede any disk mutation, so it lands here.
+        // entry milliseconds after we delete it. 423 must precede any disk mutation.
         var active = registry.CheckActiveFeedId(feedId);
         if (active is not null)
         {
@@ -334,9 +315,9 @@ internal static class AggregationEndpoints
             }, statusCode: StatusCodes.Status423Locked);
         }
 
-        // Delete on-disk first; sweep covers any partial state. Order: rename-aside → recursive
-        // delete. The manifest write is the atomic anchor — readers either see "feed missing"
-        // (manifest entry gone) or "feed present" (manifest still has it).
+        // Delete on-disk (rename-aside then recursive) first; the manifest write is the atomic
+        // anchor so readers see "feed present" or "feed missing", never half. The sweeper picks
+        // up any leftover .deleted-<ts> directory on next boot.
         var aggregatedRoot = Path.Combine(assetDir, "aggregated");
         var feedDir = Path.Combine(aggregatedRoot, feedId);
         var sidecarFeedId = def.Sidecar;
@@ -347,7 +328,6 @@ internal static class AggregationEndpoints
         SafeRecursiveDelete(feedDir);
         if (sidecarDir is not null) SafeRecursiveDelete(sidecarDir);
 
-        // Atomic manifest write: removes both entries under one exclusive lock.
         if (sidecarFeedId is not null)
             schema.RemoveFeedAndSidecar(assetDir, feedId, sidecarFeedId);
         else
@@ -359,35 +339,28 @@ internal static class AggregationEndpoints
     private static void SafeRecursiveDelete(string dir)
     {
         if (!Directory.Exists(dir)) return;
-        // Rename-aside before recursive delete so readers don't see a half-deleted dir;
-        // the trailing recursive delete is best-effort (StartupSweepService picks up any
-        // leftover .deleted-<ts> on next boot via the orphan rule).
+        // Rename-aside before recursive delete so readers don't see a half-deleted dir; the
+        // recursive delete is best-effort (StartupSweepService cleans up leftover .deleted-<ts>).
         var aside = $"{dir}.deleted-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
         Directory.Move(dir, aside);
         try { Directory.Delete(aside, recursive: true); }
         catch (IOException) { /* sweeper covers it */ }
     }
 
-    // -------------------------------------------------------------------------
-    // DELETE /api/v1/aggregations/{jobId}  (Phase 6 — cancel)
-    // -------------------------------------------------------------------------
-
     /// <remarks>
-    /// Reviewer Issue B2 — 204 means "cancel observed at the registry" (per-job CTS fired),
-    /// NOT "the run was aborted". Cooperative cancellation has an inherent race: if the
-    /// pipeline emits its last record in the gap between this call and the worker's next
-    /// per-record cancellation check, OnCompleted may still win and the SSE terminal event
-    /// will be <c>complete</c> rather than <c>cancelled</c>. The FE reconciles via SSE — the
-    /// REST status is advisory.
+    /// 204 means "cancel observed at the registry" (per-job CTS fired), NOT "run was aborted".
+    /// Cooperative cancellation can race: if the pipeline emits its last record between this
+    /// call and the worker's next cancellation check, OnCompleted may still win and the SSE
+    /// terminal event will be <c>complete</c> rather than <c>cancelled</c>. The FE reconciles
+    /// via SSE; the REST status is advisory.
     /// </remarks>
     private static IResult CancelAggregation(string jobId, IAggregationJobRegistry registry)
     {
         if (string.IsNullOrWhiteSpace(jobId))
             return Unprocessable("invalid_job_id", "job_id is required.");
 
-        // Reviewer Issue B1 — single tri-state call. The prior pattern (Get + TryRequestCancel
-        // with bool + out-state) had a TOCTOU window where a concurrent retention eviction
-        // between the two calls would surface a misleading 409 with observedState=Queued.
+        // Single tri-state call. The earlier Get + TryRequestCancel pattern had a TOCTOU window
+        // where a concurrent retention eviction between the two calls surfaced a misleading 409.
         return registry.TryRequestCancel(jobId) switch
         {
             CancelRequestOutcome.Requested => Results.NoContent(),
@@ -402,10 +375,6 @@ internal static class AggregationEndpoints
             _ => Results.Problem("unknown cancel outcome"),
         };
     }
-
-    // -------------------------------------------------------------------------
-    // GET /api/v1/aggregations/{jobId}
-    // -------------------------------------------------------------------------
 
     private static IResult GetSnapshot(string jobId, IAggregationJobRegistry registry)
     {
@@ -427,8 +396,8 @@ internal static class AggregationEndpoints
             bars_emitted = snap.State == AggregationJobState.Running || snap.State.IsTerminal()
                 ? snap.BarsEmitted
                 : (long?)null,
-            // Summary mirrors the SSE `complete` payload exactly (minus type/job_id) for a
-            // round-trip equivalence guarantee — pinned by P1b-33 test.
+            // Summary mirrors the SSE `complete` payload (minus type/job_id) for round-trip
+            // equivalence with the SSE stream.
             summary = snap.State == AggregationJobState.Complete && snap.Result is not null
                 ? CompletePayload(snap.Result)
                 : null,
@@ -440,10 +409,6 @@ internal static class AggregationEndpoints
                 : null,
         });
     }
-
-    // -------------------------------------------------------------------------
-    // GET /api/v1/aggregations/{jobId}/progress  (Server-Sent Events)
-    // -------------------------------------------------------------------------
 
     private static async Task GetProgressSse(
         string jobId,
@@ -460,7 +425,6 @@ internal static class AggregationEndpoints
             return;
         }
 
-        // SSE framing
         context.Response.Headers[HeaderNames.ContentType] = "text/event-stream";
         context.Response.Headers[HeaderNames.CacheControl] = "no-cache";
         context.Response.Headers["X-Accel-Buffering"] = "no";
@@ -469,18 +433,17 @@ internal static class AggregationEndpoints
         var lastEventId = ParseLastEventId(context);
         var lastSentSeq = lastEventId;
 
-        // Capture-before-drain pattern: every drain iteration snapshots the next-event signal
-        // BEFORE reading the events list. AppendEvent appends under the events lock and THEN
-        // swaps the signal — so any event added between our capture and our drain has already
-        // fired the captured signal, and the next iteration drains it. Reading the signal
-        // after the drain would create a TOCTOU window that loses terminal events.
+        // Capture-before-drain: snapshot the next-event signal BEFORE reading the events list.
+        // AppendEvent adds under the events lock and then swaps the signal, so any event added
+        // between our capture and our drain has already fired the captured signal — the next
+        // iteration drains it. Capturing after the drain would create a TOCTOU that loses
+        // terminal events.
         while (!context.RequestAborted.IsCancellationRequested)
         {
             var nextSignal = record.NextEventSignal;
 
-            // First pass uses the resume semantics — replay the full log if the consumer
-            // resumed past the last known event. Subsequent passes just diff against
-            // lastSentSeq so we never re-send a frame.
+            // First pass diff'd against lastSentSeq; if the consumer's Last-Event-ID is past
+            // the last known event, replay the full log below.
             var fresh = record.EventsAfter(lastSentSeq);
             if (lastSentSeq == lastEventId
                 && lastEventId > 0
@@ -488,7 +451,7 @@ internal static class AggregationEndpoints
                 && record.LastSequence > 0)
             {
                 // Resume requested past the last known event — replay the entire log so the FE
-                // never silently misses a state transition (TRD §5.4 line 320).
+                // never silently misses a state transition.
                 fresh = record.EventsAfter(0);
             }
 
@@ -504,10 +467,6 @@ internal static class AggregationEndpoints
             catch (OperationCanceledException) { return; }
         }
     }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
 
     private static IResult Unprocessable(string code, string message) =>
         Results.Json(new { code, message }, statusCode: StatusCodes.Status422UnprocessableEntity);
@@ -543,7 +502,7 @@ internal static class AggregationEndpoints
     {
         job_id = r.JobId,
         feed_id = r.OutcomeFeedId,
-        sidecar_feed_id = r.SidecarFeedId,        // null for non-EqI; populated for EqI (Phase 2b)
+        sidecar_feed_id = r.SidecarFeedId,        // null for non-EqI; populated for EqI
         bar_count = r.BarCount,
         partitions_written = r.PartitionsWritten,
         first_bar_ts = r.FirstBarTs,

@@ -1,12 +1,8 @@
 "use client";
 
-// Phase 3 — read-only Monaco/CodeMirror viewer for a feed's `feeds.json` entry (P3-15).
-// The TRD §10.1 references "Monaco" but CodeMirror 6 (already in deps) is interchangeable
-// for a read-only JSON viewer — that decision is recorded in the virtualization ADR.
-//
-// Banner: when the feed's manifest entry has imbalance_reconstruction_method ==
-// "m1_taker_buy_proxy", show the EqI yellow-banner using the canonical server-supplied
-// copy from /aggregation-options (TRD §10.1, P3-19). Pulled via parent.
+// Read-only CodeMirror viewer for a feed's `feeds.json` entry. When the manifest's
+// imbalance_reconstruction_method is "m1_taker_buy_proxy", shows the EqI banner using
+// server-supplied copy from /aggregation-options.
 
 import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -32,15 +28,11 @@ export function FeedStatusCard({ exchange, asset, feedId }: Props) {
     queryFn: ({ signal }) => dataApi.getFeedStatus(exchange, asset, feedId, signal),
   });
 
-  // Eligibility-options is the canonical source of `warnings[]` for the EqI banner.
-  // Note: Status card needs warnings even though the form is the primary consumer —
-  // a feed with `imbalance_reconstruction_method = m1_taker_buy_proxy` displays the
-  // banner regardless of where the user came from.
+  // Canonical source of `warnings[]` for the EqI banner. Harmless for alt bars (returns
+  // empty arrays); always fetch.
   const eligibility = useQuery({
     queryKey: ["data", "aggregation-options", exchange, asset, feedId],
     queryFn: ({ signal }) => dataApi.getAggregationOptions(exchange, asset, feedId, signal),
-    // Aggregation-options is meaningful for time-bar source feeds (eligible types listed)
-    // and harmless for alt bars (returns empty arrays). Always fetch.
   });
 
   const formattedJson = useMemo(() => {
@@ -55,12 +47,10 @@ export function FeedStatusCard({ exchange, asset, feedId }: Props) {
     ? pickEqiBanner(eligibility.data.warnings)
     : null;
 
-  // Initialize / update the CodeMirror view whenever the JSON changes.
   useEffect(() => {
     if (!editorContainerRef.current) return;
 
     if (editorViewRef.current) {
-      // Update content of an existing view by replacing the entire doc.
       editorViewRef.current.dispatch({
         changes: {
           from: 0,
@@ -76,9 +66,8 @@ export function FeedStatusCard({ exchange, asset, feedId }: Props) {
       extensions: [
         json(),
         oneDark,
-        // Read-only mode: the user can scroll/select but not type. `editable: () => false`
-        // is necessary IN ADDITION to readOnly to suppress the IME ghost cursor that
-        // otherwise renders.
+        // `editable: () => false` is required in addition to readOnly to suppress the
+        // IME ghost cursor that otherwise renders.
         EditorState.readOnly.of(true),
         EditorView.editable.of(false),
         EditorView.theme({

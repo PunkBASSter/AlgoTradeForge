@@ -5,32 +5,14 @@ using AlgoTradeForge.Domain.Strategy.Subscriptions;
 namespace AlgoTradeForge.Application.Backtests;
 
 /// <summary>
-/// Phase 4 (TRD §9.3) bridge: converts a polymorphic <see cref="DataFeedSubscription"/>
-/// into the strategy-side <see cref="DataSubscription"/> shape that
-/// <c>IInt64BarStrategy.DataSubscriptions</c> consumes.
+/// Converts a polymorphic <see cref="DataFeedSubscription"/> into the strategy-side
+/// <see cref="DataSubscription"/>. For alt-bar / tick primaries the TimeFrame is a placeholder
+/// derived from the source granularity — strategies must use bar timestamps for time arithmetic
+/// since bar duration is variable.
 /// </summary>
-/// <remarks>
-/// <para>
-/// For non-TimeBar primaries the strategy-side <c>TimeFrame</c> is a <em>placeholder</em>
-/// derived from the alt-bar's source granularity (or the canonical <c>1m</c> sentinel for
-/// tick-sourced bars). Strategies consuming alt-bar / tick primaries MUST use bar
-/// timestamps for time arithmetic — <c>DataSubscription.TimeFrame.Duration</c> is not
-/// authoritative for variable-duration bars. The <c>FeedKey</c> field carries the alt-bar
-/// identity so the engine and run records can disambiguate.
-/// </para>
-/// <para>
-/// Side feeds are FeedSeries (consumed via <c>IFeedContext</c>), not OHLCV bar series, and
-/// are rejected by this factory. The fail-fast prevents a silent populate-then-fail-later
-/// downstream where the loader would also reject.
-/// </para>
-/// </remarks>
 public static class StrategySubscriptionFactory
 {
-    /// <summary>
-    /// Synthesizes the strategy-side <see cref="DataSubscription"/> for a primary feed.
-    /// Throws on <see cref="SideFeedSubscription"/> — side feeds don't enter the
-    /// strategy's <c>DataSubscriptions</c> list.
-    /// </summary>
+    /// <summary>Synthesizes the strategy-side subscription for a primary feed.</summary>
     public static DataSubscription FromPrimary(DataFeedSubscription sub, Asset asset) => sub switch
     {
         TimeBarSubscription tb => new DataSubscription(asset, tb.TimeFrame),
@@ -46,10 +28,9 @@ public static class StrategySubscriptionFactory
     };
 
     /// <summary>
-    /// Extracts the placeholder TimeFrame from an alt-bar feed-id. Per TRD §3.3 the grammar
-    /// is positional (<c>&lt;TypeCode&gt;_&lt;SourceCode&gt;_&lt;Threshold&gt;</c>); the
-    /// source-code component drives the placeholder. Tick-sourced alt-bars fall back to
-    /// the canonical <c>1m</c> sentinel because there is no source TimeFrame for ticks.
+    /// Parses an alt-bar feed-id (<c>&lt;TypeCode&gt;_&lt;SourceCode&gt;_&lt;Threshold&gt;</c>)
+    /// and returns the source TimeFrame. Tick-sourced alt-bars fall back to the <c>1m</c>
+    /// sentinel since ticks have no native TimeFrame.
     /// </summary>
     public static TimeFrame ResolveSourceTimeFrame(string altBarFeedId)
     {
@@ -57,7 +38,7 @@ public static class StrategySubscriptionFactory
         if (parts.Length != 3)
             throw new ArgumentException(
                 $"Invalid alt-bar feed-id '{altBarFeedId}': expected positional grammar " +
-                "'<TypeCode>_<SourceCode>_<Threshold>' (TRD §3.3).", nameof(altBarFeedId));
+                "'<TypeCode>_<SourceCode>_<Threshold>'.", nameof(altBarFeedId));
 
         var sourceCode = parts[1];
         if (sourceCode == "ticks")

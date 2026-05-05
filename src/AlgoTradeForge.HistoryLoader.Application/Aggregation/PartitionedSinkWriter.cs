@@ -4,20 +4,11 @@ using System.Text;
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
 /// <summary>
-/// Streaming CSV writer that emits monthly partition files under <paramref name="feedDir"/>
-/// with the size-overflow scheme from TRD §3.2:
-/// <list type="bullet">
-///   <item>Default partition name <c>&lt;YYYY&gt;-&lt;MM&gt;.csv</c>.</item>
-///   <item>When bytes-written exceeds <c>maxPartitionBytes</c> mid-month and the partition
-///         is bare-named, the in-progress file atomic-renames to <c>&lt;YYYY&gt;-&lt;MM&gt;.p01.csv</c>
-///         and writing continues in <c>&lt;YYYY&gt;-&lt;MM&gt;.p02.csv</c>. Sticky for the
-///         rest of the month — a month is either single-file or part-numbered, never mixed.</item>
-///   <item>Once any month overflows, all subsequent months pre-open as
-///         <c>&lt;YYYY&gt;-&lt;MM&gt;.p01.csv</c> from the first bar (cross-month sticky).</item>
-///   <item>Every partition write goes to <c>&lt;name&gt;.tmp</c> and atomic-renames on close.</item>
-/// </list>
-/// Standalone in Phase 1a (test-fed); aggregator-fed in Phase 1b. Single-threaded by design —
-/// the aggregator owns one writer per job and feeds it serially.
+/// Streaming CSV writer that emits monthly partition files under <c>feedDir</c> with size-
+/// overflow handling: bare <c>YYYY-MM.csv</c> until <c>maxPartitionBytes</c> is exceeded, then
+/// atomic-rename to <c>.p01.csv</c> and continue with <c>.p02.csv</c>. Once any month overflows,
+/// every subsequent month pre-opens as <c>.p01.csv</c> (cross-month sticky). All writes go
+/// through <c>*.tmp</c> and atomic-rename on close. Single-threaded — one writer per job.
 /// </summary>
 public sealed class PartitionedSinkWriter : IDisposable
 {
@@ -57,8 +48,7 @@ public sealed class PartitionedSinkWriter : IDisposable
         }
         else if (!string.Equals(month, _openMonth, StringComparison.Ordinal))
         {
-            // Source reader (TRD §6.2) guarantees chronological enumeration. A backward
-            // jump is a contract violation; surface loudly.
+            // Source reader guarantees chronological enumeration; a backward jump is a contract violation.
             if (string.CompareOrdinal(month, _openMonth) < 0)
             {
                 throw new InvalidOperationException(
@@ -70,9 +60,8 @@ public sealed class PartitionedSinkWriter : IDisposable
 
         var rowBytes = Encoding.UTF8.GetBytes(csvRow + "\n");
 
-        // Roll over BEFORE writing the row that would exceed the budget. Skip the rollover
-        // when the current partition is empty-of-data (only header written) — otherwise a
-        // single oversize row would loop forever.
+        // Roll over BEFORE writing the over-budget row. Skip when the partition has only its
+        // header — otherwise a single oversize row would loop forever.
         if (_bytesInCurrent + rowBytes.Length > _maxBytes && _bytesInCurrent > _headerBytes.Length)
         {
             HandleMidMonthOverflow();
@@ -90,12 +79,9 @@ public sealed class PartitionedSinkWriter : IDisposable
         _disposed = true;
     }
 
-    // -------------------------------------------------------------------------
-
     private void OpenForMonth(string month)
     {
-        // Cross-month sticky: any prior overflow in THIS writer's lifetime forces every
-        // subsequent month to pre-open at .p01.
+        // Cross-month sticky: any prior overflow forces all subsequent months to pre-open at .p01.
         if (_hasEverOverflowed)
             OpenAt(month, partNumber: 1);
         else
@@ -109,7 +95,7 @@ public sealed class PartitionedSinkWriter : IDisposable
         var finalName = NameFor(month, partNumber);
         _tmpPath = Path.Combine(_feedDir, finalName + ".tmp");
 
-        // Co-locate tmp + final in the same dir → guaranteed same-volume rename.
+        // Same-dir tmp + final → atomic rename guaranteed.
         SameVolumeGuard.Ensure(_tmpPath, _feedDir);
 
         _stream = new FileStream(_tmpPath, FileMode.Create, FileAccess.Write, FileShare.None);
@@ -119,15 +105,11 @@ public sealed class PartitionedSinkWriter : IDisposable
 
     private void HandleMidMonthOverflow()
     {
-        // The current partition will be finalized — but as which name? If we were writing the
-        // bare <month>.csv.tmp, this is the FIRST overflow for the month: rename to
-        // <month>.p01.csv and open .p02.csv. Otherwise (already part-numbered): rename to
-        // <month>.p<N>.csv and open p<N+1>.csv.
+        // First overflow for the month: bare → p01, then open p02. Otherwise: pN → pN, open p(N+1).
         var month = _openMonth!;
 
         if (_openPartNumber is null)
         {
-            // Promote bare → p01.
             CloseStream();
             File.Move(_tmpPath!, Path.Combine(_feedDir, NameFor(month, 1)), overwrite: false);
             _tmpPath = null;

@@ -9,21 +9,10 @@ namespace AlgoTradeForge.Infrastructure.History;
 /// <summary>
 /// Loads auxiliary feed data from monthly-partitioned CSV files.
 /// Path pattern: {dataRoot}/{exchange}/{assetDir}/{feedName}/{YYYY-MM}[_{interval}].csv
-/// Header: ts,col1,col2,...  (ts is long unix ms, columns are doubles)
+/// Header: ts,col1,col2,...  (ts is long unix ms, columns are doubles).
+/// When <c>nullableColumns</c> is true, empty cells parse as NaN; otherwise they throw.
+/// Malformed non-empty cells always throw.
 /// </summary>
-/// <remarks>
-/// Empty-cell handling is gated by the <c>nullableColumns</c> argument (TRD §3.5):
-/// <list type="bullet">
-///   <item><c>true</c>: empty / truncated cells parse as <see cref="double.NaN"/>. Used by
-///         sidecar feeds (<c>.flow</c>) and any side feed declared with
-///         <c>nullable_columns: true</c> in <c>feeds.json</c>.</item>
-///   <item><c>false</c> (default): empty / truncated cells throw with file/row/column context.
-///         Surfaces malformed legacy data instead of silently filling with zero.</item>
-/// </list>
-/// Malformed non-empty cells (e.g. <c>"abc"</c>) always throw regardless of flag — that's
-/// data corruption, never silent (TRD §3.5; tightened in Phase 1b P1b-0a from the legacy
-/// "skip row" behavior).
-/// </remarks>
 public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
 {
     private readonly ILogger<CsvFeedSeriesLoader> _logger;
@@ -115,7 +104,6 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
 
                     if (raw is null || raw.Length == 0)
                     {
-                        // Empty / missing cell — gated by nullable_columns (TRD §3.5).
                         if (nullableColumns)
                         {
                             values[c] = double.NaN;
@@ -134,9 +122,6 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
                     }
                     else
                     {
-                        // Malformed non-empty cell — data corruption. Phase 1b (P1b-0a) tightened
-                        // this from the legacy "skip row" behavior so silent loss never happens
-                        // under either nullable_columns setting.
                         throw new FormatException(
                             $"Malformed numeric cell '{raw}' in feed '{feedName}', file '{filePath}', " +
                             $"row {rowIndex} (ts={ts}), column index {c}.");

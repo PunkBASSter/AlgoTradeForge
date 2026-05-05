@@ -71,15 +71,14 @@ internal sealed class LiquidationStreamService(
             try
             {
                 await ConnectAndStreamAsync(stoppingToken);
-                // Normal disconnect (e.g. server-side close) — reset and reconnect
+                // Normal disconnect — reset and reconnect.
                 attempts = 0;
             }
             catch (OperationCanceledException) when (
                 stoppingToken.IsCancellationRequested)
             {
-                // Real shutdown — exit the loop cleanly. HttpClient/WebSocket timeouts also throw
-                // OperationCanceledException without any caller cancellation; those fall through
-                // to the generic handler below and trigger reconnect with backoff.
+                // Real shutdown. HttpClient/WebSocket timeouts also throw OCE without caller
+                // cancellation; the qualifier ensures those fall through to the reconnect path.
                 break;
             }
             catch (Exception ex)
@@ -130,9 +129,8 @@ internal sealed class LiquidationStreamService(
         catch (Exception ex) when (
             !(ex is OperationCanceledException && ct.IsCancellationRequested))
         {
-            // HttpClient.Timeout (a TaskCanceledException) is also an OperationCanceledException
-            // — without the `ct.IsCancellationRequested` qualifier, timeout would escape and
-            // crash the BG service. Probe is best-effort; any non-shutdown exception → unreachable.
+            // HttpClient.Timeout throws TaskCanceledException (an OCE); without this qualifier
+            // a timeout would escape and crash the BG service. Probe is best-effort.
             return false;
         }
     }
@@ -211,7 +209,6 @@ internal sealed class LiquidationStreamService(
                     "Liquidation {Symbol} {Side} qty={Qty} price={Price} notional=${Notional:F2}",
                     symbol, sideLabel, record.Values[2], record.Values[1], record.Values[3]);
 
-                // Track status
                 if (!statusTracker.TryGetValue(assetDir, out var st))
                     st = (0, null, null);
                 st.count++;
@@ -222,21 +219,18 @@ internal sealed class LiquidationStreamService(
             catch (Exception ex) when (
                 !(ex is OperationCanceledException && ct.IsCancellationRequested))
             {
-                // Per-message handler. Real shutdown propagates; a stray TaskCanceledException
-                // from an HTTP/WS timeout inside the handler must not kill the stream loop.
+                // Real shutdown propagates; a stray HTTP/WS timeout must not kill the stream loop.
                 logger.LogError(ex, "Failed to process liquidation message");
             }
 
             var now = DateTimeOffset.UtcNow;
 
-            // Periodic status flush
             if (now - lastStatusFlush >= StatusFlushInterval)
             {
                 FlushStatus(statusTracker);
                 lastStatusFlush = now;
             }
 
-            // Periodic heartbeat
             if (now - lastHeartbeat >= HeartbeatInterval)
             {
                 logger.LogInformation(
@@ -246,7 +240,6 @@ internal sealed class LiquidationStreamService(
             }
         }
 
-        // Final flush
         FlushStatus(statusTracker);
     }
 
@@ -257,7 +250,6 @@ internal sealed class LiquidationStreamService(
             using var doc = JsonDocument.Parse(data);
             var root = doc.RootElement;
 
-            // Verify event type
             if (!root.TryGetProperty("e", out var eventType)
                 || eventType.GetString() != "forceOrder")
                 return null;
@@ -265,26 +257,24 @@ internal sealed class LiquidationStreamService(
             if (!root.TryGetProperty("o", out var order))
                 return null;
 
-            // Only process FILLED orders
+            // Only process FILLED orders.
             if (!order.TryGetProperty("X", out var status)
                 || status.GetString() != "FILLED")
                 return null;
 
-            // Extract symbol
             if (!order.TryGetProperty("s", out var symbolProp))
                 return null;
             var symbol = symbolProp.GetString();
             if (string.IsNullOrEmpty(symbol))
                 return null;
 
-            // Extract timestamp
             if (!order.TryGetProperty("T", out var tsProp))
                 return null;
             long timestamp = tsProp.ValueKind == JsonValueKind.Number
                 ? tsProp.GetInt64()
                 : long.Parse(tsProp.GetString()!, CultureInfo.InvariantCulture);
 
-            // Extract side: SELL = long liquidated (1.0), BUY = short liquidated (-1.0)
+            // SELL = long liquidated (+1), BUY = short liquidated (-1).
             if (!order.TryGetProperty("S", out var sideProp))
                 return null;
             var sideStr = sideProp.GetString();
@@ -292,14 +282,12 @@ internal sealed class LiquidationStreamService(
             if (double.IsNaN(side))
                 return null;
 
-            // Extract average price
             if (!order.TryGetProperty("ap", out var apProp))
                 return null;
             var apStr = apProp.GetString();
             if (!double.TryParse(apStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var avgPrice))
                 return null;
 
-            // Extract executed qty
             if (!order.TryGetProperty("z", out var zProp))
                 return null;
             var zStr = zProp.GetString();

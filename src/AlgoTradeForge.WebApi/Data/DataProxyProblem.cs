@@ -3,16 +3,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace AlgoTradeForge.WebApi.Data;
 
 /// <summary>
-/// Translates upstream HistoryLoader failures into <see cref="ProblemDetails"/> with stable
-/// <c>code</c> values (Phase 3 / P3-6). Only 5xx and connection failures are translated;
-/// upstream 4xx (422, 423, 409) is forwarded byte-identical because those status codes carry
-/// domain-meaningful body shapes the FE already differentiates.
+/// Translates upstream HistoryLoader 5xx / connection failures into <see cref="ProblemDetails"/>
+/// with stable <c>code</c> values. Upstream 4xx is forwarded byte-identical so domain-meaningful
+/// body shapes reach the FE unchanged. The FE matches on <c>code</c>, never title/detail.
 /// </summary>
-/// <remarks>
-/// Stable codes: <c>history_loader_unavailable</c> (502), <c>upstream_timeout</c> (504),
-/// <c>upstream_error</c> (passthrough 5xx). The FE matches on <c>code</c>, never on the
-/// title or detail.
-/// </remarks>
 public static class DataProxyProblem
 {
     public static IResult Unavailable(string detail) => Problem(
@@ -28,8 +22,8 @@ public static class DataProxyProblem
         detail: detail);
 
     public static IResult UpstreamError(int upstreamStatus, string detail) => Problem(
-        // Pass through the upstream 5xx status (e.g. 503 from queue-full passthrough), not
-        // a fixed 502 — preserves the upstream contract for clients that branch on status.
+        // Pass through upstream 5xx (e.g. 503) instead of fixing 502 so clients that branch
+        // on status see the original code.
         statusCode: upstreamStatus,
         code: "upstream_error",
         title: "History loader returned an error",
@@ -40,7 +34,6 @@ public static class DataProxyProblem
             statusCode: statusCode,
             title: title,
             detail: detail,
-            // Stable error code on extensions, not the title — title is human-readable
-            // and could change without breaking FE contract.
+            // Stable code on extensions; title is human-readable and may change.
             extensions: new Dictionary<string, object?> { ["code"] = code });
 }
