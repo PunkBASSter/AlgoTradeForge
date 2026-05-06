@@ -64,6 +64,10 @@ internal sealed class FeedSchemaManager : ISchemaManager
                     Type = autoApply.Type,
                     RateColumn = autoApply.RateColumn,
                     SignConvention = autoApply.SignConvention,
+                    Cap = autoApply.Cap,
+                    Floor = autoApply.Floor,
+                    IntervalHours = autoApply.IntervalHours,
+                    Disclaimer = autoApply.Disclaimer,
                 }
                 : null;
 
@@ -200,6 +204,78 @@ internal sealed class FeedSchemaManager : ISchemaManager
         }
 
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
+    }
+
+    public bool SetAutoApplyParams(
+        string assetDir,
+        string feedName,
+        double? cap,
+        double? floor,
+        int? intervalHours,
+        bool? disclaimer)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(feedName);
+
+        var path = FeedsJsonPath(assetDir);
+        var rwl = GetLock(path);
+        rwl.EnterWriteLock();
+        try
+        {
+            var existing = LoadUnsafe(path);
+            if (existing is null || !existing.Feeds.TryGetValue(feedName, out var feed))
+                return false;
+
+            if (feed.AutoApply is null)
+                return false;
+
+            var updatedAutoApply = new AutoApplyDefinition
+            {
+                Type = feed.AutoApply.Type,
+                RateColumn = feed.AutoApply.RateColumn,
+                SignConvention = feed.AutoApply.SignConvention,
+                Cap = cap,
+                Floor = floor,
+                IntervalHours = intervalHours,
+                Disclaimer = disclaimer,
+            };
+
+            var updatedFeed = new FeedDefinition
+            {
+                Kind = feed.Kind,
+                Interval = feed.Interval,
+                Columns = feed.Columns,
+                AutoApply = updatedAutoApply,
+                Type = feed.Type,
+                Source = feed.Source,
+                Threshold = feed.Threshold,
+                Build = feed.Build,
+                Fidelity = feed.Fidelity,
+                FirstBarTs = feed.FirstBarTs,
+                LastBarTs = feed.LastBarTs,
+                Sidecar = feed.Sidecar,
+                NullableColumns = feed.NullableColumns,
+            };
+
+            var updatedFeeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
+            {
+                [feedName] = updatedFeed
+            };
+
+            var updated = new FeedMetadata
+            {
+                Feeds = updatedFeeds,
+                Candles = existing.Candles,
+            };
+
+            AtomicWriteUnsafe(assetDir, path, updated);
+        }
+        finally
+        {
+            rwl.ExitWriteLock();
+        }
+
+        ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
+        return true;
     }
 
     public void RemoveFeed(string assetDir, string feedId)

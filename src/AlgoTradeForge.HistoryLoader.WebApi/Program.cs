@@ -85,6 +85,9 @@ builder.Services.AddHostedService<RatioCollectorService>();
 builder.Services.AddHostedService<HourlyCollectorService>();
 builder.Services.AddHostedService<LiquidationStreamService>();
 builder.Services.AddHostedService<TicksCollectorService>();
+builder.Services.AddHostedService<FundingInfoRefreshService>();
+builder.Services.AddHostedService<SpotAggTradeStreamService>();
+builder.Services.AddHostedService<BookTickerStreamService>();
 
 var app = builder.Build();
 

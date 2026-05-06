@@ -162,6 +162,109 @@ public sealed class FeedSchemaManagerTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
+    public void SetAutoApplyParams_FeedMissing_ReturnsFalse()
+    {
+        var manager = new FeedSchemaManager();
+        var assetDir = AssetDir("BTCUSDT_UpdateMissing");
+
+        var updated = manager.SetAutoApplyParams(assetDir, "funding-rate", 0.03, -0.03, 8, false);
+
+        Assert.False(updated);
+    }
+
+    [Fact]
+    public void SetAutoApplyParams_AutoApplyMissing_ReturnsFalse()
+    {
+        var manager = new FeedSchemaManager();
+        var assetDir = AssetDir("BTCUSDT_NoAutoApply");
+
+        manager.EnsureSchema(assetDir, "funding-rate", "", columns: ["rate", "mark_price"]);
+
+        var updated = manager.SetAutoApplyParams(assetDir, "funding-rate", 0.03, -0.03, 8, false);
+
+        Assert.False(updated);
+    }
+
+    [Fact]
+    public void SetAutoApplyParams_FeedWithAutoApply_ReplacesParams()
+    {
+        var manager = new FeedSchemaManager();
+        var assetDir = AssetDir("BTCUSDT_Update");
+
+        manager.EnsureSchema(
+            assetDir, "funding-rate", "",
+            columns: ["rate", "mark_price"],
+            autoApply: new AlgoTradeForge.HistoryLoader.Application.Abstractions.AutoApplySpec(
+                "FundingRate", "rate"));
+
+        var updated = manager.SetAutoApplyParams(
+            assetDir, "funding-rate",
+            cap: 0.0300, floor: -0.0300, intervalHours: 8, disclaimer: false);
+
+        Assert.True(updated);
+
+        var metadata = ReadFeedsJson(assetDir);
+        var feed = metadata.Feeds["funding-rate"];
+        Assert.NotNull(feed.AutoApply);
+        Assert.Equal("FundingRate", feed.AutoApply.Type);
+        Assert.Equal("rate", feed.AutoApply.RateColumn);
+        Assert.Equal(0.0300, feed.AutoApply.Cap);
+        Assert.Equal(-0.0300, feed.AutoApply.Floor);
+        Assert.Equal(8, feed.AutoApply.IntervalHours);
+        Assert.False(feed.AutoApply.Disclaimer);
+
+        Assert.Equal(["rate", "mark_price"], feed.Columns);
+    }
+
+    [Fact]
+    public void SetAutoApplyParams_NullArgs_ClearExistingValues()
+    {
+        var manager = new FeedSchemaManager();
+        var assetDir = AssetDir("BTCUSDT_UpdateClears");
+
+        manager.EnsureSchema(
+            assetDir, "funding-rate", "",
+            columns: ["rate", "mark_price"],
+            autoApply: new AlgoTradeForge.HistoryLoader.Application.Abstractions.AutoApplySpec(
+                "FundingRate", "rate"));
+
+        manager.SetAutoApplyParams(assetDir, "funding-rate", 0.03, -0.03, 8, true);
+
+        manager.SetAutoApplyParams(
+            assetDir, "funding-rate",
+            cap: null, floor: null, intervalHours: null, disclaimer: null);
+
+        var metadata = ReadFeedsJson(assetDir);
+        var feed = metadata.Feeds["funding-rate"];
+        Assert.NotNull(feed.AutoApply);
+        Assert.Null(feed.AutoApply.Cap);
+        Assert.Null(feed.AutoApply.Floor);
+        Assert.Null(feed.AutoApply.IntervalHours);
+        Assert.Null(feed.AutoApply.Disclaimer);
+    }
+
+    [Fact]
+    public void SetAutoApplyParams_PreservesOtherFeeds()
+    {
+        var manager = new FeedSchemaManager();
+        var assetDir = AssetDir("BTCUSDT_UpdatePreserves");
+
+        manager.EnsureSchema(assetDir, "open-interest", "5m", columns: ["oi", "oi_usd"]);
+        manager.EnsureSchema(
+            assetDir, "funding-rate", "",
+            columns: ["rate", "mark_price"],
+            autoApply: new AlgoTradeForge.HistoryLoader.Application.Abstractions.AutoApplySpec(
+                "FundingRate", "rate"));
+
+        manager.SetAutoApplyParams(assetDir, "funding-rate", 0.03, -0.03, 8, false);
+
+        var metadata = ReadFeedsJson(assetDir);
+        Assert.Equal(2, metadata.Feeds.Count);
+        Assert.True(metadata.Feeds.ContainsKey("open-interest"));
+        Assert.Equal(["oi", "oi_usd"], metadata.Feeds["open-interest"].Columns);
+    }
+
+    [Fact]
     public async Task ConcurrentEnsureSchema_DifferentFeeds_BothPresent()
     {
         var manager  = new FeedSchemaManager();

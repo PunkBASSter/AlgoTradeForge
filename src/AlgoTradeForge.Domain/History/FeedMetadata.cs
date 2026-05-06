@@ -67,6 +67,18 @@ public sealed class AutoApplyDefinition
     public required string Type { get; init; }
     public required string RateColumn { get; init; }
     public string? SignConvention { get; init; }
+
+    /// <summary>Upper bound on the realized rate, refreshed from venue metadata (e.g. Binance <c>/fapi/v1/fundingInfo</c>).</summary>
+    public double? Cap { get; init; }
+
+    /// <summary>Lower bound on the realized rate.</summary>
+    public double? Floor { get; init; }
+
+    /// <summary>Native cadence of the underlying mechanism (e.g. funding interval in hours).</summary>
+    public int? IntervalHours { get; init; }
+
+    /// <summary>Venue-published flag indicating non-standard treatment.</summary>
+    public bool? Disclaimer { get; init; }
 }
 
 public sealed class AggregatedTypeInfo

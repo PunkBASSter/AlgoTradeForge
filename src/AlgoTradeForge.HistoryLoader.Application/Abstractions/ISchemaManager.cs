@@ -25,6 +25,21 @@ public interface ISchemaManager
         string sidecarFeedId,
         string[] sidecarColumns);
 
+    /// <summary>
+    /// Replaces the bounded-rate params (cap/floor/intervalHours/disclaimer) on an existing
+    /// feed's <see cref="AutoApplyDefinition"/>. Null args clear the value, they do not
+    /// preserve it — callers must pass a complete venue snapshot. Returns <c>false</c> if the
+    /// feed entry or its <c>AutoApply</c> sub-object is absent (no auto-apply mechanism to
+    /// constrain, so caller should skip this asset rather than synthesize one).
+    /// </summary>
+    bool SetAutoApplyParams(
+        string assetDir,
+        string feedName,
+        double? cap,
+        double? floor,
+        int? intervalHours,
+        bool? disclaimer);
+
     /// <summary>Removes one feed entry from <c>feeds.json</c>. No-op if the entry isn't present.</summary>
     void RemoveFeed(string assetDir, string feedId);
 

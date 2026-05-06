@@ -57,6 +57,10 @@ public static class DependencyInjection
         services.AddKeyedSingleton<ICandleFetcher>(futuresKey,
             (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
 
+        // Funding-info fetcher — single-shot endpoint, no per-symbol/per-feed routing.
+        services.AddSingleton<IFundingInfoFetcher>(
+            sp => sp.GetRequiredService<BinanceFuturesClient>());
+
         // Keyed DI — futures feed fetchers (compound key: "{exchange}:{feedName}")
         services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.FundingRate}",
             (sp, _) => new DelegatingFeedFetcher(
@@ -132,6 +136,7 @@ public static class DependencyInjection
         services.AddSingleton<ICandleWriter, CandleCsvWriter>();
         services.AddSingleton<IFeedWriter, FeedCsvWriter>();
         services.AddSingleton<ITickFeedWriter, DailyTickCsvWriter>();
+        services.AddSingleton<IBookTickerWriter, DailyBookTickerCsvWriter>();
         services.AddSingleton<ISchemaManager, FeedSchemaManager>();
         services.AddSingleton<IFeedStatusStore, FeedStatusManager>();
 
