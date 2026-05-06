@@ -44,6 +44,8 @@ builder.Services.AddHistoryLoaderInfrastructure();
 builder.Services.AddSingleton<IFeedCollector, CandleFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, FundingRateFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, MarkPriceFeedCollector>();
+builder.Services.AddSingleton<IFeedCollector, PremiumIndexFeedCollector>();
+builder.Services.AddSingleton<IFeedCollector, IndexPriceFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, OpenInterestFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LsRatioGlobalFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LsRatioTopAccountsFeedCollector>();

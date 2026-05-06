@@ -68,6 +68,16 @@ public static class DependencyInjection
                 (symbol, interval, fromMs, toMs, ct) =>
                     sp.GetRequiredService<BinanceFuturesClient>().FetchMarkPriceFeedAsync(symbol, interval!, fromMs, toMs, ct)));
 
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.PremiumIndex}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, interval, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchPremiumIndexFeedAsync(symbol, interval!, fromMs, toMs, ct)));
+
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.IndexPrice}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, interval, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchIndexPriceFeedAsync(symbol, interval!, fromMs, toMs, ct)));
+
         services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.OpenInterest}",
             (sp, _) => new DelegatingFeedFetcher(
                 (symbol, interval, fromMs, toMs, ct) =>
