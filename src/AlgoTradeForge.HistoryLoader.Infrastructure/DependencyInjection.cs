@@ -104,8 +104,14 @@ public static class DependencyInjection
                     sp.GetRequiredService<BinanceFuturesClient>().FetchAggTradesAsync(symbol, fromMs, toMs, ct)));
 
         // Keyed DI — spot
-        services.AddKeyedSingleton<ICandleFetcher>("binance-spot",
+        var spotKey = "binance-spot";
+        services.AddKeyedSingleton<ICandleFetcher>(spotKey,
             (sp, _) => sp.GetRequiredService<BinanceSpotClient>());
+
+        services.AddKeyedSingleton<IFeedFetcher>($"{spotKey}:{FeedNames.Ticks}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, _, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceSpotClient>().FetchAggTradesAsync(symbol, fromMs, toMs, ct)));
 
         // Factory abstractions (replace direct IServiceProvider usage in Application layer)
         services.AddSingleton<IFeedFetcherFactory, FeedFetcherFactory>();

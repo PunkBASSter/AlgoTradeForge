@@ -5,7 +5,9 @@ using Microsoft.Extensions.Logging;
 namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 
 /// <summary>
-/// Collects Binance USDT-M Futures aggregate trades into daily-partitioned CSVs.
+/// Collects Binance Spot and USDT-M Futures aggregate trades into daily-partitioned CSVs.
+/// Routes to the spot or futures HTTP client based on <see cref="AssetCollectionConfig.Type"/>
+/// via <see cref="ExchangeKeys.Resolve"/>.
 /// </summary>
 /// <remarks>
 /// Does NOT extend <see cref="GenericFeedCollectorBase"/>: that base assumes monthly partitions
@@ -24,8 +26,7 @@ public sealed class AggTradeFeedCollector(
 
     public string FeedName => FeedNames.Ticks;
 
-    // Perp-only for now; spot tick ingestion is a follow-up.
-    public bool SupportsSpot => false;
+    public bool SupportsSpot => true;
 
     public async Task CollectAsync(
         AssetCollectionConfig assetConfig,
@@ -45,7 +46,7 @@ public sealed class AggTradeFeedCollector(
         if (resume is { } r && r.LastTsMs >= fromMs)
             fromMs = r.LastTsMs;
 
-        var exchangeKey = ExchangeKeys.Futures(assetConfig.Exchange);
+        var exchangeKey = ExchangeKeys.Resolve(assetConfig);
         var fetcher = feedFetcherFactory.Create(exchangeKey, FeedNames.Ticks);
 
         long recordCount = 0;
