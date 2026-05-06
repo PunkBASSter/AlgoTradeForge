@@ -1,5 +1,6 @@
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
@@ -21,7 +22,19 @@ public sealed record AggregationJob(
     ScaleContext SourceScale,
     ScaleContext AccumulatorScale,
     int MaxPartitionSizeMB,
-    string ToolVersion);
+    string ToolVersion,
+    /// <summary>Non-null = incremental continue. Null = fresh build.</summary>
+    ResumeContext? Resume = null);
+
+/// <summary>
+/// Resume anchor. Filter is <c>r.TsMs &gt; LastSourceTsMs</c> — set the cutoff to
+/// <c>priorLastBarTs - 1</c> so the trailing bar's source records get reconsumed and the
+/// bar is re-emitted (deterministic). <see cref="LastBrickClose"/> is Renko-only.
+/// </summary>
+public sealed record ResumeContext(
+    long LastSourceTsMs,
+    long? LastBrickClose,
+    AltBarFeedSpec PriorSpec);
 
 /// <summary>Pipeline output snapshotted at finalize.</summary>
 public sealed record AggregationResult(

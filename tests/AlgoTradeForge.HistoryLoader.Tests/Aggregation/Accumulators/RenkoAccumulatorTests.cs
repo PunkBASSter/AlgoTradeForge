@@ -250,6 +250,75 @@ public sealed class RenkoAccumulatorTests
     }
 
     [Fact]
+    public void Seed_SkipsFirstRecordAnchor_BricksChainOffPriorClose()
+    {
+        // Without seed: first record's close becomes _lastBrickClose (no-emit).
+        // With seed: _lastBrickClose is pre-set, the first record can immediately emit.
+        var acc = new RenkoAccumulator(brickSize: 10);
+        acc.Seed(lastBrickClose: 100);
+
+        // Price moves to 110 — one brick up against the seeded wall, NOT a no-op seed.
+        Assert.True(acc.TryAdvance(Tick(1000, 110, 7), out var bar));
+        Assert.Equal(100, bar.Open);
+        Assert.Equal(110, bar.Close);
+        Assert.Equal(7, bar.Volume);
+
+        Assert.Equal(110, acc.LastBrickClose);
+    }
+
+    [Fact]
+    public void Seed_ResumesFromGivenBrickClose_ProducesIdenticalChainAsFreshRun()
+    {
+        // Build a fresh chain over [tick0..tick4]. Note the brick-close after tick2.
+        // Then build a "resumed" chain over [tick2..tick4] seeded with that close.
+        // Bricks emitted from tick3 onward must be byte-identical between the two runs.
+        var ticks = new[]
+        {
+            Tick(1000, 100, 0),     // seed
+            Tick(2000, 110, 4),     // 1 brick → close=110
+            Tick(3000, 120, 4),     // 1 brick → close=120  (resume anchor)
+            Tick(4000, 130, 4),     // 1 brick → close=130
+            Tick(5000, 140, 4),     // 1 brick → close=140
+        };
+
+        var fresh = new RenkoAccumulator(brickSize: 10);
+        var freshBricks = new List<AggregatedBar>();
+        foreach (var t in ticks)
+        {
+            if (fresh.TryAdvance(t, out var b)) freshBricks.Add(b);
+            while (fresh.TryDrainQueued(out var q)) freshBricks.Add(q);
+        }
+
+        // Anchor = close of brick produced by tick at ts=3000 (i.e. tick at index 2).
+        var anchor = freshBricks[1].Close;            // 120
+        Assert.Equal(120, anchor);
+
+        var resumed = new RenkoAccumulator(brickSize: 10);
+        resumed.Seed(lastBrickClose: anchor);
+        var resumedBricks = new List<AggregatedBar>();
+        foreach (var t in ticks[3..])                 // tick4 + tick5
+        {
+            if (resumed.TryAdvance(t, out var b)) resumedBricks.Add(b);
+            while (resumed.TryDrainQueued(out var q)) resumedBricks.Add(q);
+        }
+
+        // Fresh emitted 4 bricks (one per up-move). Resumed re-emits the last 2 with
+        // identical OHLC + volume.
+        Assert.Equal(4, freshBricks.Count);
+        Assert.Equal(2, resumedBricks.Count);
+        for (var i = 0; i < resumedBricks.Count; i++)
+        {
+            var f = freshBricks[2 + i];
+            var r = resumedBricks[i];
+            Assert.Equal(f.Open, r.Open);
+            Assert.Equal(f.High, r.High);
+            Assert.Equal(f.Low, r.Low);
+            Assert.Equal(f.Close, r.Close);
+            Assert.Equal(f.Volume, r.Volume);
+        }
+    }
+
+    [Fact]
     public void Finalize_OvershootStaysZero_ByConstruction()
     {
         // Each Renko brick is exactly brick_size tall — no overshoot semantics.

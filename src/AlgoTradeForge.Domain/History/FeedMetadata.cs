@@ -127,6 +127,12 @@ public sealed class BuildInfo
     /// benign equal-millisecond clustering. Always absent for time-bar source jobs.
     /// </summary>
     public long? MonotonicRegressions { get; init; }
+
+    /// <summary>Renko resume anchor; null for non-Renko feeds.</summary>
+    public long? LastBrickClose { get; init; }
+
+    /// <summary>Fresh = 1; +1 per continue.</summary>
+    public int? RunCount { get; init; }
 }
 
 public sealed class FidelityInfo

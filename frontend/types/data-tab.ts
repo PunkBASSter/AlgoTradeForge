@@ -53,7 +53,7 @@ export interface FeedDefinition {
   interval?: string;
   columns?: string[];
   type?: { code: string; name: string } | null;
-  source?: { feed: string; record_count: number } | null;
+  source?: AggregatedSourceInfo | null;
   threshold?: ThresholdInfo | null;
   build?: BuildInfo | null;
   fidelity?: FidelityInfo | null;
@@ -64,6 +64,14 @@ export interface FeedDefinition {
   auto_apply?: { type: string; rate_column: string; sign_convention?: string | null } | null;
   /** Forward-compatibility: unknown keys flow through to the JSON renderer. */
   [key: string]: unknown;
+}
+
+export interface AggregatedSourceInfo {
+  feed: string;
+  record_count: number;
+  first_ts?: string | null;
+  /** Continue's no_new_data probe compares the source tail against this. */
+  last_ts?: string | null;
 }
 
 export interface ThresholdInfo {
@@ -85,6 +93,10 @@ export interface BuildInfo {
    *  from monotonic_bumps (benign equal-ms clustering); non-zero implies an upstream
    *  defect. */
   monotonic_regressions?: number | null;
+  /** Renko resume anchor; null for non-Renko feeds. */
+  last_brick_close?: number | null;
+  /** Fresh = 1; +1 per continue. */
+  run_count?: number | null;
 }
 
 export interface FidelityInfo {
@@ -120,13 +132,22 @@ export interface AggregateRequest {
   threshold_unit: "base_asset" | "quote_asset" | "trades";
   input_mode: "absolute" | "convenience";
   convenience_input: string | null;
-  overwrite_existing: boolean;
 }
 
 export interface AggregateAcceptedResponse {
   job_id: string;
   state: "queued";
 }
+
+/** 200 from Continue when the source hasn't advanced; no job enqueued. */
+export interface AggregateNoOpResponse {
+  code: "no_new_data";
+  feed_id: string;
+  last_source_ts: number;
+  last_bar_ts: string | null;
+}
+
+export type AggregateResponse = AggregateAcceptedResponse | AggregateNoOpResponse;
 
 export interface AggregateLockedResponse {
   code: "feed_already_locked";

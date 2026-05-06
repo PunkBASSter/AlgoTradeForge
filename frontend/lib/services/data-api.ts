@@ -2,8 +2,8 @@
 // HistoryLoader).
 
 import type {
-  AggregateAcceptedResponse,
   AggregateRequest,
+  AggregateResponse,
   AggregationOptionsResponse,
   AssetCatalogEntry,
   AssetListResponse,
@@ -83,7 +83,8 @@ export const dataApi = {
     asset: string,
     body: AggregateRequest,
     signal?: AbortSignal,
-  ): Promise<AggregateAcceptedResponse> => {
+  ): Promise<AggregateResponse> => {
+    // 202 = queued job; 200 = no_new_data. Callers narrow on `"job_id" in resp`.
     const resp = await fetch(
       `${BASE_URL}/api/data/exchanges/${encodeURIComponent(exchange)}/assets/${encodeURIComponent(asset)}/aggregate`,
       {
@@ -93,7 +94,7 @@ export const dataApi = {
         signal,
       },
     );
-    return asJson<AggregateAcceptedResponse>(resp);
+    return asJson<AggregateResponse>(resp);
   },
 
   deleteFeed: async (

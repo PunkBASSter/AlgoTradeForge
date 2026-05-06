@@ -77,6 +77,11 @@ export function NewAggregateForm({ exchange, asset, sourceFeed, eligibleSources,
         if (parsed) sourceComponentForHint = parsed.sourceCode;
       }
       const outcomeHint = `${typeCode}_${sourceComponentForHint}_${thresholdInput}`;
+      // Defensive: Create form should only see 202, but the union forces narrowing.
+      if (!("job_id" in resp)) {
+        toast(`Already up to date (${resp.feed_id})`, "info");
+        return;
+      }
       onJobAccepted?.(resp.job_id, outcomeHint);
       toast(`Queued ${outcomeHint} (job ${resp.job_id.slice(0, 8)})`, "success");
       queryClient.invalidateQueries({ queryKey: ["data", "exchange-assets", exchange] });
@@ -111,7 +116,6 @@ export function NewAggregateForm({ exchange, asset, sourceFeed, eligibleSources,
       threshold_unit: thresholdUnitFor(typeCode),
       input_mode: "convenience",
       convenience_input: thresholdInput,
-      overwrite_existing: false,
     });
   };
 

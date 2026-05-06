@@ -17,11 +17,10 @@ interface Props {
   onView?: (asset: AssetCatalogEntry, feed: FeedCatalogEntry) => void;
 }
 
-// Side feeds and sidecar-only entries are excluded — informational, not source data.
+// Raw sources open the create form; alt-bars fall through to the status view (which hosts
+// Continue + Delete).
 const AGGREGATION_SOURCE_KINDS: ReadonlySet<FeedKind> = new Set([
   "OHLCV_TimeBar",
-  "OHLCV_AltBar",
-  "aggregated",
   "Tick",
 ]);
 

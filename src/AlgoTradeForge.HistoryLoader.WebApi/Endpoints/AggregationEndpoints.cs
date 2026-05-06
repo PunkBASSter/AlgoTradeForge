@@ -36,8 +36,7 @@ internal static class AggregationEndpoints
         decimal? Threshold,
         string ThresholdUnit,
         string InputMode,
-        string? ConvenienceInput,
-        bool OverwriteExisting);
+        string? ConvenienceInput);
 
     private static IResult PostAggregate(
         string exchange,
@@ -175,26 +174,11 @@ internal static class AggregationEndpoints
             }, statusCode: StatusCodes.Status423Locked);
         }
 
-        // On-disk feed-exists check (409)
+        // Existing feed → Continue (202), no_new_data (200), or resume_unsupported (422).
+        // Full rebuild = explicit Delete then Aggregate; no in-place overwrite.
         var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, assetConfig);
-        if (!body.OverwriteExisting)
-        {
-            var manifest = schema.Load(assetDir);
-            if (manifest?.Feeds.ContainsKey(outcomeFeedId) == true)
-            {
-                return Results.Conflict(new
-                {
-                    code = "feed_already_exists",
-                    feed_id = outcomeFeedId,
-                    hint = "Pass overwrite_existing=true to rebuild.",
-                });
-            }
-        }
+        ResumeContext? resume = null;
 
-        // Enqueue (race-protected: TryEnqueue rechecks 423 internally). Tick sources route to a
-        // separate queue + worker pool so their I/O load doesn't block CPU-bound time-bar
-        // aggregations at the queue head. AltBar sources reuse the time-bar queue but the
-        // descriptor's Kind redirects PartitionedSourceReader to aggregated/<feedId>/.
         DataFeedKind sourceKind;
         if (string.Equals(body.SourceFeedId, FeedNames.Ticks, StringComparison.Ordinal))
             sourceKind = DataFeedKind.Tick;
@@ -203,6 +187,73 @@ internal static class AggregationEndpoints
         else
             sourceKind = DataFeedKind.TimeBar;
 
+        var manifest = schema.Load(assetDir);
+        if (manifest?.Feeds.TryGetValue(outcomeFeedId, out var existing) == true)
+        {
+            // Legacy feeds (no last_ts) can't be safely continued — Range/Renko drop trailing
+            // sub-threshold ticks, so synthesizing from last_bar_ts is wrong. Force rebuild.
+            if (existing.Source?.LastTs is null)
+            {
+                return Results.UnprocessableEntity(new
+                {
+                    code = "resume_unsupported",
+                    feed_id = outcomeFeedId,
+                    message = "This feed predates incremental continuation. Delete and re-aggregate to rebuild.",
+                });
+            }
+
+            if (!long.TryParse(
+                    existing.Source.LastTs,
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var lastSrcTs))
+            {
+                return Results.UnprocessableEntity(new
+                {
+                    code = "resume_unsupported",
+                    feed_id = outcomeFeedId,
+                    message = $"Existing feed's source.last_ts '{existing.Source.LastTs}' is not a valid epoch ms.",
+                });
+            }
+
+            // O(1) tail probe; no_new_data short-circuit if source hasn't advanced.
+            var sourceDescriptor = new DataFeedDescriptor(
+                config.DataRoot, exchange, asset, body.SourceFeedId, sourceKind);
+            var sourceLastTs = SourceTailProbe.GetLastTs(sourceDescriptor);
+            if (sourceLastTs is null || sourceLastTs.Value <= lastSrcTs)
+            {
+                return Results.Ok(new
+                {
+                    code = "no_new_data",
+                    feed_id = outcomeFeedId,
+                    last_source_ts = lastSrcTs,
+                    last_bar_ts = existing.LastBarTs,
+                });
+            }
+
+            // Cutoff = lastBarTs - 1 so records ts >= lastBarTs get reconsumed and the
+            // trailing bar is re-emitted deterministically. Falls back to lastSrcTs for
+            // zero-bar prior runs.
+            long cutoffTs = lastSrcTs;
+            if (existing.LastBarTs is not null && long.TryParse(
+                    existing.LastBarTs,
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var lastBarTs))
+            {
+                cutoffTs = lastBarTs - 1;
+            }
+
+            resume = new ResumeContext(
+                LastSourceTsMs: cutoffTs,
+                LastBrickClose: existing.Build?.LastBrickClose,
+                PriorSpec: BuildSpecFromDefinition(existing));
+        }
+
+        // Enqueue (race-protected: TryEnqueue rechecks 423 internally). Tick sources route to a
+        // separate queue + worker pool so their I/O load doesn't block CPU-bound time-bar
+        // aggregations at the queue head. AltBar sources reuse the time-bar queue but the
+        // descriptor's Kind redirects PartitionedSourceReader to aggregated/<feedId>/.
         var job = new AggregationJob(
             JobId: Guid.NewGuid().ToString("N"),
             Source: new DataFeedDescriptor(config.DataRoot, exchange, asset, body.SourceFeedId, sourceKind),
@@ -217,7 +268,8 @@ internal static class AggregationEndpoints
             SourceScale: scale,
             AccumulatorScale: scale,
             MaxPartitionSizeMB: config.Aggregator.MaxPartitionSizeMB,
-            ToolVersion: typeof(AggregationEndpoints).Assembly.GetName().Version?.ToString() ?? "0.0.0");
+            ToolVersion: typeof(AggregationEndpoints).Assembly.GetName().Version?.ToString() ?? "0.0.0",
+            Resume: resume);
 
         IAggregationJobQueue targetQueue = sourceKind == DataFeedKind.Tick ? tickQueue : queue;
         var outcome = registry.TryEnqueue(job, targetQueue);
@@ -237,6 +289,25 @@ internal static class AggregationEndpoints
             _ => Results.Problem("unknown enqueue outcome"),
         };
     }
+
+    private static AltBarFeedSpec BuildSpecFromDefinition(FeedDefinition def) =>
+        new(
+            Kind: def.Kind ?? "OHLCV_AltBar",
+            Columns: def.Columns ?? [],
+            Type: def.Type ?? new AggregatedTypeInfo { Code = "?", Name = null },
+            Source: def.Source ?? new AggregatedSourceInfo { Feed = "?" },
+            Threshold: def.Threshold ?? new ThresholdInfo
+            {
+                Value = 0m,
+                Unit = "base_asset",
+                InputMode = "absolute",
+                ConvenienceInput = null,
+            },
+            Build: def.Build ?? new BuildInfo(),
+            Fidelity: def.Fidelity ?? new FidelityInfo(),
+            FirstBarTs: def.FirstBarTs,
+            LastBarTs: def.LastBarTs,
+            Sidecar: def.Sidecar);
 
     private static IResult AcceptedResult(AggregationJobRecord record)
     {
@@ -421,51 +492,60 @@ internal static class AggregationEndpoints
         if (record is null)
         {
             context.Response.StatusCode = StatusCodes.Status410Gone;
-            await context.Response.WriteAsJsonAsync(new { error = "job_not_found_or_expired", job_id = jobId });
+            try
+            {
+                await context.Response.WriteAsJsonAsync(
+                    new { error = "job_not_found_or_expired", job_id = jobId },
+                    context.RequestAborted);
+            }
+            catch (OperationCanceledException) { }
             return;
         }
 
         context.Response.Headers[HeaderNames.ContentType] = "text/event-stream";
         context.Response.Headers[HeaderNames.CacheControl] = "no-cache";
         context.Response.Headers["X-Accel-Buffering"] = "no";
-        await context.Response.Body.FlushAsync(context.RequestAborted);
 
-        var lastEventId = ParseLastEventId(context);
-        var lastSentSeq = lastEventId;
-
-        // Capture-before-drain: snapshot the next-event signal BEFORE reading the events list.
-        // AppendEvent adds under the events lock and then swaps the signal, so any event added
-        // between our capture and our drain has already fired the captured signal — the next
-        // iteration drains it. Capturing after the drain would create a TOCTOU that loses
-        // terminal events.
-        while (!context.RequestAborted.IsCancellationRequested)
+        // SSE writes throw OperationCanceledException on client disconnect — that's normal
+        // (FE may reconnect with Last-Event-ID, navigate away, or be replaced by a new job
+        // stream). Swallow the cancel and exit; any other exception still bubbles.
+        try
         {
-            var nextSignal = record.NextEventSignal;
+            await context.Response.Body.FlushAsync(context.RequestAborted);
 
-            // First pass diff'd against lastSentSeq; if the consumer's Last-Event-ID is past
-            // the last known event, replay the full log below.
-            var fresh = record.EventsAfter(lastSentSeq);
-            if (lastSentSeq == lastEventId
-                && lastEventId > 0
-                && fresh.Count == 0
-                && record.LastSequence > 0)
+            var lastEventId = ParseLastEventId(context);
+            var lastSentSeq = lastEventId;
+
+            // Capture-before-drain: snapshot the next-event signal BEFORE reading the events.
+            // AppendEvent adds under the events lock then swaps the signal, so any event added
+            // between capture and drain has already fired the captured signal — the next
+            // iteration drains it. Capture-after-drain would TOCTOU and lose terminal events.
+            while (!context.RequestAborted.IsCancellationRequested)
             {
-                // Resume requested past the last known event — replay the entire log so the FE
-                // never silently misses a state transition.
-                fresh = record.EventsAfter(0);
-            }
+                var nextSignal = record.NextEventSignal;
 
-            foreach (var je in fresh)
-            {
-                await WriteSseFrameAsync(context, je.Sequence, je.Event, context.RequestAborted);
-                lastSentSeq = je.Sequence;
-                if (je.Event is ProgressEvent.Complete or ProgressEvent.Error or ProgressEvent.Cancelled)
-                    return;
-            }
+                var fresh = record.EventsAfter(lastSentSeq);
+                if (lastSentSeq == lastEventId
+                    && lastEventId > 0
+                    && fresh.Count == 0
+                    && record.LastSequence > 0)
+                {
+                    // Resume past the last known event — replay so no state transition is missed.
+                    fresh = record.EventsAfter(0);
+                }
 
-            try { await nextSignal.WaitAsync(context.RequestAborted); }
-            catch (OperationCanceledException) { return; }
+                foreach (var je in fresh)
+                {
+                    await WriteSseFrameAsync(context, je.Sequence, je.Event, context.RequestAborted);
+                    lastSentSeq = je.Sequence;
+                    if (je.Event is ProgressEvent.Complete or ProgressEvent.Error or ProgressEvent.Cancelled)
+                        return;
+                }
+
+                await nextSignal.WaitAsync(context.RequestAborted);
+            }
         }
+        catch (OperationCanceledException) { }
     }
 
     private static IResult Unprocessable(string code, string message) =>

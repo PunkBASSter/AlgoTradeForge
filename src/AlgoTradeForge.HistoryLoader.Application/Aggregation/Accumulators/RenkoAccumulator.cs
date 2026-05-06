@@ -30,6 +30,17 @@ internal sealed class RenkoAccumulator : IBarAccumulator
         _brickSize = brickSize;
     }
 
+    // Skips the first-record-as-anchor branch so resumed bricks chain off the prior wall.
+    public void Seed(long lastBrickClose)
+    {
+        _lastBrickClose = lastBrickClose;
+        _seeded = true;
+        _pendingVolume = 0;
+        _lastEmittedTs = 0;
+    }
+
+    public long LastBrickClose => _lastBrickClose;
+
     public bool TryAdvance(in SourceRecord r, out AggregatedBar emitted)
     {
         if (!_seeded)

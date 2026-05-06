@@ -25,6 +25,18 @@ public sealed class PartitionedSinkWriter : IDisposable
     private bool _disposed;
 
     public PartitionedSinkWriter(string feedDir, long maxPartitionBytes, string headerLine)
+        : this(feedDir, maxPartitionBytes, headerLine, resumeState: null) { }
+
+    /// <summary>
+    /// Append-mode ctor: takes ownership of the pre-staged trailing partition (renames to
+    /// <c>.tmp</c>, opens for append) so subsequent <see cref="WriteRow"/> calls land in
+    /// the same file until rollover.
+    /// </summary>
+    public PartitionedSinkWriter(
+        string feedDir,
+        long maxPartitionBytes,
+        string headerLine,
+        PartitionAppendState? resumeState)
     {
         if (maxPartitionBytes <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxPartitionBytes),
@@ -33,6 +45,31 @@ public sealed class PartitionedSinkWriter : IDisposable
         _maxBytes = maxPartitionBytes;
         _headerBytes = Encoding.UTF8.GetBytes(headerLine + "\n");
         Directory.CreateDirectory(_feedDir);
+
+        if (resumeState is not null)
+            OpenForAppend(resumeState);
+    }
+
+    private void OpenForAppend(PartitionAppendState state)
+    {
+        var finalName = NameFor(state.MonthKey, state.PartNumber);
+        var finalPath = Path.Combine(_feedDir, finalName);
+        if (!File.Exists(finalPath))
+            throw new InvalidOperationException(
+                $"Append-mode resume requires pre-staged file '{finalName}' under '{_feedDir}'.");
+
+        // FileMode.Append disallows seeks — use FileMode.Open + Position=Length instead.
+        _tmpPath = Path.Combine(_feedDir, finalName + ".tmp");
+        SameVolumeGuard.Ensure(_tmpPath, _feedDir);
+        File.Move(finalPath, _tmpPath, overwrite: false);
+
+        _stream = new FileStream(_tmpPath, FileMode.Open, FileAccess.Write, FileShare.None);
+        _stream.Position = _stream.Length;
+
+        _openMonth = state.MonthKey;
+        _openPartNumber = state.PartNumber;
+        _bytesInCurrent = state.FileBytes;
+        _hasEverOverflowed = state.HasEverOverflowed;
     }
 
     public void WriteRow(long tsEpochMs, string csvRow)
