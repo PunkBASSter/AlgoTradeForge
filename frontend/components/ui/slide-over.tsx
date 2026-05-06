@@ -87,7 +87,7 @@ export function SlideOver({ open, onClose, title, children }: SlideOverProps) {
         aria-label={title}
         className="fixed inset-y-0 right-0 flex max-w-full"
       >
-        <div className="w-screen max-w-md">
+        <div className="w-screen max-w-[33.6rem]">
           <div className="flex h-full flex-col bg-bg-surface shadow-xl">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-border-default px-4 py-4">

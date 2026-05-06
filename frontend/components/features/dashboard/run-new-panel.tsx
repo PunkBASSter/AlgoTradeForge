@@ -215,21 +215,39 @@ export function RunNewPanel({
     [primaries, syncEditorFromPickers],
   );
 
-  // Single-primary (Backtest/Live): synthesize FeedPickerSelection from the current
-  // primary so the dropdowns reflect the picked value when the panel reopens.
-  const singlePrimarySelection: FeedPickerSelection | null = useMemo(() => {
-    if (primaries.length === 0) return null;
+  // Single-primary (Backtest/Live): the FeedPicker has 3 cascading dropdowns and
+  // emits partial selections (e.g. exchange picked, asset/feed not yet). We can't
+  // derive `value` from primaries alone — partial selections have subscription=null
+  // and would be discarded, snapping the dropdown back to "Select exchange". Hold
+  // partial state locally and mirror only complete subscriptions into `primaries`.
+  const [singlePrimaryPartial, setSinglePrimaryPartial] =
+    useState<FeedPickerSelection | null>(null);
+
+  // Sync partial state when primaries change externally (template swap, JSON edit,
+  // panel reopen). Skip if the partial already matches primaries[0] to avoid
+  // clobbering an in-flight user selection.
+  useEffect(() => {
+    if (primaries.length === 0) {
+      // Only clear if we don't have an in-flight partial selection — keeps the
+      // exchange dropdown sticky while the user is still picking asset/feed.
+      if (singlePrimaryPartial?.subscription) setSinglePrimaryPartial(null);
+      return;
+    }
     const sub = primaries[0];
-    return {
+    const fromPrimary: FeedPickerSelection = {
       exchange: sub.exchange,
       asset: sub.assetName,
       feedId: subFeedIdForSelection(sub),
       subscription: sub,
     };
-  }, [primaries]);
+    setSinglePrimaryPartial((prev) =>
+      prev?.subscription === sub ? prev : fromPrimary,
+    );
+  }, [primaries, singlePrimaryPartial?.subscription]);
 
   const handleSinglePrimaryChange = useCallback(
     (sel: FeedPickerSelection | null) => {
+      setSinglePrimaryPartial(sel);
       const next = sel?.subscription ? [sel.subscription] : [];
       handlePrimariesChange(next);
     },
@@ -701,7 +719,7 @@ export function RunNewPanel({
                   <h3 className="text-sm font-semibold text-text-primary">Primary feed</h3>
                   <FeedPicker
                     role="Primary"
-                    value={singlePrimarySelection}
+                    value={singlePrimaryPartial}
                     onChange={handleSinglePrimaryChange}
                     disabled={submitting}
                   />
