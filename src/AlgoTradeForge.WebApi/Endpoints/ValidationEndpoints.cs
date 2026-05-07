@@ -172,6 +172,10 @@ public static class ValidationEndpoints
             {
                 return Results.BadRequest(new { error = ex.Message });
             }
+            catch (DirectoryNotFoundException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
         }
 
         // Single-run path (backward compat)
@@ -198,6 +202,10 @@ public static class ValidationEndpoints
             return Results.Accepted($"/api/validations/{submission.Id}/status", response);
         }
         catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (DirectoryNotFoundException ex)
         {
             return Results.BadRequest(new { error = ex.Message });
         }
@@ -397,6 +405,10 @@ public static class ValidationEndpoints
             return Results.Accepted($"/api/validations/groups/{submission.GroupId}/status", response);
         }
         catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (DirectoryNotFoundException ex)
         {
             return Results.BadRequest(new { error = ex.Message });
         }

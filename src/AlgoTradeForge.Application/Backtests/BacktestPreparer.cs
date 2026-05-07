@@ -103,6 +103,24 @@ public sealed class BacktestPreparer(
             }
         }
 
+        for (var i = 0; i < seriesArray.Length; i++)
+        {
+            if (seriesArray[i].Count > 0) continue;
+            var sub = command.DataSubscriptions[i];
+            var feedDescriptor = sub switch
+            {
+                TimeBarSubscription tb => $"TimeBar timeFrame='{tb.TimeFrame.Code}'",
+                AltBarSubscription ab => $"AltBar feedId='{ab.FeedId}'",
+                TickSubscription => "Tick",
+                _ => sub.GetType().Name,
+            };
+            throw new ArgumentException(
+                $"Data feed produced 0 bars for {feedDescriptor} on {sub.AssetName}@{sub.Exchange} " +
+                $"in range {fromDate:yyyy-MM-dd}..{toDate:yyyy-MM-dd}. " +
+                $"Verify the feed exists on disk and contains data for the requested period.",
+                nameof(command));
+        }
+
         // Propagate the primary's feed-id so FeedContextBuilder can lazy-bind a sidecar from
         // feeds.json. Tick/Side never sidecar (they are themselves source / side).
         var primaryTimeFrameCode = primarySub switch

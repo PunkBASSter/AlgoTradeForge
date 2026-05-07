@@ -170,7 +170,9 @@ export function FeedStatusCard({ exchange, asset, feedId }: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="text-xs text-text-muted uppercase tracking-wide">Status</div>
+      <div className="text-xs text-text-muted uppercase tracking-wide">Asset</div>
+      <div className="font-mono text-sm text-text-primary">{asset}</div>
+      <div className="text-xs text-text-muted uppercase tracking-wide">Feed</div>
       <div className="font-mono text-sm text-text-primary">{feedId}</div>
 
       {banner && (

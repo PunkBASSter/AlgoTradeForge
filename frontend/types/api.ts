@@ -503,7 +503,7 @@ export interface LiveLastBar {
 // ---------------------------------------------------------------------------
 
 export interface StartDebugSessionRequest {
-  dataSubscriptions: DataSubscriptionInput[];
+  dataSubscriptions: DataFeedSubscription[];
   backtestSettings: BacktestSettingsInput;
   strategyName: string;
   strategyParameters?: Record<string, unknown>;

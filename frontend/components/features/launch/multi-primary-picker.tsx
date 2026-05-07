@@ -28,6 +28,12 @@ interface MultiPrimaryPickerProps {
   costPreviewLabel?: string;
   /** Disabled state — used by parents during submit. */
   disabled?: boolean;
+  /** Cap on Primary chips. Backtest/Debug/Live pass 1; Optimization leaves undefined for unbounded. */
+  maxPrimaries?: number;
+  /** Override copy for the primary section (Optimization explains fan-out; Backtest/Live don't). */
+  primaryTitle?: string;
+  primarySubtitle?: string;
+  primaryEmptyHint?: string;
 }
 
 export function MultiPrimaryPicker({
@@ -37,18 +43,29 @@ export function MultiPrimaryPicker({
   onSidesChange,
   costPreviewLabel,
   disabled,
+  maxPrimaries,
+  primaryTitle,
+  primarySubtitle,
+  primaryEmptyHint,
 }: MultiPrimaryPickerProps) {
   return (
     <div className="space-y-4">
       <ChipSection
-        title="Primary feeds"
-        subtitle="Each primary becomes one optimization run; parameter grid fans out per primary."
+        title={primaryTitle ?? "Primary feeds"}
+        subtitle={
+          primarySubtitle ??
+          "Each primary becomes one optimization run; parameter grid fans out per primary."
+        }
         rightLabel={costPreviewLabel}
         role="Primary"
         items={primaries}
         onChange={onPrimariesChange}
         disabled={disabled}
-        emptyHint="Pick at least one Primary feed (TimeBar / AltBar / Tick)."
+        maxItems={maxPrimaries}
+        emptyHint={
+          primaryEmptyHint ??
+          "Pick at least one Primary feed (TimeBar / AltBar / Tick)."
+        }
       />
       <ChipSection
         title="Side feeds"
@@ -72,6 +89,8 @@ interface ChipSectionProps {
   onChange: (next: DataFeedSubscription[]) => void;
   disabled?: boolean;
   emptyHint: string;
+  /** Hide the "Add" affordance once items.length reaches this cap. Undefined = unbounded. */
+  maxItems?: number;
 }
 
 function ChipSection({
@@ -83,6 +102,7 @@ function ChipSection({
   onChange,
   disabled,
   emptyHint,
+  maxItems,
 }: ChipSectionProps) {
   const [adding, setAdding] = useState(false);
   const [pending, setPending] = useState<FeedPickerSelection | null>(null);
@@ -189,7 +209,7 @@ function ChipSection({
             </Button>
           </div>
         </div>
-      ) : (
+      ) : maxItems !== undefined && items.length >= maxItems ? null : (
         <Button
           type="button"
           variant="secondary"

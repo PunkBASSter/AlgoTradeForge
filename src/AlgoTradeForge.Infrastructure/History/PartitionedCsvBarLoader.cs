@@ -12,7 +12,9 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
         var series = new TimeSeries<Int64Bar>();
         var dir = ResolveFeedDir(feed);
         if (!Directory.Exists(dir))
-            return series;
+            throw new DirectoryNotFoundException(
+                $"Data feed directory not found for {feed.Kind} feed '{feed.FeedId}' " +
+                $"(asset={feed.Asset}, exchange={feed.Exchange}). Expected path: {dir}");
 
         var fromMs = new DateTimeOffset(from.Year, from.Month, from.Day, 0, 0, 0, TimeSpan.Zero)
             .ToUnixTimeMilliseconds();

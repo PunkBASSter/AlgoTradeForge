@@ -65,6 +65,30 @@ public class DebugSessionHandlerTests
     }
 
     [Fact]
+    public async Task StartSession_EmptySeries_ThrowsArgumentExceptionWithDescriptiveMessage()
+    {
+        SetupAssetAndStrategy(barCount: 0);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            CreateStartHandler().HandleAsync(new StartDebugSessionCommand
+            {
+                DataSubscriptions = [new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
+                BacktestSettings = new BacktestSettingsDto
+                {
+                    InitialCash = 100_000m,
+                    StartTime = Start,
+                    EndTime = Start.AddDays(1),
+                },
+                StrategyName = "TestStrategy",
+            }, TestContext.Current.CancellationToken));
+
+        Assert.Contains("0 bars", ex.Message);
+        Assert.Contains("AAPL", ex.Message);
+        Assert.Contains("NASDAQ", ex.Message);
+        Assert.Contains("1m", ex.Message);
+    }
+
+    [Fact]
     public async Task StartSession_ReturnsSessionId()
     {
         SetupAssetAndStrategy();

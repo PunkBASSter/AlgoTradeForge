@@ -17,7 +17,6 @@ import { getClient } from "@/lib/services";
 import { RunProgress } from "@/components/features/dashboard/run-progress";
 import { useAvailableStrategies } from "@/hooks/use-available-strategies";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
-import { FeedPicker, type FeedPickerSelection } from "@/components/features/launch/feed-picker";
 import { MultiPrimaryPicker } from "@/components/features/launch/multi-primary-picker";
 import { useThresholdProfiles } from "@/hooks/use-threshold-profiles";
 import type {
@@ -64,16 +63,6 @@ function computeEvalCacheKey(text: string, genetic: boolean): string | null {
 
 function formatNumber(n: number): string {
   return n.toLocaleString();
-}
-
-/** Synthesize a stable picker-feed-id from a subscription (used to seed dropdown state). */
-function subFeedIdForSelection(sub: DataFeedSubscription): string {
-  switch (sub.kind) {
-    case "TimeBar": return sub.timeFrame;
-    case "AltBar": return sub.feedId;
-    case "Tick": return "ticks";
-    case "Side": return sub.feedId;
-  }
 }
 
 interface RunNewPanelProps {
@@ -139,21 +128,36 @@ export function RunNewPanel({
   // Handle editor doc changes: check cache, clear or restore evaluation, sync pickers
   const handleDocChange = useCallback((text: string) => {
     // Sync picker state from the editor unless the editor change was triggered BY the
-    // pickers (suppressEditorSyncRef). Multi-DSS JSON (legacy hand-edited shape) is
-    // flattened — every primary across DSSes becomes a fan-out candidate.
+    // pickers (suppressEditorSyncRef).
+    //
+    // Wire shape is mode-aware:
+    //   - Optimization: 2D `subscriptionAxis: [[...primaries, ...sides], ...]` — server
+    //     fans multi-primary DSSes via ExpandMultiPrimary. Hand-edited multi-DSS JSON is
+    //     flattened across all DSSes; every primary becomes a fan-out candidate.
+    //   - Backtest / Debug / Live: 1D `dataSubscriptions: [primary, ...sides]` — single
+    //     DSS read directly.
     if (!suppressEditorSyncRef.current) {
       try {
         const obj = JSON.parse(text) as Record<string, unknown>;
-        const axis = obj.subscriptionAxis as DataFeedSubscription[][] | undefined;
-        if (axis && Array.isArray(axis) && axis.length > 0) {
-          const flat = axis.flat();
-          const nextPrimaries = flat.filter((s) => s.role === "Primary");
-          const nextSides = flat.filter((s) => s.role === "Side");
-          setPrimaries(nextPrimaries);
-          setSides(nextSides);
-        } else if (!axis) {
-          setPrimaries(prev => prev.length === 0 ? prev : []);
-          setSides(prev => prev.length === 0 ? prev : []);
+        if (isOptimization) {
+          const axis = obj.subscriptionAxis as DataFeedSubscription[][] | undefined;
+          if (axis && Array.isArray(axis) && axis.length > 0) {
+            const flat = axis.flat();
+            setPrimaries(flat.filter((s) => s.role === "Primary"));
+            setSides(flat.filter((s) => s.role === "Side"));
+          } else if (!axis) {
+            setPrimaries((prev) => (prev.length === 0 ? prev : []));
+            setSides((prev) => (prev.length === 0 ? prev : []));
+          }
+        } else {
+          const list = obj.dataSubscriptions as DataFeedSubscription[] | undefined;
+          if (list && Array.isArray(list) && list.length > 0) {
+            setPrimaries(list.filter((s) => s.role === "Primary"));
+            setSides(list.filter((s) => s.role === "Side"));
+          } else if (!list) {
+            setPrimaries((prev) => (prev.length === 0 ? prev : []));
+            setSides((prev) => (prev.length === 0 ? prev : []));
+          }
         }
       } catch {
         // Invalid JSON — don't update picker state
@@ -172,8 +176,12 @@ export function RunNewPanel({
     setEvaluation(null);
   }, [isOptimization]);
 
-  // Pushes picker state into the editor's subscriptionAxis as a single DSS containing
-  // [...primaries, ...sides].
+  // Pushes picker state into the editor in the shape the backend actually reads:
+  //   - Optimization: `subscriptionAxis: [[...primaries, ...sides]]` (2D). Multi-primary
+  //     fan-out happens server-side via ExpandMultiPrimary.
+  //   - Backtest / Debug / Live: `dataSubscriptions: [...primaries, ...sides]` (1D).
+  // The opposing key is removed to avoid confusing "two sources of truth" sections in
+  // the JSON that don't agree with the picker.
   const syncEditorFromPickers = useCallback(
     (nextPrimaries: DataFeedSubscription[], nextSides: DataFeedSubscription[]) => {
       const view = editorViewRef.current;
@@ -181,9 +189,13 @@ export function RunNewPanel({
       try {
         const obj = JSON.parse(view.state.doc.toString()) as Record<string, unknown>;
         const combined = [...nextPrimaries, ...nextSides];
-        if (combined.length > 0) {
-          obj.subscriptionAxis = [combined];
+        if (isOptimization) {
+          if (combined.length > 0) obj.subscriptionAxis = [combined];
+          else delete obj.subscriptionAxis;
+          delete obj.dataSubscriptions;
         } else {
+          if (combined.length > 0) obj.dataSubscriptions = combined;
+          else delete obj.dataSubscriptions;
           delete obj.subscriptionAxis;
         }
         const newDoc = JSON.stringify(obj, null, 2);
@@ -196,7 +208,7 @@ export function RunNewPanel({
         // Editor JSON is invalid — can't sync
       }
     },
-    [],
+    [isOptimization],
   );
 
   const handlePrimariesChange = useCallback(
@@ -213,45 +225,6 @@ export function RunNewPanel({
       syncEditorFromPickers(primaries, next);
     },
     [primaries, syncEditorFromPickers],
-  );
-
-  // Single-primary (Backtest/Live): the FeedPicker has 3 cascading dropdowns and
-  // emits partial selections (e.g. exchange picked, asset/feed not yet). We can't
-  // derive `value` from primaries alone — partial selections have subscription=null
-  // and would be discarded, snapping the dropdown back to "Select exchange". Hold
-  // partial state locally and mirror only complete subscriptions into `primaries`.
-  const [singlePrimaryPartial, setSinglePrimaryPartial] =
-    useState<FeedPickerSelection | null>(null);
-
-  // Sync partial state when primaries change externally (template swap, JSON edit,
-  // panel reopen). Skip if the partial already matches primaries[0] to avoid
-  // clobbering an in-flight user selection.
-  useEffect(() => {
-    if (primaries.length === 0) {
-      // Only clear if we don't have an in-flight partial selection — keeps the
-      // exchange dropdown sticky while the user is still picking asset/feed.
-      if (singlePrimaryPartial?.subscription) setSinglePrimaryPartial(null);
-      return;
-    }
-    const sub = primaries[0];
-    const fromPrimary: FeedPickerSelection = {
-      exchange: sub.exchange,
-      asset: sub.assetName,
-      feedId: subFeedIdForSelection(sub),
-      subscription: sub,
-    };
-    setSinglePrimaryPartial((prev) =>
-      prev?.subscription === sub ? prev : fromPrimary,
-    );
-  }, [primaries, singlePrimaryPartial?.subscription]);
-
-  const handleSinglePrimaryChange = useCallback(
-    (sel: FeedPickerSelection | null) => {
-      setSinglePrimaryPartial(sel);
-      const next = sel?.subscription ? [sel.subscription] : [];
-      handlePrimariesChange(next);
-    },
-    [handlePrimariesChange],
   );
 
   // Create editor once when the slide-over opens
@@ -506,8 +479,13 @@ export function RunNewPanel({
         return;
       }
     } else if (mode === "live") {
-      const missing = ["strategyName", "initialCash"]
-        .filter((k) => obj[k] === undefined || obj[k] === null);
+      const dsArr = obj.dataSubscriptions as Record<string, unknown>[] | undefined;
+      const ds = dsArr?.[0];
+      const missing: string[] = ["strategyName", "initialCash"].filter(
+        (k) => obj[k] === undefined || obj[k] === null,
+      );
+      if (!ds?.assetName) missing.push("dataSubscriptions[0].assetName");
+      if (!ds?.exchange) missing.push("dataSubscriptions[0].exchange");
       if (missing.length > 0) {
         toast(`Missing required fields: ${missing.join(", ")}`, "error");
         return;
@@ -542,25 +520,7 @@ export function RunNewPanel({
       } else {
         let runId: string;
         if (mode === "backtest") {
-          // Power-user escape hatch: the FeedPicker only emits one DSS, so this branch
-          // fires when the user hand-edits the JSON to add multiple DSSes. Each
-          // becomes its own backtest submission.
-          const btReq = parsed as RunBacktestRequest & { subscriptionAxis?: DataFeedSubscription[][] };
-          if (btReq.subscriptionAxis && btReq.subscriptionAxis.length > 1) {
-            const results: string[] = [];
-            for (const dss of btReq.subscriptionAxis) {
-              const perDssReq: RunBacktestRequest = {
-                ...btReq,
-                dataSubscriptions: dss,
-              };
-              const submission = await client.runBacktest(perDssReq);
-              results.push(submission.id);
-            }
-            toast(`${results.length} backtests submitted`, "success");
-            setActiveRunId(results[0]);
-            return;
-          }
-          const submission = await client.runBacktest(btReq as RunBacktestRequest);
+          const submission = await client.runBacktest(parsed as RunBacktestRequest);
           runId = submission.id;
         } else if (useGenetic) {
           const genReq = parsed as RunGeneticOptimizationRequest;
@@ -699,34 +659,34 @@ export function RunNewPanel({
               )}
             </div>
           )}
-          {mode !== "live" && (
-            <div className="shrink-0">
-              {isOptimization ? (
-                <MultiPrimaryPicker
-                  primaries={primaries}
-                  sides={sides}
-                  onPrimariesChange={handlePrimariesChange}
-                  onSidesChange={handleSidesChange}
-                  costPreviewLabel={
-                    evaluation && primaries.length > 0
-                      ? `${primaries.length} × ${formatNumber(evaluation.totalCombinations)} = ${formatNumber(primaries.length * evaluation.totalCombinations)} trials`
-                      : undefined
-                  }
-                  disabled={submitting}
-                />
-              ) : (
-                <div className="rounded-lg border border-border-default bg-bg-panel p-3 space-y-2">
-                  <h3 className="text-sm font-semibold text-text-primary">Primary feed</h3>
-                  <FeedPicker
-                    role="Primary"
-                    value={singlePrimaryPartial}
-                    onChange={handleSinglePrimaryChange}
-                    disabled={submitting}
-                  />
-                </div>
-              )}
-            </div>
-          )}
+          <div className="shrink-0">
+            {isOptimization ? (
+              <MultiPrimaryPicker
+                primaries={primaries}
+                sides={sides}
+                onPrimariesChange={handlePrimariesChange}
+                onSidesChange={handleSidesChange}
+                costPreviewLabel={
+                  evaluation && primaries.length > 0
+                    ? `${primaries.length} × ${formatNumber(evaluation.totalCombinations)} = ${formatNumber(primaries.length * evaluation.totalCombinations)} trials`
+                    : undefined
+                }
+                disabled={submitting}
+              />
+            ) : (
+              <MultiPrimaryPicker
+                primaries={primaries}
+                sides={sides}
+                onPrimariesChange={handlePrimariesChange}
+                onSidesChange={handleSidesChange}
+                disabled={submitting}
+                maxPrimaries={1}
+                primaryTitle="Primary feed"
+                primarySubtitle="The strategy's main bar stream. Optional side feeds attach as auxiliary signals."
+                primaryEmptyHint="Pick a Primary feed (TimeBar / AltBar / Tick)."
+              />
+            )}
+          </div>
           <div
             ref={editorContainerRef}
             data-testid="json-editor"

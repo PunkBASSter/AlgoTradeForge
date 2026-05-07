@@ -117,9 +117,28 @@ export function SessionConfigEditor({
     const text = editorViewRef.current.state.doc.toString();
     try {
       const config = JSON.parse(text) as StartDebugSessionRequest;
-      if (!config.dataSubscriptions?.[0]?.assetName || !config.strategyName || !config.dataSubscriptions?.[0]?.exchange) {
+      const firstSub = config.dataSubscriptions?.[0];
+      if (!firstSub?.assetName || !config.strategyName || !firstSub?.exchange) {
         setValidationError(
           "Missing required fields: dataSubscriptions[0].assetName, strategyName, dataSubscriptions[0].exchange"
+        );
+        return;
+      }
+      if (!firstSub.kind) {
+        setValidationError(
+          'Missing dataSubscriptions[0].kind (must be "TimeBar", "AltBar", "Tick", or "Side")'
+        );
+        return;
+      }
+      if (firstSub.kind === "AltBar" && !firstSub.feedId) {
+        setValidationError(
+          'AltBar subscriptions require a "feedId" (e.g. "EqV_1m_5M")'
+        );
+        return;
+      }
+      if (firstSub.kind === "TimeBar" && !firstSub.timeFrame) {
+        setValidationError(
+          'TimeBar subscriptions require a "timeFrame" (e.g. "1m", "1h")'
         );
         return;
       }

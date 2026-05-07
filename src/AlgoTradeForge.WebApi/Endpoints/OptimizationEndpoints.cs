@@ -253,6 +253,10 @@ public static class OptimizationEndpoints
         {
             return Results.BadRequest(new { error = ex.Message });
         }
+        catch (DirectoryNotFoundException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
     }
 
     private static async Task<IResult> EvaluateOptimization(
@@ -507,6 +511,10 @@ public static class OptimizationEndpoints
             return Results.Accepted($"/api/optimizations/groups/{groupSubmission.GroupId}/status", groupResponse);
         }
         catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (DirectoryNotFoundException ex)
         {
             return Results.BadRequest(new { error = ex.Message });
         }

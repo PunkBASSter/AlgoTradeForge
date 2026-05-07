@@ -278,6 +278,8 @@ export function CrossDssTrialsTable({
                         e.stopPropagation();
                         const config: StartDebugSessionRequest = {
                           dataSubscriptions: [{
+                            kind: "TimeBar",
+                            role: "Primary",
                             assetName: row.dataSubscriptions[0]?.assetName ?? "",
                             exchange: row.dataSubscriptions[0]?.exchange ?? "",
                             timeFrame: toTimeSpan(row.dataSubscriptions[0]?.timeFrame ?? ""),

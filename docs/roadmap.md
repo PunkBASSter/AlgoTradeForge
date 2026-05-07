@@ -1,5 +1,11 @@
 # Main focus:
 
+## TECH: Split domain / API
+Split strategies assembly and backtesting; maybe extract a shared contracts assembly
+Split strategy API (local, actively developed) from platform API (remote - stable, multi-user). FE calls 2 APIs. Don't forget CORS.
+@docs\split-local-remote-features.md
+Decouple from local file system: replace with abstraction (to add S3 compatibility)
+
 ## Launch optimized but not overtrained Delta ZigZag Breakout to live on multiple (30+) assets: crypto, stocks, maybe FX, maybe FUT.
 
 ## QA
@@ -56,11 +62,6 @@ This can be increased at least by 5 times if needed. May need host config update
 
 ## Usability
 - Endpoint to generate default params via reflection
-
-## TECH: Split domain / API
-Split strategies assembly and backtesting; maybe extract a shared contracts assembly
-Split strategy API (local, actively developed) from platform API (remote - stable, multi-user). FE calls 2 APIs. Don't forget CORS.
-@docs\split-local-remote-features.md
 
 ## Candle Ingestor / History Loader
 history-loader-project.md - DONE

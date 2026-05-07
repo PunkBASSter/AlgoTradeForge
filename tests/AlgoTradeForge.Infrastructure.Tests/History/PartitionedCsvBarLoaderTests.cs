@@ -193,11 +193,29 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     [Fact]
     public void Load_NoDataInRange_ReturnsEmptySeries()
     {
+        // Directory exists (data written for January) but the requested range (June)
+        // intersects no rows — loader returns an empty series rather than throwing.
+        WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
+            [$"{Ts(2024,1,15)},100,200,50,150,1000"]);
+
         var series = _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
             new DateOnly(2024, 6, 1), new DateOnly(2024, 6, 30));
 
         Assert.Empty(series);
+    }
+
+    [Fact]
+    public void Load_MissingFeedDirectory_ThrowsDirectoryNotFound()
+    {
+        var ex = Assert.Throws<DirectoryNotFoundException>(() => _loader.Load(
+            AltBarDescriptor("Binance", "BTCUSDT", "EqV_1m_5M"),
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31)));
+
+        Assert.Contains("EqV_1m_5M", ex.Message);
+        Assert.Contains("Binance", ex.Message);
+        Assert.Contains("BTCUSDT", ex.Message);
+        Assert.Contains("Expected path", ex.Message);
     }
 
     // -------------------------------------------------------------------------

@@ -11,7 +11,8 @@
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "ASPNETCORE_URLS": "http://localhost:5000",
-                "HistoryLoader__BaseUrl": "http://localhost:5051"
+                "HistoryLoader__BaseUrl": "http://localhost:5051",
+                "CandleStorage__DataRoot": "C:\\Users\\Andrew\\AppData\\Local\\AlgoTradeForge\\HistoryTest"
             },
             "preLaunchTask": "build-backend",
             "serverReadyAction": {
@@ -31,7 +32,8 @@
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "ASPNETCORE_URLS": "http://localhost:5000",
                 "DIAG_LOG_FILE": "${workspaceFolder}/optimization-diag.log",
-                "HistoryLoader__BaseUrl": "http://localhost:5051"
+                "HistoryLoader__BaseUrl": "http://localhost:5051",
+                "CandleStorage__DataRoot": "C:\\Users\\Andrew\\AppData\\Local\\AlgoTradeForge\\HistoryTest"
             },
             "preLaunchTask": "build-backend"
         },

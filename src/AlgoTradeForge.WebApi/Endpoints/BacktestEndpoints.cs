@@ -112,6 +112,10 @@ public static class BacktestEndpoints
         {
             return Results.BadRequest(new { error = ex.Message });
         }
+        catch (DirectoryNotFoundException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
     }
 
     private static async Task<IResult> GetBacktestStatus(
