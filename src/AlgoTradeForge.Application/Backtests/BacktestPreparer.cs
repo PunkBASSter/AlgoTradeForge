@@ -1,13 +1,13 @@
-using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain;
-using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Engine;
+using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Application.Backtests;
@@ -54,42 +54,85 @@ public sealed class BacktestPreparer(
             spaceProvider, command.StrategyName, command.StrategyParameters, scale);
         var strategy = strategyFactory.Create(command.StrategyName, indicatorFactory, scaledParams);
 
+        var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
+        var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
+
+        TimeSeries<Int64Bar>[] seriesArray;
+
         if (strategy.DataSubscriptions.Count == 0)
         {
-            foreach (var sub in command.DataSubscriptions)
+            // Side entries are bound via FeedContextBuilder below; they are FeedSeries, not
+            // TimeSeries<Int64Bar>, so they don't enter strategy.DataSubscriptions/seriesArray.
+            var primaries = new List<(DataFeedSubscription FeedSub, Asset SubAsset, DataSubscription StrategySub)>();
+            for (var i = 0; i < command.DataSubscriptions.Count; i++)
             {
-                var subAsset = sub == primarySub
+                var sub = command.DataSubscriptions[i];
+                if (sub.Role == DataFeedRole.Side) continue;
+
+                var subAsset = i == 0
                     ? asset
                     : await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
                       ?? throw new ArgumentException($"Asset '{sub.AssetName}' not found.");
 
-                TimeSpan timeFrame;
-                if (string.IsNullOrEmpty(sub.TimeFrame))
-                {
-                    timeFrame = TimeSpan.FromMinutes(1);
-                }
-                else if (!TimeFrameFormatter.TryParseShorthand(sub.TimeFrame, out timeFrame)
-                         && !TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out timeFrame))
-                {
-                    throw new ArgumentException($"Invalid TimeFrame format: '{sub.TimeFrame}'");
-                }
+                var strategySub = StrategySubscriptionFactory.FromPrimary(sub, subAsset);
+                primaries.Add((sub, subAsset, strategySub));
+            }
 
-                strategy.DataSubscriptions.Add(new DataSubscription(subAsset, timeFrame));
+            seriesArray = new TimeSeries<Int64Bar>[primaries.Count];
+            for (var i = 0; i < primaries.Count; i++)
+            {
+                strategy.DataSubscriptions.Add(primaries[i].StrategySub);
+                seriesArray[i] = historyRepository.Load(
+                    primaries[i].SubAsset, primaries[i].FeedSub, fromDate, toDate);
+            }
+        }
+        else
+        {
+            // Pre-declared subscriptions: legacy Load(DataSubscription, ...) only knows TimeBar.
+            // Reject non-TimeBar FeedKeys to prevent silent coercion to a 1m load.
+            seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
+            for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
+            {
+                var preDeclared = strategy.DataSubscriptions[i];
+                if (preDeclared.FeedKey != "ohlcv")
+                    throw new NotSupportedException(
+                        $"Strategy pre-declared a non-TimeBar subscription (FeedKey='{preDeclared.FeedKey}'). " +
+                        "Strategies must declare alt-bar / tick / side primaries via the command's " +
+                        "DataSubscriptions (DataFeedSubscription), not strategy.DataSubscriptions.");
+                seriesArray[i] = historyRepository.Load(preDeclared, fromDate, toDate);
             }
         }
 
-        var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
-        var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
-
-        var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
-        for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
+        for (var i = 0; i < seriesArray.Length; i++)
         {
-            seriesArray[i] = historyRepository.Load(strategy.DataSubscriptions[i], fromDate, toDate);
+            if (seriesArray[i].Count > 0) continue;
+            var sub = command.DataSubscriptions[i];
+            var feedDescriptor = sub switch
+            {
+                TimeBarSubscription tb => $"TimeBar timeFrame='{tb.TimeFrame.Code}'",
+                AltBarSubscription ab => $"AltBar feedId='{ab.FeedId}'",
+                TickSubscription => "Tick",
+                _ => sub.GetType().Name,
+            };
+            throw new ArgumentException(
+                $"Data feed produced 0 bars for {feedDescriptor} on {sub.AssetName}@{sub.Exchange} " +
+                $"in range {fromDate:yyyy-MM-dd}..{toDate:yyyy-MM-dd}. " +
+                $"Verify the feed exists on disk and contains data for the requested period.",
+                nameof(command));
         }
+
+        // Propagate the primary's feed-id so FeedContextBuilder can lazy-bind a sidecar from
+        // feeds.json. Tick/Side never sidecar (they are themselves source / side).
+        var primaryTimeFrameCode = primarySub switch
+        {
+            TimeBarSubscription tb => tb.TimeFrame.Code,
+            AltBarSubscription ab => ab.FeedId,
+            _ => null,
+        };
 
         var feedContext = feedContextBuilder?.Build(
             storageOptions?.Value.DataRoot ?? CandleStorageOptions.DefaultDataRoot,
-            asset, fromDate, toDate);
+            asset, fromDate, toDate, primaryFeedName: primaryTimeFrameCode);
 
         return new BacktestSetup(asset, scale, options, strategy, seriesArray, FeedContext: feedContext);
     }

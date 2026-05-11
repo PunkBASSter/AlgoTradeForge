@@ -32,7 +32,7 @@ public sealed class ModularStrategyEventTests
         SignalThreshold = 30, AtrStopMultiplier = 2.0,
         MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
-        DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
+        DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)))],
     };
 
     private static TimeSeries<Int64Bar> CreateSignalSeries()

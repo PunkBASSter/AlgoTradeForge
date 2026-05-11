@@ -1,3 +1,5 @@
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AlgoTradeForge.Application;
@@ -108,12 +110,7 @@ public abstract class ApiTestBase : IDisposable
         DateTimeOffset? startTime = null,
         DateTimeOffset? endTime = null) => new()
     {
-        DataSubscriptions = [new()
-        {
-            AssetName = "BTCUSDT",
-            Exchange = "Binance",
-            TimeFrame = timeFrame ?? "01:00:00",
-        }],
+        DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.TryParseLiberal(timeFrame ?? "1h", out var tf) ? tf : new TimeFrame(TimeSpan.FromHours(1)))],
         BacktestSettings = new()
         {
             InitialCash = 10_000m,
@@ -125,12 +122,7 @@ public abstract class ApiTestBase : IDisposable
 
     protected static StartDebugSessionRequest MakeDebugSessionRequest() => new()
     {
-        DataSubscriptions = [new()
-        {
-            AssetName = "BTCUSDT",
-            Exchange = "Binance",
-            TimeFrame = "01:00:00",
-        }],
+        DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
         BacktestSettings = new()
         {
             InitialCash = 10_000m,

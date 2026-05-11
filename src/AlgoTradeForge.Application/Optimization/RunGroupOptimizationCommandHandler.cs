@@ -2,6 +2,7 @@ using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
+using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Domain.Optimization.Fitness;
@@ -29,12 +30,19 @@ public sealed class RunGroupOptimizationCommandHandler(
     {
         var isGenetic = command.OptimizationMethod == "Genetic";
 
+        // Pre-split multi-primary DSSes so every downstream slot (group key, dedup, DSS loop,
+        // persistence) sees one primary per child run. Per-primary normalizer dedup is then
+        // automatic — each child run gets its own ComputeTask + NormalizingEnumerable instance.
+        if (command.SubscriptionAxis is not { Count: > 0 })
+            throw new ArgumentException("At least one SubscriptionAxis group must be provided.");
+        var expandedAxis = OptimizationSetupHelper.ExpandMultiPrimary(command.SubscriptionAxis);
+
         // 1. Compute group RunKey and check for dedup under a narrow lock.
         //    Only the dedup check + key reservation are inside the lock;
         //    data loading, DB inserts, and background launch happen outside.
         var groupRunKey = RunKeyBuilder.BuildGroupKey(
             command.StrategyName, command.BacktestSettings,
-            command.OptimizationMethod, command.SubscriptionAxis, command.Axes);
+            command.OptimizationMethod, expandedAxis, command.Axes);
         var groupId = Guid.NewGuid();
         using (await progressCache.AcquireRunKeyLockAsync(groupRunKey, ct))
         {
@@ -74,11 +82,9 @@ public sealed class RunGroupOptimizationCommandHandler(
 
         var settings = command.BacktestSettings;
 
-        // 3. Validate subscriptions (data loading deferred to executor at execution time)
-        var subscriptionAxis = command.SubscriptionAxis;
-        if (subscriptionAxis is not { Count: > 0 })
-            throw new ArgumentException("At least one SubscriptionAxis group must be provided.");
-
+        // 3. Validate subscriptions (data loading deferred to executor at execution time).
+        //    Use post-expansion shape — one primary per child run.
+        var subscriptionAxis = expandedAxis;
         var dssCount = subscriptionAxis.Count;
 
         // 4. Resolve parameter axes (without subscription axis — each DSS gets its own subscription)
@@ -146,14 +152,7 @@ public sealed class RunGroupOptimizationCommandHandler(
             var childRunId = Guid.NewGuid();
             childRunIds[dssIdx] = childRunId;
 
-            var dssSubs = subscriptionAxis[dssIdx]
-                .Select(s => new DataSubscriptionDto
-                {
-                    AssetName = s.AssetName,
-                    Exchange = s.Exchange,
-                    TimeFrame = s.TimeFrame,
-                })
-                .ToList();
+            var dssSubs = subscriptionAxis[dssIdx].ToList();
 
             await helper.InsertPlaceholderAsync(new OptimizationRunRecord
             {
@@ -197,23 +196,16 @@ public sealed class RunGroupOptimizationCommandHandler(
         for (var dssIdx = 0; dssIdx < dssCount; dssIdx++)
         {
             var dssLabel = string.Join(", ", subscriptionAxis[dssIdx]
-                .Select(s => $"{s.AssetName}/{s.Exchange}/{s.TimeFrame}"));
+                .Select(BacktestInputsFormatter.Format));
 
-            var dssSubs = subscriptionAxis[dssIdx]
-                .Select(s => new DataSubscriptionDto
-                {
-                    AssetName = s.AssetName,
-                    Exchange = s.Exchange,
-                    TimeFrame = s.TimeFrame,
-                })
-                .ToList();
+            var dssSubs = subscriptionAxis[dssIdx].ToList();
 
             object executionCtx = isGenetic
                 ? new GeneticExecutionContext
                 {
                     StrategyName = command.StrategyName,
                     BacktestSettings = settings,
-                    SubscriptionDtos = dssSubs,
+                    Subscriptions = dssSubs,
                     ActiveAxes = activeAxes,
                     GaConfig = gaConfig!,
                     MaxParallelism = maxParallelism,
@@ -230,7 +222,7 @@ public sealed class RunGroupOptimizationCommandHandler(
                     StrategyName = command.StrategyName,
                     OptimizationMethod = command.OptimizationMethod,
                     BacktestSettings = settings,
-                    SubscriptionDtos = dssSubs,
+                    Subscriptions = dssSubs,
                     ActiveAxes = activeAxes,
                     EstimatedCount = estimatedCountPerDss,
                     MaxParallelism = maxParallelism,

@@ -108,7 +108,10 @@ export default function BacktestReportPage({
 
   const handleRerun = () => {
     const config: RunBacktestRequest = {
+      // Rerun assumes a TimeBar primary; legacy reports lack the kind/role discriminator.
       dataSubscriptions: [{
+        kind: "TimeBar",
+        role: "Primary",
         assetName: backtest.dataSubscriptions[0]?.assetName ?? "",
         exchange: backtest.dataSubscriptions[0]?.exchange ?? "",
         timeFrame: backtest.dataSubscriptions[0]?.timeFrame ?? "",

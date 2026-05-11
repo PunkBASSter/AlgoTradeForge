@@ -36,7 +36,7 @@ public sealed class DonchianBreakoutStrategyTests
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
         TrailingStopConfig = new TrailingStopParams { Variant = TrailingStopVariant.Atr, AtrMultiplier = 2.0 },
         RegimeDetectorConfig = new RegimeDetectorParams { AdxPeriod = 7, TrendThreshold = 20.0 },
-        DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
+        DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)))],
     };
 
     private static TimeSeries<Int64Bar> CreateBreakoutSeries()
@@ -142,7 +142,7 @@ public sealed class DonchianBreakoutStrategyTests
             TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
             TrailingStopConfig = new TrailingStopParams { Variant = TrailingStopVariant.Atr, AtrMultiplier = 2.0 },
             RegimeDetectorConfig = new RegimeDetectorParams { AdxPeriod = 7, TrendThreshold = 20.0 },
-            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
+            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)))],
         };
         var strategy = new DonchianBreakoutStrategy(p);
 

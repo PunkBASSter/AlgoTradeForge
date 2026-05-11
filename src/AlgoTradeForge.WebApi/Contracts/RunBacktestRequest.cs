@@ -1,11 +1,6 @@
-namespace AlgoTradeForge.WebApi.Contracts;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
-public sealed record DataSubscriptionInput
-{
-    public required string AssetName { get; init; }
-    public required string Exchange { get; init; }
-    public string? TimeFrame { get; init; }
-}
+namespace AlgoTradeForge.WebApi.Contracts;
 
 public sealed record BacktestSettingsInput
 {
@@ -18,7 +13,7 @@ public sealed record BacktestSettingsInput
 
 public sealed record RunBacktestRequest
 {
-    public required List<DataSubscriptionInput> DataSubscriptions { get; init; }
+    public required IReadOnlyList<DataFeedSubscription> DataSubscriptions { get; init; }
     public required BacktestSettingsInput BacktestSettings { get; init; }
     public required string StrategyName { get; init; }
     public Dictionary<string, object>? StrategyParameters { get; init; }

@@ -19,6 +19,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Optimization;
 
@@ -67,6 +68,8 @@ public sealed class OptimizationTaskExecutorTests
             .Returns(Task.FromResult<Asset?>(asset));
         _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
             .Returns(TestBars.CreateSeries(10));
+        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(TestBars.CreateSeries(10));
 
         // Generator returns many combinations to ensure we can cancel mid-stream
         var combos = Enumerable.Range(0, 1000)
@@ -94,6 +97,8 @@ public sealed class OptimizationTaskExecutorTests
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
         _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(TestBars.CreateSeries(10));
+        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
             .Returns(TestBars.CreateSeries(10));
 
         _strategyFactory.Create(Arg.Any<string>(), Arg.Any<ParameterCombination>())
@@ -127,9 +132,15 @@ public sealed class OptimizationTaskExecutorTests
             .Returns(Task.FromResult<Asset?>(asset));
         _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
             .Returns(TestBars.CreateSeries(10));
+        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(TestBars.CreateSeries(10));
 
+        var strategy = Substitute.For<IInt64BarStrategy>();
+        // Use a real backing list so .Clear()/.Add() actually mutates — the substitute's
+        // auto-stub does nothing, which would mismatch BacktestEngine's series.Length assertion.
+        strategy.DataSubscriptions.Returns(new List<DataSubscription>());
         _strategyFactory.Create(Arg.Any<string>(), Arg.Any<ParameterCombination>())
-            .Returns(Substitute.For<IInt64BarStrategy>());
+            .Returns(strategy);
         _metricsCalculator.Calculate(
                 Arg.Any<IReadOnlyList<Fill>>(),
                 Arg.Any<IReadOnlyList<long>>(),
@@ -166,8 +177,14 @@ public sealed class OptimizationTaskExecutorTests
             .Returns(Task.FromResult<Asset?>(asset));
         _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
             .Returns(TestBars.CreateSeries(10));
+        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(TestBars.CreateSeries(10));
+        var strategy = Substitute.For<IInt64BarStrategy>();
+        // Use a real backing list so .Clear()/.Add() actually mutates — the substitute's
+        // auto-stub does nothing, which would mismatch BacktestEngine's series.Length assertion.
+        strategy.DataSubscriptions.Returns(new List<DataSubscription>());
         _strategyFactory.Create(Arg.Any<string>(), Arg.Any<ParameterCombination>())
-            .Returns(Substitute.For<IInt64BarStrategy>());
+            .Returns(strategy);
         _metricsCalculator.Calculate(
                 Arg.Any<IReadOnlyList<Fill>>(),
                 Arg.Any<IReadOnlyList<long>>(),
@@ -205,7 +222,7 @@ public sealed class OptimizationTaskExecutorTests
             StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
         },
-        SubscriptionDtos = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }],
+        Subscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
         ActiveAxes = [new ResolvedNumericAxis("Period", [10, 20])],
         EstimatedCount = estimatedCount,
         MaxParallelism = 1,

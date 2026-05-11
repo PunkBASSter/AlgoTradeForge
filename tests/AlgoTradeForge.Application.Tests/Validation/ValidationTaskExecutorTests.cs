@@ -9,6 +9,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Validation;
 
@@ -57,7 +59,7 @@ public sealed class ValidationTaskExecutorTests
             DurationMs = 1000,
             TotalCombinations = 100,
             SortBy = MetricNames.SharpeRatio,
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10_000m,
@@ -217,7 +219,7 @@ public sealed class ValidationTaskExecutorTests
             StrategyName = "TestStrategy",
             StrategyVersion = "1.0",
             Parameters = new Dictionary<string, object> { ["Period"] = 10 },
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10_000m,

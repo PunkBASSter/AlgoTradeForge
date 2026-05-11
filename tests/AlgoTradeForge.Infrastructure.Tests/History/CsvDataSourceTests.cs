@@ -1,6 +1,7 @@
 using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Infrastructure.History;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -12,7 +13,7 @@ public class CsvDataSourceTests
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset End = new(2024, 1, 31, 23, 59, 0, TimeSpan.Zero);
-    private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+    private static readonly TimeFrame OneMinute = new(TimeSpan.FromMinutes(1));
 
     private static readonly CryptoAsset TestAsset = CryptoAsset.Create("BTCUSDT", "Binance", 2);
 
@@ -26,7 +27,7 @@ public class CsvDataSourceTests
     {
         var series = new TimeSeries<Int64Bar>();
         var startMs = Start.ToUnixTimeMilliseconds();
-        var stepMs = (long)OneMinute.TotalMilliseconds;
+        var stepMs = (long)OneMinute.Duration.TotalMilliseconds;
         for (var i = 0; i < count; i++)
             series.Add(new Int64Bar(startMs + i * stepMs, 100 + i, 200 + i, 50 + i, 150 + i, 1000));
         return series;
@@ -35,9 +36,8 @@ public class CsvDataSourceTests
     private void SetupLoader(TimeSeries<Int64Bar> series)
     {
         _loader.Load(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(),
-            Arg.Any<TimeSpan>())
+            Arg.Any<DataFeedDescriptor>(),
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
             .Returns(series);
     }
 

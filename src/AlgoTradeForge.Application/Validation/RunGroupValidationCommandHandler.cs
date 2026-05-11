@@ -1,8 +1,10 @@
 using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Validation;
 using Microsoft.Extensions.Logging;
 
@@ -36,6 +38,18 @@ public sealed class RunGroupValidationCommandHandler(
         if (completedRuns.Count == 0)
             throw new ArgumentException(
                 $"Optimization group '{command.OptimizationGroupId}' has no completed child runs.");
+
+        // Validation requires exactly one Role=Primary per child run. Post-expansion runs are
+        // single-primary by construction; this guard catches stale records pre-dating expansion.
+        for (var i = 0; i < completedRuns.Count; i++)
+        {
+            var run = completedRuns[i];
+            var primaryCount = run.DataSubscriptions.Count(s => s.Role == DataFeedRole.Primary);
+            if (primaryCount != 1)
+                throw new ArgumentException(
+                    $"Optimization run '{run.Id}' (child {i} of group '{command.OptimizationGroupId}') " +
+                    $"has {primaryCount} Role=Primary subscriptions; validation requires exactly one.");
+        }
 
         // 3. Resolve threshold profile
         ValidationThresholdProfile profile;
@@ -143,7 +157,7 @@ public sealed class RunGroupValidationCommandHandler(
         {
             var optimizationRun = completedRuns[i];
             var dssLabel = string.Join(", ", optimizationRun.DataSubscriptions
-                .Select(s => $"{s.AssetName}/{s.Exchange}/{s.TimeFrame}"));
+                .Select(BacktestInputsFormatter.Format));
 
             computeTasks.Add(new ComputeTask
             {

@@ -12,9 +12,9 @@ namespace AlgoTradeForge.Domain.Tests.Engine;
 public class BacktestEngineFeedTests
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+    private static readonly TimeFrame OneMinute = new(TimeSpan.FromMinutes(1));
     private static readonly long StartMs = Start.ToUnixTimeMilliseconds();
-    private static readonly long StepMs = (long)OneMinute.TotalMilliseconds;
+    private static readonly long StepMs = (long)OneMinute.Duration.TotalMilliseconds;
 
     private static readonly CryptoPerpetualAsset PerpAsset = CryptoPerpetualAsset.Create("BTCUSDT_PERP", "Binance",
         decimalDigits: 2);

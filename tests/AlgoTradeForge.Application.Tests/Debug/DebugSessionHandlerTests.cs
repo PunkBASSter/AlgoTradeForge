@@ -12,13 +12,14 @@ using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Application.Tests.TestUtilities;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Debug;
 
 public class DebugSessionHandlerTests
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+    private static readonly TimeFrame OneMinute = new(TimeSpan.FromMinutes(1));
 
     private readonly IAssetRepository _assetRepo = Substitute.For<IAssetRepository>();
     private readonly IStrategyFactory _strategyFactory = Substitute.For<IStrategyFactory>();
@@ -64,13 +65,37 @@ public class DebugSessionHandlerTests
     }
 
     [Fact]
+    public async Task StartSession_EmptySeries_ThrowsArgumentExceptionWithDescriptiveMessage()
+    {
+        SetupAssetAndStrategy(barCount: 0);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            CreateStartHandler().HandleAsync(new StartDebugSessionCommand
+            {
+                DataSubscriptions = [new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
+                BacktestSettings = new BacktestSettingsDto
+                {
+                    InitialCash = 100_000m,
+                    StartTime = Start,
+                    EndTime = Start.AddDays(1),
+                },
+                StrategyName = "TestStrategy",
+            }, TestContext.Current.CancellationToken));
+
+        Assert.Contains("0 bars", ex.Message);
+        Assert.Contains("AAPL", ex.Message);
+        Assert.Contains("NASDAQ", ex.Message);
+        Assert.Contains("1m", ex.Message);
+    }
+
+    [Fact]
     public async Task StartSession_ReturnsSessionId()
     {
         SetupAssetAndStrategy();
 
         var dto = await CreateStartHandler().HandleAsync(new StartDebugSessionCommand
         {
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" }],
+            DataSubscriptions = [new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 100_000m,
@@ -108,7 +133,7 @@ public class DebugSessionHandlerTests
 
         var sessionDto = await startHandler.HandleAsync(new StartDebugSessionCommand
         {
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" }],
+            DataSubscriptions = [new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 100_000m,
@@ -182,7 +207,7 @@ public class DebugSessionHandlerTests
 
         var sessionDto = await startHandler.HandleAsync(new StartDebugSessionCommand
         {
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "AAPL", Exchange = "NASDAQ", TimeFrame = "00:01:00" }],
+            DataSubscriptions = [new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 100_000m,

@@ -5,6 +5,8 @@ using AlgoTradeForge.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Infrastructure.Tests.Persistence;
 
@@ -62,7 +64,7 @@ public class SqliteRunRepositoryTests : IDisposable
             StrategyName = strategyName,
             StrategyVersion = "1.0.0",
             Parameters = new Dictionary<string, object> { ["Quantity"] = 1.5m },
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10000m,
@@ -134,10 +136,10 @@ public class SqliteRunRepositoryTests : IDisposable
         // Parameters
         Assert.Equal(1.5m, loaded.Parameters["Quantity"]);
 
-        // Data subscription fields
+        // Data subscription fields — the persisted polymorphic shape round-trips as TimeBarSubscription
         Assert.Equal("BTCUSDT", loaded.DataSubscriptions[0].AssetName);
         Assert.Equal("Binance", loaded.DataSubscriptions[0].Exchange);
-        Assert.Equal("1h", loaded.DataSubscriptions[0].TimeFrame);
+        Assert.Equal("1h", Assert.IsType<TimeBarSubscription>(loaded.DataSubscriptions[0]).TimeFrame.Code);
     }
 
     // ── GetById returns null for non-existent ──────────────────────────
@@ -172,12 +174,12 @@ public class SqliteRunRepositoryTests : IDisposable
         var r1 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
         };
         var r2 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "4h" }],
+            DataSubscriptions = [new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("4h"))],
         };
 
         await _repo.SaveAsync(r1, TestContext.Current.CancellationToken);
@@ -196,12 +198,12 @@ public class SqliteRunRepositoryTests : IDisposable
         var r1 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
         };
         var r2 = MakeBacktestRecord() with
         {
             Id = Guid.NewGuid(),
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "4h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("4h"))],
         };
 
         await _repo.SaveAsync(r1, TestContext.Current.CancellationToken);
@@ -209,7 +211,7 @@ public class SqliteRunRepositoryTests : IDisposable
 
         var results = await _repo.QueryAsync(new BacktestRunQuery { TimeFrame = "4h" }, TestContext.Current.CancellationToken);
         Assert.Single(results.Items);
-        Assert.Equal("4h", results.Items[0].DataSubscriptions[0].TimeFrame);
+        Assert.Equal("4h", Assert.IsType<TimeBarSubscription>(results.Items[0].DataSubscriptions[0]).TimeFrame.Code);
     }
 
     // ── Query by date range ────────────────────────────────────────────
@@ -317,7 +319,7 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 60000,
             TotalCombinations = 2,
             SortBy = "SharpeRatio",
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10000m,
@@ -347,10 +349,10 @@ public class SqliteRunRepositoryTests : IDisposable
         Assert.Empty(loaded.Trials); // Trials loaded separately via GetOptimizationTrialsAsync
         Assert.Equal(OptimizationRunStatus.Completed, loaded.Status);
 
-        // Verify optimization data subscription fields
+        // Verify optimization data subscription fields — polymorphic round-trip
         Assert.Equal("BTCUSDT", loaded.DataSubscriptions[0].AssetName);
         Assert.Equal("Binance", loaded.DataSubscriptions[0].Exchange);
-        Assert.Equal("1h", loaded.DataSubscriptions[0].TimeFrame);
+        Assert.Equal("1h", Assert.IsType<TimeBarSubscription>(loaded.DataSubscriptions[0]).TimeFrame.Code);
     }
 
     // ── Get optimization by ID with all trials ─────────────────────────
@@ -383,7 +385,7 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 100,
             TotalCombinations = 1,
             SortBy = "SharpeRatio",
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10000m,
@@ -434,7 +436,7 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 100,
             TotalCombinations = 1,
             SortBy = "SharpeRatio",
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10000m,
@@ -555,7 +557,7 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 60000,
             TotalCombinations = 1,
             SortBy = "SharpeRatio",
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10000m,
@@ -727,7 +729,7 @@ public class SqliteRunRepositoryTests : IDisposable
                 DurationMs = 1000,
                 TotalCombinations = 1,
                 SortBy = "SharpeRatio",
-                DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+                DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
                 BacktestSettings = new BacktestSettingsDto
                 {
                     InitialCash = 10000m,
@@ -875,7 +877,7 @@ public class SqliteRunRepositoryTests : IDisposable
             DurationMs = 100,
             TotalCombinations = 3,
             SortBy = MetricNames.Fitness,
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10000m,

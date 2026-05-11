@@ -11,7 +11,7 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules.MoneyManagement;
 public sealed class MoneyManagementModuleTests
 {
     private static readonly DataSubscription DefaultSubscription =
-        new(TestAssets.BtcUsdt, TimeSpan.FromHours(1));
+        new(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromHours(1)));
 
     private static CryptoAsset CreateAsset(
         decimal minOrderQuantity = 0.001m,

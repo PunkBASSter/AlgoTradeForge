@@ -6,6 +6,8 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Backtests;
 
@@ -44,7 +46,7 @@ public class GetBacktestStatusQueryHandlerTests
         {
             Id = id, StrategyName = "S", StrategyVersion = "1",
             Parameters = new Dictionary<string, object>(),
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTC", Exchange = "Binance", TimeFrame = "00:01:00" }],
+            DataSubscriptions = [new TimeBarSubscription("BTC", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10_000m, CommissionPerTrade = 0m, SlippageTicks = 0,

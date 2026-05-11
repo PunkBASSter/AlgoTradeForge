@@ -7,6 +7,8 @@ using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.Domain.Optimization.Space;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Optimization;
 
@@ -178,8 +180,8 @@ public class EvaluateOptimizationQueryHandlerTests
             },
             SubscriptionAxis =
             [
-                [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
-                [new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
+                [new TimeBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
+                [new TimeBarSubscription("ETHUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             ],
             Mode = "BruteForce",
         };
@@ -207,7 +209,7 @@ public class EvaluateOptimizationQueryHandlerTests
             },
             SubscriptionAxis =
             [
-                [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
+                [new TimeBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             ],
             Mode = "BruteForce",
         };
@@ -234,9 +236,9 @@ public class EvaluateOptimizationQueryHandlerTests
             },
             SubscriptionAxis =
             [
-                [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
-                [new DataSubscriptionDto { AssetName = "ETHUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
-                [new DataSubscriptionDto { AssetName = "SOLUSDT", Exchange = "binance", TimeFrame = "1:00:00" }],
+                [new TimeBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
+                [new TimeBarSubscription("ETHUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
+                [new TimeBarSubscription("SOLUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             ],
             Mode = "BruteForce",
         };
@@ -337,6 +339,74 @@ public class EvaluateOptimizationQueryHandlerTests
         // Genetic mode ignores MaxCombinations — cost is governed by MaxEvaluations
         Assert.False(result.ExceedsMaxCombinations);
         Assert.NotNull(result.GeneticConfig);
+    }
+
+    [Fact]
+    public async Task MultiPrimaryDss_DssCountReflectsExpansion()
+    {
+        // Phase 4 (P4-14, TRD §9.6): a single DSS with multiple Role=Primary entries
+        // should preview as |primaries| separate child runs (post-expansion), so the
+        // FE's "dssCount × combosPerRun" cost preview math matches what the submission
+        // handler will actually enqueue.
+        var descriptor = MakeDescriptor("TestStrategy",
+            new NumericRangeAxis("Period", 5, 50, 1, typeof(int), ParamUnit.Raw));
+        _spaceProvider.GetDescriptor("TestStrategy").Returns(descriptor);
+
+        var query = new EvaluateOptimizationQuery
+        {
+            StrategyName = "TestStrategy",
+            Axes = new Dictionary<string, OptimizationAxisOverride>
+            {
+                ["Period"] = new RangeOverride(10, 12, 1), // 3 values
+            },
+            // One DSS, three Role=Primary entries — should expand to 3 single-primary DSSes.
+            SubscriptionAxis =
+            [
+                [
+                    new TimeBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new TimeBarSubscription("ETHUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new TimeBarSubscription("SOLUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                ],
+            ],
+            Mode = "BruteForce",
+        };
+
+        var result = await _handler.HandleAsync(query, TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, result.TotalCombinations); // per-run, unchanged
+        Assert.Equal(3, result.DssCount);          // post-expansion: 3 fan-out children
+    }
+
+    [Fact]
+    public async Task MultiPrimaryWithSharedSide_ExpansionPreservesSideForEachChild()
+    {
+        // [Primary(BTC), Primary(ETH), Side(funding-rate)] → 2 expanded DSSes,
+        // each carrying the funding-rate side feed. Cost preview: 2 children.
+        var descriptor = MakeDescriptor("TestStrategy",
+            new NumericRangeAxis("Period", 5, 50, 1, typeof(int), ParamUnit.Raw));
+        _spaceProvider.GetDescriptor("TestStrategy").Returns(descriptor);
+
+        var query = new EvaluateOptimizationQuery
+        {
+            StrategyName = "TestStrategy",
+            Axes = new Dictionary<string, OptimizationAxisOverride>
+            {
+                ["Period"] = new RangeOverride(10, 12, 1),
+            },
+            SubscriptionAxis =
+            [
+                [
+                    new TimeBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new TimeBarSubscription("ETHUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new SideFeedSubscription("BTCUSDT", "binance", DataFeedRole.Side, "funding-rate"),
+                ],
+            ],
+            Mode = "BruteForce",
+        };
+
+        var result = await _handler.HandleAsync(query, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.DssCount); // 2 fan-out children, side feed shared
     }
 
     [Fact]

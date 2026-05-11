@@ -207,6 +207,49 @@ public class FeedContextBuilderTests : IDisposable
     }
 
     [Fact]
+    public void Build_OnlyPrimaryAndSidecar_NoEagerSideFeeds_ReturnsContextWithSidecarBound()
+    {
+        // Regression: an asset whose feeds.json contains ONLY an EqIV alt-bar primary + its
+        // .flow sidecar (no funding-rate, no OI, no other eager side feeds) must still get a
+        // non-null IFeedContext with the sidecar lazy-bound. Previously this returned null
+        // because the eager-load counter (`loaded`) stayed at 0 and the lazy sidecar
+        // registration didn't bump it — silently dropping the sidecar binding.
+        var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
+        var assetDir = AssetDirectoryName.From(asset);
+
+        WriteFeedsJson("Binance", assetDir, new
+        {
+            Feeds = new Dictionary<string, object>
+            {
+                ["EqIV_ticks_500000"] = new
+                {
+                    Kind     = "OHLCV_AltBar",
+                    Columns  = new[] { "ts", "o", "h", "l", "c", "vol" },
+                    Sidecar  = "EqIV_ticks_500000.flow",
+                },
+                ["EqIV_ticks_500000.flow"] = new
+                {
+                    Kind            = "Side",
+                    Columns         = new[] { "signed_imbalance", "buy_volume", "sell_volume", "realized_threshold" },
+                    NullableColumns = true,
+                },
+            }
+        });
+
+        var result = _builder.Build(
+            _testDataRoot, asset,
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
+            primaryFeedName: "EqIV_ticks_500000");
+
+        Assert.NotNull(result);
+        Assert.NotNull(result!.PrimarySidecarSchema);
+        Assert.Equal("EqIV_ticks_500000.flow", result.PrimarySidecarSchema!.FeedKey);
+        Assert.Equal(
+            new[] { "signed_imbalance", "buy_volume", "sell_volume", "realized_threshold" },
+            result.PrimarySidecarSchema.ColumnNames);
+    }
+
+    [Fact]
     public void Build_InvalidAutoApplyType_RegistersFeedWithNullAutoApply()
     {
         var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);

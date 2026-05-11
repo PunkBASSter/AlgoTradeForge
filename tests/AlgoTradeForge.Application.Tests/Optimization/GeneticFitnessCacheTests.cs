@@ -5,6 +5,7 @@ using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Optimization;
 
@@ -99,13 +100,13 @@ public sealed class GeneticFitnessCacheTests
 
         var combo1 = new ParameterCombination(new Dictionary<string, object>
         {
-            ["sub"] = new DataSubscription(btcAsset, TimeSpan.FromHours(1)),
+            ["sub"] = new DataSubscription(btcAsset, new TimeFrame(TimeSpan.FromHours(1))),
             ["period"] = 14,
         });
 
         var combo2 = new ParameterCombination(new Dictionary<string, object>
         {
-            ["sub"] = new DataSubscription(ethAsset, TimeSpan.FromHours(1)),
+            ["sub"] = new DataSubscription(ethAsset, new TimeFrame(TimeSpan.FromHours(1))),
             ["period"] = 14,
         });
 
@@ -267,7 +268,7 @@ public sealed class GeneticFitnessCacheTests
             StrategyName = "Test",
             StrategyVersion = "1",
             Parameters = new Dictionary<string, object> { ["period"] = paramValue, ["threshold"] = 2.5 },
-            DataSubscriptions = [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "1h" }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = 10_000m,

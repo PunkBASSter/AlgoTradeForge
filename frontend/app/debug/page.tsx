@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { useDebugStore } from "@/lib/stores/debug-store";
 import { useDebugWebSocket } from "@/hooks/use-debug-websocket";
 import { SessionConfigEditor } from "@/components/features/debug/session-config-editor";
+import { SessionSettingsCard } from "@/components/features/debug/session-settings-card";
 import { DebugToolbar } from "@/components/features/debug/debug-toolbar";
 import { DebugMetrics } from "@/components/features/debug/debug-metrics";
 import { OrderLog } from "@/components/features/debug/order-log";
@@ -84,6 +85,7 @@ export default function DebugPage() {
         }
         s.reset();
         s.setSessionState("configuring");
+        s.setInitialConfig(config);
         const session = await client.createDebugSession(config);
         const s2 = useDebugStore.getState();
         s2.setSessionId(session.sessionId);
@@ -219,6 +221,9 @@ export default function DebugPage() {
 
       {isActive && (
         <>
+          {store.initialConfig && (
+            <SessionSettingsCard config={store.initialConfig} />
+          )}
           <DebugToolbar
             onCommand={handleCommand}
             onStop={handleStop}

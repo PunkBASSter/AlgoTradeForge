@@ -8,8 +8,19 @@ public sealed record AutoApplySpec
     public string Type { get; }
     public string RateColumn { get; }
     public string? SignConvention { get; }
+    public double? Cap { get; }
+    public double? Floor { get; }
+    public int? IntervalHours { get; }
+    public bool? Disclaimer { get; }
 
-    public AutoApplySpec(string type, string rateColumn, string? signConvention = null)
+    public AutoApplySpec(
+        string type,
+        string rateColumn,
+        string? signConvention = null,
+        double? cap = null,
+        double? floor = null,
+        int? intervalHours = null,
+        bool? disclaimer = null)
     {
         if (!ValidTypes.Contains(type))
             throw new ArgumentException(
@@ -19,5 +30,9 @@ public sealed record AutoApplySpec
         Type = type;
         RateColumn = rateColumn;
         SignConvention = signConvention;
+        Cap = cap;
+        Floor = floor;
+        IntervalHours = intervalHours;
+        Disclaimer = disclaimer;
     }
 }

@@ -80,11 +80,16 @@ public sealed class BinanceSpotClientTests
         Assert.Equal(50500.00m, first.Close);
         Assert.Equal(123.45m, first.Volume);
         Assert.NotNull(first.ExtValues);
-        Assert.Equal(4, first.ExtValues.Length);
+        // Spot client uses the shared kline parser; the proxy column is always emitted in
+        // memory even though the spot client itself doesn't persist candle-ext (its
+        // CandleExtColumns is null). Length parity with the futures parser keeps the wire
+        // format uniform.
+        Assert.Equal(5, first.ExtValues.Length);
         Assert.Equal(6172500.00, first.ExtValues[0]); // quoteVolume
         Assert.Equal(3000, first.ExtValues[1]);        // tradeCount
         Assert.Equal(60.00, first.ExtValues[2]);       // takerBuyVolume
         Assert.Equal(3000000.00, first.ExtValues[3]);  // takerBuyQuoteVolume
+        Assert.Equal(1458d, first.ExtValues[4]);       // taker_buy_trade_count proxy
 
         var second = records[1];
         Assert.Equal(1_700_000_060_000L, second.TimestampMs);

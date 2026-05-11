@@ -1,3 +1,5 @@
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -124,9 +126,26 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     [InlineData("abc:def")]
     public async Task Post_InvalidTimeFrame_Returns400(string badTimeFrame)
     {
-        var request = MakeBacktestRequest(timeFrame: badTimeFrame);
-
-        var response = await Client.PostAsJsonAsync("/api/backtests", request, Json, TestContext.Current.CancellationToken);
+        // Phase 4 P4-A: TimeFrame is now a strict value type validated at JSON deserialization.
+        // Send a raw JSON payload so the bad string actually reaches the wire (the typed helper
+        // would fail-fast at construction in this process before the request is sent).
+        var rawJson = $$"""
+            {
+                "dataSubscriptions": [
+                    { "kind": "TimeBar", "assetName": "BTCUSDT", "exchange": "Binance", "role": 0, "timeFrame": "{{badTimeFrame}}" }
+                ],
+                "backtestSettings": {
+                    "initialCash": 10000,
+                    "startTime": "2025-01-01T00:00:00+00:00",
+                    "endTime": "2025-01-15T00:00:00+00:00",
+                    "commissionPerTrade": 0,
+                    "slippageTicks": 0
+                },
+                "strategyName": "BuyAndHold"
+            }
+            """;
+        using var content = new StringContent(rawJson, System.Text.Encoding.UTF8, "application/json");
+        var response = await Client.PostAsync("/api/backtests", content, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -166,12 +185,7 @@ public sealed class BacktestEndpointsApiTests(AlgoTradeForgeApiFactory factory) 
     {
         var request = new RunBacktestRequest
         {
-            DataSubscriptions = [new()
-            {
-                AssetName = "FAKEUSDT",
-                Exchange = "FakeExchange",
-                TimeFrame = "01:00:00",
-            }],
+            DataSubscriptions = [new TimeBarSubscription("FAKEUSDT", "FakeExchange", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new()
             {
                 InitialCash = 10_000m,

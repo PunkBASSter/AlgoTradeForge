@@ -2,10 +2,11 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Domain.Reporting;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 
@@ -17,11 +18,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private bool _initialized;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
-    };
+    // Independent copy of the wire policy (JsonSerializerOptions is immutable after first use).
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonDefaults.Api);
 
     /// <summary>All backtest_runs columns except equity_curve_json, for list queries.</summary>
     private const string BacktestListColumns = """
@@ -30,7 +28,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         started_at, completed_at, data_start, data_end,
         duration_ms, total_bars, metrics_json,
         run_folder_path, run_mode, optimization_run_id,
-        asset_name, exchange, timeframe,
+        primary_asset, primary_exchange, primary_feed, primary_kind,
         error_message, error_stack_trace, fitness_score,
         subscriptions_json
         """;
@@ -100,7 +98,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 duration_ms, total_bars, metrics_json, equity_curve_json,
                 trade_pnl_json,
                 run_folder_path, run_mode, optimization_run_id,
-                asset_name, exchange, timeframe,
+                primary_asset, primary_exchange, primary_feed, primary_kind,
                 error_message, error_stack_trace, fitness_score,
                 subscriptions_json,
                 sharpe_ratio, sortino_ratio, profit_factor, max_drawdown_pct,
@@ -112,7 +110,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 $durationMs, $totalBars, $metricsJson, $equityJson,
                 $tradePnlJson,
                 $runFolder, $runMode, $optId,
-                $asset, $exchange, $tf,
+                $primaryAsset, $primaryExchange, $primaryFeed, $primaryKind,
                 $errorMsg, $errorStack, $fitnessScore,
                 $subscriptionsJson,
                 $sharpe, $sortino, $pf, $maxDd,
@@ -139,9 +137,11 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         cmd.Parameters.AddWithValue("$runFolder", (object?)r.RunFolderPath ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$runMode", r.RunMode);
         cmd.Parameters.AddWithValue("$optId", r.OptimizationRunId.HasValue ? r.OptimizationRunId.Value.ToString() : DBNull.Value);
-        cmd.Parameters.AddWithValue("$asset", r.DataSubscriptions[0].AssetName);
-        cmd.Parameters.AddWithValue("$exchange", r.DataSubscriptions[0].Exchange);
-        cmd.Parameters.AddWithValue("$tf", r.DataSubscriptions[0].TimeFrame);
+        var primarySub = r.DataSubscriptions[0];
+        cmd.Parameters.AddWithValue("$primaryAsset", primarySub.AssetName);
+        cmd.Parameters.AddWithValue("$primaryExchange", primarySub.Exchange);
+        cmd.Parameters.AddWithValue("$primaryFeed", PrimaryFeedCode(primarySub));
+        cmd.Parameters.AddWithValue("$primaryKind", PrimaryKindCode(primarySub));
         cmd.Parameters.AddWithValue("$errorMsg", (object?)r.ErrorMessage ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$errorStack", (object?)r.ErrorStackTrace ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$fitnessScore",
@@ -197,18 +197,20 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         }
         if (query.AssetName is not null)
         {
-            conditions.Add("br.asset_name = $asset");
-            parameters.Add(new SqliteParameter("$asset", query.AssetName));
+            conditions.Add("br.primary_asset = $primaryAsset");
+            parameters.Add(new SqliteParameter("$primaryAsset", query.AssetName));
         }
         if (query.Exchange is not null)
         {
-            conditions.Add("br.exchange = $exchange");
-            parameters.Add(new SqliteParameter("$exchange", query.Exchange));
+            conditions.Add("br.primary_exchange = $primaryExchange");
+            parameters.Add(new SqliteParameter("$primaryExchange", query.Exchange));
         }
         if (query.TimeFrame is not null)
         {
-            conditions.Add("br.timeframe = $tf");
-            parameters.Add(new SqliteParameter("$tf", query.TimeFrame));
+            // BacktestRunQuery.TimeFrame is the legacy filter name; primary_feed holds
+            // TimeFrame.Code OR alt-bar FeedId OR "ticks".
+            conditions.Add("br.primary_feed = $primaryFeed");
+            parameters.Add(new SqliteParameter("$primaryFeed", query.TimeFrame));
         }
         if (query.StandaloneOnly == true)
         {
@@ -274,7 +276,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 started_at, completed_at, duration_ms, total_combinations,
                 sort_by, data_start, data_end,
                 initial_cash, commission, slippage_ticks, max_parallelism,
-                asset_name, exchange, timeframe, filtered_trials, failed_trials,
+                primary_asset, primary_exchange, primary_feed, primary_kind,
+                filtered_trials, failed_trials,
                 optimization_method, generations_completed, input_json, error_message, status,
                 subscriptions_json, group_id, dss_index
             ) VALUES (
@@ -282,7 +285,8 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 $startedAt, '', 0, $totalCombinations,
                 $sortBy, $dataStart, $dataEnd,
                 $cash, $commission, $slippage, $maxParallelism,
-                $asset, $exchange, $tf, 0, 0,
+                $primaryAsset, $primaryExchange, $primaryFeed, $primaryKind,
+                0, 0,
                 $optMethod, NULL, $inputJson, NULL, $status,
                 $subscriptionsJson, $groupId, $dssIndex
             )
@@ -300,9 +304,11 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         cmd.Parameters.AddWithValue("$commission", record.BacktestSettings.CommissionPerTrade.ToString(CultureInfo.InvariantCulture));
         cmd.Parameters.AddWithValue("$slippage", record.BacktestSettings.SlippageTicks);
         cmd.Parameters.AddWithValue("$maxParallelism", record.MaxParallelism);
-        cmd.Parameters.AddWithValue("$asset", record.DataSubscriptions[0].AssetName);
-        cmd.Parameters.AddWithValue("$exchange", record.DataSubscriptions[0].Exchange);
-        cmd.Parameters.AddWithValue("$tf", record.DataSubscriptions[0].TimeFrame);
+        var primarySub = record.DataSubscriptions[0];
+        cmd.Parameters.AddWithValue("$primaryAsset", primarySub.AssetName);
+        cmd.Parameters.AddWithValue("$primaryExchange", primarySub.Exchange);
+        cmd.Parameters.AddWithValue("$primaryFeed", PrimaryFeedCode(primarySub));
+        cmd.Parameters.AddWithValue("$primaryKind", PrimaryKindCode(primarySub));
         cmd.Parameters.AddWithValue("$optMethod", (object?)record.OptimizationMethod ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$inputJson", (object?)record.InputJson ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$status", record.Status);
@@ -554,18 +560,18 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         }
         if (query.AssetName is not null)
         {
-            conditions.Add("opr.asset_name = $asset");
-            parameters.Add(new SqliteParameter("$asset", query.AssetName));
+            conditions.Add("opr.primary_asset = $primaryAsset");
+            parameters.Add(new SqliteParameter("$primaryAsset", query.AssetName));
         }
         if (query.Exchange is not null)
         {
-            conditions.Add("opr.exchange = $exchange");
-            parameters.Add(new SqliteParameter("$exchange", query.Exchange));
+            conditions.Add("opr.primary_exchange = $primaryExchange");
+            parameters.Add(new SqliteParameter("$primaryExchange", query.Exchange));
         }
         if (query.TimeFrame is not null)
         {
-            conditions.Add("opr.timeframe = $tf");
-            parameters.Add(new SqliteParameter("$tf", query.TimeFrame));
+            conditions.Add("opr.primary_feed = $primaryFeed");
+            parameters.Add(new SqliteParameter("$primaryFeed", query.TimeFrame));
         }
         if (query.From is not null)
         {
@@ -723,25 +729,38 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
 
     // ── Helpers ────────────────────────────────────────────────────────
 
+    /// <summary>Canonical feed code stored in <c>primary_feed</c>.</summary>
+    private static string PrimaryFeedCode(DataFeedSubscription sub) => sub switch
+    {
+        TimeBarSubscription tb => tb.TimeFrame.Code,
+        AltBarSubscription ab => ab.FeedId,
+        TickSubscription => "ticks",
+        SideFeedSubscription s => s.FeedId,
+        _ => sub.GetType().Name,
+    };
+
+    /// <summary>String discriminator stored in <c>primary_kind</c>.</summary>
+    private static string PrimaryKindCode(DataFeedSubscription sub) => sub switch
+    {
+        TimeBarSubscription => "TimeBar",
+        AltBarSubscription => "AltBar",
+        TickSubscription => "Tick",
+        SideFeedSubscription => "Side",
+        _ => sub.GetType().Name,
+    };
+
     private static BacktestRunRecord ReadBacktestRunCore(DbDataReader reader, bool includeEquityCurve)
     {
         var optIdStr = reader.IsDBNull(reader.GetOrdinal("optimization_run_id"))
             ? null
             : reader.GetString(reader.GetOrdinal("optimization_run_id"));
 
-        var subscriptionsOrd = TryGetOrdinal(reader, "subscriptions_json");
-        var subscriptionsJson = subscriptionsOrd is int sOrd && !reader.IsDBNull(sOrd)
-            ? reader.GetString(sOrd)
-            : null;
-
-        var dataSubscriptions = subscriptionsJson is not null
-            ? (IReadOnlyList<DataSubscriptionDto>)JsonSerializer.Deserialize<List<DataSubscriptionDto>>(subscriptionsJson, JsonOptions)!
-            : [new DataSubscriptionDto
-            {
-                AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
-                Exchange = reader.GetString(reader.GetOrdinal("exchange")),
-                TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
-            }];
+        // subscriptions_json is NOT NULL by schema; null deserialization indicates corruption.
+        var subscriptionsJson = reader.GetString(reader.GetOrdinal("subscriptions_json"));
+        var dataSubscriptions = JsonSerializer.Deserialize<List<DataFeedSubscription>>(
+            subscriptionsJson, JsonOptions)
+            ?? throw new InvalidOperationException(
+                "subscriptions_json deserialized to null — corrupted row.");
 
         var parameters = DeserializeParameters(reader.GetString(reader.GetOrdinal("parameters_json")));
 
@@ -794,7 +813,7 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
         var parts = new List<string>();
         foreach (var (key, value) in parameters)
         {
-            if (key is "DataSubscriptions")
+            if (key is "DataSubscriptions" or "FeedSubscriptions")
                 continue;
             var val = value switch
             {
@@ -819,19 +838,12 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
             ? startedAt
             : DateTimeOffset.Parse(completedAtRaw, CultureInfo.InvariantCulture);
 
-        var subscriptionsOrd = TryGetOrdinal(reader, "subscriptions_json");
-        var subscriptionsJson = subscriptionsOrd is int sOrd && !reader.IsDBNull(sOrd)
-            ? reader.GetString(sOrd)
-            : null;
-
-        var dataSubscriptions = subscriptionsJson is not null
-            ? (IReadOnlyList<DataSubscriptionDto>)JsonSerializer.Deserialize<List<DataSubscriptionDto>>(subscriptionsJson, JsonOptions)!
-            : [new DataSubscriptionDto
-            {
-                AssetName = reader.GetString(reader.GetOrdinal("asset_name")),
-                Exchange = reader.GetString(reader.GetOrdinal("exchange")),
-                TimeFrame = reader.GetString(reader.GetOrdinal("timeframe")),
-            }];
+        // subscriptions_json is NOT NULL by schema; null deserialization indicates corruption.
+        var subscriptionsJson = reader.GetString(reader.GetOrdinal("subscriptions_json"));
+        var dataSubscriptions = JsonSerializer.Deserialize<List<DataFeedSubscription>>(
+            subscriptionsJson, JsonOptions)
+            ?? throw new InvalidOperationException(
+                "subscriptions_json deserialized to null — corrupted row.");
 
         return new OptimizationRunRecord
         {

@@ -12,7 +12,7 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules.TradeRegistry;
 public class TradeRegistryIntegrationTests
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+    private static readonly TimeFrame OneMinute = new(TimeSpan.FromMinutes(1));
     private static readonly Asset TestAsset = TestAssets.Aapl;
 
     private static BacktestEngine CreateEngine() =>

@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Domain.Optimization.Fitness;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.WebApi.Contracts;
 
@@ -54,7 +55,7 @@ public sealed record RunOptimizationRequest
     public Dictionary<string, OptimizationAxisOverride>? OptimizationAxes { get; init; }
 
     [JsonConverter(typeof(SubscriptionAxisConverter))]
-    public List<List<DataSubscriptionDto>>? SubscriptionAxis { get; init; }
+    public List<List<DataFeedSubscription>>? SubscriptionAxis { get; init; }
 
     public bool Validate { get; init; }
     public string ThresholdProfileName { get; init; } = "Crypto-Standard";

@@ -14,23 +14,23 @@ public sealed class EvaluateOptimizationQueryHandler(
     public Task<OptimizationEvaluationDto> HandleAsync(
         EvaluateOptimizationQuery query, CancellationToken ct = default)
     {
-        // 1. Validate strategy exists
         var descriptor = spaceProvider.GetDescriptor(query.StrategyName)
             ?? throw new ArgumentException($"Strategy '{query.StrategyName}' not found.");
 
-        // 2. Resolve parameter axes (pure computation, no scaling needed for counting)
         var resolvedAxes = axisResolver.Resolve(descriptor, query.Axes);
 
-        // 3. Build active axes — per-DSS group mode excludes subscription axis
-        var dssCount = query.SubscriptionAxis?.Count ?? 0;
+        // Expand multi-primary DSSes so the cost preview matches the post-expansion child-run
+        // count produced by the submission handler.
+        var expandedAxis = OptimizationSetupHelper.ExpandMultiPrimary(query.SubscriptionAxis);
+
+        // Per-DSS group mode excludes the subscription axis.
+        var dssCount = expandedAxis.Count;
         var activeAxes = dssCount > 0
             ? OptimizationSetupHelper.FilterEmptyAxes(resolvedAxes)
             : OptimizationSetupHelper.AppendSubscriptionAxisAndFilter(resolvedAxes, 0);
 
-        // 4. Count combinations (per-run, not multiplied by DSS count)
         var totalCombinations = cartesianGenerator.EstimateCount(activeAxes);
 
-        // 5. Compute unique combinations after normalization (if strategy supports it)
         long? uniqueCombinations = null;
         var normalizer = NormalizingEnumerable.TryCreateNormalizer(descriptor.ParamsType);
         if (normalizer is not null && totalCombinations <= query.MaxCombinations)
@@ -44,10 +44,9 @@ public sealed class EvaluateOptimizationQueryHandler(
             uniqueCombinations = seen.Count;
         }
 
-        // 6. Compute effective dimensions
         var effectiveDimensions = GeneticConfigResolver.ComputeEffectiveDimensions(activeAxes);
 
-        // 7. Resolve genetic config if in genetic mode
+
         ResolvedGeneticConfigDto? geneticConfigDto = null;
         if (string.Equals(query.Mode, "Genetic", StringComparison.OrdinalIgnoreCase))
         {

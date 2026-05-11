@@ -11,7 +11,7 @@ namespace AlgoTradeForge.Domain.Tests.Live;
 public class BacktestOrderContextGetPositionsTests
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+    private static readonly TimeFrame OneMinute = new(TimeSpan.FromMinutes(1));
 
     [Fact]
     public void GetPositions_ReturnsPortfolioPositions()

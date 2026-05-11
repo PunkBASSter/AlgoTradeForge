@@ -11,13 +11,60 @@ public interface IFeedContext
 {
     /// <summary>
     /// Returns the latest record at or before the current bar's timestamp.
-    /// The returned array is a shared buffer — do NOT hold a reference across bars.
+    /// The returned span aliases a shared row buffer — the ref-struct lifetime prevents
+    /// the caller from holding it across bars.
     /// </summary>
-    bool TryGetLatest(string feedKey, out double[] values);
+    bool TryGetLatest(string feedKey, out ReadOnlySpan<double> values);
 
     /// <summary>True if a new record arrived at or before the current bar's timestamp.</summary>
     bool HasNewData(string feedKey);
 
     /// <summary>Access the feed schema (column names) for index resolution during OnInit.</summary>
     DataFeedSchema GetSchema(string feedKey);
+
+    // Default-interface methods so existing IFeedContext impls (private-repo strategies,
+    // null/test impls) keep compiling without modification.
+
+    /// <summary>
+    /// Returns the latest sidecar row for the strategy's primary bar feed (e.g. EqIV's
+    /// <c>.flow</c> companion). Returns <c>false</c> when the primary has no sidecar
+    /// or the sidecar has no data at the current bar's timestamp. Lazy-loaded: a strategy
+    /// that never calls this triggers zero loader hits.
+    /// </summary>
+    bool TryGetPrimarySidecar(out ReadOnlySpan<double> values)
+    {
+        values = ReadOnlySpan<double>.Empty;
+        return false;
+    }
+
+    /// <summary>
+    /// Schema of the primary's sidecar (column names for index resolution at <c>OnInit</c>).
+    /// <c>null</c> when the primary has no sidecar — strategies should branch on this once at
+    /// init time and cache the column index, not re-resolve per bar.
+    /// </summary>
+    DataFeedSchema? PrimarySidecarSchema => null;
+
+    /// <summary>
+    /// Convenience accessor for the EqIV sidecar's <c>signed_imbalance</c> column. Returns
+    /// <see cref="double.NaN"/> when the primary has no sidecar, no row at the current ts,
+    /// or the sidecar lacks a <c>signed_imbalance</c> column.
+    /// </summary>
+    double GetPrimarySignedImbalance()
+    {
+        var schema = PrimarySidecarSchema;
+        if (schema is null) return double.NaN;
+        var idx = IndexOf(schema.ColumnNames, "signed_imbalance");
+        if (idx < 0) return double.NaN;
+        return TryGetPrimarySidecar(out ReadOnlySpan<double> values) && idx < values.Length
+            ? values[idx]
+            : double.NaN;
+    }
+
+    private static int IndexOf(string[] columns, string name)
+    {
+        for (var i = 0; i < columns.Length; i++)
+            if (string.Equals(columns[i], name, StringComparison.Ordinal))
+                return i;
+        return -1;
+    }
 }

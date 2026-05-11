@@ -37,7 +37,7 @@ public class StrategyEventBusReceiverTests
     {
         var bus = new CapturingEventBus();
         var asset = new EquityAsset { Name = "TEST", Exchange = "XTEST" };
-        var sub = new DataSubscription(asset, TimeSpan.FromMinutes(1));
+        var sub = new DataSubscription(asset, new TimeFrame(TimeSpan.FromMinutes(1)));
         var strategy = new SignalEmittingStrategy(new TestParams { DataSubscriptions = [sub] });
 
         ((IEventBusReceiver)strategy).SetEventBus(bus);
@@ -59,7 +59,7 @@ public class StrategyEventBusReceiverTests
     {
         var bus = new CapturingEventBus();
         var asset = new EquityAsset { Name = "TEST", Exchange = "XTEST" };
-        var sub = new DataSubscription(asset, TimeSpan.FromMinutes(1));
+        var sub = new DataSubscription(asset, new TimeFrame(TimeSpan.FromMinutes(1)));
 
         // Use a strategy that emits without a reason
         var strategy = new NoReasonSignalStrategy(new TestParams { DataSubscriptions = [sub] });
@@ -78,7 +78,7 @@ public class StrategyEventBusReceiverTests
         // StrategyBase defaults EventBus to NullEventBus.Instance
         // EmitSignal should be a no-op — no exception means NullEventBus works
         var asset = new EquityAsset { Name = "TEST", Exchange = "XTEST" };
-        var sub = new DataSubscription(asset, TimeSpan.FromMinutes(1));
+        var sub = new DataSubscription(asset, new TimeFrame(TimeSpan.FromMinutes(1)));
         var strategy = new SignalEmittingStrategy(new TestParams { DataSubscriptions = [sub] });
 
         var bar = new Int64Bar(0, 100, 110, 90, 105, 1000);

@@ -2,6 +2,8 @@ using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Validation;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -52,12 +54,7 @@ public class RunGroupValidationCommandHandlerTests
                 DurationMs = 5000,
                 TotalCombinations = 100,
                 SortBy = "FitnessScore",
-                DataSubscriptions = [new DataSubscriptionDto
-                {
-                    AssetName = $"ASSET{i}",
-                    Exchange = "Binance",
-                    TimeFrame = "01:00:00",
-                }],
+                DataSubscriptions = [new TimeBarSubscription($"ASSET{i}", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
                 BacktestSettings = new BacktestSettingsDto
                 {
                     InitialCash = 10_000m,
@@ -84,12 +81,7 @@ public class RunGroupValidationCommandHandlerTests
                 DurationMs = 1000,
                 TotalCombinations = 100,
                 SortBy = "FitnessScore",
-                DataSubscriptions = [new DataSubscriptionDto
-                {
-                    AssetName = $"FAILED{i}",
-                    Exchange = "Binance",
-                    TimeFrame = "01:00:00",
-                }],
+                DataSubscriptions = [new TimeBarSubscription($"FAILED{i}", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
                 BacktestSettings = new BacktestSettingsDto
                 {
                     InitialCash = 10_000m,
@@ -242,6 +234,74 @@ public class RunGroupValidationCommandHandlerTests
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task HandleAsync_OptimizationRunWithMultiPrimary_ThrowsArgumentException()
+    {
+        // Phase 4 (P4-16, TRD §9.6): validation requires exactly one Role=Primary per
+        // child run. After P4-14 expansion, every optimization run is single-primary by
+        // construction — this guard catches stale/corrupt records where multi-primary
+        // somehow leaked through.
+        var groupId = Guid.NewGuid();
+        var corruptRun = new OptimizationRunRecord
+        {
+            Id = Guid.NewGuid(),
+            StrategyName = "TestStrategy",
+            StrategyVersion = "1",
+            StartedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            CompletedAt = DateTimeOffset.UtcNow,
+            DurationMs = 5000,
+            TotalCombinations = 100,
+            SortBy = "FitnessScore",
+            // Two Role=Primary entries — the corrupt state the guard should catch.
+            DataSubscriptions =
+            [
+                new TimeBarSubscription("BTC", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                new TimeBarSubscription("ETH", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+            ],
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10_000m,
+                StartTime = DateTimeOffset.UtcNow.AddDays(-30),
+                EndTime = DateTimeOffset.UtcNow,
+            },
+            MaxParallelism = 4,
+            TrialCount = 50,
+            Trials = [],
+            Status = OptimizationRunStatus.Completed,
+            GroupId = groupId,
+            DssIndex = 0,
+        };
+        var optGroup = new OptimizationGroupRecord
+        {
+            Id = groupId,
+            StrategyName = "TestStrategy",
+            StrategyVersion = "1",
+            OptimizationMethod = "BruteForce",
+            StartedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            CompletedAt = DateTimeOffset.UtcNow,
+            TotalRuns = 1,
+            Status = OptimizationGroupStatus.Completed,
+            SubscriptionsJson = "[]",
+            BacktestSettingsJson = "{}",
+            MaxParallelism = 4,
+            Runs = [corruptRun],
+        };
+        _runRepo.GetOptimizationGroupByIdAsync(optGroup.Id, Arg.Any<CancellationToken>())
+            .Returns(optGroup);
+        _profileRepo.GetByNameAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((ThresholdProfileRecord?)null);
+
+        var handler = CreateHandler();
+        var ex = await Assert.ThrowsAsync<ArgumentException>(
+            () => handler.HandleAsync(new RunGroupValidationCommand
+            {
+                OptimizationGroupId = optGroup.Id,
+            }, TestContext.Current.CancellationToken));
+
+        Assert.Contains("Role=Primary", ex.Message);
+        Assert.Contains("validation requires exactly one", ex.Message);
     }
 
     [Fact]

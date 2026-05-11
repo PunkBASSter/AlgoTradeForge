@@ -37,7 +37,7 @@ public sealed class Rsi2MeanReversionStrategyTests
         AtrStopMultiplier = 2.0,
         MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
         TradeRegistry = new() { MaxConcurrentGroups = 1 },
-        DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
+        DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)))],
     };
 
     private static TimeSeries<Int64Bar> CreateTrendUpThenDipSeries()
@@ -307,7 +307,7 @@ public sealed class Rsi2MeanReversionStrategyTests
             SignalThreshold = 30, AtrStopMultiplier = 2.0,
             MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new() { MaxConcurrentGroups = 1 },
-            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
+            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)))],
         };
         var bars = CreateTrendUpThenDipSeries();
         var strategy = new Rsi2MeanReversionStrategy(p);
@@ -331,7 +331,7 @@ public sealed class Rsi2MeanReversionStrategyTests
             SignalThreshold = 99, AtrStopMultiplier = 2.0,
             MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 2.0 }),
             TradeRegistry = new() { MaxConcurrentGroups = 1 },
-            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
+            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)))],
         };
         var bars = CreateTrendUpThenDipSeries();
         var strategy = new Rsi2MeanReversionStrategy(p);

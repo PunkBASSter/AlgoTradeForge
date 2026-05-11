@@ -17,6 +17,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Optimization;
 
@@ -65,9 +67,9 @@ public class RunGroupOptimizationGeneticTests
             StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
             EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
         },
-        SubscriptionAxis = Enumerable.Range(0, dssCount).Select(_ => new List<DataSubscriptionDto>
+        SubscriptionAxis = Enumerable.Range(0, dssCount).Select(_ => new List<DataFeedSubscription>
         {
-            new() { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }
+            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))
         }).ToList(),
         Axes = new Dictionary<string, OptimizationAxisOverride>
         {
@@ -180,5 +182,184 @@ public class RunGroupOptimizationGeneticTests
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
+    }
+
+    // -------- Phase 4 (P4-14, TRD §9.6): brute-force multi-primary fan-out --------
+
+    [Fact]
+    public async Task HandleAsync_BruteForce_MultiPrimaryDss_ProducesPerPrimaryChildRuns()
+    {
+        // A single DSS containing two Role=Primary entries plus one Role=Side feed
+        // expands into TWO child runs, each carrying its own primary + the shared side.
+        // Group's TotalRuns and child count both reflect post-expansion |primaries|.
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = new RunGroupOptimizationCommand
+        {
+            StrategyName = "TestStrategy",
+            OptimizationMethod = "BruteForce",
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+            SubscriptionAxis =
+            [
+                [
+                    new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new SideFeedSubscription("BTCUSDT", "Binance", DataFeedRole.Side, "funding-rate"),
+                ],
+            ],
+            Axes = new Dictionary<string, OptimizationAxisOverride>
+            {
+                ["Period"] = new RangeOverride(10, 20, 5),
+            },
+            MaxCombinations = 1_000_000,
+        };
+
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.Runs.Count);   // Two fan-out child runs
+        // Group record TotalRuns matches expansion count
+        await _runRepository.Received(1).InsertOptimizationGroupAsync(
+            Arg.Is<OptimizationGroupRecord>(g => g.TotalRuns == 2),
+            Arg.Any<CancellationToken>());
+        // Two placeholder inserts, each with single-primary DataSubscriptions
+        await _runRepository.Received(2).InsertOptimizationPlaceholderAsync(
+            Arg.Is<OptimizationRunRecord>(r =>
+                r.DataSubscriptions.Count(s => s.Role == DataFeedRole.Primary) == 1),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleAsync_BruteForce_MultiPrimaryAcrossMultipleDsses_ProducesCartesianFanOut()
+    {
+        // Two input DSSes:
+        //   DSS 0: [Primary(BTC), Primary(ETH)] → 2 expanded
+        //   DSS 1: [Primary(SOL)]               → 1 expanded
+        // Total: 3 child runs.
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = new RunGroupOptimizationCommand
+        {
+            StrategyName = "TestStrategy",
+            OptimizationMethod = "BruteForce",
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+            SubscriptionAxis =
+            [
+                [
+                    new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                ],
+                [
+                    new TimeBarSubscription("SOLUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                ],
+            ],
+            Axes = new Dictionary<string, OptimizationAxisOverride>
+            {
+                ["Period"] = new RangeOverride(10, 20, 5),
+            },
+            MaxCombinations = 1_000_000,
+        };
+
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, result.Runs.Count);
+        await _runRepository.Received(1).InsertOptimizationGroupAsync(
+            Arg.Is<OptimizationGroupRecord>(g => g.TotalRuns == 3),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleAsync_Genetic_MultiPrimaryDss_ProducesPerPrimaryChildRuns()
+    {
+        // Phase 4 (P4-14b, TRD §9.6): a single DSS with multiple Role=Primary entries
+        // submitted in Genetic mode should fan out into N child runs, each driving its
+        // own GA (independent population, independent fitness cache via per-task
+        // GeneticOptimizationTaskExecutor.ExecuteAsync).
+        //
+        // The WebApi endpoint routes this via post-expansion count > 1 → group handler;
+        // this test proves the group handler handles the genetic path correctly.
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = new RunGroupOptimizationCommand
+        {
+            StrategyName = "TestStrategy",
+            OptimizationMethod = "Genetic",
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+            SubscriptionAxis =
+            [
+                [
+                    new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new SideFeedSubscription("BTCUSDT", "Binance", DataFeedRole.Side, "funding-rate"),
+                ],
+            ],
+            Axes = new Dictionary<string, OptimizationAxisOverride>
+            {
+                ["Period"] = new RangeOverride(10, 20, 5),
+            },
+            GeneticSettings = new GeneticConfig(),
+        };
+
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+
+        // Two fan-out child runs, each carrying its own primary + the shared side feed.
+        Assert.Equal(2, result.Runs.Count);
+        await _runRepository.Received(1).InsertOptimizationGroupAsync(
+            Arg.Is<OptimizationGroupRecord>(g =>
+                g.OptimizationMethod == "Genetic" && g.TotalRuns == 2),
+            Arg.Any<CancellationToken>());
+        // Each child placeholder is single-primary and Genetic
+        await _runRepository.Received(2).InsertOptimizationPlaceholderAsync(
+            Arg.Is<OptimizationRunRecord>(r =>
+                r.OptimizationMethod == "Genetic"
+                && r.DataSubscriptions.Count(s => s.Role == DataFeedRole.Primary) == 1),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleAsync_BruteForce_SinglePrimary_ExpansionIsIdentity()
+    {
+        // Regression: single-primary DSS continues to produce a single child run after
+        // P4-14 expansion lands. Ensures the identity case isn't accidentally broken.
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = new RunGroupOptimizationCommand
+        {
+            StrategyName = "TestStrategy",
+            OptimizationMethod = "BruteForce",
+            BacktestSettings = new BacktestSettingsDto
+            {
+                InitialCash = 10_000m,
+                StartTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                EndTime = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+            SubscriptionAxis =
+            [
+                [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
+            ],
+            Axes = new Dictionary<string, OptimizationAxisOverride>
+            {
+                ["Period"] = new RangeOverride(10, 20, 5),
+            },
+            MaxCombinations = 1_000_000,
+        };
+
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+
+        Assert.Single(result.Runs);
     }
 }

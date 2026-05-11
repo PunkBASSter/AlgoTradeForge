@@ -188,7 +188,7 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
         }
     }
 
-    private static readonly HashSet<string> SkippableProperties = ["DataSubscriptions"];
+    private static readonly HashSet<string> SkippableProperties = ["DataSubscriptions", "FeedSubscriptions"];
 
     private static void SetProperty(Type type, object instance, string propertyName, object value)
     {

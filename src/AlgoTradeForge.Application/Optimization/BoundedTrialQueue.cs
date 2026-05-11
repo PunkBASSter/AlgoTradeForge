@@ -94,14 +94,12 @@ public sealed class BoundedTrialQueue
     {
         var sb = new System.Text.StringBuilder();
         foreach (var sub in record.DataSubscriptions)
-            sb.Append(sub.AssetName)
-              .Append(':').Append(sub.Exchange)
-              .Append(':').Append(sub.TimeFrame)
+            sb.Append(AlgoTradeForge.Application.Backtests.BacktestInputsFormatter.Key(sub))
               .Append('|');
 
         var first = true;
         foreach (var key in record.Parameters.Keys
-            .Where(k => k != "DataSubscriptions")
+            .Where(k => k != "DataSubscriptions" && k != "FeedSubscriptions")
             .OrderBy(k => k, StringComparer.Ordinal))
         {
             if (!first) sb.Append('|');

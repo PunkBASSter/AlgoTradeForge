@@ -15,7 +15,10 @@ export function openTrialAsBacktest(
 ): void {
   const request: RunBacktestRequest = {
     strategyName: trial.strategyName,
+    // Trial replay assumes TimeBar primary; legacy trials lack the kind/role discriminator.
     dataSubscriptions: trial.dataSubscriptions.map((ds) => ({
+      kind: "TimeBar" as const,
+      role: "Primary" as const,
       assetName: ds.assetName,
       exchange: ds.exchange,
       timeFrame: toTimeSpan(ds.timeFrame),

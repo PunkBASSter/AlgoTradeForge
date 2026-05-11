@@ -27,6 +27,18 @@
             ],
             "dependsOn": "try-build-plugins",
             "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-history-loader",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "${workspaceFolder}/src/AlgoTradeForge.HistoryLoader.WebApi/AlgoTradeForge.HistoryLoader.WebApi.csproj",
+                "-c",
+                "Debug"
+            ],
+            "problemMatcher": "$msCompile"
         }
     ]
 }

@@ -1,8 +1,10 @@
 using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Validation;
 using Microsoft.Extensions.Logging;
 
@@ -28,6 +30,14 @@ public sealed class RunValidationCommandHandler(
         if (optimization.Status != OptimizationRunStatus.Completed)
             throw new ArgumentException(
                 $"Optimization run '{command.OptimizationRunId}' has status '{optimization.Status}', expected 'Completed'.");
+
+        // Validation requires exactly one Role=Primary. Post-expansion runs are single-primary
+        // by construction; this guard catches stale records pre-dating expansion.
+        var primaryCount = optimization.DataSubscriptions.Count(s => s.Role == DataFeedRole.Primary);
+        if (primaryCount != 1)
+            throw new ArgumentException(
+                $"Optimization run '{command.OptimizationRunId}' has {primaryCount} Role=Primary " +
+                "subscriptions; validation requires exactly one.");
 
         // 2. Resolve threshold profile (check repository for custom profiles, fall back to built-in)
         ValidationThresholdProfile profile;
@@ -71,7 +81,7 @@ public sealed class RunValidationCommandHandler(
         // 5. Enqueue compute task to the queue
         var thresholdProfileJson = JsonSerializer.Serialize(profile, JsonOptions);
         var dssLabel = string.Join(", ", optimization.DataSubscriptions
-            .Select(s => $"{s.AssetName}/{s.Exchange}/{s.TimeFrame}"));
+            .Select(BacktestInputsFormatter.Format));
 
         var computeTask = new ComputeTask
         {

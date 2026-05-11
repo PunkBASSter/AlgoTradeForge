@@ -128,7 +128,9 @@ public sealed class GetLiveSessionDataQueryHandler(
         // Build last bar per subscription
         var lastBars = BuildLastBars(snapshot, tickSize);
 
-        var timeFrame = primarySub?.TimeFrame.ToString() ?? "00:01:00";
+        // Preserve historical "hh:mm:ss" wire shape (vs TimeFrame.Code "1m") so existing FE
+        // consumers keep parsing. Migrate to TimeFrame.Code via a coordinated FE/BE change.
+        var timeFrame = primarySub?.TimeFrame.Duration.ToString() ?? "00:01:00";
 
         var dto = new LiveSessionDataDto
         {
@@ -160,7 +162,7 @@ public sealed class GetLiveSessionDataQueryHandler(
         return snapshot.LastBarsPerSubscription
             .Select(entry => new LastBarDto(
                 entry.Subscription.Asset.Name,
-                entry.Subscription.TimeFrame.ToString(),
+                entry.Subscription.TimeFrame.Duration.ToString(),
                 entry.Bar.TimestampMs / 1000,
                 entry.Bar.Open * tickSize,
                 entry.Bar.High * tickSize,

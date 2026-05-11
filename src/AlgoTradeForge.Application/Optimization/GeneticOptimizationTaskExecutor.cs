@@ -10,6 +10,7 @@ using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Optimization.Genetic;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -23,7 +24,7 @@ public sealed record GeneticExecutionContext
 {
     public required string StrategyName { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
-    public required List<DataSubscriptionDto> SubscriptionDtos { get; init; }
+    public required IReadOnlyList<DataFeedSubscription> Subscriptions { get; init; }
     public required List<ResolvedAxis> ActiveAxes { get; init; }
     public required GeneticConfig GaConfig { get; init; }
     public required int MaxParallelism { get; init; }
@@ -77,8 +78,11 @@ public sealed class GeneticOptimizationTaskExecutor(
 
         var resolvedSubs = new List<DataSubscription>();
         var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
-        foreach (var sub in ctx.SubscriptionDtos)
+        foreach (var sub in ctx.Subscriptions)
             await helper.ResolveAndCacheAsync(sub, resolvedSubs, dataCache, fromDate, toDate, ct);
+
+        // Dual-key carrier (see OptimizationTaskExecutor).
+        var feedSubs = ctx.Subscriptions.ToList();
 
         // 2. Set up trial infrastructure
         var maxParallelism = ctx.MaxParallelism > 0
@@ -116,7 +120,7 @@ public sealed class GeneticOptimizationTaskExecutor(
             // Evaluate population in parallel
             EvaluatePopulation(
                 population, ctx.StrategyName, ctx.BacktestSettings,
-                strategyFactory, dataCache, resolvedSubs,
+                strategyFactory, dataCache, resolvedSubs, feedSubs,
                 fitnessFunction, filter, topTrials, failedTrials,
                 childRunId, ctx.StartedAt, ref strategyVersion,
                 ref filteredOut, ref failedCount,
@@ -179,6 +183,7 @@ public sealed class GeneticOptimizationTaskExecutor(
         IOptimizationStrategyFactory factory,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
         List<DataSubscription> resolvedSubs,
+        List<DataFeedSubscription> feedSubs,
         IFitnessFunction fitnessFunction,
         TrialFilter filter,
         BoundedTrialQueue topTrials,
@@ -259,10 +264,11 @@ public sealed class GeneticOptimizationTaskExecutor(
                             }
                             trialCts.CancelAfter(trialTimeout);
 
-                            // Inject resolved subscriptions
+                            // Inject resolved subscriptions (dual-key carrier)
                             var mutableValues = new Dictionary<string, object>(combos[i].Values)
                             {
-                                ["DataSubscriptions"] = resolvedSubs
+                                ["DataSubscriptions"] = resolvedSubs,
+                                ["FeedSubscriptions"] = feedSubs,
                             };
                             var comboWithSubs = new ParameterCombination(mutableValues);
 

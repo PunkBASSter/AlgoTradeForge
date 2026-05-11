@@ -15,7 +15,7 @@ const modeTabs = [
 ] as const;
 
 // Top-level route prefixes that are NOT strategy names
-const reservedPrefixes = new Set(["report", "debug", "dashboard"]);
+const reservedPrefixes = new Set(["report", "debug", "dashboard", "data"]);
 
 function parseRoute(pathname: string): {
   strategy: string | null;
@@ -41,20 +41,39 @@ export function NavBar() {
     }
   }, [strategy, mode]);
 
-  // Only show mode tabs when we're on a strategy page
+  // Only show strategy-scoped mode tabs on strategy pages.
   const showTabs = strategy !== null && mode !== null;
+
+  // Data tab is strategy-agnostic: stays visible on routes without a strategy.
+  const isOnDataTab = pathname.startsWith("/data");
 
   return (
     <header className="flex items-center justify-between px-6 py-3 border-b border-border-default bg-bg-surface">
-      <div className="flex items-center gap-8">
+      <div className="flex items-center gap-6">
         <Link
           href={showTabs ? `/${strategy}/${mode}` : "/"}
           className="text-lg font-bold text-text-primary tracking-tight"
         >
           AlgoTradeForge
         </Link>
+
+        <nav className="flex items-center gap-1" role="tablist" aria-label="Global tabs">
+          <Link
+            href="/data"
+            role="tab"
+            aria-selected={isOnDataTab}
+            className={`px-3 py-1.5 text-sm rounded transition-colors ${
+              isOnDataTab
+                ? "bg-accent-blue text-white"
+                : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+            }`}
+          >
+            Data
+          </Link>
+        </nav>
+
         {showTabs && (
-          <nav className="flex items-center gap-1" role="tablist">
+          <nav className="flex items-center gap-1" role="tablist" aria-label="Strategy tabs">
             {modeTabs.map((tab) => {
               const isActive = mode === tab.id;
               return (

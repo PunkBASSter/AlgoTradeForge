@@ -1,11 +1,12 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain.Optimization.Fitness;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Backtests;
 
 public sealed record RunBacktestCommand : ICommand<BacktestSubmissionDto>, IBacktestSetupCommand
 {
-    public required IReadOnlyList<DataSubscriptionDto> DataSubscriptions { get; init; }
+    public required IReadOnlyList<DataFeedSubscription> DataSubscriptions { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
     public required string StrategyName { get; init; }
     public bool UseDetailedExecutionLogic { get; init; }

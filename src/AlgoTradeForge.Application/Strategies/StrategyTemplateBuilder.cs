@@ -16,7 +16,7 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<AvailableAssetInfo> availableAssets,
         int requiredSubscriptionCount = 1) => new()
     {
-        ["dataSubscriptions"] = BuildSubscriptionList(availableAssets, "01:00:00", requiredSubscriptionCount),
+        ["dataSubscriptions"] = BuildSubscriptionList(availableAssets, "1h", requiredSubscriptionCount),
         ["backtestSettings"] = new Dictionary<string, object>
         {
             ["initialCash"] = 10000,
@@ -70,7 +70,7 @@ public static class StrategyTemplateBuilder
                     ["minTrades"] = 10,
                 },
             },
-            ["subscriptionAxis"] = BuildSubscriptionGroups(availableAssets, "01:00:00", requiredSubscriptionCount),
+            ["subscriptionAxis"] = BuildSubscriptionGroups(availableAssets, "1h", requiredSubscriptionCount),
             ["optimizationAxes"] = axisOverrides.Count > 0 ? axisOverrides : null!,
         };
     }
@@ -115,7 +115,7 @@ public static class StrategyTemplateBuilder
         ["strategyName"] = strategyName,
         ["initialCash"] = 10000,
         ["accountName"] = "paper",
-        ["dataSubscriptions"] = BuildSubscriptions(availableAssets, "00:01:00"),
+        ["dataSubscriptions"] = BuildSubscriptions(availableAssets, "1m"),
         ["strategyParameters"] = ConvertToHumanReadable(paramDefaults, axes),
     };
 
@@ -126,7 +126,7 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<AvailableAssetInfo> availableAssets,
         int requiredSubscriptionCount = 1) => new()
     {
-        ["dataSubscriptions"] = BuildSubscriptionList(availableAssets, "01:00:00", requiredSubscriptionCount),
+        ["dataSubscriptions"] = BuildSubscriptionList(availableAssets, "1h", requiredSubscriptionCount),
         ["backtestSettings"] = new Dictionary<string, object>
         {
             ["initialCash"] = 10000,
@@ -158,8 +158,10 @@ public static class StrategyTemplateBuilder
             var exchange = i < assets.Count ? assets[i].Exchange : DefaultExchange;
             result.Add(new Dictionary<string, object>
             {
+                ["kind"] = "TimeBar",
                 ["assetName"] = assetName,
                 ["exchange"] = exchange,
+                ["role"] = i == 0 ? 0 : 1,
                 ["timeFrame"] = timeFrame,
             });
         }
@@ -170,17 +172,27 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<AvailableAssetInfo> assets, string timeFrame)
     {
         if (assets.Count == 0)
-            return [new() { ["assetName"] = DefaultAsset, ["exchange"] = DefaultExchange, ["timeFrame"] = timeFrame }];
+            return [Subscription(DefaultAsset, DefaultExchange, timeFrame, role: 0)];
 
         return assets
-            .Select(a => new Dictionary<string, object>
-            {
-                ["assetName"] = a.LookupName,
-                ["exchange"] = a.Exchange,
-                ["timeFrame"] = timeFrame,
-            })
+            .Select((a, i) => Subscription(a.LookupName, a.Exchange, timeFrame, role: i == 0 ? 0 : 1))
             .ToList();
     }
+
+    // Role conventions in templates:
+    //   • BuildSubscriptions (single backtest list): index 0 = Primary, index 1+ = Side.
+    //   • Optimization axis groups: every entry is Role=Primary (fan-out candidate primaries —
+    //     the optimizer runs |primaries| × |combos| per group). Side feeds in optimization
+    //     templates require manual JSON edits.
+    private static Dictionary<string, object> Subscription(
+        string assetName, string exchange, string timeFrame, int role) => new()
+    {
+        ["kind"] = "TimeBar",
+        ["assetName"] = assetName,
+        ["exchange"] = exchange,
+        ["role"] = role,
+        ["timeFrame"] = timeFrame,
+    };
 
     /// <summary>
     /// Builds subscription axis groups for optimization templates.
@@ -210,12 +222,7 @@ public static class StrategyTemplateBuilder
             var group = new List<Dictionary<string, object>>();
             for (var j = 0; j < groupSize; j++)
             {
-                group.Add(new Dictionary<string, object>
-                {
-                    ["assetName"] = assets[i + j].LookupName,
-                    ["exchange"] = assets[i + j].Exchange,
-                    ["timeFrame"] = timeFrame,
-                });
+                group.Add(Subscription(assets[i + j].LookupName, assets[i + j].Exchange, timeFrame, role: 0));
             }
             groups.Add(group);
         }
@@ -224,12 +231,13 @@ public static class StrategyTemplateBuilder
             ? groups
             : new List<List<Dictionary<string, object>>>
             {
-                Enumerable.Range(0, groupSize).Select(i => new Dictionary<string, object>
-                {
-                    ["assetName"] = i == 0 ? DefaultAsset : $"{DefaultSecondaryAsset}_PERP",
-                    ["exchange"] = DefaultExchange,
-                    ["timeFrame"] = timeFrame,
-                }).ToList()
+                Enumerable.Range(0, groupSize)
+                    .Select(i => Subscription(
+                        i == 0 ? DefaultAsset : $"{DefaultSecondaryAsset}_PERP",
+                        DefaultExchange,
+                        timeFrame,
+                        role: 0))
+                    .ToList()
             };
     }
 
@@ -237,12 +245,12 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<AvailableAssetInfo> assets, string timeFrame)
     {
         if (assets.Count == 0)
-            return [[new() { ["assetName"] = DefaultAsset, ["exchange"] = DefaultExchange, ["timeFrame"] = timeFrame }]];
+            return [[Subscription(DefaultAsset, DefaultExchange, timeFrame, role: 0)]];
 
         return assets
             .Select(a => new List<Dictionary<string, object>>
             {
-                new() { ["assetName"] = a.LookupName, ["exchange"] = a.Exchange, ["timeFrame"] = timeFrame }
+                Subscription(a.LookupName, a.Exchange, timeFrame, role: 0),
             })
             .ToList();
     }
@@ -275,8 +283,8 @@ public static class StrategyTemplateBuilder
 
             pairs.Add(
             [
-                new() { ["assetName"] = baseAsset.LookupName, ["exchange"] = baseAsset.Exchange, ["timeFrame"] = timeFrame },
-                new() { ["assetName"] = perpAsset.LookupName, ["exchange"] = perpAsset.Exchange, ["timeFrame"] = timeFrame },
+                Subscription(baseAsset.LookupName, baseAsset.Exchange, timeFrame, role: 0),
+                Subscription(perpAsset.LookupName, perpAsset.Exchange, timeFrame, role: 0),
             ]);
         }
 

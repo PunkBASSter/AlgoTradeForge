@@ -15,7 +15,7 @@ public class GetLiveSessionDataQueryHandlerTests
 {
     private static readonly CryptoAsset TestAsset = CryptoAsset.Create("BTCUSDT", "Binance", 2);
 
-    private static readonly DataSubscription TestSubscription = new(TestAsset, TimeSpan.FromMinutes(1));
+    private static readonly DataSubscription TestSubscription = new(TestAsset, new TimeFrame(TimeSpan.FromMinutes(1)));
 
     private readonly ILiveSessionStore _store = new InMemoryLiveSessionStore();
     private readonly ILiveSessionDataProvider _dataProvider = Substitute.For<ILiveSessionDataProvider>();

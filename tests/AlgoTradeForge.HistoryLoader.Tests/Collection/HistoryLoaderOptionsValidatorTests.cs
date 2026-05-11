@@ -15,6 +15,33 @@ public sealed class HistoryLoaderOptionsValidatorTests
         Assert.True(result.Succeeded);
     }
 
+    // -------------------------------------------------------------------------
+    // P1b-19 — Aggregator knobs validation (TRD §6.5)
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("MaxConcurrentJobs")]
+    [InlineData("MaxConcurrentTickJobs")]
+    [InlineData("MaxQueueDepth")]
+    [InlineData("JobRetentionMinutes")]
+    [InlineData("MaxPartitionSizeMB")]
+    public void Validate_AggregatorKnobNonPositive_Fails(string field)
+    {
+        var aggregator = field switch
+        {
+            "MaxConcurrentJobs"     => new AggregatorOptions { MaxConcurrentJobs = 0 },
+            "MaxConcurrentTickJobs" => new AggregatorOptions { MaxConcurrentTickJobs = 0 },
+            "MaxQueueDepth"         => new AggregatorOptions { MaxQueueDepth = 0 },
+            "JobRetentionMinutes"   => new AggregatorOptions { JobRetentionMinutes = 0 },
+            "MaxPartitionSizeMB"    => new AggregatorOptions { MaxPartitionSizeMB = 0 },
+            _ => throw new ArgumentOutOfRangeException(nameof(field)),
+        };
+        var options = new HistoryLoaderOptions { Aggregator = aggregator };
+        var result = _validator.Validate(null, options);
+        Assert.True(result.Failed);
+        Assert.Contains(field, result.FailureMessage);
+    }
+
     [Fact]
     public void Validate_ZeroConcurrency_Fails()
     {

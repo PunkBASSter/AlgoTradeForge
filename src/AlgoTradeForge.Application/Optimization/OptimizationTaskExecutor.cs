@@ -9,6 +9,7 @@ using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using static AlgoTradeForge.Domain.Reporting.MetricNames;
@@ -24,7 +25,7 @@ public sealed record OptimizationExecutionContext
     public required string StrategyName { get; init; }
     public required string OptimizationMethod { get; init; }
     public required BacktestSettingsDto BacktestSettings { get; init; }
-    public required List<DataSubscriptionDto> SubscriptionDtos { get; init; }
+    public required IReadOnlyList<DataFeedSubscription> Subscriptions { get; init; }
     public required List<ResolvedAxis> ActiveAxes { get; init; }
     public required long EstimatedCount { get; init; }
     public required int MaxParallelism { get; init; }
@@ -79,8 +80,12 @@ public sealed class OptimizationTaskExecutor(
 
         var resolvedSubs = new List<DataSubscription>();
         var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
-        foreach (var sub in ctx.SubscriptionDtos)
+        foreach (var sub in ctx.Subscriptions)
             await helper.ResolveAndCacheAsync(sub, resolvedSubs, dataCache, fromDate, toDate, ct);
+
+        // Dual-key carrier — keep the polymorphic originals alongside the strategy-side
+        // projection so ExecuteTrial can round-trip AltBar FeedIds and use kind-aware cache lookups.
+        var feedSubs = ctx.Subscriptions.ToList();
 
         // 2. Set up trial infrastructure
         var maxParallelism = ctx.MaxParallelism > 0
@@ -135,7 +140,8 @@ public sealed class OptimizationTaskExecutor(
 
                                 var mutableValues = new Dictionary<string, object>(combo.Values)
                                 {
-                                    ["DataSubscriptions"] = resolvedSubs
+                                    ["DataSubscriptions"] = resolvedSubs,
+                                    ["FeedSubscriptions"] = feedSubs,
                                 };
                                 var combinationWithSubs = new ParameterCombination(mutableValues);
 

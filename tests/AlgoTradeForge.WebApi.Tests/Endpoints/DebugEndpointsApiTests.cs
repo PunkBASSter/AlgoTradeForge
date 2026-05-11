@@ -1,3 +1,5 @@
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.WebSockets;
@@ -119,12 +121,7 @@ public sealed class DebugEndpointsApiTests : ApiTestBase
     {
         var request = new StartDebugSessionRequest
         {
-            DataSubscriptions = [new()
-            {
-                AssetName = "BTCUSDT",
-                Exchange = "Binance",
-                TimeFrame = "01:00:00",
-            }],
+            DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))],
             BacktestSettings = new()
             {
                 InitialCash = 10_000m,

@@ -10,7 +10,7 @@ namespace AlgoTradeForge.Domain.Tests.Engine;
 public class BacktestEventOrderingTests
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+    private static readonly TimeFrame OneMinute = new(TimeSpan.FromMinutes(1));
 
     private static BacktestOptions CreateOptions(long initialCash = 100_000L) =>
         new()

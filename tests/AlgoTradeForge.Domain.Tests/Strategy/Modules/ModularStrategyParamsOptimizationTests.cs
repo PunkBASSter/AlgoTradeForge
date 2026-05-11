@@ -148,7 +148,7 @@ public sealed class ModularStrategyParamsOptimizationTests
             TrendFilterPeriod = 50, AtrPeriod = 14,
             MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 1.0 }),
             TradeRegistry = new() { MaxConcurrentGroups = 1 },
-            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
+            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)))],
         };
 
         var params2 = new Rsi2Params
@@ -157,7 +157,7 @@ public sealed class ModularStrategyParamsOptimizationTests
             TrendFilterPeriod = 50, AtrPeriod = 14,
             MoneyManagement = new FixedFractionalModule(new FixedFractionalParams { RiskPercent = 3.0 }),
             TradeRegistry = new() { MaxConcurrentGroups = 2 },
-            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
+            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)))],
         };
 
         var strategy1 = new Rsi2MeanReversionStrategy(params1);
@@ -185,7 +185,7 @@ public sealed class ModularStrategyParamsOptimizationTests
         {
             RsiPeriod = 2, OversoldThreshold = 10, OverboughtThreshold = 90,
             TrendFilterPeriod = 50, AtrPeriod = 14,
-            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1))],
+            DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)))],
         };
 
         var s1 = new Rsi2MeanReversionStrategy(p);

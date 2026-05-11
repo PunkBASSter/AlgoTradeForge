@@ -53,8 +53,11 @@ internal static class BackfillEndpoints
                 if (!await orchestrator.TryRunSingleAsync(asset, assetDir, feedFilter, fromDate, ct))
                     logger.LogWarning("Backfill already running for {Symbol}", asset.Symbol);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (
+                !(ex is OperationCanceledException && ct.IsCancellationRequested))
             {
+                // HttpClient timeouts surface as TaskCanceledException (an OCE); without the
+                // ct.IsCancellationRequested qualifier the unobserved-task crash would kill the host.
                 logger.LogError(ex, "Backfill failed for {Symbol}", asset.Symbol);
             }
         }, ct);

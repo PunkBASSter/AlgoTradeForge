@@ -18,6 +18,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Optimization;
 
@@ -67,7 +68,7 @@ public class RunGeneticOptimizationCommandHandlerTests
         },
         SubscriptionAxis =
         [
-            [new DataSubscriptionDto { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "01:00:00" }]
+            [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h"))]
         ],
         Axes = new Dictionary<string, OptimizationAxisOverride>
         {
@@ -95,6 +96,8 @@ public class RunGeneticOptimizationCommandHandlerTests
         var series = TestBars.CreateSeries(10);
         _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
             .Returns(series);
+        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            .Returns(series);
     }
 
     [Fact]
@@ -113,7 +116,7 @@ public class RunGeneticOptimizationCommandHandlerTests
     {
         SetupStandardMocks();
         var handler = CreateHandler();
-        var command = CreateCommand() with { SubscriptionAxis = new List<List<DataSubscriptionDto>>() };
+        var command = CreateCommand() with { SubscriptionAxis = new List<List<DataFeedSubscription>>() };
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
@@ -172,5 +175,49 @@ public class RunGeneticOptimizationCommandHandlerTests
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task HandleAsync_MultiPrimaryDss_ThrowsNotSupported_DefenseInDepth()
+    {
+        // Phase 4 (P4-14, TRD §9.6): the WebApi (`OptimizationEndpoints.RunGeneticOptimization`)
+        // routes multi-primary genetic requests to the group handler before they reach this
+        // single-DSS handler — so in production this exception is unreachable. The guard
+        // exists as defense in depth: a future internal caller (or a test harness) that
+        // skips the endpoint must still get a loud, predictable failure instead of silently
+        // running only the first primary. See `RunGroupOptimizationGeneticTests.HandleAsync_Genetic_MultiPrimaryDss_ProducesPerPrimaryChildRuns`
+        // for the production happy path.
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = CreateCommand() with
+        {
+            SubscriptionAxis =
+            [
+                [
+                    new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                    new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+                ]
+            ]
+        };
+
+        var ex = await Assert.ThrowsAsync<NotSupportedException>(
+            () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
+        Assert.Contains("Genetic optimization across multiple primaries", ex.Message);
+        Assert.Contains("post-expansion DSS count = 2", ex.Message);
+    }
+
+    [Fact]
+    public async Task HandleAsync_SinglePrimaryDss_PassesThroughExpansion()
+    {
+        // P4-14 expansion is identity for single-primary DSS; the genetic single-primary
+        // happy path must still work after the expansion call lands.
+        SetupStandardMocks();
+        var handler = CreateHandler();
+        var command = CreateCommand(); // already single-primary
+
+        var result = await handler.HandleAsync(command, TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(Guid.Empty, result.Id);
+        Assert.True(result.TotalCombinations > 0);
     }
 }

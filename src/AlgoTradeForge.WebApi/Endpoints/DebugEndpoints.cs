@@ -60,12 +60,7 @@ public static class DebugEndpoints
 
         var command = new StartDebugSessionCommand
         {
-            DataSubscriptions = request.DataSubscriptions.Select(s => new DataSubscriptionDto
-            {
-                AssetName = s.AssetName,
-                Exchange = s.Exchange,
-                TimeFrame = s.TimeFrame ?? "",
-            }).ToList(),
+            DataSubscriptions = request.DataSubscriptions,
             BacktestSettings = new BacktestSettingsDto
             {
                 InitialCash = request.BacktestSettings.InitialCash,
@@ -84,6 +79,10 @@ public static class DebugEndpoints
             return Results.Created($"/api/debug-sessions/{result.SessionId}", result);
         }
         catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (DirectoryNotFoundException ex)
         {
             return Results.BadRequest(new { error = ex.Message });
         }

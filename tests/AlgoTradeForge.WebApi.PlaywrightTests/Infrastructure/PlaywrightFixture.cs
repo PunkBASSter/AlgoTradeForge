@@ -181,15 +181,51 @@ public sealed class PlaywrightFixture : IAsyncLifetime
     /// Kills a stale frontend process from a previous run that wasn't cleaned up
     /// (e.g., the test runner crashed or was force-killed).
     /// </summary>
+    /// <remarks>
+    /// Two-pronged sweep:
+    /// 1. Honor the pid file written by the previous successful start.
+    /// 2. Scan running processes for any <c>node.exe</c> whose command line points at
+    ///    this repo's frontend dir running <c>next dev</c>. The pid file alone is
+    ///    insufficient because (a) cleanup may have deleted the pid file before the
+    ///    grandchild Next server was reaped, and (b) Turbopack's exclusive lock at
+    ///    <c>.next/dev/lock</c> blocks every subsequent <c>next dev</c> until the
+    ///    orphan exits, surfacing as a 90s health-probe timeout.
+    /// </remarks>
     private static void KillStaleFrontend()
     {
-        if (!File.Exists(PidFilePath))
+        // 1. Pid-file path
+        if (File.Exists(PidFilePath))
+        {
+            try
+            {
+                var pidText = Fs.ReadAllText(PidFilePath).Trim();
+                if (int.TryParse(pidText, out var pid))
+                {
+                    try
+                    {
+                        using var stale = Process.GetProcessById(pid);
+                        KillProcessTree(pid);
+                        stale.WaitForExit(10_000);
+                    }
+                    catch (ArgumentException) { /* process already exited */ }
+                }
+            }
+            catch { /* best-effort */ }
+            finally
+            {
+                DeletePidFile();
+            }
+        }
+
+        // 2. Command-line sweep — catches orphans whose pid was never recorded or
+        // whose pid file was deleted before the process tree was fully reaped.
+        if (!OperatingSystem.IsWindows())
             return;
 
         try
         {
-            var pidText = Fs.ReadAllText(PidFilePath).Trim();
-            if (int.TryParse(pidText, out var pid))
+            var frontendDir = FindFrontendDirectory();
+            foreach (var pid in FindStaleNextDevPids(frontendDir))
             {
                 try
                 {
@@ -197,13 +233,58 @@ public sealed class PlaywrightFixture : IAsyncLifetime
                     KillProcessTree(pid);
                     stale.WaitForExit(10_000);
                 }
-                catch (ArgumentException) { /* process already exited */ }
+                catch (ArgumentException) { /* already exited */ }
+                catch { /* best-effort */ }
             }
         }
         catch { /* best-effort */ }
-        finally
+    }
+
+    /// <summary>
+    /// Enumerates node.exe processes whose command line references the given
+    /// frontend directory and "next" + "dev". Shells out to PowerShell because
+    /// wmic was removed in recent Windows 11 builds and reading another
+    /// process's command line otherwise requires P/Invoke or System.Management.
+    /// </summary>
+    private static IEnumerable<int> FindStaleNextDevPids(string frontendDir)
+    {
+        var marker = frontendDir.Replace('\\', '/');
+        // PowerShell: emit one PID per line for matching node processes.
+        // We pass via -EncodedCommand (UTF-16 LE Base64) to sidestep cmd.exe's
+        // double-quote stripping, which otherwise mangles the embedded -Filter
+        // and -like patterns and produces parser errors.
+        var script =
+            "$ErrorActionPreference='SilentlyContinue';" +
+            "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | " +
+            "Where-Object { ($_.CommandLine -replace '\\\\','/') -like '*" + marker + "*' -and " +
+            "$_.CommandLine -match 'next' -and $_.CommandLine -match 'dev' } | " +
+            "ForEach-Object { $_.ProcessId }";
+
+        var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
+
+        var psi = new ProcessStartInfo
         {
-            DeletePidFile();
+            FileName = "powershell.exe",
+            Arguments = $"-NoProfile -NonInteractive -EncodedCommand {encoded}",
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+
+        string output;
+        using (var proc = Process.Start(psi))
+        {
+            if (proc is null) yield break;
+            output = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit(10_000);
+        }
+
+        foreach (var line in output.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (int.TryParse(trimmed, out var pid))
+                yield return pid;
         }
     }
 

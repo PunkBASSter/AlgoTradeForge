@@ -10,6 +10,7 @@ using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Strategy;
 using NSubstitute;
 using Xunit;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Tests.Live;
 
@@ -19,9 +20,9 @@ public class StartLiveSessionCommandHandlerTests
         decimalDigits: 2,
         minOrderQuantity: 0.00001m, maxOrderQuantity: 9000m, quantityStepSize: 0.00001m);
 
-    private static readonly List<DataSubscriptionDto> DefaultSubscriptions =
+    private static readonly List<DataFeedSubscription> DefaultSubscriptions =
     [
-        new() { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
+        new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")),
     ];
 
     private static IInt64BarStrategy CreateStrategyWithSubscriptions(
@@ -121,7 +122,7 @@ public class StartLiveSessionCommandHandlerTests
 
         Assert.Single(strategy.DataSubscriptions);
         Assert.Equal(BtcUsdt, strategy.DataSubscriptions[0].Asset);
-        Assert.Equal(TimeSpan.FromMinutes(1), strategy.DataSubscriptions[0].TimeFrame);
+        Assert.Equal(new TimeFrame(TimeSpan.FromMinutes(1)), strategy.DataSubscriptions[0].TimeFrame);
     }
 
     [Fact]
@@ -386,8 +387,8 @@ public class StartLiveSessionCommandHandlerTests
             StrategyName = "MultiAsset", InitialCash = 10000m,
             DataSubscriptions =
             [
-                new() { AssetName = "ETHUSDT", Exchange = "Binance", TimeFrame = "00:05:00" },
-                new() { AssetName = "BTCUSDT", Exchange = "Binance", TimeFrame = "00:01:00" },
+                new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("5m")),
+                new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")),
             ],
         };
 

@@ -11,7 +11,7 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules.Filter;
 public sealed class AtrVolatilityFilterModuleTests
 {
     private static readonly DataSubscription DefaultSubscription =
-        new(TestAssets.BtcUsdt, TimeSpan.FromMinutes(1));
+        new(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)));
 
     private static readonly AtrVolatilityFilterParams DefaultParams = new()
     {

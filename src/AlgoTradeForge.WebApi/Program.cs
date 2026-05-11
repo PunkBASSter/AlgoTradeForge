@@ -11,12 +11,12 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Infrastructure;
-using AlgoTradeForge.Infrastructure.CandleIngestion;
 using AlgoTradeForge.WebApi;
 using AlgoTradeForge.Infrastructure.History;
 using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Plugins;
 using System.Text;
+using AlgoTradeForge.WebApi.Data;
 using AlgoTradeForge.WebApi.Endpoints;
 using AlgoTradeForge.WebApi.Middleware;
 
@@ -37,13 +37,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Shared JSON options for FE-facing API (camelCase + case-insensitive)
 builder.Services.AddSingleton(JsonDefaults.Api);
 
-// Configure minimal API request/response JSON to match frontend conventions
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-    options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
-    options.SerializerOptions.PropertyNameCaseInsensitive = true;
-    options.SerializerOptions.NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
-});
+// Single source of truth for wire JSON policy (camelCase, NaN/Infinity round-trip, string enums).
+builder.Services.ConfigureHttpJsonOptions(options => JsonDefaults.Apply(options.SerializerOptions));
 
 // Add OpenAPI/Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -122,6 +117,10 @@ builder.Services.AddSingleton<IAssetRepository, FileSystemAssetRepository>();
 // Debug WebSocket handler (instance class for constructor-injected JSON options)
 builder.Services.AddSingleton<DebugWebSocketHandler>();
 
+// History-loader proxy: typed HttpClient over the sibling WebApi.
+builder.Services.AddHistoryLoaderClient(builder.Configuration);
+builder.Services.AddSingleton<DataProxyCache>();
+
 // CORS for frontend dev server
 builder.Services.AddCors(options =>
 {
@@ -166,6 +165,7 @@ app.MapValidationEndpoints();
 app.MapTaskQueueEndpoints();
 app.MapThresholdProfileEndpoints();
 app.MapLiveEndpoints();
+app.MapDataEndpoints();
 
 app.Run();
 

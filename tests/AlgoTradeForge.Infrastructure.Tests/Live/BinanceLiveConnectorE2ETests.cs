@@ -98,7 +98,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         {
             SessionId = _sessionIdA,
             Strategy = _strategyA,
-            Subscriptions = [new DataSubscription(_asset, TimeSpan.FromMinutes(1))],
+            Subscriptions = [new DataSubscription(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
             PrimaryAsset = _asset,
             InitialCash = initialCash,
             Routing = LiveEventRouting.All,
@@ -112,7 +112,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         {
             SessionId = _sessionIdB,
             Strategy = _strategyB,
-            Subscriptions = [new DataSubscription(_asset, TimeSpan.FromMinutes(1))],
+            Subscriptions = [new DataSubscription(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
             PrimaryAsset = _asset,
             InitialCash = initialCash,
             Routing = LiveEventRouting.All,

@@ -1,7 +1,7 @@
 // T022 - Zustand debug session store
 
 import { create } from "zustand";
-import type { DebugSnapshot, CandleData } from "@/types/api";
+import type { DebugSnapshot, CandleData, StartDebugSessionRequest } from "@/types/api";
 import type { IndicatorEventData } from "@/lib/events/types";
 import type { DebugTrade } from "@/components/features/charts/candlestick-chart";
 
@@ -40,6 +40,7 @@ interface DebugStoreState {
   sessionState: DebugSessionState;
   sessionId: string | null;
   logFolderPath: string | null;
+  initialConfig: StartDebugSessionRequest | null;
   candles: CandleData[];
   indicatorBuffers: Map<string, DebugBufferPoint[]>;
   indicatorBufferMeta: Map<string, DebugBufferMeta>;
@@ -52,6 +53,7 @@ interface DebugStoreState {
   setSessionState: (state: DebugSessionState) => void;
   setSessionId: (id: string | null) => void;
   setLogFolderPath: (path: string | null) => void;
+  setInitialConfig: (config: StartDebugSessionRequest | null) => void;
   addCandle: (candle: CandleData) => void;
   updateCandle: (candle: CandleData) => void;
   addIndicator: (data: IndicatorEventData, time: number) => void;
@@ -67,6 +69,7 @@ const initialState = {
   sessionState: "idle" as DebugSessionState,
   sessionId: null as string | null,
   logFolderPath: null as string | null,
+  initialConfig: null as StartDebugSessionRequest | null,
   candles: [] as CandleData[],
   indicatorBuffers: new Map<string, DebugBufferPoint[]>(),
   indicatorBufferMeta: new Map<string, DebugBufferMeta>(),
@@ -83,6 +86,7 @@ export const useDebugStore = create<DebugStoreState>((set) => ({
   setSessionState: (sessionState) => set({ sessionState }),
   setSessionId: (sessionId) => set({ sessionId }),
   setLogFolderPath: (logFolderPath) => set({ logFolderPath }),
+  setInitialConfig: (initialConfig) => set({ initialConfig }),
 
   addCandle: (candle) =>
     set((state) => {

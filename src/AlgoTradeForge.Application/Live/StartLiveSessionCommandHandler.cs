@@ -1,4 +1,3 @@
-using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Progress;
@@ -7,6 +6,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Live;
 
@@ -22,17 +22,21 @@ public sealed class StartLiveSessionCommandHandler(
         if (command.DataSubscriptions is null or { Count: 0 })
             throw new ArgumentException("At least one data subscription must be provided.");
 
-        // Resolve assets from subscription DTOs
+        // Live trading is TimeBar-only: the connector aggregator pipeline doesn't yet emit
+        // alt-bars in real time. Silently coercing a non-TimeBar primary to 1m would deliver
+        // wrong data, so reject explicitly.
         var resolvedSubscriptions = new List<DataSubscription>();
         foreach (var sub in command.DataSubscriptions)
         {
             var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
                 ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
-            if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out var timeFrame))
-                throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.AssetName}'.");
+            if (sub is not TimeBarSubscription tb)
+                throw new NotSupportedException(
+                    $"Live trading currently supports TimeBarSubscription only; got {sub.GetType().Name}. " +
+                    "Alt-bar / tick primaries are supported for backtest and optimization only.");
 
-            resolvedSubscriptions.Add(new DataSubscription(asset, timeFrame));
+            resolvedSubscriptions.Add(new DataSubscription(asset, tb.TimeFrame));
         }
 
         var primaryAsset = resolvedSubscriptions[0].Asset;

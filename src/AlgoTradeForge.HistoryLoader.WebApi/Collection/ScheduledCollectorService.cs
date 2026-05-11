@@ -19,11 +19,19 @@ internal abstract class ScheduledCollectorService(
     protected abstract string[] CollectedFeedNames { get; }
     protected virtual bool FuturesOnly => true;
 
-    /// <summary>
-    /// Optional schedule name from HistoryLoaderOptions.Schedules.
-    /// Null (default) = 24/7 PeriodicTimer mode.
-    /// </summary>
+    /// <summary>Optional schedule name from <c>HistoryLoaderOptions.Schedules</c>; null = PeriodicTimer mode.</summary>
     protected virtual string? ScheduleName => null;
+
+    /// <summary>
+    /// Distinguishes a real shutdown from an HttpClient timeout — the latter throws
+    /// <see cref="TaskCanceledException"/> (an OCE) without caller cancellation. A naive
+    /// <c>when (ex is not OperationCanceledException)</c> filter lets timeouts escape and the
+    /// host treats that as a fatal StopHost event.
+    /// </summary>
+    private static bool IsTrueShutdown(Exception ex, CancellationToken stoppingToken) =>
+        ex is OperationCanceledException oce
+        && stoppingToken.IsCancellationRequested
+        && oce.CancellationToken == stoppingToken;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -61,8 +69,10 @@ internal abstract class ScheduledCollectorService(
             {
                 await CollectCycleAsync(stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!IsTrueShutdown(ex, stoppingToken))
             {
+                // Transient (HttpClient timeout, socket abort, DNS failure, etc.) — log and let
+                // the timer fire next tick.
                 logger.LogError(ex, "{ServiceName} cycle failed", ServiceName);
             }
         }
@@ -102,7 +112,7 @@ internal abstract class ScheduledCollectorService(
             {
                 await CollectCycleAsync(ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!IsTrueShutdown(ex, ct))
             {
                 logger.LogError(ex, "{ServiceName} cycle failed", ServiceName);
             }
@@ -149,10 +159,10 @@ internal abstract class ScheduledCollectorService(
             client.Timeout = TimeSpan.FromSeconds(5);
 
             using var response = await client.GetAsync($"{baseUrl}/fapi/v1/ping", ct);
-            // Any HTTP response means the network is reachable
+            // Any HTTP response means the network is reachable.
             return true;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!IsTrueShutdown(ex, ct))
         {
             return false;
         }
@@ -197,7 +207,7 @@ internal abstract class ScheduledCollectorService(
                         return;
                     }
                     catch (Exception ex) when (
-                        ex is not OperationCanceledException && NetworkErrorHelper.IsNetworkError(ex))
+                        !IsTrueShutdown(ex, ct) && NetworkErrorHelper.IsNetworkError(ex))
                     {
                         consecutiveNetworkFailures++;
 
@@ -214,7 +224,7 @@ internal abstract class ScheduledCollectorService(
                             "Network error for {Feed}/{Symbol} ({Count}/{Threshold})",
                             feedName, asset.Symbol, consecutiveNetworkFailures, config.NetworkFailureThreshold);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    catch (Exception ex) when (!IsTrueShutdown(ex, ct))
                     {
                         consecutiveNetworkFailures = 0;
                         logger.LogError(ex, "{Feed} collection failed for {Symbol}", feedName, asset.Symbol);

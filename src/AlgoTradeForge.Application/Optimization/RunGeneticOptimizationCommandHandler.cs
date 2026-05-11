@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Validation;
@@ -28,10 +29,19 @@ public sealed class RunGeneticOptimizationCommandHandler(
         var settings = command.BacktestSettings;
 
         // 2. Validate subscriptions (data loading deferred to executor)
-        var subscriptionAxis = command.SubscriptionAxis;
-        if (subscriptionAxis is not { Count: > 0 } || subscriptionAxis[0].Count == 0)
+        if (command.SubscriptionAxis is not { Count: > 0 } || command.SubscriptionAxis[0].Count == 0)
             throw new ArgumentException("At least one data subscription must be provided.");
-        var primarySub = OptimizationSetupHelper.GetSubscriptionDtos(subscriptionAxis);
+
+        // Genetic supports single-primary only — multi-primary fan-out would need |primaries|
+        // independent GA runs (separate populations + fitness caches). Expand and reject.
+        var subscriptionAxis = OptimizationSetupHelper.ExpandMultiPrimary(command.SubscriptionAxis);
+        if (subscriptionAxis.Count > 1)
+            throw new NotSupportedException(
+                $"Genetic optimization across multiple primaries is not yet supported " +
+                $"(post-expansion DSS count = {subscriptionAxis.Count}). " +
+                "Submit one Role=Primary feed per request, or use brute-force optimization.");
+
+        var primarySub = OptimizationSetupHelper.GetSubscriptions(subscriptionAxis);
 
         // 3. Resolve axes and GA config
         var resolvedAxes = axisResolver.Resolve(descriptor, command.Axes);
@@ -66,9 +76,10 @@ public sealed class RunGeneticOptimizationCommandHandler(
         var startedAt = DateTimeOffset.UtcNow;
         var runId = Guid.NewGuid();
         var groupId = runId; // Genetic uses runId as jobId (single-DSS)
+        // Use the post-expansion shape so dedup keys match the brute-force handler.
         var groupRunKey = RunKeyBuilder.BuildGroupKey(
             command.StrategyName, settings, "Genetic",
-            command.SubscriptionAxis, command.Axes);
+            subscriptionAxis, command.Axes);
         var maxParallelism = command.MaxDegreeOfParallelism > 0
             ? command.MaxDegreeOfParallelism
             : Environment.ProcessorCount;
@@ -101,14 +112,14 @@ public sealed class RunGeneticOptimizationCommandHandler(
         // 6. Build execution context and enqueue
         var normalizer = NormalizingEnumerable.TryCreateNormalizer(descriptor.ParamsType);
         var dssLabel = primarySub.Count > 0
-            ? string.Join(", ", primarySub.Select(s => $"{s.AssetName}/{s.Exchange}/{s.TimeFrame}"))
+            ? string.Join(", ", primarySub.Select(BacktestInputsFormatter.Format))
             : command.StrategyName;
 
         var geneticCtx = new GeneticExecutionContext
         {
             StrategyName = command.StrategyName,
             BacktestSettings = settings,
-            SubscriptionDtos = primarySub.ToList(),
+            Subscriptions = primarySub.ToList(),
             ActiveAxes = activeAxes,
             GaConfig = gaConfig,
             MaxParallelism = maxParallelism,

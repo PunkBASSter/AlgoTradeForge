@@ -13,12 +13,14 @@
 
   <ItemGroup>
     <PackageReference Include="Cronos" Version="0.8.4" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.2" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AlgoTradeForge.HistoryLoader.Domain\AlgoTradeForge.HistoryLoader.Domain.csproj" />
+    <ProjectReference Include="..\AlgoTradeForge.Domain\AlgoTradeForge.Domain.csproj" />
   </ItemGroup>
 
 </Project>

@@ -23,7 +23,7 @@ public class NullEventBusBenchmarkTests
     {
         // Arrange: generate 500K bars
         var series = Generate500KBars();
-        var sub = new DataSubscription(TestAssets.Aapl, TimeSpan.FromMinutes(1));
+        var sub = new DataSubscription(TestAssets.Aapl, new TimeFrame(TimeSpan.FromMinutes(1)));
         var strategy = new NoOpStrategy(sub);
         var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
         var options = new BacktestOptions

@@ -1,3 +1,10 @@
+// JSON case convention: the on-disk `feeds.json` schema is camelCase via
+// `JsonNamingPolicy.CamelCase` in `FeedSchemaManager`. Don't add `[JsonPropertyName]`
+// attributes to "fix" individual properties — that creates a heterogeneous schema where
+// some keys are camelCase and others snake_case.
+
+using System.Text.Json.Serialization;
+
 namespace AlgoTradeForge.Domain.History;
 
 /// <summary>
@@ -13,9 +20,40 @@ public sealed class FeedMetadata
 
 public sealed class FeedDefinition
 {
-    public required string Interval { get; init; }
+    /// <summary>
+    /// Optional discriminator. Legacy time-bar feeds leave this null and rely on
+    /// <see cref="Interval"/>. New feeds set
+    /// <c>"OHLCV_TimeBar" | "OHLCV_AltBar" | "Tick" | "Side" | "aggregated"</c>.
+    /// </summary>
+    public string? Kind { get; init; }
+
+    /// <summary>
+    /// Native interval for time-bar / interval-bearing feeds (e.g. <c>"1h"</c>, <c>"8h"</c>).
+    /// Variable-duration feeds (alt bars, ticks) leave this null.
+    /// </summary>
+    public string? Interval { get; init; }
+
     public string[] Columns { get; init; } = [];
+
     public AutoApplyDefinition? AutoApply { get; init; }
+
+    public AggregatedTypeInfo? Type { get; init; }
+    public AggregatedSourceInfo? Source { get; init; }
+    public ThresholdInfo? Threshold { get; init; }
+    public BuildInfo? Build { get; init; }
+    public FidelityInfo? Fidelity { get; init; }
+
+    public string? FirstBarTs { get; init; }
+    public string? LastBarTs { get; init; }
+
+    /// <summary>Sibling feed-id pointing to the analytical sidecar (e.g. <c>"EqIV_ticks_500000.flow"</c>).</summary>
+    public string? Sidecar { get; init; }
+
+    /// <summary>
+    /// When <c>true</c>, <c>CsvFeedSeriesLoader</c> parses empty cells as <c>NaN</c>
+    /// instead of throwing.
+    /// </summary>
+    public bool? NullableColumns { get; init; }
 }
 
 public sealed class CandleConfig
@@ -29,4 +67,98 @@ public sealed class AutoApplyDefinition
     public required string Type { get; init; }
     public required string RateColumn { get; init; }
     public string? SignConvention { get; init; }
+
+    /// <summary>Upper bound on the realized rate, refreshed from venue metadata (e.g. Binance <c>/fapi/v1/fundingInfo</c>).</summary>
+    public double? Cap { get; init; }
+
+    /// <summary>Lower bound on the realized rate.</summary>
+    public double? Floor { get; init; }
+
+    /// <summary>Native cadence of the underlying mechanism (e.g. funding interval in hours).</summary>
+    public int? IntervalHours { get; init; }
+
+    /// <summary>Venue-published flag indicating non-standard treatment.</summary>
+    public bool? Disclaimer { get; init; }
+}
+
+public sealed class AggregatedTypeInfo
+{
+    public required string Code { get; init; }     // "EqV" | "EqT" | "EqD" | "EqIV" | "Range" | "Renko"
+    public string? Name { get; init; }              // "EqualVolume", "EqualImbalance", ...
+}
+
+public sealed class AggregatedSourceInfo
+{
+    public required string Feed { get; init; }     // "1m" | "5m" | ... | "ticks"
+    public string? FirstTs { get; init; }
+    public string? LastTs { get; init; }
+    public long? RecordCount { get; init; }
+}
+
+public sealed class ThresholdInfo
+{
+    public required decimal Value { get; init; }   // absolute, canonical units
+    public required string Unit { get; init; }     // "base_asset" | "quote_asset" | "trades"
+    public required string InputMode { get; init; } // "absolute" | "convenience"
+    public string? ConvenienceInput { get; init; }
+}
+
+public sealed class BuildInfo
+{
+    public string? ToolVersion { get; init; }
+    public string? BuiltAt { get; init; }
+    public double? DurationSeconds { get; init; }
+    public long? BarCount { get; init; }
+    public string[]? PartitionsWritten { get; init; }
+    public int? MaxPartitionSizeMB { get; init; }
+
+    /// <summary>
+    /// Cumulative count of <c>+1 ms</c> bumps applied to enforce strict-monotonic
+    /// <c>bar.ts_open</c> on tick-source aggregations. Always 0 (or absent) for time-bar
+    /// source jobs. High values relative to source record count indicate clustered
+    /// exchange activity (volatility windows).
+    /// </summary>
+    public long? MonotonicBumps { get; init; }
+
+    /// <summary>
+    /// Count of strictly out-of-order tick records the source decorator recovered from
+    /// (raw ts &lt; prev). Distinct from <see cref="MonotonicBumps"/>: non-zero values here
+    /// indicate a real upstream ordering defect (ingestor bug, pagination misorder), not
+    /// benign equal-millisecond clustering. Always absent for time-bar source jobs.
+    /// </summary>
+    public long? MonotonicRegressions { get; init; }
+
+    /// <summary>Renko resume anchor; null for non-Renko feeds.</summary>
+    public long? LastBrickClose { get; init; }
+
+    /// <summary>Fresh = 1; +1 per continue.</summary>
+    public int? RunCount { get; init; }
+}
+
+public sealed class FidelityInfo
+{
+    public double? EstimatedOvershootPct { get; init; }
+    public double? ActualOvershootPct { get; init; }
+    public double? MaxOvershootPct { get; init; }
+    public double? MedianSourceRecordValue { get; init; }
+    public double? NFactor { get; init; }
+
+    /// <summary>
+    /// One of the following, set per imbalance accumulator's <c>SidecarSchema</c>:
+    /// <list type="bullet">
+    ///   <item><c>tick_signed</c> — EqIV from tick source.</item>
+    ///   <item><c>m1_taker_buy_proxy</c> — EqIV from time-bar source via <c>taker_buy_vol</c>.</item>
+    ///   <item><c>tick_signed_dollar</c> — EqID from tick source.</item>
+    ///   <item><c>m1_taker_buy_quote_proxy</c> — EqID from time-bar source via <c>taker_buy_quote_vol</c>.</item>
+    ///   <item><c>tick_signed_count</c> — EqIT from tick source.</item>
+    ///   <item><c>m1_taker_buy_count_proxy</c> — EqIT from time-bar source via the
+    ///         <c>taker_buy_trade_count</c> proxy (itself derived as <c>round(trade_count × taker_buy_vol / vol)</c>
+    ///         at ingest time, since Binance kline doesn't carry the count directly).</item>
+    ///   <item><c>null</c> — non-imbalance feeds (EqV, EqT, EqD, Range, Renko).</item>
+    /// </list>
+    /// The JSON property MUST be present even when null — absence indicates a malformed
+    /// manifest. Forced serialization via the <see cref="JsonIgnoreAttribute"/> override.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public string? ImbalanceReconstructionMethod { get; init; }
 }

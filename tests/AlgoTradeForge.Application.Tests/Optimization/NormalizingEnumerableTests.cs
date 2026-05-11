@@ -94,6 +94,39 @@ public sealed class NormalizingEnumerableTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public void TwoInstances_DedupCountsAreIndependent()
+    {
+        // Phase 4 (P4-14, TRD §9.6): when optimization fan-out produces |primaries| child
+        // runs, each child run owns its own NormalizingEnumerable. SkippedCount must be
+        // per-instance state (not shared) so per-primary dedup is independent.
+        //
+        // Pin this directly: two instances, same normalizer impl but separate sources;
+        // each enumeration's skipped count reflects only its own deduplications.
+        var combosForPrimaryA = new[]
+        {
+            MakeCombination(("Mode", "Both"), ("Irrelevant", 1)),
+            MakeCombination(("Mode", "Both"), ("Irrelevant", 2)),
+            MakeCombination(("Mode", "Both"), ("Irrelevant", 3)), // 2 dupes after normalize
+        };
+        var combosForPrimaryB = new[]
+        {
+            MakeCombination(("Mode", "Follow"), ("Irrelevant", 1)),
+            MakeCombination(("Mode", "Follow"), ("Irrelevant", 2)), // pass-through, 0 dupes
+        };
+
+        var sutA = new NormalizingEnumerable(combosForPrimaryA, new FixIrrelevantNormalizer());
+        var sutB = new NormalizingEnumerable(combosForPrimaryB, new FixIrrelevantNormalizer());
+
+        // Drain both fully (interleaved, just to confirm no cross-contamination on order)
+        var enumA = sutA.Enumerate().GetEnumerator();
+        var enumB = sutB.Enumerate().GetEnumerator();
+        while (enumA.MoveNext() | enumB.MoveNext()) { /* drain both */ }
+
+        Assert.Equal(2, sutA.SkippedCount); // 3 combos → 1 unique → 2 skipped
+        Assert.Equal(0, sutB.SkippedCount); // 2 combos → 2 unique → 0 skipped
+    }
+
     private static ParameterCombination MakeCombination(params (string Key, object Value)[] pairs) =>
         new(pairs.ToDictionary(p => p.Key, p => p.Value));
 

@@ -17,5 +17,5 @@ internal sealed class HourlyCollectorService(
     protected override TimeSpan Interval => TimeSpan.FromHours(1);
     protected override string ServiceName => "HourlyCollectorService";
     protected override string[] CollectedFeedNames =>
-        [FeedNames.MarkPrice, FeedNames.LsRatioTopPositions];
+        [FeedNames.MarkPrice, FeedNames.PremiumIndex, FeedNames.IndexPrice, FeedNames.LsRatioTopPositions];
 }

@@ -153,13 +153,9 @@ public sealed class RunBacktestCommandHandler(
                 StrategyVersion = setup.Strategy.Version,
                 Parameters = command.StrategyParameters?.AsReadOnly()
                     ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-                DataSubscriptions = setup.Strategy.DataSubscriptions
-                    .Select(s => new DataSubscriptionDto
-                    {
-                        AssetName = AssetLookupName.From(s.Asset),
-                        Exchange = s.Asset.Exchange,
-                        TimeFrame = TimeFrameFormatter.Format(s.TimeFrame),
-                    }).ToList(),
+                // Persist the wire shape; setup.Strategy.DataSubscriptions is the resolved
+                // (Asset, TimeFrame) form which would erase FeedId for AltBar/Tick/Side feeds.
+                DataSubscriptions = command.DataSubscriptions,
                 BacktestSettings = command.BacktestSettings,
                 StartedAt = startedAt,
                 CompletedAt = completedAt,
@@ -210,13 +206,9 @@ public sealed class RunBacktestCommandHandler(
                 StrategyVersion = setup.Strategy.Version,
                 Parameters = command.StrategyParameters?.AsReadOnly()
                     ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
-                DataSubscriptions = setup.Strategy.DataSubscriptions
-                    .Select(s => new DataSubscriptionDto
-                    {
-                        AssetName = AssetLookupName.From(s.Asset),
-                        Exchange = s.Asset.Exchange,
-                        TimeFrame = TimeFrameFormatter.Format(s.TimeFrame),
-                    }).ToList(),
+                // Persist the wire shape; setup.Strategy.DataSubscriptions is the resolved
+                // (Asset, TimeFrame) form which would erase FeedId for AltBar/Tick/Side feeds.
+                DataSubscriptions = command.DataSubscriptions,
                 BacktestSettings = command.BacktestSettings,
                 StartedAt = startedAt,
                 CompletedAt = completedAt,

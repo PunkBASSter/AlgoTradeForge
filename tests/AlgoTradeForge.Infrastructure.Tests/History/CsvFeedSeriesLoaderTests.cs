@@ -179,7 +179,28 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_FewerColumnsThanHeader_FillsZero()
+    public void Load_FewerColumnsThanHeader_ThrowsByDefault()
+    {
+        // Phase 1a (TRD §3.5): missing/empty cells throw unless nullable_columns: true.
+        // Surfaces malformed legacy data instead of silently filling with zero.
+        var ts1 = Ts(2024, 1, 1);
+        var ts2 = Ts(2024, 1, 1, 8);
+        WriteCsv("Binance", "BTCUSDT_perp", "oi", 2024, 1, null,
+            "ts,oi_usd,oi_contracts",
+            [
+                $"{ts1},1000000.0,500.0",
+                $"{ts2},2000000.0"
+            ]);
+
+        var ex = Assert.Throws<FormatException>(() => _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT_perp", "oi", "",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31)));
+
+        Assert.Contains("nullable_columns", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Load_FewerColumnsThanHeader_NullableColumnsFillsWithNaN()
     {
         var ts1 = Ts(2024, 1, 1);
         var ts2 = Ts(2024, 1, 1, 8);
@@ -192,17 +213,71 @@ public class CsvFeedSeriesLoaderTests : IDisposable
 
         var result = _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "oi", "",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
+            nullableColumns: true);
 
         Assert.NotNull(result);
         Assert.Equal(2, result!.Count);
-        // Second row's missing column should be 0
-        Assert.Equal(0d, result.Columns[1][1]);
+        Assert.Equal(500d, result.Columns[1][0]);
+        Assert.True(double.IsNaN(result.Columns[1][1]),
+            "Truncated row's missing column should be NaN under nullable_columns: true.");
+    }
+
+    // P1a-25 — empty-cell handling explicitly gated on nullable_columns
+    [Fact]
+    public void Load_EmptyCell_NullableColumnsFalse_Throws()
+    {
+        var ts = Ts(2024, 1, 1);
+        WriteCsv("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", 2024, 1, null,
+            "ts,signed_imbalance,buy_volume,sell_volume,realized_threshold",
+            [
+                $"{ts},,,,500000",   // first three cells empty
+            ]);
+
+        var ex = Assert.Throws<FormatException>(() => _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", "",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
+            nullableColumns: false));
+
+        Assert.Contains("Empty/missing cell", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("EqIV_ticks_500000.flow", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Load_NonNumericValue_SkipsRow()
+    public void Load_EmptyCell_NullableColumnsTrue_ParsesAsNaN()
     {
+        var ts = Ts(2024, 1, 1);
+        WriteCsv("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", 2024, 1, null,
+            "ts,signed_imbalance,buy_volume,sell_volume,realized_threshold",
+            [
+                $"{ts},,,,500000",
+                $"{ts + 1000},1.5,3.2,1.7,500000",
+            ]);
+
+        var result = _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", "",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
+            nullableColumns: true);
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result!.Count);
+        Assert.Equal(4, result.ColumnCount);
+
+        Assert.True(double.IsNaN(result.Columns[0][0]));
+        Assert.True(double.IsNaN(result.Columns[1][0]));
+        Assert.True(double.IsNaN(result.Columns[2][0]));
+        Assert.Equal(500_000d, result.Columns[3][0]);
+
+        // Second row has all values present even under nullable_columns=true.
+        Assert.Equal(1.5, result.Columns[0][1]);
+        Assert.Equal(3.2, result.Columns[1][1]);
+    }
+
+    [Fact]
+    public void Load_NonNumericValue_Throws()
+    {
+        // P1b-0a: malformed non-empty cells must throw with file/row/column context under
+        // both nullable_columns settings — silent row skipping was data-corruption-prone.
         var ts1 = Ts(2024, 1, 1);
         var ts2 = Ts(2024, 1, 1, 8);
         WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
@@ -212,13 +287,32 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 $"{ts2},not-a-number"
             ]);
 
-        var result = _loader.Load(
+        var ex = Assert.Throws<FormatException>(() => _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31)));
 
-        Assert.NotNull(result);
-        Assert.Single(result!.Timestamps);
-        Assert.Equal(ts1, result.Timestamps[0]);
+        Assert.Contains("Malformed numeric cell 'not-a-number'", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("funding_rate", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Load_NonNumericValue_NullableColumnsTrue_StillThrows()
+    {
+        // Empty cells are gated by nullable_columns (NaN vs throw). Malformed non-empty cells
+        // throw under BOTH settings — they're data corruption regardless.
+        var ts1 = Ts(2024, 1, 1);
+        WriteCsv("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", 2024, 1, null,
+            "ts,signed_imbalance,buy_volume,sell_volume,realized_threshold",
+            [
+                $"{ts1},0.5,not-a-number,1.7,500000",
+            ]);
+
+        var ex = Assert.Throws<FormatException>(() => _loader.Load(
+            _testDataRoot, "Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", "",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
+            nullableColumns: true));
+
+        Assert.Contains("Malformed numeric cell 'not-a-number'", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

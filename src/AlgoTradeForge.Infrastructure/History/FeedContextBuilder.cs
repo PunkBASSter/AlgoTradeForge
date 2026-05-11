@@ -20,7 +20,12 @@ public sealed class FeedContextBuilder(
         PropertyNameCaseInsensitive = true
     };
 
-    public BacktestFeedContext? Build(string dataRoot, Asset asset, DateOnly from, DateOnly to)
+    public BacktestFeedContext? Build(
+        string dataRoot,
+        Asset asset,
+        DateOnly from,
+        DateOnly to,
+        string? primaryFeedName = null)
     {
         var assetDir = AssetDirectoryName.From(asset);
         var feedsJsonPath = Path.Combine(dataRoot, asset.Exchange, assetDir, "feeds.json");
@@ -47,11 +52,24 @@ public sealed class FeedContextBuilder(
 
         var context = new BacktestFeedContext();
         var loaded = 0;
+        var sidecarRegistered = false;
 
         foreach (var (feedName, def) in metadata.Feeds)
         {
+            // .flow sidecars are lazy-loaded below only if a strategy's primary references them.
+            if (feedName.EndsWith(".flow", StringComparison.Ordinal))
+                continue;
+
+            // OHLCV/Tick entries are bar feeds, read via the bar loader path — not as side feeds.
+            if (string.Equals(def.Kind, "OHLCV_AltBar", StringComparison.Ordinal) ||
+                string.Equals(def.Kind, "aggregated", StringComparison.Ordinal) ||
+                string.Equals(def.Kind, "OHLCV_TimeBar", StringComparison.Ordinal) ||
+                string.Equals(def.Kind, "Tick", StringComparison.Ordinal))
+                continue;
+
             var series = feedSeriesLoader.Load(
-                dataRoot, asset.Exchange, assetDir, feedName, def.Interval, from, to);
+                dataRoot, asset.Exchange, assetDir, feedName, def.Interval ?? string.Empty, from, to,
+                nullableColumns: def.NullableColumns ?? false);
 
             if (series is null)
                 continue;
@@ -76,6 +94,38 @@ public sealed class FeedContextBuilder(
             loaded++;
         }
 
-        return loaded > 0 ? context : null;
+        // Primary's sidecar (.flow) is registered lazily — only materialized when the strategy reads it.
+        if (primaryFeedName is not null
+            && metadata.Feeds.TryGetValue(primaryFeedName, out var primaryDef)
+            && !string.IsNullOrEmpty(primaryDef.Sidecar))
+        {
+            var sidecarFeedId = primaryDef.Sidecar;
+            if (!metadata.Feeds.TryGetValue(sidecarFeedId, out var sidecarDef))
+            {
+                throw new InvalidOperationException(
+                    $"Primary feed '{primaryFeedName}' references sidecar '{sidecarFeedId}' but that " +
+                    $"sidecar entry is missing from feeds.json for asset {asset.Name}. The manifest " +
+                    "must list both atomically (see ISchemaManager.EnsureAltBarWithSidecar).");
+            }
+
+            // Sidecar files live under <assetDir>/aggregated/<sidecarFeedId>/. The loader
+            // appends feedName to the path verbatim, so the "aggregated/" segment goes here.
+            var sidecarFeedNameOnDisk = Path.Combine("aggregated", sidecarFeedId);
+            var sidecarSchema = new DataFeedSchema(sidecarFeedId, sidecarDef.Columns, AutoApply: null);
+            context.RegisterPrimarySidecarLazy(
+                sidecarFeedId,
+                sidecarSchema,
+                () => feedSeriesLoader.Load(
+                    dataRoot, asset.Exchange, assetDir,
+                    feedName: sidecarFeedNameOnDisk,
+                    interval: sidecarDef.Interval ?? string.Empty,
+                    from, to,
+                    nullableColumns: sidecarDef.NullableColumns ?? true));
+            sidecarRegistered = true;
+        }
+
+        // A registered lazy sidecar counts as a binding — without this, an asset with only a
+        // primary + .flow sidecar (no other side feeds) would return a null IFeedContext.
+        return (loaded > 0 || sidecarRegistered) ? context : null;
     }
 }

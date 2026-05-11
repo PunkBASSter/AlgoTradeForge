@@ -17,10 +17,10 @@ import { getClient } from "@/lib/services";
 import { RunProgress } from "@/components/features/dashboard/run-progress";
 import { useAvailableStrategies } from "@/hooks/use-available-strategies";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
-import { DssBuilder } from "@/components/features/dashboard/dss-builder";
+import { MultiPrimaryPicker } from "@/components/features/launch/multi-primary-picker";
 import { useThresholdProfiles } from "@/hooks/use-threshold-profiles";
 import type {
-  DataSubscription,
+  DataFeedSubscription,
   RunBacktestRequest,
   RunOptimizationRequest,
   RunGeneticOptimizationRequest,
@@ -91,7 +91,11 @@ export function RunNewPanel({
   const [evaluation, setEvaluation] = useState<OptimizationEvaluation | null>(null);
   const [evaluating, setEvaluating] = useState(false);
   const evaluationCacheRef = useRef<Map<string, OptimizationEvaluation>>(new Map());
-  const [dssValue, setDssValue] = useState<DataSubscription[][]>([]);
+  // One DSS containing [...primaries, ...sides] is sent as subscriptionAxis on the
+  // wire; the server's ExpandMultiPrimary fans the multi-primary case into N child runs.
+  // Backtest/Live restrict primaries to length === 1 via the picker UI.
+  const [primaries, setPrimaries] = useState<DataFeedSubscription[]>([]);
+  const [sides, setSides] = useState<DataFeedSubscription[]>([]);
   const [runValidation, setRunValidation] = useState(false);
   const [thresholdProfile, setThresholdProfile] = useState("Crypto-Standard");
   const [maxThreads, setMaxThreads] = useState(0);
@@ -121,20 +125,42 @@ export function RunNewPanel({
 
   const isOptimization = mode === "optimization";
 
-  // Handle editor doc changes: check cache, clear or restore evaluation, sync DSS builder
+  // Handle editor doc changes: check cache, clear or restore evaluation, sync pickers
   const handleDocChange = useCallback((text: string) => {
-    // Sync DSS builder from editor (unless the editor change was triggered BY the DSS builder)
+    // Sync picker state from the editor unless the editor change was triggered BY the
+    // pickers (suppressEditorSyncRef).
+    //
+    // Wire shape is mode-aware:
+    //   - Optimization: 2D `subscriptionAxis: [[...primaries, ...sides], ...]` — server
+    //     fans multi-primary DSSes via ExpandMultiPrimary. Hand-edited multi-DSS JSON is
+    //     flattened across all DSSes; every primary becomes a fan-out candidate.
+    //   - Backtest / Debug / Live: 1D `dataSubscriptions: [primary, ...sides]` — single
+    //     DSS read directly.
     if (!suppressEditorSyncRef.current) {
       try {
         const obj = JSON.parse(text) as Record<string, unknown>;
-        const axis = obj.subscriptionAxis as DataSubscription[][] | undefined;
-        if (axis && Array.isArray(axis)) {
-          setDssValue(axis);
-        } else if (!axis) {
-          setDssValue(prev => prev.length === 0 ? prev : []);
+        if (isOptimization) {
+          const axis = obj.subscriptionAxis as DataFeedSubscription[][] | undefined;
+          if (axis && Array.isArray(axis) && axis.length > 0) {
+            const flat = axis.flat();
+            setPrimaries(flat.filter((s) => s.role === "Primary"));
+            setSides(flat.filter((s) => s.role === "Side"));
+          } else if (!axis) {
+            setPrimaries((prev) => (prev.length === 0 ? prev : []));
+            setSides((prev) => (prev.length === 0 ? prev : []));
+          }
+        } else {
+          const list = obj.dataSubscriptions as DataFeedSubscription[] | undefined;
+          if (list && Array.isArray(list) && list.length > 0) {
+            setPrimaries(list.filter((s) => s.role === "Primary"));
+            setSides(list.filter((s) => s.role === "Side"));
+          } else if (!list) {
+            setPrimaries((prev) => (prev.length === 0 ? prev : []));
+            setSides((prev) => (prev.length === 0 ? prev : []));
+          }
         }
       } catch {
-        // Invalid JSON — don't update DSS builder
+        // Invalid JSON — don't update picker state
       }
     }
 
@@ -150,29 +176,56 @@ export function RunNewPanel({
     setEvaluation(null);
   }, [isOptimization]);
 
-  // Handle DSS builder changes: update subscriptionAxis in editor JSON
-  const handleDssChange = useCallback((newAxis: DataSubscription[][]) => {
-    setDssValue(newAxis);
-    const view = editorViewRef.current;
-    if (!view) return;
-
-    try {
-      const obj = JSON.parse(view.state.doc.toString()) as Record<string, unknown>;
-      if (newAxis.length > 0) {
-        obj.subscriptionAxis = newAxis;
-      } else {
-        delete obj.subscriptionAxis;
+  // Pushes picker state into the editor in the shape the backend actually reads:
+  //   - Optimization: `subscriptionAxis: [[...primaries, ...sides]]` (2D). Multi-primary
+  //     fan-out happens server-side via ExpandMultiPrimary.
+  //   - Backtest / Debug / Live: `dataSubscriptions: [...primaries, ...sides]` (1D).
+  // The opposing key is removed to avoid confusing "two sources of truth" sections in
+  // the JSON that don't agree with the picker.
+  const syncEditorFromPickers = useCallback(
+    (nextPrimaries: DataFeedSubscription[], nextSides: DataFeedSubscription[]) => {
+      const view = editorViewRef.current;
+      if (!view) return;
+      try {
+        const obj = JSON.parse(view.state.doc.toString()) as Record<string, unknown>;
+        const combined = [...nextPrimaries, ...nextSides];
+        if (isOptimization) {
+          if (combined.length > 0) obj.subscriptionAxis = [combined];
+          else delete obj.subscriptionAxis;
+          delete obj.dataSubscriptions;
+        } else {
+          if (combined.length > 0) obj.dataSubscriptions = combined;
+          else delete obj.dataSubscriptions;
+          delete obj.subscriptionAxis;
+        }
+        const newDoc = JSON.stringify(obj, null, 2);
+        suppressEditorSyncRef.current = true;
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: newDoc },
+        });
+        suppressEditorSyncRef.current = false;
+      } catch {
+        // Editor JSON is invalid — can't sync
       }
-      const newDoc = JSON.stringify(obj, null, 2);
-      suppressEditorSyncRef.current = true;
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: newDoc },
-      });
-      suppressEditorSyncRef.current = false;
-    } catch {
-      // Editor JSON is invalid — can't sync
-    }
-  }, []);
+    },
+    [isOptimization],
+  );
+
+  const handlePrimariesChange = useCallback(
+    (next: DataFeedSubscription[]) => {
+      setPrimaries(next);
+      syncEditorFromPickers(next, sides);
+    },
+    [sides, syncEditorFromPickers],
+  );
+
+  const handleSidesChange = useCallback(
+    (next: DataFeedSubscription[]) => {
+      setSides(next);
+      syncEditorFromPickers(primaries, next);
+    },
+    [primaries, syncEditorFromPickers],
+  );
 
   // Create editor once when the slide-over opens
   useEffect(() => {
@@ -376,7 +429,6 @@ export function RunNewPanel({
       const req: EvaluateOptimizationRequest = {
         strategyName: parsed.strategyName as string,
         optimizationAxes: parsed.optimizationAxes as EvaluateOptimizationRequest["optimizationAxes"],
-        dataSubscriptions: parsed.dataSubscriptions as EvaluateOptimizationRequest["dataSubscriptions"],
         subscriptionAxis: parsed.subscriptionAxis as EvaluateOptimizationRequest["subscriptionAxis"],
         optimizationSettings: parsed.optimizationSettings as EvaluateOptimizationRequest["optimizationSettings"],
         mode: useGenetic ? "Genetic" : "BruteForce",
@@ -427,8 +479,13 @@ export function RunNewPanel({
         return;
       }
     } else if (mode === "live") {
-      const missing = ["strategyName", "initialCash"]
-        .filter((k) => obj[k] === undefined || obj[k] === null);
+      const dsArr = obj.dataSubscriptions as Record<string, unknown>[] | undefined;
+      const ds = dsArr?.[0];
+      const missing: string[] = ["strategyName", "initialCash"].filter(
+        (k) => obj[k] === undefined || obj[k] === null,
+      );
+      if (!ds?.assetName) missing.push("dataSubscriptions[0].assetName");
+      if (!ds?.exchange) missing.push("dataSubscriptions[0].exchange");
       if (missing.length > 0) {
         toast(`Missing required fields: ${missing.join(", ")}`, "error");
         return;
@@ -463,23 +520,7 @@ export function RunNewPanel({
       } else {
         let runId: string;
         if (mode === "backtest") {
-          // T059: Multi-DSS backtest — launch N separate backtest requests
-          const btReq = parsed as RunBacktestRequest & { subscriptionAxis?: DataSubscription[][] };
-          if (btReq.subscriptionAxis && btReq.subscriptionAxis.length > 1) {
-            const results: string[] = [];
-            for (const dss of btReq.subscriptionAxis) {
-              const perDssReq: RunBacktestRequest = {
-                ...btReq,
-                dataSubscriptions: dss,
-              };
-              const submission = await client.runBacktest(perDssReq);
-              results.push(submission.id);
-            }
-            toast(`${results.length} backtests submitted`, "success");
-            setActiveRunId(results[0]);
-            return;
-          }
-          const submission = await client.runBacktest(btReq as RunBacktestRequest);
+          const submission = await client.runBacktest(parsed as RunBacktestRequest);
           runId = submission.id;
         } else if (useGenetic) {
           const genReq = parsed as RunGeneticOptimizationRequest;
@@ -618,11 +659,34 @@ export function RunNewPanel({
               )}
             </div>
           )}
-          {mode !== "live" && (
-            <div className="shrink-0">
-              <DssBuilder value={dssValue} onChange={handleDssChange} />
-            </div>
-          )}
+          <div className="shrink-0">
+            {isOptimization ? (
+              <MultiPrimaryPicker
+                primaries={primaries}
+                sides={sides}
+                onPrimariesChange={handlePrimariesChange}
+                onSidesChange={handleSidesChange}
+                costPreviewLabel={
+                  evaluation && primaries.length > 0
+                    ? `${primaries.length} × ${formatNumber(evaluation.totalCombinations)} = ${formatNumber(primaries.length * evaluation.totalCombinations)} trials`
+                    : undefined
+                }
+                disabled={submitting}
+              />
+            ) : (
+              <MultiPrimaryPicker
+                primaries={primaries}
+                sides={sides}
+                onPrimariesChange={handlePrimariesChange}
+                onSidesChange={handleSidesChange}
+                disabled={submitting}
+                maxPrimaries={1}
+                primaryTitle="Primary feed"
+                primarySubtitle="The strategy's main bar stream. Optional side feeds attach as auxiliary signals."
+                primaryEmptyHint="Pick a Primary feed (TimeBar / AltBar / Tick)."
+              />
+            )}
+          </div>
           <div
             ref={editorContainerRef}
             data-testid="json-editor"

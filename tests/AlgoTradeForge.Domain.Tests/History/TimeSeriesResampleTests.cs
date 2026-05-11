@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.Domain.Strategy;
 using Xunit;
 
 namespace AlgoTradeForge.Domain.Tests.History;
@@ -6,14 +7,14 @@ namespace AlgoTradeForge.Domain.Tests.History;
 public class TimeSeriesResampleTests
 {
     private static readonly DateTimeOffset Start = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly TimeSpan OneMinute = TimeSpan.FromMinutes(1);
+    private static readonly TimeFrame OneMinute = new(TimeSpan.FromMinutes(1));
 
     private static TimeSeries<Int64Bar> MakeMinuteBars(int count,
         long openBase = 100, long highBase = 200, long lowBase = 50, long closeBase = 150, long volumeBase = 1000)
     {
         var series = new TimeSeries<Int64Bar>();
         var startMs = Start.ToUnixTimeMilliseconds();
-        var stepMs = (long)OneMinute.TotalMilliseconds;
+        var stepMs = (long)OneMinute.Duration.TotalMilliseconds;
         for (var i = 0; i < count; i++)
             series.Add(new Int64Bar(startMs + i * stepMs, openBase + i, highBase + i, lowBase + i, closeBase + i, volumeBase));
         return series;
@@ -25,7 +26,7 @@ public class TimeSeriesResampleTests
         // 5 one-minute bars -> 1 five-minute bar
         var series = new TimeSeries<Int64Bar>();
         var startMs = Start.ToUnixTimeMilliseconds();
-        var stepMs = (long)OneMinute.TotalMilliseconds;
+        var stepMs = (long)OneMinute.Duration.TotalMilliseconds;
         series.Add(new Int64Bar(startMs, 100, 110, 90, 105, 1000));
         series.Add(new Int64Bar(startMs + stepMs, 105, 115, 95, 108, 2000));
         series.Add(new Int64Bar(startMs + 2 * stepMs, 108, 120, 85, 112, 1500));
@@ -109,7 +110,7 @@ public class TimeSeriesResampleTests
         // Bars at minute 0,1,2 then gap, then bars at minute 10,11,12
         var series = new TimeSeries<Int64Bar>();
         var startMs = Start.ToUnixTimeMilliseconds();
-        var stepMs = (long)OneMinute.TotalMilliseconds;
+        var stepMs = (long)OneMinute.Duration.TotalMilliseconds;
         for (var i = 0; i < 3; i++)
             series.Add(new Int64Bar(startMs + i * stepMs, 100 + i, 200 + i, 50 + i, 150 + i, 1000));
         for (var i = 10; i < 13; i++)

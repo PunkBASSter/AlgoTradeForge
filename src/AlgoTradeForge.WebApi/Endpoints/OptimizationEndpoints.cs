@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Optimization;
@@ -6,6 +7,7 @@ using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Domain.Optimization.Fitness;
 using AlgoTradeForge.Domain.Optimization.Genetic;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.WebApi.Contracts;
 
 namespace AlgoTradeForge.WebApi.Endpoints;
@@ -181,15 +183,19 @@ public static class OptimizationEndpoints
         };
         var inputJson = JsonSerializer.Serialize(request, JsonOptions);
 
-        // Multi-DSS genetic → dispatch through group handler (same pattern as brute-force)
-        if (request.SubscriptionAxis is { Count: > 1 })
+        // Route through group handler when post-expansion yields >1 child runs. Catches both
+        // multi-DSS requests and single-DSS-multi-primary requests that fan out to N DSSes.
+        // The command receives the raw axis; the group handler calls ExpandMultiPrimary
+        // (matching the brute-force path). `!` is safe: reaching `Count > 1` implies the
+        // axis was non-null (ExpandMultiPrimary(null) returns empty).
+        if (OptimizationSetupHelper.ExpandMultiPrimary(request.SubscriptionAxis).Count > 1)
         {
             var groupCommand = new RunGroupOptimizationCommand
             {
                 StrategyName = request.StrategyName,
                 OptimizationMethod = "Genetic",
                 Axes = request.OptimizationAxes,
-                SubscriptionAxis = request.SubscriptionAxis,
+                SubscriptionAxis = request.SubscriptionAxis!,
                 BacktestSettings = backtestSettings,
                 MaxDegreeOfParallelism = request.MaxThreads > 0 ? request.MaxThreads : request.OptimizationSettings.MaxDegreeOfParallelism,
                 MaxTrialsToKeep = request.OptimizationSettings.MaxTrialsToKeep,
@@ -244,6 +250,10 @@ public static class OptimizationEndpoints
             return Results.Accepted($"/api/optimizations/{submission.Id}/status", response);
         }
         catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (DirectoryNotFoundException ex)
         {
             return Results.BadRequest(new { error = ex.Message });
         }
@@ -494,18 +504,17 @@ public static class OptimizationEndpoints
                 Runs = groupSubmission.Runs.Select(r => new GroupRunSubmission
                 {
                     Id = r.Id,
-                    Dss = r.Dss.Select(d => new DataSubscriptionInput
-                    {
-                        AssetName = d.AssetName,
-                        Exchange = d.Exchange,
-                        TimeFrame = d.TimeFrame,
-                    }).ToList(),
+                    Dss = r.Dss.ToList(),
                     TotalCombinations = r.TotalCombinations,
                 }).ToList(),
             };
             return Results.Accepted($"/api/optimizations/groups/{groupSubmission.GroupId}/status", groupResponse);
         }
         catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (DirectoryNotFoundException ex)
         {
             return Results.BadRequest(new { error = ex.Message });
         }
@@ -516,13 +525,15 @@ public static class OptimizationEndpoints
     private static async Task<IResult> GetOptimizationGroup(
         Guid groupId,
         IQueryHandler<GetOptimizationGroupByIdQuery, OptimizationGroupRecord?> handler,
+        ILoggerFactory loggerFactory,
         CancellationToken ct)
     {
         var group = await handler.HandleAsync(new GetOptimizationGroupByIdQuery(groupId), ct);
         if (group is null)
             return Results.NotFound(new { error = $"Optimization group '{groupId}' not found." });
 
-        return Results.Ok(MapGroupToResponse(group));
+        var logger = loggerFactory.CreateLogger("OptimizationEndpoints");
+        return Results.Ok(MapGroupToResponse(group, logger));
     }
 
     private static async Task<IResult> GetOptimizationGroupTrials(
@@ -591,21 +602,27 @@ public static class OptimizationEndpoints
         return Results.NoContent();
     }
 
-    private static OptimizationGroupDetailResponse MapGroupToResponse(OptimizationGroupRecord group)
+    private static OptimizationGroupDetailResponse MapGroupToResponse(
+        OptimizationGroupRecord group,
+        ILogger logger)
     {
-        List<List<DataSubscriptionInput>> subscriptions = [];
+        List<List<DataFeedSubscription>> subscriptions = [];
         if (!string.IsNullOrEmpty(group.SubscriptionsJson))
         {
             try
             {
-                var parsed = JsonSerializer.Deserialize<List<List<DataSubscriptionInput>>>(
+                var parsed = JsonSerializer.Deserialize<List<List<DataFeedSubscription>>>(
                     group.SubscriptionsJson, JsonOptions);
                 if (parsed is not null)
                     subscriptions = parsed;
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
-                // Malformed JSON — fall back to empty
+                // Legacy rows without the `kind` discriminator land here — log instead of
+                // silently returning an empty subscriptions array.
+                logger.LogWarning(ex,
+                    "Legacy or malformed subscriptions_json for optimization group {GroupId}; returning empty subscriptions.",
+                    group.Id);
             }
         }
 
@@ -625,12 +642,7 @@ public static class OptimizationEndpoints
             Runs = group.Runs.Select(r => new GroupRunDetailResponse
             {
                 Id = r.Id,
-                Dss = r.DataSubscriptions.Select(d => new DataSubscriptionInput
-                {
-                    AssetName = d.AssetName,
-                    Exchange = d.Exchange,
-                    TimeFrame = d.TimeFrame,
-                }).ToList(),
+                Dss = r.DataSubscriptions.ToList(),
                 Status = r.Status,
                 TotalCombinations = r.TotalCombinations,
                 KeptTrials = r.TrialCount,

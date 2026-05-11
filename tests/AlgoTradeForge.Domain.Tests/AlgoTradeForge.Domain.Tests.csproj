@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\AlgoTradeForge.Domain\AlgoTradeForge.Domain.csproj" />
     <ProjectReference Include="..\..\src\AlgoTradeForge.Application\AlgoTradeForge.Application.csproj" />
+    <ProjectReference Include="..\..\src\AlgoTradeForge.HistoryLoader.Domain\AlgoTradeForge.HistoryLoader.Domain.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Persistence;
@@ -10,6 +9,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Optimization.Space;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.Application.Optimization;
@@ -36,7 +36,7 @@ public sealed class OptimizationSetupHelper(
     public async Task<(List<List<DataSubscription>> AxisSubscriptionGroups,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> DataCache)>
         ResolveSubscriptionsAsync(
-            List<List<DataSubscriptionDto>>? axisGroups,
+            List<List<DataFeedSubscription>>? axisGroups,
             DateOnly fromDate, DateOnly toDate,
             CancellationToken ct)
     {
@@ -46,10 +46,10 @@ public sealed class OptimizationSetupHelper(
         var axisSubscriptionGroups = new List<List<DataSubscription>>();
         var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
 
-        foreach (var dtoGroup in axisGroups)
+        foreach (var group in axisGroups)
         {
             var resolvedGroup = new List<DataSubscription>();
-            foreach (var sub in dtoGroup)
+            foreach (var sub in group)
                 await ResolveAndCacheAsync(sub, resolvedGroup, dataCache, fromDate, toDate, ct);
             axisSubscriptionGroups.Add(resolvedGroup);
         }
@@ -138,7 +138,7 @@ public sealed class OptimizationSetupHelper(
             .ToList();
 
     public async Task ResolveAndCacheAsync(
-        DataSubscriptionDto sub,
+        DataFeedSubscription sub,
         List<DataSubscription> target,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
         DateOnly fromDate, DateOnly toDate,
@@ -147,16 +147,17 @@ public sealed class OptimizationSetupHelper(
         var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
             ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
-        if (!TimeSpan.TryParse(sub.TimeFrame, CultureInfo.InvariantCulture, out var timeFrame))
-            throw new ArgumentException($"Invalid TimeFrame '{sub.TimeFrame}' for asset '{sub.AssetName}'.");
-
-        var subscription = new DataSubscription(asset, timeFrame);
+        // Strategy-side slot gets a placeholder TimeFrame for non-TimeBar primaries; the
+        // polymorphic loader receives the original DataFeedSubscription.
+        var subscription = StrategySubscriptionFactory.FromPrimary(sub, asset);
         target.Add(subscription);
 
-        var key = CacheKey(asset, timeFrame);
+        // Kind-aware cache key — distinguishes alt-bar feeds at the same source
+        // (e.g. EqV_1m_1000 vs EqV_1m_5000) and Primary vs Side roles.
+        var key = BacktestInputsFormatter.Key(sub);
         if (!dataCache.ContainsKey(key))
         {
-            var series = historyRepository.Load(subscription, fromDate, toDate);
+            var series = historyRepository.Load(asset, sub, fromDate, toDate);
             dataCache[key] = (asset, series);
         }
     }
@@ -174,11 +175,19 @@ public sealed class OptimizationSetupHelper(
     {
         var trialWatch = Stopwatch.StartNew();
 
-        // 1. Extract trial subscriptions from the combination's axis group
+        // Dual-key carrier: FeedSubscriptions holds the polymorphic originals (cache lookup +
+        // run record fidelity); DataSubscriptions holds the strategy-side projection.
         var trialSubscriptions = combination.Values.TryGetValue("DataSubscriptions", out var subObj)
             && subObj is List<DataSubscription> group
             ? group
             : throw new InvalidOperationException("Trial has no data subscriptions — this indicates a bug in subscription resolution.");
+
+        var trialFeedSubscriptions = combination.Values.TryGetValue("FeedSubscriptions", out var feedObj)
+            && feedObj is List<DataFeedSubscription> feedGroup
+            ? feedGroup
+            : throw new InvalidOperationException(
+                "Trial missing FeedSubscriptions axis carrier. Both executors must inject this " +
+                "alongside DataSubscriptions.");
 
         // 2. Scale QuoteAsset params using this trial's actual asset
         var trialAsset = trialSubscriptions[0].Asset;
@@ -197,11 +206,10 @@ public sealed class OptimizationSetupHelper(
         foreach (var sub in trialSubscriptions)
             strategy.DataSubscriptions.Add(sub);
 
-        var seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
-        for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
+        var seriesArray = new TimeSeries<Int64Bar>[trialFeedSubscriptions.Count];
+        for (var i = 0; i < trialFeedSubscriptions.Count; i++)
         {
-            var sub = strategy.DataSubscriptions[i];
-            var key = CacheKey(sub.Asset, sub.TimeFrame);
+            var key = BacktestInputsFormatter.Key(trialFeedSubscriptions[i]);
             if (dataCache.TryGetValue(key, out var cached))
                 seriesArray[i] = cached.Series;
             else
@@ -233,13 +241,9 @@ public sealed class OptimizationSetupHelper(
             StrategyName = strategyName,
             StrategyVersion = strategy.Version,
             Parameters = combination.Values, // Store original unscaled values
-            DataSubscriptions = strategy.DataSubscriptions
-                .Select(s => new DataSubscriptionDto
-                {
-                    AssetName = AssetLookupName.From(s.Asset),
-                    Exchange = s.Asset.Exchange,
-                    TimeFrame = TimeFrameFormatter.Format(s.TimeFrame),
-                }).ToList(),
+            // Persist the polymorphic originals so AltBar/Tick FeedIds round-trip through the
+            // run record (no lossy TimeBar coercion).
+            DataSubscriptions = trialFeedSubscriptions,
             BacktestSettings = settings,
             StartedAt = startedAt,
             CompletedAt = DateTimeOffset.UtcNow,
@@ -257,7 +261,7 @@ public sealed class OptimizationSetupHelper(
     public async Task SaveErrorOptimizationAsync(
         string strategyName,
         BacktestSettingsDto backtestSettings,
-        IReadOnlyList<DataSubscriptionDto> subscriptions,
+        IReadOnlyList<DataFeedSubscription> subscriptions,
         string sortBy,
         int maxParallelism,
         Guid optimizationRunId,
@@ -306,8 +310,13 @@ public sealed class OptimizationSetupHelper(
         }
     }
 
-    public static IReadOnlyList<DataSubscriptionDto> GetSubscriptionDtos(
-        List<List<DataSubscriptionDto>>? axisGroups)
+    /// <summary>
+    /// Display-only summary subscription with a composite <c>AssetName</c> label
+    /// (e.g. <c>"BTCUSDT+ETHUSDT (+N more)"</c>). The label is NOT a valid asset lookup key —
+    /// never pass the result back through <c>IAssetRepository.GetByNameAsync</c>.
+    /// </summary>
+    public static IReadOnlyList<DataFeedSubscription> GetSubscriptions(
+        List<List<DataFeedSubscription>>? axisGroups)
     {
         if (axisGroups is not { Count: > 0 })
             return [];
@@ -317,6 +326,47 @@ public sealed class OptimizationSetupHelper(
         if (axisGroups.Count > 1)
             return [firstGroup[0] with { AssetName = $"{groupLabel} (+{axisGroups.Count - 1} more)" }];
         return [firstGroup[0] with { AssetName = groupLabel }];
+    }
+
+    /// <summary>
+    /// Pre-splits multi-primary DSSes into single-primary DSSes. A DSS with N primaries
+    /// expands to N DSSes ordered <c>[Primary_i, ...sides]</c>; single-primary DSSes pass
+    /// through unchanged. Each output DSS becomes its own ComputeTask, so per-primary
+    /// <see cref="NormalizingEnumerable"/> dedup state stays isolated.
+    /// </summary>
+    public static List<List<DataFeedSubscription>> ExpandMultiPrimary(
+        IReadOnlyList<IReadOnlyList<DataFeedSubscription>>? axisGroups)
+    {
+        if (axisGroups is null || axisGroups.Count == 0)
+            return [];
+
+        var expanded = new List<List<DataFeedSubscription>>(axisGroups.Count);
+        for (var dssIdx = 0; dssIdx < axisGroups.Count; dssIdx++)
+        {
+            var dss = axisGroups[dssIdx];
+            var primaries = new List<DataFeedSubscription>();
+            var sides = new List<DataFeedSubscription>();
+            for (var i = 0; i < dss.Count; i++)
+            {
+                var sub = dss[i];
+                if (sub.Role == DataFeedRole.Primary) primaries.Add(sub);
+                else sides.Add(sub);
+            }
+
+            if (primaries.Count == 0)
+                throw new ArgumentException(
+                    $"SubscriptionAxis[{dssIdx}] has no Role=Primary entry. " +
+                    "Each DSS must carry at least one primary feed (the bar-clock driver).",
+                    nameof(axisGroups));
+
+            foreach (var primary in primaries)
+            {
+                var fanned = new List<DataFeedSubscription>(1 + sides.Count) { primary };
+                fanned.AddRange(sides);
+                expanded.Add(fanned);
+            }
+        }
+        return expanded;
     }
 
     public static string CacheKey(Asset asset, TimeSpan timeFrame) =>

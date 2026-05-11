@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application;
+using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Domain.Validation;
@@ -88,14 +89,14 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
 
         Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
 
-        // Group by (subscription, barCount) → build timelines
-        var timelineKeys = new Dictionary<(DataSubscriptionDto, int), int>();
+        // Group by (canonical subscription key, barCount) → build timelines
+        var timelineKeys = new Dictionary<(string PrimaryKey, int BarCount), int>();
         var timelines = new List<long[]>();
         var trialTimelineIndices = new int[trials.Count];
 
         for (var t = 0; t < trials.Count; t++)
         {
-            var key = (trials[t].DataSubscriptions[0], trials[t].EquityCurve.Count);
+            var key = (BacktestInputsFormatter.Key(trials[t].DataSubscriptions[0]), trials[t].EquityCurve.Count);
             if (!timelineKeys.TryGetValue(key, out var tlIdx))
             {
                 tlIdx = timelines.Count;

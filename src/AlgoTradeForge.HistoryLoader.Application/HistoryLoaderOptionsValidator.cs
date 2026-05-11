@@ -23,6 +23,17 @@ public sealed class HistoryLoaderOptionsValidator : IValidateOptions<HistoryLoad
         if (options.CircuitBreakerCooldownMinutes <= 0)
             failures.Add("CircuitBreakerCooldownMinutes must be greater than 0.");
 
+        if (options.Aggregator.MaxPartitionSizeMB <= 0)
+            failures.Add("Aggregator.MaxPartitionSizeMB must be greater than 0.");
+        if (options.Aggregator.MaxConcurrentJobs <= 0)
+            failures.Add("Aggregator.MaxConcurrentJobs must be greater than 0.");
+        if (options.Aggregator.MaxConcurrentTickJobs <= 0)
+            failures.Add("Aggregator.MaxConcurrentTickJobs must be greater than 0.");
+        if (options.Aggregator.MaxQueueDepth <= 0)
+            failures.Add("Aggregator.MaxQueueDepth must be greater than 0.");
+        if (options.Aggregator.JobRetentionMinutes <= 0)
+            failures.Add("Aggregator.JobRetentionMinutes must be greater than 0.");
+
         foreach (var asset in options.Assets)
         {
             if (!AssetTypes.All.Contains(asset.Type, StringComparer.OrdinalIgnoreCase))

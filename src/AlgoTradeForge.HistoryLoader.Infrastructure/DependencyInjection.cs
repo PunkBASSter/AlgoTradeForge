@@ -1,5 +1,6 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
@@ -56,6 +57,10 @@ public static class DependencyInjection
         services.AddKeyedSingleton<ICandleFetcher>(futuresKey,
             (sp, _) => sp.GetRequiredService<BinanceFuturesClient>());
 
+        // Funding-info fetcher — single-shot endpoint, no per-symbol/per-feed routing.
+        services.AddSingleton<IFundingInfoFetcher>(
+            sp => sp.GetRequiredService<BinanceFuturesClient>());
+
         // Keyed DI — futures feed fetchers (compound key: "{exchange}:{feedName}")
         services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.FundingRate}",
             (sp, _) => new DelegatingFeedFetcher(
@@ -66,6 +71,16 @@ public static class DependencyInjection
             (sp, _) => new DelegatingFeedFetcher(
                 (symbol, interval, fromMs, toMs, ct) =>
                     sp.GetRequiredService<BinanceFuturesClient>().FetchMarkPriceFeedAsync(symbol, interval!, fromMs, toMs, ct)));
+
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.PremiumIndex}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, interval, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchPremiumIndexFeedAsync(symbol, interval!, fromMs, toMs, ct)));
+
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.IndexPrice}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, interval, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchIndexPriceFeedAsync(symbol, interval!, fromMs, toMs, ct)));
 
         services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.OpenInterest}",
             (sp, _) => new DelegatingFeedFetcher(
@@ -97,9 +112,20 @@ public static class DependencyInjection
                 (symbol, _, fromMs, toMs, ct) =>
                     sp.GetRequiredService<BinanceFuturesClient>().FetchLiquidationsAsync(symbol, fromMs, toMs, ct)));
 
+        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.Ticks}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, _, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceFuturesClient>().FetchAggTradesAsync(symbol, fromMs, toMs, ct)));
+
         // Keyed DI — spot
-        services.AddKeyedSingleton<ICandleFetcher>("binance-spot",
+        var spotKey = "binance-spot";
+        services.AddKeyedSingleton<ICandleFetcher>(spotKey,
             (sp, _) => sp.GetRequiredService<BinanceSpotClient>());
+
+        services.AddKeyedSingleton<IFeedFetcher>($"{spotKey}:{FeedNames.Ticks}",
+            (sp, _) => new DelegatingFeedFetcher(
+                (symbol, _, fromMs, toMs, ct) =>
+                    sp.GetRequiredService<BinanceSpotClient>().FetchAggTradesAsync(symbol, fromMs, toMs, ct)));
 
         // Factory abstractions (replace direct IServiceProvider usage in Application layer)
         services.AddSingleton<IFeedFetcherFactory, FeedFetcherFactory>();
@@ -109,8 +135,12 @@ public static class DependencyInjection
         services.AddSingleton<WriteLockManager>();
         services.AddSingleton<ICandleWriter, CandleCsvWriter>();
         services.AddSingleton<IFeedWriter, FeedCsvWriter>();
+        services.AddSingleton<ITickFeedWriter, DailyTickCsvWriter>();
+        services.AddSingleton<IBookTickerWriter, DailyBookTickerCsvWriter>();
         services.AddSingleton<ISchemaManager, FeedSchemaManager>();
         services.AddSingleton<IFeedStatusStore, FeedStatusManager>();
+
+        services.AddSingleton<AggregatedDirSweeper>();
 
         return services;
     }

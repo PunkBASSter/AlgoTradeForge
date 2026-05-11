@@ -16,6 +16,26 @@ public sealed class HistoryLoaderOptions
     public BinanceOptions Binance { get; init; } = new();
     public List<AssetCollectionConfig> Assets { get; init; } = [];
     public Dictionary<string, CollectionSchedule> Schedules { get; init; } = [];
+    public AggregatorOptions Aggregator { get; init; } = new();
+}
+
+/// <summary>Alt-bar aggregation knobs.</summary>
+public sealed class AggregatorOptions
+{
+    /// <summary>Soft per-partition byte budget. Past this size the writer rolls into <c>&lt;YYYY&gt;-&lt;MM&gt;.p&lt;NN&gt;.csv</c>.</summary>
+    public int MaxPartitionSizeMB { get; init; } = 100;
+
+    /// <summary>Max parallel time-bar aggregations.</summary>
+    public int MaxConcurrentJobs { get; init; } = 2;
+
+    /// <summary>Max parallel tick-source aggregations (separate gate so I/O-heavy tick jobs don't block CPU-bound time-bar jobs).</summary>
+    public int MaxConcurrentTickJobs { get; init; } = 1;
+
+    /// <summary>Bounded job-queue capacity.</summary>
+    public int MaxQueueDepth { get; init; } = 64;
+
+    /// <summary>Terminal-state job retention before eviction (minutes).</summary>
+    public int JobRetentionMinutes { get; init; } = 15;
 }
 
 public sealed class BinanceOptions
@@ -23,6 +43,7 @@ public sealed class BinanceOptions
     public string SpotBaseUrl { get; init; } = "https://api.binance.com";
     public string FuturesBaseUrl { get; init; } = "https://fapi.binance.com";
     public string FuturesWsBaseUrl { get; init; } = "wss://fstream.binance.com";
+    public string SpotWsBaseUrl { get; init; } = "wss://stream.binance.com:9443";
     public int MaxWeightPerMinute { get; init; } = 2400;
     public int WeightBudgetPercent { get; init; } = 40;
     public int RequestDelayMs { get; init; } = 50;

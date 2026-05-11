@@ -10,13 +10,13 @@ internal sealed partial class BinanceFuturesClient(
     HttpClient httpClient,
     BinanceOptions options,
     SourceRateLimiter rateLimiter)
-    : ICandleFetcher
+    : ICandleFetcher, IFundingInfoFetcher
 {
     private const int KlineLimit = 1500;
     private const int KlineWeight = 5;
 
     public string[]? CandleExtColumns =>
-        ["quote_vol", "trade_count", "taker_buy_vol", "taker_buy_quote_vol"];
+        ["quote_vol", "trade_count", "taker_buy_vol", "taker_buy_quote_vol", "taker_buy_trade_count"];
 
     // -------------------------------------------------------------------------
     // Klines
