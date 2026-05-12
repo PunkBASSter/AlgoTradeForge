@@ -1,5 +1,26 @@
 # Main focus:
 
+## HistoryLoader & Live mode cloud-native redesign (why? collect ticks 24/7)
+Cloud:
+- Make history loader a batch-loader backfill tool
+  - Replace local file system calls with abstraction
+    - Implement for local file system
+    - Implement for S3
+- Introduce live host - sync processing of strategy logic (CPU) + async incremental data updates (IO)
+  - Keep existing Binance API support
+  - Add IB data connector
+  - Light short-term incremental storage for new live data -> long-term S3 compatible
+  - Support live host with X reserve nodes (either redundant data saving with sync later or stand by or something else)
+- Collect raw ticks
+- Collect market depth snapshots
+- Implement cloud to local sync
+
+Data processing:
+- Consider extracting data processing layers (raw, aggregated/transformed, analytics)
+- Consider using parquet/clickhouse for storing data feeds as columns
+
+- Where to store metadata? Keep in FS or some DB?
+
 ## TECH: Split domain / API
 Split strategies assembly and backtesting; maybe extract a shared contracts assembly
 Split strategy API (local, actively developed) from platform API (remote - stable, multi-user). FE calls 2 APIs. Don't forget CORS.
@@ -9,28 +30,12 @@ Decouple from local file system: replace with abstraction (to add S3 compatibili
 ## Launch optimized but not overtrained Delta ZigZag Breakout to live on multiple (30+) assets: crypto, stocks, maybe FX, maybe FUT.
 
 ## QA
-- ModularStrategyBase cleanup required (e.g. from trailing stop, regime?), leaving only necessary things.
-- Refactor existing ZigZagTrendBreakout with using the modules
+- Refactor existing ZigZagTrendBreakout with using the modules - TODO - restore initial logic
 - Debug Donchian Strategy
 - Pass validation at least somehow - know the metrics and what went wrong
 - Debug and fix trend zigzag
 - Add preview/quick popup for optimization run
 - Estimate the data volume on the current runs, evaluate DB performance and further performance capacity
-
-## Data
-- Research on the collected data if liquidation streams and open interest of futures - estimate opportunities potential?
-
-## Overfitting control
-@overfitting-detection-requirements.md
-Consider extending existing cache sizes up to several GB overall, configure heap size properly to avoid OOM exceptions.
-Caches: GA trials cache (up to 200MB?); Overfitting detection runs cache, equity curve (200MB).
-Reason: 64GB available memory can be utilized much better.
-```
-Equity curve retention tradeoff: The one-line change EquityCurve = MetricsScaler.ScaleEquityCurve(...) increases    
-  memory per trial from ~0 bytes to ~80KB (10K bars × 8 bytes). With BoundedTrialQueue capped at 10K trials and
-  GC-eligible eviction, peak usage is ~800MB — acceptable for server workloads.
-```
-This can be increased at least by 5 times if needed. May need host config update.
 
 ## Live
 @docs/live-connector-binance.md
