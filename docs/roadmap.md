@@ -12,7 +12,7 @@ Split strategy API (local, actively developed) from platform API (remote - stabl
 ## HistoryLoader & Live mode cloud-native redesign (why? collect ticks 24/7)
 Confirm cloud/local concerns and responsible services separation.
 Cloud:
-- Make history loader a batch-loader backfill tool
+- Make history loader an incremental (delta) batch-loader backfill tool
   - Replace local file system calls with abstraction
     - Implement for local file system
     - Implement for S3
@@ -27,6 +27,7 @@ Cloud:
 - Determine observability strategy: cloud logging, monitoring, telemetry
 
 Data processing (local?):
+- Backfill from https://data.binance.vision/ via https://github.com/binance/binance-public-data
 - Consider extracting data processing layers (raw, aggregated/transformed, analytics)
 - Consider using parquet/clickhouse for storing data feeds as columns
 
