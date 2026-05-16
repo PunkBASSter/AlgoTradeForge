@@ -1,4 +1,5 @@
 using AlgoTradeForge.Infrastructure.History;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.Infrastructure.Tests.History;
@@ -6,7 +7,8 @@ namespace AlgoTradeForge.Infrastructure.Tests.History;
 public class CsvFeedSeriesLoaderTests : IDisposable
 {
     private readonly string _testDataRoot;
-    private readonly CsvFeedSeriesLoader _loader = new();
+    private readonly CsvFeedSeriesLoader _loader = new(new LocalFileStorage());
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public CsvFeedSeriesLoaderTests()
     {
@@ -37,7 +39,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
         new DateTimeOffset(year, month, day, hour, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
 
     [Fact]
-    public void Load_SingleMonth_ReturnsCorrectFeedSeries()
+    public async Task Load_SingleMonth_ReturnsCorrectFeedSeries()
     {
         var ts1 = Ts(2024, 1, 1, 0);
         var ts2 = Ts(2024, 1, 1, 8);
@@ -48,9 +50,9 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 $"{ts2},0.00015"
             ]);
 
-        var result = _loader.Load(
+        var result = await _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.NotNull(result);
         Assert.Equal(2, result!.Count);
@@ -62,7 +64,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_MultipleColumns_RoundTrips()
+    public async Task Load_MultipleColumns_RoundTrips()
     {
         var ts1 = Ts(2024, 1, 1);
         WriteCsv("Binance", "BTCUSDT", "oi", 2024, 1, null,
@@ -71,9 +73,9 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 $"{ts1},1000000.5,500.25"
             ]);
 
-        var result = _loader.Load(
+        var result = await _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT", "oi", "",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.NotNull(result);
         Assert.Equal(2, result!.ColumnCount);
@@ -82,7 +84,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_MultiMonth_CombinesData()
+    public async Task Load_MultiMonth_CombinesData()
     {
         WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
             "ts,rate",
@@ -91,26 +93,26 @@ public class CsvFeedSeriesLoaderTests : IDisposable
             "ts,rate",
             [$"{Ts(2024,2,15)},0.0002"]);
 
-        var result = _loader.Load(
+        var result = await _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 2, 28));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 2, 28), ct: Ct);
 
         Assert.NotNull(result);
         Assert.Equal(2, result!.Count);
     }
 
     [Fact]
-    public void Load_NoFiles_ReturnsNull()
+    public async Task Load_NoFiles_ReturnsNull()
     {
-        var result = _loader.Load(
+        var result = await _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.Null(result);
     }
 
     [Fact]
-    public void Load_FiltersByDateRange()
+    public async Task Load_FiltersByDateRange()
     {
         var tsEarly = Ts(2024, 1, 1);
         var tsMid = Ts(2024, 1, 15);
@@ -123,9 +125,9 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 $"{tsLate},0.0003"
             ]);
 
-        var result = _loader.Load(
+        var result = await _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
-            new DateOnly(2024, 1, 10), new DateOnly(2024, 1, 20));
+            new DateOnly(2024, 1, 10), new DateOnly(2024, 1, 20), ct: Ct);
 
         Assert.NotNull(result);
         Assert.Single(result!.Timestamps);
@@ -134,7 +136,7 @@ public class CsvFeedSeriesLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_InvariantCulture_ParsesDecimalCorrectly()
+    public async Task Load_InvariantCulture_ParsesDecimalCorrectly()
     {
         var ts1 = Ts(2024, 1, 1);
         WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, null,
@@ -143,20 +145,16 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 $"{ts1},1.23456789"
             ]);
 
-        var result = _loader.Load(
+        var result = await _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.NotNull(result);
         Assert.Equal(1.23456789, result!.Columns[0][0], precision: 8);
     }
 
-    // -------------------------------------------------------------------------
-    // Malformed data handling (T5)
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public void Load_EmptyLines_SkipsGracefully()
+    public async Task Load_EmptyLines_SkipsGracefully()
     {
         var ts1 = Ts(2024, 1, 1);
         var ts2 = Ts(2024, 1, 1, 8);
@@ -170,19 +168,17 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 ""
             ]);
 
-        var result = _loader.Load(
+        var result = await _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.NotNull(result);
         Assert.Equal(2, result!.Count);
     }
 
     [Fact]
-    public void Load_FewerColumnsThanHeader_ThrowsByDefault()
+    public async Task Load_FewerColumnsThanHeader_ThrowsByDefault()
     {
-        // Phase 1a (TRD §3.5): missing/empty cells throw unless nullable_columns: true.
-        // Surfaces malformed legacy data instead of silently filling with zero.
         var ts1 = Ts(2024, 1, 1);
         var ts2 = Ts(2024, 1, 1, 8);
         WriteCsv("Binance", "BTCUSDT_perp", "oi", 2024, 1, null,
@@ -192,15 +188,15 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 $"{ts2},2000000.0"
             ]);
 
-        var ex = Assert.Throws<FormatException>(() => _loader.Load(
+        var ex = await Assert.ThrowsAsync<FormatException>(() => _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "oi", "",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31)));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct));
 
         Assert.Contains("nullable_columns", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Load_FewerColumnsThanHeader_NullableColumnsFillsWithNaN()
+    public async Task Load_FewerColumnsThanHeader_NullableColumnsFillsWithNaN()
     {
         var ts1 = Ts(2024, 1, 1);
         var ts2 = Ts(2024, 1, 1, 8);
@@ -211,10 +207,10 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 $"{ts2},2000000.0"
             ]);
 
-        var result = _loader.Load(
+        var result = await _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "oi", "",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
-            nullableColumns: true);
+            nullableColumns: true, ct: Ct);
 
         Assert.NotNull(result);
         Assert.Equal(2, result!.Count);
@@ -223,28 +219,27 @@ public class CsvFeedSeriesLoaderTests : IDisposable
             "Truncated row's missing column should be NaN under nullable_columns: true.");
     }
 
-    // P1a-25 — empty-cell handling explicitly gated on nullable_columns
     [Fact]
-    public void Load_EmptyCell_NullableColumnsFalse_Throws()
+    public async Task Load_EmptyCell_NullableColumnsFalse_Throws()
     {
         var ts = Ts(2024, 1, 1);
         WriteCsv("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", 2024, 1, null,
             "ts,signed_imbalance,buy_volume,sell_volume,realized_threshold",
             [
-                $"{ts},,,,500000",   // first three cells empty
+                $"{ts},,,,500000",
             ]);
 
-        var ex = Assert.Throws<FormatException>(() => _loader.Load(
+        var ex = await Assert.ThrowsAsync<FormatException>(() => _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", "",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
-            nullableColumns: false));
+            nullableColumns: false, ct: Ct));
 
         Assert.Contains("Empty/missing cell", ex.Message, StringComparison.Ordinal);
         Assert.Contains("EqIV_ticks_500000.flow", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Load_EmptyCell_NullableColumnsTrue_ParsesAsNaN()
+    public async Task Load_EmptyCell_NullableColumnsTrue_ParsesAsNaN()
     {
         var ts = Ts(2024, 1, 1);
         WriteCsv("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", 2024, 1, null,
@@ -254,10 +249,10 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 $"{ts + 1000},1.5,3.2,1.7,500000",
             ]);
 
-        var result = _loader.Load(
+        var result = await _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", "",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
-            nullableColumns: true);
+            nullableColumns: true, ct: Ct);
 
         Assert.NotNull(result);
         Assert.Equal(2, result!.Count);
@@ -268,16 +263,13 @@ public class CsvFeedSeriesLoaderTests : IDisposable
         Assert.True(double.IsNaN(result.Columns[2][0]));
         Assert.Equal(500_000d, result.Columns[3][0]);
 
-        // Second row has all values present even under nullable_columns=true.
         Assert.Equal(1.5, result.Columns[0][1]);
         Assert.Equal(3.2, result.Columns[1][1]);
     }
 
     [Fact]
-    public void Load_NonNumericValue_Throws()
+    public async Task Load_NonNumericValue_Throws()
     {
-        // P1b-0a: malformed non-empty cells must throw with file/row/column context under
-        // both nullable_columns settings — silent row skipping was data-corruption-prone.
         var ts1 = Ts(2024, 1, 1);
         var ts2 = Ts(2024, 1, 1, 8);
         WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
@@ -287,19 +279,17 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 $"{ts2},not-a-number"
             ]);
 
-        var ex = Assert.Throws<FormatException>(() => _loader.Load(
+        var ex = await Assert.ThrowsAsync<FormatException>(() => _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31)));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct));
 
         Assert.Contains("Malformed numeric cell 'not-a-number'", ex.Message, StringComparison.Ordinal);
         Assert.Contains("funding_rate", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Load_NonNumericValue_NullableColumnsTrue_StillThrows()
+    public async Task Load_NonNumericValue_NullableColumnsTrue_StillThrows()
     {
-        // Empty cells are gated by nullable_columns (NaN vs throw). Malformed non-empty cells
-        // throw under BOTH settings — they're data corruption regardless.
         var ts1 = Ts(2024, 1, 1);
         WriteCsv("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", 2024, 1, null,
             "ts,signed_imbalance,buy_volume,sell_volume,realized_threshold",
@@ -307,16 +297,16 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 $"{ts1},0.5,not-a-number,1.7,500000",
             ]);
 
-        var ex = Assert.Throws<FormatException>(() => _loader.Load(
+        var ex = await Assert.ThrowsAsync<FormatException>(() => _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", "",
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
-            nullableColumns: true));
+            nullableColumns: true, ct: Ct));
 
         Assert.Contains("Malformed numeric cell 'not-a-number'", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Load_NonNumericTimestamp_SkipsRow()
+    public async Task Load_NonNumericTimestamp_SkipsRow()
     {
         var ts1 = Ts(2024, 1, 1);
         WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
@@ -326,16 +316,16 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 "invalid-ts,0.00015"
             ]);
 
-        var result = _loader.Load(
+        var result = await _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.NotNull(result);
         Assert.Single(result!.Timestamps);
     }
 
     [Fact]
-    public void Load_SingleColumnRow_SkipsRow()
+    public async Task Load_SingleColumnRow_SkipsRow()
     {
         var ts1 = Ts(2024, 1, 1);
         WriteCsv("Binance", "BTCUSDT_perp", "funding_rate", 2024, 1, "8h",
@@ -345,9 +335,9 @@ public class CsvFeedSeriesLoaderTests : IDisposable
                 "just-one-field"
             ]);
 
-        var result = _loader.Load(
+        var result = await _loader.Load(
             _testDataRoot, "Binance", "BTCUSDT_perp", "funding_rate", "8h",
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.NotNull(result);
         Assert.Single(result!.Timestamps);

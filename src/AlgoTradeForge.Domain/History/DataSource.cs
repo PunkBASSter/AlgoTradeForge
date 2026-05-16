@@ -1,6 +1,6 @@
-﻿namespace AlgoTradeForge.Domain.History;
+namespace AlgoTradeForge.Domain.History;
 
 public interface IDataSource
 {
-    TimeSeries<Int64Bar> GetData(HistoryDataQuery query);
+    Task<TimeSeries<Int64Bar>> GetData(HistoryDataQuery query, CancellationToken ct = default);
 }

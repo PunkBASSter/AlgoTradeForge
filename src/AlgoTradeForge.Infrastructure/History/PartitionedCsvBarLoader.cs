@@ -1,19 +1,21 @@
 using System.Text.RegularExpressions;
 using AlgoTradeForge.Application.CandleIngestion;
+using AlgoTradeForge.Application.IO;
 using AlgoTradeForge.Domain.History;
 
 namespace AlgoTradeForge.Infrastructure.History;
 
 /// <summary>Loads <see cref="Int64Bar"/> series from partitioned CSV storage. Header: <c>ts,o,h,l,c,vol</c>.</summary>
-public sealed class PartitionedCsvBarLoader : IInt64BarLoader
+public sealed class PartitionedCsvBarLoader(IFileStorage storage) : IInt64BarLoader
 {
-    public TimeSeries<Int64Bar> Load(DataFeedDescriptor feed, DateOnly from, DateOnly to)
+    public async Task<TimeSeries<Int64Bar>> Load(DataFeedDescriptor feed, DateOnly from, DateOnly to, CancellationToken ct = default)
     {
         var series = new TimeSeries<Int64Bar>();
         var dir = ResolveFeedDir(feed);
-        if (!Directory.Exists(dir))
+        var (keys, anyEntry) = await CollectChronologicalKeys(feed, dir, ct);
+        if (!anyEntry)
             throw new DirectoryNotFoundException(
-                $"Data feed directory not found for {feed.Kind} feed '{feed.FeedId}' " +
+                $"Data feed directory not found or empty for {feed.Kind} feed '{feed.FeedId}' " +
                 $"(asset={feed.Asset}, exchange={feed.Exchange}). Expected path: {dir}");
 
         var fromMs = new DateTimeOffset(from.Year, from.Month, from.Day, 0, 0, 0, TimeSpan.Zero)
@@ -21,19 +23,15 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
         var toMs = new DateTimeOffset(to.Year, to.Month, to.Day, 0, 0, 0, TimeSpan.Zero)
             .AddDays(1).ToUnixTimeMilliseconds() - 1;
 
-        foreach (var filePath in EnumerateChronologicalFiles(feed, dir))
+        foreach (var key in keys)
         {
-            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            using var reader = new StreamReader(fs);
-
-            string? line;
             var firstLine = true;
-            while ((line = reader.ReadLine()) is not null)
+            await foreach (var line in storage.ReadLines(key, ct))
             {
                 if (firstLine)
                 {
                     firstLine = false;
-                    continue; // skip header
+                    continue;
                 }
 
                 if (line.Length == 0)
@@ -61,18 +59,15 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
         return series;
     }
 
-    public DateTimeOffset? GetLastTimestamp(DataFeedDescriptor feed)
+    public async Task<DateTimeOffset?> GetLastTimestamp(DataFeedDescriptor feed, CancellationToken ct = default)
     {
         var dir = ResolveFeedDir(feed);
-        if (!Directory.Exists(dir))
+        var (keys, _) = await CollectChronologicalKeys(feed, dir, ct);
+        if (keys.Count == 0)
             return null;
 
-        // Lex order = chronological because part numbers are zero-padded.
-        var lastFile = EnumerateChronologicalFiles(feed, dir).LastOrDefault();
-        if (lastFile is null)
-            return null;
-
-        var lastLine = ReadLastDataLine(lastFile);
+        var lastKey = keys[^1];
+        var lastLine = await ReadLastDataLine(storage, lastKey, ct);
         if (lastLine is null)
             return null;
 
@@ -96,21 +91,61 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
             _                    => throw new ArgumentOutOfRangeException(nameof(feed), $"Unsupported kind: {feed.Kind}"),
         };
 
-    private static IEnumerable<string> EnumerateChronologicalFiles(DataFeedDescriptor feed, string dir)
+    // Single storage pass: tracks whether the directory yielded any entry at all (used to
+    // distinguish "feed dir missing/empty" from "dir exists with sibling intervals only"),
+    // while collecting just the keys that match this feed's filename shape.
+    private async Task<(List<string> Keys, bool AnyEntry)> CollectChronologicalKeys(DataFeedDescriptor feed, string dir, CancellationToken ct)
     {
-        // TimeBar must use a per-FeedId glob to avoid picking up sibling intervals
-        // (loading "1m" must not match "2026-04_5m.csv"). Other kinds isolate by subdir.
-        var pattern = feed.Kind == DataFeedKind.TimeBar
-            ? $"*_{feed.FeedId}.csv"
-            : "*.csv";
+        var dirPrefix = WithTrailingSeparator(dir);
+        var keys = new List<string>();
+        var anyEntry = false;
+        await foreach (var key in storage.ListKeys(dirPrefix, suffix: null, recursive: false, ct))
+        {
+            anyEntry = true;
+            if (!key.EndsWith(".csv", StringComparison.Ordinal)) continue;
 
-        var files = Directory.EnumerateFiles(dir, pattern, SearchOption.TopDirectoryOnly)
-            .OrderBy(Path.GetFileName, StringComparer.Ordinal)
-            .ToList();
+            var fileName = Path.GetFileName(key);
+            if (feed.Kind == DataFeedKind.TimeBar && !MatchesTimeBarFeedId(fileName, feed.FeedId))
+                continue;
+            keys.Add(key);
+        }
 
-        EnsureNoDuplicateMonthPartitions(files);
-        return files;
+        keys.Sort(static (a, b) => string.CompareOrdinal(Path.GetFileName(a), Path.GetFileName(b)));
+        EnsureNoDuplicateMonthPartitions(keys);
+        return (keys, anyEntry);
     }
+
+    // TimeBar partition filenames are "<YYYY-MM>_<feedId>.csv" or "<YYYY-MM>_<feedId>.pNN.csv".
+    // Substring matching is too permissive ("_1m" collides with "_11m"; partial-suffix checks
+    // can swallow unrelated ".part" files). Strip ".csv" and the optional ".pNN" tail, then
+    // require the stem to terminate in exactly "_<feedId>".
+    private static bool MatchesTimeBarFeedId(string fileName, string feedId)
+    {
+        var stem = fileName.AsSpan();
+        if (!stem.EndsWith(".csv", StringComparison.Ordinal)) return false;
+        stem = stem[..^4];
+
+        var dotP = stem.LastIndexOf(".p", StringComparison.Ordinal);
+        if (dotP > 0 && IsAllAsciiDigits(stem[(dotP + 2)..]))
+            stem = stem[..dotP];
+
+        if (stem.Length < feedId.Length + 1) return false;
+        if (stem[^(feedId.Length + 1)] != '_') return false;
+        return stem.EndsWith(feedId, StringComparison.Ordinal);
+    }
+
+    private static bool IsAllAsciiDigits(ReadOnlySpan<char> span)
+    {
+        if (span.Length == 0) return false;
+        foreach (var c in span)
+            if (!char.IsAsciiDigit(c)) return false;
+        return true;
+    }
+
+    private static string WithTrailingSeparator(string path) =>
+        path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith('/')
+            ? path
+            : path + Path.DirectorySeparatorChar;
 
     private static readonly Regex AltBarOrSidecarPattern =
         new(@"^(?<month>\d{4}-\d{2})(?:\.p(?<part>\d{2}))?\.csv$",
@@ -151,14 +186,11 @@ public sealed class PartitionedCsvBarLoader : IInt64BarLoader
             $"Partition layout violation: bare <YYYY-MM>.csv and <YYYY-MM>.pNN.csv co-exist for the same month. Details: {details}");
     }
 
-    private static string? ReadLastDataLine(string filePath)
+    private static async Task<string?> ReadLastDataLine(IFileStorage storage, string key, CancellationToken ct)
     {
         string? lastLine = null;
-        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var reader = new StreamReader(fs);
-        string? line;
         var firstLine = true;
-        while ((line = reader.ReadLine()) is not null)
+        await foreach (var line in storage.ReadLines(key, ct))
         {
             if (firstLine) { firstLine = false; continue; }
             if (line.Length > 0)

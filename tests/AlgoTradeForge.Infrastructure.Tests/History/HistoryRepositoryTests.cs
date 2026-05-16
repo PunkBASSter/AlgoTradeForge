@@ -18,6 +18,7 @@ public class HistoryRepositoryTests
 
     private readonly IInt64BarLoader _loader;
     private readonly HistoryRepository _repo;
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public HistoryRepositoryTests()
     {
@@ -37,55 +38,55 @@ public class HistoryRepositoryTests
     }
 
     [Fact]
-    public void Load_SameTimeframe_ReturnsRawData()
+    public async Task Load_SameTimeframe_ReturnsRawData()
     {
         var sub = new DataSubscription(BtcUsdt, OneMinute);
         var raw = MakeMinuteSeries(10);
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>()).Returns(raw);
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(raw);
 
-        var result = _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.Equal(10, result.Count);
     }
 
     [Fact]
-    public void Load_HigherTimeframe_Resamples()
+    public async Task Load_HigherTimeframe_Resamples()
     {
         var sub = new DataSubscription(BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(5)));
         var raw = MakeMinuteSeries(10);
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>()).Returns(raw);
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(raw);
 
-        var result = _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.Equal(2, result.Count);
     }
 
     [Fact]
-    public void Load_LowerTimeframe_Throws()
+    public async Task Load_LowerTimeframe_Throws()
     {
         var sub = new DataSubscription(BtcUsdt, new TimeFrame(TimeSpan.FromSeconds(30)));
 
-        Assert.Throws<ArgumentException>(() =>
-            _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31)));
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct));
     }
 
     [Fact]
-    public void Load_EmptyData_ReturnsEmptySeries()
+    public async Task Load_EmptyData_ReturnsEmptySeries()
     {
         var sub = new DataSubscription(BtcUsdt, OneMinute);
         var raw = new TimeSeries<Int64Bar>();
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>()).Returns(raw);
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(raw);
 
-        var result = _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.Empty(result);
     }
 
     [Fact]
-    public void Load_ResampledOhlcv_IsCorrect()
+    public async Task Load_ResampledOhlcv_IsCorrect()
     {
         var sub = new DataSubscription(BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(5)));
         var series = new TimeSeries<Int64Bar>();
@@ -97,9 +98,9 @@ public class HistoryRepositoryTests
         series.Add(new Int64Bar(ms + 3 * step, 112, 118, 92, 110, 1800));
         series.Add(new Int64Bar(ms + 4 * step, 110, 125, 88, 115, 2200));
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>()).Returns(series);
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(series);
 
-        var result = _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.Single(result);
         Assert.Equal(100, result[0].Open);
@@ -109,25 +110,20 @@ public class HistoryRepositoryTests
         Assert.Equal(8500, result[0].Volume);
     }
 
-    // -------------------------------------------------------------------------
-    // P4-12 — polymorphic Load(Asset, DataFeedSubscription, ...) dispatch matrix.
-    // Verifies each subtype builds the right DataFeedDescriptor and Side throws.
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public void LoadFeedSubscription_TimeBar_BuildsTimeBarDescriptor()
+    public async Task LoadFeedSubscription_TimeBar_BuildsTimeBarDescriptor()
     {
         var sub = new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, OneMinute);
         DataFeedDescriptor? captured = null;
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 captured = call.Arg<DataFeedDescriptor>();
                 return MakeMinuteSeries(3);
             });
 
-        var result = _repo.Load(BtcUsdt, sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _repo.Load(BtcUsdt, sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.NotNull(captured);
         Assert.Equal(DataFeedKind.TimeBar, captured!.Value.Kind);
@@ -138,19 +134,19 @@ public class HistoryRepositoryTests
     }
 
     [Fact]
-    public void LoadFeedSubscription_AltBar_BuildsAltBarDescriptorWithFeedId()
+    public async Task LoadFeedSubscription_AltBar_BuildsAltBarDescriptorWithFeedId()
     {
         var sub = new AltBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, "EqV_1m_1000");
         DataFeedDescriptor? captured = null;
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 captured = call.Arg<DataFeedDescriptor>();
                 return new TimeSeries<Int64Bar>();
             });
 
-        _repo.Load(BtcUsdt, sub, new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
+        await _repo.Load(BtcUsdt, sub, new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30), ct: Ct);
 
         Assert.NotNull(captured);
         Assert.Equal(DataFeedKind.AltBar, captured!.Value.Kind);
@@ -159,21 +155,17 @@ public class HistoryRepositoryTests
     }
 
     [Fact]
-    public void LoadFeedSubscription_AltBar_DoesNotResample()
+    public async Task LoadFeedSubscription_AltBar_DoesNotResample()
     {
-        // AltBars are at native granularity — the loader's output is returned verbatim with
-        // no resample. Plant 3 bars, expect 3 bars (vs the 5m resample of MakeMinuteSeries(15)
-        // which would collapse to 3 — same count by accident, so use distinct timestamps to
-        // assert pass-through).
         var sub = new AltBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, "EqV_1m_1000");
         var raw = new TimeSeries<Int64Bar>();
         raw.Add(new Int64Bar(100, 1, 1, 1, 1, 100));
         raw.Add(new Int64Bar(200, 2, 2, 2, 2, 200));
         raw.Add(new Int64Bar(300, 3, 3, 3, 3, 300));
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>()).Returns(raw);
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(raw);
 
-        var result = _repo.Load(BtcUsdt, sub, new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
+        var result = await _repo.Load(BtcUsdt, sub, new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30), ct: Ct);
 
         Assert.Equal(3, result.Count);
         Assert.Equal(100, result[0].TimestampMs);
@@ -182,19 +174,19 @@ public class HistoryRepositoryTests
     }
 
     [Fact]
-    public void LoadFeedSubscription_Tick_BuildsTickDescriptorWithTicksFeedId()
+    public async Task LoadFeedSubscription_Tick_BuildsTickDescriptorWithTicksFeedId()
     {
         var sub = new TickSubscription("BTCUSDT", "Binance", DataFeedRole.Primary);
         DataFeedDescriptor? captured = null;
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 captured = call.Arg<DataFeedDescriptor>();
                 return new TimeSeries<Int64Bar>();
             });
 
-        _repo.Load(BtcUsdt, sub, new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
+        await _repo.Load(BtcUsdt, sub, new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30), ct: Ct);
 
         Assert.NotNull(captured);
         Assert.Equal(DataFeedKind.Tick, captured!.Value.Kind);
@@ -202,48 +194,48 @@ public class HistoryRepositoryTests
     }
 
     [Fact]
-    public void LoadFeedSubscription_Side_ThrowsArgumentException()
+    public async Task LoadFeedSubscription_Side_ThrowsArgumentException()
     {
         var sub = new SideFeedSubscription("BTCUSDT", "Binance", DataFeedRole.Side, "funding-rate");
 
-        var ex = Assert.Throws<ArgumentException>(() =>
-            _repo.Load(BtcUsdt, sub, new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30)));
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            _repo.Load(BtcUsdt, sub, new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30), ct: Ct));
 
         Assert.Contains("Side feeds", ex.Message);
         Assert.Contains("IFeedContext", ex.Message);
     }
 
     [Fact]
-    public void LoadFeedSubscription_TimeBar_ResamplesAtHigherTimeFrame()
+    public async Task LoadFeedSubscription_TimeBar_ResamplesAtHigherTimeFrame()
     {
         var sub = new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary,
             new TimeFrame(TimeSpan.FromMinutes(5)));
         var raw = MakeMinuteSeries(10);
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>()).Returns(raw);
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(raw);
 
-        var result = _repo.Load(BtcUsdt, sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _repo.Load(BtcUsdt, sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
-        Assert.Equal(2, result.Count);  // 10 1m bars resampled to 5m = 2 bars
+        Assert.Equal(2, result.Count);
     }
 
     [Fact]
-    public void LoadFeedSubscription_PerpetualAsset_AppendsPerpSuffix()
+    public async Task LoadFeedSubscription_PerpetualAsset_AppendsPerpSuffix()
     {
         var perp = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
         var sub = new AltBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, "EqV_1m_1000");
         DataFeedDescriptor? captured = null;
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 captured = call.Arg<DataFeedDescriptor>();
                 return new TimeSeries<Int64Bar>();
             });
 
-        _repo.Load(perp, sub, new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
+        await _repo.Load(perp, sub, new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30), ct: Ct);
 
         Assert.NotNull(captured);
-        Assert.Equal("BTCUSDT_perp", captured!.Value.Asset);  // AssetDirectoryName.From applied
+        Assert.Equal("BTCUSDT_perp", captured!.Value.Asset);
     }
 }

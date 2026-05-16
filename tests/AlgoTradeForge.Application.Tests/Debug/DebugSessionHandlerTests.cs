@@ -60,7 +60,7 @@ public class DebugSessionHandlerTests
             .Returns(strategy);
 
         var bars = TestBars.CreateSeries(Start, OneMinute, barCount);
-        _historyRepo.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+        _historyRepo.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(bars);
     }
 

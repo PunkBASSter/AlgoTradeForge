@@ -10,10 +10,11 @@ public interface IFeedContextBuilder
     /// are eagerly loaded; the primary's sidecar (if any) is registered as a lazy loader so
     /// strategies that ignore it pay zero cost.
     /// </summary>
-    BacktestFeedContext? Build(
+    Task<BacktestFeedContext?> Build(
         string dataRoot,
         Asset asset,
         DateOnly from,
         DateOnly to,
-        string? primaryFeedName = null);
+        string? primaryFeedName = null,
+        CancellationToken ct = default);
 }

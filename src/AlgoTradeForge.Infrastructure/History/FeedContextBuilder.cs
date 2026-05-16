@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Application.IO;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
@@ -12,6 +13,7 @@ namespace AlgoTradeForge.Infrastructure.History;
 /// and loading each declared feed from monthly-partitioned CSV files.
 /// </summary>
 public sealed class FeedContextBuilder(
+    IFileStorage storage,
     IFeedSeriesLoader feedSeriesLoader,
     ILogger<FeedContextBuilder> logger) : IFeedContextBuilder
 {
@@ -20,17 +22,18 @@ public sealed class FeedContextBuilder(
         PropertyNameCaseInsensitive = true
     };
 
-    public BacktestFeedContext? Build(
+    public async Task<BacktestFeedContext?> Build(
         string dataRoot,
         Asset asset,
         DateOnly from,
         DateOnly to,
-        string? primaryFeedName = null)
+        string? primaryFeedName = null,
+        CancellationToken ct = default)
     {
         var assetDir = AssetDirectoryName.From(asset);
         var feedsJsonPath = Path.Combine(dataRoot, asset.Exchange, assetDir, "feeds.json");
 
-        if (!File.Exists(feedsJsonPath))
+        if (!await storage.Exists(feedsJsonPath, ct))
         {
             logger.LogDebug("No feeds.json found at {Path} for {Asset}", feedsJsonPath, asset.Name);
             return null;
@@ -39,8 +42,8 @@ public sealed class FeedContextBuilder(
         FeedMetadata? metadata;
         try
         {
-            using var fs = new FileStream(feedsJsonPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            metadata = JsonSerializer.Deserialize<FeedMetadata>(fs, JsonOptions);
+            await using var stream = await storage.OpenRead(feedsJsonPath, ct);
+            metadata = await JsonSerializer.DeserializeAsync<FeedMetadata>(stream, JsonOptions, ct);
         }
         catch (JsonException)
         {
@@ -67,9 +70,9 @@ public sealed class FeedContextBuilder(
                 string.Equals(def.Kind, "Tick", StringComparison.Ordinal))
                 continue;
 
-            var series = feedSeriesLoader.Load(
+            var series = await feedSeriesLoader.Load(
                 dataRoot, asset.Exchange, assetDir, feedName, def.Interval ?? string.Empty, from, to,
-                nullableColumns: def.NullableColumns ?? false);
+                nullableColumns: def.NullableColumns ?? false, ct);
 
             if (series is null)
                 continue;
@@ -112,6 +115,8 @@ public sealed class FeedContextBuilder(
             // appends feedName to the path verbatim, so the "aggregated/" segment goes here.
             var sidecarFeedNameOnDisk = Path.Combine("aggregated", sidecarFeedId);
             var sidecarSchema = new DataFeedSchema(sidecarFeedId, sidecarDef.Columns, AutoApply: null);
+            // Sync-bridge: the engine's emit loop is synchronous by design (docs/storage-abstraction.md §"IRunSink.Write stays sync")
+            // and TryGetPrimarySidecar runs inside it. Lazy loader fires at most once per run, on first sidecar read.
             context.RegisterPrimarySidecarLazy(
                 sidecarFeedId,
                 sidecarSchema,
@@ -120,7 +125,7 @@ public sealed class FeedContextBuilder(
                     feedName: sidecarFeedNameOnDisk,
                     interval: sidecarDef.Interval ?? string.Empty,
                     from, to,
-                    nullableColumns: sidecarDef.NullableColumns ?? true));
+                    nullableColumns: sidecarDef.NullableColumns ?? true).GetAwaiter().GetResult());
             sidecarRegistered = true;
         }
 

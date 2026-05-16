@@ -1,38 +1,65 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
+using AlgoTradeForge.Application.IO;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Infrastructure.History;
 
 public sealed class FileSystemAvailableAssetsProvider(
+    IFileStorage storage,
     IOptions<CandleStorageOptions> options) : IAvailableAssetsProvider
 {
-    private readonly Lazy<IReadOnlyList<AvailableAssetInfo>> _cached = new(() => Scan(options.Value.DataRoot));
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private IReadOnlyList<AvailableAssetInfo>? _cached;
 
-    public IReadOnlyList<AvailableAssetInfo> GetAvailableAssets() => _cached.Value;
+    public async Task<IReadOnlyList<AvailableAssetInfo>> GetAvailableAssets(CancellationToken ct = default)
+    {
+        if (_cached is not null) return _cached;
+        await _gate.WaitAsync(ct);
+        try
+        {
+            return _cached ??= await Scan(storage, options.Value.DataRoot, ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
-    private static List<AvailableAssetInfo> Scan(string dataRoot)
+    private static async Task<List<AvailableAssetInfo>> Scan(IFileStorage storage, string dataRoot, CancellationToken ct)
     {
         var result = new List<AvailableAssetInfo>();
 
-        if (!Directory.Exists(dataRoot))
-            return result;
+        // List all CSVs under dataRoot recursively, then group by the (exchange, asset) prefix that
+        // sits two segments above the file. Treats "candles/<*>.csv" and the legacy "<YYYY>/<*>.csv"
+        // layouts as proof an asset exists. Object-store-shaped: no per-directory probing.
+        var seen = new HashSet<(string Exchange, string Symbol)>();
+        var rootPrefix = string.IsNullOrEmpty(dataRoot)
+            ? ""
+            : (dataRoot.EndsWith(Path.DirectorySeparatorChar) || dataRoot.EndsWith('/')
+                ? dataRoot
+                : dataRoot + Path.DirectorySeparatorChar);
 
-        foreach (var exchangeDir in Directory.EnumerateDirectories(dataRoot))
+        await foreach (var key in storage.ListKeys(rootPrefix, suffix: ".csv", recursive: true, ct))
         {
-            var exchange = Path.GetFileName(exchangeDir);
+            ct.ThrowIfCancellationRequested();
+            var relative = StripRoot(key, dataRoot);
+            var segments = relative.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length < 4) continue;
 
-            foreach (var symbolDir in Directory.EnumerateDirectories(exchangeDir))
-            {
-                if (!HasCandleData(symbolDir))
-                    continue;
+            var exchange = segments[0];
+            var symbolDir = segments[1];
+            var third = segments[2];
 
-                var dirName = Path.GetFileName(symbolDir);
-                var isFutures = dirName.EndsWith("_perp", StringComparison.OrdinalIgnoreCase);
-                var symbol = isFutures ? dirName[..^5] : dirName;
+            var isNewFormat = string.Equals(third, "candles", StringComparison.Ordinal);
+            var isLegacyFormat = third.Length == 4 && int.TryParse(third, out _);
+            if (!isNewFormat && !isLegacyFormat) continue;
 
-                result.Add(new AvailableAssetInfo(exchange, symbol, isFutures));
-            }
+            if (!seen.Add((exchange, symbolDir))) continue;
+
+            var isFutures = symbolDir.EndsWith("_perp", StringComparison.OrdinalIgnoreCase);
+            var symbol = isFutures ? symbolDir[..^5] : symbolDir;
+            result.Add(new AvailableAssetInfo(exchange, symbol, isFutures));
         }
 
         result.Sort((a, b) =>
@@ -44,22 +71,13 @@ public sealed class FileSystemAvailableAssetsProvider(
         return result;
     }
 
-    private static bool HasCandleData(string symbolDir)
+    private static string StripRoot(string key, string root)
     {
-        // New format: candles/ subdir with any .csv
-        var candlesDir = Path.Combine(symbolDir, "candles");
-        if (Directory.Exists(candlesDir) && Directory.EnumerateFiles(candlesDir, "*.csv").Any())
-            return true;
-
-        // Old format: any 4-digit year subdir with .csv files
-        foreach (var subDir in Directory.EnumerateDirectories(symbolDir))
-        {
-            var name = Path.GetFileName(subDir);
-            if (name.Length == 4 && int.TryParse(name, out _)
-                && Directory.EnumerateFiles(subDir, "*.csv").Any())
-                return true;
-        }
-
-        return false;
+        if (string.IsNullOrEmpty(root)) return key;
+        var normalized = key.Replace('\\', '/');
+        var rootNorm = root.Replace('\\', '/').TrimEnd('/');
+        return normalized.StartsWith(rootNorm + '/', StringComparison.OrdinalIgnoreCase)
+            ? normalized[(rootNorm.Length + 1)..]
+            : normalized;
     }
 }

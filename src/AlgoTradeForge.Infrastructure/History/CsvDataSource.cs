@@ -9,7 +9,7 @@ public sealed class CsvDataSource(
     IInt64BarLoader barLoader,
     IOptions<CandleStorageOptions> storageOptions) : IDataSource
 {
-    public TimeSeries<Int64Bar> GetData(HistoryDataQuery query)
+    public async Task<TimeSeries<Int64Bar>> GetData(HistoryDataQuery query, CancellationToken ct = default)
     {
         var asset = query.Asset;
 
@@ -32,10 +32,11 @@ public sealed class CsvDataSource(
             FeedId: TimeFrameFormatter.Format(sourceInterval),
             Kind: DataFeedKind.TimeBar);
 
-        var raw = barLoader.Load(
+        var raw = await barLoader.Load(
             descriptor,
             DateOnly.FromDateTime(from.UtcDateTime),
-            DateOnly.FromDateTime(to.UtcDateTime));
+            DateOnly.FromDateTime(to.UtcDateTime),
+            ct);
 
         if (query.TimeFrame > sourceInterval)
             return raw.Resample(query.TimeFrame);

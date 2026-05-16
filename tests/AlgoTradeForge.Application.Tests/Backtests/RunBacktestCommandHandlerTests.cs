@@ -87,7 +87,7 @@ public class RunBacktestCommandHandlerTests
             .Returns(strategy);
 
         var series = TestBars.CreateSeries(10);
-        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(series);
     }
 
@@ -235,7 +235,7 @@ public class RunBacktestCommandHandlerTests
         Domain.Asset? capturedAsset = null;
         _historyRepository.Load(
                 Arg.Any<Domain.Asset>(), Arg.Any<DataFeedSubscription>(),
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 capturedAsset = call.Arg<Domain.Asset>();
@@ -401,7 +401,7 @@ public class RunBacktestCommandHandlerTests
             .Returns(strategy);
 
         var series = TestBars.CreateSeries(10);
-        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(series);
 
         SetupBackgroundMocks();

@@ -66,9 +66,9 @@ public sealed class OptimizationTaskExecutorTests
         var asset = TestAssets.BtcUsdt;
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
-        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
-        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
 
         // Generator returns many combinations to ensure we can cancel mid-stream
@@ -96,9 +96,9 @@ public sealed class OptimizationTaskExecutorTests
         var asset = TestAssets.BtcUsdt;
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
-        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
-        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
 
         _strategyFactory.Create(Arg.Any<string>(), Arg.Any<ParameterCombination>())
@@ -130,9 +130,9 @@ public sealed class OptimizationTaskExecutorTests
         var asset = TestAssets.BtcUsdt;
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
-        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
-        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
 
         var strategy = Substitute.For<IInt64BarStrategy>();
@@ -175,9 +175,9 @@ public sealed class OptimizationTaskExecutorTests
         var asset = TestAssets.BtcUsdt;
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
-        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
-        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+        _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
         var strategy = Substitute.For<IInt64BarStrategy>();
         // Use a real backing list so .Clear()/.Add() actually mutates — the substitute's

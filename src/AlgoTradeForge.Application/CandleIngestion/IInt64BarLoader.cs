@@ -8,7 +8,7 @@ namespace AlgoTradeForge.Application.CandleIngestion;
 /// </summary>
 public interface IInt64BarLoader
 {
-    TimeSeries<Int64Bar> Load(DataFeedDescriptor feed, DateOnly from, DateOnly to);
+    Task<TimeSeries<Int64Bar>> Load(DataFeedDescriptor feed, DateOnly from, DateOnly to, CancellationToken ct = default);
 
-    DateTimeOffset? GetLastTimestamp(DataFeedDescriptor feed);
+    Task<DateTimeOffset?> GetLastTimestamp(DataFeedDescriptor feed, CancellationToken ct = default);
 }

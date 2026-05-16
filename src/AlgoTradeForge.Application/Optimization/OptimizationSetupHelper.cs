@@ -157,7 +157,7 @@ public sealed class OptimizationSetupHelper(
         var key = BacktestInputsFormatter.Key(sub);
         if (!dataCache.ContainsKey(key))
         {
-            var series = historyRepository.Load(asset, sub, fromDate, toDate);
+            var series = await historyRepository.Load(asset, sub, fromDate, toDate, ct);
             dataCache[key] = (asset, series);
         }
     }
