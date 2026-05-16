@@ -123,7 +123,7 @@ public sealed class RunBacktestCommandHandler(
                     result.Fills.Count,
                     result.Duration);
 
-                fileSink.WriteMeta(runSummary);
+                await fileSink.WriteMeta(runSummary, ct);
                 runFolderPath = fileSink.RunFolderPath;
             }
 

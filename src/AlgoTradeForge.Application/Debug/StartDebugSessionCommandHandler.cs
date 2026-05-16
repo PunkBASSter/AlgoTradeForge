@@ -73,7 +73,7 @@ public sealed class StartDebugSessionCommandHandler(
         }
 
         session.RunTask = Task.Factory.StartNew(
-            () =>
+            async () =>
             {
                 var result = engine.Run(setup.Series, setup.Strategy, setup.Options, session.Cts.Token, session.Probe, session.EventBus);
 
@@ -83,7 +83,7 @@ public sealed class StartDebugSessionCommandHandler(
                     result.Fills.Count,
                     result.Duration);
 
-                runSink.WriteMeta(runSummary);
+                await runSink.WriteMeta(runSummary, ct);
                 postRunPipeline.Execute(runSink.RunFolderPath, capturedIdentity!, runSummary);
 
                 var equityValues = result.EquityCurve.Select(e => e.Value).ToList();
@@ -117,7 +117,7 @@ public sealed class StartDebugSessionCommandHandler(
             },
             session.Cts.Token,
             TaskCreationOptions.LongRunning,
-            TaskScheduler.Default);
+            TaskScheduler.Default).Unwrap();
 
         return new DebugSessionDto(session.Id, resolvedAssetName!, command.StrategyName, session.CreatedAt, runSink.RunFolderPath);
     }

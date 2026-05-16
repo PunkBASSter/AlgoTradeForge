@@ -49,7 +49,7 @@ public sealed class JsonlFileSink : IRunSink
         }
     }
 
-    public void WriteMeta(RunSummary summary)
+    public Task WriteMeta(RunSummary summary, CancellationToken ct = default)
     {
         var meta = new RunMeta
         {
@@ -70,7 +70,7 @@ public sealed class JsonlFileSink : IRunSink
 
         var metaPath = Path.Combine(RunFolderPath, "meta.json");
         var json = JsonSerializer.Serialize(meta, MetaJsonOptions);
-        _fileStorage.WriteAllText(metaPath, json, Encoding.UTF8);
+        return _fileStorage.WriteAllText(metaPath, json, Encoding.UTF8, ct);
     }
 
     public void Dispose()

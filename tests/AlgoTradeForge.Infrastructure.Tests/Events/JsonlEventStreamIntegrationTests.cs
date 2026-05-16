@@ -22,7 +22,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
     private static readonly EquityAsset Aapl = new() { Name = "AAPL", Exchange = "NASDAQ" };
 
     private readonly string _testRoot;
-    private readonly FileStorage _fs = new();
+    private readonly LocalFileStorage _fs = new();
 
     public JsonlEventStreamIntegrationTests()
     {
@@ -37,7 +37,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
     }
 
     [Fact]
-    public void FullBacktestRun_ProducesCorrectJsonlEventStream()
+    public async Task FullBacktestRun_ProducesCorrectJsonlEventStream()
     {
         // Arrange
         var identity = new RunIdentity
@@ -74,7 +74,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         // Assert — read the events.jsonl file
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var lines = _fs.ReadAllLines(eventsPath);
+        var lines = await _fs.ReadAllLines(eventsPath, TestContext.Current.CancellationToken);
 
         // Must have at least run.start, 3x bar, ord.place, ord.fill, pos, run.end
         Assert.True(lines.Length >= 8, $"Expected at least 8 lines but got {lines.Length}");
@@ -125,7 +125,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
     }
 
     [Fact]
-    public void EventOrdering_OrdPlace_Before_OrdFill_Before_Pos()
+    public async Task EventOrdering_OrdPlace_Before_OrdFill_Before_Pos()
     {
         // Arrange
         var identity = new RunIdentity
@@ -162,7 +162,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         // Assert
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var typeIds = _fs.ReadAllLines(eventsPath)
+        var typeIds = (await _fs.ReadAllLines(eventsPath, TestContext.Current.CancellationToken))
             .Select(l => JsonDocument.Parse(l).RootElement.GetProperty("_t").GetString()!)
             .ToList();
 
@@ -178,7 +178,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
     }
 
     [Fact]
-    public void EmittingIndicatorFactory_ProducesIndEventsInJsonl()
+    public async Task EmittingIndicatorFactory_ProducesIndEventsInJsonl()
     {
         // Arrange
         var identity = new RunIdentity
@@ -216,14 +216,15 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         // Assert
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var typeIds = _fs.ReadAllLines(eventsPath)
+        var rawLines = await _fs.ReadAllLines(eventsPath, TestContext.Current.CancellationToken);
+        var typeIds = rawLines
             .Select(l => JsonDocument.Parse(l).RootElement.GetProperty("_t").GetString()!)
             .ToList();
 
         Assert.Contains("ind", typeIds);
 
         // Verify ind event has correct structure
-        var indLines = _fs.ReadAllLines(eventsPath)
+        var indLines = rawLines
             .Where(l => JsonDocument.Parse(l).RootElement.GetProperty("_t").GetString() == "ind")
             .ToList();
         Assert.True(indLines.Count >= 3, $"Expected at least 3 ind events (one per bar), got {indLines.Count}");
@@ -234,7 +235,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
     }
 
     [Fact]
-    public void OptimizationPath_NoFactory_ZeroIndEvents()
+    public async Task OptimizationPath_NoFactory_ZeroIndEvents()
     {
         // Arrange — backtest without indicator factory (optimization path)
         var identity = new RunIdentity
@@ -271,7 +272,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         // Assert
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var typeIds = _fs.ReadAllLines(eventsPath)
+        var typeIds = (await _fs.ReadAllLines(eventsPath, TestContext.Current.CancellationToken))
             .Select(l => JsonDocument.Parse(l).RootElement.GetProperty("_t").GetString()!)
             .ToList();
 

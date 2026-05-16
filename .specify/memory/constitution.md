@@ -1,16 +1,30 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.8.1 → 1.8.2
+Version change: 1.8.3 → 1.8.4
 Modified principles: None (all 6 unchanged)
 Added sections: None
 Modified sections:
-  - Testing Requirements: Added rule mandating use of the
-    BenchmarkDotNet harness (benchmarks/AlgoTradeForge.Benchmarks/,
-    invoked via the `run-benchmarks` skill / `/benchmark` command) for
-    measuring changes to engine/strategy/indicator/registry/optimization
-    hot paths; ad-hoc timing scripts are disallowed.
-Trigger: Resurrected benchmark project; codify usage convention.
+  - Backend → Code Style: Tightened the XML / inline comment rule. New
+    written XML comments MUST be terse (prefer one line; several lines
+    acceptable only when the documented behavior is genuinely non-
+    obvious or non-conventional). Multi-paragraph doc-comment essays,
+    restating the method signature in prose, and paraphrasing the type
+    name back into English are prohibited. The "when comments are
+    allowed" allowlist (non-obvious algorithm, known pitfall/workaround,
+    TODO/HACK with justification) is unchanged.
+  - Solution Layout + Code Organization conventions: Removed the
+    `AlgoTradeForge.CandleIngestor` worker project and its dedicated
+    "exempt from clean architecture" architecture note. The project
+    is superseded by `AlgoTradeForge.HistoryLoader.*` (full clean-
+    architecture subsystem). HistoryLoader's architecture note no
+    longer contrasts itself with CandleIngestor. Test project tree
+    no longer lists the `CandleIngestion/` subfolder (those tests
+    are also deleted).
+Trigger: (a) Codify the existing reviewer preference so new code stays
+self-documenting and doesn't accrete narrative XML doc-comments that
+restate identifiers. (b) Retire the deprecated CandleIngestor worker;
+all candle / feed ingestion now flows through HistoryLoader.
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible
   - .specify/templates/spec-template.md ✅ compatible
@@ -181,6 +195,19 @@ frontend/
   - Explaining a non-obvious algorithm or mathematical formula
   - Flagging a known pitfall, workaround, or counterintuitive behavior
   - Documenting a `TODO` or `HACK` with justification
+- When an XML comment IS written under one of the cases above, it MUST
+  be terse:
+  - Prefer a single line. Several lines are acceptable only when the
+    documented behavior is genuinely non-obvious or non-conventional
+    (e.g., explaining why `Span<byte>` was replaced with
+    `ReadOnlyMemory<byte>` across an async boundary).
+  - MUST NOT be a multi-paragraph essay or narrative.
+  - MUST NOT restate the method signature, parameter types, or return
+    type in prose ("Gets the foo and returns the bar.").
+  - MUST NOT paraphrase the identifier back into English
+    (`/// <summary>The user identifier.</summary>` on `UserId`).
+  - Aim for the shortest text that conveys the non-obvious fact, and
+    nothing more.
 - Code MUST be self-documenting through clear naming, small methods, and explicit types
 - MUST use `long` (Int64) for all monetary and price values within the Domain layer
   (cash, fill prices, commissions, equity curve). Quantities and percentages
@@ -287,6 +314,25 @@ frontend/
 
 - MUST use `async`/`await` throughout; no `.Result` or `.Wait()` blocking
 - MUST use `ct` propagation for all async operations
+- I/O-bound APIs (file storage, network HTTP clients, database access,
+  external service clients, message-broker producers/consumers) MUST
+  expose async signatures returning `Task` / `Task<T>` / `IAsyncEnumerable<T>`
+  with a `CancellationToken ct = default` parameter on every method.
+  Sync-over-async (`.Result`, `.Wait()`, `.GetAwaiter().GetResult()`,
+  `Task.Run(...).Wait()`) at call sites is prohibited except in narrowly
+  scoped contexts that genuinely cannot be threaded async (test fixture
+  cleanup helpers, static initializers, one-shot startup helpers). Such
+  exceptions MUST be flagged with a comment explaining why async
+  propagation is impractical there.
+- New async methods MUST NOT use the `Async` suffix on the method name
+  (e.g., `Task<bool> Exists(...)` — not `ExistsAsync(...)`). When an
+  existing `Async`-suffixed method's signature is changed (parameters,
+  return type, cancellation token) or the method is moved to an
+  async-only interface, the suffix MUST be dropped as part of the
+  change. Pre-existing `Async`-suffixed methods that are not touched
+  MAY keep their current names; rename is incremental, applied as
+  methods are evolved — bulk renames are discouraged because they
+  invite merge conflicts without benefit.
 - MUST use `Channel<T>` or `IAsyncEnumerable<T>` for streaming scenarios
 - MUST use `ValueTask<T>` for hot paths where allocation matters
 - MUST document thread-affinity assumptions on types that are not
@@ -380,13 +426,6 @@ AlgoTradeForge/
 │   │   ├── Plugins/                  # Plugin loader
 │   │   ├── Repositories/            # Repository implementations
 │   │   └── Validation/              # SQLite validation/threshold repos
-│   ├── AlgoTradeForge.CandleIngestor/ # Worker service (see note below)
-│   │   ├── BinanceAdapter.cs          # Binance API adapter
-│   │   ├── CsvCandleWriter.cs         # CSV partition writer
-│   │   ├── IngestionOrchestrator.cs   # Fetch-and-store coordinator
-│   │   ├── IngestionWorker.cs         # BackgroundService with PeriodicTimer
-│   │   ├── RateLimiter.cs             # Sliding-window rate limiter
-│   │   └── CandleIngestorOptions.cs   # Configuration records
 │   ├── AlgoTradeForge.HistoryLoader.Domain/       # HistoryLoader domain models
 │   ├── AlgoTradeForge.HistoryLoader.Application/  # HistoryLoader use cases
 │   ├── AlgoTradeForge.HistoryLoader.Infrastructure/ # HistoryLoader data access
@@ -409,9 +448,7 @@ AlgoTradeForge/
 │   │   └── TestUtilities/             # Shared test data factories
 │   ├── AlgoTradeForge.Application.Tests/ # Application layer tests
 │   │   └── TestUtilities/
-│   ├── AlgoTradeForge.Infrastructure.Tests/ # Infrastructure + CandleIngestor tests
-│   │   └── CandleIngestion/           # CsvInt64BarLoader, CsvCandleWriter,
-│   │                                  # BinanceAdapter tests
+│   ├── AlgoTradeForge.Infrastructure.Tests/ # Infrastructure tests
 │   ├── AlgoTradeForge.HistoryLoader.Tests/  # HistoryLoader tests
 │   ├── AlgoTradeForge.WebApi.Tests/         # WebApi integration tests
 │   └── AlgoTradeForge.WebApi.PlaywrightTests/ # E2E browser tests
@@ -419,32 +456,19 @@ AlgoTradeForge/
 └── specs/                             # Feature specifications and checklists
 ```
 
-> **CandleIngestor architecture note**: `AlgoTradeForge.CandleIngestor` is a
-> self-contained worker service that bundles its own infrastructure code
-> (adapters, writers, rate limiter, configuration records) directly in the
-> executable project. It references only Application (for `IInt64BarLoader`
-> and domain types via transitive reference). This project is intentionally
-> **exempt from clean architecture layering** — it is a thin utility service
-> where simplicity and colocation outweigh separation of concerns. New
-> exchange adapters, writers, or ingestion logic MUST be added here, not in
-> the Infrastructure project.
-
 > **HistoryLoader architecture note**: `AlgoTradeForge.HistoryLoader.*` is a
 > separate subsystem following full clean architecture (Domain, Application,
 > Infrastructure, WebApi). It runs as an independent ASP.NET Core host for
 > scheduled and on-demand historical data collection from exchange APIs
-> (klines, funding rates, open interest, liquidations, etc.). Unlike
-> CandleIngestor (legacy simple worker), HistoryLoader supports multiple
-> exchanges, feed types, rate limiting, backfill orchestration, and
+> (klines, funding rates, open interest, liquidations, etc.) and supports
+> multiple exchanges, feed types, rate limiting, backfill orchestration, and
 > configuration hot-reload. Test project: `AlgoTradeForge.HistoryLoader.Tests`.
 
 **Code Organization conventions**:
 - Each project uses namespace `AlgoTradeForge.<Layer>`
 - Domain project exposes internals to its test project via `InternalsVisibleTo`
-- CandleIngestor exposes internals to Infrastructure.Tests via `InternalsVisibleTo`
 - Application references Domain; Infrastructure references Application;
-  WebApi references Application, Domain, and Infrastructure;
-  CandleIngestor references Application only
+  WebApi references Application, Domain, and Infrastructure
 - HistoryLoader projects follow independent clean architecture layering:
   HistoryLoader.WebApi → Infrastructure → Application → Domain
 - Test projects mirror the source project folder structure
@@ -576,4 +600,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.8.2 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-04-26
+**Version**: 1.8.4 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-05-16

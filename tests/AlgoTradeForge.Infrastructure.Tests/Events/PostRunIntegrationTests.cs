@@ -40,7 +40,7 @@ public class PostRunIntegrationTests : IDisposable
     }
 
     [Fact]
-    public void FullBacktest_ProducesIndexSqliteAndTradesDb()
+    public async Task FullBacktest_ProducesIndexSqliteAndTradesDb()
     {
         // Arrange — run engine through JSONL sink
         var identity = new RunIdentity
@@ -56,7 +56,7 @@ public class PostRunIntegrationTests : IDisposable
 
         var eventLogRoot = Path.Combine(_testRoot, "EventLogs");
         var storageOptions = new EventLogStorageOptions { Root = eventLogRoot };
-        using var sink = new JsonlFileSink(identity, storageOptions, new FileStorage());
+        using var sink = new JsonlFileSink(identity, storageOptions, new LocalFileStorage());
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
@@ -80,7 +80,7 @@ public class PostRunIntegrationTests : IDisposable
             result.Fills.Count,
             result.Duration);
 
-        sink.WriteMeta(summary);
+        await sink.WriteMeta(summary, TestContext.Current.CancellationToken);
         sink.Dispose();
 
         // Run pipeline
@@ -166,7 +166,7 @@ public class PostRunIntegrationTests : IDisposable
     }
 
     [Fact]
-    public void CrashRecovery_RebuildFromJsonl_MatchesOriginal()
+    public async Task CrashRecovery_RebuildFromJsonl_MatchesOriginal()
     {
         // Arrange — run engine through JSONL sink
         var identity = new RunIdentity
@@ -182,7 +182,7 @@ public class PostRunIntegrationTests : IDisposable
 
         var eventLogRoot = Path.Combine(_testRoot, "EventLogs");
         var storageOptions = new EventLogStorageOptions { Root = eventLogRoot };
-        using var sink = new JsonlFileSink(identity, storageOptions, new FileStorage());
+        using var sink = new JsonlFileSink(identity, storageOptions, new LocalFileStorage());
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
@@ -203,7 +203,7 @@ public class PostRunIntegrationTests : IDisposable
             result.EquityCurve.Count > 0 ? result.EquityCurve[^1].Value : 100_000L,
             result.Fills.Count,
             result.Duration);
-        sink.WriteMeta(summary);
+        await sink.WriteMeta(summary, TestContext.Current.CancellationToken);
         sink.Dispose();
 
         // Build original

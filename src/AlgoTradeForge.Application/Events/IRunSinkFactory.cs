@@ -3,7 +3,7 @@ namespace AlgoTradeForge.Application.Events;
 public interface IRunSink : ISink, IDisposable
 {
     string RunFolderPath { get; }
-    void WriteMeta(RunSummary summary);
+    Task WriteMeta(RunSummary summary, CancellationToken ct = default);
 }
 
 public interface IRunSinkFactory

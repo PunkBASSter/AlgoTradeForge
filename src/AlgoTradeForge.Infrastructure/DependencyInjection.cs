@@ -32,7 +32,9 @@ public static class DependencyInjection
         services.AddSingleton<IStrategyFactory>(factory);
         services.AddSingleton<IOptimizationStrategyFactory>(factory);
 
-        services.AddSingleton<IFileStorage, FileStorage>();
+        services.Configure<StorageOptions>(_ => { });
+        services.AddSingleton<IFileStorage, LocalFileStorage>();
+        services.AddSingleton<IPartitionTailIndex, LocalTailIndex>();
         services.AddSingleton<IRunSinkFactory, JsonlRunSinkFactory>();
         services.AddSingleton<IEventIndexBuilder, SqliteEventIndexBuilder>();
         services.AddSingleton<ITradeDbWriter, SqliteTradeDbWriter>();

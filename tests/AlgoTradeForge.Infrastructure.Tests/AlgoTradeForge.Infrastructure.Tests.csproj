@@ -23,9 +23,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\AlgoTradeForge.CandleIngestor\AlgoTradeForge.CandleIngestor.csproj">
-      <PrivateAssets>all</PrivateAssets>
-    </ProjectReference>
     <ProjectReference Include="..\..\src\AlgoTradeForge.Infrastructure\AlgoTradeForge.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\AlgoTradeForge.Application\AlgoTradeForge.Application.csproj" />
     <ProjectReference Include="..\..\src\AlgoTradeForge.Domain\AlgoTradeForge.Domain.csproj" />

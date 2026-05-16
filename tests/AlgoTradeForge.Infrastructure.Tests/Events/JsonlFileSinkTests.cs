@@ -11,7 +11,7 @@ namespace AlgoTradeForge.Infrastructure.Tests.Events;
 public class JsonlFileSinkTests : IDisposable
 {
     private readonly string _testRoot;
-    private readonly FileStorage _fs = new();
+    private readonly LocalFileStorage _fs = new();
 
     public JsonlFileSinkTests()
     {
@@ -50,7 +50,7 @@ public class JsonlFileSinkTests : IDisposable
     }
 
     [Fact]
-    public void Write_ProducesValidJsonlLines()
+    public async Task Write_ProducesValidJsonlLines()
     {
         var identity = MakeIdentity();
         var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
@@ -62,7 +62,7 @@ public class JsonlFileSinkTests : IDisposable
         sink.Dispose();
 
         var path = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var lines = _fs.ReadAllLines(path);
+        var lines = await _fs.ReadAllLines(path, TestContext.Current.CancellationToken);
         Assert.Equal(2, lines.Length);
 
         var doc1 = JsonDocument.Parse(lines[0]);
@@ -72,7 +72,7 @@ public class JsonlFileSinkTests : IDisposable
     }
 
     [Fact]
-    public void Write_SequenceOrdering_Preserved()
+    public async Task Write_SequenceOrdering_Preserved()
     {
         var identity = MakeIdentity();
         var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
@@ -83,7 +83,7 @@ public class JsonlFileSinkTests : IDisposable
         sink.Dispose();
 
         var path = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var lines = _fs.ReadAllLines(path);
+        var lines = await _fs.ReadAllLines(path, TestContext.Current.CancellationToken);
         Assert.Equal(5, lines.Length);
 
         for (var i = 0; i < 5; i++)
@@ -94,7 +94,7 @@ public class JsonlFileSinkTests : IDisposable
     }
 
     [Fact]
-    public void ConcurrentRead_WhileWriting_Succeeds()
+    public async Task ConcurrentRead_WhileWriting_Succeeds()
     {
         var identity = MakeIdentity();
         using var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
@@ -103,23 +103,23 @@ public class JsonlFileSinkTests : IDisposable
 
         // Read with FileShare.ReadWrite so we can read while sink is writing
         var path = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var lines = _fs.ReadAllLines(path);
+        var lines = await _fs.ReadAllLines(path, TestContext.Current.CancellationToken);
         Assert.Single(lines);
     }
 
     [Fact]
-    public void WriteMeta_CreatesMetaJson()
+    public async Task WriteMeta_CreatesMetaJson()
     {
         var identity = MakeIdentity();
         using var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
 
         var summary = new RunSummary(1000, 105_000, 42, TimeSpan.FromSeconds(3.5));
-        sink.WriteMeta(summary);
+        await sink.WriteMeta(summary, TestContext.Current.CancellationToken);
 
         var metaPath = Path.Combine(sink.RunFolderPath, "meta.json");
         Assert.True(File.Exists(metaPath));
 
-        var json = _fs.ReadAllText(metaPath);
+        var json = await _fs.ReadAllText(metaPath, TestContext.Current.CancellationToken);
         var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
@@ -160,7 +160,7 @@ public class JsonlFileSinkTests : IDisposable
     }
 
     [Fact]
-    public void Integration_ThroughEventBus_WritesEvents()
+    public async Task Integration_ThroughEventBus_WritesEvents()
     {
         var identity = MakeIdentity();
         using var sink = new JsonlFileSink(identity, MakeOptions(), _fs);
@@ -171,7 +171,7 @@ public class JsonlFileSinkTests : IDisposable
 
         // Read with FileShare.ReadWrite so we can read while sink is writing
         var path = Path.Combine(sink.RunFolderPath, "events.jsonl");
-        var lines = _fs.ReadAllLines(path);
+        var lines = await _fs.ReadAllLines(path, TestContext.Current.CancellationToken);
         Assert.Single(lines);
 
         var doc = JsonDocument.Parse(lines[0]);
