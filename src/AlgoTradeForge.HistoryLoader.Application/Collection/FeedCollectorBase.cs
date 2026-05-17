@@ -45,7 +45,7 @@ public abstract class FeedCollectorBase(
             gaps.Add(new DataGap { FromMs = previousTs, ToMs = currentTs });
     }
 
-    protected void UpdateFeedStatus(
+    protected async Task UpdateFeedStatus(
         string assetDir,
         string feedName,
         string interval,
@@ -53,9 +53,10 @@ public abstract class FeedCollectorBase(
         long lastTs,
         long recordCount,
         CollectionHealth health = CollectionHealth.Healthy,
-        List<DataGap>? newGaps = null)
+        List<DataGap>? newGaps = null,
+        CancellationToken ct = default)
     {
-        var existing = FeedStatusStore.Load(assetDir, feedName, interval);
+        var existing = await FeedStatusStore.Load(assetDir, feedName, interval, ct);
 
         IReadOnlyList<DataGap> mergedGaps = existing?.Gaps ?? [];
         if (newGaps is { Count: > 0 })
@@ -81,6 +82,6 @@ public abstract class FeedCollectorBase(
             Health = resolvedHealth
         };
 
-        FeedStatusStore.Save(assetDir, feedName, interval, status);
+        await FeedStatusStore.Save(assetDir, feedName, interval, status, ct);
     }
 }

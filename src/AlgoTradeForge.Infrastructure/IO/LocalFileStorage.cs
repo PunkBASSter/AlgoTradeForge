@@ -30,7 +30,10 @@ public sealed class LocalFileStorage : IFileStorage
     private string Resolve(string key)
     {
         if (string.IsNullOrEmpty(key)) throw new ArgumentException("key must not be empty", nameof(key));
-        // TODO PR 4: remove absolute-path bypass once all call sites build keys via StorageKeys.
+        // TODO PR 4b/4c: remove absolute-path bypass once aggregation/event call sites use
+        // StorageKeys. AppSettingsWriter intentionally relies on this bypass — its target is
+        // the host content-root appsettings.json (not data-root content) and must keep an
+        // absolute path even after the bypass goes away.
         if (Path.IsPathRooted(key)) return key;
         if (string.IsNullOrEmpty(_dataRoot)) return key;
         var native = key.Replace('/', Path.DirectorySeparatorChar);
@@ -212,6 +215,10 @@ public sealed class LocalFileStorage : IFileStorage
             if (_stream is null) throw new ObjectDisposedException(nameof(LocalWriteSession));
 
             await _stream.FlushAsync(ct);
+            // Drive contents past the OS cache before the rename. Without flushToDisk:true, NTFS
+            // can commit the new file length on unclean shutdown but leave the data pages zeroed,
+            // producing a same-size, all-zero file that crashes the next deserialize.
+            _stream.Flush(flushToDisk: true);
             await _stream.DisposeAsync();
             _stream = null;
             File.Move(_tmpPath, _finalPath, overwrite: true);

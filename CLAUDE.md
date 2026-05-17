@@ -113,6 +113,21 @@ All monetary/price values in the Domain layer use `long` (Int64). When convertin
   - A non-generic + generic interface pair where one derives from the other (e.g., `IFoo` + `IFoo<T> : IFoo`) MAY share a file.
 - **Extension methods** belong in their own file alongside the interface they extend (e.g., `IPartitionTailIndex.cs` + `PartitionTailIndexExtensions.cs`).
 
+### Resource Release Convention (Constitution v1.9.1)
+
+- **Prefer `using` over `try` / `finally`** whenever the `finally` is purely a release call. The modern form is the brace-less declaration:
+  ```csharp
+  using var stream = File.OpenRead(path);
+  ```
+  No parentheses, no `{ }` block — the resource is released when the enclosing scope exits.
+- **`SemaphoreSlim` mutex use case** — acquire via `SemaphoreSlimExtensions.LockAsync` (`AlgoTradeForge.Application.Threading`):
+  ```csharp
+  using var _ = await _gate.LockAsync(ct);
+  await DoWorkUnderLock(...);
+  ```
+  Do NOT write `await _gate.WaitAsync(ct); try { ... } finally { _gate.Release(); }` for new code. `RunProgressCache.AcquireRunKeyLockAsync` is the older per-key sibling; the generic extension is the right choice for a single static gate.
+- `try` / `finally` remains correct when the cleanup branches on state, suppresses specific exceptions, or coordinates with anything beyond a single release call.
+
 ### Async I/O Convention (Constitution v1.8.3)
 
 - **I/O-bound APIs MUST be async.** Any interface that fronts file storage, network HTTP, database access, an external service client, or a message broker MUST expose `Task` / `Task<T>` / `IAsyncEnumerable<T>` signatures with `CancellationToken ct = default` on every method.

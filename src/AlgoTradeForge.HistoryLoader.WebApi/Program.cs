@@ -64,10 +64,15 @@ builder.Services.AddSingleton<IFeedCollector, LsRatioTopPositionsFeedCollector>(
 builder.Services.AddSingleton<IFeedCollector, LiquidationFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, AggTradeFeedCollector>();
 
-// Persists discovered feed dates back to appsettings.json
+// Persists discovered feed dates back to appsettings.json. Binds LocalFileStorage directly
+// (not IFileStorage) because the binary's content-root appsettings.json is host config and
+// must never be routed to S3.
 var appSettingsPath = Path.Combine(builder.Environment.ContentRootPath, "appsettings.json");
 builder.Services.AddSingleton<ISettingsWriter>(sp =>
-    new AppSettingsWriter(appSettingsPath, sp.GetRequiredService<ILogger<AppSettingsWriter>>()));
+    new AppSettingsWriter(
+        appSettingsPath,
+        new AlgoTradeForge.Infrastructure.IO.LocalFileStorage(),
+        sp.GetRequiredService<ILogger<AppSettingsWriter>>()));
 
 builder.Services.AddSingleton<ICollectionCircuitBreaker, CollectionCircuitBreaker>();
 builder.Services.AddSingleton<SymbolCollector>();

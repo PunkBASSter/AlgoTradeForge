@@ -1,6 +1,6 @@
 # Storage Abstraction: Local FS + S3 backends for HistoryLoader and Backtest Engine
 
-> **Status (2026-05-17):** PR 1–3 complete. PR 3 introduced `BufferedPartitionWriter` + `BufferedWriterFlushService` and migrated the four HistoryLoader CSV writers (candle, feed, daily-tick, daily-book-ticker) to buffer-then-PUT atop `IFileStorage`. Torn-row recovery deleted. PR 4–5 outstanding.
+> **Status (2026-05-17):** PR 1–3 complete; PR 4a complete. PR 3 introduced `BufferedPartitionWriter` + `BufferedWriterFlushService` and migrated the four HistoryLoader CSV writers (candle, feed, daily-tick, daily-book-ticker) to buffer-then-PUT atop `IFileStorage`. Torn-row recovery deleted. PR 4a routed `IFeedStatusStore` + `ISettingsWriter` through `IFileStorage` (async, no `Async` suffix), bound `AppSettingsWriter` to `LocalFileStorage` directly, and hardened `LocalWriteSession.Commit` with `Flush(flushToDisk: true)`. All test suites green (Domain 1024, Application 517, Infrastructure 249, HistoryLoader 575, WebApi 158). PR 4a.1 (ISchemaManager + FeedCatalog cascade), PR 4b (aggregation pipeline), PR 4c (JsonlFileSink + SimulationCacheFileStore), and PR 5 (S3) outstanding.
 
 ## Context
 
@@ -208,20 +208,27 @@ HistoryLoader writers — subclass `BufferedPartitionWriter` (PR 3):
 - `src/AlgoTradeForge.HistoryLoader.Infrastructure/Storage/DailyTickCsvWriter.cs`
 - `src/AlgoTradeForge.HistoryLoader.Infrastructure/Storage/DailyBookTickerCsvWriter.cs`
 
-HistoryLoader metadata/state (PR 4):
-- `src/AlgoTradeForge.HistoryLoader.Infrastructure/Storage/FeedSchemaManager.cs`
+HistoryLoader state (PR 4a):
 - `src/AlgoTradeForge.HistoryLoader.Infrastructure/State/FeedStatusManager.cs`
 - `src/AlgoTradeForge.HistoryLoader.WebApi/AppSettingsWriter.cs` (binds to `LocalFileStorage` only)
 
-HistoryLoader aggregation (PR 4):
+HistoryLoader schema manager (PR 4a.1):
+- `src/AlgoTradeForge.HistoryLoader.Infrastructure/Storage/FeedSchemaManager.cs`
+- `src/AlgoTradeForge.HistoryLoader.Application/Catalog/FeedCatalog.cs` (5 sync→async API methods)
+- `src/AlgoTradeForge.HistoryLoader.WebApi/Endpoints/AggregationEndpoints.cs`
+- `src/AlgoTradeForge.HistoryLoader.WebApi/Collection/FundingInfoRefreshService.cs`
+- `src/AlgoTradeForge.HistoryLoader.Application/Aggregation/AggregationPipeline.cs` (its three `Ensure*` call sites)
+
+HistoryLoader aggregation (PR 4b):
 - `src/AlgoTradeForge.HistoryLoader.Application/Aggregation/PartitionedSourceReader.cs`
 - `src/AlgoTradeForge.HistoryLoader.Application/Aggregation/PartitionedSinkWriter.cs`
 - `src/AlgoTradeForge.HistoryLoader.Application/Aggregation/OverwritePathWriter.cs`
 - `src/AlgoTradeForge.HistoryLoader.Application/Aggregation/AggregatedDirSweeper.cs`
-- `src/AlgoTradeForge.HistoryLoader.WebApi/StartupSweepService.cs` (calls sweeper)
+- `src/AlgoTradeForge.HistoryLoader.Application/Aggregation/StartupSweepService.cs` (calls sweeper)
+- `src/AlgoTradeForge.HistoryLoader.Application/Aggregation/AggregationPipeline.cs`
 
-Events + cache (PR 4):
-- `src/AlgoTradeForge.Infrastructure/Events/JsonlFileSink.cs` (already on `IFileStorage`; add session-write + flush)
+Events + cache (PR 4c):
+- `src/AlgoTradeForge.Infrastructure/Events/JsonlFileSink.cs` (hot event path → `OpenWriteSession` + periodic flush; `WriteMeta` is already on `IFileStorage`)
 - `src/AlgoTradeForge.Infrastructure/Validation/SimulationCacheFileStore.cs`
 
 DI:
@@ -274,6 +281,16 @@ The work decomposes into independently shippable PRs to keep review tractable:
 
 3. **PR 3 — `BufferedPartitionWriter` + writer migration.** ✅ **Complete.** Added `BufferedPartitionWriter` (read-merge-write flush, watermark-only resume, no buffer hydration), `BufferedWriterFlushService` (single hosted service driving periodic + shutdown flush), `HistoryLoaderStorageOptions`. Extended `IPartitionTailIndex` with `GetLastLine`. Migrated the four writers; deleted ~300 LOC of torn-row recovery + LRU dedup caches + active-day stream cache. Four `ResumeFrom` interfaces became `Task<...>` async with `CancellationToken`. Tests rewritten to inject `LocalFileStorage(tempDir)` + `LocalTailIndex`; added new resume-watermark / tail-spy / threshold-flush / failure-retry tests.
 
-4. **PR 4 — Metadata + aggregation migration.** `FeedSchemaManager`, `FeedStatusManager`, `PartitionedSourceReader`, `PartitionedSinkWriter`, `OverwritePathWriter`, `AggregatedDirSweeper`, `JsonlFileSink` session-write upgrade. Migrate call sites from absolute paths to `StorageKeys` so the absolute-path bypass in `LocalFileStorage` can be removed.
+4. **PR 4 — Metadata + aggregation migration.** Split into three independently shippable chunks because the call-site fan-out is too broad for one PR and the aggregation pipeline's streaming append semantics need their own design pass:
+
+   - **PR 4a (this stage) — `IFeedStatusStore` + `ISettingsWriter` async; `LocalFileStorage` flush hardening.** Convert `IFeedStatusStore` and `ISettingsWriter` to async (no `Async` suffix per Constitution v1.8.3) and route their implementations through `IFileStorage`. `AppSettingsWriter` binds `LocalFileStorage` directly because the binary's `appsettings.json` is not data-root content. Tighten `LocalWriteSession.Commit` to call `Flush(flushToDisk: true)` — the doc has always promised this and `FeedStatusManager` relied on it for NTFS zero-extension safety. Update ~14 caller sites (`FeedCollectorBase`, three `*StreamService` flushers, `AggTradeFeedCollector`, `CandleFeedCollector`, `GenericFeedCollectorBase`, `SymbolCollector`, `StatusEndpoints` GET handlers) to await. `ISchemaManager` (and the `FeedSchemaManager` `ReaderWriterLockSlim`-vs-`SemaphoreSlim` rework) intentionally stays out of 4a — its `Load` flows through `FeedCatalog`'s `IMemoryCache`-backed sync API and a half-dozen sync endpoint handlers, all of which would need to go async in lock-step. That sub-migration is PR 4a.1.
+
+   - **PR 4a.1 — `ISchemaManager` + `FeedCatalog` + Aggregation endpoints async.** Convert every `ISchemaManager` method to async, swap `ReaderWriterLockSlim` for per-asset `SemaphoreSlim` in `FeedSchemaManager`, propagate `Task` through `IFeedCatalog` (5 methods) and the catalog/aggregation/status endpoint handlers and `FundingInfoRefreshService`/`AggregationPipeline`. Update the test fan-out (`FeedSchemaManagerTests`, `FeedSchemaManagerCascadeTests`, `FeedSchemaManagerStressTests`, `FeedCatalogTests`, `FeedMetadataValidationTests`, `StartupSweepTests`, all `AggregationPipeline*Tests`).
+
+   - **PR 4b — Aggregation pipeline.** `PartitionedSourceReader` → async + `IFileStorage.ListKeys` / `OpenRead`. `PartitionedSinkWriter` + `OverwritePathWriter` → `IObjectWriteSession`-based streaming with the `.tmp + Move` cycle becoming explicit `Commit()`. `AggregatedDirSweeper` + `StartupSweepService` → `ListKeys` / `DeleteByPrefix`. `AggregationPipeline.Run` becomes async (it orchestrates all of the above). The sweeper's "enumerate immediate subdirs" semantics on S3 need to be derived from key prefixes since S3 has no real directories — this is the structural reason for the separate PR.
+
+   - **PR 4c — Run/event/cache storage.** `JsonlFileSink` hot event path → `OpenWriteSession` with periodic flush (per-event PutObject is prohibitive on S3; the session-based pattern with a flush hosted service mirrors `BufferedPartitionWriter`). `SimulationCacheFileStore` → `OpenWriteSession` for binary streaming + `OpenRead` for typed binary reads. The hot tailing-while-writing pattern of `events.jsonl` is structurally different from per-partition append (live tailers want incremental visibility), so the session policy needs design that's distinct from `BufferedPartitionWriter`'s read-merge-write.
+
+   Migration of call sites from absolute paths to `StorageKeys` (so the absolute-path bypass in `LocalFileStorage` can be removed) is deferred to PR 4b/4c. PR 4a keeps using absolute paths via the bypass — every modified call site builds the final path via `Path.Combine` and hands it to `IFileStorage`, which forwards rooted paths unchanged.
 
 5. **PR 5 — S3 backend.** Add `AWSSDK.S3` package, implement `S3FileStorage` + `SidecarTailIndex`, wire DI selection across both hosts (WebApi, HistoryLoader.WebApi), MinIO-based contract tests (inheriting `FileStorageContractTests`), MinIO-based integration test for backtest reads. Deprecate `HistoryLoader.DataRoot` / `CandleStorage.DataRoot` config keys with one-release migration warning.

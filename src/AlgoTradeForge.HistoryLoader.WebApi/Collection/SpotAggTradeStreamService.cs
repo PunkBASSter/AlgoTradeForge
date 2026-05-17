@@ -224,7 +224,7 @@ internal sealed class SpotAggTradeStreamService(
             var now = DateTimeOffset.UtcNow;
             if (now - lastStatusFlush >= StatusFlushInterval)
             {
-                FlushStatus(statusTracker);
+                await FlushStatus(statusTracker, ct);
                 lastStatusFlush = now;
             }
             if (now - lastHeartbeat >= HeartbeatInterval)
@@ -236,7 +236,7 @@ internal sealed class SpotAggTradeStreamService(
             }
         }
 
-        FlushStatus(statusTracker);
+        await FlushStatus(statusTracker, ct);
     }
 
     /// <summary>
@@ -310,16 +310,16 @@ internal sealed class SpotAggTradeStreamService(
         }
     }
 
-    private void FlushStatus(Dictionary<string, (long count, long? firstTs, long? lastTs)> tracker)
+    private async Task FlushStatus(Dictionary<string, (long count, long? firstTs, long? lastTs)> tracker, CancellationToken ct)
     {
         foreach (var (assetDir, st) in tracker)
         {
             if (st.count == 0)
                 continue;
 
-            var existing = feedStatusStore.Load(assetDir, FeedNames.Ticks, "");
+            var existing = await feedStatusStore.Load(assetDir, FeedNames.Ticks, "", ct);
 
-            feedStatusStore.Save(assetDir, FeedNames.Ticks, "", new FeedStatus
+            await feedStatusStore.Save(assetDir, FeedNames.Ticks, "", new FeedStatus
             {
                 FeedName = FeedNames.Ticks,
                 Interval = "",
@@ -328,7 +328,7 @@ internal sealed class SpotAggTradeStreamService(
                 LastRunUtc = DateTimeOffset.UtcNow,
                 RecordCount = (existing?.RecordCount ?? 0) + st.count,
                 Health = CollectionHealth.Healthy
-            });
+            }, ct);
         }
 
         tracker.Clear();

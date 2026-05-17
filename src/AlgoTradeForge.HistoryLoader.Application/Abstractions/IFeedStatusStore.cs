@@ -4,6 +4,6 @@ namespace AlgoTradeForge.HistoryLoader.Application.Abstractions;
 
 public interface IFeedStatusStore
 {
-    FeedStatus? Load(string assetDir, string feedName, string interval);
-    void Save(string assetDir, string feedName, string interval, FeedStatus status);
+    Task<FeedStatus?> Load(string assetDir, string feedName, string interval, CancellationToken ct = default);
+    Task Save(string assetDir, string feedName, string interval, FeedStatus status, CancellationToken ct = default);
 }

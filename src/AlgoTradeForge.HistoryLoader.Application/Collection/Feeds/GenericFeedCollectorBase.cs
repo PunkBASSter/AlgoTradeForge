@@ -73,8 +73,8 @@ public abstract class GenericFeedCollectorBase(
             catch (IOException ex)
             {
                 Logger.LogCritical(ex, "Disk I/O error writing {Feed} for {AssetDir}", FeedName, assetDir);
-                UpdateFeedStatus(assetDir, FeedName, interval, firstTs, lastTs, recordCount,
-                    CollectionHealth.Error, gaps);
+                await UpdateFeedStatus(assetDir, FeedName, interval, firstTs, lastTs, recordCount,
+                    CollectionHealth.Error, gaps, ct);
                 throw;
             }
 
@@ -87,8 +87,8 @@ public abstract class GenericFeedCollectorBase(
         }
 
         if (recordCount > 0)
-            UpdateFeedStatus(assetDir, FeedName, interval, firstTs, lastTs, recordCount,
-                newGaps: gaps);
+            await UpdateFeedStatus(assetDir, FeedName, interval, firstTs, lastTs, recordCount,
+                newGaps: gaps, ct: ct);
 
         if (recordCount > 0)
             Logger.LogInformation(

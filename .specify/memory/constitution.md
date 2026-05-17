@@ -1,23 +1,26 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.8.4 → 1.9.0
+Version change: 1.9.0 → 1.9.1
 Modified principles: None (all 6 unchanged)
 Added sections: None
 Modified sections:
-  - Backend → Code Style: Added a file-organization rule. Each class,
-    interface, record, or enum MUST live in its own .cs file named after
-    the type. Two narrow exceptions are codified: (1) a single-line record
-    or record struct that accompanies an interface MAY share that
-    interface's file (e.g., TickResumeState beside ITickFeedWriter);
-    (2) a non-generic + generic interface pair where one derives from the
-    other MAY share a file. Extension methods MUST live in their own file
-    alongside the interface they extend (e.g., IPartitionTailIndex.cs +
-    PartitionTailIndexExtensions.cs).
-Trigger: Codify the existing reviewer preference for one-type-per-file so
-new code stays grep-friendly and PR diffs stay focused, while explicitly
-allowing the small set of cases where co-locating types is more readable
-than splitting them.
+  - Backend → Code Style: Added a resource-release rule. MUST prefer
+    `using` over explicit try/finally when the `finally` clause is purely
+    a release call (form choice — `using var x = ...;` declaration vs
+    block — stays governed by the pre-existing rule immediately above).
+    For primitives that lack a built-in scope-release pattern (notably
+    SemaphoreSlim, which doubles as a counting primitive), acquire via a
+    thin extension that returns an IDisposable releaser — the canonical
+    helper is `SemaphoreSlimExtensions.LockAsync`, used as
+    `using var _ = await gate.LockAsync(ct);`. try/finally remains
+    appropriate when the cleanup needs branching logic or coordinates
+    with state beyond simple disposal.
+Trigger: AppSettingsWriter (PR 4a of storage abstraction) needed an
+async-aware mutex; the existing try/finally around SemaphoreSlim.WaitAsync
+was noisier than necessary and inconsistent with the codebase's existing
+`using (await ...AcquireRunKeyLockAsync(...))` pattern in RunProgressCache.
+Codifying the preference and providing a shared helper closes that gap.
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible
   - .specify/templates/spec-template.md ✅ compatible
@@ -289,6 +292,19 @@ frontend/
   block-scoped `using (var x = ...) { }` unless early disposal within a
   larger scope is required (e.g., releasing a file handle before a
   subsequent read in the same method)
+- MUST prefer `using` over explicit `try` / `finally` when the `finally`
+  block is purely a resource-release call. The form choice (declaration
+  vs. block) is governed by the rule above. For types that lack a
+  built-in scope-release pattern (notably `SemaphoreSlim`, whose
+  `Release()` doubles as a counting primitive), acquire through a thin
+  extension that returns an `IDisposable` releaser. The canonical helper
+  is `SemaphoreSlimExtensions.LockAsync` (in
+  `AlgoTradeForge.Application.Threading`), used as
+  `using var _ = await gate.LockAsync(ct);` instead of
+  `await gate.WaitAsync(ct); try { ... } finally { gate.Release(); }`.
+  `try` / `finally` remains correct when the cleanup branches on state,
+  swallows specific exceptions, or coordinates with anything beyond a
+  single release call.
 - MUST prefer explicit `FileStream` constructor over static `File` class
   helpers (`File.ReadLines`, `File.ReadAllText`, `File.Open`, etc.) when
   `FileShare` or `FileMode` control is needed. Static `File` helpers are
@@ -607,4 +623,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.9.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-05-17
+**Version**: 1.9.1 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-05-17

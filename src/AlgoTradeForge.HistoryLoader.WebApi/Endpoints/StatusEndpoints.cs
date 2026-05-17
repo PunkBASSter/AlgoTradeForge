@@ -18,9 +18,10 @@ internal static class StatusEndpoints
         return group;
     }
 
-    private static IResult GetAllStatus(
+    private static async Task<IResult> GetAllStatus(
         IOptionsMonitor<HistoryLoaderOptions> options,
-        IFeedStatusStore feedStatusStore)
+        IFeedStatusStore feedStatusStore,
+        CancellationToken ct)
     {
         var config = options.CurrentValue;
         var symbols = new List<SymbolStatus>();
@@ -32,7 +33,7 @@ internal static class StatusEndpoints
 
             foreach (var feed in asset.Feeds)
             {
-                var status = feedStatusStore.Load(assetDir, feed.Name, feed.Interval);
+                var status = await feedStatusStore.Load(assetDir, feed.Name, feed.Interval, ct);
                 var health = status?.Health.ToString() ?? "Unknown";
                 var gapCount = status?.Gaps.Count ?? 0;
 
@@ -55,11 +56,12 @@ internal static class StatusEndpoints
         return Results.Json(new StatusResponse(symbols));
     }
 
-    private static IResult GetSymbolStatus(
+    private static async Task<IResult> GetSymbolStatus(
         string symbol,
         IOptionsMonitor<HistoryLoaderOptions> options,
         IFeedStatusStore feedStatusStore,
-        BackfillOrchestrator orchestrator)
+        BackfillOrchestrator orchestrator,
+        CancellationToken ct)
     {
         var config = options.CurrentValue;
 
@@ -77,7 +79,7 @@ internal static class StatusEndpoints
 
         foreach (var feed in asset.Feeds)
         {
-            var status = feedStatusStore.Load(resolvedAssetDir, feed.Name, feed.Interval);
+            var status = await feedStatusStore.Load(resolvedAssetDir, feed.Name, feed.Interval, ct);
             if (status is not null)
             {
                 feedDetails.Add(new FeedStatusDetail(
