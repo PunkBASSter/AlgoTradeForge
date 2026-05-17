@@ -42,7 +42,7 @@ public sealed class AggTradeFeedCollector(
         // Re-fetch the boundary ms (inclusive) and let the writer's agg_id dedup drop
         // already-persisted records — ts+1 advancement would silently skip ticks that share a
         // millisecond.
-        var resume = tickWriter.ResumeFrom(assetDir);
+        var resume = await tickWriter.ResumeFrom(assetDir, ct);
         if (resume is { } r && r.LastTsMs >= fromMs)
             fromMs = r.LastTsMs;
 

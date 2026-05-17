@@ -17,15 +17,10 @@ public readonly record struct TickResumeState(long LastAggId, long LastTsMs);
 public interface ITickFeedWriter
 {
     /// <summary>
-    /// Appends a tick record to <c>{assetDir}/ticks/&lt;YYYY-MM-DD&gt;.csv</c>. Values must be
-    /// <c>[price, qty, is_buyer_maker, agg_id]</c>. Records whose <c>agg_id</c> is at-or-below
-    /// the cached last-written id for that day are silently dropped.
+    /// Values must be <c>[price, qty, is_buyer_maker, agg_id]</c>. Records whose <c>agg_id</c>
+    /// is at-or-below the partition watermark are silently dropped.
     /// </summary>
     void Write(string assetDir, FeedRecord record);
 
-    /// <summary>
-    /// Returns the last <c>(aggId, ts)</c> pair from the latest daily partition, or <c>null</c>
-    /// if none exists. Repairs torn last-row writes by truncating to the last clean newline.
-    /// </summary>
-    TickResumeState? ResumeFrom(string assetDir);
+    Task<TickResumeState?> ResumeFrom(string assetDir, CancellationToken ct = default);
 }

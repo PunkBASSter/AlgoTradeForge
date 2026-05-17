@@ -5,5 +5,5 @@ namespace AlgoTradeForge.HistoryLoader.Application.Abstractions;
 public interface IFeedWriter
 {
     void Write(string assetDir, string feedName, string interval, string[] columns, FeedRecord record);
-    long? ResumeFrom(string assetDir, string feedName, string interval);
+    Task<long?> ResumeFrom(string assetDir, string feedName, string interval, CancellationToken ct = default);
 }

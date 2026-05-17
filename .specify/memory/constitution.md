@@ -1,30 +1,23 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.8.3 → 1.8.4
+Version change: 1.8.4 → 1.9.0
 Modified principles: None (all 6 unchanged)
 Added sections: None
 Modified sections:
-  - Backend → Code Style: Tightened the XML / inline comment rule. New
-    written XML comments MUST be terse (prefer one line; several lines
-    acceptable only when the documented behavior is genuinely non-
-    obvious or non-conventional). Multi-paragraph doc-comment essays,
-    restating the method signature in prose, and paraphrasing the type
-    name back into English are prohibited. The "when comments are
-    allowed" allowlist (non-obvious algorithm, known pitfall/workaround,
-    TODO/HACK with justification) is unchanged.
-  - Solution Layout + Code Organization conventions: Removed the
-    `AlgoTradeForge.CandleIngestor` worker project and its dedicated
-    "exempt from clean architecture" architecture note. The project
-    is superseded by `AlgoTradeForge.HistoryLoader.*` (full clean-
-    architecture subsystem). HistoryLoader's architecture note no
-    longer contrasts itself with CandleIngestor. Test project tree
-    no longer lists the `CandleIngestion/` subfolder (those tests
-    are also deleted).
-Trigger: (a) Codify the existing reviewer preference so new code stays
-self-documenting and doesn't accrete narrative XML doc-comments that
-restate identifiers. (b) Retire the deprecated CandleIngestor worker;
-all candle / feed ingestion now flows through HistoryLoader.
+  - Backend → Code Style: Added a file-organization rule. Each class,
+    interface, record, or enum MUST live in its own .cs file named after
+    the type. Two narrow exceptions are codified: (1) a single-line record
+    or record struct that accompanies an interface MAY share that
+    interface's file (e.g., TickResumeState beside ITickFeedWriter);
+    (2) a non-generic + generic interface pair where one derives from the
+    other MAY share a file. Extension methods MUST live in their own file
+    alongside the interface they extend (e.g., IPartitionTailIndex.cs +
+    PartitionTailIndexExtensions.cs).
+Trigger: Codify the existing reviewer preference for one-type-per-file so
+new code stays grep-friendly and PR diffs stay focused, while explicitly
+allowing the small set of cases where co-locating types is more readable
+than splitting them.
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible
   - .specify/templates/spec-template.md ✅ compatible
@@ -302,6 +295,20 @@ frontend/
   acceptable only for simple one-shot reads/writes with no concurrent
   access. This prevents Windows file-locking issues where default
   `FileShare.Read` conflicts with concurrent writers.
+- **File organization (one type per file)**: Each class, interface,
+  record, record struct, or enum MUST live in its own `.cs` file named
+  after the type. This keeps the source tree grep-friendly and PR diffs
+  focused. Two narrow exceptions:
+  - A single-line record or record struct that accompanies an interface
+    MAY share that interface's file (e.g.,
+    `public readonly record struct TickResumeState(long LastAggId, long LastTsMs);`
+    beside `ITickFeedWriter` in `ITickFeedWriter.cs`).
+  - A non-generic + generic interface pair where one derives from the
+    other (e.g., `IFoo` and `IFoo<T> : IFoo`) MAY share a file.
+  - Extension methods MUST live in their own file named after the
+    extension class (e.g., `IPartitionTailIndex.cs` +
+    `PartitionTailIndexExtensions.cs`), not co-located with the
+    interface they extend.
 
 **API Design**:
 
@@ -600,4 +607,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.8.4 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-05-16
+**Version**: 1.9.0 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-05-17

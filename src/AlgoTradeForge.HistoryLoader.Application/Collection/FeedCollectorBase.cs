@@ -26,9 +26,9 @@ public abstract class FeedCollectorBase(
         long toMs,
         CancellationToken ct);
 
-    protected (long? ResumeTs, long AdjustedFromMs) ResolveFromMs(string assetDir, string feedName, string interval, long fromMs)
+    protected async Task<(long? ResumeTs, long AdjustedFromMs)> ResolveFromMs(string assetDir, string feedName, string interval, long fromMs, CancellationToken ct)
     {
-        var resumeTs = FeedWriter.ResumeFrom(assetDir, feedName, interval);
+        var resumeTs = await FeedWriter.ResumeFrom(assetDir, feedName, interval, ct);
         if (resumeTs.HasValue && resumeTs.Value >= fromMs)
             fromMs = resumeTs.Value + 1;
         return (resumeTs, fromMs);

@@ -30,7 +30,7 @@ public sealed class CandleFeedCollector(
         SchemaManager.EnsureCandleConfig(assetDir, assetConfig.DecimalDigits, interval);
 
         // Resume from last written timestamp
-        var resumeTs = candleWriter.ResumeFrom(assetDir, interval);
+        var resumeTs = await candleWriter.ResumeFrom(assetDir, interval, ct);
         if (resumeTs.HasValue && resumeTs.Value >= fromMs)
             fromMs = resumeTs.Value + 1;
 

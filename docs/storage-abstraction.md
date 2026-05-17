@@ -1,6 +1,6 @@
 # Storage Abstraction: Local FS + S3 backends for HistoryLoader and Backtest Engine
 
-> **Status (2026-05-16):** PR 1 complete — abstraction surface in place (async), `LocalFileStorage` migrated, contract test suite green. PR 2–5 outstanding.
+> **Status (2026-05-17):** PR 1–3 complete. PR 3 introduced `BufferedPartitionWriter` + `BufferedWriterFlushService` and migrated the four HistoryLoader CSV writers (candle, feed, daily-tick, daily-book-ticker) to buffer-then-PUT atop `IFileStorage`. Torn-row recovery deleted. PR 4–5 outstanding.
 
 ## Context
 
@@ -75,7 +75,7 @@ Notes:
 | `StorageOptions` | `src/AlgoTradeForge.Application/IO/StorageOptions.cs` | Bound from `Storage:*` config — `Backend` (`LocalFileSystem` \| `S3`), `Local:DataRoot`, `S3:{Endpoint, Region, Bucket, KeyPrefix, AccessKeyId, SecretAccessKey}`. |
 | `LocalFileStorage` (renamed from `FileStorage`) | `src/AlgoTradeForge.Infrastructure/IO/LocalFileStorage.cs` | Local backend. `key` → `Path.Combine(DataRoot, key.Replace('/', sep))`. Preserves atomic-rename + `flushToDisk:true` semantics. Treats absolute keys as pass-through so legacy callers (still passing absolute paths in PR 1) continue to work. |
 | `S3FileStorage` | `src/AlgoTradeForge.Infrastructure/IO/S3FileStorage.cs` | S3 backend using `AWSSDK.S3` NuGet (only new package). Uses bucket + key prefix from `StorageOptions`. Arrives in PR 5. |
-| `IPartitionTailIndex` + `LocalTailIndex` + `SidecarTailIndex` | `src/AlgoTradeForge.Application/IO/IPartitionTailIndex.cs`, `src/AlgoTradeForge.Infrastructure/IO/LocalTailIndex.cs`, `SidecarTailIndex.cs` (PR 5) | Cheap "what's the last timestamp in partition X?" lookup so writers don't pull the whole object on restart. Local impl reads tail of file directly; S3 impl reads a sidecar `{key}.tail` (8 bytes, one PutObject per flush). |
+| `IPartitionTailIndex` + `LocalTailIndex` + `SidecarTailIndex` | `src/AlgoTradeForge.Application/IO/IPartitionTailIndex.cs`, `src/AlgoTradeForge.Infrastructure/IO/LocalTailIndex.cs`, `SidecarTailIndex.cs` (PR 5) | Cheap last-row lookup so writers don't pull the whole object on restart. Exposes `GetLastTimestamp(key)` for candle/feed (col-0 dedup) and `GetLastLine(key)` for tick/book (col-3 / col-4 dedup — parser lives in the subclass). Local impl reads the file's 8 KiB tail; S3 impl reads a sidecar `{key}.tail` (one PutObject per flush). |
 
 DI registration in `src/AlgoTradeForge.Infrastructure/DependencyInjection.cs`:
 
@@ -93,21 +93,26 @@ services.AddSingleton<IPartitionTailIndex>(...);   // mirror selection
 
 ### Buffer-then-PUT writer pattern
 
-The four hot append writers — `CandleCsvWriter`, `FeedCsvWriter`, `DailyTickCsvWriter`, `DailyBookTickerCsvWriter` — get a common base class `BufferedPartitionWriter` in `src/AlgoTradeForge.HistoryLoader.Infrastructure/Storage/Buffered/`:
+The four hot append writers — `CandleCsvWriter`, `FeedCsvWriter`, `DailyTickCsvWriter`, `DailyBookTickerCsvWriter` — share a common base class `BufferedPartitionWriter` in `src/AlgoTradeForge.HistoryLoader.Infrastructure/Storage/Buffered/`:
 
-1. **Open partition** → if `IFileStorage.Exists(key)`, hydrate buffer by streaming `OpenRead(key)` lines into an in-memory `List<string>` (or a local spill `FileStream` if the partition exceeds a configurable threshold, default 16 MB). Use `IPartitionTailIndex.GetLastTimestamp(key)` to short-circuit when the caller only needs the dedupe watermark — no full read in that case.
-2. **AppendRow(...)** writes the formatted row into the buffer + updates in-memory `lastTimestamp`.
-3. **Flush()** publishes the whole buffer via `IFileStorage.WriteAllLines(key, buffer)`. Triggered by:
-   - month/day rollover (partition close — natural commit point),
-   - configurable interval (`HistoryLoader:Storage:FlushIntervalSeconds`, default 60s) per asset/feed,
-   - row count threshold (`FlushEveryRows`, default 1000),
-   - graceful shutdown (`IHostApplicationLifetime.ApplicationStopping`),
-   - explicit `FlushAsync()` from the calling collector.
-4. **Tail sidecar** updated alongside each flush so restarts don't re-read full partitions.
+1. **Resume** → on first contact with a partition (or after restart), the writer calls `IPartitionTailIndex.GetLastTimestamp(key)` (candle/feed) or `GetLastLine(key)` (tick/book) to recover only the dedup **watermark**. The in-memory buffer is NOT hydrated with existing rows — that would re-read every byte of a multi-megabyte daily tick partition just to know the last id, which is wasteful and quadratic in flush count.
+2. **AppendRow(...)** is synchronous and adds the formatted row to the buffer behind the per-partition semaphore. Rows whose dedup key is &le; the current watermark are silently dropped.
+3. **Flush()** is async and publishes via read-merge-write: `Exists(key)` → if yes, `ReadAllLines(key)` and concatenate buffered rows; if no, emit header + buffered rows. The whole partition is then `WriteAllLines(key, merged)` — atomic on local FS (`.tmp + Move`) and on S3 (single `PutObject`). Triggered by:
+   - month/day rollover (a new partition key in `AppendRow` creates a new buffer; the prior one stays dirty until the timer or threshold fires),
+   - configurable interval (`HistoryLoader:Storage:FlushIntervalSeconds`, default 60 s) driven by a single `BufferedWriterFlushService` hosted service,
+   - row count threshold (`HistoryLoader:Storage:FlushEveryRows`, default 1000) — fire-and-forget inside `AppendRow`, exceptions logged. A per-buffer `FlushInFlight` flag prevents back-pressure from stacking N concurrent flushes when the producer outpaces the publisher,
+   - graceful shutdown via `IHostApplicationLifetime.ApplicationStopping` (`BufferedWriterFlushService.StopAsync`, bounded by `HistoryLoader:Storage:ShutdownFlushTimeoutSeconds`, default 30 s),
+   - explicit `FlushAllAsync(ct)` from tests or operators.
 
-The existing per-asset/per-feed concurrency primitives (`WriteLockManager` semaphores, `Lock` gates) stay where they are — they protect the buffer, not the file handle. Torn-row recovery logic in `DailyTickCsvWriter` / `DailyBookTickerCsvWriter` is **deleted** — atomic publish means partial rows are impossible.
+The existing per-partition concurrency primitives stay: `WriteLockManager.GetLock(partitionKey)` is the only thing protecting buffer mutation and per-key flush — same role, different consumer (it used to serialize the file append). Torn-row recovery in `DailyTickCsvWriter` / `DailyBookTickerCsvWriter` is **deleted** — atomic publish makes partial rows structurally impossible.
 
-Crash semantics: rows in the in-memory buffer that haven't reached a Flush trigger are lost on hard crash. This is the tradeoff that was accepted by choosing the buffer-then-PUT model. Worst-case loss is `FlushIntervalSeconds` or `FlushEveryRows` rows per active partition.
+`HistoryLoader:Storage:InMemoryBufferLimitMB` (default 16) **only emits a warning** in PR 3 when the buffer's running byte total (sum of row lengths) exceeds the threshold; spill-to-disk is deferred until measurement shows it's needed. Realistic worst case at 60 s / 1000-row flush settings is ~80 KB per partition.
+
+**Flush cost scales with current partition size, not row count.** Each flush reads the existing object whole, appends buffered rows, then rewrites the whole partition. For monthly-partitioned candle/feed files this is fine (kilobytes per flush). For daily tick / book-ticker files growing through the day, the daily total bytes rewritten is roughly `Σᵢ partition_size_i` — i.e. quadratic in partition size, linear in the number of intra-day flushes. The mitigation is partition granularity: ticks/book are already day-partitioned, and the file rolls at UTC midnight. If a single day exceeds the perf budget on S3, the next step is sub-day partitioning, not in-place append.
+
+Crash semantics: rows still in the in-memory buffer at hard-kill are lost. Worst-case loss is `FlushIntervalSeconds` worth (or `FlushEveryRows`, whichever trips first) per active partition. This is the deliberate buffer-then-PUT tradeoff for object-store compatibility.
+
+**Cross-project dependency note:** `AlgoTradeForge.HistoryLoader.Infrastructure` now references both `AlgoTradeForge.Application` (for `IFileStorage` / `IPartitionTailIndex`) and `AlgoTradeForge.Infrastructure` (for `LocalFileStorage` / `LocalTailIndex`). HistoryLoader does its own DI registration rather than calling `AddInfrastructure`, which would pull in SQLite repos and live-trading wiring the loader has no use for. PR 5 should consider extracting `LocalFileStorage` / `LocalTailIndex` (and the upcoming S3 backends) into a dedicated `AlgoTradeForge.Infrastructure.IO` package so HistoryLoader doesn't reach into the main Infrastructure project.
 
 ### Metadata + state managers
 
@@ -267,7 +272,7 @@ The work decomposes into independently shippable PRs to keep review tractable:
 
 2. **PR 2 — Backtest read-path migration.** Route all five read-path classes through `IFileStorage`. Re-run benchmarks + integration tests. Use the absolute-path bypass in `LocalFileStorage.Resolve()` until call sites move to `StorageKeys`.
 
-3. **PR 3 — `BufferedPartitionWriter` + writer migration.** Introduce the base class, migrate the four hot writers, delete torn-row recovery code, add resume tests, capture performance baseline before/after.
+3. **PR 3 — `BufferedPartitionWriter` + writer migration.** ✅ **Complete.** Added `BufferedPartitionWriter` (read-merge-write flush, watermark-only resume, no buffer hydration), `BufferedWriterFlushService` (single hosted service driving periodic + shutdown flush), `HistoryLoaderStorageOptions`. Extended `IPartitionTailIndex` with `GetLastLine`. Migrated the four writers; deleted ~300 LOC of torn-row recovery + LRU dedup caches + active-day stream cache. Four `ResumeFrom` interfaces became `Task<...>` async with `CancellationToken`. Tests rewritten to inject `LocalFileStorage(tempDir)` + `LocalTailIndex`; added new resume-watermark / tail-spy / threshold-flush / failure-retry tests.
 
 4. **PR 4 — Metadata + aggregation migration.** `FeedSchemaManager`, `FeedStatusManager`, `PartitionedSourceReader`, `PartitionedSinkWriter`, `OverwritePathWriter`, `AggregatedDirSweeper`, `JsonlFileSink` session-write upgrade. Migrate call sites from absolute paths to `StorageKeys` so the absolute-path bypass in `LocalFileStorage` can be removed.
 

@@ -12,12 +12,10 @@ public readonly record struct BookTickerResumeState(long LastUpdateId, long Last
 public interface IBookTickerWriter
 {
     /// <summary>
-    /// Appends a record with values <c>[bid_price, bid_qty, ask_price, ask_qty, update_id]</c>.
-    /// Records whose <c>update_id</c> is at-or-below the cached last-written id for that day
-    /// are silently dropped.
+    /// Values must be <c>[bid_price, bid_qty, ask_price, ask_qty, update_id]</c>. Records whose
+    /// <c>update_id</c> is at-or-below the partition watermark are silently dropped.
     /// </summary>
     void Write(string assetDir, FeedRecord record);
 
-    /// <summary>Returns the last <c>(updateId, ts)</c> pair from the latest daily partition, or <c>null</c>. Repairs torn last-row writes.</summary>
-    BookTickerResumeState? ResumeFrom(string assetDir);
+    Task<BookTickerResumeState?> ResumeFrom(string assetDir, CancellationToken ct = default);
 }

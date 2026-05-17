@@ -1,3 +1,4 @@
+using AlgoTradeForge.Application.IO;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
@@ -6,6 +7,8 @@ using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
 using AlgoTradeForge.HistoryLoader.Infrastructure.State;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.HistoryLoader.Infrastructure.Storage.Buffered;
+using AlgoTradeForge.Infrastructure.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -131,12 +134,29 @@ public static class DependencyInjection
         services.AddSingleton<IFeedFetcherFactory, FeedFetcherFactory>();
         services.AddSingleton<ICandleFetcherFactory, CandleFetcherFactory>();
 
+        // File storage (local; S3 backend arrives in PR5). HistoryLoader registers these itself
+        // rather than calling AlgoTradeForge.Infrastructure.AddInfrastructure, which pulls in
+        // SQLite repos and live-trading wiring that this host has no use for. StorageOptions
+        // binding is the host's responsibility — see Program.cs (Storage section).
+        services.AddSingleton<IFileStorage, LocalFileStorage>();
+        services.AddSingleton<IPartitionTailIndex, LocalTailIndex>();
+
         // Storage writers (share a WriteLockManager so scheduled + backfill don't collide)
         services.AddSingleton<WriteLockManager>();
         services.AddSingleton<ICandleWriter, CandleCsvWriter>();
         services.AddSingleton<IFeedWriter, FeedCsvWriter>();
         services.AddSingleton<ITickFeedWriter, DailyTickCsvWriter>();
         services.AddSingleton<IBookTickerWriter, DailyBookTickerCsvWriter>();
+
+        // IBufferedPartitionWriter aliases for the flush service. Each resolves to the same
+        // singleton as its interface counterpart — no duplicate instances.
+        services.AddSingleton<IBufferedPartitionWriter>(sp => (IBufferedPartitionWriter)sp.GetRequiredService<ICandleWriter>());
+        services.AddSingleton<IBufferedPartitionWriter>(sp => (IBufferedPartitionWriter)sp.GetRequiredService<IFeedWriter>());
+        services.AddSingleton<IBufferedPartitionWriter>(sp => (IBufferedPartitionWriter)sp.GetRequiredService<ITickFeedWriter>());
+        services.AddSingleton<IBufferedPartitionWriter>(sp => (IBufferedPartitionWriter)sp.GetRequiredService<IBookTickerWriter>());
+
+        services.AddHostedService<BufferedWriterFlushService>();
+
         services.AddSingleton<ISchemaManager, FeedSchemaManager>();
         services.AddSingleton<IFeedStatusStore, FeedStatusManager>();
 

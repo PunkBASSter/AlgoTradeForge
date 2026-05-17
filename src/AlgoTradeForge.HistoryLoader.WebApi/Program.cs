@@ -1,3 +1,4 @@
+using AlgoTradeForge.Application.IO;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
@@ -27,6 +28,15 @@ builder.Services.AddSerilog(cfg => cfg
 builder.Services.Configure<HistoryLoaderOptions>(
     builder.Configuration.GetSection("HistoryLoader"));
 builder.Services.AddSingleton<IValidateOptions<HistoryLoaderOptions>, HistoryLoaderOptionsValidator>();
+
+builder.Services.Configure<HistoryLoaderStorageOptions>(
+    builder.Configuration.GetSection("HistoryLoader:Storage"));
+
+// PR3: Storage:Local:DataRoot drives LocalFileStorage's relative-key resolution. Absolute keys
+// still pass through (the writers haven't moved to relative keys yet — that's PR4). Bind the
+// whole Storage section so PR5's S3 backend slots in without another wiring change.
+builder.Services.Configure<StorageOptions>(
+    builder.Configuration.GetSection("Storage"));
 
 // API JSON: snake_case wire schema. Distinct from the camelCase FeedSchemaManager uses for
 // on-disk feeds.json (its own JsonOptions).

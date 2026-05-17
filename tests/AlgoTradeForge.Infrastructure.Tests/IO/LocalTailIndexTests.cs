@@ -74,4 +74,33 @@ public sealed class LocalTailIndexTests : IDisposable
 
         Assert.Null(await _tail.GetLastTimestamp(key, Ct));
     }
+
+    [Fact]
+    public async Task GetLastLine_ReturnsLastNonEmptyRow()
+    {
+        const string key = "tick-partition.csv";
+        await _storage.WriteAllLines(key, new[]
+        {
+            "ts,price,qty,is_buyer_maker,agg_id",
+            "1700000000000,100,1,0,42",
+            "1700000000005,101,2,1,43",
+        }, Ct);
+
+        Assert.Equal("1700000000005,101,2,1,43", await _tail.GetLastLine(key, Ct));
+    }
+
+    [Fact]
+    public async Task GetLastLine_ReturnsNull_ForMissingKey()
+    {
+        Assert.Null(await _tail.GetLastLine("absent.csv", Ct));
+    }
+
+    [Fact]
+    public async Task GetLastLine_StripsTrailingNewlines()
+    {
+        const string key = "trailing-crlf.csv";
+        await _storage.WriteAllBytes(key, Encoding.UTF8.GetBytes("ts,v\r\n1234,7\r\n"), Ct);
+
+        Assert.Equal("1234,7", await _tail.GetLastLine(key, Ct));
+    }
 }

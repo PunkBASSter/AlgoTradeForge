@@ -105,6 +105,14 @@ All monetary/price values in the Domain layer use `long` (Int64). When convertin
 - **When you do write one, keep it terse.** Prefer a single line. Several lines are acceptable only when the documented behavior is genuinely non-obvious or non-conventional. No multi-paragraph essays, no signature restatement, no English paraphrase of the identifier (`<summary>The user identifier.</summary>` on `UserId` is forbidden). Shortest text that conveys the non-obvious fact, nothing more.
 - **Existing comments in validation stages and related domain types stay** — this convention applies to writing new comments and editing existing ones, not to bulk-stripping documented code.
 
+### File Organization (Constitution v1.9.0)
+
+- **One type per file**, named after the type. `IFoo` lives in `IFoo.cs`; `FooImpl` lives in `FooImpl.cs`.
+- **Exceptions:**
+  - Single-line records / record structs declared next to the interface they accompany MAY share that file — e.g., `public readonly record struct TickResumeState(long LastAggId, long LastTsMs);` can sit beside `ITickFeedWriter`.
+  - A non-generic + generic interface pair where one derives from the other (e.g., `IFoo` + `IFoo<T> : IFoo`) MAY share a file.
+- **Extension methods** belong in their own file alongside the interface they extend (e.g., `IPartitionTailIndex.cs` + `PartitionTailIndexExtensions.cs`).
+
 ### Async I/O Convention (Constitution v1.8.3)
 
 - **I/O-bound APIs MUST be async.** Any interface that fronts file storage, network HTTP, database access, an external service client, or a message broker MUST expose `Task` / `Task<T>` / `IAsyncEnumerable<T>` signatures with `CancellationToken ct = default` on every method.
