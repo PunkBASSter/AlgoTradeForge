@@ -32,7 +32,7 @@ public sealed class DebugSession : IAsyncDisposable
     /// <summary>
     /// The event sink for this run. Disposed when the session ends.
     /// </summary>
-    public IDisposable? EventSink { get; internal set; }
+    public IAsyncDisposable? EventSink { get; internal set; }
 
     /// <summary>
     /// The WebSocket sink for real-time event streaming.
@@ -60,7 +60,8 @@ public sealed class DebugSession : IAsyncDisposable
         Probe.DisposeGate();
         if (WebSocketSink is not null)
             await WebSocketSink.DisposeAsync().ConfigureAwait(false);
-        EventSink?.Dispose();
+        if (EventSink is not null)
+            await EventSink.DisposeAsync().ConfigureAwait(false);
         Cts.Dispose();
     }
 }

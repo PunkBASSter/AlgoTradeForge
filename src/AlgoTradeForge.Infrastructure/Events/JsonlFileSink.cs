@@ -7,9 +7,21 @@ using AlgoTradeForge.Application.IO;
 
 namespace AlgoTradeForge.Infrastructure.Events;
 
+/// <summary>
+/// JSONL run sink that buffers events in memory and atomically re-publishes the whole
+/// file through <see cref="IFileStorage"/> on each flush. The buffer-then-PUT pattern
+/// (same shape as the HistoryLoader's BufferedPartitionWriter) is what lets the same
+/// sink target local FS (.tmp + Move) and S3 (single PutObject) without code changes.
+/// </summary>
+/// <remarks>
+/// Live tailing of the on-disk events.jsonl is gone — readers see content only after
+/// a Flush. The WebSocket sink remains the channel for live debugger consumers; on-disk
+/// consumers (SqliteEventIndexBuilder, SqliteTradeDbWriter) run after the sink is
+/// disposed, so the final flush makes the whole stream visible before they touch it.
+/// </remarks>
 public sealed class JsonlFileSink : IRunSink
 {
-    private static readonly byte[] NewLine = "\n"u8.ToArray();
+    private const byte NewLine = (byte)'\n';
 
     private static readonly JsonSerializerOptions MetaJsonOptions = new()
     {
@@ -21,9 +33,12 @@ public sealed class JsonlFileSink : IRunSink
 
     private readonly RunIdentity _identity;
     private readonly IFileStorage _fileStorage;
-    private readonly FileStream _stream;
+    private readonly string _eventsKey;
+    private readonly string _metaKey;
     private readonly Lock _writeLock = new();
-    private bool _disposed;
+    private readonly SemaphoreSlim _flushGate = new(1, 1);
+    private readonly MemoryStream _buffer = new();
+    private int _disposed;
 
     public string RunFolderPath { get; }
 
@@ -33,19 +48,45 @@ public sealed class JsonlFileSink : IRunSink
         _fileStorage = fileStorage;
         RunFolderPath = Path.Combine(options.Root, identity.ComputeFolderName());
         Directory.CreateDirectory(RunFolderPath);
-
-        var eventsPath = Path.Combine(RunFolderPath, "events.jsonl");
-        _stream = new FileStream(eventsPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+        // IFileStorage keys are slash-delimited; the local backend's absolute-path bypass
+        // still resolves these correctly until the StorageKey migration in PR 5.
+        _eventsKey = ToKey(RunFolderPath, "events.jsonl");
+        _metaKey = ToKey(RunFolderPath, "meta.json");
     }
+
+    private static string ToKey(string folder, string name)
+        => (folder + "/" + name).Replace('\\', '/');
 
     public void Write(ReadOnlyMemory<byte> utf8Json)
     {
         lock (_writeLock)
         {
-            if (_disposed) return;
-            _stream.Write(utf8Json.Span);
-            _stream.Write(NewLine);
-            _stream.Flush();
+            if (_disposed != 0) return;
+            _buffer.Write(utf8Json.Span);
+            _buffer.WriteByte(NewLine);
+        }
+    }
+
+    // Each Flush re-publishes the entire accumulated buffer (atomic replace semantics).
+    // Cost is O(total bytes written so far), so don't loop Flush per-event — call it on
+    // dispose, or at coarse checkpoints.
+    public async Task Flush(CancellationToken ct = default)
+    {
+        byte[] snapshot;
+        lock (_writeLock)
+        {
+            if (_buffer.Length == 0) return;
+            snapshot = _buffer.ToArray();
+        }
+
+        await _flushGate.WaitAsync(ct);
+        try
+        {
+            await _fileStorage.WriteAllBytes(_eventsKey, snapshot, ct);
+        }
+        finally
+        {
+            _flushGate.Release();
         }
     }
 
@@ -68,19 +109,21 @@ public sealed class JsonlFileSink : IRunSink
             Duration = summary.Duration,
         };
 
-        var metaPath = Path.Combine(RunFolderPath, "meta.json");
         var json = JsonSerializer.Serialize(meta, MetaJsonOptions);
-        return _fileStorage.WriteAllText(metaPath, json, Encoding.UTF8, ct);
+        return _fileStorage.WriteAllText(_metaKey, json, Encoding.UTF8, ct);
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        lock (_writeLock)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        try
         {
-            if (_disposed) return;
-            _disposed = true;
-            _stream.Flush();
-            _stream.Dispose();
+            await Flush();
+        }
+        finally
+        {
+            await _buffer.DisposeAsync();
+            _flushGate.Dispose();
         }
     }
 }

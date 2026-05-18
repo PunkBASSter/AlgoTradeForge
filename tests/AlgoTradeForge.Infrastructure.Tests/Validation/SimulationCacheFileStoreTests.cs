@@ -3,6 +3,7 @@ using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Validation;
+using AlgoTradeForge.Infrastructure.IO;
 using AlgoTradeForge.Infrastructure.Validation;
 using Xunit;
 using AlgoTradeForge.Domain.Strategy;
@@ -13,7 +14,7 @@ namespace AlgoTradeForge.Infrastructure.Tests.Validation;
 public class SimulationCacheFileStoreTests : IDisposable
 {
     private readonly string _testDir = Path.Combine(Path.GetTempPath(), $"cache_test_{Guid.NewGuid():N}");
-    private readonly SimulationCacheFileStore _store = new();
+    private readonly SimulationCacheFileStore _store = new(new LocalFileStorage());
 
     public void Dispose()
     {
@@ -22,20 +23,19 @@ public class SimulationCacheFileStoreTests : IDisposable
     }
 
     [Fact]
-    public void WriteAndRead_RoundTrip_PreservesData()
+    public async Task WriteAndRead_RoundTrip_PreservesData()
     {
         var cache = CreateTestCache(trialCount: 10, barCount: 50);
         var filePath = Path.Combine(_testDir, "test.bin");
 
-        _store.Write(cache, filePath);
+        await _store.Write(cache, filePath, TestContext.Current.CancellationToken);
         Assert.True(File.Exists(filePath));
 
-        var loaded = _store.Read(filePath);
+        var loaded = await _store.Read(filePath, TestContext.Current.CancellationToken);
 
         Assert.Equal(cache.TrialCount, loaded.TrialCount);
         Assert.Equal(cache.MaxBarCount, loaded.MaxBarCount);
 
-        // Verify per-trial timestamps and P&L
         for (var t = 0; t < cache.TrialCount; t++)
         {
             Assert.Equal(cache.GetBarCount(t), loaded.GetBarCount(t));
@@ -53,15 +53,14 @@ public class SimulationCacheFileStoreTests : IDisposable
     }
 
     [Fact]
-    public void WriteDirect_RoundTrip_MatchesBuild()
+    public async Task WriteDirect_RoundTrip_MatchesBuild()
     {
         var trials = CreateTestTrials(trialCount: 5, barCount: 50);
         var filePath = Path.Combine(_testDir, "direct.bin");
 
-        _store.WriteDirect(trials, filePath);
-        var loaded = _store.Read(filePath);
+        await _store.WriteDirect(trials, filePath, TestContext.Current.CancellationToken);
+        var loaded = await _store.Read(filePath, TestContext.Current.CancellationToken);
 
-        // Compare against the in-memory Build path
         var expected = SimulationCacheBuilder.Build(trials);
 
         Assert.Equal(expected.TrialCount, loaded.TrialCount);
@@ -83,13 +82,13 @@ public class SimulationCacheFileStoreTests : IDisposable
     }
 
     [Fact]
-    public void WriteAndRead_SingleTrialSingleBar()
+    public async Task WriteAndRead_SingleTrialSingleBar()
     {
         var cache = CreateTestCache(trialCount: 1, barCount: 1);
         var filePath = Path.Combine(_testDir, "minimal.bin");
 
-        _store.Write(cache, filePath);
-        var loaded = _store.Read(filePath);
+        await _store.Write(cache, filePath, TestContext.Current.CancellationToken);
+        var loaded = await _store.Read(filePath, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, loaded.TrialCount);
         Assert.Equal(1, loaded.GetBarCount(0));
@@ -98,32 +97,30 @@ public class SimulationCacheFileStoreTests : IDisposable
     }
 
     [Fact]
-    public void WriteAndRead_VariableLengthTrials()
+    public async Task WriteAndRead_VariableLengthTrials()
     {
         var timelines = new long[][] { [100, 200, 300], [100, 200] };
         var trials = new TrialData[] { new(0, [1.0, 2.0, 3.0]), new(1, [-1.0, 0.5]) };
         var cache = new SimulationCache(timelines, trials);
         var filePath = Path.Combine(_testDir, "variable.bin");
 
-        _store.Write(cache, filePath);
-        var loaded = _store.Read(filePath);
+        await _store.Write(cache, filePath, TestContext.Current.CancellationToken);
+        var loaded = await _store.Read(filePath, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, loaded.TrialCount);
         Assert.Equal(3, loaded.GetBarCount(0));
         Assert.Equal(2, loaded.GetBarCount(1));
         Assert.Equal(3, loaded.MaxBarCount);
 
-        // Verify trial 0
         Assert.Equal(300L, loaded.GetTrialTimestamps(0)[2]);
         Assert.Equal(3.0, loaded.GetTrialPnl(0)[2]);
 
-        // Verify trial 1
         Assert.Equal(200L, loaded.GetTrialTimestamps(1)[1]);
         Assert.Equal(0.5, loaded.GetTrialPnl(1)[1]);
     }
 
     [Fact]
-    public void Read_UnknownVersion_Throws()
+    public async Task Read_UnknownVersion_Throws()
     {
         var filePath = Path.Combine(_testDir, "badversion.bin");
         Directory.CreateDirectory(_testDir);
@@ -131,19 +128,19 @@ public class SimulationCacheFileStoreTests : IDisposable
         using (var fs = new FileStream(filePath, FileMode.Create))
         using (var writer = new BinaryWriter(fs))
         {
-            writer.Write(999); // unsupported version
-            writer.Write(1);   // trialCount
+            writer.Write(999);
+            writer.Write(1);
         }
 
-        var ex = Assert.Throws<InvalidDataException>(() => _store.Read(filePath));
+        var ex = await Assert.ThrowsAsync<InvalidDataException>(
+            () => _store.Read(filePath, TestContext.Current.CancellationToken));
         Assert.Contains("999", ex.Message);
         Assert.Contains("3", ex.Message);
     }
 
     [Fact]
-    public void WriteAndRead_V3_SharedTimeline_RoundTrip()
+    public async Task WriteAndRead_V3_SharedTimeline_RoundTrip()
     {
-        // All 5 trials share a single timeline — verify deduplication survives serialization
         var timestamps = new long[] { 1000, 2000, 3000, 4000, 5000 };
         var matrix = new double[5][];
         var rng = new Random(123);
@@ -161,13 +158,12 @@ public class SimulationCacheFileStoreTests : IDisposable
         Assert.Equal(1, cache.TimelineCount);
 
         var filePath = Path.Combine(_testDir, "v3_shared.bin");
-        _store.Write(cache, filePath);
-        var loaded = _store.Read(filePath);
+        await _store.Write(cache, filePath, TestContext.Current.CancellationToken);
+        var loaded = await _store.Read(filePath, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, loaded.TimelineCount);
         Assert.Equal(5, loaded.TrialCount);
 
-        // All trials should map to timeline 0
         for (var t = 0; t < 5; t++)
         {
             Assert.Equal(0, loaded.GetTimelineIndex(t));

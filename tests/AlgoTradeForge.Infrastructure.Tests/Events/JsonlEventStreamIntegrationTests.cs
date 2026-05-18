@@ -52,7 +52,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         };
 
         var options = new EventLogStorageOptions { Root = _testRoot };
-        using var sink = new JsonlFileSink(identity, options, _fs);
+        await using var sink = new JsonlFileSink(identity, options, _fs);
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
@@ -70,7 +70,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         // Act
         engine.Run([bars], strategy, btOptions, ct: TestContext.Current.CancellationToken, bus: bus);
-        sink.Dispose();
+        await sink.Flush(TestContext.Current.CancellationToken);
 
         // Assert — read the events.jsonl file
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
@@ -140,7 +140,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         };
 
         var options = new EventLogStorageOptions { Root = _testRoot };
-        using var sink = new JsonlFileSink(identity, options, _fs);
+        await using var sink = new JsonlFileSink(identity, options, _fs);
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
@@ -158,7 +158,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         // Act
         engine.Run([bars], strategy, btOptions, ct: TestContext.Current.CancellationToken, bus: bus);
-        sink.Dispose();
+        await sink.Flush(TestContext.Current.CancellationToken);
 
         // Assert
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
@@ -193,7 +193,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         };
 
         var options = new EventLogStorageOptions { Root = _testRoot };
-        using var sink = new JsonlFileSink(identity, options, _fs);
+        await using var sink = new JsonlFileSink(identity, options, _fs);
         var bus = new EventBus(ExportMode.Backtest, [sink]);
         var indicatorFactory = new EmittingIndicatorFactory(bus);
 
@@ -212,7 +212,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         // Act
         engine.Run([bars], strategy, btOptions, ct: TestContext.Current.CancellationToken, bus: bus);
-        sink.Dispose();
+        await sink.Flush(TestContext.Current.CancellationToken);
 
         // Assert
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");
@@ -250,7 +250,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         };
 
         var options = new EventLogStorageOptions { Root = _testRoot };
-        using var sink = new JsonlFileSink(identity, options, _fs);
+        await using var sink = new JsonlFileSink(identity, options, _fs);
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
@@ -268,7 +268,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
 
         // Act — no indicatorFactory passed (passthrough default)
         engine.Run([bars], strategy, btOptions, ct: TestContext.Current.CancellationToken, bus: bus);
-        sink.Dispose();
+        await sink.Flush(TestContext.Current.CancellationToken);
 
         // Assert
         var eventsPath = Path.Combine(sink.RunFolderPath, "events.jsonl");

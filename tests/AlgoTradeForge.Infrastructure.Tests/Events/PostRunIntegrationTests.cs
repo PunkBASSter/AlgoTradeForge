@@ -56,7 +56,7 @@ public class PostRunIntegrationTests : IDisposable
 
         var eventLogRoot = Path.Combine(_testRoot, "EventLogs");
         var storageOptions = new EventLogStorageOptions { Root = eventLogRoot };
-        using var sink = new JsonlFileSink(identity, storageOptions, new LocalFileStorage());
+        await using var sink = new JsonlFileSink(identity, storageOptions, new LocalFileStorage());
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
@@ -81,7 +81,7 @@ public class PostRunIntegrationTests : IDisposable
             result.Duration);
 
         await sink.WriteMeta(summary, TestContext.Current.CancellationToken);
-        sink.Dispose();
+        await sink.Flush(TestContext.Current.CancellationToken);
 
         // Run pipeline
         var indexBuilder = new SqliteEventIndexBuilder();
@@ -182,7 +182,7 @@ public class PostRunIntegrationTests : IDisposable
 
         var eventLogRoot = Path.Combine(_testRoot, "EventLogs");
         var storageOptions = new EventLogStorageOptions { Root = eventLogRoot };
-        using var sink = new JsonlFileSink(identity, storageOptions, new LocalFileStorage());
+        await using var sink = new JsonlFileSink(identity, storageOptions, new LocalFileStorage());
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
         var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
@@ -204,7 +204,7 @@ public class PostRunIntegrationTests : IDisposable
             result.Fills.Count,
             result.Duration);
         await sink.WriteMeta(summary, TestContext.Current.CancellationToken);
-        sink.Dispose();
+        await sink.Flush(TestContext.Current.CancellationToken);
 
         // Build original
         var indexBuilder = new SqliteEventIndexBuilder();
