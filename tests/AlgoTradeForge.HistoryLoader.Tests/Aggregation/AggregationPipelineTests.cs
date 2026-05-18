@@ -77,9 +77,10 @@ public sealed class AggregationPipelineTests : IDisposable
             (Ts(2024, 1, 1, 5), 128, 135, 125, 132, 400));
 
         var pipeline = new AggregationPipeline(
-            new PartitionedSourceReader(),
+            new PartitionedSourceReader(new LocalFileStorage()),
             new FeedSchemaManager(new LocalFileStorage()),
-            new OverwritePathWriter(),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
 
         var result = await pipeline.Run(
@@ -117,9 +118,10 @@ public sealed class AggregationPipelineTests : IDisposable
         Directory.CreateDirectory(CandlesDir(asset));   // empty candles dir, no CSV files
 
         var pipeline = new AggregationPipeline(
-            new PartitionedSourceReader(),
+            new PartitionedSourceReader(new LocalFileStorage()),
             new FeedSchemaManager(new LocalFileStorage()),
-            new OverwritePathWriter(),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
 
         var result = await pipeline.Run(
@@ -150,9 +152,10 @@ public sealed class AggregationPipelineTests : IDisposable
         WriteCandles(asset, "2024-01", "1m", rows);
 
         var pipeline = new AggregationPipeline(
-            new PartitionedSourceReader(),
+            new PartitionedSourceReader(new LocalFileStorage()),
             new FeedSchemaManager(new LocalFileStorage()),
-            new OverwritePathWriter(),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
 
         var result = await pipeline.Run(
@@ -179,9 +182,10 @@ public sealed class AggregationPipelineTests : IDisposable
         WriteCandles(asset, "2024-01", "1m", rows);
 
         var pipeline = new AggregationPipeline(
-            new PartitionedSourceReader(),
+            new PartitionedSourceReader(new LocalFileStorage()),
             new FeedSchemaManager(new LocalFileStorage()),
-            new OverwritePathWriter(),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
 
         var allocBefore = GC.GetAllocatedBytesForCurrentThread();
@@ -209,9 +213,10 @@ public sealed class AggregationPipelineTests : IDisposable
             (Ts(2024, 1, 1, 1), 105, 115, 100, 110, 600));
 
         var pipeline = new AggregationPipeline(
-            new PartitionedSourceReader(),
+            new PartitionedSourceReader(new LocalFileStorage()),
             new FeedSchemaManager(new LocalFileStorage()),
-            new OverwritePathWriter(),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
 
         var events = new List<ProgressEvent>();

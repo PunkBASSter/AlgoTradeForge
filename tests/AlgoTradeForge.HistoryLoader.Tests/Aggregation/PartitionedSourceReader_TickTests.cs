@@ -1,5 +1,6 @@
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
@@ -10,6 +11,8 @@ namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
 /// </summary>
 public sealed class PartitionedSourceReader_TickTests : IDisposable
 {
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
     private readonly string _tempDir =
         Path.Combine(Path.GetTempPath(), $"PartitionedSourceReader_TickTests_{Guid.NewGuid():N}");
 
@@ -39,16 +42,18 @@ public sealed class PartitionedSourceReader_TickTests : IDisposable
     private DataFeedDescriptor TickSource(string asset) =>
         new(_tempDir, "binance", asset, FeedId: "ticks", Kind: DataFeedKind.Tick);
 
+    private static PartitionedSourceReader NewReader() => new(new LocalFileStorage());
+
     [Fact]
-    public void Read_SingleDay_YieldsAllRecords_OhlcEqualsPrice()
+    public async Task Read_SingleDay_YieldsAllRecords_OhlcEqualsPrice()
     {
         WriteTicks("BTCUSDT_perp", "2024-03-15",
             (Ts(2024, 3, 15, 12, 0, 0), 5000000, 100, 0, 1000),
             (Ts(2024, 3, 15, 12, 0, 1), 5000050, 200, 1, 1001),
             (Ts(2024, 3, 15, 12, 0, 2), 5000100, 50, 0, 1002));
 
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(TickSource("BTCUSDT_perp")).ToList();
+        var reader = NewReader();
+        var records = await reader.Read(TickSource("BTCUSDT_perp"), ct: Ct).ToListAsync(Ct);
 
         Assert.Equal(3, records.Count);
         // For ticks, OHLC all = price; volume = qty
@@ -63,15 +68,15 @@ public sealed class PartitionedSourceReader_TickTests : IDisposable
     }
 
     [Fact]
-    public void Read_AcrossDayBoundary_IsChronological()
+    public async Task Read_AcrossDayBoundary_IsChronological()
     {
         WriteTicks("BTCUSDT_perp", "2024-03-16",
             (Ts(2024, 3, 16, 0, 0, 0), 5001000, 10, 0, 2000));
         WriteTicks("BTCUSDT_perp", "2024-03-15",
             (Ts(2024, 3, 15, 23, 59, 59), 5000900, 5, 1, 1999));
 
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(TickSource("BTCUSDT_perp")).ToList();
+        var reader = NewReader();
+        var records = await reader.Read(TickSource("BTCUSDT_perp"), ct: Ct).ToListAsync(Ct);
 
         Assert.Equal(2, records.Count);
         Assert.True(records[0].TsMs < records[1].TsMs);
@@ -79,7 +84,7 @@ public sealed class PartitionedSourceReader_TickTests : IDisposable
     }
 
     [Fact]
-    public void Read_AcrossMonthBoundary_IsChronological()
+    public async Task Read_AcrossMonthBoundary_IsChronological()
     {
         WriteTicks("BTCUSDT_perp", "2024-04-01",
             (Ts(2024, 4, 1, 0, 0, 0), 5002000, 1, 0, 3000));
@@ -88,8 +93,8 @@ public sealed class PartitionedSourceReader_TickTests : IDisposable
         WriteTicks("BTCUSDT_perp", "2024-03-30",
             (Ts(2024, 3, 30, 12, 0, 0), 5000000, 1, 0, 2998));
 
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(TickSource("BTCUSDT_perp")).ToList();
+        var reader = NewReader();
+        var records = await reader.Read(TickSource("BTCUSDT_perp"), ct: Ct).ToListAsync(Ct);
 
         Assert.Equal(3, records.Count);
         for (int i = 1; i < records.Count; i++)
@@ -97,7 +102,7 @@ public sealed class PartitionedSourceReader_TickTests : IDisposable
     }
 
     [Fact]
-    public void Read_DateRangeFilter_RestrictsResults()
+    public async Task Read_DateRangeFilter_RestrictsResults()
     {
         WriteTicks("BTCUSDT_perp", "2024-03-15",
             (Ts(2024, 3, 15, 12, 0, 0), 5000000, 1, 0, 100));
@@ -106,33 +111,35 @@ public sealed class PartitionedSourceReader_TickTests : IDisposable
         WriteTicks("BTCUSDT_perp", "2024-03-25",
             (Ts(2024, 3, 25, 12, 0, 0), 5001000, 1, 0, 300));
 
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(
+        var reader = NewReader();
+        var records = await reader.Read(
             TickSource("BTCUSDT_perp"),
             from: new DateOnly(2024, 3, 18),
-            to: new DateOnly(2024, 3, 22)).ToList();
+            to: new DateOnly(2024, 3, 22),
+            ct: Ct).ToListAsync(Ct);
 
         Assert.Single(records);
         Assert.Equal(5000500, records[0].Close);
     }
 
     [Fact]
-    public void Read_NonexistentDir_YieldsEmpty()
+    public async Task Read_NonexistentDir_YieldsEmpty()
     {
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(TickSource("DOESNOTEXIST")).ToList();
+        var reader = NewReader();
+        var records = await reader.Read(TickSource("DOESNOTEXIST"), ct: Ct).ToListAsync(Ct);
         Assert.Empty(records);
     }
 
     [Fact]
-    public void Read_MalformedTickRow_Throws()
+    public async Task Read_MalformedTickRow_Throws()
     {
         var dir = TicksDir("BTCUSDT_perp");
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, "2024-03-15.csv");
         File.WriteAllText(path, "ts,price,qty,is_buyer_maker,agg_id\n100,abc,1,0,500\n");
 
-        var reader = new PartitionedSourceReader();
-        Assert.Throws<FormatException>(() => reader.Read(TickSource("BTCUSDT_perp")).ToList());
+        var reader = NewReader();
+        await Assert.ThrowsAsync<FormatException>(async () =>
+            await reader.Read(TickSource("BTCUSDT_perp"), ct: Ct).ToListAsync(Ct));
     }
 }

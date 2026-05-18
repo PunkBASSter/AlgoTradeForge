@@ -98,9 +98,10 @@ public sealed class AggregationPipeline_EqIDTests : IDisposable
     }
 
     private static AggregationPipeline NewPipeline() =>
-        new(new PartitionedSourceReader(),
+        new(new PartitionedSourceReader(new LocalFileStorage()),
             new FeedSchemaManager(new LocalFileStorage()),
-            new OverwritePathWriter(),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
 
     // -----------------------------------------------------------------------

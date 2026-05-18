@@ -1,5 +1,6 @@
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
@@ -7,6 +8,8 @@ namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
 /// <summary>P1b-10 — chronological streaming source reader with per-FeedId glob.</summary>
 public sealed class PartitionedSourceReaderTests : IDisposable
 {
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
     private readonly string _tempDir =
         Path.Combine(Path.GetTempPath(), $"PartitionedSourceReaderTests_{Guid.NewGuid():N}");
 
@@ -36,16 +39,18 @@ public sealed class PartitionedSourceReaderTests : IDisposable
     private DataFeedDescriptor Source(string asset, string interval) =>
         new(_tempDir, "binance", asset, interval, DataFeedKind.TimeBar);
 
+    private static PartitionedSourceReader NewReader() => new(new LocalFileStorage());
+
     [Fact]
-    public void Read_SingleMonth_YieldsAllRecordsInOrder()
+    public async Task Read_SingleMonth_YieldsAllRecordsInOrder()
     {
         WriteCandles("BTCUSDT", "2024-01", "1m",
             (Ts(2024, 1, 1, 0), 100, 110, 95, 105, 50),
             (Ts(2024, 1, 1, 1), 105, 115, 100, 110, 60),
             (Ts(2024, 1, 1, 2), 110, 120, 108, 118, 70));
 
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(Source("BTCUSDT", "1m")).ToList();
+        var reader = NewReader();
+        var records = await reader.Read(Source("BTCUSDT", "1m"), ct: Ct).ToListAsync(Ct);
 
         Assert.Equal(3, records.Count);
         Assert.Equal(50, records[0].Volume);
@@ -53,22 +58,22 @@ public sealed class PartitionedSourceReaderTests : IDisposable
     }
 
     [Fact]
-    public void Read_AcrossMonths_IsChronological()
+    public async Task Read_AcrossMonths_IsChronological()
     {
         WriteCandles("BTCUSDT", "2024-02", "1m",
             (Ts(2024, 2, 1, 0), 110, 120, 105, 115, 80));
         WriteCandles("BTCUSDT", "2024-01", "1m",
             (Ts(2024, 1, 31, 23), 105, 115, 100, 110, 60));
 
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(Source("BTCUSDT", "1m")).ToList();
+        var reader = NewReader();
+        var records = await reader.Read(Source("BTCUSDT", "1m"), ct: Ct).ToListAsync(Ct);
 
         Assert.Equal(2, records.Count);
         Assert.True(records[0].TsMs < records[1].TsMs);
     }
 
     [Fact]
-    public void Read_OtherIntervalsInSameDir_NotPickedUp()
+    public async Task Read_OtherIntervalsInSameDir_NotPickedUp()
     {
         // P1a-30 regression: loading "1m" must not yield rows from "5m"-named files.
         WriteCandles("BTCUSDT", "2024-01", "1m",
@@ -76,46 +81,48 @@ public sealed class PartitionedSourceReaderTests : IDisposable
         WriteCandles("BTCUSDT", "2024-01", "5m",
             (Ts(2024, 1, 1, 0), 100, 110, 95, 105, 250));   // 5m volume should not leak in
 
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(Source("BTCUSDT", "1m")).ToList();
+        var reader = NewReader();
+        var records = await reader.Read(Source("BTCUSDT", "1m"), ct: Ct).ToListAsync(Ct);
 
         Assert.Single(records);
         Assert.Equal(50, records[0].Volume);
     }
 
     [Fact]
-    public void Read_DateRangeFilter_ExcludesOutOfRange()
+    public async Task Read_DateRangeFilter_ExcludesOutOfRange()
     {
         WriteCandles("BTCUSDT", "2024-01", "1m",
             (Ts(2024, 1, 1, 0), 100, 110, 95, 105, 50),
             (Ts(2024, 1, 5, 0), 105, 115, 100, 110, 60),
             (Ts(2024, 1, 10, 0), 110, 120, 108, 118, 70));
 
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(
+        var reader = NewReader();
+        var records = await reader.Read(
                 Source("BTCUSDT", "1m"),
                 from: new DateOnly(2024, 1, 3),
-                to: new DateOnly(2024, 1, 7))
-            .ToList();
+                to: new DateOnly(2024, 1, 7),
+                ct: Ct)
+            .ToListAsync(Ct);
 
         Assert.Single(records);
         Assert.Equal(60, records[0].Volume);
     }
 
     [Fact]
-    public void Read_SideKind_Throws()
+    public async Task Read_SideKind_Throws()
     {
         // Phase 6 added AltBar support; Side remains rejected (side feeds carry per-row
         // analytical data, not OHLCV — re-aggregation isn't meaningful).
-        var reader = new PartitionedSourceReader();
+        var reader = NewReader();
         var sideSource = new DataFeedDescriptor(_tempDir, "binance", "BTCUSDT",
             "taker-buy-ratio", DataFeedKind.Side);
 
-        Assert.Throws<NotSupportedException>(() => reader.Read(sideSource).ToList());
+        await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await reader.Read(sideSource, ct: Ct).ToListAsync(Ct));
     }
 
     [Fact]
-    public void Read_AltBarSource_EnumeratesPartitionedCsvsChronologically()
+    public async Task Read_AltBarSource_EnumeratesPartitionedCsvsChronologically()
     {
         // P6-13 — AltBar branch globs aggregated/<feedId>/*.csv in lex order (≡ chronological).
         const string asset = "BTCUSDT";
@@ -134,9 +141,9 @@ public sealed class PartitionedSourceReaderTests : IDisposable
             "1717238400000,110,120,100,115,500",
         ]);
 
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(new DataFeedDescriptor(
-            _tempDir, "binance", asset, sourceFeedId, DataFeedKind.AltBar)).ToList();
+        var reader = NewReader();
+        var records = await reader.Read(new DataFeedDescriptor(
+            _tempDir, "binance", asset, sourceFeedId, DataFeedKind.AltBar), ct: Ct).ToListAsync(Ct);
 
         Assert.Equal(3, records.Count);
         Assert.Equal(1714560000000, records[0].TsMs);
@@ -152,7 +159,7 @@ public sealed class PartitionedSourceReaderTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Read_AltBarSource_BareAndPartNumberedSameMonth_Throws()
+    public async Task Read_AltBarSource_BareAndPartNumberedSameMonth_Throws()
     {
         // The writer never produces this state on a successful job (atomic-rename bare→p01
         // before opening p02), so it indicates operator manipulation, partial migration, or
@@ -166,16 +173,16 @@ public sealed class PartitionedSourceReaderTests : IDisposable
         File.WriteAllLines(Path.Combine(dir, "2024-06.p01.csv"),
             ["ts,o,h,l,c,vol", "1717238460000,105,115,95,110,500"]);
 
-        var reader = new PartitionedSourceReader();
-        var ex = Assert.Throws<InvalidDataException>(() =>
-            reader.Read(new DataFeedDescriptor(_tempDir, "binance", asset, sourceFeedId, DataFeedKind.AltBar)).ToList());
+        var reader = NewReader();
+        var ex = await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            await reader.Read(new DataFeedDescriptor(_tempDir, "binance", asset, sourceFeedId, DataFeedKind.AltBar), ct: Ct).ToListAsync(Ct));
         Assert.Contains("2024-06", ex.Message);
         Assert.Contains("2024-06.csv", ex.Message);
         Assert.Contains("2024-06.p01.csv", ex.Message);
     }
 
     [Fact]
-    public void Read_AltBarSource_MultiplePartNumbersForSameMonth_DoesNotThrow()
+    public async Task Read_AltBarSource_MultiplePartNumbersForSameMonth_DoesNotThrow()
     {
         // Normal overflow case — multiple .pNN files per month is the documented writer scheme.
         // Only bare-AND-pNN co-existence is a violation.
@@ -188,13 +195,13 @@ public sealed class PartitionedSourceReaderTests : IDisposable
         File.WriteAllLines(Path.Combine(dir, "2024-06.p02.csv"),
             ["ts,o,h,l,c,vol", "1717238460000,105,115,95,110,500"]);
 
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(new DataFeedDescriptor(_tempDir, "binance", asset, sourceFeedId, DataFeedKind.AltBar)).ToList();
+        var reader = NewReader();
+        var records = await reader.Read(new DataFeedDescriptor(_tempDir, "binance", asset, sourceFeedId, DataFeedKind.AltBar), ct: Ct).ToListAsync(Ct);
         Assert.Equal(2, records.Count);
     }
 
     [Fact]
-    public void Read_AltBarSource_StagingDirSibling_DoesNotTripCheck()
+    public async Task Read_AltBarSource_StagingDirSibling_DoesNotTripCheck()
     {
         // .staging-* dirs are excluded from *.csv glob (they're directories, not files), so
         // their presence alongside a bare-month file must NOT trigger the collision check.
@@ -206,8 +213,8 @@ public sealed class PartitionedSourceReaderTests : IDisposable
             ["ts,o,h,l,c,vol", "1717238400000,100,110,90,105,500"]);
         Directory.CreateDirectory(Path.Combine(dir, ".staging-jobX"));
 
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(new DataFeedDescriptor(_tempDir, "binance", asset, sourceFeedId, DataFeedKind.AltBar)).ToList();
+        var reader = NewReader();
+        var records = await reader.Read(new DataFeedDescriptor(_tempDir, "binance", asset, sourceFeedId, DataFeedKind.AltBar), ct: Ct).ToListAsync(Ct);
         Assert.Single(records);
     }
 
@@ -220,15 +227,15 @@ public sealed class PartitionedSourceReaderTests : IDisposable
     // change — but no production path can produce a collision today.
 
     [Fact]
-    public void Read_MissingDir_YieldsNothing()
+    public async Task Read_MissingDir_YieldsNothing()
     {
-        var reader = new PartitionedSourceReader();
-        var records = reader.Read(Source("DOESNT_EXIST", "1m")).ToList();
+        var reader = NewReader();
+        var records = await reader.Read(Source("DOESNT_EXIST", "1m"), ct: Ct).ToListAsync(Ct);
         Assert.Empty(records);
     }
 
     [Fact]
-    public void Read_MalformedCell_Throws()
+    public async Task Read_MalformedCell_Throws()
     {
         // Reviewer Issue 2 — malformed source cells must surface, not silently skip.
         // A skipped source bar shifts every downstream threshold-equivalence boundary,
@@ -243,15 +250,16 @@ public sealed class PartitionedSourceReaderTests : IDisposable
             $"{Ts(2024, 1, 1, 1)},105,not-a-number,100,110,60",
         ]);
 
-        var reader = new PartitionedSourceReader();
-        var ex = Assert.Throws<FormatException>(() => reader.Read(Source("MALFORMED", "1m")).ToList());
+        var reader = NewReader();
+        var ex = await Assert.ThrowsAsync<FormatException>(async () =>
+            await reader.Read(Source("MALFORMED", "1m"), ct: Ct).ToListAsync(Ct));
         Assert.Contains("not-a-number", ex.Message, StringComparison.Ordinal);
         Assert.Contains("row 3", ex.Message, StringComparison.Ordinal);
         Assert.Contains("'h'", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Read_TooFewColumns_Throws()
+    public async Task Read_TooFewColumns_Throws()
     {
         var dir = CandlesDir("SHORTROW");
         Directory.CreateDirectory(dir);
@@ -262,8 +270,9 @@ public sealed class PartitionedSourceReaderTests : IDisposable
             $"{Ts(2024, 1, 1, 0)},100,110",   // truncated row
         ]);
 
-        var reader = new PartitionedSourceReader();
-        var ex = Assert.Throws<FormatException>(() => reader.Read(Source("SHORTROW", "1m")).ToList());
+        var reader = NewReader();
+        var ex = await Assert.ThrowsAsync<FormatException>(async () =>
+            await reader.Read(Source("SHORTROW", "1m"), ct: Ct).ToListAsync(Ct));
         Assert.Contains("at least 6", ex.Message, StringComparison.Ordinal);
     }
 }

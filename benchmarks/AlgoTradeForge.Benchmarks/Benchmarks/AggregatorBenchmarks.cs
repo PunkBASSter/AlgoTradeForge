@@ -51,9 +51,10 @@ public class AggregatorBenchmarks
         }
 
         _pipeline = new AggregationPipeline(
-            new PartitionedSourceReader(),
+            new PartitionedSourceReader(new LocalFileStorage()),
             new FeedSchemaManager(new LocalFileStorage()),
-            new OverwritePathWriter(),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
 
         var scale = new ScaleContext(0.01m);   // 2 decimal digits → ScaleFactor=100

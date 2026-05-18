@@ -66,9 +66,10 @@ public sealed class AggregationPipeline_TickSourceTests : IDisposable
     }
 
     private static AggregationPipeline NewPipeline() => new(
-        new PartitionedSourceReader(),
+        new PartitionedSourceReader(new LocalFileStorage()),
         new FeedSchemaManager(new LocalFileStorage()),
-        new OverwritePathWriter(),
+        new OverwritePathWriter(new LocalFileStorage()),
+        new LocalFileStorage(),
         TimeProvider.System);
 
     // -------------------------------------------------------------------------

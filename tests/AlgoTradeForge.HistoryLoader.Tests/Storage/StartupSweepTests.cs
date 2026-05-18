@@ -2,6 +2,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
+using AlgoTradeForge.Infrastructure.IO;
 using NSubstitute;
 using Xunit;
 
@@ -33,7 +34,7 @@ public sealed class StartupSweepTests : IDisposable
         return path;
     }
 
-    private AggregatedDirSweeper BuildSweeper() => new(_schema, _logger);
+    private AggregatedDirSweeper BuildSweeper() => new(new LocalFileStorage(), _schema, _logger);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 

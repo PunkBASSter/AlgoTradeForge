@@ -106,9 +106,10 @@ public sealed class AggregationPipelineResumeTests : IDisposable
         WriteCandlesEqVPattern(assetRef);
 
         var pipelineRef = new AggregationPipeline(
-            new PartitionedSourceReader(),
+            new PartitionedSourceReader(new LocalFileStorage()),
             new FeedSchemaManager(new LocalFileStorage()),
-            new OverwritePathWriter(),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
         var freshResult = await pipelineRef.Run(
             Job(assetRef, "EqV", thresholdScaled: 1000, thresholdAbs: 1000m),
@@ -120,9 +121,10 @@ public sealed class AggregationPipelineResumeTests : IDisposable
         WriteCandlesEqVPattern(assetSub, firstSix: true);
 
         var pipelineSub = new AggregationPipeline(
-            new PartitionedSourceReader(),
+            new PartitionedSourceReader(new LocalFileStorage()),
             new FeedSchemaManager(new LocalFileStorage()),
-            new OverwritePathWriter(),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
         var firstHalf = await pipelineSub.Run(
             Job(assetSub, "EqV", thresholdScaled: 1000, thresholdAbs: 1000m),
@@ -175,9 +177,10 @@ public sealed class AggregationPipelineResumeTests : IDisposable
         WriteCandlesEqVPattern(asset, firstSix: true);
 
         var pipeline = new AggregationPipeline(
-            new PartitionedSourceReader(),
+            new PartitionedSourceReader(new LocalFileStorage()),
             new FeedSchemaManager(new LocalFileStorage()),
-            new OverwritePathWriter(),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
         await pipeline.Run(
             Job(asset, "EqV", thresholdScaled: 1000, thresholdAbs: 1000m),

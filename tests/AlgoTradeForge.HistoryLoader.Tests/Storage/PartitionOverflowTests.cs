@@ -1,4 +1,5 @@
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Storage;
@@ -9,6 +10,8 @@ namespace AlgoTradeForge.HistoryLoader.Tests.Storage;
 /// </summary>
 public sealed class PartitionOverflowTests : IDisposable
 {
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
     private readonly string _tempDir =
         Path.Combine(Path.GetTempPath(), $"PartitionOverflowTests_{Guid.NewGuid():N}");
 
@@ -28,20 +31,23 @@ public sealed class PartitionOverflowTests : IDisposable
 
     private string FeedDir(string name) => Path.Combine(_tempDir, name);
 
+    private static LocalFileStorage Storage() => new();
+
     // -------------------------------------------------------------------------
     // P1a-19 baseline — no overflow, single bare-name partition
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Writer_BelowBudget_ProducesSingleBareNamePartition()
+    public async Task Writer_BelowBudget_ProducesSingleBareNamePartition()
     {
         var feedDir = FeedDir("EqV_baseline");
 
         // Each row ~30 bytes with header included; budget 10 KB → no overflow for ~10 rows.
-        using (var writer = new PartitionedSinkWriter(feedDir, maxPartitionBytes: 10_000, headerLine: "ts,o,h,l,c,vol"))
+        await using (var writer = await PartitionedSinkWriter.Open(Storage(), feedDir, maxPartitionBytes: 10_000, headerLine: "ts,o,h,l,c,vol", Ct))
         {
             for (var i = 0; i < 10; i++)
-                writer.WriteRow(Apr15Ms(i % 24), $"{Apr15Ms(i % 24)},1,2,0,1,5");
+                await writer.WriteRow(Apr15Ms(i % 24), $"{Apr15Ms(i % 24)},1,2,0,1,5", Ct);
+            await writer.Complete(Ct);
         }
 
         Assert.True(File.Exists(Path.Combine(feedDir, "2026-04.csv")));
@@ -54,7 +60,7 @@ public sealed class PartitionOverflowTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Writer_MidMonthOverflow_PromotesBareToP01AndOpensP02()
+    public async Task Writer_MidMonthOverflow_PromotesBareToP01AndOpensP02()
     {
         var feedDir = FeedDir("EqV_overflow");
 
@@ -62,13 +68,14 @@ public sealed class PartitionOverflowTests : IDisposable
         // bytes lets us write ~1 row before overflow check.
         const long tinyBudget = 80;
 
-        using (var writer = new PartitionedSinkWriter(feedDir, tinyBudget, headerLine: "ts,o,h,l,c,vol"))
+        await using (var writer = await PartitionedSinkWriter.Open(Storage(), feedDir, tinyBudget, headerLine: "ts,o,h,l,c,vol", Ct))
         {
             // 4 rows in April → triggers ~3 rollovers
-            writer.WriteRow(Apr15Ms(0), $"{Apr15Ms(0)},1,2,0,1,5");
-            writer.WriteRow(Apr15Ms(1), $"{Apr15Ms(1)},1,2,0,1,5");
-            writer.WriteRow(Apr15Ms(2), $"{Apr15Ms(2)},1,2,0,1,5");
-            writer.WriteRow(Apr15Ms(3), $"{Apr15Ms(3)},1,2,0,1,5");
+            await writer.WriteRow(Apr15Ms(0), $"{Apr15Ms(0)},1,2,0,1,5", Ct);
+            await writer.WriteRow(Apr15Ms(1), $"{Apr15Ms(1)},1,2,0,1,5", Ct);
+            await writer.WriteRow(Apr15Ms(2), $"{Apr15Ms(2)},1,2,0,1,5", Ct);
+            await writer.WriteRow(Apr15Ms(3), $"{Apr15Ms(3)},1,2,0,1,5", Ct);
+            await writer.Complete(Ct);
         }
 
         // After rollover: bare-name 2026-04.csv MUST NOT exist (it was renamed to p01).
@@ -99,21 +106,22 @@ public sealed class PartitionOverflowTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Writer_StickyOverflow_NextMonthOpensAtP01()
+    public async Task Writer_StickyOverflow_NextMonthOpensAtP01()
     {
         var feedDir = FeedDir("EqV_sticky");
 
         const long tinyBudget = 80;
 
-        using (var writer = new PartitionedSinkWriter(feedDir, tinyBudget, headerLine: "ts,o,h,l,c,vol"))
+        await using (var writer = await PartitionedSinkWriter.Open(Storage(), feedDir, tinyBudget, headerLine: "ts,o,h,l,c,vol", Ct))
         {
             // Force overflow within April...
-            writer.WriteRow(Apr15Ms(0), $"{Apr15Ms(0)},1,2,0,1,5");
-            writer.WriteRow(Apr15Ms(1), $"{Apr15Ms(1)},1,2,0,1,5");
-            writer.WriteRow(Apr15Ms(2), $"{Apr15Ms(2)},1,2,0,1,5");
+            await writer.WriteRow(Apr15Ms(0), $"{Apr15Ms(0)},1,2,0,1,5", Ct);
+            await writer.WriteRow(Apr15Ms(1), $"{Apr15Ms(1)},1,2,0,1,5", Ct);
+            await writer.WriteRow(Apr15Ms(2), $"{Apr15Ms(2)},1,2,0,1,5", Ct);
 
             // ... then write a row in May. Per cross-month sticky rule, May MUST pre-open at p01.
-            writer.WriteRow(May01Ms(0), $"{May01Ms(0)},1,2,0,1,5");
+            await writer.WriteRow(May01Ms(0), $"{May01Ms(0)},1,2,0,1,5", Ct);
+            await writer.Complete(Ct);
         }
 
         Assert.False(File.Exists(Path.Combine(feedDir, "2026-04.csv")),
@@ -126,21 +134,22 @@ public sealed class PartitionOverflowTests : IDisposable
     }
 
     [Fact]
-    public void Writer_NoOverflowMonthFollowedByOverflow_OnlyLaterMonthHasParts()
+    public async Task Writer_NoOverflowMonthFollowedByOverflow_OnlyLaterMonthHasParts()
     {
         // Inverted scenario: write a small batch in April (no overflow), then large batch in
         // May that overflows. April stays bare-named; May goes part-numbered.
         var feedDir = FeedDir("EqV_late_overflow");
 
-        using (var writer = new PartitionedSinkWriter(feedDir, maxPartitionBytes: 10_000, headerLine: "ts,o,h,l,c,vol"))
+        await using (var writer = await PartitionedSinkWriter.Open(Storage(), feedDir, maxPartitionBytes: 10_000, headerLine: "ts,o,h,l,c,vol", Ct))
         {
-            writer.WriteRow(Apr15Ms(0), $"{Apr15Ms(0)},1,2,0,1,5");
-            writer.WriteRow(Apr15Ms(1), $"{Apr15Ms(1)},1,2,0,1,5");
+            await writer.WriteRow(Apr15Ms(0), $"{Apr15Ms(0)},1,2,0,1,5", Ct);
+            await writer.WriteRow(Apr15Ms(1), $"{Apr15Ms(1)},1,2,0,1,5", Ct);
 
             // ... then May with tiny rows but force overflow via a wide row.
             // The default budget here is 10k so we won't actually overflow May either —
             // assert just that April stays bare-named (no premature stickiness).
-            writer.WriteRow(May01Ms(0), $"{May01Ms(0)},1,2,0,1,5");
+            await writer.WriteRow(May01Ms(0), $"{May01Ms(0)},1,2,0,1,5", Ct);
+            await writer.Complete(Ct);
         }
 
         Assert.True(File.Exists(Path.Combine(feedDir, "2026-04.csv")));
@@ -154,17 +163,17 @@ public sealed class PartitionOverflowTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Writer_BackwardMonthJump_Throws()
+    public async Task Writer_BackwardMonthJump_Throws()
     {
         var feedDir = FeedDir("EqV_outoforder");
 
-        var writer = new PartitionedSinkWriter(feedDir, maxPartitionBytes: 10_000, headerLine: "ts,o,h,l,c,vol");
-        writer.WriteRow(May01Ms(0), $"{May01Ms(0)},1,2,0,1,5");
+        var writer = await PartitionedSinkWriter.Open(Storage(), feedDir, maxPartitionBytes: 10_000, headerLine: "ts,o,h,l,c,vol", Ct);
+        await writer.WriteRow(May01Ms(0), $"{May01Ms(0)},1,2,0,1,5", Ct);
 
-        Assert.Throws<InvalidOperationException>(
-            () => writer.WriteRow(Apr15Ms(0), $"{Apr15Ms(0)},1,2,0,1,5"));
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await writer.WriteRow(Apr15Ms(0), $"{Apr15Ms(0)},1,2,0,1,5", Ct));
 
-        writer.Dispose();
+        await writer.DisposeAsync();
     }
 
     // -------------------------------------------------------------------------
@@ -175,20 +184,21 @@ public sealed class PartitionOverflowTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Writer_FirstRowExceedsBudget_AdmitsRow_DoesNotInfiniteLoop()
+    public async Task Writer_FirstRowExceedsBudget_AdmitsRow_DoesNotInfiniteLoop()
     {
         var feedDir = FeedDir("EqV_oversize");
         // Row payload is ~30+ bytes (timestamp + OHLCV); set budget below header alone so
         // a naive `>budget` check would refuse to ever advance.
         const long impossiblyTinyBudget = 8;
 
-        using (var writer = new PartitionedSinkWriter(feedDir, maxPartitionBytes: impossiblyTinyBudget, headerLine: "ts,o,h,l,c,vol"))
+        await using (var writer = await PartitionedSinkWriter.Open(Storage(), feedDir, maxPartitionBytes: impossiblyTinyBudget, headerLine: "ts,o,h,l,c,vol", Ct))
         {
             // Must complete (does not loop or throw) — the empty-partition guard waives the
             // rollover for the first data row.
-            writer.WriteRow(Apr15Ms(0), $"{Apr15Ms(0)},1,2,0,1,5");
+            await writer.WriteRow(Apr15Ms(0), $"{Apr15Ms(0)},1,2,0,1,5", Ct);
             // Second row triggers a normal rollover because the partition now has data.
-            writer.WriteRow(Apr15Ms(1), $"{Apr15Ms(1)},1,2,0,1,5");
+            await writer.WriteRow(Apr15Ms(1), $"{Apr15Ms(1)},1,2,0,1,5", Ct);
+            await writer.Complete(Ct);
         }
 
         // Bare partition was promoted on the second row (overflow detected post-first-write).

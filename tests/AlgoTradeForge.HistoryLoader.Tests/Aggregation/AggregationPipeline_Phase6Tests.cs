@@ -27,9 +27,10 @@ public sealed class AggregationPipeline_Phase6Tests : IDisposable
     private string AssetDir(string asset) => Path.Combine(_tempDir, "binance", asset);
 
     private static AggregationPipeline NewPipeline() => new(
-        new PartitionedSourceReader(),
+        new PartitionedSourceReader(new LocalFileStorage()),
         new FeedSchemaManager(new LocalFileStorage()),
-        new OverwritePathWriter(),
+        new OverwritePathWriter(new LocalFileStorage()),
+        new LocalFileStorage(),
         TimeProvider.System);
 
     private static long Ts(int year, int month, int day, int hour = 0, int minute = 0, int second = 0) =>

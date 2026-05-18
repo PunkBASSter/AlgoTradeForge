@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
+using AlgoTradeForge.Application.IO;
 using AlgoTradeForge.Domain;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
@@ -6,42 +8,25 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 /// <summary>
 /// Streaming 1:1 join between a chronological time-bar source and the asset's
 /// <c>candle-ext</c> feed. Produces <see cref="SourceRecord"/>s with the appropriate
-/// imbalance fields populated for the requested <see cref="CandleExtJoinMode"/>:
-/// <list type="bullet">
-///   <item><see cref="CandleExtJoinMode.TakerBuyVolume"/> (EqIV proxy): reads
-///         <c>taker_buy_vol</c>; writes <c>BuyVolumeLong</c>/<c>SellVolumeLong</c> in
-///         base-asset-tick units (qty × QuantityScale).</item>
-///   <item><see cref="CandleExtJoinMode.TakerBuyQuoteVolume"/> (EqID proxy): reads
-///         <c>taker_buy_quote_vol</c>; writes <c>BuyVolumeLong</c>/<c>SellVolumeLong</c>
-///         in dollar-tick units (dollars × QuantityScale × ScaleFactor) so the
-///         EqIDAccumulator can sum directly.</item>
-///   <item><see cref="CandleExtJoinMode.TakerBuyTradeCount"/> (EqIT proxy): reads
-///         <c>taker_buy_trade_count</c> + <c>trade_count</c>; writes
-///         <c>BuyTradeCountLong</c>/<c>SellTradeCountLong</c> as raw counts.</item>
-/// </list>
+/// imbalance fields populated for the requested <see cref="CandleExtJoinMode"/>.
 /// Source records without a matching candle-ext row are dropped silently. O(1) memory.
 /// </summary>
 public sealed class CandleExtJoiningSource
 {
-    // Column-name lookup; the joiner resolves indices per partition (header row) so we
-    // tolerate column-order changes between schema revisions.
     private const string TakerBuyVolColumn = "taker_buy_vol";
     private const string TakerBuyQuoteVolColumn = "taker_buy_quote_vol";
     private const string TakerBuyTradeCountColumn = "taker_buy_trade_count";
     private const string TradeCountColumn = "trade_count";
 
+    private readonly IFileStorage _storage;
     private readonly string _candleExtDir;
     private readonly string _interval;
     private readonly decimal _quantityScale;
-    private readonly decimal _quantityTimesScaleFactor;     // QuantityScale / TickSize
+    private readonly decimal _quantityTimesScaleFactor;
     private readonly CandleExtJoinMode _mode;
 
-    public CandleExtJoiningSource(string assetDir, string interval, ScaleContext scale)
-        : this(assetDir, interval, scale, CandleExtJoinMode.TakerBuyVolume)
-    {
-    }
-
     public CandleExtJoiningSource(
+        IFileStorage storage,
         string assetDir,
         string interval,
         ScaleContext scale,
@@ -53,6 +38,7 @@ public sealed class CandleExtJoiningSource
         if (mode == CandleExtJoinMode.None)
             throw new ArgumentException("CandleExtJoiningSource requires a non-None join mode.", nameof(mode));
 
+        _storage = storage;
         _candleExtDir = Path.Combine(assetDir, "candle-ext");
         _interval = interval;
         _quantityScale = scale.QuantityScale;
@@ -61,23 +47,22 @@ public sealed class CandleExtJoiningSource
         _mode = mode;
     }
 
-    /// <summary>
-    /// Yields source records joined to candle-ext. Records without a matching candle-ext row
-    /// (by <c>ts</c>) are dropped.
-    /// </summary>
-    public IEnumerable<SourceRecord> Join(IEnumerable<SourceRecord> upstream)
+    public async IAsyncEnumerable<SourceRecord> Join(
+        IAsyncEnumerable<SourceRecord> upstream,
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(upstream);
 
-        if (!Directory.Exists(_candleExtDir))
-            yield break;
+        var partitionKeys = await ListPartitionsByMonth(ct);
+        if (partitionKeys.Count == 0) yield break;
 
-        using var cursor = new CandleExtCursor(_candleExtDir, _interval, _mode);
+        await using var cursor = new CandleExtCursor(_storage, _interval, _mode, partitionKeys);
 
-        foreach (var record in upstream)
+        await foreach (var record in upstream.WithCancellation(ct))
         {
-            if (!cursor.AdvanceTo(record.TsMs, out var row))
-                continue;       // partial coverage — skip this source record
+            var (matched, row) = await cursor.AdvanceTo(record.TsMs, ct);
+            if (!matched)
+                continue;
 
             switch (_mode)
             {
@@ -93,8 +78,7 @@ public sealed class CandleExtJoiningSource
                 case CandleExtJoinMode.TakerBuyQuoteVolume:
                 {
                     // Pre-scale to dollar-tick units so EqIDAccumulator can sum without re-scaling.
-                    // PrimaryDouble carries taker_buy_quote_vol; SecondaryDouble carries quote_vol
-                    // (total quote volume) for the sell-side back-out.
+                    // PrimaryDouble carries taker_buy_quote_vol; SecondaryDouble carries quote_vol.
                     var quoteVolDouble = row.SecondaryDouble;
                     var takerBuyQuote = row.PrimaryDouble;
                     if (takerBuyQuote < 0d) takerBuyQuote = 0d;
@@ -111,7 +95,6 @@ public sealed class CandleExtJoiningSource
                 }
                 case CandleExtJoinMode.TakerBuyTradeCount:
                 {
-                    // PrimaryDouble = taker_buy_trade_count; SecondaryDouble = trade_count.
                     var takerBuyCount = (long)row.PrimaryDouble;
                     var tradeCount = (long)row.SecondaryDouble;
                     if (takerBuyCount < 0L) takerBuyCount = 0L;
@@ -128,19 +111,32 @@ public sealed class CandleExtJoiningSource
         }
     }
 
-    /// <summary>One staged candle-ext row, holding up to two doubles depending on join mode.</summary>
+    private async Task<List<(string Path, string MonthKey)>> ListPartitionsByMonth(CancellationToken ct)
+    {
+        var suffix = $"_{_interval}.csv";
+        var matches = new List<(string Path, string MonthKey)>();
+        await foreach (var key in _storage.ListKeys(_candleExtDir, suffix, recursive: false, ct))
+        {
+            var name = Path.GetFileNameWithoutExtension(key);
+            var monthKey = name.Length >= 7 ? name[..7] : name;
+            matches.Add((key, monthKey));
+        }
+        matches.Sort((a, b) => string.CompareOrdinal(a.MonthKey, b.MonthKey));
+        return matches;
+    }
+
     private readonly record struct CursorRow(double PrimaryDouble, double SecondaryDouble);
 
     // Walks candle-ext monthly partitions forward by ts. Single-pass; not thread-safe.
-    private sealed class CandleExtCursor : IDisposable
+    private sealed class CandleExtCursor : IAsyncDisposable
     {
-        private readonly string _dir;
+        private readonly IFileStorage _storage;
         private readonly string _interval;
         private readonly CandleExtJoinMode _mode;
+        private readonly List<(string Path, string MonthKey)> _partitions;
 
-        private FileStream? _fs;
-        private StreamReader? _reader;
-        private string? _openMonth;
+        private int _partitionIndex = -1;
+        private IAsyncEnumerator<string>? _lineEnumerator;
         private int _primaryIdx = -1;
         private int _secondaryIdx = -1;
         private long _stagedTs = long.MinValue;
@@ -148,55 +144,57 @@ public sealed class CandleExtJoiningSource
         private bool _hasStaged;
         private bool _eofReached;
 
-        public CandleExtCursor(string dir, string interval, CandleExtJoinMode mode)
+        public CandleExtCursor(
+            IFileStorage storage,
+            string interval,
+            CandleExtJoinMode mode,
+            List<(string Path, string MonthKey)> partitions)
         {
-            _dir = dir;
+            _storage = storage;
             _interval = interval;
             _mode = mode;
+            _partitions = partitions;
         }
 
-        public bool AdvanceTo(long ts, out CursorRow row)
+        public async Task<(bool Matched, CursorRow Row)> AdvanceTo(long ts, CancellationToken ct)
         {
-            row = default;
-
             // Walk past any staged record whose ts is older than the request — the upstream
             // iterator is monotonic, so once we step past a ts we never need to rewind.
             while (true)
             {
                 if (!_hasStaged)
                 {
-                    if (!ReadNextRow()) return false;
+                    if (!await ReadNextRow(ct)) return (false, default);
                 }
 
                 if (_stagedTs == ts)
                 {
-                    row = _stagedRow;
+                    var row = _stagedRow;
                     _hasStaged = false;
-                    return true;
+                    return (true, row);
                 }
 
                 if (_stagedTs > ts)
-                    return false;             // candle-ext jumped past the requested ts (gap on source side)
+                    return (false, default);   // candle-ext jumped past the requested ts (gap on source side)
 
                 _hasStaged = false;
             }
         }
 
-        private bool ReadNextRow()
+        private async Task<bool> ReadNextRow(CancellationToken ct)
         {
             while (true)
             {
-                if (_reader is null)
+                if (_lineEnumerator is null)
                 {
                     if (_eofReached) return false;
-                    if (!OpenNextMonth()) return false;
+                    if (!await OpenNextMonth(ct)) return false;
                 }
 
-                var line = _reader!.ReadLine();
-                if (line is null)
+                if (!await _lineEnumerator!.MoveNextAsync())
                 {
-                    CloseCurrent();
-                    if (!OpenNextMonth())
+                    await CloseCurrent();
+                    if (!await OpenNextMonth(ct))
                     {
                         _eofReached = true;
                         return false;
@@ -204,12 +202,13 @@ public sealed class CandleExtJoiningSource
                     continue;
                 }
 
+                var line = _lineEnumerator.Current;
                 if (line.Length == 0) continue;
 
                 var parts = line.Split(',');
                 var maxIdx = Math.Max(_primaryIdx, _secondaryIdx);
                 if (parts.Length <= maxIdx)
-                    continue;       // malformed row; primary partition is the source of truth
+                    continue;    // malformed row; primary partition is the source of truth
 
                 if (!long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var ts))
                     continue;
@@ -227,40 +226,20 @@ public sealed class CandleExtJoiningSource
             }
         }
 
-        private bool OpenNextMonth()
+        private async Task<bool> OpenNextMonth(CancellationToken ct)
         {
-            // Lex sort ≡ chronological for YYYY-MM; start after the previously-open month.
-            var pattern = $"*_{_interval}.csv";
-            var months = Directory
-                .EnumerateFiles(_dir, pattern, SearchOption.TopDirectoryOnly)
-                .Select(p => (Path: p, Name: Path.GetFileNameWithoutExtension(p)))
-                .OrderBy(t => t.Name, StringComparer.Ordinal)
-                .ToArray();
+            _partitionIndex++;
+            if (_partitionIndex >= _partitions.Count) return false;
 
-            (string Path, string Name)? next = null;
-            foreach (var m in months)
+            var (path, _) = _partitions[_partitionIndex];
+            _lineEnumerator = _storage.ReadLines(path, ct).GetAsyncEnumerator(ct);
+
+            if (!await _lineEnumerator.MoveNextAsync())
             {
-                // Name format: "YYYY-MM_<interval>"; sort on the YYYY-MM prefix.
-                var monthKey = m.Name.Length >= 7 ? m.Name[..7] : m.Name;
-                if (_openMonth is not null && string.CompareOrdinal(monthKey, _openMonth) <= 0)
-                    continue;
-
-                next = (m.Path, monthKey);
-                break;
+                await CloseCurrent();
+                return await OpenNextMonth(ct);
             }
-
-            if (next is null) return false;
-
-            _fs = new FileStream(next.Value.Path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            _reader = new StreamReader(_fs);
-            _openMonth = next.Value.Name;
-
-            var header = _reader.ReadLine();
-            if (header is null)
-            {
-                CloseCurrent();
-                return OpenNextMonth();
-            }
+            var header = _lineEnumerator.Current;
 
             var headerParts = header.Split(',');
             var (primaryName, secondaryName) = _mode switch
@@ -276,11 +255,11 @@ public sealed class CandleExtJoiningSource
 
             if (_primaryIdx < 0)
                 throw new InvalidOperationException(
-                    $"candle-ext partition '{next.Value.Path}' is missing the '{primaryName}' column. " +
+                    $"candle-ext partition '{path}' is missing the '{primaryName}' column. " +
                     DescribeMissingRemediation(_mode));
             if (secondaryName is not null && _secondaryIdx < 0)
                 throw new InvalidOperationException(
-                    $"candle-ext partition '{next.Value.Path}' is missing the '{secondaryName}' column. " +
+                    $"candle-ext partition '{path}' is missing the '{secondaryName}' column. " +
                     DescribeMissingRemediation(_mode));
 
             return true;
@@ -308,14 +287,15 @@ public sealed class CandleExtJoiningSource
             _ => string.Empty,
         };
 
-        private void CloseCurrent()
+        private async ValueTask CloseCurrent()
         {
-            _reader?.Dispose();
-            _fs?.Dispose();
-            _reader = null;
-            _fs = null;
+            if (_lineEnumerator is not null)
+            {
+                await _lineEnumerator.DisposeAsync();
+                _lineEnumerator = null;
+            }
         }
 
-        public void Dispose() => CloseCurrent();
+        public async ValueTask DisposeAsync() => await CloseCurrent();
     }
 }
