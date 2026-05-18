@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using AlgoTradeForge.Application.Threading;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
@@ -19,6 +21,7 @@ public sealed class FeedCatalog : IFeedCatalog
     private readonly ISchemaManager _schemaManager;
     private readonly IMemoryCache _cache;
     private readonly TimeSpan _ttl = TimeSpan.FromSeconds(30);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _loadGates = new();
 
     private long _version;
 
@@ -33,41 +36,48 @@ public sealed class FeedCatalog : IFeedCatalog
 
         // Both this and the schema manager are singletons constructed at DI time, so the
         // subscription captures every mutation from the moment the catalog exists.
-        _schemaManager.ManifestChanged += _ => Interlocked.Increment(ref _version);
+        _schemaManager.ManifestChanged += _ =>
+        {
+            Interlocked.Increment(ref _version);
+            // Versioned cache keys are never reused after a bump, so the per-key gates from
+            // the previous version are dead weight. Drop them to keep the map bounded.
+            _loadGates.Clear();
+        };
     }
 
-    public ExchangeListResponse GetExchanges() =>
-        Cached($"exchanges:{Version}", () =>
+    public Task<ExchangeListResponse> GetExchanges(CancellationToken ct = default) =>
+        CachedAsync($"exchanges:{Version}", () =>
         {
             var groups = _options.CurrentValue.Assets
                 .GroupBy(a => a.Exchange, StringComparer.OrdinalIgnoreCase)
                 .Select(g => new ExchangeSummary(g.Key, g.Count()))
                 .OrderBy(e => e.Name, StringComparer.Ordinal)
                 .ToArray();
-            return new ExchangeListResponse(groups);
+            return Task.FromResult(new ExchangeListResponse(groups));
         });
 
-    public AssetListResponse GetAssetsByExchange(string exchange) =>
-        Cached($"assets:{exchange}:{Version}", () =>
-            new AssetListResponse(BuildAssetEntries(exchange).ToArray()));
+    public Task<AssetListResponse> GetAssetsByExchange(string exchange, CancellationToken ct = default) =>
+        CachedAsync($"assets:{exchange}:{Version}", async () =>
+            new AssetListResponse(await BuildAssetEntries(exchange, ct)));
 
-    public AssetListResponse GetAllAssets() =>
-        Cached($"assets:all:{Version}", () =>
-            new AssetListResponse(BuildAssetEntries(exchange: null).ToArray()));
+    public Task<AssetListResponse> GetAllAssets(CancellationToken ct = default) =>
+        CachedAsync($"assets:all:{Version}", async () =>
+            new AssetListResponse(await BuildAssetEntries(exchange: null, ct)));
 
-    public AssetCatalogEntry? GetAsset(string exchange, string assetSymbol)
+    public async Task<AssetCatalogEntry?> GetAsset(string exchange, string assetSymbol, CancellationToken ct = default)
     {
         // No separate cache — the assets-by-exchange entry already contains this slice.
-        return BuildAssetEntries(exchange).FirstOrDefault(a =>
+        var entries = await BuildAssetEntries(exchange, ct);
+        return entries.FirstOrDefault(a =>
             string.Equals(a.Symbol, assetSymbol, StringComparison.Ordinal));
     }
 
-    public FeedDefinition? GetFeed(string exchange, string assetSymbol, string feedId)
+    public async Task<FeedDefinition?> GetFeed(string exchange, string assetSymbol, string feedId, CancellationToken ct = default)
     {
         var asset = ResolveConfiguredAsset(exchange, assetSymbol);
         if (asset is null) return null;
         var assetDir = BackfillOrchestrator.ResolveAssetDir(_options.CurrentValue.DataRoot, asset);
-        var manifest = _schemaManager.Load(assetDir);
+        var manifest = await _schemaManager.Load(assetDir, ct);
         if (manifest is null) return null;
 
         // Declared feeds (Side / Tick / explicit AltBar) live in `manifest.Feeds`.
@@ -93,13 +103,24 @@ public sealed class FeedCatalog : IFeedCatalog
 
     private long Version => Interlocked.Read(ref _version);
 
-    private T Cached<T>(string key, Func<T> factory)
+    private async Task<T> CachedAsync<T>(string key, Func<Task<T>> factory) where T : class
     {
-        return _cache.GetOrCreate(key, e =>
-        {
-            e.AbsoluteExpirationRelativeToNow = _ttl;
-            return factory();
-        })!;
+        // Fast path: avoid the gate on a hot cache hit.
+        if (_cache.TryGetValue(key, out T? hit) && hit is not null) return hit;
+
+        // Single-flight per key. Without this, concurrent miss-readers each invoke factory
+        // (which awaits per-asset manifest I/O), fanning out into N parallel file reads per
+        // HTTP burst — fine on local FS, painful on S3 latency.
+        var gate = _loadGates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        using var _ = await gate.LockAsync(CancellationToken.None);
+
+        if (_cache.TryGetValue(key, out hit) && hit is not null) return hit;
+
+        using var entry = _cache.CreateEntry(key);
+        entry.AbsoluteExpirationRelativeToNow = _ttl;
+        var result = await factory();
+        entry.Value = result;
+        return result;
     }
 
     private AssetCollectionConfig? ResolveConfiguredAsset(string exchange, string assetSymbol) =>
@@ -110,19 +131,25 @@ public sealed class FeedCatalog : IFeedCatalog
                 assetSymbol,
                 StringComparison.Ordinal));
 
-    private IEnumerable<AssetCatalogEntry> BuildAssetEntries(string? exchange)
+    private async Task<AssetCatalogEntry[]> BuildAssetEntries(string? exchange, CancellationToken ct)
     {
         var config = _options.CurrentValue;
-        var assets = config.Assets.AsEnumerable();
-        if (exchange is not null)
-        {
-            assets = assets.Where(a => string.Equals(a.Exchange, exchange, StringComparison.OrdinalIgnoreCase));
-        }
+        var assets = exchange is null
+            ? config.Assets.ToArray()
+            : config.Assets
+                .Where(a => string.Equals(a.Exchange, exchange, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
 
-        foreach (var asset in assets)
+        // Per-asset loads are independent — fan out so the total cost is one round-trip
+        // (max latency) instead of Σ(latencies). Matters once IFileStorage points at S3.
+        var manifests = await Task.WhenAll(assets.Select(a =>
+            _schemaManager.Load(BackfillOrchestrator.ResolveAssetDir(config.DataRoot, a), ct)));
+
+        var result = new AssetCatalogEntry[assets.Length];
+        for (var i = 0; i < assets.Length; i++)
         {
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-            var manifest = _schemaManager.Load(assetDir);
+            var asset = assets[i];
+            var manifest = manifests[i];
 
             var declaredFeedDict = manifest?.Feeds ?? new Dictionary<string, FeedDefinition>();
             var declaredFeeds = declaredFeedDict.Select(kvp => MapFeed(kvp.Key, kvp.Value));
@@ -149,7 +176,7 @@ public sealed class FeedCatalog : IFeedCatalog
                 .OrderBy(f => f, FeedOrder.Instance)
                 .ToArray();
 
-            yield return new AssetCatalogEntry(
+            result[i] = new AssetCatalogEntry(
                 Exchange: asset.Exchange,
                 Symbol: AssetPathConvention.DirectoryName(asset.Symbol, asset.Type),
                 // Disambiguate spot vs perpetual labels — asset.Symbol alone collapses
@@ -158,6 +185,7 @@ public sealed class FeedCatalog : IFeedCatalog
                 Type: asset.Type,
                 Feeds: feeds);
         }
+        return result;
     }
 
     private static FeedCatalogEntry MapFeed(string id, FeedDefinition def)

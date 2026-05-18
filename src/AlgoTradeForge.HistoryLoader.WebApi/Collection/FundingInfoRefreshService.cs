@@ -97,13 +97,14 @@ internal sealed class FundingInfoRefreshService(
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-            var updated = schemaManager.SetAutoApplyParams(
+            var updated = await schemaManager.SetAutoApplyParams(
                 assetDir,
                 FeedNames.FundingRate,
                 cap: entry.AdjustedFundingRateCap,
                 floor: entry.AdjustedFundingRateFloor,
                 intervalHours: entry.FundingIntervalHours,
-                disclaimer: entry.Disclaimer);
+                disclaimer: entry.Disclaimer,
+                ct: ct);
 
             if (updated)
                 written++;

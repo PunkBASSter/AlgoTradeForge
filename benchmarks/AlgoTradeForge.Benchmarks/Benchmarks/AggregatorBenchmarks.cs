@@ -3,6 +3,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.Infrastructure.IO;
 using BenchmarkDotNet.Attributes;
 
 namespace AlgoTradeForge.Benchmarks.Benchmarks;
@@ -51,7 +52,7 @@ public class AggregatorBenchmarks
 
         _pipeline = new AggregationPipeline(
             new PartitionedSourceReader(),
-            new FeedSchemaManager(),
+            new FeedSchemaManager(new LocalFileStorage()),
             new OverwritePathWriter(),
             TimeProvider.System);
 
@@ -115,22 +116,22 @@ public class AggregatorBenchmarks
     }
 
     [Benchmark]
-    public AggregationResult Aggregate_EqV_1h_100k() => _pipeline.Run(_eqVJob);
+    public Task<AggregationResult> Aggregate_EqV_1h_100k() => _pipeline.Run(_eqVJob);
 
     [Benchmark]
-    public AggregationResult Aggregate_EqT_1h_500() => _pipeline.Run(_eqTJob);
+    public Task<AggregationResult> Aggregate_EqT_1h_500() => _pipeline.Run(_eqTJob);
 
     [Benchmark]
-    public AggregationResult Aggregate_EqV_FromTicks_1h() => _pipeline.Run(_eqVTickJob);
+    public Task<AggregationResult> Aggregate_EqV_FromTicks_1h() => _pipeline.Run(_eqVTickJob);
 
     [Benchmark]
-    public AggregationResult Aggregate_EqT_FromTicks_1h() => _pipeline.Run(_eqTTickJob);
+    public Task<AggregationResult> Aggregate_EqT_FromTicks_1h() => _pipeline.Run(_eqTTickJob);
 
     [Benchmark]
-    public AggregationResult Aggregate_Range_FromTicks_1h() => _pipeline.Run(_rangeTickJob);
+    public Task<AggregationResult> Aggregate_Range_FromTicks_1h() => _pipeline.Run(_rangeTickJob);
 
     [Benchmark]
-    public AggregationResult Aggregate_Renko_FromTicks_1h() => _pipeline.Run(_renkoTickJob);
+    public Task<AggregationResult> Aggregate_Renko_FromTicks_1h() => _pipeline.Run(_renkoTickJob);
 
     private static AggregationJob MakeJob(
         DataFeedDescriptor source, string typeCode, string outcomeFeedId,

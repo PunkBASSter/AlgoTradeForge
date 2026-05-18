@@ -1,6 +1,7 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Storage;
@@ -21,10 +22,6 @@ public sealed class FeedSchemaManagerTests : IDisposable
             Directory.Delete(_tempDir, recursive: true);
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
     private string AssetDir(string name) => Path.Combine(_tempDir, name);
 
     private static FeedMetadata ReadFeedsJson(string assetDir)
@@ -34,33 +31,27 @@ public sealed class FeedSchemaManagerTests : IDisposable
         return JsonSerializer.Deserialize<FeedMetadata>(json, JsonOptions)!;
     }
 
-    // -------------------------------------------------------------------------
-    // Load_NoFile_ReturnsNull
-    // -------------------------------------------------------------------------
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public void Load_NoFile_ReturnsNull()
+    public async Task Load_NoFile_ReturnsNull()
     {
-        var manager  = new FeedSchemaManager();
+        var manager  = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_Load");
 
-        var result = manager.Load(assetDir);
+        var result = await manager.Load(assetDir, Ct);
 
         Assert.Null(result);
     }
 
-    // -------------------------------------------------------------------------
-    // EnsureSchema_NewFile_CreatesFeedsJson
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public void EnsureSchema_NewFile_CreatesFeedsJson()
+    public async Task EnsureSchema_NewFile_CreatesFeedsJson()
     {
-        var manager  = new FeedSchemaManager();
+        var manager  = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_New");
         var columns  = new[] { "rate", "mark" };
 
-        manager.EnsureSchema(assetDir, "funding", "8h", columns);
+        await manager.EnsureSchema(assetDir, "funding", "8h", columns, ct: Ct);
 
         var feedsJsonPath = Path.Combine(assetDir, "feeds.json");
         Assert.True(File.Exists(feedsJsonPath));
@@ -74,23 +65,17 @@ public sealed class FeedSchemaManagerTests : IDisposable
         Assert.Null(def.AutoApply);
     }
 
-    // -------------------------------------------------------------------------
-    // EnsureSchema_ExistingFile_UpdatesFeed
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public void EnsureSchema_ExistingFile_UpdatesFeed()
+    public async Task EnsureSchema_ExistingFile_UpdatesFeed()
     {
-        var manager  = new FeedSchemaManager();
+        var manager  = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_Update");
 
-        // Create initial feed with two columns
-        manager.EnsureSchema(assetDir, "funding", "8h",
-            columns: ["rate"]);
+        await manager.EnsureSchema(assetDir, "funding", "8h",
+            columns: ["rate"], ct: Ct);
 
-        // Update the same feed with a different column set
-        manager.EnsureSchema(assetDir, "funding", "4h",
-            columns: ["rate", "mark", "index"]);
+        await manager.EnsureSchema(assetDir, "funding", "4h",
+            columns: ["rate", "mark", "index"], ct: Ct);
 
         var metadata = ReadFeedsJson(assetDir);
         Assert.Single(metadata.Feeds);
@@ -100,17 +85,13 @@ public sealed class FeedSchemaManagerTests : IDisposable
         Assert.Equal(["rate", "mark", "index"],     def.Columns);
     }
 
-    // -------------------------------------------------------------------------
-    // EnsureCandleConfig_NewFile_CreatesCandleSection
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public void EnsureCandleConfig_NewFile_CreatesCandleSection()
+    public async Task EnsureCandleConfig_NewFile_CreatesCandleSection()
     {
-        var manager  = new FeedSchemaManager();
+        var manager  = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("ETHUSDT_Candle");
 
-        manager.EnsureCandleConfig(assetDir, decimalDigits: 2, interval: "1h");
+        await manager.EnsureCandleConfig(assetDir, decimalDigits: 2, interval: "1h", ct: Ct);
 
         Assert.True(File.Exists(Path.Combine(assetDir, "feeds.json")));
 
@@ -121,18 +102,14 @@ public sealed class FeedSchemaManagerTests : IDisposable
         Assert.Equal("1h",    metadata.Candles.Intervals[0]);
     }
 
-    // -------------------------------------------------------------------------
-    // EnsureCandleConfig_ExistingFile_AddsInterval
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public void EnsureCandleConfig_ExistingFile_AddsInterval()
+    public async Task EnsureCandleConfig_ExistingFile_AddsInterval()
     {
-        var manager  = new FeedSchemaManager();
+        var manager  = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("ETHUSDT_AddInterval");
 
-        manager.EnsureCandleConfig(assetDir, decimalDigits: 2, interval: "1m");
-        manager.EnsureCandleConfig(assetDir, decimalDigits: 2, interval: "1d");
+        await manager.EnsureCandleConfig(assetDir, decimalDigits: 2, interval: "1m", ct: Ct);
+        await manager.EnsureCandleConfig(assetDir, decimalDigits: 2, interval: "1d", ct: Ct);
 
         var metadata = ReadFeedsJson(assetDir);
         Assert.NotNull(metadata.Candles);
@@ -141,65 +118,58 @@ public sealed class FeedSchemaManagerTests : IDisposable
         Assert.Contains("1d", metadata.Candles.Intervals);
     }
 
-    // -------------------------------------------------------------------------
-    // AtomicWrite_NoPartialFiles
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public void AtomicWrite_NoPartialFiles()
+    public async Task AtomicWrite_NoPartialFiles()
     {
-        var manager  = new FeedSchemaManager();
+        var manager  = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("SOLUSDT_Atomic");
 
-        manager.EnsureSchema(assetDir, "funding", "8h", columns: ["rate"]);
+        await manager.EnsureSchema(assetDir, "funding", "8h", columns: ["rate"], ct: Ct);
 
         var tmpPath = Path.Combine(assetDir, "feeds.json.tmp");
         Assert.False(File.Exists(tmpPath), "Temporary .tmp file must not remain after successful write.");
     }
 
-    // -------------------------------------------------------------------------
-    // ConcurrentEnsureSchema_DifferentFeeds_BothPresent
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public void SetAutoApplyParams_FeedMissing_ReturnsFalse()
+    public async Task SetAutoApplyParams_FeedMissing_ReturnsFalse()
     {
-        var manager = new FeedSchemaManager();
+        var manager = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_UpdateMissing");
 
-        var updated = manager.SetAutoApplyParams(assetDir, "funding-rate", 0.03, -0.03, 8, false);
+        var updated = await manager.SetAutoApplyParams(assetDir, "funding-rate", 0.03, -0.03, 8, false, Ct);
 
         Assert.False(updated);
     }
 
     [Fact]
-    public void SetAutoApplyParams_AutoApplyMissing_ReturnsFalse()
+    public async Task SetAutoApplyParams_AutoApplyMissing_ReturnsFalse()
     {
-        var manager = new FeedSchemaManager();
+        var manager = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_NoAutoApply");
 
-        manager.EnsureSchema(assetDir, "funding-rate", "", columns: ["rate", "mark_price"]);
+        await manager.EnsureSchema(assetDir, "funding-rate", "", columns: ["rate", "mark_price"], ct: Ct);
 
-        var updated = manager.SetAutoApplyParams(assetDir, "funding-rate", 0.03, -0.03, 8, false);
+        var updated = await manager.SetAutoApplyParams(assetDir, "funding-rate", 0.03, -0.03, 8, false, Ct);
 
         Assert.False(updated);
     }
 
     [Fact]
-    public void SetAutoApplyParams_FeedWithAutoApply_ReplacesParams()
+    public async Task SetAutoApplyParams_FeedWithAutoApply_ReplacesParams()
     {
-        var manager = new FeedSchemaManager();
+        var manager = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_Update");
 
-        manager.EnsureSchema(
+        await manager.EnsureSchema(
             assetDir, "funding-rate", "",
             columns: ["rate", "mark_price"],
             autoApply: new AlgoTradeForge.HistoryLoader.Application.Abstractions.AutoApplySpec(
-                "FundingRate", "rate"));
+                "FundingRate", "rate"),
+            ct: Ct);
 
-        var updated = manager.SetAutoApplyParams(
+        var updated = await manager.SetAutoApplyParams(
             assetDir, "funding-rate",
-            cap: 0.0300, floor: -0.0300, intervalHours: 8, disclaimer: false);
+            cap: 0.0300, floor: -0.0300, intervalHours: 8, disclaimer: false, ct: Ct);
 
         Assert.True(updated);
 
@@ -217,22 +187,23 @@ public sealed class FeedSchemaManagerTests : IDisposable
     }
 
     [Fact]
-    public void SetAutoApplyParams_NullArgs_ClearExistingValues()
+    public async Task SetAutoApplyParams_NullArgs_ClearExistingValues()
     {
-        var manager = new FeedSchemaManager();
+        var manager = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_UpdateClears");
 
-        manager.EnsureSchema(
+        await manager.EnsureSchema(
             assetDir, "funding-rate", "",
             columns: ["rate", "mark_price"],
             autoApply: new AlgoTradeForge.HistoryLoader.Application.Abstractions.AutoApplySpec(
-                "FundingRate", "rate"));
+                "FundingRate", "rate"),
+            ct: Ct);
 
-        manager.SetAutoApplyParams(assetDir, "funding-rate", 0.03, -0.03, 8, true);
+        await manager.SetAutoApplyParams(assetDir, "funding-rate", 0.03, -0.03, 8, true, Ct);
 
-        manager.SetAutoApplyParams(
+        await manager.SetAutoApplyParams(
             assetDir, "funding-rate",
-            cap: null, floor: null, intervalHours: null, disclaimer: null);
+            cap: null, floor: null, intervalHours: null, disclaimer: null, ct: Ct);
 
         var metadata = ReadFeedsJson(assetDir);
         var feed = metadata.Feeds["funding-rate"];
@@ -244,19 +215,20 @@ public sealed class FeedSchemaManagerTests : IDisposable
     }
 
     [Fact]
-    public void SetAutoApplyParams_PreservesOtherFeeds()
+    public async Task SetAutoApplyParams_PreservesOtherFeeds()
     {
-        var manager = new FeedSchemaManager();
+        var manager = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_UpdatePreserves");
 
-        manager.EnsureSchema(assetDir, "open-interest", "5m", columns: ["oi", "oi_usd"]);
-        manager.EnsureSchema(
+        await manager.EnsureSchema(assetDir, "open-interest", "5m", columns: ["oi", "oi_usd"], ct: Ct);
+        await manager.EnsureSchema(
             assetDir, "funding-rate", "",
             columns: ["rate", "mark_price"],
             autoApply: new AlgoTradeForge.HistoryLoader.Application.Abstractions.AutoApplySpec(
-                "FundingRate", "rate"));
+                "FundingRate", "rate"),
+            ct: Ct);
 
-        manager.SetAutoApplyParams(assetDir, "funding-rate", 0.03, -0.03, 8, false);
+        await manager.SetAutoApplyParams(assetDir, "funding-rate", 0.03, -0.03, 8, false, Ct);
 
         var metadata = ReadFeedsJson(assetDir);
         Assert.Equal(2, metadata.Feeds.Count);
@@ -267,21 +239,21 @@ public sealed class FeedSchemaManagerTests : IDisposable
     [Fact]
     public async Task ConcurrentEnsureSchema_DifferentFeeds_BothPresent()
     {
-        var manager  = new FeedSchemaManager();
+        var manager  = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_Concurrent");
 
         var barrier = new Barrier(2);
-
         var ct = TestContext.Current.CancellationToken;
-        var t1 = Task.Run(() =>
+
+        var t1 = Task.Run(async () =>
         {
             barrier.SignalAndWait(ct);
-            manager.EnsureSchema(assetDir, "funding", "8h", columns: ["rate"]);
+            await manager.EnsureSchema(assetDir, "funding", "8h", columns: ["rate"], ct: ct);
         }, ct);
-        var t2 = Task.Run(() =>
+        var t2 = Task.Run(async () =>
         {
             barrier.SignalAndWait(ct);
-            manager.EnsureSchema(assetDir, "open-interest", "5m", columns: ["oi", "sumOi"]);
+            await manager.EnsureSchema(assetDir, "open-interest", "5m", columns: ["oi", "sumOi"], ct: ct);
         }, ct);
 
         await Task.WhenAll(t1, t2);

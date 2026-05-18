@@ -52,7 +52,7 @@ public abstract class GenericFeedCollectorBase(
 
         var (resumeTs, adjustedFromMs) = await ResolveFromMs(assetDir, FeedName, interval, fromMs, ct);
         fromMs = adjustedFromMs;
-        SchemaManager.EnsureSchema(assetDir, FeedName, interval, Columns, GetAutoApplySpec());
+        await SchemaManager.EnsureSchema(assetDir, FeedName, interval, Columns, GetAutoApplySpec(), ct);
 
         long recordCount = 0;
         long? firstTs = null;

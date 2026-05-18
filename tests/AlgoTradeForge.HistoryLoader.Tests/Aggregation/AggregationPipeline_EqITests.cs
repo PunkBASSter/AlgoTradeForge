@@ -3,6 +3,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
@@ -95,7 +96,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
 
     private static AggregationPipeline NewPipeline() =>
         new(new PartitionedSourceReader(),
-            new FeedSchemaManager(),
+            new FeedSchemaManager(new LocalFileStorage()),
             new OverwritePathWriter(),
             TimeProvider.System);
 
@@ -104,7 +105,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Run_TimeBarEqIV_AllTakerBuy_PositiveSignedImbalance_ManifestTagged()
+    public async Task Run_TimeBarEqIV_AllTakerBuy_PositiveSignedImbalance_ManifestTagged()
     {
         const string asset = "BTCUSDT_perp";
 
@@ -122,7 +123,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
             (Ts(2024, 1, 1, 1), 0.0, 0L, 0.04, 0.0),
             (Ts(2024, 1, 1, 2), 0.0, 0L, 0.04, 0.0));
 
-        var result = NewPipeline().Run(
+        var result = await NewPipeline().Run(
             EqIJob(asset, DataFeedKind.TimeBar, sourceFeedId: "1m",
                 thresholdScaled: 1000, thresholdAbs: 1000m),
             ct: TestContext.Current.CancellationToken);
@@ -130,7 +131,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
         Assert.Equal(1, result.BarCount);
         Assert.Equal("EqIV_1m_1000.flow", result.SidecarFeedId);
 
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset))!;
+        var manifest = (await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken))!;
 
         var parent = manifest.Feeds["EqIV_1m_1000"];
         Assert.Equal("EqIV", parent.Type!.Code);
@@ -164,7 +165,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
     }
 
     [Fact]
-    public void Run_TimeBarEqIV_TakerBuyProxy_FormulaMatchesTrd()
+    public async Task Run_TimeBarEqIV_TakerBuyProxy_FormulaMatchesTrd()
     {
         // TRD §6.3 formula: signed_imbalance = 2 * taker_buy - vol (per record, summed).
         // Test fixture: source vols = 400 each, taker_buy = 0.03 (300 long) — so per-record
@@ -181,7 +182,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
             (Ts(2024, 1, 1, 1), 0.0, 0L, 0.03, 0.0),
             (Ts(2024, 1, 1, 2), 0.0, 0L, 0.03, 0.0));
 
-        var result = NewPipeline().Run(
+        var result = await NewPipeline().Run(
             EqIJob(asset, DataFeedKind.TimeBar, sourceFeedId: "1m",
                 thresholdScaled: 600, thresholdAbs: 600m),
             ct: TestContext.Current.CancellationToken);
@@ -207,7 +208,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
     }
 
     [Fact]
-    public void Run_TimeBarEqIV_NoCandleExt_NoBarsEmitted()
+    public async Task Run_TimeBarEqIV_NoCandleExt_NoBarsEmitted()
     {
         // Partial coverage (TRD §6.2): time-bar EqIV with no candle-ext on disk yields zero
         // bars (every source record is dropped at the join). Manifest still written so the
@@ -218,7 +219,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
             (Ts(2024, 1, 1, 0), 100, 110, 95, 105, 400));
         // No candle-ext written — directory missing entirely.
 
-        var result = NewPipeline().Run(
+        var result = await NewPipeline().Run(
             EqIJob(asset, DataFeedKind.TimeBar, sourceFeedId: "1m",
                 thresholdScaled: 100, thresholdAbs: 100m),
             ct: TestContext.Current.CancellationToken);
@@ -226,7 +227,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
         Assert.Equal(0, result.BarCount);
 
         // Manifest still includes both entries (parent + empty sidecar) — atomic write.
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset))!;
+        var manifest = (await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken))!;
         Assert.Contains("EqIV_1m_100", manifest.Feeds);
         Assert.Contains("EqIV_1m_100.flow", manifest.Feeds);
     }
@@ -236,7 +237,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Run_TickEqIV_AllBuy_ManifestTaggedTickSigned()
+    public async Task Run_TickEqIV_AllBuy_ManifestTaggedTickSigned()
     {
         // 100%-buy tick fixture. is_buyer_maker=0 → +qty. Threshold 1000.
         const string asset = "BTCUSDT_ticks";
@@ -246,7 +247,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
             (Ts(2024, 3, 15, 12, 0, 1), 5_000_010, 400, 0, 1001),
             (Ts(2024, 3, 15, 12, 0, 2), 5_000_020, 400, 0, 1002));
 
-        var result = NewPipeline().Run(
+        var result = await NewPipeline().Run(
             EqIJob(asset, DataFeedKind.Tick, sourceFeedId: "ticks",
                 thresholdScaled: 1000, thresholdAbs: 1000m),
             ct: TestContext.Current.CancellationToken);
@@ -254,7 +255,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
         Assert.Equal(1, result.BarCount);
         Assert.Equal("EqIV_ticks_1000.flow", result.SidecarFeedId);
 
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset))!;
+        var manifest = (await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken))!;
         var parent = manifest.Feeds["EqIV_ticks_1000"];
         Assert.Equal("tick_signed", parent.Fidelity!.ImbalanceReconstructionMethod);
         Assert.Equal("EqIV_ticks_1000.flow", parent.Sidecar);
@@ -269,7 +270,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
     }
 
     [Fact]
-    public void Run_TickEqIV_AllSell_NegativeSignedImbalance()
+    public async Task Run_TickEqIV_AllSell_NegativeSignedImbalance()
     {
         const string asset = "BTCUSDT_ticks_sell";
         WriteTicks(asset, "2024-03-15",
@@ -277,7 +278,7 @@ public sealed class AggregationPipeline_EqITests : IDisposable
             (Ts(2024, 3, 15, 12, 0, 1), 5_000_010, 400, 1, 1001),
             (Ts(2024, 3, 15, 12, 0, 2), 5_000_020, 400, 1, 1002));
 
-        var result = NewPipeline().Run(
+        var result = await NewPipeline().Run(
             EqIJob(asset, DataFeedKind.Tick, sourceFeedId: "ticks",
                 thresholdScaled: 1000, thresholdAbs: 1000m),
             ct: TestContext.Current.CancellationToken);

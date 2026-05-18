@@ -1,6 +1,7 @@
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Storage;
@@ -18,6 +19,7 @@ public sealed class FeedSchemaManagerCascadeTests : IDisposable
     }
 
     private string AssetDir(string name) => Path.Combine(_tempDir, name);
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static AltBarFeedSpec ParentSpec(string sidecarFeedId) => new(
         Kind: "OHLCV_AltBar",
@@ -47,66 +49,66 @@ public sealed class FeedSchemaManagerCascadeTests : IDisposable
         Sidecar: null);
 
     [Fact]
-    public void RemoveFeedAndSidecar_BothEntriesGoneAtomically()
+    public async Task RemoveFeedAndSidecar_BothEntriesGoneAtomically()
     {
-        var manager = new FeedSchemaManager();
+        var manager = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_perp");
-        manager.EnsureAltBarFeed(assetDir, "EqIV_1m_500", ParentSpec("EqIV_1m_500.flow"));
-        manager.EnsureAltBarFeed(assetDir, "EqIV_1m_500.flow", SidecarSpec());
+        await manager.EnsureAltBarFeed(assetDir, "EqIV_1m_500", ParentSpec("EqIV_1m_500.flow"), Ct);
+        await manager.EnsureAltBarFeed(assetDir, "EqIV_1m_500.flow", SidecarSpec(), Ct);
 
-        var before = manager.Load(assetDir)!;
+        var before = (await manager.Load(assetDir, Ct))!;
         Assert.Contains("EqIV_1m_500", before.Feeds);
         Assert.Contains("EqIV_1m_500.flow", before.Feeds);
 
-        manager.RemoveFeedAndSidecar(assetDir, "EqIV_1m_500", "EqIV_1m_500.flow");
+        await manager.RemoveFeedAndSidecar(assetDir, "EqIV_1m_500", "EqIV_1m_500.flow", Ct);
 
-        var after = manager.Load(assetDir)!;
+        var after = (await manager.Load(assetDir, Ct))!;
         Assert.DoesNotContain("EqIV_1m_500", after.Feeds);
         Assert.DoesNotContain("EqIV_1m_500.flow", after.Feeds);
     }
 
     [Fact]
-    public void RemoveFeed_SingleEntry_LeavesOthersIntact()
+    public async Task RemoveFeed_SingleEntry_LeavesOthersIntact()
     {
-        var manager = new FeedSchemaManager();
+        var manager = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_perp");
-        manager.EnsureSchema(assetDir, "1m", "1m", ["ts", "o", "h", "l", "c", "vol"]);
-        manager.EnsureAltBarFeed(assetDir, "EqV_1m_1000", ParentSpec(sidecarFeedId: null!) with { Sidecar = null });
+        await manager.EnsureSchema(assetDir, "1m", "1m", ["ts", "o", "h", "l", "c", "vol"], ct: Ct);
+        await manager.EnsureAltBarFeed(assetDir, "EqV_1m_1000", ParentSpec(sidecarFeedId: null!) with { Sidecar = null }, Ct);
 
-        manager.RemoveFeed(assetDir, "EqV_1m_1000");
+        await manager.RemoveFeed(assetDir, "EqV_1m_1000", Ct);
 
-        var after = manager.Load(assetDir)!;
+        var after = (await manager.Load(assetDir, Ct))!;
         Assert.DoesNotContain("EqV_1m_1000", after.Feeds);
         Assert.Contains("1m", after.Feeds);
     }
 
     [Fact]
-    public void RemoveFeed_NonExistentEntry_NoOp_NoEvent()
+    public async Task RemoveFeed_NonExistentEntry_NoOp_NoEvent()
     {
-        var manager = new FeedSchemaManager();
+        var manager = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_perp");
-        manager.EnsureSchema(assetDir, "1m", "1m", ["ts", "o", "h", "l", "c", "vol"]);
+        await manager.EnsureSchema(assetDir, "1m", "1m", ["ts", "o", "h", "l", "c", "vol"], ct: Ct);
 
         var changeCount = 0;
         manager.ManifestChanged += _ => changeCount++;
 
-        manager.RemoveFeed(assetDir, "DoesNotExist_1m_1");
+        await manager.RemoveFeed(assetDir, "DoesNotExist_1m_1", Ct);
 
         Assert.Equal(0, changeCount);   // no event raised when nothing changed
     }
 
     [Fact]
-    public void RemoveFeedAndSidecar_RaisesManifestChangedOnce()
+    public async Task RemoveFeedAndSidecar_RaisesManifestChangedOnce()
     {
-        var manager = new FeedSchemaManager();
+        var manager = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_perp");
-        manager.EnsureAltBarFeed(assetDir, "EqIV_1m_500", ParentSpec("EqIV_1m_500.flow"));
-        manager.EnsureAltBarFeed(assetDir, "EqIV_1m_500.flow", SidecarSpec());
+        await manager.EnsureAltBarFeed(assetDir, "EqIV_1m_500", ParentSpec("EqIV_1m_500.flow"), Ct);
+        await manager.EnsureAltBarFeed(assetDir, "EqIV_1m_500.flow", SidecarSpec(), Ct);
 
         var changeCount = 0;
         manager.ManifestChanged += _ => changeCount++;
 
-        manager.RemoveFeedAndSidecar(assetDir, "EqIV_1m_500", "EqIV_1m_500.flow");
+        await manager.RemoveFeedAndSidecar(assetDir, "EqIV_1m_500", "EqIV_1m_500.flow", Ct);
 
         Assert.Equal(1, changeCount);   // single rewrite → single event
     }

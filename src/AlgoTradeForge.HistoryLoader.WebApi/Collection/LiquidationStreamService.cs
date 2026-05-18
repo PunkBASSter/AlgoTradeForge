@@ -29,7 +29,7 @@ internal sealed class LiquidationStreamService(
     {
         logger.LogInformation("LiquidationStreamService started");
 
-        EnsureSchemas();
+        await EnsureSchemas(stoppingToken);
 
         int attempts = 0;
 
@@ -200,7 +200,7 @@ internal sealed class LiquidationStreamService(
                     continue;
 
                 var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-                schemaManager.EnsureSchema(assetDir, FeedNames.Liquidations, "", Columns);
+                await schemaManager.EnsureSchema(assetDir, FeedNames.Liquidations, "", Columns, ct: ct);
                 feedWriter.Write(assetDir, FeedNames.Liquidations, "", Columns, record);
                 totalWritten++;
 
@@ -304,7 +304,7 @@ internal sealed class LiquidationStreamService(
         }
     }
 
-    private void EnsureSchemas()
+    private async Task EnsureSchemas(CancellationToken ct)
     {
         var config = options.CurrentValue;
 
@@ -318,7 +318,7 @@ internal sealed class LiquidationStreamService(
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-            schemaManager.EnsureSchema(assetDir, FeedNames.Liquidations, "", Columns);
+            await schemaManager.EnsureSchema(assetDir, FeedNames.Liquidations, "", Columns, ct: ct);
         }
     }
 

@@ -14,7 +14,7 @@ public sealed class StartupSweepService(
     IOptions<HistoryLoaderOptions> options,
     ILogger<StartupSweepService> logger) : IHostedService
 {
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         var dataRoot = options.Value.DataRoot;
         if (!Directory.Exists(dataRoot))
@@ -22,7 +22,7 @@ public sealed class StartupSweepService(
             logger.LogInformation(
                 "Startup sweep: dataRoot {DataRoot} does not exist; nothing to sweep.",
                 dataRoot);
-            return Task.CompletedTask;
+            return;
         }
 
         var assetDirCount = 0;
@@ -33,7 +33,7 @@ public sealed class StartupSweepService(
             foreach (var assetDir in Directory.EnumerateDirectories(exchangeDir))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                sweeper.Sweep(assetDir);
+                await sweeper.Sweep(assetDir, cancellationToken);
                 assetDirCount++;
             }
         }
@@ -41,8 +41,6 @@ public sealed class StartupSweepService(
         logger.LogInformation(
             "Startup sweep complete: scanned {AssetCount} asset directories under {DataRoot}.",
             assetDirCount, dataRoot);
-
-        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

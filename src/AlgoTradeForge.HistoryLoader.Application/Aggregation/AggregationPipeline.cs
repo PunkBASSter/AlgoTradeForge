@@ -40,7 +40,7 @@ public sealed class AggregationPipeline
         _monoLogger = monoLogger ?? NullLogger<MonotonicTickSource>.Instance;
     }
 
-    public AggregationResult Run(
+    public async Task<AggregationResult> Run(
         AggregationJob job,
         Action<ProgressEvent>? onProgress = null,
         CancellationToken ct = default)
@@ -420,12 +420,12 @@ public sealed class AggregationPipeline
 
         if (hasSidecar)
         {
-            _schemaManager.EnsureAltBarWithSidecar(
-                job.AssetDir, job.OutcomeFeedId, spec, sidecarFeedId!, [.. sidecarSchema!.Columns]);
+            await _schemaManager.EnsureAltBarWithSidecar(
+                job.AssetDir, job.OutcomeFeedId, spec, sidecarFeedId!, [.. sidecarSchema!.Columns], ct);
         }
         else
         {
-            _schemaManager.EnsureAltBarFeed(job.AssetDir, job.OutcomeFeedId, spec);
+            await _schemaManager.EnsureAltBarFeed(job.AssetDir, job.OutcomeFeedId, spec, ct);
         }
 
         var result = new AggregationResult(

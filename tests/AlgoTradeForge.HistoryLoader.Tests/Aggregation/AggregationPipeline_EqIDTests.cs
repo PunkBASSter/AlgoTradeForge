@@ -3,6 +3,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
@@ -98,7 +99,7 @@ public sealed class AggregationPipeline_EqIDTests : IDisposable
 
     private static AggregationPipeline NewPipeline() =>
         new(new PartitionedSourceReader(),
-            new FeedSchemaManager(),
+            new FeedSchemaManager(new LocalFileStorage()),
             new OverwritePathWriter(),
             TimeProvider.System);
 
@@ -107,7 +108,7 @@ public sealed class AggregationPipeline_EqIDTests : IDisposable
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Run_TickEqID_AllBuy_PositiveDollarImbalance_ManifestTaggedTickSignedDollar()
+    public async Task Run_TickEqID_AllBuy_PositiveDollarImbalance_ManifestTaggedTickSignedDollar()
     {
         // tickSize=0.01, qty step=0.0001 → QuantityScale=10000, ScaleFactor=100,
         // dollarTickPerDollar = 1,000,000.
@@ -120,7 +121,7 @@ public sealed class AggregationPipeline_EqIDTests : IDisposable
             (Ts(2024, 3, 15, 12, 0, 1), 5_000_010, 400, 0, 1001),
             (Ts(2024, 3, 15, 12, 0, 2), 5_000_020, 400, 0, 1002));
 
-        var result = NewPipeline().Run(
+        var result = await NewPipeline().Run(
             EqIDJob(asset, DataFeedKind.Tick, sourceFeedId: "ticks",
                 thresholdScaled: 5_000_000_000L, thresholdAbs: 5000m),
             ct: TestContext.Current.CancellationToken);
@@ -128,7 +129,7 @@ public sealed class AggregationPipeline_EqIDTests : IDisposable
         Assert.Equal(1, result.BarCount);
         Assert.Equal("EqID_ticks_5000.flow", result.SidecarFeedId);
 
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset))!;
+        var manifest = (await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken))!;
         var parent = manifest.Feeds["EqID_ticks_5000"];
         Assert.Equal("EqID", parent.Type!.Code);
         Assert.Equal("tick_signed_dollar", parent.Fidelity!.ImbalanceReconstructionMethod);
@@ -156,7 +157,7 @@ public sealed class AggregationPipeline_EqIDTests : IDisposable
     }
 
     [Fact]
-    public void Run_TickEqID_AllSell_NegativeDollarImbalance()
+    public async Task Run_TickEqID_AllSell_NegativeDollarImbalance()
     {
         const string asset = "BTCUSDT_ticks_sell";
         WriteTicks(asset, "2024-03-15",
@@ -164,7 +165,7 @@ public sealed class AggregationPipeline_EqIDTests : IDisposable
             (Ts(2024, 3, 15, 12, 0, 1), 5_000_010, 400, 1, 1001),
             (Ts(2024, 3, 15, 12, 0, 2), 5_000_020, 400, 1, 1002));
 
-        var result = NewPipeline().Run(
+        var result = await NewPipeline().Run(
             EqIDJob(asset, DataFeedKind.Tick, sourceFeedId: "ticks",
                 thresholdScaled: 5_000_000_000L, thresholdAbs: 5000m),
             ct: TestContext.Current.CancellationToken);
@@ -181,7 +182,7 @@ public sealed class AggregationPipeline_EqIDTests : IDisposable
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Run_TimeBarEqID_TakerBuyQuoteProxy_ManifestTaggedQuoteProxy()
+    public async Task Run_TimeBarEqID_TakerBuyQuoteProxy_ManifestTaggedQuoteProxy()
     {
         // Per record: candle-ext exposes taker_buy_quote_vol = $50 (50 dollars), and
         // quote_vol = $100. Joiner pre-scales:
@@ -203,14 +204,14 @@ public sealed class AggregationPipeline_EqIDTests : IDisposable
             (Ts(2024, 1, 1, 2), 100.0, 50L, 0.04, 100.0, 50L));
 
         // Threshold: $250 → 250 × QuantityScale × ScaleFactor = 250 × 1e6 = 2.5e8.
-        var result = NewPipeline().Run(
+        var result = await NewPipeline().Run(
             EqIDJob(asset, DataFeedKind.TimeBar, sourceFeedId: "1m",
                 thresholdScaled: 250_000_000L, thresholdAbs: 250m),
             ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.BarCount);
 
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset))!;
+        var manifest = (await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken))!;
         var parent = manifest.Feeds["EqID_1m_250"];
         Assert.Equal("m1_taker_buy_quote_proxy", parent.Fidelity!.ImbalanceReconstructionMethod);
 

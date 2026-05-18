@@ -2,20 +2,25 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Application.Threading;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 
 namespace AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 
 /// <summary>
-/// Per-<c>feeds.json</c> synchronized writer. Shared lock for <see cref="Load"/>; exclusive
-/// read-merge-write under one lock so parallel writers on distinct feed-ids of the same asset
-/// don't lose each other's entries. Each write is <c>*.tmp</c> + same-volume rename. Different
-/// asset directories use independent locks so cross-asset writes proceed in parallel.
+/// Per-<c>feeds.json</c> synchronized writer. One <see cref="SemaphoreSlim"/> per asset path
+/// serializes read-merge-write so parallel writers on distinct feed-ids of the same asset don't
+/// lose each other's entries. File I/O is routed through <see cref="IFileStorage"/>; the local
+/// backend's <c>WriteAllText</c> is atomic (<c>*.tmp</c> + same-volume rename with
+/// <c>flushToDisk:true</c>). Different asset directories use independent semaphores so
+/// cross-asset writes proceed in parallel.
 /// </summary>
 internal sealed class FeedSchemaManager : ISchemaManager
 {
-    private readonly ConcurrentDictionary<string, ReaderWriterLockSlim> _locks = new();
+    private readonly IFileStorage _fs;
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
 
     public event Action<string>? ManifestChanged;
 
@@ -26,37 +31,35 @@ internal sealed class FeedSchemaManager : ISchemaManager
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public FeedMetadata? Load(string assetDir)
+    public FeedSchemaManager(IFileStorage fs)
     {
-        var path = FeedsJsonPath(assetDir);
-        var rwl = GetLock(path);
-        rwl.EnterReadLock();
-        try
-        {
-            return LoadUnsafe(path);
-        }
-        finally
-        {
-            rwl.ExitReadLock();
-        }
+        _fs = fs;
     }
 
-    public void EnsureSchema(
+    public async Task<FeedMetadata?> Load(string assetDir, CancellationToken ct = default)
+    {
+        var path = FeedsJsonPath(assetDir);
+        var gate = GetLock(path);
+        using var _ = await gate.LockAsync(ct);
+        return await LoadUnsafe(path, ct);
+    }
+
+    public async Task EnsureSchema(
         string assetDir,
         string feedName,
         string interval,
         string[] columns,
-        AutoApplySpec? autoApply = null)
+        AutoApplySpec? autoApply = null,
+        CancellationToken ct = default)
     {
         var path = FeedsJsonPath(assetDir);
-        var rwl = GetLock(path);
-        rwl.EnterWriteLock();
-        try
+        var gate = GetLock(path);
+        using (var _ = await gate.LockAsync(ct))
         {
             // Re-read inside the lock so a concurrent earlier writer's entries are visible —
             // otherwise two parallel writers each merge against pre-write state and clobber
             // each other.
-            var existing = LoadUnsafe(path) ?? new FeedMetadata();
+            var existing = await LoadUnsafe(path, ct) ?? new FeedMetadata();
 
             AutoApplyDefinition? autoApplyDef = autoApply is not null
                 ? new AutoApplyDefinition
@@ -87,27 +90,22 @@ internal sealed class FeedSchemaManager : ISchemaManager
                 Candles = existing.Candles,
             };
 
-            AtomicWriteUnsafe(assetDir, path, updated);
-        }
-        finally
-        {
-            rwl.ExitWriteLock();
+            await AtomicWriteUnsafe(path, updated, ct);
         }
 
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
 
-    public void EnsureAltBarFeed(string assetDir, string feedId, AltBarFeedSpec spec)
+    public async Task EnsureAltBarFeed(string assetDir, string feedId, AltBarFeedSpec spec, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(feedId);
         ArgumentNullException.ThrowIfNull(spec);
 
         var path = FeedsJsonPath(assetDir);
-        var rwl = GetLock(path);
-        rwl.EnterWriteLock();
-        try
+        var gate = GetLock(path);
+        using (var _ = await gate.LockAsync(ct))
         {
-            var existing = LoadUnsafe(path) ?? new FeedMetadata();
+            var existing = await LoadUnsafe(path, ct) ?? new FeedMetadata();
 
             var updatedFeeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
             {
@@ -132,22 +130,19 @@ internal sealed class FeedSchemaManager : ISchemaManager
                 Candles = existing.Candles,
             };
 
-            AtomicWriteUnsafe(assetDir, path, updated);
-        }
-        finally
-        {
-            rwl.ExitWriteLock();
+            await AtomicWriteUnsafe(path, updated, ct);
         }
 
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
 
-    public void EnsureAltBarWithSidecar(
+    public async Task EnsureAltBarWithSidecar(
         string assetDir,
         string parentFeedId,
         AltBarFeedSpec parentSpec,
         string sidecarFeedId,
-        string[] sidecarColumns)
+        string[] sidecarColumns,
+        CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(parentFeedId);
         ArgumentException.ThrowIfNullOrEmpty(sidecarFeedId);
@@ -155,11 +150,10 @@ internal sealed class FeedSchemaManager : ISchemaManager
         ArgumentNullException.ThrowIfNull(sidecarColumns);
 
         var path = FeedsJsonPath(assetDir);
-        var rwl = GetLock(path);
-        rwl.EnterWriteLock();
-        try
+        var gate = GetLock(path);
+        using (var _ = await gate.LockAsync(ct))
         {
-            var existing = LoadUnsafe(path) ?? new FeedMetadata();
+            var existing = await LoadUnsafe(path, ct) ?? new FeedMetadata();
 
             // Override the parent's Sidecar field; we own the linkage so the contract
             // "Sidecar references a live sidecar entry in this same write" stays exact.
@@ -196,32 +190,28 @@ internal sealed class FeedSchemaManager : ISchemaManager
                 Candles = existing.Candles,
             };
 
-            AtomicWriteUnsafe(assetDir, path, updated);
-        }
-        finally
-        {
-            rwl.ExitWriteLock();
+            await AtomicWriteUnsafe(path, updated, ct);
         }
 
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
 
-    public bool SetAutoApplyParams(
+    public async Task<bool> SetAutoApplyParams(
         string assetDir,
         string feedName,
         double? cap,
         double? floor,
         int? intervalHours,
-        bool? disclaimer)
+        bool? disclaimer,
+        CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(feedName);
 
         var path = FeedsJsonPath(assetDir);
-        var rwl = GetLock(path);
-        rwl.EnterWriteLock();
-        try
+        var gate = GetLock(path);
+        using (var _ = await gate.LockAsync(ct))
         {
-            var existing = LoadUnsafe(path);
+            var existing = await LoadUnsafe(path, ct);
             if (existing is null || !existing.Feeds.TryGetValue(feedName, out var feed))
                 return false;
 
@@ -267,39 +257,34 @@ internal sealed class FeedSchemaManager : ISchemaManager
                 Candles = existing.Candles,
             };
 
-            AtomicWriteUnsafe(assetDir, path, updated);
-        }
-        finally
-        {
-            rwl.ExitWriteLock();
+            await AtomicWriteUnsafe(path, updated, ct);
         }
 
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
         return true;
     }
 
-    public void RemoveFeed(string assetDir, string feedId)
+    public Task RemoveFeed(string assetDir, string feedId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(feedId);
-        RemoveFeedsInternal(assetDir, [feedId]);
+        return RemoveFeedsInternal(assetDir, [feedId], ct);
     }
 
-    public void RemoveFeedAndSidecar(string assetDir, string feedId, string sidecarFeedId)
+    public Task RemoveFeedAndSidecar(string assetDir, string feedId, string sidecarFeedId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(feedId);
         ArgumentException.ThrowIfNullOrEmpty(sidecarFeedId);
-        RemoveFeedsInternal(assetDir, [feedId, sidecarFeedId]);
+        return RemoveFeedsInternal(assetDir, [feedId, sidecarFeedId], ct);
     }
 
-    private void RemoveFeedsInternal(string assetDir, string[] feedIds)
+    private async Task RemoveFeedsInternal(string assetDir, string[] feedIds, CancellationToken ct)
     {
         var path = FeedsJsonPath(assetDir);
-        var rwl = GetLock(path);
+        var gate = GetLock(path);
         var raised = false;
-        rwl.EnterWriteLock();
-        try
+        using (var _ = await gate.LockAsync(ct))
         {
-            var existing = LoadUnsafe(path);
+            var existing = await LoadUnsafe(path, ct);
             if (existing is null) return;
 
             var updated = new Dictionary<string, FeedDefinition>(existing.Feeds);
@@ -310,29 +295,24 @@ internal sealed class FeedSchemaManager : ISchemaManager
             }
             if (!removedAny) return;
 
-            AtomicWriteUnsafe(assetDir, path, new FeedMetadata
+            await AtomicWriteUnsafe(path, new FeedMetadata
             {
                 Feeds   = updated,
                 Candles = existing.Candles,
-            });
+            }, ct);
             raised = true;
-        }
-        finally
-        {
-            rwl.ExitWriteLock();
         }
 
         if (raised) ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
 
-    public void EnsureCandleConfig(string assetDir, int decimalDigits, string interval)
+    public async Task EnsureCandleConfig(string assetDir, int decimalDigits, string interval, CancellationToken ct = default)
     {
         var path = FeedsJsonPath(assetDir);
-        var rwl = GetLock(path);
-        rwl.EnterWriteLock();
-        try
+        var gate = GetLock(path);
+        using (var _ = await gate.LockAsync(ct))
         {
-            var existing = LoadUnsafe(path) ?? new FeedMetadata();
+            var existing = await LoadUnsafe(path, ct) ?? new FeedMetadata();
 
             var scaleFactor = (decimal)Math.Pow(10, decimalDigits);
 
@@ -351,28 +331,24 @@ internal sealed class FeedSchemaManager : ISchemaManager
                 },
             };
 
-            AtomicWriteUnsafe(assetDir, path, updated);
-        }
-        finally
-        {
-            rwl.ExitWriteLock();
+            await AtomicWriteUnsafe(path, updated, ct);
         }
 
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
 
-    private ReaderWriterLockSlim GetLock(string path) =>
-        _locks.GetOrAdd(path, _ => new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion));
+    private SemaphoreSlim GetLock(string path) =>
+        _locks.GetOrAdd(path, _ => new SemaphoreSlim(initialCount: 1, maxCount: 1));
 
     private static string FeedsJsonPath(string assetDir) =>
         Path.GetFullPath(Path.Combine(assetDir, "feeds.json"));
 
-    private static FeedMetadata? LoadUnsafe(string path)
+    private async Task<FeedMetadata?> LoadUnsafe(string path, CancellationToken ct)
     {
-        if (!File.Exists(path))
+        if (!await _fs.Exists(path, ct))
             return null;
 
-        var json = File.ReadAllText(path);
+        var json = await _fs.ReadAllText(path, ct);
 
         // Parse as JsonNode first so the validator can distinguish "property absent" from
         // "property == null" — JsonSerializer collapses both into null.
@@ -382,12 +358,8 @@ internal sealed class FeedSchemaManager : ISchemaManager
         return JsonSerializer.Deserialize<FeedMetadata>(json, JsonOptions);
     }
 
-    private static void AtomicWriteUnsafe(string assetDir, string targetPath, FeedMetadata metadata)
+    private async Task AtomicWriteUnsafe(string targetPath, FeedMetadata metadata, CancellationToken ct)
     {
-        Directory.CreateDirectory(assetDir);
-
-        var tmpPath = targetPath + ".tmp";
-
         var json = JsonSerializer.Serialize(metadata, JsonOptions);
 
         // Re-validate before the on-disk write so a future refactor that drops a presence
@@ -395,7 +367,8 @@ internal sealed class FeedSchemaManager : ISchemaManager
         var node = JsonNode.Parse(json);
         FeedMetadataValidator.ValidateOrThrow(node);
 
-        File.WriteAllText(tmpPath, json);
-        File.Move(tmpPath, targetPath, overwrite: true);
+        // IFileStorage.WriteAllText is atomic on local FS (.tmp + Move with flushToDisk:true)
+        // and on S3 (single PutObject); parent dir creation is handled by OpenWriteSession.
+        await _fs.WriteAllText(targetPath, json, ct: ct);
     }
 }

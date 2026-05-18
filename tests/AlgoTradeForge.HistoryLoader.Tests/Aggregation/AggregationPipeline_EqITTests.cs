@@ -3,6 +3,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
@@ -113,7 +114,7 @@ public sealed class AggregationPipeline_EqITTests : IDisposable
 
     private static AggregationPipeline NewPipeline() =>
         new(new PartitionedSourceReader(),
-            new FeedSchemaManager(),
+            new FeedSchemaManager(new LocalFileStorage()),
             new OverwritePathWriter(),
             TimeProvider.System);
 
@@ -122,7 +123,7 @@ public sealed class AggregationPipeline_EqITTests : IDisposable
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Run_TickEqIT_AllBuy_PositiveCountImbalance_ManifestTaggedTickSignedCount()
+    public async Task Run_TickEqIT_AllBuy_PositiveCountImbalance_ManifestTaggedTickSignedCount()
     {
         const string asset = "BTCUSDT_ticks";
         // 3 buy ticks → signed_count = +3 → emit at threshold 3.
@@ -131,7 +132,7 @@ public sealed class AggregationPipeline_EqITTests : IDisposable
             (Ts(2024, 3, 15, 12, 0, 1), 5_000_010, 400, 0, 1001),
             (Ts(2024, 3, 15, 12, 0, 2), 5_000_020, 400, 0, 1002));
 
-        var result = NewPipeline().Run(
+        var result = await NewPipeline().Run(
             EqITJob(asset, DataFeedKind.Tick, sourceFeedId: "ticks",
                 thresholdScaled: 3, thresholdAbs: 3m),
             ct: TestContext.Current.CancellationToken);
@@ -139,7 +140,7 @@ public sealed class AggregationPipeline_EqITTests : IDisposable
         Assert.Equal(1, result.BarCount);
         Assert.Equal("EqIT_ticks_3.flow", result.SidecarFeedId);
 
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset))!;
+        var manifest = (await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken))!;
         var parent = manifest.Feeds["EqIT_ticks_3"];
         Assert.Equal("EqIT", parent.Type!.Code);
         Assert.Equal("tick_signed_count", parent.Fidelity!.ImbalanceReconstructionMethod);
@@ -164,7 +165,7 @@ public sealed class AggregationPipeline_EqITTests : IDisposable
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Run_TimeBarEqIT_TakerBuyCountProxy_ManifestTaggedCountProxy()
+    public async Task Run_TimeBarEqIT_TakerBuyCountProxy_ManifestTaggedCountProxy()
     {
         const string asset = "BTCUSDT_perp";
         WriteCandles(asset, "2024-01", "1m",
@@ -178,14 +179,14 @@ public sealed class AggregationPipeline_EqITTests : IDisposable
             (Ts(2024, 1, 1, 1), 100.0, 30L, 0.04, 100.0, 25L),
             (Ts(2024, 1, 1, 2), 100.0, 30L, 0.04, 100.0, 25L));
 
-        var result = NewPipeline().Run(
+        var result = await NewPipeline().Run(
             EqITJob(asset, DataFeedKind.TimeBar, sourceFeedId: "1m",
                 thresholdScaled: 50, thresholdAbs: 50m),
             ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.BarCount);
 
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset))!;
+        var manifest = (await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken))!;
         var parent = manifest.Feeds["EqIT_1m_50"];
         Assert.Equal("m1_taker_buy_count_proxy", parent.Fidelity!.ImbalanceReconstructionMethod);
 
@@ -201,7 +202,7 @@ public sealed class AggregationPipeline_EqITTests : IDisposable
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Run_TimeBarEqIT_LegacyCandleExtMissingNewColumn_ThrowsRemediationMessage()
+    public async Task Run_TimeBarEqIT_LegacyCandleExtMissingNewColumn_ThrowsRemediationMessage()
     {
         const string asset = "BTCUSDT_perp_legacy";
         WriteCandles(asset, "2024-01", "1m",
@@ -211,7 +212,7 @@ public sealed class AggregationPipeline_EqITTests : IDisposable
 
         // Joiner throws when it can't resolve the column. Pipeline propagates the exception
         // (the eligibility layer is meant to pre-flight this; the runtime guard is defense-in-depth).
-        var ex = Assert.Throws<InvalidOperationException>(() => NewPipeline().Run(
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => NewPipeline().Run(
             EqITJob(asset, DataFeedKind.TimeBar, sourceFeedId: "1m",
                 thresholdScaled: 50, thresholdAbs: 50m),
             ct: TestContext.Current.CancellationToken));

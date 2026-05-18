@@ -27,7 +27,7 @@ public sealed class CandleFeedCollector(
         var interval = feedConfig.Interval;
 
         // Ensure feeds.json has candle config
-        SchemaManager.EnsureCandleConfig(assetDir, assetConfig.DecimalDigits, interval);
+        await SchemaManager.EnsureCandleConfig(assetDir, assetConfig.DecimalDigits, interval, ct);
 
         // Resume from last written timestamp
         var resumeTs = await candleWriter.ResumeFrom(assetDir, interval, ct);
@@ -42,7 +42,7 @@ public sealed class CandleFeedCollector(
 
         if (extColumns is not null)
         {
-            SchemaManager.EnsureSchema(assetDir, FeedNames.CandleExt, interval, extColumns);
+            await SchemaManager.EnsureSchema(assetDir, FeedNames.CandleExt, interval, extColumns, ct: ct);
         }
 
         long recordCount = 0;

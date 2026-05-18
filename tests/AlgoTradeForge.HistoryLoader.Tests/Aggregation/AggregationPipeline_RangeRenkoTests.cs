@@ -2,6 +2,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
@@ -63,7 +64,7 @@ public sealed class AggregationPipeline_RangeRenkoTests : IDisposable
 
     private static AggregationPipeline NewPipeline() => new(
         new PartitionedSourceReader(),
-        new FeedSchemaManager(),
+        new FeedSchemaManager(new LocalFileStorage()),
         new OverwritePathWriter(),
         TimeProvider.System);
 
@@ -72,7 +73,7 @@ public sealed class AggregationPipeline_RangeRenkoTests : IDisposable
     // -----------------------------------------------------------------
 
     [Fact]
-    public void Run_RangeFromTicks_EmitsBars_ManifestUnitIsPrice_SidecarNull()
+    public async Task Run_RangeFromTicks_EmitsBars_ManifestUnitIsPrice_SidecarNull()
     {
         const string asset = "BTCUSDT_perp";
         // Walking price tick stream; threshold = 50 ticks (= $0.50 with tickSize=0.01).
@@ -94,7 +95,7 @@ public sealed class AggregationPipeline_RangeRenkoTests : IDisposable
         WriteTicks(asset, "2024-04-15", rows);
 
         var pipeline = NewPipeline();
-        var result = pipeline.Run(
+        var result = await pipeline.Run(
             BuildJob(asset, "Range", thresholdScaled: 50, thresholdAbs: 50m),
             ct: TestContext.Current.CancellationToken);
 
@@ -102,7 +103,7 @@ public sealed class AggregationPipeline_RangeRenkoTests : IDisposable
         Assert.Null(result.SidecarFeedId);
 
         // Manifest assertions.
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset));
+        var manifest = await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken);
         Assert.NotNull(manifest);
         var entry = Assert.Contains("Range_ticks_50", manifest!.Feeds);
         Assert.Equal("OHLCV_AltBar", entry.Kind);
@@ -129,7 +130,7 @@ public sealed class AggregationPipeline_RangeRenkoTests : IDisposable
     // -----------------------------------------------------------------
 
     [Fact]
-    public void Run_RenkoFromTicks_EmitsBars_ManifestUnitIsPrice_SidecarNull()
+    public async Task Run_RenkoFromTicks_EmitsBars_ManifestUnitIsPrice_SidecarNull()
     {
         const string asset = "ETHUSDT_perp";
         // Brick size = 50 (= $0.50). Walking price triggers a multi-brick chain.
@@ -144,7 +145,7 @@ public sealed class AggregationPipeline_RangeRenkoTests : IDisposable
         WriteTicks(asset, "2024-04-15", rows);
 
         var pipeline = NewPipeline();
-        var result = pipeline.Run(
+        var result = await pipeline.Run(
             BuildJob(asset, "Renko", thresholdScaled: 50, thresholdAbs: 50m),
             ct: TestContext.Current.CancellationToken);
 
@@ -152,7 +153,7 @@ public sealed class AggregationPipeline_RangeRenkoTests : IDisposable
         Assert.Equal(4, result.BarCount);
         Assert.Null(result.SidecarFeedId);
 
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset));
+        var manifest = await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken);
         Assert.NotNull(manifest);
         var entry = Assert.Contains("Renko_ticks_50", manifest!.Feeds);
         Assert.Equal("OHLCV_AltBar", entry.Kind);
@@ -181,7 +182,7 @@ public sealed class AggregationPipeline_RangeRenkoTests : IDisposable
     [Theory]
     [InlineData("Range")]
     [InlineData("Renko")]
-    public void Run_NonTickSource_ThrowsDefenseInDepthGuard(string typeCode)
+    public async Task Run_NonTickSource_ThrowsDefenseInDepthGuard(string typeCode)
     {
         // ADR D1 — EligibilityRules normally blocks this, but the pipeline guard catches
         // private-API callers that bypass eligibility (e.g. integration shims, future bugs).
@@ -206,14 +207,14 @@ public sealed class AggregationPipeline_RangeRenkoTests : IDisposable
             ToolVersion: "test-1.0");
 
         var pipeline = NewPipeline();
-        var ex = Assert.Throws<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             pipeline.Run(job, ct: TestContext.Current.CancellationToken));
         Assert.Contains(typeCode, ex.Message);
         Assert.Contains("Tick source", ex.Message);
     }
 
     [Fact]
-    public void Run_RenkoMultiBrick_OutputTimestampsStrictlyMonotonic()
+    public async Task Run_RenkoMultiBrick_OutputTimestampsStrictlyMonotonic()
     {
         const string asset = "SOLUSDT_perp";
         // One tick triggers a 4-brick chain — output ts must bump.
@@ -223,7 +224,7 @@ public sealed class AggregationPipeline_RangeRenkoTests : IDisposable
             (t0 + 100,  1200L, 40L, 0, 2L));  // delta = 200 → 4 bricks (brick=50)
 
         var pipeline = NewPipeline();
-        var result = pipeline.Run(
+        var result = await pipeline.Run(
             BuildJob(asset, "Renko", thresholdScaled: 50, thresholdAbs: 50m),
             ct: TestContext.Current.CancellationToken);
 

@@ -2,6 +2,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.Infrastructure.IO;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
@@ -27,7 +28,7 @@ public sealed class AggregationPipeline_Phase6Tests : IDisposable
 
     private static AggregationPipeline NewPipeline() => new(
         new PartitionedSourceReader(),
-        new FeedSchemaManager(),
+        new FeedSchemaManager(new LocalFileStorage()),
         new OverwritePathWriter(),
         TimeProvider.System);
 
@@ -39,7 +40,7 @@ public sealed class AggregationPipeline_Phase6Tests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Run_CancelMidStream_DeletesStagingDir_NoManifestWrite()
+    public async Task Run_CancelMidStream_DeletesStagingDir_NoManifestWrite()
     {
         const string asset = "BTCUSDT";
         var candlesDir = Path.Combine(AssetDir(asset), "candles");
@@ -75,7 +76,7 @@ public sealed class AggregationPipeline_Phase6Tests : IDisposable
         cts.Cancel();
 
         var pipeline = NewPipeline();
-        Assert.Throws<OperationCanceledException>(() => pipeline.Run(job, ct: cts.Token));
+        await Assert.ThrowsAsync<OperationCanceledException>(() => pipeline.Run(job, ct: cts.Token));
 
         // Staging dir gone, no manifest written. The feed dir itself was created by the pipeline
         // (Directory.CreateDirectory at the top), but it should be empty.
@@ -101,7 +102,7 @@ public sealed class AggregationPipeline_Phase6Tests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Run_EqV2000_FromEqV1000_ProducesHalfTheBars_WithDoubledVolume()
+    public async Task Run_EqV2000_FromEqV1000_ProducesHalfTheBars_WithDoubledVolume()
     {
         const string asset = "BTCUSDT";
 
@@ -136,7 +137,7 @@ public sealed class AggregationPipeline_Phase6Tests : IDisposable
             ToolVersion: "test-1.0");
 
         var pipeline = NewPipeline();
-        var result = pipeline.Run(job, ct: TestContext.Current.CancellationToken);
+        var result = await pipeline.Run(job, ct: TestContext.Current.CancellationToken);
 
         // 10 source bars × 1000 vol each / 2000 threshold → 5 output bars.
         Assert.Equal(5, result.BarCount);
@@ -154,7 +155,7 @@ public sealed class AggregationPipeline_Phase6Tests : IDisposable
         }
 
         // Manifest records the actual source feedId, not the underlying time-bar interval.
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset));
+        var manifest = await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken);
         Assert.NotNull(manifest);
         var entry = Assert.Contains("EqV_1m_2000", manifest!.Feeds);
         Assert.Equal(sourceFeedId, entry.Source!.Feed);
@@ -162,7 +163,7 @@ public sealed class AggregationPipeline_Phase6Tests : IDisposable
     }
 
     [Fact]
-    public void Run_EqT200_FromEqT100_ProducesHalfTheBars()
+    public async Task Run_EqT200_FromEqT100_ProducesHalfTheBars()
     {
         const string asset = "BTCUSDT";
         var sourceFeedId = "EqT_1m_100";
@@ -193,13 +194,13 @@ public sealed class AggregationPipeline_Phase6Tests : IDisposable
             MaxPartitionSizeMB: 1,
             ToolVersion: "test-1.0");
 
-        var result = NewPipeline().Run(job, ct: TestContext.Current.CancellationToken);
+        var result = await NewPipeline().Run(job, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(4, result.BarCount);   // 8 source bars / 2 = 4
     }
 
     [Fact]
-    public void Run_EqDFromEqD_PreservesQuoteVolumeAccumulation()
+    public async Task Run_EqDFromEqD_PreservesQuoteVolumeAccumulation()
     {
         // EqD's per-record contribution is close × volume. With close=100, vol=1000 per source
         // bar, each contributes 100 × 1000 = 100_000 quote units. Threshold 200_000 → 2 source
@@ -233,7 +234,7 @@ public sealed class AggregationPipeline_Phase6Tests : IDisposable
             MaxPartitionSizeMB: 1,
             ToolVersion: "test-1.0");
 
-        var result = NewPipeline().Run(job, ct: TestContext.Current.CancellationToken);
+        var result = await NewPipeline().Run(job, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(3, result.BarCount);   // 6 source bars / 2 per emit = 3
     }

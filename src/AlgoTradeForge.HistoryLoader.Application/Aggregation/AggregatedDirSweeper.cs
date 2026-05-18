@@ -13,13 +13,13 @@ public sealed class AggregatedDirSweeper(
     ISchemaManager schemaManager,
     ILogger<AggregatedDirSweeper> logger)
 {
-    public void Sweep(string assetDir)
+    public async Task Sweep(string assetDir, CancellationToken ct = default)
     {
         var aggregatedDir = Path.Combine(assetDir, "aggregated");
         if (!Directory.Exists(aggregatedDir))
             return;
 
-        var metadata = schemaManager.Load(assetDir);
+        var metadata = await schemaManager.Load(assetDir, ct);
         var knownIds = metadata?.Feeds.Keys.ToHashSet(StringComparer.Ordinal)
                        ?? new HashSet<string>(StringComparer.Ordinal);
 

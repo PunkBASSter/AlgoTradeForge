@@ -41,7 +41,7 @@ internal sealed class SpotAggTradeStreamService(
             return;
         }
 
-        EnsureSchemas(enabledSpotSymbols);
+        await EnsureSchemas(enabledSpotSymbols, stoppingToken);
 
         int attempts = 0;
 
@@ -204,7 +204,7 @@ internal sealed class SpotAggTradeStreamService(
                     continue;
 
                 var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-                schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null);
+                await schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null, ct);
                 tickWriter.Write(assetDir, record);
                 totalWritten++;
 
@@ -293,7 +293,7 @@ internal sealed class SpotAggTradeStreamService(
         }
     }
 
-    private void EnsureSchemas(IReadOnlyList<string> symbols)
+    private async Task EnsureSchemas(IReadOnlyList<string> symbols, CancellationToken ct)
     {
         var config = options.CurrentValue;
         var symbolSet = symbols.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -306,7 +306,7 @@ internal sealed class SpotAggTradeStreamService(
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-            schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null);
+            await schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null, ct);
         }
     }
 

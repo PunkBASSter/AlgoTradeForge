@@ -37,7 +37,7 @@ public sealed class AggTradeFeedCollector(
         CancellationToken ct)
     {
         // Schema first so concurrent readers see the feed entry even before the first row lands.
-        schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null);
+        await schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null, ct);
 
         // Re-fetch the boundary ms (inclusive) and let the writer's agg_id dedup drop
         // already-persisted records — ts+1 advancement would silently skip ticks that share a
