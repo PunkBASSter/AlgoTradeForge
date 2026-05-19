@@ -29,13 +29,6 @@ public sealed class LocalTailIndex : IPartitionTailIndex
         var buf = new byte[bufLen];
         var read = await stream.ReadAsync(buf.AsMemory(0, bufLen), ct);
 
-        var end = read;
-        while (end > 0 && (buf[end - 1] == (byte)'\n' || buf[end - 1] == (byte)'\r')) end--;
-        if (end == 0) return null;
-
-        var start = end - 1;
-        while (start > 0 && buf[start - 1] != (byte)'\n' && buf[start - 1] != (byte)'\r') start--;
-
-        return System.Text.Encoding.UTF8.GetString(buf, start, end - start);
+        return TailExtractor.ExtractLastLine(buf, read);
     }
 }

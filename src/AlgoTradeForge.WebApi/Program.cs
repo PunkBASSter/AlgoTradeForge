@@ -2,6 +2,7 @@ using System.Reflection;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
+using AlgoTradeForge.Application.IO;
 using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
@@ -79,6 +80,13 @@ builder.Services.Configure<BinanceLiveOptions>(
 // Register simulation cache config
 builder.Services.Configure<SimulationCacheOptions>(
     builder.Configuration.GetSection("SimulationCache"));
+
+// Storage backend (LocalFileSystem | S3). Bound here so AddInfrastructure's IFileStorage /
+// IPartitionTailIndex factories see it. S3 settings (Bucket, KeyPrefix, …) live under Storage:S3.
+builder.Services.Configure<StorageOptions>(
+    builder.Configuration.GetSection("Storage"));
+foreach (var warning in StorageConfigMigration.ApplyLegacyAliases(builder.Configuration, builder.Services))
+    Console.Error.WriteLine($"[Storage] {warning}");
 
 // Register Infrastructure services
 builder.Services.Configure<CandleStorageOptions>(

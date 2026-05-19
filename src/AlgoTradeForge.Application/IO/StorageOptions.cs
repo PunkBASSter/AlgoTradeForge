@@ -22,10 +22,18 @@ public sealed class LocalStorageOptions
     public string DataRoot { get; set; } = "";
 }
 
+/// <summary>
+/// Defaults target Hetzner Object Storage (Falkenstein, <c>fsn1</c>). Other Hetzner regions
+/// (<c>nbg1</c>, <c>hel1</c>) override both <see cref="Endpoint"/> and <see cref="Region"/>
+/// to match. For real AWS, clear <see cref="Endpoint"/> to empty and set <see cref="Region"/>
+/// to a real AWS region (e.g. <c>us-east-1</c>); the SDK then resolves via
+/// <c>RegionEndpoint.GetBySystemName</c>. Other S3-compatible providers (Ceph RGW, MinIO,
+/// R2, Wasabi, B2, DO Spaces) work by overriding <see cref="Endpoint"/> + <see cref="Region"/>.
+/// </summary>
 public sealed class S3StorageOptions
 {
-    public string Endpoint { get; set; } = "";
-    public string Region { get; set; } = "us-east-1";
+    public string Endpoint { get; set; } = "https://fsn1.your-objectstorage.com";
+    public string Region { get; set; } = "fsn1";
     public string Bucket { get; set; } = "";
     public string KeyPrefix { get; set; } = "";
     public string AccessKeyId { get; set; } = "";

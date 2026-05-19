@@ -14,6 +14,8 @@ using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Infrastructure.Persistence;
 using AlgoTradeForge.Infrastructure.Validation;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Infrastructure;
 
@@ -33,8 +35,8 @@ public static class DependencyInjection
         services.AddSingleton<IOptimizationStrategyFactory>(factory);
 
         services.Configure<StorageOptions>(_ => { });
-        services.AddSingleton<IFileStorage, LocalFileStorage>();
-        services.AddSingleton<IPartitionTailIndex, LocalTailIndex>();
+        services.AddSingleton<IFileStorage>(BuildFileStorage);
+        services.AddSingleton<IPartitionTailIndex>(BuildTailIndex);
         services.AddSingleton<IRunSinkFactory, JsonlRunSinkFactory>();
         services.AddSingleton<IEventIndexBuilder, SqliteEventIndexBuilder>();
         services.AddSingleton<ITradeDbWriter, SqliteTradeDbWriter>();
@@ -51,5 +53,27 @@ public static class DependencyInjection
         services.AddSingleton<ILiveSessionDataProvider, BinanceLiveSessionDataProvider>();
 
         return services;
+    }
+
+    internal static IFileStorage BuildFileStorage(IServiceProvider sp)
+    {
+        var opt = sp.GetRequiredService<IOptions<StorageOptions>>().Value;
+        return opt.Backend switch
+        {
+            StorageBackend.S3 => new S3FileStorage(opt.S3, sp.GetRequiredService<ILogger<S3FileStorage>>()),
+            _                 => new LocalFileStorage(opt.Local),
+        };
+    }
+
+    internal static IPartitionTailIndex BuildTailIndex(IServiceProvider sp)
+    {
+        // The tail index has to know the backend layout — Local uses Seek(-N, End) on the
+        // OpenRead stream; S3 issues a Range GET. They can't share a single implementation.
+        var storage = sp.GetRequiredService<IFileStorage>();
+        return storage switch
+        {
+            S3FileStorage s3 => new S3TailIndex(s3),
+            _                => new LocalTailIndex(storage),
+        };
     }
 }

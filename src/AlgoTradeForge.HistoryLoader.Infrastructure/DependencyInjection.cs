@@ -134,12 +134,14 @@ public static class DependencyInjection
         services.AddSingleton<IFeedFetcherFactory, FeedFetcherFactory>();
         services.AddSingleton<ICandleFetcherFactory, CandleFetcherFactory>();
 
-        // File storage (local; S3 backend arrives in PR5). HistoryLoader registers these itself
-        // rather than calling AlgoTradeForge.Infrastructure.AddInfrastructure, which pulls in
-        // SQLite repos and live-trading wiring that this host has no use for. StorageOptions
-        // binding is the host's responsibility — see Program.cs (Storage section).
-        services.AddSingleton<IFileStorage, LocalFileStorage>();
-        services.AddSingleton<IPartitionTailIndex, LocalTailIndex>();
+        // File storage backend selected from StorageOptions:Backend. HistoryLoader registers
+        // these itself rather than calling AlgoTradeForge.Infrastructure.AddInfrastructure,
+        // which pulls in SQLite repos and live-trading wiring that this host has no use for.
+        // The factories live in the main Infrastructure project so both hosts pick the same
+        // backend per the same config; StorageOptions binding is the host's responsibility —
+        // see Program.cs (Storage section).
+        services.AddSingleton<IFileStorage>(AlgoTradeForge.Infrastructure.DependencyInjection.BuildFileStorage);
+        services.AddSingleton<IPartitionTailIndex>(AlgoTradeForge.Infrastructure.DependencyInjection.BuildTailIndex);
 
         // Storage writers (share a WriteLockManager so scheduled + backfill don't collide)
         services.AddSingleton<WriteLockManager>();

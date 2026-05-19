@@ -33,10 +33,12 @@ builder.Services.Configure<HistoryLoaderStorageOptions>(
     builder.Configuration.GetSection("HistoryLoader:Storage"));
 
 // PR3: Storage:Local:DataRoot drives LocalFileStorage's relative-key resolution. Absolute keys
-// still pass through (the writers haven't moved to relative keys yet — that's PR4). Bind the
-// whole Storage section so PR5's S3 backend slots in without another wiring change.
+// still pass through (the writers haven't moved to relative keys yet — that's PR4). PR5: the
+// same Storage section now also picks between local FS and S3 via Backend.
 builder.Services.Configure<StorageOptions>(
     builder.Configuration.GetSection("Storage"));
+foreach (var warning in StorageConfigMigration.ApplyLegacyAliases(builder.Configuration, builder.Services))
+    Console.Error.WriteLine($"[Storage] {warning}");
 
 // API JSON: snake_case wire schema. Distinct from the camelCase FeedSchemaManager uses for
 // on-disk feeds.json (its own JsonOptions).
