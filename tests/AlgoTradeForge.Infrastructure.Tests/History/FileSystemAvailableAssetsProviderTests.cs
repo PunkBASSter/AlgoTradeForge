@@ -1,6 +1,6 @@
 using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Infrastructure.History;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Options;
 using Xunit;
 

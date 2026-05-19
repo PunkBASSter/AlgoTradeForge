@@ -3,7 +3,7 @@ using System.Text.Json;
 using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Infrastructure.Events;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using Xunit;
 
 namespace AlgoTradeForge.Infrastructure.Tests.Events;

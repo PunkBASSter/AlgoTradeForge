@@ -1,7 +1,7 @@
 using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
-using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;

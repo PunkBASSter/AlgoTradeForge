@@ -299,7 +299,7 @@ frontend/
   `Release()` doubles as a counting primitive), acquire through a thin
   extension that returns an `IDisposable` releaser. The canonical helper
   is `SemaphoreSlimExtensions.LockAsync` (in
-  `AlgoTradeForge.Application.Threading`), used as
+  `AlgoTradeForge.Storage.Threading`), used as
   `using var _ = await gate.LockAsync(ct);` instead of
   `await gate.WaitAsync(ct); try { ... } finally { gate.Release(); }`.
   `try` / `finally` remains correct when the cleanup branches on state,

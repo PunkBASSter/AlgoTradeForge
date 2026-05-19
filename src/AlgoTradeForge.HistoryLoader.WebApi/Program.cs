@@ -1,4 +1,4 @@
-using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
@@ -73,7 +73,7 @@ var appSettingsPath = Path.Combine(builder.Environment.ContentRootPath, "appsett
 builder.Services.AddSingleton<ISettingsWriter>(sp =>
     new AppSettingsWriter(
         appSettingsPath,
-        new AlgoTradeForge.Infrastructure.IO.LocalFileStorage(),
+        new AlgoTradeForge.Storage.LocalFileStorage(),
         sp.GetRequiredService<ILogger<AppSettingsWriter>>()));
 
 builder.Services.AddSingleton<ICollectionCircuitBreaker, CollectionCircuitBreaker>();

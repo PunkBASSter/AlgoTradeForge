@@ -1,4 +1,4 @@
-using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
@@ -8,7 +8,6 @@ using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
 using AlgoTradeForge.HistoryLoader.Infrastructure.State;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage.Buffered;
-using AlgoTradeForge.Infrastructure.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -135,13 +134,12 @@ public static class DependencyInjection
         services.AddSingleton<ICandleFetcherFactory, CandleFetcherFactory>();
 
         // File storage backend selected from StorageOptions:Backend. HistoryLoader registers
-        // these itself rather than calling AlgoTradeForge.Infrastructure.AddInfrastructure,
-        // which pulls in SQLite repos and live-trading wiring that this host has no use for.
-        // The factories live in the main Infrastructure project so both hosts pick the same
-        // backend per the same config; StorageOptions binding is the host's responsibility —
-        // see Program.cs (Storage section).
-        services.AddSingleton<IFileStorage>(AlgoTradeForge.Infrastructure.DependencyInjection.BuildFileStorage);
-        services.AddSingleton<IPartitionTailIndex>(AlgoTradeForge.Infrastructure.DependencyInjection.BuildTailIndex);
+        // these itself rather than calling AddInfrastructure, which pulls in SQLite repos and
+        // live-trading wiring that this host has no use for. The factories live in the Storage
+        // project so both hosts pick the same backend per the same config; StorageOptions
+        // binding is the host's responsibility — see Program.cs (Storage section).
+        services.AddSingleton<IFileStorage>(FileStorageFactory.Build);
+        services.AddSingleton<IPartitionTailIndex>(FileStorageFactory.BuildTailIndex);
 
         // Storage writers (share a WriteLockManager so scheduled + backfill don't collide)
         services.AddSingleton<WriteLockManager>();

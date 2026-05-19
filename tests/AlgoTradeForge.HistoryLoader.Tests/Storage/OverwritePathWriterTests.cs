@@ -1,5 +1,5 @@
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Storage;

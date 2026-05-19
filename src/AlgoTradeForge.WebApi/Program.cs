@@ -2,7 +2,7 @@ using System.Reflection;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
-using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;

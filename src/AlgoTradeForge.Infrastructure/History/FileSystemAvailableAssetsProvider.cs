@@ -1,6 +1,6 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
-using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Infrastructure.History;

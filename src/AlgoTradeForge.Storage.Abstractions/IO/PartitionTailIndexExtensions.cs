@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace AlgoTradeForge.Application.IO;
+namespace AlgoTradeForge.Storage;
 
 public static class PartitionTailIndexExtensions
 {

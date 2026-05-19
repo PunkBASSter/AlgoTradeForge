@@ -1,9 +1,8 @@
 using System.Runtime.CompilerServices;
 using System.Text;
-using AlgoTradeForge.Application.IO;
 using Microsoft.Extensions.Options;
 
-namespace AlgoTradeForge.Infrastructure.IO;
+namespace AlgoTradeForge.Storage;
 
 /// <summary>
 /// Local-FS <see cref="IFileStorage"/>. Absolute keys pass through; relative keys resolve

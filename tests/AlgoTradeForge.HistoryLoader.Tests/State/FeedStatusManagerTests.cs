@@ -1,6 +1,6 @@
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.State;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.State;

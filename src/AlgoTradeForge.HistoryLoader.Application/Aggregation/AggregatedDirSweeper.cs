@@ -1,4 +1,4 @@
-using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using Microsoft.Extensions.Logging;
 

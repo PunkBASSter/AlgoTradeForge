@@ -1,4 +1,4 @@
-namespace AlgoTradeForge.Application.IO;
+namespace AlgoTradeForge.Storage;
 
 /// <summary>Single source of truth for storage keys. Build keys here, not by hand-concatenation.</summary>
 public static class StorageKeys

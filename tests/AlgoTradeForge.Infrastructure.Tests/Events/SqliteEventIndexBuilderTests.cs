@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using AlgoTradeForge.Infrastructure.Events;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using Microsoft.Data.Sqlite;
 using Xunit;
 

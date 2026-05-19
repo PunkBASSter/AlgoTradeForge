@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text;
-using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Storage;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 

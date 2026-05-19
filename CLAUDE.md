@@ -120,7 +120,7 @@ All monetary/price values in the Domain layer use `long` (Int64). When convertin
   using var stream = File.OpenRead(path);
   ```
   No parentheses, no `{ }` block — the resource is released when the enclosing scope exits.
-- **`SemaphoreSlim` mutex use case** — acquire via `SemaphoreSlimExtensions.LockAsync` (`AlgoTradeForge.Application.Threading`):
+- **`SemaphoreSlim` mutex use case** — acquire via `SemaphoreSlimExtensions.LockAsync` (`AlgoTradeForge.Storage.Threading`):
   ```csharp
   using var _ = await _gate.LockAsync(ct);
   await DoWorkUnderLock(...);

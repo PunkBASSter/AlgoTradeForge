@@ -1,6 +1,4 @@
-using AlgoTradeForge.Application.IO;
-
-namespace AlgoTradeForge.Infrastructure.IO;
+namespace AlgoTradeForge.Storage;
 
 /// <summary>
 /// S3 counterpart to <see cref="LocalTailIndex"/>: issues a single Range GET for the last 8 KiB

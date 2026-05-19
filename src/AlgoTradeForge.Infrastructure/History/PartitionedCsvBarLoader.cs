@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 using AlgoTradeForge.Application.CandleIngestion;
-using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.Domain.History;
 
 namespace AlgoTradeForge.Infrastructure.History;

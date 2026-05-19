@@ -1,7 +1,7 @@
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Storage;

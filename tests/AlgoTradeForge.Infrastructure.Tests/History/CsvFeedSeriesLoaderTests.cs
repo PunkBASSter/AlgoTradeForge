@@ -1,5 +1,5 @@
 using AlgoTradeForge.Infrastructure.History;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using Xunit;
 
 namespace AlgoTradeForge.Infrastructure.Tests.History;

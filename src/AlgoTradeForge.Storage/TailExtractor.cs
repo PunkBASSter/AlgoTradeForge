@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace AlgoTradeForge.Infrastructure.IO;
+namespace AlgoTradeForge.Storage;
 
 /// <summary>
 /// Shared last-line extraction for the tail-index implementations. Walks a tail-window byte
@@ -8,7 +8,7 @@ namespace AlgoTradeForge.Infrastructure.IO;
 /// runs, then back to the previous line break. Returns <c>null</c> if the buffer is empty
 /// or only contains line terminators.
 /// </summary>
-internal static class TailExtractor
+public static class TailExtractor
 {
     public static string? ExtractLastLine(byte[] buf, int length)
     {

@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.HistoryLoader.Application;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

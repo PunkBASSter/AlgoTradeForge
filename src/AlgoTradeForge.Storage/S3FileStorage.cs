@@ -5,11 +5,10 @@ using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
-using AlgoTradeForge.Application.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AlgoTradeForge.Infrastructure.IO;
+namespace AlgoTradeForge.Storage;
 
 /// <summary>
 /// S3 <see cref="IFileStorage"/>. Keys are stored under

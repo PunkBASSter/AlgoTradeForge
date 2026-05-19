@@ -7,7 +7,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
 using AlgoTradeForge.Infrastructure.Events;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.Infrastructure.Tests.TestUtilities;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;

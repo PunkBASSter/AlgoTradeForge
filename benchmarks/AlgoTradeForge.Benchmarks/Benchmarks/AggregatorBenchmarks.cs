@@ -3,7 +3,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using BenchmarkDotNet.Attributes;
 
 namespace AlgoTradeForge.Benchmarks.Benchmarks;

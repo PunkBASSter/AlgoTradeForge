@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace AlgoTradeForge.Application.IO;
+namespace AlgoTradeForge.Storage;
 
 /// <summary>
 /// Bridges legacy <c>HistoryLoader:DataRoot</c> / <c>CandleStorage:DataRoot</c> keys to the

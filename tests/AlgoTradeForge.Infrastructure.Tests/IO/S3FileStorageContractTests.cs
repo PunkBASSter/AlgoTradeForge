@@ -1,5 +1,4 @@
-using AlgoTradeForge.Application.IO;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

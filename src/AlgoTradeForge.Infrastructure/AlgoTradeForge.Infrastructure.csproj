@@ -9,16 +9,15 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="AlgoTradeForge.Infrastructure.Tests" />
-    <InternalsVisibleTo Include="AlgoTradeForge.HistoryLoader.Infrastructure" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.S3" Version="4.0.23.3" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.4" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AlgoTradeForge.Application\AlgoTradeForge.Application.csproj" />
+    <ProjectReference Include="..\AlgoTradeForge.Storage\AlgoTradeForge.Storage.csproj" />
   </ItemGroup>
 
 </Project>

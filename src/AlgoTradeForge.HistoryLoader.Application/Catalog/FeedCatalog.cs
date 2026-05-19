@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using AlgoTradeForge.Application.Threading;
+using AlgoTradeForge.Storage.Threading;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Collection;

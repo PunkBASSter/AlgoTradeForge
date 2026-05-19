@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace AlgoTradeForge.Application.IO;
+namespace AlgoTradeForge.Storage;
 
 /// <summary>
 /// Async storage routing to local FS or S3. Keys are slash-delimited; the local backend

@@ -2,7 +2,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using NSubstitute;
 using Xunit;
 

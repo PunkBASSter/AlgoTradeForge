@@ -1,6 +1,4 @@
-using AlgoTradeForge.Application.IO;
-
-namespace AlgoTradeForge.Infrastructure.IO;
+namespace AlgoTradeForge.Storage;
 
 /// <summary>
 /// Seeks the 8 KiB tail of a partition file and returns its last non-empty line. Bounded

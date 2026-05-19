@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AlgoTradeForge.Application.Events;
-using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Storage;
 
 
 namespace AlgoTradeForge.Infrastructure.Events;

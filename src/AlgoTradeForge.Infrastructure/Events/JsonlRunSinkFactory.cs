@@ -1,5 +1,5 @@
 using AlgoTradeForge.Application.Events;
-using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Infrastructure.Events;

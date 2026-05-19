@@ -1,4 +1,4 @@
-namespace AlgoTradeForge.Application.Threading;
+namespace AlgoTradeForge.Storage.Threading;
 
 public static class SemaphoreSlimExtensions
 {

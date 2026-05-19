@@ -9,7 +9,7 @@ using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
 using AlgoTradeForge.Infrastructure.Events;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.Infrastructure.Tests.TestUtilities;
 using Xunit;
 

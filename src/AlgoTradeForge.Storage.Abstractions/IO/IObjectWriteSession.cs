@@ -1,4 +1,4 @@
-namespace AlgoTradeForge.Application.IO;
+namespace AlgoTradeForge.Storage;
 
 /// <summary>
 /// Callers MUST call <see cref="Commit"/> to publish; <see cref="IAsyncDisposable.DisposeAsync"/>

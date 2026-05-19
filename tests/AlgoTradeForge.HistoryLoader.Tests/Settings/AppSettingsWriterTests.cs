@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using AlgoTradeForge.HistoryLoader.WebApi;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

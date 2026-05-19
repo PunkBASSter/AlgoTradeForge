@@ -2,7 +2,7 @@ using System.Text.Json;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Infrastructure.History;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 

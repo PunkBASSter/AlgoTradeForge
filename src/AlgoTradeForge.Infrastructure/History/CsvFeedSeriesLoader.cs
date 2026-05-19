@@ -1,6 +1,6 @@
 using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
-using AlgoTradeForge.Application.IO;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.Domain.History;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;

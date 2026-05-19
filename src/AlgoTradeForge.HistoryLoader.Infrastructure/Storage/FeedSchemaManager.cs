@@ -2,8 +2,8 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using AlgoTradeForge.Application.IO;
-using AlgoTradeForge.Application.Threading;
+using AlgoTradeForge.Storage;
+using AlgoTradeForge.Storage.Threading;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 

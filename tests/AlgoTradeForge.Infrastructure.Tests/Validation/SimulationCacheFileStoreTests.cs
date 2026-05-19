@@ -3,7 +3,7 @@ using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Domain.Validation;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.Infrastructure.Validation;
 using Xunit;
 using AlgoTradeForge.Domain.Strategy;

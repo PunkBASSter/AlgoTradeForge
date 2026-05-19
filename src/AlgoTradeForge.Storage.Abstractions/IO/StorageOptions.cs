@@ -1,4 +1,4 @@
-namespace AlgoTradeForge.Application.IO;
+namespace AlgoTradeForge.Storage;
 
 public enum StorageBackend
 {
