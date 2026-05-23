@@ -13,11 +13,17 @@ namespace AlgoTradeForge.Storage;
 /// <see cref="File.Move(string, string, bool)"/>. Streams open with <c>useAsync: true</c>.
 /// Concurrent writers on the same key race on the temp file and final move — callers must
 /// serialize via domain-level locks (e.g. <c>WriteLockManager</c>) when that matters.
+/// <see cref="WriteIfMatch"/> is the exception: it serializes its CAS-commit critical section
+/// through a private per-key semaphore (<c>_writeLocks</c>), so multiple
+/// <see cref="WriteIfMatch"/> calls on the same key are safe without external coordination.
 /// </summary>
 public sealed class LocalFileStorage : IFileStorage
 {
     private const int DefaultBufferSize = 4096;
     private readonly string _dataRoot;
+    // Per-key CAS-commit serialization for WriteIfMatch. Unbounded by design: production
+    // callers (FeedSchemaManager) have a bounded key set (one feeds.json per asset). Avoid
+    // driving with an unbounded key set without adding eviction.
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _writeLocks = new();
 
     private SemaphoreSlim WriteLock(string fullPath) =>
