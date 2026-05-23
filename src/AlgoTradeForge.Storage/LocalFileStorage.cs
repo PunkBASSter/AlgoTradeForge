@@ -99,13 +99,13 @@ public sealed class LocalFileStorage : IFileStorage
     public Task<Stream> OpenRead(string key, CancellationToken ct = default)
     {
         var path = Resolve(key);
-        Stream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, DefaultBufferSize, useAsync: true);
+        Stream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, DefaultBufferSize, useAsync: true);
         return Task.FromResult(stream);
     }
 
     public async Task<string> ReadAllText(string key, CancellationToken ct = default)
     {
-        await using var fs = new FileStream(Resolve(key), FileMode.Open, FileAccess.Read, FileShare.ReadWrite, DefaultBufferSize, useAsync: true);
+        await using var fs = new FileStream(Resolve(key), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, DefaultBufferSize, useAsync: true);
         using var reader = new StreamReader(fs);
         return await reader.ReadToEndAsync(ct);
     }
@@ -120,7 +120,7 @@ public sealed class LocalFileStorage : IFileStorage
 
     public async IAsyncEnumerable<string> ReadLines(string key, [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await using var fs = new FileStream(Resolve(key), FileMode.Open, FileAccess.Read, FileShare.ReadWrite, DefaultBufferSize, useAsync: true);
+        await using var fs = new FileStream(Resolve(key), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, DefaultBufferSize, useAsync: true);
         using var reader = new StreamReader(fs);
         while (await reader.ReadLineAsync(ct) is { } line)
             yield return line;
@@ -223,6 +223,16 @@ public sealed class LocalFileStorage : IFileStorage
         return Convert.ToHexString(hash);
     }
 
+    // On Windows, File.Move(overwrite:true) fails with UnauthorizedAccessException when the
+    // destination has any open handle, regardless of FileShare.Delete on those handles.
+    // Deleting the destination first unlinks its directory entry; existing open handles retain
+    // their inode reference (reads continue), while the subsequent Move has no target to replace.
+    private static void AtomicReplace(string src, string dst)
+    {
+        if (File.Exists(dst)) File.Delete(dst);
+        File.Move(src, dst, overwrite: false);
+    }
+
     public async Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default)
     {
         var path = Resolve(key);
@@ -243,7 +253,7 @@ public sealed class LocalFileStorage : IFileStorage
             await fs.FlushAsync(ct);
             fs.Flush(flushToDisk: true);
         }
-        File.Move(tmp, path, overwrite: true);
+        AtomicReplace(tmp, path);
         return EtagOf(content);
     }
 
@@ -277,7 +287,7 @@ public sealed class LocalFileStorage : IFileStorage
             _stream.Flush(flushToDisk: true);
             await _stream.DisposeAsync();
             _stream = null;
-            File.Move(_tmpPath, _finalPath, overwrite: true);
+            AtomicReplace(_tmpPath, _finalPath);
             _committed = true;
         }
 

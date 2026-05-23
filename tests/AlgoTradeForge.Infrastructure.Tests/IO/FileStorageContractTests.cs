@@ -310,4 +310,17 @@ public abstract class FileStorageContractTests : IDisposable
 
         Assert.Equal("hi", await Storage.ReadAllText(key, Ct));
     }
+
+    [Fact]
+    public async Task Reader_DoesNotBlock_ConcurrentWriterRename()
+    {
+        var key = Key("share-delete/race.json");
+        await Storage.WriteAllText(key, "v1", Encoding.UTF8, Ct);
+
+        await using var openRead = await Storage.OpenRead(key, Ct);
+
+        await Storage.WriteAllText(key, "v2", Encoding.UTF8, Ct);
+
+        Assert.Equal("v2", await Storage.ReadAllText(key, Ct));
+    }
 }
