@@ -1,26 +1,25 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.9.0 → 1.9.1
+Version change: 1.9.1 → 1.9.2
 Modified principles: None (all 6 unchanged)
 Added sections: None
 Modified sections:
-  - Backend → Code Style: Added a resource-release rule. MUST prefer
-    `using` over explicit try/finally when the `finally` clause is purely
-    a release call (form choice — `using var x = ...;` declaration vs
-    block — stays governed by the pre-existing rule immediately above).
-    For primitives that lack a built-in scope-release pattern (notably
-    SemaphoreSlim, which doubles as a counting primitive), acquire via a
-    thin extension that returns an IDisposable releaser — the canonical
-    helper is `SemaphoreSlimExtensions.LockAsync`, used as
-    `using var _ = await gate.LockAsync(ct);`. try/finally remains
-    appropriate when the cleanup needs branching logic or coordinates
-    with state beyond simple disposal.
-Trigger: AppSettingsWriter (PR 4a of storage abstraction) needed an
-async-aware mutex; the existing try/finally around SemaphoreSlim.WaitAsync
-was noisier than necessary and inconsistent with the codebase's existing
-`using (await ...AcquireRunKeyLockAsync(...))` pattern in RunProgressCache.
-Codifying the preference and providing a shared helper closes that gap.
+  - Development Workflow → Testing Requirements: Added an
+    observed-failures rule. Test failures and bugs surfaced during ANY
+    work (including verification phases of unrelated tasks) MUST be
+    resolved on the same branch. Acceptable resolutions: fix the
+    underlying bug, repair the test to reflect current correct
+    behavior, replace the test with one that exercises the current
+    feature, or delete the test if the feature was removed. Framings
+    like "not introduced by this branch", "pre-existing", or "out of
+    scope" MUST NOT be used as discharge for leaving a failure red.
+    If the workspace makes a failure visible, the workspace owns it.
+Trigger: A final-verification pass on the FeedSchemaManager
+optimistic-concurrency branch surfaced 7 unrelated StartupSweepTests
+failures from a prior commit, and the workflow defaulted to deferring
+them. Codifying the no-defer rule prevents future drift where observed
+red tests accumulate across branches and become someone else's problem.
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible
   - .specify/templates/spec-template.md ✅ compatible
@@ -573,6 +572,21 @@ Background jobs fall into two categories:
   or reference from the primary test project via `InternalsVisibleTo`
 - API endpoint additions or changes MUST be reflected in the WebApi
   integration test project (`AlgoTradeForge.WebApi.Tests`)
+- **Observed failures are owned.** Any test failure, build break, or bug
+  surfaced during work on a branch — including unrelated work that
+  happens to run a broader verification — MUST be resolved on the same
+  branch before the work is considered complete. Acceptable
+  resolutions:
+  - Fix the underlying bug.
+  - Repair the test to reflect current correct behavior.
+  - Replace the test with one that exercises the current feature.
+  - Delete the test if the feature it covered was removed.
+  Framings like "not introduced by this branch", "pre-existing",
+  "out of scope for this task", or "the bug predates this work" MUST
+  NOT be used as discharge for leaving a failure red. Reviews,
+  verification reports, and PR descriptions MUST NOT list known
+  failures alongside merge recommendations; if a failure is known, the
+  fix lands in the same branch.
 
 ### Test Framework Stack
 
@@ -623,4 +637,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.9.1 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-05-17
+**Version**: 1.9.2 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-05-24
