@@ -8,12 +8,14 @@ using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 namespace AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 
 /// <summary>
-/// Per-<c>feeds.json</c> synchronized writer. One <see cref="SemaphoreSlim"/> per asset path
-/// serializes read-merge-write so parallel writers on distinct feed-ids of the same asset don't
-/// lose each other's entries. File I/O is routed through <see cref="IFileStorage"/>; the local
-/// backend's <c>WriteAllText</c> is atomic (<c>*.tmp</c> + same-volume rename with
-/// <c>flushToDisk:true</c>). Different asset directories use independent semaphores so
-/// cross-asset writes proceed in parallel.
+/// Optimistic-concurrency writer for per-asset <c>feeds.json</c> manifests. Each write
+/// loads the current ETag via <see cref="IFileStorage.ReadWithEtag"/>, applies a mutator
+/// to the deserialized <see cref="FeedMetadata"/>, and persists via
+/// <see cref="IFileStorage.WriteIfMatch"/>. On <see cref="ConcurrencyConflictException"/>
+/// the operation retries up to <see cref="MaxAttempts"/> times with jittered exponential
+/// backoff. Reads (<see cref="Load"/>) are lock-free; the storage backend's atomicity
+/// invariants (atomic rename on local FS, native <c>If-Match</c> on S3) provide read
+/// consistency. <see cref="ManifestChanged"/> fires exactly once per successful write.
 /// </summary>
 internal sealed class FeedSchemaManager : ISchemaManager
 {
@@ -274,7 +276,7 @@ internal sealed class FeedSchemaManager : ISchemaManager
     private static string FeedsJsonPath(string assetDir) =>
         Path.GetFullPath(Path.Combine(assetDir, "feeds.json"));
 
-    private readonly record struct LoadResult(FeedMetadata? Metadata, string? Etag);
+    private readonly record struct LoadResult(FeedMetadata? Metadata, string? ETag);
 
     private async Task<LoadResult> LoadWithEtag(string path, CancellationToken ct)
     {
@@ -302,7 +304,7 @@ internal sealed class FeedSchemaManager : ISchemaManager
             var json = SerializeAndValidate(updated);
             try
             {
-                await _fs.WriteIfMatch(path, json, current.Etag, ct);
+                await _fs.WriteIfMatch(path, json, current.ETag, ct);
                 return true;
             }
             catch (ConcurrencyConflictException) when (attempt < MaxAttempts - 1)
