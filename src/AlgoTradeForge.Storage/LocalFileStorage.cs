@@ -10,11 +10,11 @@ namespace AlgoTradeForge.Storage;
 /// <summary>
 /// Local-FS <see cref="IFileStorage"/>. Absolute keys pass through; relative keys resolve
 /// against <see cref="LocalStorageOptions.DataRoot"/>. Writes atomic via <c>.tmp</c> +
-/// <see cref="File.Move(string, string, bool)"/>. Streams open with <c>useAsync: true</c>.
-/// Concurrent writers on the same key race on the temp file and final move — callers must
-/// serialize via domain-level locks (e.g. <c>WriteLockManager</c>) when that matters.
-/// <see cref="WriteIfMatch"/> is the exception: it serializes its CAS-commit critical section
-/// through a private per-key semaphore (<c>_writeLocks</c>), so multiple
+/// <see cref="AtomicReplace"/> (delete-then-rename, Windows-safe with open readers). Streams
+/// open with <c>useAsync: true</c>. Concurrent writers on the same key race on the temp file
+/// and final move — callers must serialize via domain-level locks (e.g. <c>WriteLockManager</c>)
+/// when that matters. <see cref="WriteIfMatch"/> is the exception: it serializes its CAS-commit
+/// critical section through a private per-key semaphore (<c>_writeLocks</c>), so multiple
 /// <see cref="WriteIfMatch"/> calls on the same key are safe without external coordination.
 /// </summary>
 public sealed class LocalFileStorage : IFileStorage
@@ -227,9 +227,13 @@ public sealed class LocalFileStorage : IFileStorage
     // destination has any open handle, regardless of FileShare.Delete on those handles.
     // Deleting the destination first unlinks its directory entry; existing open handles retain
     // their inode reference (reads continue), while the subsequent Move has no target to replace.
+    // Note: there is a brief window between Delete(dst) and Move(src, dst) where the destination
+    // filename does not exist. Concurrent readers in that window observe Exists == false /
+    // FileNotFoundException / ReadWithEtag → null. Callers must tolerate this transient state —
+    // FeedSchemaManager.UpdateWithRetry handles it via its conflict-retry loop.
     private static void AtomicReplace(string src, string dst)
     {
-        if (File.Exists(dst)) File.Delete(dst);
+        File.Delete(dst); // no-op when dst is absent (BCL contract)
         File.Move(src, dst, overwrite: false);
     }
 

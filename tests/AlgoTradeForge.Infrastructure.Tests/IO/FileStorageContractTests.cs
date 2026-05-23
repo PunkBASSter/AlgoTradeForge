@@ -321,6 +321,11 @@ public abstract class FileStorageContractTests : IDisposable
 
         await Storage.WriteAllText(key, "v2", Encoding.UTF8, Ct);
 
+        // The in-flight reader's handle retains its inode; it should still see v1.
+        using var reader = new StreamReader(openRead);
+        Assert.Equal("v1", await reader.ReadToEndAsync(Ct));
+
+        // A fresh read after the rename should see v2.
         Assert.Equal("v2", await Storage.ReadAllText(key, Ct));
     }
 }
