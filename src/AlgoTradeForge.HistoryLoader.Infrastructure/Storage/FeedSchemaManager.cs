@@ -1,9 +1,7 @@
-using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using AlgoTradeForge.Storage;
-using AlgoTradeForge.Storage.Threading;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 
@@ -20,9 +18,10 @@ namespace AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 internal sealed class FeedSchemaManager : ISchemaManager
 {
     private readonly IFileStorage _fs;
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
 
     public event Action<string>? ManifestChanged;
+
+    private const int MaxAttempts = 5;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -38,10 +37,8 @@ internal sealed class FeedSchemaManager : ISchemaManager
 
     public async Task<FeedMetadata?> Load(string assetDir, CancellationToken ct = default)
     {
-        var path = FeedsJsonPath(assetDir);
-        var gate = GetLock(path);
-        using var _ = await gate.LockAsync(ct);
-        return await LoadUnsafe(path, ct);
+        var result = await LoadWithEtag(FeedsJsonPath(assetDir), ct);
+        return result.Metadata;
     }
 
     public async Task EnsureSchema(
@@ -53,45 +50,30 @@ internal sealed class FeedSchemaManager : ISchemaManager
         CancellationToken ct = default)
     {
         var path = FeedsJsonPath(assetDir);
-        var gate = GetLock(path);
-        using (var _ = await gate.LockAsync(ct))
+        AutoApplyDefinition? autoApplyDef = autoApply is null ? null : new AutoApplyDefinition
         {
-            // Re-read inside the lock so a concurrent earlier writer's entries are visible —
-            // otherwise two parallel writers each merge against pre-write state and clobber
-            // each other.
-            var existing = await LoadUnsafe(path, ct) ?? new FeedMetadata();
+            Type = autoApply.Type,
+            RateColumn = autoApply.RateColumn,
+            SignConvention = autoApply.SignConvention,
+            Cap = autoApply.Cap,
+            Floor = autoApply.Floor,
+            IntervalHours = autoApply.IntervalHours,
+            Disclaimer = autoApply.Disclaimer,
+        };
 
-            AutoApplyDefinition? autoApplyDef = autoApply is not null
-                ? new AutoApplyDefinition
-                {
-                    Type = autoApply.Type,
-                    RateColumn = autoApply.RateColumn,
-                    SignConvention = autoApply.SignConvention,
-                    Cap = autoApply.Cap,
-                    Floor = autoApply.Floor,
-                    IntervalHours = autoApply.IntervalHours,
-                    Disclaimer = autoApply.Disclaimer,
-                }
-                : null;
-
-            var updatedFeeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
+        await UpdateWithRetry(path, existing => new FeedMetadata
+        {
+            Feeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
             {
                 [feedName] = new FeedDefinition
                 {
-                    Interval  = interval,
-                    Columns   = columns,
+                    Interval = interval,
+                    Columns = columns,
                     AutoApply = autoApplyDef,
                 }
-            };
-
-            var updated = new FeedMetadata
-            {
-                Feeds   = updatedFeeds,
-                Candles = existing.Candles,
-            };
-
-            await AtomicWriteUnsafe(path, updated, ct);
-        }
+            },
+            Candles = existing.Candles,
+        }, ct);
 
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
@@ -102,36 +84,27 @@ internal sealed class FeedSchemaManager : ISchemaManager
         ArgumentNullException.ThrowIfNull(spec);
 
         var path = FeedsJsonPath(assetDir);
-        var gate = GetLock(path);
-        using (var _ = await gate.LockAsync(ct))
-        {
-            var existing = await LoadUnsafe(path, ct) ?? new FeedMetadata();
 
-            var updatedFeeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
+        await UpdateWithRetry(path, existing => new FeedMetadata
+        {
+            Feeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
             {
                 [feedId] = new FeedDefinition
                 {
-                    Kind            = spec.Kind,
-                    Columns         = spec.Columns,
-                    Type            = spec.Type,
-                    Source          = spec.Source,
-                    Threshold       = spec.Threshold,
-                    Build           = spec.Build,
-                    Fidelity        = spec.Fidelity,
-                    FirstBarTs      = spec.FirstBarTs,
-                    LastBarTs       = spec.LastBarTs,
-                    Sidecar         = spec.Sidecar,
+                    Kind = spec.Kind,
+                    Columns = spec.Columns,
+                    Type = spec.Type,
+                    Source = spec.Source,
+                    Threshold = spec.Threshold,
+                    Build = spec.Build,
+                    Fidelity = spec.Fidelity,
+                    FirstBarTs = spec.FirstBarTs,
+                    LastBarTs = spec.LastBarTs,
+                    Sidecar = spec.Sidecar,
                 }
-            };
-
-            var updated = new FeedMetadata
-            {
-                Feeds   = updatedFeeds,
-                Candles = existing.Candles,
-            };
-
-            await AtomicWriteUnsafe(path, updated, ct);
-        }
+            },
+            Candles = existing.Candles,
+        }, ct);
 
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
@@ -150,48 +123,40 @@ internal sealed class FeedSchemaManager : ISchemaManager
         ArgumentNullException.ThrowIfNull(sidecarColumns);
 
         var path = FeedsJsonPath(assetDir);
-        var gate = GetLock(path);
-        using (var _ = await gate.LockAsync(ct))
-        {
-            var existing = await LoadUnsafe(path, ct) ?? new FeedMetadata();
 
-            // Override the parent's Sidecar field; we own the linkage so the contract
-            // "Sidecar references a live sidecar entry in this same write" stays exact.
+        await UpdateWithRetry(path, existing =>
+        {
             var parentEntry = new FeedDefinition
             {
-                Kind            = parentSpec.Kind,
-                Columns         = parentSpec.Columns,
-                Type            = parentSpec.Type,
-                Source          = parentSpec.Source,
-                Threshold       = parentSpec.Threshold,
-                Build           = parentSpec.Build,
-                Fidelity        = parentSpec.Fidelity,
-                FirstBarTs      = parentSpec.FirstBarTs,
-                LastBarTs       = parentSpec.LastBarTs,
-                Sidecar         = sidecarFeedId,
+                Kind = parentSpec.Kind,
+                Columns = parentSpec.Columns,
+                Type = parentSpec.Type,
+                Source = parentSpec.Source,
+                Threshold = parentSpec.Threshold,
+                Build = parentSpec.Build,
+                Fidelity = parentSpec.Fidelity,
+                FirstBarTs = parentSpec.FirstBarTs,
+                LastBarTs = parentSpec.LastBarTs,
+                Sidecar = sidecarFeedId,
             };
 
             var sidecarEntry = new FeedDefinition
             {
-                Kind            = "Side",
-                Columns         = sidecarColumns,
+                Kind = "Side",
+                Columns = sidecarColumns,
                 NullableColumns = true,
             };
 
-            var updatedFeeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
+            return new FeedMetadata
             {
-                [parentFeedId]  = parentEntry,
-                [sidecarFeedId] = sidecarEntry,
-            };
-
-            var updated = new FeedMetadata
-            {
-                Feeds   = updatedFeeds,
+                Feeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
+                {
+                    [parentFeedId] = parentEntry,
+                    [sidecarFeedId] = sidecarEntry,
+                },
                 Candles = existing.Candles,
             };
-
-            await AtomicWriteUnsafe(path, updated, ct);
-        }
+        }, ct);
 
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
@@ -208,15 +173,10 @@ internal sealed class FeedSchemaManager : ISchemaManager
         ArgumentException.ThrowIfNullOrEmpty(feedName);
 
         var path = FeedsJsonPath(assetDir);
-        var gate = GetLock(path);
-        using (var _ = await gate.LockAsync(ct))
+        var written = await UpdateWithRetry(path, existing =>
         {
-            var existing = await LoadUnsafe(path, ct);
-            if (existing is null || !existing.Feeds.TryGetValue(feedName, out var feed))
-                return false;
-
-            if (feed.AutoApply is null)
-                return false;
+            if (!existing.Feeds.TryGetValue(feedName, out var feed) || feed.AutoApply is null)
+                return null;
 
             var updatedAutoApply = new AutoApplyDefinition
             {
@@ -246,22 +206,15 @@ internal sealed class FeedSchemaManager : ISchemaManager
                 NullableColumns = feed.NullableColumns,
             };
 
-            var updatedFeeds = new Dictionary<string, FeedDefinition>(existing.Feeds)
+            return new FeedMetadata
             {
-                [feedName] = updatedFeed
-            };
-
-            var updated = new FeedMetadata
-            {
-                Feeds = updatedFeeds,
+                Feeds = new Dictionary<string, FeedDefinition>(existing.Feeds) { [feedName] = updatedFeed },
                 Candles = existing.Candles,
             };
+        }, ct);
 
-            await AtomicWriteUnsafe(path, updated, ct);
-        }
-
-        ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
-        return true;
+        if (written) ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
+        return written;
     }
 
     public Task RemoveFeed(string assetDir, string feedId, CancellationToken ct = default)
@@ -280,95 +233,93 @@ internal sealed class FeedSchemaManager : ISchemaManager
     private async Task RemoveFeedsInternal(string assetDir, string[] feedIds, CancellationToken ct)
     {
         var path = FeedsJsonPath(assetDir);
-        var gate = GetLock(path);
-        var raised = false;
-        using (var _ = await gate.LockAsync(ct))
+        var written = await UpdateWithRetry(path, existing =>
         {
-            var existing = await LoadUnsafe(path, ct);
-            if (existing is null) return;
-
             var updated = new Dictionary<string, FeedDefinition>(existing.Feeds);
             var removedAny = false;
             foreach (var id in feedIds)
-            {
                 if (updated.Remove(id)) removedAny = true;
-            }
-            if (!removedAny) return;
+            if (!removedAny) return null;
+            return new FeedMetadata { Feeds = updated, Candles = existing.Candles };
+        }, ct);
 
-            await AtomicWriteUnsafe(path, new FeedMetadata
-            {
-                Feeds   = updated,
-                Candles = existing.Candles,
-            }, ct);
-            raised = true;
-        }
-
-        if (raised) ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
+        if (written) ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
 
     public async Task EnsureCandleConfig(string assetDir, int decimalDigits, string interval, CancellationToken ct = default)
     {
         var path = FeedsJsonPath(assetDir);
-        var gate = GetLock(path);
-        using (var _ = await gate.LockAsync(ct))
+        await UpdateWithRetry(path, existing =>
         {
-            var existing = await LoadUnsafe(path, ct) ?? new FeedMetadata();
-
             var scaleFactor = (decimal)Math.Pow(10, decimalDigits);
-
             var existingIntervals = existing.Candles?.Intervals ?? [];
-            var updatedIntervals  = existingIntervals.Contains(interval)
+            var updatedIntervals = existingIntervals.Contains(interval)
                 ? existingIntervals
                 : [..existingIntervals, interval];
 
-            var updated = new FeedMetadata
+            return new FeedMetadata
             {
-                Feeds   = existing.Feeds,
+                Feeds = existing.Feeds,
                 Candles = new CandleConfig
                 {
                     ScaleFactor = scaleFactor,
-                    Intervals   = updatedIntervals,
+                    Intervals = updatedIntervals,
                 },
             };
-
-            await AtomicWriteUnsafe(path, updated, ct);
-        }
+        }, ct);
 
         ManifestChanged?.Invoke(Path.GetFullPath(assetDir));
     }
 
-    private SemaphoreSlim GetLock(string path) =>
-        _locks.GetOrAdd(path, _ => new SemaphoreSlim(initialCount: 1, maxCount: 1));
-
     private static string FeedsJsonPath(string assetDir) =>
         Path.GetFullPath(Path.Combine(assetDir, "feeds.json"));
 
-    private async Task<FeedMetadata?> LoadUnsafe(string path, CancellationToken ct)
+    private readonly record struct LoadResult(FeedMetadata? Metadata, string? Etag);
+
+    private async Task<LoadResult> LoadWithEtag(string path, CancellationToken ct)
     {
-        if (!await _fs.Exists(path, ct))
-            return null;
+        var stored = await _fs.ReadWithEtag(path, ct);
+        if (stored is null) return new LoadResult(null, null);
 
-        var json = await _fs.ReadAllText(path, ct);
-
-        // Parse as JsonNode first so the validator can distinguish "property absent" from
-        // "property == null" — JsonSerializer collapses both into null.
-        var node = JsonNode.Parse(json);
+        var node = JsonNode.Parse(stored.Content);
         FeedMetadataValidator.ValidateOrThrow(node);
-
-        return JsonSerializer.Deserialize<FeedMetadata>(json, JsonOptions);
+        var metadata = JsonSerializer.Deserialize<FeedMetadata>(stored.Content, JsonOptions);
+        return new LoadResult(metadata, stored.ETag);
     }
 
-    private async Task AtomicWriteUnsafe(string targetPath, FeedMetadata metadata, CancellationToken ct)
+    private async Task<bool> UpdateWithRetry(
+        string path,
+        Func<FeedMetadata, FeedMetadata?> mutator,
+        CancellationToken ct)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            var current = await LoadWithEtag(path, ct);
+            var existing = current.Metadata ?? new FeedMetadata();
+            var updated = mutator(existing);
+            if (updated is null) return false;
+
+            var json = SerializeAndValidate(updated);
+            try
+            {
+                await _fs.WriteIfMatch(path, json, current.Etag, ct);
+                return true;
+            }
+            catch (ConcurrencyConflictException) when (attempt < MaxAttempts - 1)
+            {
+                await Task.Delay(Backoff(attempt), ct);
+            }
+        }
+    }
+
+    private static string SerializeAndValidate(FeedMetadata metadata)
     {
         var json = JsonSerializer.Serialize(metadata, JsonOptions);
-
-        // Re-validate before the on-disk write so a future refactor that drops a presence
-        // guarantee (e.g. imbalanceReconstructionMethod) fails loudly here, not at read time.
         var node = JsonNode.Parse(json);
         FeedMetadataValidator.ValidateOrThrow(node);
-
-        // IFileStorage.WriteAllText is atomic on local FS (.tmp + Move with flushToDisk:true)
-        // and on S3 (single PutObject); parent dir creation is handled by OpenWriteSession.
-        await _fs.WriteAllText(targetPath, json, ct: ct);
+        return json;
     }
+
+    private static TimeSpan Backoff(int attempt) =>
+        TimeSpan.FromMilliseconds(Random.Shared.Next(5, 21) * (1 << attempt));
 }
