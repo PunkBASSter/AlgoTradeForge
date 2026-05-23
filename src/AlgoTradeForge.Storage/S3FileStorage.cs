@@ -106,6 +106,23 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
             ? s3Key.Substring(_keyPrefix.Length)
             : s3Key;
 
+    private static string StripQuotes(string etag) =>
+        string.IsNullOrEmpty(etag) ? etag :
+        etag.Length >= 2 && etag[0] == '"' && etag[^1] == '"' ? etag[1..^1] : etag;
+
+    private async Task<string?> TryGetCurrentEtag(string s3Key, CancellationToken ct)
+    {
+        try
+        {
+            var meta = await _client.GetObjectMetadataAsync(_bucket, s3Key, ct);
+            return StripQuotes(meta.ETag);
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
     public async Task<bool> Exists(string key, CancellationToken ct = default)
     {
         try
@@ -357,16 +374,53 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
         return _client.PutObjectAsync(request, ct);
     }
 
+    public async Task<StoredObject?> ReadWithEtag(string key, CancellationToken ct = default)
+    {
+        try
+        {
+            using var resp = await _client.GetObjectAsync(_bucket, ToS3Key(key), ct);
+            using var reader = new StreamReader(resp.ResponseStream);
+            var content = await reader.ReadToEndAsync(ct);
+            return new StoredObject(content, StripQuotes(resp.ETag));
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
+    public async Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default)
+    {
+        var s3Key = ToS3Key(key);
+        var request = new PutObjectRequest
+        {
+            BucketName = _bucket,
+            Key = s3Key,
+            ContentBody = content,
+            ContentType = "application/octet-stream",
+        };
+
+        if (expectedETag is null)
+            request.IfNoneMatch = "*";
+        else
+            request.IfMatch = $"\"{expectedETag}\"";
+
+        try
+        {
+            var resp = await _client.PutObjectAsync(request, ct);
+            return StripQuotes(resp.ETag);
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+        {
+            var actual = await TryGetCurrentEtag(s3Key, ct);
+            throw new ConcurrencyConflictException(key, expectedETag, actual, ex);
+        }
+    }
+
     public void Dispose()
     {
         if (_ownsClient) _client.Dispose();
     }
-
-    public Task<StoredObject?> ReadWithEtag(string key, CancellationToken ct = default)
-        => throw new NotImplementedException("Task 6 implements this.");
-
-    public Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default)
-        => throw new NotImplementedException("Task 6 implements this.");
 
     /// <summary>Owns the <see cref="GetObjectResponse"/> so disposing the stream disposes the HTTP response.</summary>
     private sealed class S3ResponseStream : Stream
