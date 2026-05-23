@@ -106,7 +106,8 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
             ? s3Key.Substring(_keyPrefix.Length)
             : s3Key;
 
-    private static string StripQuotes(string etag) =>
+    // S3 wraps ETags in double-quotes on the wire (per RFC 7232); strip them for the opaque value.
+    private static string? StripQuotes(string? etag) =>
         string.IsNullOrEmpty(etag) ? etag :
         etag.Length >= 2 && etag[0] == '"' && etag[^1] == '"' ? etag[1..^1] : etag;
 
@@ -117,8 +118,12 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
             var meta = await _client.GetObjectMetadataAsync(_bucket, s3Key, ct);
             return StripQuotes(meta.ETag);
         }
-        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        catch (AmazonS3Exception ex) when (
+            ex.StatusCode == HttpStatusCode.NotFound ||
+            ex.StatusCode == HttpStatusCode.Forbidden)
         {
+            if (ex.StatusCode == HttpStatusCode.Forbidden)
+                _logger.LogWarning(ex, "S3 returned 403 on TryGetCurrentEtag('{Key}') — treating as missing.", s3Key);
             return null;
         }
     }
@@ -381,10 +386,14 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
             using var resp = await _client.GetObjectAsync(_bucket, ToS3Key(key), ct);
             using var reader = new StreamReader(resp.ResponseStream);
             var content = await reader.ReadToEndAsync(ct);
-            return new StoredObject(content, StripQuotes(resp.ETag));
+            return new StoredObject(content, StripQuotes(resp.ETag)!);
         }
-        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        catch (AmazonS3Exception ex) when (
+            ex.StatusCode == HttpStatusCode.NotFound ||
+            ex.StatusCode == HttpStatusCode.Forbidden)
         {
+            if (ex.StatusCode == HttpStatusCode.Forbidden)
+                _logger.LogWarning(ex, "S3 returned 403 on ReadWithEtag('{Key}') — treating as missing. Verify s3:ListBucket / s3:GetObject permissions if writes also fail.", key);
             return null;
         }
     }
@@ -408,7 +417,7 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
         try
         {
             var resp = await _client.PutObjectAsync(request, ct);
-            return StripQuotes(resp.ETag);
+            return StripQuotes(resp.ETag)!;
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
         {
