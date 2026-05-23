@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using AlgoTradeForge.Storage.Threading;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Storage;
@@ -16,6 +18,10 @@ public sealed class LocalFileStorage : IFileStorage
 {
     private const int DefaultBufferSize = 4096;
     private readonly string _dataRoot;
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _writeLocks = new();
+
+    private SemaphoreSlim WriteLock(string fullPath) =>
+        _writeLocks.GetOrAdd(fullPath, _ => new SemaphoreSlim(1, 1));
 
     public LocalFileStorage() : this(new LocalStorageOptions()) { }
 
@@ -211,8 +217,29 @@ public sealed class LocalFileStorage : IFileStorage
         return Convert.ToHexString(hash);
     }
 
-    public Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default)
-        => throw new NotImplementedException("Task 4 implements this.");
+    public async Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default)
+    {
+        var path = Resolve(key);
+        using var _ = await WriteLock(path).LockAsync(ct);
+
+        var current = await ReadWithEtag(key, ct);
+        if (current?.ETag != expectedETag)
+            throw new ConcurrencyConflictException(key, expectedETag, current?.ETag);
+
+        var dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        var tmp = path + ".tmp";
+        await using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write,
+                         FileShare.Read, DefaultBufferSize, useAsync: true))
+        {
+            var bytes = Encoding.UTF8.GetBytes(content);
+            await fs.WriteAsync(bytes, ct);
+            await fs.FlushAsync(ct);
+            fs.Flush(flushToDisk: true);
+        }
+        File.Move(tmp, path, overwrite: true);
+        return EtagOf(content);
+    }
 
     private sealed class LocalWriteSession : IObjectWriteSession
     {

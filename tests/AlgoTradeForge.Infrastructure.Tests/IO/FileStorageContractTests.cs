@@ -246,4 +246,68 @@ public abstract class FileStorageContractTests : IDisposable
 
         Assert.Equal(a!.ETag, b!.ETag);
     }
+
+    [Fact]
+    public async Task WriteIfMatch_CreatesFile_WhenExpectedNullAndAbsent()
+    {
+        var key = Key("cas/create.json");
+        var etag = await Storage.WriteIfMatch(key, "fresh", expectedETag: null, Ct);
+
+        Assert.False(string.IsNullOrEmpty(etag));
+        Assert.Equal("fresh", await Storage.ReadAllText(key, Ct));
+    }
+
+    [Fact]
+    public async Task WriteIfMatch_Throws_WhenExpectedNullButPresent()
+    {
+        var key = Key("cas/already-exists.json");
+        await Storage.WriteAllText(key, "existing", Encoding.UTF8, Ct);
+
+        var ex = await Assert.ThrowsAsync<ConcurrencyConflictException>(() =>
+            Storage.WriteIfMatch(key, "new", expectedETag: null, Ct));
+
+        Assert.Equal(key, ex.Key);
+        Assert.Null(ex.ExpectedETag);
+        Assert.False(string.IsNullOrEmpty(ex.ActualETag));
+        Assert.Equal("existing", await Storage.ReadAllText(key, Ct));
+    }
+
+    [Fact]
+    public async Task WriteIfMatch_Succeeds_WhenEtagMatches()
+    {
+        var key = Key("cas/match.json");
+        await Storage.WriteAllText(key, "v1", Encoding.UTF8, Ct);
+        var current = await Storage.ReadWithEtag(key, Ct);
+
+        var newEtag = await Storage.WriteIfMatch(key, "v2", current!.ETag, Ct);
+
+        Assert.NotEqual(current.ETag, newEtag);
+        Assert.Equal("v2", await Storage.ReadAllText(key, Ct));
+    }
+
+    [Fact]
+    public async Task WriteIfMatch_Throws_WhenEtagStale()
+    {
+        var key = Key("cas/stale.json");
+        await Storage.WriteAllText(key, "v1", Encoding.UTF8, Ct);
+        var stale = await Storage.ReadWithEtag(key, Ct);
+        await Storage.WriteAllText(key, "v2", Encoding.UTF8, Ct);
+
+        var ex = await Assert.ThrowsAsync<ConcurrencyConflictException>(() =>
+            Storage.WriteIfMatch(key, "v3", stale!.ETag, Ct));
+
+        Assert.Equal(stale!.ETag, ex.ExpectedETag);
+        Assert.NotEqual(stale.ETag, ex.ActualETag);
+        Assert.Equal("v2", await Storage.ReadAllText(key, Ct));
+    }
+
+    [Fact]
+    public async Task WriteIfMatch_CreatesParentDirectory()
+    {
+        var key = Key("cas/nested/deeper/leaf.json");
+
+        await Storage.WriteIfMatch(key, "hi", expectedETag: null, Ct);
+
+        Assert.Equal("hi", await Storage.ReadAllText(key, Ct));
+    }
 }
