@@ -362,6 +362,12 @@ public sealed class S3FileStorage : IFileStorage, IDisposable
         if (_ownsClient) _client.Dispose();
     }
 
+    public Task<StoredObject?> ReadWithEtag(string key, CancellationToken ct = default)
+        => throw new NotImplementedException("Task 6 implements this.");
+
+    public Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default)
+        => throw new NotImplementedException("Task 6 implements this.");
+
     /// <summary>Owns the <see cref="GetObjectResponse"/> so disposing the stream disposes the HTTP response.</summary>
     private sealed class S3ResponseStream : Stream
     {

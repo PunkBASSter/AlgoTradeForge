@@ -24,6 +24,23 @@ public interface IFileStorage
     Task WriteAllLines(string key, IEnumerable<string> lines, CancellationToken ct = default);
     Task WriteAllBytes(string key, ReadOnlyMemory<byte> bytes, CancellationToken ct = default);
 
+    /// <summary>
+    /// Reads the object at <paramref name="key"/> along with an opaque ETag. Returns
+    /// <c>null</c> when the key has no current object. The returned ETag is suitable
+    /// only for passing back to <see cref="WriteIfMatch"/>; its format is backend-
+    /// specific. Invariant: same bytes ⇒ same ETag.
+    /// </summary>
+    Task<StoredObject?> ReadWithEtag(string key, CancellationToken ct = default);
+
+    /// <summary>
+    /// Conditional atomic replace: writes <paramref name="content"/> iff the store's
+    /// current ETag for <paramref name="key"/> equals <paramref name="expectedETag"/>.
+    /// Pass <c>null</c> for create-only semantics (succeeds iff the key has no current
+    /// object). Throws <see cref="ConcurrencyConflictException"/> on mismatch. Returns
+    /// the new ETag on success.
+    /// </summary>
+    Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default);
+
     /// <summary>Callers MUST call <see cref="IObjectWriteSession.Commit"/>; disposing without commit aborts.</summary>
     Task<IObjectWriteSession> OpenWriteSession(string key, CancellationToken ct = default);
 

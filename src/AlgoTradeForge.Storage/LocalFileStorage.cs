@@ -190,6 +190,12 @@ public sealed class LocalFileStorage : IFileStorage
         return Task.CompletedTask;
     }
 
+    public Task<StoredObject?> ReadWithEtag(string key, CancellationToken ct = default)
+        => throw new NotImplementedException("Task 3 implements this.");
+
+    public Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default)
+        => throw new NotImplementedException("Task 4 implements this.");
+
     private sealed class LocalWriteSession : IObjectWriteSession
     {
         private readonly string _finalPath;

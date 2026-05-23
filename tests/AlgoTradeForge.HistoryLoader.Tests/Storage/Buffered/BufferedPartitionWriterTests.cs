@@ -248,6 +248,8 @@ public sealed class BufferedPartitionWriterTests : IDisposable
         public Task WriteAllText(string key, string content, System.Text.Encoding? encoding = null, CancellationToken ct = default) => _inner.WriteAllText(key, content, encoding, ct);
         public Task WriteAllLines(string key, IEnumerable<string> lines, CancellationToken ct = default) => _inner.WriteAllLines(key, lines, ct);
         public Task WriteAllBytes(string key, ReadOnlyMemory<byte> bytes, CancellationToken ct = default) => _inner.WriteAllBytes(key, bytes, ct);
+        public Task<StoredObject?> ReadWithEtag(string key, CancellationToken ct = default) => _inner.ReadWithEtag(key, ct);
+        public Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default) => _inner.WriteIfMatch(key, content, expectedETag, ct);
         public Task<IObjectWriteSession> OpenWriteSession(string key, CancellationToken ct = default) => _inner.OpenWriteSession(key, ct);
         public Task Delete(string key, CancellationToken ct = default) => _inner.Delete(key, ct);
         public Task DeleteByPrefix(string prefix, CancellationToken ct = default) => _inner.DeleteByPrefix(prefix, ct);
@@ -281,6 +283,8 @@ public sealed class BufferedPartitionWriterTests : IDisposable
         public Task<byte[]> ReadAllBytes(string key, CancellationToken ct = default) => _inner.ReadAllBytes(key, ct);
         public Task WriteAllText(string key, string content, System.Text.Encoding? encoding = null, CancellationToken ct = default) => _inner.WriteAllText(key, content, encoding, ct);
         public Task WriteAllBytes(string key, ReadOnlyMemory<byte> bytes, CancellationToken ct = default) => _inner.WriteAllBytes(key, bytes, ct);
+        public Task<StoredObject?> ReadWithEtag(string key, CancellationToken ct = default) => _inner.ReadWithEtag(key, ct);
+        public Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default) => _inner.WriteIfMatch(key, content, expectedETag, ct);
         public Task<IObjectWriteSession> OpenWriteSession(string key, CancellationToken ct = default) => _inner.OpenWriteSession(key, ct);
         public Task Delete(string key, CancellationToken ct = default) => _inner.Delete(key, ct);
         public Task DeleteByPrefix(string prefix, CancellationToken ct = default) => _inner.DeleteByPrefix(prefix, ct);
@@ -304,6 +308,8 @@ public sealed class BufferedPartitionWriterTests : IDisposable
         public Task<byte[]> ReadAllBytes(string key, CancellationToken ct = default) => _inner.ReadAllBytes(key, ct);
         public Task WriteAllText(string key, string content, System.Text.Encoding? encoding = null, CancellationToken ct = default) => _inner.WriteAllText(key, content, encoding, ct);
         public Task WriteAllBytes(string key, ReadOnlyMemory<byte> bytes, CancellationToken ct = default) => _inner.WriteAllBytes(key, bytes, ct);
+        public Task<StoredObject?> ReadWithEtag(string key, CancellationToken ct = default) => _inner.ReadWithEtag(key, ct);
+        public Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default) => _inner.WriteIfMatch(key, content, expectedETag, ct);
         public Task<IObjectWriteSession> OpenWriteSession(string key, CancellationToken ct = default) => _inner.OpenWriteSession(key, ct);
         public Task Delete(string key, CancellationToken ct = default) => _inner.Delete(key, ct);
         public Task DeleteByPrefix(string prefix, CancellationToken ct = default) => _inner.DeleteByPrefix(prefix, ct);
