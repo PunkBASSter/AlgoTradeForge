@@ -187,4 +187,49 @@ public abstract class FileStorageContractTests : IDisposable
 
         Assert.Empty(await Collect(Storage.ListKeys(Key("zone"), ct: Ct)));
     }
+
+    [Fact]
+    public async Task ReadWithEtag_ReturnsNull_WhenKeyAbsent()
+    {
+        var result = await Storage.ReadWithEtag(Key("absent.json"), Ct);
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task ReadWithEtag_ReturnsContentAndEtag_WhenPresent()
+    {
+        var key = Key("etag/present.json");
+        await Storage.WriteAllText(key, "{\"x\":1}", Encoding.UTF8, Ct);
+
+        var result = await Storage.ReadWithEtag(key, Ct);
+
+        Assert.NotNull(result);
+        Assert.Equal("{\"x\":1}", result!.Content);
+        Assert.False(string.IsNullOrEmpty(result.ETag));
+    }
+
+    [Fact]
+    public async Task ReadWithEtag_EtagIsStable_ForUnchangedContent()
+    {
+        var key = Key("etag/stable.json");
+        await Storage.WriteAllText(key, "stable-content", Encoding.UTF8, Ct);
+
+        var a = await Storage.ReadWithEtag(key, Ct);
+        var b = await Storage.ReadWithEtag(key, Ct);
+
+        Assert.Equal(a!.ETag, b!.ETag);
+    }
+
+    [Fact]
+    public async Task ReadWithEtag_EtagDiffers_AfterContentChange()
+    {
+        var key = Key("etag/changes.json");
+        await Storage.WriteAllText(key, "first", Encoding.UTF8, Ct);
+        var first = await Storage.ReadWithEtag(key, Ct);
+
+        await Storage.WriteAllText(key, "second", Encoding.UTF8, Ct);
+        var second = await Storage.ReadWithEtag(key, Ct);
+
+        Assert.NotEqual(first!.ETag, second!.ETag);
+    }
 }

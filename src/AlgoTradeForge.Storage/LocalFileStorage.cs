@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
 
@@ -190,8 +191,25 @@ public sealed class LocalFileStorage : IFileStorage
         return Task.CompletedTask;
     }
 
-    public Task<StoredObject?> ReadWithEtag(string key, CancellationToken ct = default)
-        => throw new NotImplementedException("Task 3 implements this.");
+    public async Task<StoredObject?> ReadWithEtag(string key, CancellationToken ct = default)
+    {
+        var path = Resolve(key);
+        if (!File.Exists(path)) return null;
+        await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete, DefaultBufferSize, useAsync: true);
+        using var reader = new StreamReader(fs);
+        var content = await reader.ReadToEndAsync(ct);
+        return new StoredObject(content, EtagOf(content));
+    }
+
+    private static string EtagOf(string content) => EtagOf(Encoding.UTF8.GetBytes(content));
+
+    private static string EtagOf(ReadOnlySpan<byte> bytes)
+    {
+        Span<byte> hash = stackalloc byte[20];
+        SHA1.HashData(bytes, hash);
+        return Convert.ToHexString(hash);
+    }
 
     public Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default)
         => throw new NotImplementedException("Task 4 implements this.");
