@@ -283,12 +283,15 @@ internal sealed class FeedSchemaManager : ISchemaManager
         var stored = await _fs.ReadWithEtag(path, ct);
         if (stored is null) return new LoadResult(null, null);
 
+        // Parse as JsonNode first so the validator can distinguish "property absent" from
+        // "property == null" — JsonSerializer collapses both into null.
         var node = JsonNode.Parse(stored.Content);
         FeedMetadataValidator.ValidateOrThrow(node);
         var metadata = JsonSerializer.Deserialize<FeedMetadata>(stored.Content, JsonOptions);
         return new LoadResult(metadata, stored.ETag);
     }
 
+    /// <summary>Returns <c>false</c> when the mutator returns <c>null</c> (no-op); <c>true</c> on a successful write.</summary>
     private async Task<bool> UpdateWithRetry(
         string path,
         Func<FeedMetadata, FeedMetadata?> mutator,
