@@ -119,11 +119,19 @@ public sealed class AggregatedDirSweeper(
 
     private static string StripPrefix(string key, string prefix)
     {
-        if (key.Length >= prefix.Length &&
-            key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        // IFileStorage.ListKeys returns forward-slash keys (LocalFileStorage normalizes
+        // via ToKey); callers pass native-separator prefixes. Normalize both before
+        // StartsWith so the comparison doesn't miss on Windows backslash vs forward slash
+        // — a miss falls through to the bare-trim path which on absolute Windows keys
+        // like "C:/foo/bar" leaves "C:" as the first IndexOfAny('/') segment and lets
+        // a downstream DeleteByPrefix target the drive root.
+        var normalizedKey = key.Replace('\\', '/');
+        var normalizedPrefix = prefix.Replace('\\', '/');
+        if (normalizedKey.Length >= normalizedPrefix.Length &&
+            normalizedKey.StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            return key.Substring(prefix.Length).TrimStart('/', Path.DirectorySeparatorChar);
+            return normalizedKey.Substring(normalizedPrefix.Length).TrimStart('/');
         }
-        return key.TrimStart('/', Path.DirectorySeparatorChar);
+        return normalizedKey.TrimStart('/');
     }
 }

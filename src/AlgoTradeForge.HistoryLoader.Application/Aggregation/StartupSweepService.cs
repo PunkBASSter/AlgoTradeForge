@@ -61,11 +61,16 @@ public sealed class StartupSweepService(
 
     private static string StripPrefix(string key, string prefix)
     {
-        if (key.Length >= prefix.Length &&
-            key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        // IFileStorage.ListKeys returns forward-slash keys (LocalFileStorage normalizes
+        // via ToKey); callers pass native-separator prefixes. Normalize both before
+        // StartsWith so the comparison doesn't miss on Windows backslash vs forward slash.
+        var normalizedKey = key.Replace('\\', '/');
+        var normalizedPrefix = prefix.Replace('\\', '/');
+        if (normalizedKey.Length >= normalizedPrefix.Length &&
+            normalizedKey.StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            return key.Substring(prefix.Length).TrimStart('/', Path.DirectorySeparatorChar);
+            return normalizedKey.Substring(normalizedPrefix.Length).TrimStart('/');
         }
-        return key.TrimStart('/', Path.DirectorySeparatorChar);
+        return normalizedKey.TrimStart('/');
     }
 }
