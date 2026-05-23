@@ -232,4 +232,18 @@ public abstract class FileStorageContractTests : IDisposable
 
         Assert.NotEqual(first!.ETag, second!.ETag);
     }
+
+    [Fact]
+    public async Task ReadWithEtag_EtagIsContentAddressed_SameBytesAtDifferentKeys()
+    {
+        var key1 = Key("etag/addr-a.json");
+        var key2 = Key("etag/addr-b.json");
+        await Storage.WriteAllText(key1, "same-content", Encoding.UTF8, Ct);
+        await Storage.WriteAllText(key2, "same-content", Encoding.UTF8, Ct);
+
+        var a = await Storage.ReadWithEtag(key1, Ct);
+        var b = await Storage.ReadWithEtag(key2, Ct);
+
+        Assert.Equal(a!.ETag, b!.ETag);
+    }
 }
