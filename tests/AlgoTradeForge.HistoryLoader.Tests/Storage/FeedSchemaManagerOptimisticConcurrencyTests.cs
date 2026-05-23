@@ -68,15 +68,21 @@ public sealed class FeedSchemaManagerOptimisticConcurrencyTests : IDisposable
     public async Task ConflictThenSuccess_Retries_AndEventFiresOnce()
     {
         var fs = Substitute.For<IFileStorage>();
+
+        // Models a real retry scenario: first read sees an empty key (we plan to create),
+        // we try to create, a concurrent writer wins the race, our retry re-reads the
+        // concurrent writer's content with its ETag, we conditionally overwrite, success.
         fs.ReadWithEtag(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((StoredObject?)null);
+            .Returns(
+                (StoredObject?)null,
+                new StoredObject("{}", "etag-after-conflict"));
 
         var calls = 0;
         fs.WriteIfMatch(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 calls++;
-                if (calls == 1) throw new ConcurrencyConflictException("path", null, "x");
+                if (calls == 1) throw new ConcurrencyConflictException("path", null, "etag-after-conflict");
                 return Task.FromResult("new-etag");
             });
 
@@ -88,5 +94,6 @@ public sealed class FeedSchemaManagerOptimisticConcurrencyTests : IDisposable
 
         Assert.Equal(2, calls);
         Assert.Single(events);
+        await fs.Received(2).ReadWithEtag(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 }
