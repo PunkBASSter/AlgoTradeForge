@@ -2,15 +2,20 @@ namespace AlgoTradeForge.Storage;
 
 public sealed class ConcurrencyConflictException : Exception
 {
-    public ConcurrencyConflictException(string key, string? expectedEtag, string? actualEtag)
-        : base($"Concurrency conflict on '{key}': expected etag '{expectedEtag ?? "<absent>"}', actual '{actualEtag ?? "<absent>"}'.")
+    public ConcurrencyConflictException(string key, string? expectedETag, string? actualETag)
+        : this(key, expectedETag, actualETag, innerException: null) { }
+
+    public ConcurrencyConflictException(string key, string? expectedETag, string? actualETag, Exception? innerException)
+        : base(
+            $"Concurrency conflict on '{key}': expected etag '{expectedETag ?? "<absent>"}', actual '{actualETag ?? "<absent>"}'.",
+            innerException)
     {
         Key = key;
-        ExpectedEtag = expectedEtag;
-        ActualEtag = actualEtag;
+        ExpectedETag = expectedETag;
+        ActualETag = actualETag;
     }
 
     public string Key { get; }
-    public string? ExpectedEtag { get; }
-    public string? ActualEtag { get; }
+    public string? ExpectedETag { get; }
+    public string? ActualETag { get; }
 }
