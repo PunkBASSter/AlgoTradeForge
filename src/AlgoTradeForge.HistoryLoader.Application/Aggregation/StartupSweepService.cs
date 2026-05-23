@@ -42,7 +42,10 @@ public sealed class StartupSweepService(
         var assetDirs = new HashSet<string>(StringComparer.Ordinal);
         await foreach (var key in storage.ListKeys(dataRoot, suffix: null, recursive: true, ct))
         {
-            var rel = key.Substring(dataRoot.Length).TrimStart('/', Path.DirectorySeparatorChar);
+            // IFileStorage returns keys relative to its own Storage:Local:DataRoot when set
+            // (production), or absolute slash-normalized paths when unset (tests). Strip the
+            // queried prefix only if present; otherwise the key is already storage-relative.
+            var rel = StripPrefix(key, dataRoot);
             var firstSlash = rel.IndexOfAny(['/', Path.DirectorySeparatorChar]);
             if (firstSlash <= 0) continue;
             var afterExchange = rel.Substring(firstSlash + 1);
@@ -54,5 +57,15 @@ public sealed class StartupSweepService(
             assetDirs.Add(Path.Combine(dataRoot, exchange, asset));
         }
         return assetDirs.ToList();
+    }
+
+    private static string StripPrefix(string key, string prefix)
+    {
+        if (key.Length >= prefix.Length &&
+            key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return key.Substring(prefix.Length).TrimStart('/', Path.DirectorySeparatorChar);
+        }
+        return key.TrimStart('/', Path.DirectorySeparatorChar);
     }
 }

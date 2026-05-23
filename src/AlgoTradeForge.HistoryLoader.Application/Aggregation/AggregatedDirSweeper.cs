@@ -83,8 +83,9 @@ public sealed class AggregatedDirSweeper(
         await foreach (var key in storage.ListKeys(feedDir, suffix: ".csv", recursive: false, ct))
         {
             // Skip nested keys (e.g. .staging-*/2026-04.csv) — the collision rule applies to the
-            // promoted top-level partitions only.
-            var rel = key.Substring(feedDir.Length).TrimStart('/', Path.DirectorySeparatorChar);
+            // promoted top-level partitions only. IFileStorage may return keys relative to its
+            // own data root rather than the queried prefix, so strip defensively.
+            var rel = StripPrefix(key, feedDir);
             if (rel.Contains('/') || rel.Contains(Path.DirectorySeparatorChar)) continue;
             files.Add(key);
         }
@@ -108,11 +109,21 @@ public sealed class AggregatedDirSweeper(
         var subdirs = new HashSet<string>(StringComparer.Ordinal);
         await foreach (var key in storage.ListKeys(prefix, suffix: null, recursive: true, ct))
         {
-            var rel = key.Substring(prefix.Length).TrimStart('/', Path.DirectorySeparatorChar);
+            var rel = StripPrefix(key, prefix);
             var slash = rel.IndexOfAny(['/', Path.DirectorySeparatorChar]);
             if (slash > 0)
                 subdirs.Add(rel.Substring(0, slash));
         }
         return subdirs;
+    }
+
+    private static string StripPrefix(string key, string prefix)
+    {
+        if (key.Length >= prefix.Length &&
+            key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return key.Substring(prefix.Length).TrimStart('/', Path.DirectorySeparatorChar);
+        }
+        return key.TrimStart('/', Path.DirectorySeparatorChar);
     }
 }
