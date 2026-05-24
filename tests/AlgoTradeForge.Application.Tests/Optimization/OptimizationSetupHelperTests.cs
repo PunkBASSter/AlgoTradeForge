@@ -50,7 +50,7 @@ public sealed class OptimizationSetupHelperTests
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
         _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(),
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
                 // Return distinct series per FeedId so cache aliasing would surface as wrong data.
@@ -91,7 +91,7 @@ public sealed class OptimizationSetupHelperTests
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
         _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(),
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
 
         var helper = CreateHelper();
@@ -116,7 +116,7 @@ public sealed class OptimizationSetupHelperTests
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
         _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(),
-                Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+                Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
 
         var helper = CreateHelper();

@@ -1,18 +1,17 @@
 using System.Reflection;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Events;
-using AlgoTradeForge.Application.IO;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Infrastructure.Events;
-using AlgoTradeForge.Infrastructure.IO;
 using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Optimization;
 using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Infrastructure.Persistence;
 using AlgoTradeForge.Infrastructure.Validation;
+using AlgoTradeForge.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace AlgoTradeForge.Infrastructure;
@@ -32,7 +31,9 @@ public static class DependencyInjection
         services.AddSingleton<IStrategyFactory>(factory);
         services.AddSingleton<IOptimizationStrategyFactory>(factory);
 
-        services.AddSingleton<IFileStorage, FileStorage>();
+        services.Configure<StorageOptions>(_ => { });
+        services.AddSingleton<IFileStorage>(FileStorageFactory.Build);
+        services.AddSingleton<IPartitionTailIndex>(FileStorageFactory.BuildTailIndex);
         services.AddSingleton<IRunSinkFactory, JsonlRunSinkFactory>();
         services.AddSingleton<IEventIndexBuilder, SqliteEventIndexBuilder>();
         services.AddSingleton<ITradeDbWriter, SqliteTradeDbWriter>();

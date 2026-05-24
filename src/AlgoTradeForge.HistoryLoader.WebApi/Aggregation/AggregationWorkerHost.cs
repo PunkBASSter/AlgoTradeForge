@@ -92,7 +92,7 @@ public sealed class AggregationWorkerHost : BackgroundService
                     using var scope = _scopeFactory.CreateScope();
                     var pipeline = scope.ServiceProvider.GetRequiredService<AggregationPipeline>();
 
-                    var result = pipeline.Run(
+                    var result = await pipeline.Run(
                         job,
                         onProgress: ev => RouteProgress(job.JobId, ev),
                         ct: linkedCts.Token);

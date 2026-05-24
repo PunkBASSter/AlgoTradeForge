@@ -2,7 +2,7 @@ using System.Text;
 using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Infrastructure.Events;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -14,7 +14,7 @@ public class SqliteTradeDbWriterTests : IDisposable
     private readonly string _testRoot;
     private readonly string _runFolder;
     private readonly string _tradeDbPath;
-    private readonly FileStorage _fs = new();
+    private readonly LocalFileStorage _fs = new();
 
     public SqliteTradeDbWriterTests()
     {
@@ -59,7 +59,7 @@ public class SqliteTradeDbWriterTests : IDisposable
 
     private static RunSummary MakeSummary() => new(1000, 105_000L, 2, TimeSpan.FromSeconds(3.5));
 
-    private void WriteSampleJsonl()
+    private Task WriteSampleJsonl()
     {
         var sb = new StringBuilder();
         sb.AppendLine("""{"ts":"2024-01-01T00:00:00+00:00","sq":1,"_t":"run.start","src":"engine","d":{"asset":"AAPL"}}""");
@@ -73,13 +73,13 @@ public class SqliteTradeDbWriterTests : IDisposable
         sb.AppendLine("""{"ts":"2024-01-01T00:02:00+00:00","sq":9,"_t":"ord.fill","src":"engine","d":{"orderId":2,"assetName":"AAPL","side":"sell","price":1100,"quantity":10,"commission":5}}""");
         sb.AppendLine("""{"ts":"2024-01-01T00:02:00+00:00","sq":10,"_t":"pos","src":"engine","d":{"assetName":"AAPL","quantity":0,"averageEntryPrice":0,"realizedPnl":500}}""");
         sb.AppendLine("""{"ts":"2024-01-01T00:03:00+00:00","sq":11,"_t":"run.end","src":"engine","d":{"totalBars":2}}""");
-        _fs.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString());
+        return _fs.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString(), ct: TestContext.Current.CancellationToken);
     }
 
     [Fact]
-    public void WriteFromJsonl_RunsTableContainsCorrectMetadata()
+    public async Task WriteFromJsonl_RunsTableContainsCorrectMetadata()
     {
-        WriteSampleJsonl();
+        await WriteSampleJsonl();
         var writer = CreateWriter();
         var identity = MakeIdentity();
         var summary = MakeSummary();
@@ -106,9 +106,9 @@ public class SqliteTradeDbWriterTests : IDisposable
     }
 
     [Fact]
-    public void WriteFromJsonl_OrdersExtractedFromOrdPlaceEvents()
+    public async Task WriteFromJsonl_OrdersExtractedFromOrdPlaceEvents()
     {
-        WriteSampleJsonl();
+        await WriteSampleJsonl();
         var writer = CreateWriter();
 
         writer.WriteFromJsonl(_runFolder, MakeIdentity(), MakeSummary());
@@ -140,9 +140,9 @@ public class SqliteTradeDbWriterTests : IDisposable
     }
 
     [Fact]
-    public void WriteFromJsonl_TradesExtractedFromOrdFillEvents()
+    public async Task WriteFromJsonl_TradesExtractedFromOrdFillEvents()
     {
-        WriteSampleJsonl();
+        await WriteSampleJsonl();
         var writer = CreateWriter();
 
         writer.WriteFromJsonl(_runFolder, MakeIdentity(), MakeSummary());
@@ -179,14 +179,14 @@ public class SqliteTradeDbWriterTests : IDisposable
         var runFolder2 = Path.Combine(_testRoot, "EventLogs", "TestStrat_v0_AAPL_2024-2024_000000_20240102T000000");
         Directory.CreateDirectory(runFolder2);
 
-        WriteSampleJsonl(); // writes to _runFolder
+        await WriteSampleJsonl(); // writes to _runFolder
 
         var sb = new StringBuilder();
         sb.AppendLine("""{"ts":"2024-01-02T00:00:00+00:00","sq":1,"_t":"run.start","src":"engine","d":{"asset":"AAPL"}}""");
         sb.AppendLine("""{"ts":"2024-01-02T00:01:00+00:00","sq":2,"_t":"ord.place","src":"engine","d":{"orderId":1,"assetName":"AAPL","side":"buy","type":"market","quantity":5}}""");
         sb.AppendLine("""{"ts":"2024-01-02T00:01:00+00:00","sq":3,"_t":"ord.fill","src":"engine","d":{"orderId":1,"assetName":"AAPL","side":"buy","price":2000,"quantity":5,"commission":3}}""");
         sb.AppendLine("""{"ts":"2024-01-02T00:02:00+00:00","sq":4,"_t":"run.end","src":"engine","d":{"totalBars":1}}""");
-        _fs.WriteAllText(Path.Combine(runFolder2, "events.jsonl"), sb.ToString());
+        await _fs.WriteAllText(Path.Combine(runFolder2, "events.jsonl"), sb.ToString(), ct: TestContext.Current.CancellationToken);
 
         var identity1 = MakeIdentity();
         var identity2 = MakeIdentity() with
@@ -216,9 +216,9 @@ public class SqliteTradeDbWriterTests : IDisposable
     }
 
     [Fact]
-    public void RebuildFromJsonl_ReplacesExistingRunData()
+    public async Task RebuildFromJsonl_ReplacesExistingRunData()
     {
-        WriteSampleJsonl();
+        await WriteSampleJsonl();
         var writer = CreateWriter();
         var identity = MakeIdentity();
 
@@ -237,7 +237,7 @@ public class SqliteTradeDbWriterTests : IDisposable
         var sb = new StringBuilder();
         sb.AppendLine("""{"ts":"2024-01-01T00:01:00+00:00","sq":1,"_t":"ord.place","src":"engine","d":{"orderId":1,"assetName":"AAPL","side":"buy","type":"market","quantity":10}}""");
         sb.AppendLine("""{"ts":"2024-01-01T00:01:00+00:00","sq":2,"_t":"ord.fill","src":"engine","d":{"orderId":1,"assetName":"AAPL","side":"buy","price":1050,"quantity":10,"commission":5}}""");
-        _fs.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString());
+        await _fs.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString(), ct: TestContext.Current.CancellationToken);
 
         writer.RebuildFromJsonl(_runFolder, identity, new RunSummary(500, 103_000L, 1, TimeSpan.FromSeconds(2)));
 
@@ -254,9 +254,9 @@ public class SqliteTradeDbWriterTests : IDisposable
     }
 
     [Fact]
-    public void WriteFromJsonl_WalModeEnabled()
+    public async Task WriteFromJsonl_WalModeEnabled()
     {
-        WriteSampleJsonl();
+        await WriteSampleJsonl();
         var writer = CreateWriter();
 
         writer.WriteFromJsonl(_runFolder, MakeIdentity(), MakeSummary());

@@ -2,6 +2,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.Storage;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
@@ -65,9 +66,10 @@ public sealed class AggregationPipeline_TickSourceTests : IDisposable
     }
 
     private static AggregationPipeline NewPipeline() => new(
-        new PartitionedSourceReader(),
-        new FeedSchemaManager(),
-        new OverwritePathWriter(),
+        new PartitionedSourceReader(new LocalFileStorage()),
+        new FeedSchemaManager(new LocalFileStorage()),
+        new OverwritePathWriter(new LocalFileStorage()),
+        new LocalFileStorage(),
         TimeProvider.System);
 
     // -------------------------------------------------------------------------
@@ -75,7 +77,7 @@ public sealed class AggregationPipeline_TickSourceTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Run_TickSourceEqV_PropagatesMonotonicBumpsToManifest()
+    public async Task Run_TickSourceEqV_PropagatesMonotonicBumpsToManifest()
     {
         const string asset = "BTCUSDT_perp";
         // 50 ticks all sharing one ms, then 50 spaced 10 ms apart. The decorator must bump
@@ -92,7 +94,7 @@ public sealed class AggregationPipeline_TickSourceTests : IDisposable
         WriteTicks(asset, "2024-04-15", rows);
 
         var pipeline = NewPipeline();
-        var result = pipeline.Run(
+        var result = await pipeline.Run(
             TickJob(asset, "EqV", thresholdScaled: 200, thresholdAbs: 200m),
             ct: TestContext.Current.CancellationToken);
 
@@ -100,7 +102,7 @@ public sealed class AggregationPipeline_TickSourceTests : IDisposable
         Assert.Equal(5, result.BarCount);
 
         // Manifest carries MonotonicBumps from the decorator.
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset));
+        var manifest = await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken);
         Assert.NotNull(manifest);
         var entry = Assert.Contains($"EqV_ticks_200", manifest!.Feeds);
         Assert.NotNull(entry.Build);
@@ -112,7 +114,7 @@ public sealed class AggregationPipeline_TickSourceTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Run_TickSourceEqT_UsesStreamingMedian_NFactorMatchesExpected()
+    public async Task Run_TickSourceEqT_UsesStreamingMedian_NFactorMatchesExpected()
     {
         const string asset = "ETHUSDT_perp";
         // 100 ticks each with qty=1 — for EqT the accumulator counts records, so threshold=10
@@ -126,7 +128,7 @@ public sealed class AggregationPipeline_TickSourceTests : IDisposable
         WriteTicks(asset, "2024-04-15", rows);
 
         var pipeline = NewPipeline();
-        var result = pipeline.Run(
+        var result = await pipeline.Run(
             TickJob(asset, "EqT", thresholdScaled: 10, thresholdAbs: 10m),
             ct: TestContext.Current.CancellationToken);
 
@@ -141,7 +143,7 @@ public sealed class AggregationPipeline_TickSourceTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Run_TickSourceWithStrictMonotonicTimestamps_BumpsZero()
+    public async Task Run_TickSourceWithStrictMonotonicTimestamps_BumpsZero()
     {
         const string asset = "SOLUSDT_perp";
         var rows = new (long ts, long price, long qty, int isBuyerMaker, long aggId)[20];
@@ -152,14 +154,14 @@ public sealed class AggregationPipeline_TickSourceTests : IDisposable
         WriteTicks(asset, "2024-04-15", rows);
 
         var pipeline = NewPipeline();
-        var result = pipeline.Run(
+        var result = await pipeline.Run(
             TickJob(asset, "EqV", thresholdScaled: 50, thresholdAbs: 50m),
             ct: TestContext.Current.CancellationToken);
 
         // 20 × qty=5 = 100 base-vol; threshold=50 → 2 bars.
         Assert.Equal(2, result.BarCount);
 
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset));
+        var manifest = await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken);
         Assert.NotNull(manifest);
         var entry = Assert.Contains("EqV_ticks_50", manifest!.Feeds);
         Assert.Equal(0L, entry.Build!.MonotonicBumps);

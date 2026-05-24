@@ -1,4 +1,5 @@
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.Storage;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Storage;
@@ -31,42 +32,36 @@ public sealed class FeedSchemaManagerStressTests : IDisposable
         return path;
     }
 
-    // -------------------------------------------------------------------------
-    // P1a-9 — ManifestChanged event
-    // -------------------------------------------------------------------------
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public void ManifestChanged_FiresAfterEnsureSchemaWithAssetDirAbsolutePath()
+    public async Task ManifestChanged_FiresAfterEnsureSchemaWithAssetDirAbsolutePath()
     {
-        var manager = new FeedSchemaManager();
+        var manager = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_Event");
         var raised = new List<string>();
         manager.ManifestChanged += raised.Add;
 
-        manager.EnsureSchema(assetDir, "funding-rate", "8h", ["rate", "mark"]);
+        await manager.EnsureSchema(assetDir, "funding-rate", "8h", ["rate", "mark"], ct: Ct);
 
         Assert.Single(raised);
         Assert.Equal(Path.GetFullPath(assetDir), raised[0]);
     }
 
     [Fact]
-    public void ManifestChanged_FiresOncePerWrite()
+    public async Task ManifestChanged_FiresOncePerWrite()
     {
-        var manager = new FeedSchemaManager();
+        var manager = new FeedSchemaManager(new LocalFileStorage());
         var assetDir = AssetDir("BTCUSDT_EventCount");
         var count = 0;
         manager.ManifestChanged += _ => Interlocked.Increment(ref count);
 
-        manager.EnsureSchema(assetDir, "feed-a", "1m", ["x"]);
-        manager.EnsureSchema(assetDir, "feed-b", "5m", ["y"]);
-        manager.EnsureCandleConfig(assetDir, decimalDigits: 2, "1m");
+        await manager.EnsureSchema(assetDir, "feed-a", "1m", ["x"], ct: Ct);
+        await manager.EnsureSchema(assetDir, "feed-b", "5m", ["y"], ct: Ct);
+        await manager.EnsureCandleConfig(assetDir, decimalDigits: 2, "1m", Ct);
 
         Assert.Equal(3, count);
     }
-
-    // -------------------------------------------------------------------------
-    // P1a-10 — concurrent-writer stress (100× repeated)
-    // -------------------------------------------------------------------------
 
     [Fact]
     [Trait("Category", "Stress")]
@@ -78,22 +73,22 @@ public sealed class FeedSchemaManagerStressTests : IDisposable
         for (var i = 0; i < iterations; i++)
         {
             var assetDir = AssetDir($"BTCUSDT_Stress_{i:D3}");
-            var manager = new FeedSchemaManager();
+            var manager = new FeedSchemaManager(new LocalFileStorage());
 
             // The barrier holds both threads at ready-to-finalize so they hit the
             // exclusive lock within ~microseconds of each other every iteration —
             // not just the first. Without this, only the first iteration races.
             using var barrier = new ManualResetEventSlim(initialState: false);
 
-            var t1 = Task.Run(() =>
+            var t1 = Task.Run(async () =>
             {
                 barrier.Wait(ct);
-                manager.EnsureSchema(assetDir, "feed-A", "1m", ["x"]);
+                await manager.EnsureSchema(assetDir, "feed-A", "1m", ["x"], ct: ct);
             }, ct);
-            var t2 = Task.Run(() =>
+            var t2 = Task.Run(async () =>
             {
                 barrier.Wait(ct);
-                manager.EnsureSchema(assetDir, "feed-B", "5m", ["y"]);
+                await manager.EnsureSchema(assetDir, "feed-B", "5m", ["y"], ct: ct);
             }, ct);
 
             // Brief delay so both Tasks reach barrier.Wait before we release.
@@ -103,7 +98,7 @@ public sealed class FeedSchemaManagerStressTests : IDisposable
             await Task.WhenAll(t1, t2);
 
             // Both entries must be present.
-            var loaded = manager.Load(assetDir);
+            var loaded = await manager.Load(assetDir, ct);
             Assert.NotNull(loaded);
             Assert.True(loaded!.Feeds.ContainsKey("feed-A"),
                 $"Iteration {i}: feed-A missing — writer race lost an entry.");

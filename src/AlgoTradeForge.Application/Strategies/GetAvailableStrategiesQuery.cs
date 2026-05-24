@@ -10,12 +10,12 @@ public sealed class GetAvailableStrategiesQueryHandler(
     IOptimizationSpaceProvider provider,
     IAvailableAssetsProvider assetsProvider) : IQueryHandler<GetAvailableStrategiesQuery, IReadOnlyList<StrategyDescriptorDto>>
 {
-    public Task<IReadOnlyList<StrategyDescriptorDto>> HandleAsync(
+    public async Task<IReadOnlyList<StrategyDescriptorDto>> HandleAsync(
         GetAvailableStrategiesQuery query, CancellationToken ct = default)
     {
         var all = provider.GetAll();
-        var availableAssets = assetsProvider.GetAvailableAssets();
-        var result = all.Values
+        var availableAssets = await assetsProvider.GetAvailableAssets(ct);
+        return all.Values
             .OrderBy(d => d.StrategyName)
             .Select(d =>
             {
@@ -32,6 +32,5 @@ public sealed class GetAvailableStrategiesQueryHandler(
                     StrategyTemplateBuilder.BuildGeneticOptimizationTemplate(d.StrategyName, d.Axes, availableAssets, reqSubs));
             })
             .ToList();
-        return Task.FromResult<IReadOnlyList<StrategyDescriptorDto>>(result);
     }
 }

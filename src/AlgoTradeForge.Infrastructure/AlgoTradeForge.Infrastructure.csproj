@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AlgoTradeForge.Application\AlgoTradeForge.Application.csproj" />
+    <ProjectReference Include="..\AlgoTradeForge.Storage\AlgoTradeForge.Storage.csproj" />
   </ItemGroup>
 
 </Project>

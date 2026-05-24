@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AlgoTradeForge.HistoryLoader.Application\AlgoTradeForge.HistoryLoader.Application.csproj" />
     <ProjectReference Include="..\AlgoTradeForge.HistoryLoader.Infrastructure\AlgoTradeForge.HistoryLoader.Infrastructure.csproj" />
+    <ProjectReference Include="..\AlgoTradeForge.Storage\AlgoTradeForge.Storage.csproj" />
   </ItemGroup>
 
 </Project>

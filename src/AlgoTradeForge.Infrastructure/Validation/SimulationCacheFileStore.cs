@@ -1,5 +1,6 @@
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Backtests;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Domain.Validation;
@@ -20,48 +21,44 @@ namespace AlgoTradeForge.Infrastructure.Validation;
 ///     [int32 timelineIndex]
 ///     [double[barCount] pnlDeltas]   // barCount from Timelines[timelineIndex]
 /// </summary>
-public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
+public sealed class SimulationCacheFileStore(IFileStorage fileStorage) : ISimulationCacheFileStore
 {
     private const int FormatVersion = 3;
 
-    /// <summary>Writes the cache to a binary file.</summary>
-    public void Write(SimulationCache cache, string filePath)
+    public async Task Write(SimulationCache cache, string filePath, CancellationToken ct = default)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
-
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
-        using var writer = new BinaryWriter(fs);
-
-        writer.Write(FormatVersion);
-
-        // Timelines
-        writer.Write(cache.TimelineCount);
-        for (var tl = 0; tl < cache.TimelineCount; tl++)
+        await using var session = await fileStorage.OpenWriteSession(filePath, ct);
+        using (var writer = new BinaryWriter(session.Stream, System.Text.Encoding.UTF8, leaveOpen: true))
         {
-            var ts = cache.Timelines[tl];
-            writer.Write(ts.Length);
-            for (var b = 0; b < ts.Length; b++)
-                writer.Write(ts[b]);
-        }
+            writer.Write(FormatVersion);
 
-        // Trials
-        writer.Write(cache.TrialCount);
-        for (var t = 0; t < cache.TrialCount; t++)
-        {
-            var trial = cache.Trials[t];
-            writer.Write(trial.TimelineIndex);
+            writer.Write(cache.TimelineCount);
+            for (var tl = 0; tl < cache.TimelineCount; tl++)
+            {
+                var ts = cache.Timelines[tl];
+                writer.Write(ts.Length);
+                for (var b = 0; b < ts.Length; b++)
+                    writer.Write(ts[b]);
+            }
 
-            var pnl = trial.PnlDeltas;
-            for (var b = 0; b < pnl.Length; b++)
-                writer.Write(pnl[b]);
+            writer.Write(cache.TrialCount);
+            for (var t = 0; t < cache.TrialCount; t++)
+            {
+                var trial = cache.Trials[t];
+                writer.Write(trial.TimelineIndex);
+
+                var pnl = trial.PnlDeltas;
+                for (var b = 0; b < pnl.Length; b++)
+                    writer.Write(pnl[b]);
+            }
         }
+        await session.Commit(ct);
     }
 
-    /// <summary>Reads a binary cache file.</summary>
-    public SimulationCache Read(string filePath)
+    public async Task<SimulationCache> Read(string filePath, CancellationToken ct = default)
     {
-        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536);
-        using var reader = new BinaryReader(fs);
+        await using var stream = await fileStorage.OpenRead(filePath, ct);
+        using var reader = new BinaryReader(stream);
 
         var version = reader.ReadInt32();
         if (version != FormatVersion)
@@ -71,25 +68,17 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
         return ReadCore(reader);
     }
 
-    /// <summary>
-    /// Writes trial data directly to binary format, computing P&amp;L deltas on the fly.
-    /// Falls back to trade P&amp;L when equity curves are empty.
-    /// </summary>
-    public void WriteDirect(IReadOnlyList<BacktestRunRecord> trials, string filePath)
+    public async Task WriteDirect(IReadOnlyList<BacktestRunRecord> trials, string filePath, CancellationToken ct = default)
     {
         if (trials.Count == 0)
             throw new ArgumentException("No trials provided.", nameof(trials));
 
-        // Use trade P&L path when equity curves are not available
         if (trials[0].EquityCurve.Count == 0)
         {
-            WriteDirectFromTradePnl(trials, filePath);
+            await WriteDirectFromTradePnl(trials, filePath, ct);
             return;
         }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
-
-        // Group by (canonical subscription key, barCount) → build timelines
         var timelineKeys = new Dictionary<(string PrimaryKey, int BarCount), int>();
         var timelines = new List<long[]>();
         var trialTimelineIndices = new int[trials.Count];
@@ -111,69 +100,64 @@ public sealed class SimulationCacheFileStore : ISimulationCacheFileStore
             trialTimelineIndices[t] = tlIdx;
         }
 
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
-        using var writer = new BinaryWriter(fs);
-
-        writer.Write(FormatVersion);
-
-        // Write timelines
-        writer.Write(timelines.Count);
-        foreach (var ts in timelines)
+        await using var session = await fileStorage.OpenWriteSession(filePath, ct);
+        using (var writer = new BinaryWriter(session.Stream, System.Text.Encoding.UTF8, leaveOpen: true))
         {
-            writer.Write(ts.Length);
-            for (var b = 0; b < ts.Length; b++)
-                writer.Write(ts[b]);
-        }
+            writer.Write(FormatVersion);
 
-        // Write trials (timeline index + PnL deltas)
-        writer.Write(trials.Count);
-        for (var t = 0; t < trials.Count; t++)
-        {
-            writer.Write(trialTimelineIndices[t]);
-
-            var curve = trials[t].EquityCurve;
-            if (curve.Count > 0)
+            writer.Write(timelines.Count);
+            foreach (var ts in timelines)
             {
-                var initialCapital = (double)trials[t].Metrics.InitialCapital;
-                writer.Write(curve[0].Value - initialCapital);
-                for (var i = 1; i < curve.Count; i++)
-                    writer.Write(curve[i].Value - curve[i - 1].Value);
+                writer.Write(ts.Length);
+                for (var b = 0; b < ts.Length; b++)
+                    writer.Write(ts[b]);
+            }
+
+            writer.Write(trials.Count);
+            for (var t = 0; t < trials.Count; t++)
+            {
+                writer.Write(trialTimelineIndices[t]);
+
+                var curve = trials[t].EquityCurve;
+                if (curve.Count > 0)
+                {
+                    var initialCapital = (double)trials[t].Metrics.InitialCapital;
+                    writer.Write(curve[0].Value - initialCapital);
+                    for (var i = 1; i < curve.Count; i++)
+                        writer.Write(curve[i].Value - curve[i - 1].Value);
+                }
             }
         }
+        await session.Commit(ct);
     }
 
-    /// <summary>
-    /// Writes trial data from trade P&L when equity curves are not available.
-    /// Each trial gets its own timeline (trade timestamps).
-    /// </summary>
-    private void WriteDirectFromTradePnl(IReadOnlyList<BacktestRunRecord> trials, string filePath)
+    private async Task WriteDirectFromTradePnl(IReadOnlyList<BacktestRunRecord> trials, string filePath, CancellationToken ct)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
-
-        using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
-        using var writer = new BinaryWriter(fs);
-
-        writer.Write(FormatVersion);
-
-        // Each trial gets its own timeline
-        writer.Write(trials.Count); // timelineCount = trialCount
-        for (var t = 0; t < trials.Count; t++)
+        await using var session = await fileStorage.OpenWriteSession(filePath, ct);
+        using (var writer = new BinaryWriter(session.Stream, System.Text.Encoding.UTF8, leaveOpen: true))
         {
-            var trades = trials[t].TradePnl;
-            writer.Write(trades.Count);
-            for (var i = 0; i < trades.Count; i++)
-                writer.Write(trades[i].TimestampMs);
-        }
+            writer.Write(FormatVersion);
 
-        writer.Write(trials.Count);
-        for (var t = 0; t < trials.Count; t++)
-        {
-            writer.Write(t); // timelineIndex = trial index
+            writer.Write(trials.Count);
+            for (var t = 0; t < trials.Count; t++)
+            {
+                var trades = trials[t].TradePnl;
+                writer.Write(trades.Count);
+                for (var i = 0; i < trades.Count; i++)
+                    writer.Write(trades[i].TimestampMs);
+            }
 
-            var trades = trials[t].TradePnl;
-            for (var i = 0; i < trades.Count; i++)
-                writer.Write(trades[i].Pnl);
+            writer.Write(trials.Count);
+            for (var t = 0; t < trials.Count; t++)
+            {
+                writer.Write(t);
+
+                var trades = trials[t].TradePnl;
+                for (var i = 0; i < trades.Count; i++)
+                    writer.Write(trades[i].Pnl);
+            }
         }
+        await session.Commit(ct);
     }
 
     private static SimulationCache ReadCore(BinaryReader reader)

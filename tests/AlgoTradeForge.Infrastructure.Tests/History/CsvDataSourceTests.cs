@@ -20,6 +20,7 @@ public class CsvDataSourceTests
     private readonly IInt64BarLoader _loader = Substitute.For<IInt64BarLoader>();
     private readonly IOptions<CandleStorageOptions> _options =
         Options.Create(new CandleStorageOptions { DataRoot = "/data" });
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private CsvDataSource CreateSource() => new(_loader, _options);
 
@@ -37,12 +38,12 @@ public class CsvDataSourceTests
     {
         _loader.Load(
             Arg.Any<DataFeedDescriptor>(),
-            Arg.Any<DateOnly>(), Arg.Any<DateOnly>())
+            Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(series);
     }
 
     [Fact]
-    public void GetData_SameInterval_ReturnsRaw()
+    public async Task GetData_SameInterval_ReturnsRaw()
     {
         var raw = MakeMinuteSeries(10);
         SetupLoader(raw);
@@ -56,13 +57,13 @@ public class CsvDataSourceTests
             EndTime = End
         };
 
-        var result = source.GetData(query);
+        var result = await source.GetData(query, ct: Ct);
 
         Assert.Equal(10, result.Count);
     }
 
     [Fact]
-    public void GetData_LargerInterval_ReturnsResampled()
+    public async Task GetData_LargerInterval_ReturnsResampled()
     {
         var raw = MakeMinuteSeries(10);
         SetupLoader(raw);
@@ -76,13 +77,13 @@ public class CsvDataSourceTests
             EndTime = End
         };
 
-        var result = source.GetData(query);
+        var result = await source.GetData(query, ct: Ct);
 
-        Assert.Equal(2, result.Count); // 10 bars / 5 = 2
+        Assert.Equal(2, result.Count);
     }
 
     [Fact]
-    public void GetData_SmallerInterval_Throws()
+    public async Task GetData_SmallerInterval_Throws()
     {
         var source = CreateSource();
 
@@ -94,11 +95,11 @@ public class CsvDataSourceTests
             EndTime = End
         };
 
-        Assert.Throws<ArgumentException>(() => source.GetData(query));
+        await Assert.ThrowsAsync<ArgumentException>(() => source.GetData(query, ct: Ct));
     }
 
     [Fact]
-    public void GetData_NullStartTime_Throws()
+    public async Task GetData_NullStartTime_Throws()
     {
         var source = CreateSource();
 
@@ -109,11 +110,11 @@ public class CsvDataSourceTests
             EndTime = End
         };
 
-        Assert.Throws<ArgumentException>(() => source.GetData(query));
+        await Assert.ThrowsAsync<ArgumentException>(() => source.GetData(query, ct: Ct));
     }
 
     [Fact]
-    public void GetData_NullEndTime_Throws()
+    public async Task GetData_NullEndTime_Throws()
     {
         var source = CreateSource();
 
@@ -124,6 +125,6 @@ public class CsvDataSourceTests
             StartTime = Start
         };
 
-        Assert.Throws<ArgumentException>(() => source.GetData(query));
+        await Assert.ThrowsAsync<ArgumentException>(() => source.GetData(query, ct: Ct));
     }
 }

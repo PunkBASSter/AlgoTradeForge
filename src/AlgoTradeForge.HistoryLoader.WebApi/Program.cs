@@ -1,3 +1,4 @@
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
@@ -28,6 +29,17 @@ builder.Services.Configure<HistoryLoaderOptions>(
     builder.Configuration.GetSection("HistoryLoader"));
 builder.Services.AddSingleton<IValidateOptions<HistoryLoaderOptions>, HistoryLoaderOptionsValidator>();
 
+builder.Services.Configure<HistoryLoaderStorageOptions>(
+    builder.Configuration.GetSection("HistoryLoader:Storage"));
+
+// PR3: Storage:Local:DataRoot drives LocalFileStorage's relative-key resolution. Absolute keys
+// still pass through (the writers haven't moved to relative keys yet — that's PR4). PR5: the
+// same Storage section now also picks between local FS and S3 via Backend.
+builder.Services.Configure<StorageOptions>(
+    builder.Configuration.GetSection("Storage"));
+foreach (var warning in StorageConfigMigration.ApplyLegacyAliases(builder.Configuration, builder.Services))
+    Console.Error.WriteLine($"[Storage] {warning}");
+
 // API JSON: snake_case wire schema. Distinct from the camelCase FeedSchemaManager uses for
 // on-disk feeds.json (its own JsonOptions).
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -54,10 +66,15 @@ builder.Services.AddSingleton<IFeedCollector, LsRatioTopPositionsFeedCollector>(
 builder.Services.AddSingleton<IFeedCollector, LiquidationFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, AggTradeFeedCollector>();
 
-// Persists discovered feed dates back to appsettings.json
+// Persists discovered feed dates back to appsettings.json. Binds LocalFileStorage directly
+// (not IFileStorage) because the binary's content-root appsettings.json is host config and
+// must never be routed to S3.
 var appSettingsPath = Path.Combine(builder.Environment.ContentRootPath, "appsettings.json");
 builder.Services.AddSingleton<ISettingsWriter>(sp =>
-    new AppSettingsWriter(appSettingsPath, sp.GetRequiredService<ILogger<AppSettingsWriter>>()));
+    new AppSettingsWriter(
+        appSettingsPath,
+        new AlgoTradeForge.Storage.LocalFileStorage(),
+        sp.GetRequiredService<ILogger<AppSettingsWriter>>()));
 
 builder.Services.AddSingleton<ICollectionCircuitBreaker, CollectionCircuitBreaker>();
 builder.Services.AddSingleton<SymbolCollector>();

@@ -2,7 +2,7 @@ namespace AlgoTradeForge.Application.Abstractions;
 
 public interface IAvailableAssetsProvider
 {
-    IReadOnlyList<AvailableAssetInfo> GetAvailableAssets();
+    Task<IReadOnlyList<AvailableAssetInfo>> GetAvailableAssets(CancellationToken ct = default);
 }
 
 public sealed record AvailableAssetInfo(string Exchange, string Symbol, bool IsFutures)

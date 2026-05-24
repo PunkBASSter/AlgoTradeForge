@@ -7,7 +7,7 @@ namespace AlgoTradeForge.Application.Abstractions;
 /// </summary>
 public interface IFeedSeriesLoader
 {
-    FeedSeries? Load(
+    Task<FeedSeries?> Load(
         string dataRoot,
         string exchange,
         string assetDir,
@@ -15,5 +15,6 @@ public interface IFeedSeriesLoader
         string interval,
         DateOnly from,
         DateOnly to,
-        bool nullableColumns = false);
+        bool nullableColumns = false,
+        CancellationToken ct = default);
 }

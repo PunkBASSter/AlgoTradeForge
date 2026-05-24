@@ -37,12 +37,12 @@ public sealed class AggTradeFeedCollector(
         CancellationToken ct)
     {
         // Schema first so concurrent readers see the feed entry even before the first row lands.
-        schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null);
+        await schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null, ct);
 
         // Re-fetch the boundary ms (inclusive) and let the writer's agg_id dedup drop
         // already-persisted records — ts+1 advancement would silently skip ticks that share a
         // millisecond.
-        var resume = tickWriter.ResumeFrom(assetDir);
+        var resume = await tickWriter.ResumeFrom(assetDir, ct);
         if (resume is { } r && r.LastTsMs >= fromMs)
             fromMs = r.LastTsMs;
 
@@ -67,13 +67,13 @@ public sealed class AggTradeFeedCollector(
         catch (IOException ex)
         {
             logger.LogCritical(ex, "Disk I/O error writing ticks for {AssetDir}", assetDir);
-            UpdateFeedStatus(assetDir, firstTs, lastTs, recordCount, CollectionHealth.Error);
+            await UpdateFeedStatus(assetDir, firstTs, lastTs, recordCount, CollectionHealth.Error, ct);
             throw;
         }
 
         if (recordCount > 0)
         {
-            UpdateFeedStatus(assetDir, firstTs, lastTs, recordCount);
+            await UpdateFeedStatus(assetDir, firstTs, lastTs, recordCount, ct: ct);
             logger.LogInformation(
                 "Collected {Count} tick records for {AssetDir}", recordCount, assetDir);
         }
@@ -83,11 +83,12 @@ public sealed class AggTradeFeedCollector(
         }
     }
 
-    private void UpdateFeedStatus(
+    private async Task UpdateFeedStatus(
         string assetDir, long? firstTs, long lastTs, long recordCount,
-        CollectionHealth health = CollectionHealth.Healthy)
+        CollectionHealth health = CollectionHealth.Healthy,
+        CancellationToken ct = default)
     {
-        var existing = feedStatusStore.Load(assetDir, FeedNames.Ticks, "");
+        var existing = await feedStatusStore.Load(assetDir, FeedNames.Ticks, "", ct);
         var status = new FeedStatus
         {
             FeedName = FeedNames.Ticks,
@@ -99,6 +100,6 @@ public sealed class AggTradeFeedCollector(
             Gaps = existing?.Gaps ?? [],
             Health = health,
         };
-        feedStatusStore.Save(assetDir, FeedNames.Ticks, "", status);
+        await feedStatusStore.Save(assetDir, FeedNames.Ticks, "", status, ct);
     }
 }

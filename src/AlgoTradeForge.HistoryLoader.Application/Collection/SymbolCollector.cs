@@ -128,9 +128,9 @@ public sealed class SymbolCollector
         // Full collection from the discovered start.
         await collector.CollectAsync(assetConfig, feedConfig, assetDir, discovered, toMs, ct);
 
-        _settingsWriter.UpdateFeedHistoryStart(
+        await _settingsWriter.UpdateFeedHistoryStart(
             assetConfig.Symbol, assetConfig.Type,
-            feedConfig.Name, feedConfig.Interval, discoveredDate);
+            feedConfig.Name, feedConfig.Interval, discoveredDate, ct);
     }
 
     /// <summary>

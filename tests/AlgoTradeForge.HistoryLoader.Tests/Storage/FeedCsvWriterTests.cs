@@ -1,6 +1,10 @@
 using System.Globalization;
+using AlgoTradeForge.Storage;
+using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Storage;
@@ -8,11 +12,17 @@ namespace AlgoTradeForge.HistoryLoader.Tests.Storage;
 public sealed class FeedCsvWriterTests : IDisposable
 {
     private readonly string _tempDir;
+    private readonly LocalFileStorage _storage;
+    private readonly LocalTailIndex _tail;
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public FeedCsvWriterTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), $"FeedCsvWriterTests_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
+        _storage = new LocalFileStorage(new LocalStorageOptions { DataRoot = _tempDir });
+        _tail = new LocalTailIndex(_storage);
     }
 
     public void Dispose()
@@ -21,150 +31,124 @@ public sealed class FeedCsvWriterTests : IDisposable
             Directory.Delete(_tempDir, recursive: true);
     }
 
-    // 2024-01-15 00:00:00 UTC in epoch ms
+    private FeedCsvWriter NewWriter(WriteLockManager? locks = null)
+        => new(
+            _storage,
+            _tail,
+            Options.Create(new HistoryLoaderStorageOptions { FlushEveryRows = 1, FlushIntervalSeconds = 60 }),
+            NullLogger<FeedCsvWriter>.Instance,
+            locks ?? new WriteLockManager());
+
     private static readonly long Ts20240115 = new DateTimeOffset(2024, 1, 15, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
 
-    // ---------------------------------------------------------------------------
-    // 1. Write_NewFile_CreatesWithCorrectHeader
-    // ---------------------------------------------------------------------------
+    private static string PartitionKey(string assetDir, string feedName, string interval, long timestampMs)
+    {
+        var partitionDate = DateTimeOffset.FromUnixTimeMilliseconds(timestampMs).UtcDateTime;
+        var fileName = string.IsNullOrEmpty(interval)
+            ? $"{partitionDate:yyyy-MM}.csv"
+            : $"{partitionDate:yyyy-MM}_{interval}.csv";
+        return Path.Combine(assetDir, feedName, fileName);
+    }
 
     [Fact]
-    public void Write_NewFile_CreatesWithCorrectHeader()
+    public async Task Write_NewFile_CreatesWithCorrectHeader()
     {
-        var writer = new FeedCsvWriter(new WriteLockManager());
+        var writer = NewWriter();
         var columns = new[] { "fundingRate", "markPrice" };
         var record = new FeedRecord(Ts20240115, [0.0001, 50000.0]);
 
         writer.Write(_tempDir, "funding-rate", "", columns, record);
+        await writer.FlushAllAsync(Ct);
 
-        var filePath = Path.Combine(_tempDir, "funding-rate", "2024-01.csv");
-        Assert.True(File.Exists(filePath));
-
-        var lines = File.ReadAllLines(filePath);
+        var key = PartitionKey(_tempDir, "funding-rate", "", Ts20240115);
+        Assert.True(await _storage.Exists(key, Ct));
+        var lines = await _storage.ReadAllLines(key, Ct);
         Assert.Equal("ts,fundingRate,markPrice", lines[0]);
     }
 
-    // ---------------------------------------------------------------------------
-    // 2. Write_DoubleValues_FormattedWithInvariantCulture
-    // ---------------------------------------------------------------------------
-
     [Fact]
-    public void Write_DoubleValues_FormattedWithInvariantCulture()
+    public async Task Write_DoubleValues_FormattedWithInvariantCulture()
     {
-        var writer = new FeedCsvWriter(new WriteLockManager());
-        var columns = new[] { "openInterest" };
-        // Use a value that varies between cultures (decimal separator)
+        var writer = NewWriter();
         var record = new FeedRecord(Ts20240115, [1234567.89]);
 
-        writer.Write(_tempDir, "open-interest", "5m", columns, record);
+        writer.Write(_tempDir, "open-interest", "5m", ["openInterest"], record);
+        await writer.FlushAllAsync(Ct);
 
-        var filePath = Path.Combine(_tempDir, "open-interest", "2024-01_5m.csv");
-        var lines = File.ReadAllLines(filePath);
-
-        // data line is index 1; value must use '.' not ','
+        var key = PartitionKey(_tempDir, "open-interest", "5m", Ts20240115);
+        var lines = await _storage.ReadAllLines(key, Ct);
         Assert.Equal(2, lines.Length);
         var dataPart = lines[1].Split(',');
         Assert.Equal(Ts20240115.ToString(CultureInfo.InvariantCulture), dataPart[0]);
         Assert.Equal("1234567.89", dataPart[1]);
     }
 
-    // ---------------------------------------------------------------------------
-    // 3. Write_NoInterval_OmitsIntervalFromFilename
-    // ---------------------------------------------------------------------------
-
     [Fact]
-    public void Write_NoInterval_OmitsIntervalFromFilename()
+    public async Task Write_NoInterval_OmitsIntervalFromFilename()
     {
-        var writer = new FeedCsvWriter(new WriteLockManager());
+        var writer = NewWriter();
         var record = new FeedRecord(Ts20240115, [0.0001]);
 
         writer.Write(_tempDir, "funding-rate", "", ["rate"], record);
+        await writer.FlushAllAsync(Ct);
 
-        var expectedPath = Path.Combine(_tempDir, "funding-rate", "2024-01.csv");
-        var unexpectedPath = Path.Combine(_tempDir, "funding-rate", "2024-01_.csv");
-
-        Assert.True(File.Exists(expectedPath), $"Expected file not found: {expectedPath}");
-        Assert.False(File.Exists(unexpectedPath), $"Unexpected file with trailing underscore found: {unexpectedPath}");
+        Assert.True(await _storage.Exists(PartitionKey(_tempDir, "funding-rate", "", Ts20240115), Ct));
+        Assert.False(await _storage.Exists(Path.Combine(_tempDir, "funding-rate", "2024-01_.csv"), Ct));
     }
 
-    // ---------------------------------------------------------------------------
-    // 4. Write_WithInterval_IncludesIntervalInFilename
-    // ---------------------------------------------------------------------------
-
     [Fact]
-    public void Write_WithInterval_IncludesIntervalInFilename()
+    public async Task Write_WithInterval_IncludesIntervalInFilename()
     {
-        var writer = new FeedCsvWriter(new WriteLockManager());
+        var writer = NewWriter();
         var record = new FeedRecord(Ts20240115, [999999.0]);
 
         writer.Write(_tempDir, "open-interest", "5m", ["oi"], record);
+        await writer.FlushAllAsync(Ct);
 
-        var expectedPath = Path.Combine(_tempDir, "open-interest", "2024-01_5m.csv");
-        Assert.True(File.Exists(expectedPath), $"Expected file not found: {expectedPath}");
+        Assert.True(await _storage.Exists(PartitionKey(_tempDir, "open-interest", "5m", Ts20240115), Ct));
     }
 
-    // ---------------------------------------------------------------------------
-    // 5. Write_Dedup_SkipsDuplicateTimestamp
-    // ---------------------------------------------------------------------------
-
     [Fact]
-    public void Write_Dedup_SkipsDuplicateTimestamp()
+    public async Task Write_Dedup_SkipsDuplicateTimestamp()
     {
-        var writer = new FeedCsvWriter(new WriteLockManager());
-        var columns = new[] { "rate" };
+        var writer = NewWriter();
         var record = new FeedRecord(Ts20240115, [0.0001]);
 
-        writer.Write(_tempDir, "funding-rate", "", columns, record);
-        writer.Write(_tempDir, "funding-rate", "", columns, record); // duplicate — must be skipped
+        writer.Write(_tempDir, "funding-rate", "", ["rate"], record);
+        writer.Write(_tempDir, "funding-rate", "", ["rate"], record);
+        await writer.FlushAllAsync(Ct);
 
-        var filePath = Path.Combine(_tempDir, "funding-rate", "2024-01.csv");
-        var lines = File.ReadAllLines(filePath);
-
-        // header + exactly one data line
+        var lines = await _storage.ReadAllLines(PartitionKey(_tempDir, "funding-rate", "", Ts20240115), Ct);
         Assert.Equal(2, lines.Length);
     }
 
-    // ---------------------------------------------------------------------------
-    // 6. ResumeFrom_ExistingFile_ReturnsLastTimestamp
-    // ---------------------------------------------------------------------------
-
     [Fact]
-    public void ResumeFrom_ExistingFile_ReturnsLastTimestamp()
+    public async Task ResumeFrom_ExistingFile_ReturnsLastTimestamp()
     {
-        var writer = new FeedCsvWriter(new WriteLockManager());
-        var columns = new[] { "rate" };
-
+        var writer = NewWriter();
         var ts1 = Ts20240115;
-        var ts2 = Ts20240115 + 8 * 60 * 60 * 1000L; // +8 hours
+        var ts2 = Ts20240115 + 8 * 60 * 60 * 1000L;
 
-        writer.Write(_tempDir, "funding-rate", "", columns, new FeedRecord(ts1, [0.0001]));
-        writer.Write(_tempDir, "funding-rate", "", columns, new FeedRecord(ts2, [0.0002]));
+        writer.Write(_tempDir, "funding-rate", "", ["rate"], new FeedRecord(ts1, [0.0001]));
+        writer.Write(_tempDir, "funding-rate", "", ["rate"], new FeedRecord(ts2, [0.0002]));
+        await writer.FlushAllAsync(Ct);
 
-        var result = writer.ResumeFrom(_tempDir, "funding-rate", "");
-
-        Assert.Equal(ts2, result);
+        var fresh = NewWriter();
+        Assert.Equal(ts2, await fresh.ResumeFrom(_tempDir, "funding-rate", "", Ct));
     }
-
-    // ---------------------------------------------------------------------------
-    // 7. Write_ConcurrentSameTimestamp_OnlyOneLineWritten
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Write_ConcurrentSameTimestamp_OnlyOneLineWritten()
     {
-        var lockMgr = new WriteLockManager();
-        var writer = new FeedCsvWriter(lockMgr);
-        var columns = new[] { "rate" };
+        var writer = NewWriter();
 
         var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(() =>
-            writer.Write(_tempDir, "concurrent-feed", "", columns,
+            writer.Write(_tempDir, "concurrent-feed", "", ["rate"],
                 new FeedRecord(Ts20240115, [0.0001]))));
-
         await Task.WhenAll(tasks);
+        await writer.FlushAllAsync(Ct);
 
-        var filePath = Path.Combine(_tempDir, "concurrent-feed", "2024-01.csv");
-        var lines = File.ReadAllLines(filePath);
-        // header + exactly 1 data line despite 10 concurrent writes
+        var lines = await _storage.ReadAllLines(PartitionKey(_tempDir, "concurrent-feed", "", Ts20240115), Ct);
         Assert.Equal(2, lines.Length);
     }
 }

@@ -1,5 +1,6 @@
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Infrastructure.History;
+using AlgoTradeForge.Storage;
 using Xunit;
 
 namespace AlgoTradeForge.Infrastructure.Tests.History;
@@ -7,7 +8,8 @@ namespace AlgoTradeForge.Infrastructure.Tests.History;
 public class PartitionedCsvBarLoaderTests : IDisposable
 {
     private readonly string _testDataRoot;
-    private readonly PartitionedCsvBarLoader _loader = new();
+    private readonly PartitionedCsvBarLoader _loader = new(new LocalFileStorage());
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public PartitionedCsvBarLoaderTests()
     {
@@ -91,7 +93,7 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Load_SingleMonth_ReturnsCorrectBars()
+    public async Task Load_SingleMonth_ReturnsCorrectBars()
     {
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
         [
@@ -99,9 +101,9 @@ public class PartitionedCsvBarLoaderTests : IDisposable
             $"{Ts(2024,1,1,0,1)},6743300,6745200,6741100,6744400,153300"
         ]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.Equal(2, series.Count);
         Assert.Equal(6743215L, series[0].Open);
@@ -113,16 +115,16 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_MultiMonth_ReturnsAllBars()
+    public async Task Load_MultiMonth_ReturnsAllBars()
     {
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
             [$"{Ts(2024,1,15)},100,200,50,150,1000"]);
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 2, "1m",
             [$"{Ts(2024,2,10)},110,210,60,160,1100"]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 2, 28));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 2, 28), ct: Ct);
 
         Assert.Equal(2, series.Count);
         Assert.Equal(100L, series[0].Open);
@@ -130,22 +132,22 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_MultiMonth_SpanningYearBoundary()
+    public async Task Load_MultiMonth_SpanningYearBoundary()
     {
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 12, "1m",
             [$"{Ts(2024,12,31,23,59)},100,200,50,150,1000"]);
         WriteCandlesCsv("Binance", "BTCUSDT", 2025, 1, "1m",
             [$"{Ts(2025,1,1)},110,210,60,160,1100"]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
-            new DateOnly(2024, 12, 1), new DateOnly(2025, 1, 31));
+            new DateOnly(2024, 12, 1), new DateOnly(2025, 1, 31), ct: Ct);
 
         Assert.Equal(2, series.Count);
     }
 
     [Fact]
-    public void Load_FiltersRowsOutsideDateRange()
+    public async Task Load_FiltersRowsOutsideDateRange()
     {
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
         [
@@ -154,63 +156,60 @@ public class PartitionedCsvBarLoaderTests : IDisposable
             $"{Ts(2024,1,31)},120,220,70,170,1200"
         ]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
-            new DateOnly(2024, 1, 10), new DateOnly(2024, 1, 20));
+            new DateOnly(2024, 1, 10), new DateOnly(2024, 1, 20), ct: Ct);
 
         var bar = Assert.Single(series);
         Assert.Equal(110L, bar.Open);
     }
 
     [Fact]
-    public void Load_IntervalInFilename_1h()
+    public async Task Load_IntervalInFilename_1h()
     {
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1h",
             [$"{Ts(2024,1,1)},1000,1100,900,1050,5000"]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1h"),
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         var bar = Assert.Single(series);
         Assert.Equal(1000L, bar.Open);
     }
 
     [Fact]
-    public void Load_MissingMonthFile_SkipsGracefully()
+    public async Task Load_MissingMonthFile_SkipsGracefully()
     {
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
             [$"{Ts(2024,1,1)},100,200,50,150,1000"]);
-        // No Feb file
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 2, 28));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 2, 28), ct: Ct);
 
         Assert.Single(series);
     }
 
     [Fact]
-    public void Load_NoDataInRange_ReturnsEmptySeries()
+    public async Task Load_NoDataInRange_ReturnsEmptySeries()
     {
-        // Directory exists (data written for January) but the requested range (June)
-        // intersects no rows — loader returns an empty series rather than throwing.
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
             [$"{Ts(2024,1,15)},100,200,50,150,1000"]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
-            new DateOnly(2024, 6, 1), new DateOnly(2024, 6, 30));
+            new DateOnly(2024, 6, 1), new DateOnly(2024, 6, 30), ct: Ct);
 
         Assert.Empty(series);
     }
 
     [Fact]
-    public void Load_MissingFeedDirectory_ThrowsDirectoryNotFound()
+    public async Task Load_MissingFeedDirectory_ThrowsDirectoryNotFound()
     {
-        var ex = Assert.Throws<DirectoryNotFoundException>(() => _loader.Load(
+        var ex = await Assert.ThrowsAsync<DirectoryNotFoundException>(() => _loader.Load(
             AltBarDescriptor("Binance", "BTCUSDT", "EqV_1m_5M"),
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31)));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct));
 
         Assert.Contains("EqV_1m_5M", ex.Message);
         Assert.Contains("Binance", ex.Message);
@@ -218,14 +217,9 @@ public class PartitionedCsvBarLoaderTests : IDisposable
         Assert.Contains("Expected path", ex.Message);
     }
 
-    // -------------------------------------------------------------------------
-    // P1a-29, P1a-30 — per-FeedId glob filter for mixed-timeframe candles/
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public void Load_TimeBar_PerFeedIdFilter_ExcludesOtherIntervals()
+    public async Task Load_TimeBar_PerFeedIdFilter_ExcludesOtherIntervals()
     {
-        // Plant 1m, 5m, AND a 1h file under candles/ — loading "1m" must pick up ONLY 1m.
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
             [$"{Ts(2024,1,1)},1,1,1,1,100"]);
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "5m",
@@ -233,9 +227,9 @@ public class PartitionedCsvBarLoaderTests : IDisposable
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1h",
             [$"{Ts(2024,1,1)},60,60,60,60,6000"]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         var bar = Assert.Single(series);
         Assert.Equal(1L, bar.Open);
@@ -243,19 +237,78 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_TimeBar_5mFeedId_DoesNotPickUp1m()
+    public async Task Load_TimeBar_5mFeedId_DoesNotPickUp1m()
     {
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
             [$"{Ts(2024,1,1)},1,1,1,1,100"]);
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "5m",
             [$"{Ts(2024,1,1)},5,5,5,5,500"]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "5m"),
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         var bar = Assert.Single(series);
         Assert.Equal(5L, bar.Open);
+    }
+
+    [Fact]
+    public async Task Load_TimeBar_PartedPartition_IsIncluded()
+    {
+        // Mirror the AltBar parted layout for TimeBar files: bare month + .pNN parts.
+        WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
+            [$"{Ts(2024,1,5)},100,200,50,150,1000"]);
+        // .p01 / .p02 partitions for a different month — same feedId.
+        var partedDir = Path.Combine(_testDataRoot, "Binance", "BTCUSDT", "candles");
+        File.WriteAllLines(Path.Combine(partedDir, "2024-02_1m.p01.csv"),
+            ["ts,o,h,l,c,vol", $"{Ts(2024,2,5)},110,210,60,160,1100"]);
+        File.WriteAllLines(Path.Combine(partedDir, "2024-02_1m.p02.csv"),
+            ["ts,o,h,l,c,vol", $"{Ts(2024,2,20)},120,220,70,170,1200"]);
+
+        var series = await _loader.Load(
+            TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 2, 29), ct: Ct);
+
+        Assert.Equal(3, series.Count);
+        Assert.Equal(100L, series[0].Open);
+        Assert.Equal(110L, series[1].Open);
+        Assert.Equal(120L, series[2].Open);
+    }
+
+    [Fact]
+    public async Task Load_TimeBar_LookAlikeFeedId_IsRejected()
+    {
+        // "_11m" must NOT match feedId "1m" — the underscore boundary is mandatory.
+        WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "11m",
+            [$"{Ts(2024,1,1)},99,99,99,99,9999"]);
+        WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
+            [$"{Ts(2024,1,1)},1,1,1,1,100"]);
+
+        var series = await _loader.Load(
+            TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
+
+        var bar = Assert.Single(series);
+        Assert.Equal(1L, bar.Open);
+    }
+
+    [Fact]
+    public async Task Load_TimeBar_NonNumericPartSuffix_IsRejected()
+    {
+        // A stray "2024-01_1m.part.csv" or "_1m.pX.csv" must not be treated as a parted file.
+        // Strict ".p\d+" guard rejects ".part" and ".pX" tails.
+        WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
+            [$"{Ts(2024,1,1)},1,1,1,1,100"]);
+        var dir = Path.Combine(_testDataRoot, "Binance", "BTCUSDT", "candles");
+        File.WriteAllLines(Path.Combine(dir, "2024-01_1m.part.csv"),
+            ["ts,o,h,l,c,vol", $"{Ts(2024,1,2)},9,9,9,9,9"]);
+
+        var series = await _loader.Load(
+            TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
+
+        var bar = Assert.Single(series);
+        Assert.Equal(1L, bar.Open);
     }
 
     // -------------------------------------------------------------------------
@@ -263,15 +316,15 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void GetLastTimestamp_NoDirectory_ReturnsNull()
+    public async Task GetLastTimestamp_NoDirectory_ReturnsNull()
     {
-        var result = _loader.GetLastTimestamp(
-            TimeBarDescriptor("Binance", "MISSING", "1m"));
+        var result = await _loader.GetLastTimestamp(
+            TimeBarDescriptor("Binance", "MISSING", "1m"), ct: Ct);
         Assert.Null(result);
     }
 
     [Fact]
-    public void GetLastTimestamp_WithData_ReturnsLastTimestamp()
+    public async Task GetLastTimestamp_WithData_ReturnsLastTimestamp()
     {
         var ts1 = Ts(2024, 3, 1);
         var ts2 = Ts(2024, 3, 15, 12, 30);
@@ -281,22 +334,22 @@ public class PartitionedCsvBarLoaderTests : IDisposable
             $"{ts2},110,210,60,160,1100"
         ]);
 
-        var result = _loader.GetLastTimestamp(
-            TimeBarDescriptor("Binance", "BTCUSDT", "1m"));
+        var result = await _loader.GetLastTimestamp(
+            TimeBarDescriptor("Binance", "BTCUSDT", "1m"), ct: Ct);
         Assert.NotNull(result);
         Assert.Equal(ts2, result!.Value.ToUnixTimeMilliseconds());
     }
 
     [Fact]
-    public void GetLastTimestamp_MultipleFiles_ReturnsLatest()
+    public async Task GetLastTimestamp_MultipleFiles_ReturnsLatest()
     {
         var tsJan = Ts(2024, 1, 31);
         var tsFeb = Ts(2024, 2, 29);
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m", [$"{tsJan},100,200,50,150,1000"]);
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 2, "1m", [$"{tsFeb},110,210,60,160,1100"]);
 
-        var result = _loader.GetLastTimestamp(
-            TimeBarDescriptor("Binance", "BTCUSDT", "1m"));
+        var result = await _loader.GetLastTimestamp(
+            TimeBarDescriptor("Binance", "BTCUSDT", "1m"), ct: Ct);
         Assert.NotNull(result);
         Assert.Equal(tsFeb, result!.Value.ToUnixTimeMilliseconds());
     }
@@ -306,7 +359,7 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Load_EmptyLines_SkipsGracefully()
+    public async Task Load_EmptyLines_SkipsGracefully()
     {
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
         [
@@ -317,15 +370,15 @@ public class PartitionedCsvBarLoaderTests : IDisposable
             ""
         ]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.Equal(2, series.Count);
     }
 
     [Fact]
-    public void Load_FewerThanSixColumns_SkipsRow()
+    public async Task Load_FewerThanSixColumns_SkipsRow()
     {
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
         [
@@ -334,9 +387,9 @@ public class PartitionedCsvBarLoaderTests : IDisposable
             $"{Ts(2024,1,1,0,2)},120,220,70,170,1200"
         ]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.Equal(2, series.Count);
         Assert.Equal(100L, series[0].Open);
@@ -344,7 +397,7 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_NonNumericValues_SkipsRow()
+    public async Task Load_NonNumericValues_SkipsRow()
     {
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
         [
@@ -353,9 +406,9 @@ public class PartitionedCsvBarLoaderTests : IDisposable
             $"{Ts(2024,1,1,0,2)},120,220,70,170,1200"
         ]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.Equal(2, series.Count);
         Assert.Equal(100L, series[0].Open);
@@ -363,7 +416,7 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_NonNumericTimestamp_SkipsRow()
+    public async Task Load_NonNumericTimestamp_SkipsRow()
     {
         WriteCandlesCsv("Binance", "BTCUSDT", 2024, 1, "1m",
         [
@@ -372,28 +425,28 @@ public class PartitionedCsvBarLoaderTests : IDisposable
             $"{Ts(2024,1,1,0,2)},120,220,70,170,1200"
         ]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TimeBarDescriptor("Binance", "BTCUSDT", "1m"),
-            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.Equal(2, series.Count);
     }
 
     // -------------------------------------------------------------------------
-    // P1a-26 – AltBar reads from aggregated/{feedId}/*.csv
+    // AltBar
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Load_AltBar_LoadsFromAggregatedFeedDir()
+    public async Task Load_AltBar_LoadsFromAggregatedFeedDir()
     {
         WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-04.csv",
             [$"{Ts(2026,4,1)},10,20,5,15,1000"]);
         WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-05.csv",
             [$"{Ts(2026,5,1)},20,30,15,25,2000"]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             AltBarDescriptor("Binance", "BTCUSDT", "EqV_1m_1000"),
-            new DateOnly(2026, 4, 1), new DateOnly(2026, 5, 31));
+            new DateOnly(2026, 4, 1), new DateOnly(2026, 5, 31), ct: Ct);
 
         Assert.Equal(2, series.Count);
         Assert.Equal(10L, series[0].Open);
@@ -401,9 +454,8 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_AltBar_PartNumberedPartitionsLexSortChronological()
+    public async Task Load_AltBar_PartNumberedPartitionsLexSortChronological()
     {
-        // 2026-04.csv  < 2026-05.p01.csv < 2026-05.p02.csv  (lex order = chronological)
         WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-04.csv",
             [$"{Ts(2026,4,15)},10,20,5,15,1000"]);
         WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-05.p01.csv",
@@ -411,9 +463,9 @@ public class PartitionedCsvBarLoaderTests : IDisposable
         WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-05.p02.csv",
             [$"{Ts(2026,5,20)},30,40,25,35,3000"]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             AltBarDescriptor("Binance", "BTCUSDT", "EqV_1m_1000"),
-            new DateOnly(2026, 4, 1), new DateOnly(2026, 5, 31));
+            new DateOnly(2026, 4, 1), new DateOnly(2026, 5, 31), ct: Ct);
 
         Assert.Equal(3, series.Count);
         Assert.Equal(10L, series[0].Open);
@@ -421,64 +473,48 @@ public class PartitionedCsvBarLoaderTests : IDisposable
         Assert.Equal(30L, series[2].Open);
     }
 
-    // -------------------------------------------------------------------------
-    // Q-4 — bare-vs-pNN collision detection (mirrors PartitionedSourceReader's
-    // defense; the two loaders live in different layers and cannot share code).
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public void Load_AltBar_BareAndPartNumberedSameMonth_Throws()
+    public async Task Load_AltBar_BareAndPartNumberedSameMonth_Throws()
     {
         WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-05.csv",
             [$"{Ts(2026,5,5)},10,20,5,15,1000"]);
         WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-05.p01.csv",
             [$"{Ts(2026,5,20)},20,30,15,25,2000"]);
 
-        var ex = Assert.Throws<InvalidDataException>(() =>
+        var ex = await Assert.ThrowsAsync<InvalidDataException>(() =>
             _loader.Load(
                 AltBarDescriptor("Binance", "BTCUSDT", "EqV_1m_1000"),
-                new DateOnly(2026, 4, 1), new DateOnly(2026, 5, 31)));
+                new DateOnly(2026, 4, 1), new DateOnly(2026, 5, 31), ct: Ct));
         Assert.Contains("2026-05", ex.Message);
     }
 
     [Fact]
-    public void GetLastTimestamp_AltBar_BareAndPartNumberedSameMonth_Throws()
+    public async Task GetLastTimestamp_AltBar_BareAndPartNumberedSameMonth_Throws()
     {
-        // GetLastTimestamp uses the same EnumerateChronologicalFiles path; the collision
-        // check is inherited automatically.
         WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-05.csv",
             [$"{Ts(2026,5,5)},10,20,5,15,1000"]);
         WriteAggregatedCsv("Binance", "BTCUSDT", "EqV_1m_1000", "2026-05.p01.csv",
             [$"{Ts(2026,5,20)},20,30,15,25,2000"]);
 
-        Assert.Throws<InvalidDataException>(() =>
-            _loader.GetLastTimestamp(AltBarDescriptor("Binance", "BTCUSDT", "EqV_1m_1000")));
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            _loader.GetLastTimestamp(AltBarDescriptor("Binance", "BTCUSDT", "EqV_1m_1000"), ct: Ct));
     }
 
-    // Note: no time-bar Q-4 test. Time-bar partitions have no .pNN overflow scheme today
-    // (only the aggregation pipeline uses .pNN), and the loader's per-FeedId glob
-    // `*_{FeedId}.csv` does not match `<YYYY-MM>_{FeedId}.pNN.csv`. The collision check is
-    // still wired through this code path (defense-in-depth for a future writer change), but
-    // no production scenario can trigger it.
-
     // -------------------------------------------------------------------------
-    // P4-13 — Glob resolution coverage for Tick + Side (sidecar / top-level).
-    // The loader's CSV schema is OHLCV-shaped; we verify path resolution only,
-    // so test fixtures plant OHLCV rows in the per-Kind locations. (Real tick
-    // CSV is 5-col per TRD §3.5; tick-aware schema parsing is a separate task.)
+    // Tick + Side
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Load_Tick_RoutesToTicksDir()
+    public async Task Load_Tick_RoutesToTicksDir()
     {
         WriteTicksCsv("Binance", "BTCUSDT_perp", 2026, 4, 15,
             [$"{Ts(2026,4,15,10,0)},100,100,100,100,5"]);
         WriteTicksCsv("Binance", "BTCUSDT_perp", 2026, 4, 16,
             [$"{Ts(2026,4,16,11,0)},110,110,110,110,7"]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             TickDescriptor("Binance", "BTCUSDT_perp"),
-            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
+            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30), ct: Ct);
 
         Assert.Equal(2, series.Count);
         Assert.Equal(100L, series[0].Open);
@@ -487,16 +523,14 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_Side_Sidecar_RoutesToAggregatedFlowDir()
+    public async Task Load_Side_Sidecar_RoutesToAggregatedFlowDir()
     {
-        // .flow sidecar lives under aggregated/<feedId>.flow/ — same parent dir as the
-        // primary EqIV bar feed, so reader path resolution treats them as siblings.
         WriteSidecarCsv("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", "2026-04.csv",
             [$"{Ts(2026,4,1)},10,10,10,10,500"]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             SideDescriptor("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow"),
-            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
+            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30), ct: Ct);
 
         var bar = Assert.Single(series);
         Assert.Equal(10L, bar.Open);
@@ -504,16 +538,14 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_Side_TopLevel_RoutesToAssetRootDir()
+    public async Task Load_Side_TopLevel_RoutesToAssetRootDir()
     {
-        // Top-level side feed (e.g. funding-rate, candle-ext) lives directly under the asset
-        // root — NOT under aggregated/. Confirms the loader does not prefix `aggregated/`.
         WriteTopLevelSideCsv("Binance", "BTCUSDT_perp", "funding-rate", "2026-04.csv",
             [$"{Ts(2026,4,1)},20,20,20,20,1000"]);
 
-        var series = _loader.Load(
+        var series = await _loader.Load(
             SideDescriptor("Binance", "BTCUSDT_perp", "funding-rate"),
-            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
+            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30), ct: Ct);
 
         var bar = Assert.Single(series);
         Assert.Equal(20L, bar.Open);
@@ -521,18 +553,16 @@ public class PartitionedCsvBarLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_Side_Sidecar_DoesNotConflictWithParentBarDir()
+    public async Task Load_Side_Sidecar_DoesNotConflictWithParentBarDir()
     {
-        // Plant both the parent EqIV bar dir AND the sidecar dir as siblings. Loading the
-        // sidecar must not pick up the parent's bars (different feed-id, different glob).
         WriteAggregatedCsv("Binance", "BTCUSDT_perp", "EqIV_ticks_500000", "2026-04.csv",
             [$"{Ts(2026,4,1)},999,999,999,999,99999"]);
         WriteSidecarCsv("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow", "2026-04.csv",
             [$"{Ts(2026,4,1)},1,1,1,1,1"]);
 
-        var sidecarSeries = _loader.Load(
+        var sidecarSeries = await _loader.Load(
             SideDescriptor("Binance", "BTCUSDT_perp", "EqIV_ticks_500000.flow"),
-            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30));
+            new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 30), ct: Ct);
 
         var bar = Assert.Single(sidecarSeries);
         Assert.Equal(1L, bar.Open);

@@ -4,6 +4,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.Storage;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
@@ -98,18 +99,19 @@ public sealed class AggregationPipelineResumeTests : IDisposable
     }
 
     [Fact]
-    public void Run_EqVResume_ProducesSameManifestTotalsAsFreshBuild()
+    public async Task Run_EqVResume_ProducesSameManifestTotalsAsFreshBuild()
     {
         // Reference (fresh): build all 12 records in one run.
         const string assetRef = "BTCUSDT_REF";
         WriteCandlesEqVPattern(assetRef);
 
         var pipelineRef = new AggregationPipeline(
-            new PartitionedSourceReader(),
-            new FeedSchemaManager(),
-            new OverwritePathWriter(),
+            new PartitionedSourceReader(new LocalFileStorage()),
+            new FeedSchemaManager(new LocalFileStorage()),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
-        var freshResult = pipelineRef.Run(
+        var freshResult = await pipelineRef.Run(
             Job(assetRef, "EqV", thresholdScaled: 1000, thresholdAbs: 1000m),
             ct: TestContext.Current.CancellationToken);
         Assert.Equal(4, freshResult.BarCount);
@@ -119,11 +121,12 @@ public sealed class AggregationPipelineResumeTests : IDisposable
         WriteCandlesEqVPattern(assetSub, firstSix: true);
 
         var pipelineSub = new AggregationPipeline(
-            new PartitionedSourceReader(),
-            new FeedSchemaManager(),
-            new OverwritePathWriter(),
+            new PartitionedSourceReader(new LocalFileStorage()),
+            new FeedSchemaManager(new LocalFileStorage()),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
-        var firstHalf = pipelineSub.Run(
+        var firstHalf = await pipelineSub.Run(
             Job(assetSub, "EqV", thresholdScaled: 1000, thresholdAbs: 1000m),
             ct: TestContext.Current.CancellationToken);
         Assert.Equal(2, firstHalf.BarCount);
@@ -132,14 +135,14 @@ public sealed class AggregationPipelineResumeTests : IDisposable
         // the source feed between continue calls.
         AppendCandlesEqVPattern(assetSub, secondSix: true);
 
-        var manifest = new FeedSchemaManager().Load(AssetDir(assetSub));
+        var manifest = await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(assetSub), TestContext.Current.CancellationToken);
         var existing = manifest!.Feeds["EqV_1m_1000"];
         var resume = new ResumeContext(
             LastSourceTsMs: ComputeResumeCutoff(existing),
             LastBrickClose: existing.Build?.LastBrickClose,
             PriorSpec: ToSpec(existing));
 
-        var resumedResult = pipelineSub.Run(
+        var resumedResult = await pipelineSub.Run(
             Job(assetSub, "EqV", thresholdScaled: 1000, thresholdAbs: 1000m, resume: resume),
             ct: TestContext.Current.CancellationToken);
 
@@ -147,7 +150,7 @@ public sealed class AggregationPipelineResumeTests : IDisposable
         // = 3. The manifest merges to priorBars + newBars - 1 = 2 + 3 - 1 = 4.
         Assert.Equal(3, resumedResult.BarCount);
 
-        var resumedManifest = new FeedSchemaManager().Load(AssetDir(assetSub))!;
+        var resumedManifest = (await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(assetSub), TestContext.Current.CancellationToken))!;
         var resumedEntry = resumedManifest.Feeds["EqV_1m_1000"];
         Assert.Equal(4L, resumedEntry.Build!.BarCount);
         Assert.Equal(2, resumedEntry.Build.RunCount);
@@ -163,7 +166,7 @@ public sealed class AggregationPipelineResumeTests : IDisposable
     }
 
     [Fact]
-    public void Run_ResumeWithNoNewRecords_ReEmitsTrailingBarOnly()
+    public async Task Run_ResumeWithNoNewRecords_ReEmitsTrailingBarOnly()
     {
         // Pipeline-level test of the "trailing bar refresh" semantics. The endpoint would
         // short-circuit this case to no_new_data; reaching the pipeline with no new records
@@ -174,15 +177,16 @@ public sealed class AggregationPipelineResumeTests : IDisposable
         WriteCandlesEqVPattern(asset, firstSix: true);
 
         var pipeline = new AggregationPipeline(
-            new PartitionedSourceReader(),
-            new FeedSchemaManager(),
-            new OverwritePathWriter(),
+            new PartitionedSourceReader(new LocalFileStorage()),
+            new FeedSchemaManager(new LocalFileStorage()),
+            new OverwritePathWriter(new LocalFileStorage()),
+            new LocalFileStorage(),
             TimeProvider.System);
-        pipeline.Run(
+        await pipeline.Run(
             Job(asset, "EqV", thresholdScaled: 1000, thresholdAbs: 1000m),
             ct: TestContext.Current.CancellationToken);
 
-        var manifest = new FeedSchemaManager().Load(AssetDir(asset))!;
+        var manifest = (await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken))!;
         var existing = manifest.Feeds["EqV_1m_1000"];
         var priorBarCount = existing.Build!.BarCount!.Value;
 
@@ -190,14 +194,14 @@ public sealed class AggregationPipelineResumeTests : IDisposable
             LastSourceTsMs: ComputeResumeCutoff(existing),
             LastBrickClose: existing.Build.LastBrickClose,
             PriorSpec: ToSpec(existing));
-        var resumedResult = pipeline.Run(
+        var resumedResult = await pipeline.Run(
             Job(asset, "EqV", thresholdScaled: 1000, thresholdAbs: 1000m, resume: resume),
             ct: TestContext.Current.CancellationToken);
 
         // Re-emitted trailing bar only.
         Assert.Equal(1, resumedResult.BarCount);
 
-        var resumedManifest = new FeedSchemaManager().Load(AssetDir(asset))!;
+        var resumedManifest = (await new FeedSchemaManager(new LocalFileStorage()).Load(AssetDir(asset), TestContext.Current.CancellationToken))!;
         var resumed = resumedManifest.Feeds["EqV_1m_1000"];
         // Total bars = priorBars (2) + newBars (1) - 1 = priorBars unchanged.
         Assert.Equal(priorBarCount, resumed.Build!.BarCount);

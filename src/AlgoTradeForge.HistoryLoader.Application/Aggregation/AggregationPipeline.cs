@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
@@ -20,6 +21,7 @@ public sealed class AggregationPipeline
     private readonly PartitionedSourceReader _reader;
     private readonly ISchemaManager _schemaManager;
     private readonly OverwritePathWriter _overwriter;
+    private readonly IFileStorage _storage;
     private readonly TimeProvider _clock;
     private readonly ILogger<AggregationPipeline> _logger;
     private readonly ILogger<MonotonicTickSource> _monoLogger;
@@ -28,6 +30,7 @@ public sealed class AggregationPipeline
         PartitionedSourceReader reader,
         ISchemaManager schemaManager,
         OverwritePathWriter overwriter,
+        IFileStorage storage,
         TimeProvider clock,
         ILogger<AggregationPipeline>? logger = null,
         ILogger<MonotonicTickSource>? monoLogger = null)
@@ -35,12 +38,13 @@ public sealed class AggregationPipeline
         _reader = reader;
         _schemaManager = schemaManager;
         _overwriter = overwriter;
+        _storage = storage;
         _clock = clock;
         _logger = logger ?? NullLogger<AggregationPipeline>.Instance;
         _monoLogger = monoLogger ?? NullLogger<MonotonicTickSource>.Instance;
     }
 
-    public AggregationResult Run(
+    public async Task<AggregationResult> Run(
         AggregationJob job,
         Action<ProgressEvent>? onProgress = null,
         CancellationToken ct = default)
@@ -61,7 +65,6 @@ public sealed class AggregationPipeline
         var startTicks = _clock.GetTimestamp();
 
         var feedDir = Path.Combine(job.AssetDir, "aggregated", job.OutcomeFeedId);
-        Directory.CreateDirectory(feedDir);
 
         AppendStagingPlan? appendPlan = null;
         string stagingDir;
@@ -70,12 +73,12 @@ public sealed class AggregationPipeline
             var priorLastBarTs = long.Parse(
                 resumeContext.PriorSpec.LastBarTs!,
                 CultureInfo.InvariantCulture);
-            appendPlan = _overwriter.PrepareStagingDirForAppend(feedDir, job.JobId, priorLastBarTs);
+            appendPlan = await _overwriter.PrepareStagingDirForAppend(feedDir, job.JobId, priorLastBarTs, ct);
             stagingDir = appendPlan.StagingDir;
         }
         else
         {
-            stagingDir = _overwriter.PrepareStagingDir(feedDir, job.JobId);
+            stagingDir = await _overwriter.PrepareStagingDir(feedDir, job.JobId, ct);
         }
 
         var accumulator = AccumulatorEntry.Open(
@@ -90,14 +93,18 @@ public sealed class AggregationPipeline
         }
 
         long bytesBudget = (long)job.MaxPartitionSizeMB * 1024 * 1024;
-        using var sink = new PartitionedSinkWriter(
-            stagingDir, bytesBudget, OutputHeader, appendPlan?.ResumeState);
+        // await using covers exceptions other than OperationCanceledException (the explicit
+        // OCE catch below disposes ahead of staging-dir cleanup so the .tmp handle is released
+        // before DeleteByPrefix on Windows). DisposeAsync is idempotent — the second call from
+        // scope-exit is a no-op once Complete or the OCE catch has run.
+        await using var sink = await PartitionedSinkWriter.Open(
+            _storage, stagingDir, bytesBudget, OutputHeader, appendPlan?.ResumeState, ct);
 
         // Imbalance-family accumulators (EqIV, EqID, EqIT) publish a sidecar (.flow) sibling
-        // dir alongside the bar dir. Both stage in parallel; both promote atomically; the
-        // manifest writes both entries under one exclusive lock at finalize so readers never
-        // see a half-registered imbalance feed. Schema (header, columns, fidelity tags) is
-        // owned by the accumulator — pipeline is shape-agnostic.
+        // dir alongside the bar dir. Both stage in parallel; both promote per-key; the manifest
+        // writes both entries under one exclusive lock at finalize so readers never see a
+        // half-registered imbalance feed. Schema (header, columns, fidelity tags) is owned by
+        // the accumulator — pipeline is shape-agnostic.
         var sidecarSchema = accumulator.SidecarSchema;
         var hasSidecar = sidecarSchema is not null;
         var sidecarFeedId = hasSidecar ? job.OutcomeFeedId + ".flow" : null;
@@ -106,29 +113,24 @@ public sealed class AggregationPipeline
         AppendStagingPlan? sidecarAppendPlan = null;
         if (hasSidecar)
         {
-            Directory.CreateDirectory(sidecarFeedDir!);
             // Sidecar rows are 1:1 with primary bars; same cutoff applies.
             if (appendPlan is not null && job.Resume is { } resumeForSidecar)
             {
                 var priorLastBarTs = long.Parse(
                     resumeForSidecar.PriorSpec.LastBarTs!,
                     CultureInfo.InvariantCulture);
-                sidecarAppendPlan = _overwriter.PrepareStagingDirForAppend(
-                    sidecarFeedDir!, job.JobId, priorLastBarTs);
+                sidecarAppendPlan = await _overwriter.PrepareStagingDirForAppend(
+                    sidecarFeedDir!, job.JobId, priorLastBarTs, ct);
                 sidecarStagingDir = sidecarAppendPlan.StagingDir;
             }
             else
             {
-                sidecarStagingDir = _overwriter.PrepareStagingDir(sidecarFeedDir!, job.JobId);
+                sidecarStagingDir = await _overwriter.PrepareStagingDir(sidecarFeedDir!, job.JobId, ct);
             }
         }
-        // Using declaration so any exception path closes the FileStream — otherwise on Windows
-        // the staging dir can't be cleaned and StartupSweepService inherits a leaked handle.
-        // The explicit Dispose() below is load-bearing for partition-rename ordering before
-        // Promote and is idempotent.
-        using PartitionedSinkWriter? sidecarSink = hasSidecar
-            ? new PartitionedSinkWriter(
-                sidecarStagingDir!, bytesBudget, sidecarSchema!.Header, sidecarAppendPlan?.ResumeState)
+        await using PartitionedSinkWriter? sidecarSink = hasSidecar
+            ? await PartitionedSinkWriter.Open(
+                _storage, sidecarStagingDir!, bytesBudget, sidecarSchema!.Header, sidecarAppendPlan?.ResumeState, ct)
             : null;
 
         // Source record volume samples drive `median_source_record_value` on finalize.
@@ -171,23 +173,26 @@ public sealed class AggregationPipeline
         //
         // Resume cutoff filter goes BEFORE the monotonic decorator so its bump count tracks
         // only post-cutoff records.
-        IEnumerable<SourceRecord> sourceStream = _reader.Read(job.Source);
+        IAsyncEnumerable<SourceRecord> sourceStream = _reader.Read(job.Source, ct: ct);
         if (job.Resume is { } resumeFilter)
-            sourceStream = sourceStream.Where(r => r.TsMs > resumeFilter.LastSourceTsMs);
+        {
+            var cutoff = resumeFilter.LastSourceTsMs;
+            sourceStream = FilterAfterCutoff(sourceStream, cutoff, ct);
+        }
         if (monoSource is not null)
-            sourceStream = monoSource.Read(sourceStream);
+            sourceStream = monoSource.Read(sourceStream, ct);
         if (hasSidecar &&
             sidecarSchema!.TimeBarJoinMode != CandleExtJoinMode.None &&
             job.Source.Kind == DataFeedKind.TimeBar)
         {
             var join = new CandleExtJoiningSource(
-                job.AssetDir, job.Source.FeedId, job.SourceScale, sidecarSchema.TimeBarJoinMode);
-            sourceStream = join.Join(sourceStream);
+                _storage, job.AssetDir, job.Source.FeedId, job.SourceScale, sidecarSchema.TimeBarJoinMode);
+            sourceStream = join.Join(sourceStream, ct);
         }
 
         // Local helper: write one bar's CSV row + update per-bar bookkeeping. Used by both
         // the primary emit path and the Renko multi-brick drain loop.
-        void WriteBar(in AggregatedBar bar)
+        async Task WriteBar(AggregatedBar bar)
         {
             rowBuffer.Clear();
             rowBuffer.Append(bar.TsMs.ToString(CultureInfo.InvariantCulture)).Append(',')
@@ -196,7 +201,7 @@ public sealed class AggregationPipeline
                      .Append(bar.Low.ToString(CultureInfo.InvariantCulture)).Append(',')
                      .Append(bar.Close.ToString(CultureInfo.InvariantCulture)).Append(',')
                      .Append(bar.Volume.ToString(CultureInfo.InvariantCulture));
-            sink.WriteRow(bar.TsMs, rowBuffer.ToString());
+            await sink.WriteRow(bar.TsMs, rowBuffer.ToString(), ct);
             firstBarTs ??= bar.TsMs;
             lastBarTs = bar.TsMs;
             barsEmitted++;
@@ -205,9 +210,8 @@ public sealed class AggregationPipeline
 
         try
         {
-            foreach (var record in sourceStream)
+            await foreach (var record in sourceStream.WithCancellation(ct))
             {
-                ct.ThrowIfCancellationRequested();
                 sourceRecordsConsumed++;
                 lastSourceTs = record.TsMs;
                 if (priorLastSourceTs is null || record.TsMs > priorLastSourceTs.Value)
@@ -219,7 +223,7 @@ public sealed class AggregationPipeline
 
                 if (accumulator.TryAdvance(in record, out var bar))
                 {
-                    WriteBar(in bar);
+                    await WriteBar(bar);
 
                     if (sidecarSink is not null && accumulator.TryGetLastSidecarRow(out var sidecar))
                     {
@@ -229,7 +233,7 @@ public sealed class AggregationPipeline
                                  .Append(sidecar.BuyVolume.ToString("R", CultureInfo.InvariantCulture)).Append(',')
                                  .Append(sidecar.SellVolume.ToString("R", CultureInfo.InvariantCulture)).Append(',')
                                  .Append(sidecar.RealizedThreshold.ToString("R", CultureInfo.InvariantCulture));
-                        sidecarSink.WriteRow(sidecar.TsMs, rowBuffer.ToString());
+                        await sidecarSink.WriteRow(sidecar.TsMs, rowBuffer.ToString(), ct);
                     }
 
                     // Renko: a single TryAdvance can stage multiple bricks; drain the queue.
@@ -237,7 +241,7 @@ public sealed class AggregationPipeline
                     // exactly one bar per TryAdvance so its drain queue stays empty).
                     while (accumulator.TryDrainQueued(out var queued))
                     {
-                        WriteBar(in queued);
+                        await WriteBar(queued);
                     }
                 }
 
@@ -258,14 +262,18 @@ public sealed class AggregationPipeline
         }
         catch (OperationCanceledException)
         {
-            // Dispose explicitly first so the directory delete doesn't race a still-open handle
-            // on Windows. PartitionedSinkWriter.Dispose() is idempotent.
-            try { sink.Dispose(); } catch (Exception ex) { _logger.LogWarning(ex, "Sink dispose during cancel cleanup failed (ignored): jobId={JobId}", job.JobId); }
-            try { sidecarSink?.Dispose(); } catch (Exception ex) { _logger.LogWarning(ex, "Sidecar sink dispose during cancel cleanup failed (ignored): jobId={JobId}", job.JobId); }
+            // Dispose explicitly so any open partition session aborts cleanly. DisposeAsync on
+            // a writer with no Commit aborts the in-flight session (no published key) and any
+            // staging keys already published get cleaned up below.
+            try { await sink.DisposeAsync(); } catch (Exception ex) { _logger.LogWarning(ex, "Sink dispose during cancel cleanup failed (ignored): jobId={JobId}", job.JobId); }
+            if (sidecarSink is not null)
+            {
+                try { await sidecarSink.DisposeAsync(); } catch (Exception ex) { _logger.LogWarning(ex, "Sidecar sink dispose during cancel cleanup failed (ignored): jobId={JobId}", job.JobId); }
+            }
 
-            DeleteStagingDirSafely(stagingDir, job.JobId);
+            await DeleteStagingDirSafely(stagingDir, job.JobId, ct);
             if (sidecarStagingDir is not null)
-                DeleteStagingDirSafely(sidecarStagingDir, job.JobId);
+                await DeleteStagingDirSafely(sidecarStagingDir, job.JobId, ct);
 
             // Rethrow so the worker host's catch handler routes to the correct terminal state
             // (OnCancelled vs OnErrored("host_shutdown") based on which token fired).
@@ -283,22 +291,26 @@ public sealed class AggregationPipeline
                 MonotonicRegressions = monoSource.RegressionCount,
             };
 
-        // Force any in-progress partition file to atomic-rename to its final name before promote.
-        sink.Dispose();
-        sidecarSink?.Dispose();
-
-        // Enumerate produced partitions BEFORE the staging→live rename so we report the
-        // canonical filenames (without the path prefix) regardless of the post-promote layout.
-        var partitions = Directory
-            .EnumerateFiles(stagingDir, "*.csv", SearchOption.TopDirectoryOnly)
-            .Select(Path.GetFileName)
-            .OfType<string>()
-            .OrderBy(s => s, StringComparer.Ordinal)
-            .ToArray();
-
-        _overwriter.Promote(feedDir, stagingDir);
+        // Commit any in-flight partition session so its bytes are published as the final key
+        // before promote enumerates the staging contents.
+        await sink.Complete(ct);
         if (sidecarSink is not null)
-            _overwriter.Promote(sidecarFeedDir!, sidecarStagingDir!);
+            await sidecarSink.Complete(ct);
+
+        // Enumerate produced partitions BEFORE the staging→live moves so we report the
+        // canonical filenames (without the path prefix) regardless of the post-promote layout.
+        var partitions = new List<string>();
+        await foreach (var stagingKey in _storage.ListKeys(stagingDir, suffix: ".csv", recursive: false, ct))
+        {
+            var name = Path.GetFileName(stagingKey);
+            if (string.IsNullOrEmpty(name)) continue;
+            partitions.Add(name);
+        }
+        partitions.Sort(StringComparer.Ordinal);
+
+        await _overwriter.Promote(feedDir, stagingDir, ct);
+        if (sidecarSink is not null)
+            await _overwriter.Promote(sidecarFeedDir!, sidecarStagingDir!, ct);
 
         var medianSourceRecordValue = streamingMedian is not null
             ? streamingMedian.Median
@@ -324,8 +336,8 @@ public sealed class AggregationPipeline
         var lastBarTsForSpec = barsEmitted > 0
             ? lastBarTs.ToString(CultureInfo.InvariantCulture)
             : priorSpec?.LastBarTs;
-        var partitionsForSpec = priorSpec is null
-            ? partitions
+        string[] partitionsForSpec = priorSpec is null
+            ? [.. partitions]
             : MergePartitionLists(priorSpec.Build?.PartitionsWritten ?? [], partitions);
         var monotonicBumps = priorSpec is null
             ? (isTickSource ? (long?)stats.MonotonicBumps : null)
@@ -420,12 +432,12 @@ public sealed class AggregationPipeline
 
         if (hasSidecar)
         {
-            _schemaManager.EnsureAltBarWithSidecar(
-                job.AssetDir, job.OutcomeFeedId, spec, sidecarFeedId!, [.. sidecarSchema!.Columns]);
+            await _schemaManager.EnsureAltBarWithSidecar(
+                job.AssetDir, job.OutcomeFeedId, spec, sidecarFeedId!, [.. sidecarSchema!.Columns], ct);
         }
         else
         {
-            _schemaManager.EnsureAltBarFeed(job.AssetDir, job.OutcomeFeedId, spec);
+            await _schemaManager.EnsureAltBarFeed(job.AssetDir, job.OutcomeFeedId, spec, ct);
         }
 
         var result = new AggregationResult(
@@ -456,12 +468,11 @@ public sealed class AggregationPipeline
         DateTimeOffset.FromUnixTimeMilliseconds(tsMs).UtcDateTime
             .ToString("yyyy-MM", CultureInfo.InvariantCulture);
 
-    private void DeleteStagingDirSafely(string stagingDir, string jobId)
+    private async Task DeleteStagingDirSafely(string stagingDir, string jobId, CancellationToken ct)
     {
         try
         {
-            if (Directory.Exists(stagingDir))
-                Directory.Delete(stagingDir, recursive: true);
+            await _storage.DeleteByPrefix(stagingDir, ct);
         }
         catch (Exception ex)
         {
@@ -470,6 +481,18 @@ public sealed class AggregationPipeline
             _logger.LogWarning(ex,
                 "Cancel cleanup failed to delete staging dir '{StagingDir}' (jobId={JobId}); StartupSweep will reclaim it on next boot.",
                 stagingDir, jobId);
+        }
+    }
+
+    private static async IAsyncEnumerable<SourceRecord> FilterAfterCutoff(
+        IAsyncEnumerable<SourceRecord> upstream,
+        long cutoff,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        await foreach (var r in upstream.WithCancellation(ct))
+        {
+            if (r.TsMs > cutoff)
+                yield return r;
         }
     }
 

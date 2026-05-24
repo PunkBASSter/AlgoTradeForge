@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AlgoTradeForge.HistoryLoader.Domain\AlgoTradeForge.HistoryLoader.Domain.csproj" />
     <ProjectReference Include="..\AlgoTradeForge.Domain\AlgoTradeForge.Domain.csproj" />
+    <ProjectReference Include="..\AlgoTradeForge.Storage.Abstractions\AlgoTradeForge.Storage.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,16 +1,25 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.8.1 → 1.8.2
+Version change: 1.9.1 → 1.9.2
 Modified principles: None (all 6 unchanged)
 Added sections: None
 Modified sections:
-  - Testing Requirements: Added rule mandating use of the
-    BenchmarkDotNet harness (benchmarks/AlgoTradeForge.Benchmarks/,
-    invoked via the `run-benchmarks` skill / `/benchmark` command) for
-    measuring changes to engine/strategy/indicator/registry/optimization
-    hot paths; ad-hoc timing scripts are disallowed.
-Trigger: Resurrected benchmark project; codify usage convention.
+  - Development Workflow → Testing Requirements: Added an
+    observed-failures rule. Test failures and bugs surfaced during ANY
+    work (including verification phases of unrelated tasks) MUST be
+    resolved on the same branch. Acceptable resolutions: fix the
+    underlying bug, repair the test to reflect current correct
+    behavior, replace the test with one that exercises the current
+    feature, or delete the test if the feature was removed. Framings
+    like "not introduced by this branch", "pre-existing", or "out of
+    scope" MUST NOT be used as discharge for leaving a failure red.
+    If the workspace makes a failure visible, the workspace owns it.
+Trigger: A final-verification pass on the FeedSchemaManager
+optimistic-concurrency branch surfaced 7 unrelated StartupSweepTests
+failures from a prior commit, and the workflow defaulted to deferring
+them. Codifying the no-defer rule prevents future drift where observed
+red tests accumulate across branches and become someone else's problem.
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible
   - .specify/templates/spec-template.md ✅ compatible
@@ -181,6 +190,19 @@ frontend/
   - Explaining a non-obvious algorithm or mathematical formula
   - Flagging a known pitfall, workaround, or counterintuitive behavior
   - Documenting a `TODO` or `HACK` with justification
+- When an XML comment IS written under one of the cases above, it MUST
+  be terse:
+  - Prefer a single line. Several lines are acceptable only when the
+    documented behavior is genuinely non-obvious or non-conventional
+    (e.g., explaining why `Span<byte>` was replaced with
+    `ReadOnlyMemory<byte>` across an async boundary).
+  - MUST NOT be a multi-paragraph essay or narrative.
+  - MUST NOT restate the method signature, parameter types, or return
+    type in prose ("Gets the foo and returns the bar.").
+  - MUST NOT paraphrase the identifier back into English
+    (`/// <summary>The user identifier.</summary>` on `UserId`).
+  - Aim for the shortest text that conveys the non-obvious fact, and
+    nothing more.
 - Code MUST be self-documenting through clear naming, small methods, and explicit types
 - MUST use `long` (Int64) for all monetary and price values within the Domain layer
   (cash, fill prices, commissions, equity curve). Quantities and percentages
@@ -269,12 +291,39 @@ frontend/
   block-scoped `using (var x = ...) { }` unless early disposal within a
   larger scope is required (e.g., releasing a file handle before a
   subsequent read in the same method)
+- MUST prefer `using` over explicit `try` / `finally` when the `finally`
+  block is purely a resource-release call. The form choice (declaration
+  vs. block) is governed by the rule above. For types that lack a
+  built-in scope-release pattern (notably `SemaphoreSlim`, whose
+  `Release()` doubles as a counting primitive), acquire through a thin
+  extension that returns an `IDisposable` releaser. The canonical helper
+  is `SemaphoreSlimExtensions.LockAsync` (in
+  `AlgoTradeForge.Storage.Threading`), used as
+  `using var _ = await gate.LockAsync(ct);` instead of
+  `await gate.WaitAsync(ct); try { ... } finally { gate.Release(); }`.
+  `try` / `finally` remains correct when the cleanup branches on state,
+  swallows specific exceptions, or coordinates with anything beyond a
+  single release call.
 - MUST prefer explicit `FileStream` constructor over static `File` class
   helpers (`File.ReadLines`, `File.ReadAllText`, `File.Open`, etc.) when
   `FileShare` or `FileMode` control is needed. Static `File` helpers are
   acceptable only for simple one-shot reads/writes with no concurrent
   access. This prevents Windows file-locking issues where default
   `FileShare.Read` conflicts with concurrent writers.
+- **File organization (one type per file)**: Each class, interface,
+  record, record struct, or enum MUST live in its own `.cs` file named
+  after the type. This keeps the source tree grep-friendly and PR diffs
+  focused. Two narrow exceptions:
+  - A single-line record or record struct that accompanies an interface
+    MAY share that interface's file (e.g.,
+    `public readonly record struct TickResumeState(long LastAggId, long LastTsMs);`
+    beside `ITickFeedWriter` in `ITickFeedWriter.cs`).
+  - A non-generic + generic interface pair where one derives from the
+    other (e.g., `IFoo` and `IFoo<T> : IFoo`) MAY share a file.
+  - Extension methods MUST live in their own file named after the
+    extension class (e.g., `IPartitionTailIndex.cs` +
+    `PartitionTailIndexExtensions.cs`), not co-located with the
+    interface they extend.
 
 **API Design**:
 
@@ -287,6 +336,25 @@ frontend/
 
 - MUST use `async`/`await` throughout; no `.Result` or `.Wait()` blocking
 - MUST use `ct` propagation for all async operations
+- I/O-bound APIs (file storage, network HTTP clients, database access,
+  external service clients, message-broker producers/consumers) MUST
+  expose async signatures returning `Task` / `Task<T>` / `IAsyncEnumerable<T>`
+  with a `CancellationToken ct = default` parameter on every method.
+  Sync-over-async (`.Result`, `.Wait()`, `.GetAwaiter().GetResult()`,
+  `Task.Run(...).Wait()`) at call sites is prohibited except in narrowly
+  scoped contexts that genuinely cannot be threaded async (test fixture
+  cleanup helpers, static initializers, one-shot startup helpers). Such
+  exceptions MUST be flagged with a comment explaining why async
+  propagation is impractical there.
+- New async methods MUST NOT use the `Async` suffix on the method name
+  (e.g., `Task<bool> Exists(...)` — not `ExistsAsync(...)`). When an
+  existing `Async`-suffixed method's signature is changed (parameters,
+  return type, cancellation token) or the method is moved to an
+  async-only interface, the suffix MUST be dropped as part of the
+  change. Pre-existing `Async`-suffixed methods that are not touched
+  MAY keep their current names; rename is incremental, applied as
+  methods are evolved — bulk renames are discouraged because they
+  invite merge conflicts without benefit.
 - MUST use `Channel<T>` or `IAsyncEnumerable<T>` for streaming scenarios
 - MUST use `ValueTask<T>` for hot paths where allocation matters
 - MUST document thread-affinity assumptions on types that are not
@@ -380,13 +448,6 @@ AlgoTradeForge/
 │   │   ├── Plugins/                  # Plugin loader
 │   │   ├── Repositories/            # Repository implementations
 │   │   └── Validation/              # SQLite validation/threshold repos
-│   ├── AlgoTradeForge.CandleIngestor/ # Worker service (see note below)
-│   │   ├── BinanceAdapter.cs          # Binance API adapter
-│   │   ├── CsvCandleWriter.cs         # CSV partition writer
-│   │   ├── IngestionOrchestrator.cs   # Fetch-and-store coordinator
-│   │   ├── IngestionWorker.cs         # BackgroundService with PeriodicTimer
-│   │   ├── RateLimiter.cs             # Sliding-window rate limiter
-│   │   └── CandleIngestorOptions.cs   # Configuration records
 │   ├── AlgoTradeForge.HistoryLoader.Domain/       # HistoryLoader domain models
 │   ├── AlgoTradeForge.HistoryLoader.Application/  # HistoryLoader use cases
 │   ├── AlgoTradeForge.HistoryLoader.Infrastructure/ # HistoryLoader data access
@@ -409,9 +470,7 @@ AlgoTradeForge/
 │   │   └── TestUtilities/             # Shared test data factories
 │   ├── AlgoTradeForge.Application.Tests/ # Application layer tests
 │   │   └── TestUtilities/
-│   ├── AlgoTradeForge.Infrastructure.Tests/ # Infrastructure + CandleIngestor tests
-│   │   └── CandleIngestion/           # CsvInt64BarLoader, CsvCandleWriter,
-│   │                                  # BinanceAdapter tests
+│   ├── AlgoTradeForge.Infrastructure.Tests/ # Infrastructure tests
 │   ├── AlgoTradeForge.HistoryLoader.Tests/  # HistoryLoader tests
 │   ├── AlgoTradeForge.WebApi.Tests/         # WebApi integration tests
 │   └── AlgoTradeForge.WebApi.PlaywrightTests/ # E2E browser tests
@@ -419,32 +478,19 @@ AlgoTradeForge/
 └── specs/                             # Feature specifications and checklists
 ```
 
-> **CandleIngestor architecture note**: `AlgoTradeForge.CandleIngestor` is a
-> self-contained worker service that bundles its own infrastructure code
-> (adapters, writers, rate limiter, configuration records) directly in the
-> executable project. It references only Application (for `IInt64BarLoader`
-> and domain types via transitive reference). This project is intentionally
-> **exempt from clean architecture layering** — it is a thin utility service
-> where simplicity and colocation outweigh separation of concerns. New
-> exchange adapters, writers, or ingestion logic MUST be added here, not in
-> the Infrastructure project.
-
 > **HistoryLoader architecture note**: `AlgoTradeForge.HistoryLoader.*` is a
 > separate subsystem following full clean architecture (Domain, Application,
 > Infrastructure, WebApi). It runs as an independent ASP.NET Core host for
 > scheduled and on-demand historical data collection from exchange APIs
-> (klines, funding rates, open interest, liquidations, etc.). Unlike
-> CandleIngestor (legacy simple worker), HistoryLoader supports multiple
-> exchanges, feed types, rate limiting, backfill orchestration, and
+> (klines, funding rates, open interest, liquidations, etc.) and supports
+> multiple exchanges, feed types, rate limiting, backfill orchestration, and
 > configuration hot-reload. Test project: `AlgoTradeForge.HistoryLoader.Tests`.
 
 **Code Organization conventions**:
 - Each project uses namespace `AlgoTradeForge.<Layer>`
 - Domain project exposes internals to its test project via `InternalsVisibleTo`
-- CandleIngestor exposes internals to Infrastructure.Tests via `InternalsVisibleTo`
 - Application references Domain; Infrastructure references Application;
-  WebApi references Application, Domain, and Infrastructure;
-  CandleIngestor references Application only
+  WebApi references Application, Domain, and Infrastructure
 - HistoryLoader projects follow independent clean architecture layering:
   HistoryLoader.WebApi → Infrastructure → Application → Domain
 - Test projects mirror the source project folder structure
@@ -526,6 +572,21 @@ Background jobs fall into two categories:
   or reference from the primary test project via `InternalsVisibleTo`
 - API endpoint additions or changes MUST be reflected in the WebApi
   integration test project (`AlgoTradeForge.WebApi.Tests`)
+- **Observed failures are owned.** Any test failure, build break, or bug
+  surfaced during work on a branch — including unrelated work that
+  happens to run a broader verification — MUST be resolved on the same
+  branch before the work is considered complete. Acceptable
+  resolutions:
+  - Fix the underlying bug.
+  - Repair the test to reflect current correct behavior.
+  - Replace the test with one that exercises the current feature.
+  - Delete the test if the feature it covered was removed.
+  Framings like "not introduced by this branch", "pre-existing",
+  "out of scope for this task", or "the bug predates this work" MUST
+  NOT be used as discharge for leaving a failure red. Reviews,
+  verification reports, and PR descriptions MUST NOT list known
+  failures alongside merge recommendations; if a failure is known, the
+  fix lands in the same branch.
 
 ### Test Framework Stack
 
@@ -576,4 +637,4 @@ the collective agreement on how AlgoTradeForge is built and maintained.
 - Outdated principles MUST be updated or removed
 - New patterns that emerge MUST be evaluated for inclusion
 
-**Version**: 1.8.2 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-04-26
+**Version**: 1.9.2 | **Ratified**: 2026-01-23 | **Last Amended**: 2026-05-24

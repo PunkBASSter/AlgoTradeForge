@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useIsFetching, useQuery } from "@tanstack/react-query";
 import { dataApi } from "@/lib/services/data-api";
 import { ExchangeCard } from "./exchange-card";
 import { DataSidebar } from "./data-sidebar";
@@ -21,9 +21,20 @@ export function DataTabRoot() {
 
   const selection = useDataSelectionStore();
 
+  // Block grid clicks while a cell's response is in flight to prevent rapid-click
+  // request supersession (each new click aborts the prior request mid-read).
+  const pendingCellQueries = useIsFetching({
+    predicate: (q) =>
+      q.queryKey[0] === "data" &&
+      (q.queryKey[1] === "feed-status" || q.queryKey[1] === "aggregation-options"),
+  });
+  const cellsBusy = pendingCellQueries > 0;
+
   return (
-    <div className="flex h-full">
-      <main className="flex-1 overflow-auto p-6 space-y-2">
+    <div className={`flex h-full ${cellsBusy ? "cursor-wait" : ""}`}>
+      <main
+        className={`flex-1 overflow-auto p-6 space-y-2 ${cellsBusy ? "pointer-events-none" : ""}`}
+      >
         <h1 className="text-2xl font-semibold text-text-primary mb-4">Data</h1>
 
         {Object.keys(activeJobs).length > 0 && (

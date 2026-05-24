@@ -29,7 +29,7 @@ internal sealed class LiquidationStreamService(
     {
         logger.LogInformation("LiquidationStreamService started");
 
-        EnsureSchemas();
+        await EnsureSchemas(stoppingToken);
 
         int attempts = 0;
 
@@ -200,7 +200,7 @@ internal sealed class LiquidationStreamService(
                     continue;
 
                 var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-                schemaManager.EnsureSchema(assetDir, FeedNames.Liquidations, "", Columns);
+                await schemaManager.EnsureSchema(assetDir, FeedNames.Liquidations, "", Columns, ct: ct);
                 feedWriter.Write(assetDir, FeedNames.Liquidations, "", Columns, record);
                 totalWritten++;
 
@@ -227,7 +227,7 @@ internal sealed class LiquidationStreamService(
 
             if (now - lastStatusFlush >= StatusFlushInterval)
             {
-                FlushStatus(statusTracker);
+                await FlushStatus(statusTracker, ct);
                 lastStatusFlush = now;
             }
 
@@ -240,7 +240,7 @@ internal sealed class LiquidationStreamService(
             }
         }
 
-        FlushStatus(statusTracker);
+        await FlushStatus(statusTracker, ct);
     }
 
     internal static (string Symbol, FeedRecord Record)? ParseForceOrder(ReadOnlyMemory<byte> data)
@@ -304,7 +304,7 @@ internal sealed class LiquidationStreamService(
         }
     }
 
-    private void EnsureSchemas()
+    private async Task EnsureSchemas(CancellationToken ct)
     {
         var config = options.CurrentValue;
 
@@ -318,20 +318,20 @@ internal sealed class LiquidationStreamService(
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-            schemaManager.EnsureSchema(assetDir, FeedNames.Liquidations, "", Columns);
+            await schemaManager.EnsureSchema(assetDir, FeedNames.Liquidations, "", Columns, ct: ct);
         }
     }
 
-    private void FlushStatus(Dictionary<string, (long count, long? firstTs, long? lastTs)> tracker)
+    private async Task FlushStatus(Dictionary<string, (long count, long? firstTs, long? lastTs)> tracker, CancellationToken ct)
     {
         foreach (var (assetDir, st) in tracker)
         {
             if (st.count == 0)
                 continue;
 
-            var existing = feedStatusStore.Load(assetDir, FeedNames.Liquidations, "");
+            var existing = await feedStatusStore.Load(assetDir, FeedNames.Liquidations, "", ct);
 
-            feedStatusStore.Save(assetDir, FeedNames.Liquidations, "", new FeedStatus
+            await feedStatusStore.Save(assetDir, FeedNames.Liquidations, "", new FeedStatus
             {
                 FeedName = FeedNames.Liquidations,
                 Interval = "",
@@ -340,7 +340,7 @@ internal sealed class LiquidationStreamService(
                 LastRunUtc = DateTimeOffset.UtcNow,
                 RecordCount = (existing?.RecordCount ?? 0) + st.count,
                 Health = CollectionHealth.Healthy
-            });
+            }, ct);
         }
 
         tracker.Clear();

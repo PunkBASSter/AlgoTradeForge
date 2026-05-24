@@ -54,7 +54,6 @@ src/
     Persistence/       # SQLite repositories
     Plugins/           # PluginLoader
   AlgoTradeForge.WebApi/
-  AlgoTradeForge.CandleIngestor/
 tests/
   AlgoTradeForge.Domain.Tests/
   AlgoTradeForge.Application.Tests/
@@ -98,6 +97,43 @@ All monetary/price values in the Domain layer use `long` (Int64). When convertin
 - **User-facing templates/JSON**: Any code that exposes `ParamUnit.QuoteAsset` parameter defaults to the user (templates, API responses, UI forms) MUST convert tick-denominated `long` values to human-readable form. Use `StrategyTemplateBuilder.ConvertToHumanReadable()` or equivalent. Raw tick values in user-facing output will cause double-scaling when the user submits them back through `ParameterScaler`.
 - **Parameter normalization (dedup)**: When a strategy has parameters that are conditionally irrelevant (e.g., `NumberOfLevels` has no effect when `Mode != FollowTrend`), the params class should implement `IParameterNormalizer` (`Domain.Optimization.Space`). The `Normalize()` method fixes irrelevant params to canonical values; the optimizer deduplicates identical normalized combinations automatically. Both brute-force and genetic paths apply normalization. The evaluate endpoint reports `UniqueCombinations` when a normalizer exists. `NormalizingEnumerable` (Application) wraps the lazy combination stream. Dedup stats are persisted as `DedupSkipped` on `OptimizationRunRecord`.
 - **Indicator buffer memory (ring buffer)**: Indicators deriving from `IndicatorBase<T>` (`Int64IndicatorBase`, `DoubleIndicatorBase`) MUST call `ApplyBufferCapacity()` at end of constructor after populating `Buffers`. This bounds each `IndicatorBuffer<T>` to a `RingBuffer<T>`. `CapacityLimit`: `null` = auto `Max(MinimumHistory*2, 256)`, `0` = unbounded, `N` = fixed. `Count` reports total appended (not retained). `Set()` is a silent no-op on evicted indices; `Revise()` throws — if an indicator relocates pivots, capacity MUST cover its revision window. `SetCapacity()` MUST be called before any data is appended.
+
+### Comment Convention (Constitution v1.8.4)
+
+- **Prefer no XML or inline comments.** Code is self-documenting through clear naming, small methods, and explicit types. Don't write a comment that just restates the identifier or the signature.
+- **Allowed when** (and only when) the code involves: a non-obvious algorithm or formula, a known pitfall / workaround / counterintuitive behavior, or a `TODO`/`HACK` with justification.
+- **When you do write one, keep it terse.** Prefer a single line. Several lines are acceptable only when the documented behavior is genuinely non-obvious or non-conventional. No multi-paragraph essays, no signature restatement, no English paraphrase of the identifier (`<summary>The user identifier.</summary>` on `UserId` is forbidden). Shortest text that conveys the non-obvious fact, nothing more.
+- **Existing comments in validation stages and related domain types stay** — this convention applies to writing new comments and editing existing ones, not to bulk-stripping documented code.
+
+### File Organization (Constitution v1.9.0)
+
+- **One type per file**, named after the type. `IFoo` lives in `IFoo.cs`; `FooImpl` lives in `FooImpl.cs`.
+- **Exceptions:**
+  - Single-line records / record structs declared next to the interface they accompany MAY share that file — e.g., `public readonly record struct TickResumeState(long LastAggId, long LastTsMs);` can sit beside `ITickFeedWriter`.
+  - A non-generic + generic interface pair where one derives from the other (e.g., `IFoo` + `IFoo<T> : IFoo`) MAY share a file.
+- **Extension methods** belong in their own file alongside the interface they extend (e.g., `IPartitionTailIndex.cs` + `PartitionTailIndexExtensions.cs`).
+
+### Resource Release Convention (Constitution v1.9.1)
+
+- **Prefer `using` over `try` / `finally`** whenever the `finally` is purely a release call. The modern form is the brace-less declaration:
+  ```csharp
+  using var stream = File.OpenRead(path);
+  ```
+  No parentheses, no `{ }` block — the resource is released when the enclosing scope exits.
+- **`SemaphoreSlim` mutex use case** — acquire via `SemaphoreSlimExtensions.LockAsync` (`AlgoTradeForge.Storage.Threading`):
+  ```csharp
+  using var _ = await _gate.LockAsync(ct);
+  await DoWorkUnderLock(...);
+  ```
+  Do NOT write `await _gate.WaitAsync(ct); try { ... } finally { _gate.Release(); }` for new code. `RunProgressCache.AcquireRunKeyLockAsync` is the older per-key sibling; the generic extension is the right choice for a single static gate.
+- `try` / `finally` remains correct when the cleanup branches on state, suppresses specific exceptions, or coordinates with anything beyond a single release call.
+
+### Async I/O Convention (Constitution v1.8.3)
+
+- **I/O-bound APIs MUST be async.** Any interface that fronts file storage, network HTTP, database access, an external service client, or a message broker MUST expose `Task` / `Task<T>` / `IAsyncEnumerable<T>` signatures with `CancellationToken ct = default` on every method.
+- **No `Async` suffix on new or updated async methods.** Write `Task<bool> Exists(string key, CancellationToken ct = default)` — not `ExistsAsync(...)`. When you change the signature of an existing `Async`-suffixed method (or move it onto an async-only interface), drop the suffix as part of the change. Pre-existing `Async`-suffixed methods that you are not touching keep their names — this convention is applied incrementally to avoid bulk-rename churn.
+- **No sync-over-async.** `.Result`, `.Wait()`, `.GetAwaiter().GetResult()` are prohibited at production call sites. The only acceptable use is in narrowly-scoped test fixture cleanup or one-shot startup helpers that cannot be threaded async; such uses MUST carry an inline comment explaining why.
+- **Reference impl**: `src/AlgoTradeForge.Application/IO/IFileStorage.cs` is the canonical example — fully async, no `Async` suffix, `CancellationToken` on every method, `IAsyncEnumerable<string>` for streaming reads, `IObjectWriteSession : IAsyncDisposable` with explicit `Commit()`.
 
 ## Recent Changes
 - 028-dss-optimization-split: Added C# 14 / .NET 10 (backend), TypeScript 5.x strict (frontend) + ASP.NET Core minimal APIs, System.Threading, TanStack Query, Next.js 16, CodeMirror 6

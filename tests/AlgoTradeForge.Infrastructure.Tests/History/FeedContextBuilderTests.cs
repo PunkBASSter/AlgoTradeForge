@@ -2,6 +2,7 @@ using System.Text.Json;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Infrastructure.History;
+using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -10,14 +11,17 @@ namespace AlgoTradeForge.Infrastructure.Tests.History;
 public class FeedContextBuilderTests : IDisposable
 {
     private readonly string _testDataRoot;
-    private readonly CsvFeedSeriesLoader _feedSeriesLoader = new();  // concrete for integration testing
+    private readonly LocalFileStorage _storage = new();
+    private readonly CsvFeedSeriesLoader _feedSeriesLoader;
     private readonly FeedContextBuilder _builder;
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public FeedContextBuilderTests()
     {
         _testDataRoot = Path.Combine(Path.GetTempPath(), $"FeedCtxBuilder_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testDataRoot);
-        _builder = new FeedContextBuilder(_feedSeriesLoader, NullLogger<FeedContextBuilder>.Instance);
+        _feedSeriesLoader = new CsvFeedSeriesLoader(_storage);
+        _builder = new FeedContextBuilder(_storage, _feedSeriesLoader, NullLogger<FeedContextBuilder>.Instance);
     }
 
     public void Dispose()
@@ -51,18 +55,18 @@ public class FeedContextBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Build_NoFeedsJson_ReturnsNull()
+    public async Task Build_NoFeedsJson_ReturnsNull()
     {
         var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
-        var result = _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
         Assert.Null(result);
     }
 
     [Fact]
-    public void Build_FeedsJsonWithNoData_ReturnsNull()
+    public async Task Build_FeedsJsonWithNoData_ReturnsNull()
     {
         var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
-        var assetDir = AssetDirectoryName.From(asset); // BTCUSDT_perp
+        var assetDir = AssetDirectoryName.From(asset);
 
         WriteFeedsJson("Binance", assetDir, new
         {
@@ -71,17 +75,16 @@ public class FeedContextBuilderTests : IDisposable
                 ["funding_rate"] = new { Interval = "8h", Columns = new[] { "rate" } }
             }
         });
-        // No CSV files written
 
-        var result = _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
         Assert.Null(result);
     }
 
     [Fact]
-    public void Build_WithFeedData_RegistersFeed()
+    public async Task Build_WithFeedData_RegistersFeed()
     {
         var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
-        var assetDir = AssetDirectoryName.From(asset); // BTCUSDT_perp
+        var assetDir = AssetDirectoryName.From(asset);
 
         WriteFeedsJson("Binance", assetDir, new
         {
@@ -95,7 +98,7 @@ public class FeedContextBuilderTests : IDisposable
             "ts,rate",
             [$"{Ts(2024,1,1,0)},0.0001", $"{Ts(2024,1,1,8)},0.00015"]);
 
-        var result = _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.NotNull(result);
         var schema = result!.GetSchema("funding_rate");
@@ -106,7 +109,7 @@ public class FeedContextBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Build_WithAutoApply_SetsAutoApplyConfig()
+    public async Task Build_WithAutoApply_SetsAutoApplyConfig()
     {
         var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
         var assetDir = AssetDirectoryName.From(asset);
@@ -128,7 +131,7 @@ public class FeedContextBuilderTests : IDisposable
             "ts,rate",
             [$"{Ts(2024,1,1)},0.0001"]);
 
-        var result = _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.NotNull(result);
         var schema = result!.GetSchema("funding_rate");
@@ -138,7 +141,7 @@ public class FeedContextBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Build_MultipleFeeds_RegistersAll()
+    public async Task Build_MultipleFeeds_RegistersAll()
     {
         var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
         var assetDir = AssetDirectoryName.From(asset);
@@ -158,7 +161,7 @@ public class FeedContextBuilderTests : IDisposable
         WriteFeedCsv("Binance", assetDir, "open_interest", 2024, 1, "1h",
             "ts,oi_usd,oi_contracts", [$"{Ts(2024,1,1)},1000000.0,500.0"]);
 
-        var result = _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.NotNull(result);
         var schemaFunding = result!.GetSchema("funding_rate");
@@ -168,10 +171,10 @@ public class FeedContextBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Build_CryptoAsset_UsesAssetNameDirectly()
+    public async Task Build_CryptoAsset_UsesAssetNameDirectly()
     {
         var asset = CryptoAsset.Create("ETHUSDT", "Binance", 2);
-        var assetDir = AssetDirectoryName.From(asset); // ETHUSDT (no _perp suffix)
+        var assetDir = AssetDirectoryName.From(asset);
         Assert.Equal("ETHUSDT", assetDir);
 
         WriteFeedsJson("Binance", assetDir, new
@@ -185,35 +188,29 @@ public class FeedContextBuilderTests : IDisposable
         WriteFeedCsv("Binance", assetDir, "volume", 2024, 1, "1h",
             "ts,vol", [$"{Ts(2024,1,1)},99999.0"]);
 
-        var result = _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
         Assert.NotNull(result);
         var schema = result!.GetSchema("volume");
         Assert.Equal("vol", schema.ColumnNames[0]);
     }
 
     [Fact]
-    public void Build_MalformedFeedsJson_ReturnsNull()
+    public async Task Build_MalformedFeedsJson_ReturnsNull()
     {
         var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
         var assetDir = AssetDirectoryName.From(asset);
 
-        // Write invalid JSON to feeds.json
         var dir = Path.Combine(_testDataRoot, "Binance", assetDir);
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "feeds.json"), "{ invalid json !!!");
 
-        var result = _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
         Assert.Null(result);
     }
 
     [Fact]
-    public void Build_OnlyPrimaryAndSidecar_NoEagerSideFeeds_ReturnsContextWithSidecarBound()
+    public async Task Build_OnlyPrimaryAndSidecar_NoEagerSideFeeds_ReturnsContextWithSidecarBound()
     {
-        // Regression: an asset whose feeds.json contains ONLY an EqIV alt-bar primary + its
-        // .flow sidecar (no funding-rate, no OI, no other eager side feeds) must still get a
-        // non-null IFeedContext with the sidecar lazy-bound. Previously this returned null
-        // because the eager-load counter (`loaded`) stayed at 0 and the lazy sidecar
-        // registration didn't bump it — silently dropping the sidecar binding.
         var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
         var assetDir = AssetDirectoryName.From(asset);
 
@@ -236,10 +233,10 @@ public class FeedContextBuilderTests : IDisposable
             }
         });
 
-        var result = _builder.Build(
+        var result = await _builder.Build(
             _testDataRoot, asset,
             new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31),
-            primaryFeedName: "EqIV_ticks_500000");
+            primaryFeedName: "EqIV_ticks_500000", ct: Ct);
 
         Assert.NotNull(result);
         Assert.NotNull(result!.PrimarySidecarSchema);
@@ -250,7 +247,7 @@ public class FeedContextBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Build_InvalidAutoApplyType_RegistersFeedWithNullAutoApply()
+    public async Task Build_InvalidAutoApplyType_RegistersFeedWithNullAutoApply()
     {
         var asset = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", 2);
         var assetDir = AssetDirectoryName.From(asset);
@@ -271,7 +268,7 @@ public class FeedContextBuilderTests : IDisposable
         WriteFeedCsv("Binance", assetDir, "funding_rate", 2024, 1, "8h",
             "ts,rate", [$"{Ts(2024,1,1)},0.0001"]);
 
-        var result = _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31));
+        var result = await _builder.Build(_testDataRoot, asset, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.NotNull(result);
         var schema = result!.GetSchema("funding_rate");

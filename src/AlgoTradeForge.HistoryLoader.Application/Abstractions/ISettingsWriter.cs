@@ -6,6 +6,6 @@ namespace AlgoTradeForge.HistoryLoader.Application.Abstractions;
 /// </summary>
 public interface ISettingsWriter
 {
-    void UpdateFeedHistoryStart(string symbol, string assetType,
-        string feedName, string feedInterval, DateOnly historyStart);
+    Task UpdateFeedHistoryStart(string symbol, string assetType,
+        string feedName, string feedInterval, DateOnly historyStart, CancellationToken ct = default);
 }

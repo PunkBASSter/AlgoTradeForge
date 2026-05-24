@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using AlgoTradeForge.Infrastructure.Events;
-using AlgoTradeForge.Infrastructure.IO;
+using AlgoTradeForge.Storage;
 using Microsoft.Data.Sqlite;
 using Xunit;
 
@@ -11,7 +11,7 @@ public class SqliteEventIndexBuilderTests : IDisposable
 {
     private readonly string _testRoot;
     private readonly string _runFolder;
-    private readonly FileStorage _fs = new();
+    private readonly LocalFileStorage _fs = new();
     private readonly SqliteEventIndexBuilder _builder = new();
 
     public SqliteEventIndexBuilderTests()
@@ -28,7 +28,7 @@ public class SqliteEventIndexBuilderTests : IDisposable
             Directory.Delete(_testRoot, recursive: true);
     }
 
-    private void WriteSampleJsonl(int count = 10)
+    private Task WriteSampleJsonl(int count = 10)
     {
         var sb = new StringBuilder();
         for (var i = 1; i <= count; i++)
@@ -36,13 +36,13 @@ public class SqliteEventIndexBuilderTests : IDisposable
             var type = i % 3 == 0 ? "ord.fill" : i % 2 == 0 ? "ord.place" : "bar";
             sb.AppendLine($"{{\"ts\":\"2024-01-01T00:0{i:D2}:00+00:00\",\"sq\":{i},\"_t\":\"{type}\",\"src\":\"engine\",\"d\":{{\"v\":{i}}}}}");
         }
-        _fs.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString());
+        return _fs.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString(), ct: TestContext.Current.CancellationToken);
     }
 
     [Fact]
-    public void Build_CreatesCorrectSchema_FromSampleJsonl()
+    public async Task Build_CreatesCorrectSchema_FromSampleJsonl()
     {
-        WriteSampleJsonl();
+        await WriteSampleJsonl();
 
         _builder.Build(_runFolder);
 
@@ -82,9 +82,9 @@ public class SqliteEventIndexBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Build_QueryByType_ReturnsCorrectEvents()
+    public async Task Build_QueryByType_ReturnsCorrectEvents()
     {
-        WriteSampleJsonl();
+        await WriteSampleJsonl();
 
         _builder.Build(_runFolder);
 
@@ -106,9 +106,9 @@ public class SqliteEventIndexBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Build_QueryBySequenceRange_ReturnsOrderedEvents()
+    public async Task Build_QueryBySequenceRange_ReturnsOrderedEvents()
     {
-        WriteSampleJsonl();
+        await WriteSampleJsonl();
 
         _builder.Build(_runFolder);
 
@@ -129,15 +129,16 @@ public class SqliteEventIndexBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Build_TransactionalOnFailure_NoPartialIndex()
+    public async Task Build_TransactionalOnFailure_NoPartialIndex()
     {
         // Write corrupt JSONL
-        _fs.WriteAllText(
+        await _fs.WriteAllText(
             Path.Combine(_runFolder, "events.jsonl"),
             """
             {"ts":"2024-01-01T00:00:00+00:00","sq":1,"_t":"bar","src":"engine","d":{}}
             NOT VALID JSON!!!
-            """);
+            """,
+            ct: TestContext.Current.CancellationToken);
 
         Assert.ThrowsAny<Exception>(() => _builder.Build(_runFolder));
 
@@ -149,9 +150,9 @@ public class SqliteEventIndexBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Rebuild_ReplacesExistingIndex()
+    public async Task Rebuild_ReplacesExistingIndex()
     {
-        WriteSampleJsonl(5);
+        await WriteSampleJsonl(5);
         _builder.Build(_runFolder);
 
         var indexPath = Path.Combine(_runFolder, "index.sqlite");
@@ -166,7 +167,7 @@ public class SqliteEventIndexBuilderTests : IDisposable
         }
 
         // Rewrite with 3 events and rebuild
-        WriteSampleJsonl(3);
+        await WriteSampleJsonl(3);
         _builder.Rebuild(_runFolder);
 
         using (var conn = new SqliteConnection($"Data Source={indexPath};Mode=ReadOnly;Pooling=False"))
@@ -179,9 +180,9 @@ public class SqliteEventIndexBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Build_SkipsIfAlreadyExists()
+    public async Task Build_SkipsIfAlreadyExists()
     {
-        WriteSampleJsonl(5);
+        await WriteSampleJsonl(5);
         _builder.Build(_runFolder);
 
         var indexPath = Path.Combine(_runFolder, "index.sqlite");
@@ -191,7 +192,7 @@ public class SqliteEventIndexBuilderTests : IDisposable
         Thread.Sleep(50);
 
         // Rewrite JSONL with different count — Build should be no-op
-        WriteSampleJsonl(3);
+        await WriteSampleJsonl(3);
         _builder.Build(_runFolder);
 
         Assert.Equal(firstWriteTime, File.GetLastWriteTimeUtc(indexPath));
@@ -205,12 +206,12 @@ public class SqliteEventIndexBuilderTests : IDisposable
     }
 
     [Fact]
-    public void Build_100KEvents_CompletesInUnder5Seconds()
+    public async Task Build_100KEvents_CompletesInUnder5Seconds()
     {
         var sb = new StringBuilder();
         for (var i = 1; i <= 100_000; i++)
             sb.AppendLine($"{{\"ts\":\"2024-01-01T00:00:00+00:00\",\"sq\":{i},\"_t\":\"bar\",\"src\":\"engine\",\"d\":{{\"v\":{i}}}}}");
-        _fs.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString());
+        await _fs.WriteAllText(Path.Combine(_runFolder, "events.jsonl"), sb.ToString(), ct: TestContext.Current.CancellationToken);
 
         var sw = Stopwatch.StartNew();
         _builder.Build(_runFolder);

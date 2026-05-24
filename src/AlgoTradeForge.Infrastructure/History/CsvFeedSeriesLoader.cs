@@ -1,5 +1,6 @@
 using System.Globalization;
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.Domain.History;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,14 +16,16 @@ namespace AlgoTradeForge.Infrastructure.History;
 /// </summary>
 public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
 {
+    private readonly IFileStorage _storage;
     private readonly ILogger<CsvFeedSeriesLoader> _logger;
 
-    public CsvFeedSeriesLoader(ILogger<CsvFeedSeriesLoader>? logger = null)
+    public CsvFeedSeriesLoader(IFileStorage storage, ILogger<CsvFeedSeriesLoader>? logger = null)
     {
+        _storage = storage;
         _logger = logger ?? NullLogger<CsvFeedSeriesLoader>.Instance;
     }
 
-    public FeedSeries? Load(
+    public async Task<FeedSeries?> Load(
         string dataRoot,
         string exchange,
         string assetDir,
@@ -30,7 +33,8 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
         string interval,
         DateOnly from,
         DateOnly to,
-        bool nullableColumns = false)
+        bool nullableColumns = false,
+        CancellationToken ct = default)
     {
         var timestamps = new List<long>();
         List<double>[]? columnLists = null;
@@ -46,19 +50,15 @@ public sealed class CsvFeedSeriesLoader : IFeedSeriesLoader
         while (current <= endMonth)
         {
             var filePath = GetPartitionPath(dataRoot, exchange, assetDir, feedName, current, interval);
-            if (!File.Exists(filePath))
+            if (!await _storage.Exists(filePath, ct))
             {
                 current = current.AddMonths(1);
                 continue;
             }
 
-            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            using var reader = new StreamReader(fs);
-
-            var firstLine = true;
-            string? line;
             var rowIndex = -1;
-            while ((line = reader.ReadLine()) is not null)
+            var firstLine = true;
+            await foreach (var line in _storage.ReadLines(filePath, ct))
             {
                 rowIndex++;
                 if (firstLine)

@@ -115,9 +115,8 @@ public sealed class ValidationTaskExecutor(
         var sw = Stopwatch.StartNew();
 
         // 3. Build simulation cache (with spillover to disk if too large)
-        var estimatedSize = SimulationCacheBuilder.EstimateSize(trialsWithCurves);
-        SimulationCache cache;
-        using var cacheFileHandle = BuildSimulationCache(trialsWithCurves, validationId, out cache);
+        var (cache, cacheFileHandle) = await BuildSimulationCache(trialsWithCurves, validationId, ct);
+        using var _cacheCleanup = cacheFileHandle;
 
         var trialSummaries = SimulationCacheBuilder.BuildTrialSummaries(trialsWithCurves);
         var subscriptionGroupMap = SimulationCacheBuilder.BuildSubscriptionGroupMap(trialsWithCurves);
@@ -170,8 +169,8 @@ public sealed class ValidationTaskExecutor(
             validationId, trialsWithCurves.Count, candidatesOut, scoreResult.Verdict, sw.ElapsedMilliseconds);
     }
 
-    private IDisposable? BuildSimulationCache(
-        List<BacktestRunRecord> trials, Guid validationId, out SimulationCache cache)
+    private async Task<(SimulationCache Cache, IDisposable? Cleanup)> BuildSimulationCache(
+        List<BacktestRunRecord> trials, Guid validationId, CancellationToken ct)
     {
         var estimatedSize = SimulationCacheBuilder.EstimateSize(trials);
         var options = cacheOptions.Value;
@@ -183,12 +182,11 @@ public sealed class ValidationTaskExecutor(
                 estimatedSize / (1024.0 * 1024.0));
 
             var filePath = Path.Combine(options.CacheDirectory, $"cache_{validationId:N}.bin");
-            cacheFileStore.WriteDirect(trials, filePath);
-            cache = cacheFileStore.Read(filePath);
-            return new CacheFileCleanup(filePath);
+            await cacheFileStore.WriteDirect(trials, filePath, ct);
+            var spilled = await cacheFileStore.Read(filePath, ct);
+            return (spilled, new CacheFileCleanup(filePath));
         }
 
-        cache = SimulationCacheBuilder.Build(trials);
-        return null;
+        return (SimulationCacheBuilder.Build(trials), null);
     }
 }

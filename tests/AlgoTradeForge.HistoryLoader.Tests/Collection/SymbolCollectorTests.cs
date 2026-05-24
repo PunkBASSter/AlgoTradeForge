@@ -83,9 +83,10 @@ public sealed class SymbolCollectorTests
         await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
 
         // Should persist August 2020 as the discovered start.
-        _settingsWriter.Received(1).UpdateFeedHistoryStart(
+        await _settingsWriter.Received(1).UpdateFeedHistoryStart(
             "BTCUSDT", "perpetual", "open-interest", "5m",
-            new DateOnly(2020, 8, 1));
+            new DateOnly(2020, 8, 1),
+            Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------
@@ -136,8 +137,8 @@ public sealed class SymbolCollectorTests
         await _collector.Received(1).CollectAsync(
             Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
             Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
-        _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default);
+        await _settingsWriter.DidNotReceiveWithAnyArgs()
+            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -158,8 +159,8 @@ public sealed class SymbolCollectorTests
         await _collector.Received(1).CollectAsync(
             Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
             Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
-        _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default);
+        await _settingsWriter.DidNotReceiveWithAnyArgs()
+            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -179,8 +180,8 @@ public sealed class SymbolCollectorTests
         await _collector.Received(1).CollectAsync(
             Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
             Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
-        _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default);
+        await _settingsWriter.DidNotReceiveWithAnyArgs()
+            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -198,8 +199,8 @@ public sealed class SymbolCollectorTests
 
         await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
 
-        _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default);
+        await _settingsWriter.DidNotReceiveWithAnyArgs()
+            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -219,8 +220,8 @@ public sealed class SymbolCollectorTests
         await _collector.Received(1).CollectAsync(
             Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
             Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
-        _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default);
+        await _settingsWriter.DidNotReceiveWithAnyArgs()
+            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------

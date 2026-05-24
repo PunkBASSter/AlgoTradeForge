@@ -1,31 +1,34 @@
 using System.Globalization;
+using System.Text;
+using AlgoTradeForge.Storage;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 
 /// <summary>
-/// Orchestrates the overwrite sequence for an aggregated feed: stage to
-/// <c>aggregated/&lt;feedId&gt;/.staging-&lt;jobId&gt;/</c>, atomic-rename the live dir aside,
-/// pluck the staged contents into the live slot, then delete the renamed-aside dir.
-/// Crash-recovery is delegated to <see cref="AggregatedDirSweeper"/>.
+/// Orchestrates the overwrite sequence for an aggregated feed via <see cref="IFileStorage"/>:
+/// stage to <c>aggregated/&lt;feedId&gt;/.staging-&lt;jobId&gt;/</c>, then per-key
+/// <see cref="IFileStorage.Move"/> each staged partition into the live slot, prune orphan
+/// partitions, and <see cref="IFileStorage.DeleteByPrefix"/> the staging prefix. The local-FS
+/// dir-rename-aside atomicity is gone — on S3 we get per-key atomicity instead. Crash-recovery
+/// is delegated to <see cref="AggregatedDirSweeper"/>.
 /// </summary>
 public sealed class OverwritePathWriter
 {
-    private readonly SameVolumeGuard.VolumeResolver? _resolver;
+    private readonly IFileStorage _storage;
 
-    public OverwritePathWriter(SameVolumeGuard.VolumeResolver? volumeResolver = null)
+    public OverwritePathWriter(IFileStorage storage)
     {
-        _resolver = volumeResolver;
+        _storage = storage;
     }
 
-    /// <summary>Computes the staging directory path for a job. Creates the directory if missing.</summary>
-    public string PrepareStagingDir(string feedDir, string jobId)
+    /// <summary>Computes the staging directory key for a job; clears any prior contents under that prefix.</summary>
+    public async Task<string> PrepareStagingDir(string feedDir, string jobId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(jobId))
             throw new ArgumentException("jobId required.", nameof(jobId));
 
         var stagingDir = Path.Combine(feedDir, $".staging-{jobId}");
-        SameVolumeGuard.Ensure(stagingDir, feedDir, _resolver);
-        Directory.CreateDirectory(stagingDir);
+        await _storage.DeleteByPrefix(stagingDir, ct);
         return stagingDir;
     }
 
@@ -34,24 +37,25 @@ public sealed class OverwritePathWriter
     /// trailing-month file at <paramref name="priorLastBarTs"/> so the resume run re-emits
     /// the trailing bar.
     /// </summary>
-    public AppendStagingPlan PrepareStagingDirForAppend(string feedDir, string jobId, long priorLastBarTs)
+    public async Task<AppendStagingPlan> PrepareStagingDirForAppend(
+        string feedDir,
+        string jobId,
+        long priorLastBarTs,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(jobId))
             throw new ArgumentException("jobId required.", nameof(jobId));
 
         var stagingDir = Path.Combine(feedDir, $".staging-{jobId}");
-        SameVolumeGuard.Ensure(stagingDir, feedDir, _resolver);
-        Directory.CreateDirectory(stagingDir);
+        await _storage.DeleteByPrefix(stagingDir, ct);
 
         var trailingMonth = DateTimeOffset.FromUnixTimeMilliseconds(priorLastBarTs).UtcDateTime
             .ToString("yyyy-MM", CultureInfo.InvariantCulture);
 
-        var allFiles = Directory
-            .EnumerateFiles(feedDir, "*.csv", SearchOption.TopDirectoryOnly)
-            .OrderBy(Path.GetFileName, StringComparer.Ordinal)
-            .ToList();
+        // List the live partitions only (top-level); staging is a sibling subdir we mustn't
+        // recurse into.
+        var allFiles = await ListLivePartitions(feedDir, ct);
 
-        // Sticky cross-month: any pNN file forces subsequent months to pre-open at .p01.
         var hasEverOverflowed = allFiles
             .Select(f => PartitionFilenameParser.TryParse(Path.GetFileName(f), out _, out var part) && part is not null)
             .Any(b => b);
@@ -71,12 +75,12 @@ public sealed class OverwritePathWriter
         {
             if (string.Equals(src, trailingFile, StringComparison.Ordinal)) continue;
             var dest = Path.Combine(stagingDir, Path.GetFileName(src));
-            File.Copy(src, dest, overwrite: false);
+            await CopyKey(src, dest, ct);
         }
 
         var trailingFileName = Path.GetFileName(trailingFile);
         var truncatedDest = Path.Combine(stagingDir, trailingFileName);
-        var truncatedBytes = TruncateAtCutoff(trailingFile, truncatedDest, priorLastBarTs);
+        var truncatedBytes = await TruncateAtCutoff(trailingFile, truncatedDest, priorLastBarTs, ct);
 
         PartitionFilenameParser.TryParse(trailingFileName, out _, out var trailingPart);
 
@@ -89,85 +93,127 @@ public sealed class OverwritePathWriter
                 HasEverOverflowed: hasEverOverflowed));
     }
 
-    private static long TruncateAtCutoff(string srcPath, string destPath, long cutoffTs)
+    private async Task<List<string>> ListLivePartitions(string feedDir, CancellationToken ct)
     {
-        using var inFs = new FileStream(srcPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var outFs = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var reader = new StreamReader(inFs);
-        using var writer = new StreamWriter(outFs) { NewLine = "\n" };
-
-        string? line;
-        var firstLine = true;
-        while ((line = reader.ReadLine()) is not null)
+        var files = new List<string>();
+        await foreach (var key in _storage.ListKeys(feedDir, suffix: ".csv", recursive: false, ct))
         {
-            if (firstLine)
-            {
-                writer.WriteLine(line);
-                firstLine = false;
-                continue;
-            }
-            if (line.Length == 0) continue;
-
-            var commaIdx = line.IndexOf(',');
-            if (commaIdx < 0) continue;
-            if (!long.TryParse(
-                    line.AsSpan(0, commaIdx),
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out var ts))
-                continue;
-
-            // Strict >= so the trailing bar itself is dropped (resume re-emits it).
-            if (ts >= cutoffTs) break;
-
-            writer.WriteLine(line);
+            // Skip anything inside a nested staging dir — we asked recursive:false, but a future
+            // backend might not honor that strictly.
+            var rel = key.Substring(feedDir.Length).TrimStart('/', Path.DirectorySeparatorChar);
+            if (rel.Contains('/') || rel.Contains(Path.DirectorySeparatorChar)) continue;
+            files.Add(key);
         }
-        writer.Flush();
-        return outFs.Length;
+        files.Sort((a, b) => string.CompareOrdinal(Path.GetFileName(a), Path.GetFileName(b)));
+        return files;
+    }
+
+    private async Task CopyKey(string srcKey, string dstKey, CancellationToken ct)
+    {
+        var bytes = await _storage.ReadAllBytes(srcKey, ct);
+        await _storage.WriteAllBytes(dstKey, bytes, ct);
+    }
+
+    private async Task<long> TruncateAtCutoff(string srcKey, string dstKey, long cutoffTs, CancellationToken ct)
+    {
+        var session = await _storage.OpenWriteSession(dstKey, ct);
+        var writer = new StreamWriter(session.Stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), leaveOpen: true)
+        {
+            NewLine = "\n",
+        };
+
+        long bytesWritten = 0;
+        try
+        {
+            var firstLine = true;
+            await foreach (var line in _storage.ReadLines(srcKey, ct))
+            {
+                if (firstLine)
+                {
+                    await writer.WriteLineAsync(line.AsMemory(), ct);
+                    bytesWritten += Encoding.UTF8.GetByteCount(line) + 1;
+                    firstLine = false;
+                    continue;
+                }
+                if (line.Length == 0) continue;
+
+                var commaIdx = line.IndexOf(',');
+                if (commaIdx < 0) continue;
+                if (!long.TryParse(
+                        line.AsSpan(0, commaIdx),
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out var ts))
+                    continue;
+
+                // Strict >= so the trailing bar itself is dropped (resume re-emits it).
+                if (ts >= cutoffTs) break;
+
+                await writer.WriteLineAsync(line.AsMemory(), ct);
+                bytesWritten += Encoding.UTF8.GetByteCount(line) + 1;
+            }
+            await writer.FlushAsync(ct);
+            // Drop the writer before committing — StreamWriter.DisposeAsync flushes the
+            // underlying stream, which the session has already closed post-Commit. Explicit
+            // ordering avoids the "Cannot access a closed file" race that scope-exit dispose
+            // (in reverse declaration order) would otherwise trigger.
+            await writer.DisposeAsync();
+            await session.Commit(ct);
+        }
+        catch
+        {
+            await writer.DisposeAsync();
+            await session.DisposeAsync();
+            throw;
+        }
+        await session.DisposeAsync();
+        return bytesWritten;
     }
 
     /// <summary>
     /// Promotes <paramref name="stagingDir"/> to be the new <paramref name="feedDir"/> via
-    /// atomic-rename-aside, atomic-rename-back, then recursive delete of the aside dir.
+    /// per-key <see cref="IFileStorage.Move"/>, pruning any live keys that the staging layout
+    /// does not include. Not atomic across keys on S3; the sweeper reclaims partial state.
     /// </summary>
-    public void Promote(string feedDir, string stagingDir)
+    public async Task Promote(string feedDir, string stagingDir, CancellationToken ct = default)
     {
-        SameVolumeGuard.Ensure(stagingDir, feedDir, _resolver);
+        var stagingFiles = await ListStagingPartitions(stagingDir, ct);
+        var liveFiles = await ListLivePartitions(feedDir, ct);
+        var stagingNames = new HashSet<string>(
+            stagingFiles.Select(Path.GetFileName)!,
+            StringComparer.Ordinal);
 
-        if (!Directory.Exists(stagingDir))
-            throw new InvalidOperationException(
-                $"Staging dir does not exist: {stagingDir}");
-
-        var stagingName = Path.GetFileName(stagingDir);
-
-        if (Directory.Exists(feedDir))
+        // Replace step: move each staging key into the live slot.
+        foreach (var stagingKey in stagingFiles)
         {
-            var deletedDir = $"{feedDir}.deleted-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
-            Directory.Move(feedDir, deletedDir);
-
-            var stagingInsideDeleted = Path.Combine(deletedDir, stagingName);
-            Directory.Move(stagingInsideDeleted, feedDir);
-
-            try
-            {
-                Directory.Delete(deletedDir, recursive: true);
-            }
-            catch (IOException)
-            {
-                // Best-effort cleanup; the sweeper reaps any leftover .deleted-<ts>/ dir on next boot.
-            }
+            var name = Path.GetFileName(stagingKey);
+            var liveKey = Path.Combine(feedDir, name);
+            await _storage.Move(stagingKey, liveKey, overwrite: true, ct);
         }
-        else
+
+        // Prune step: any pre-existing live partition whose name is NOT in the new staging set
+        // is an orphan (e.g. the prior layout had `.p02.csv` that the new run no longer emits).
+        foreach (var liveKey in liveFiles)
         {
-            // PrepareStagingDir creates feedDir; missing here means something deleted it in the gap.
-            throw new InvalidOperationException(
-                $"Cannot promote: feedDir '{feedDir}' does not exist. " +
-                $"Was it deleted between PrepareStagingDir and Promote?");
+            var name = Path.GetFileName(liveKey);
+            if (!stagingNames.Contains(name))
+                await _storage.Delete(liveKey, ct);
         }
+
+        // Cleanup: drop the staging prefix in full (the moves above emptied it of partitions,
+        // but any sidecar bookkeeping under the prefix is also discarded here).
+        await _storage.DeleteByPrefix(stagingDir, ct);
     }
 
-    public static string DeletedDirName(string feedDir, DateTime utcNow) =>
-        $"{Path.GetFileName(feedDir)}.deleted-{utcNow.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture)}";
+    private async Task<List<string>> ListStagingPartitions(string stagingDir, CancellationToken ct)
+    {
+        var files = new List<string>();
+        await foreach (var key in _storage.ListKeys(stagingDir, suffix: ".csv", recursive: false, ct))
+            files.Add(key);
+        files.Sort((a, b) => string.CompareOrdinal(Path.GetFileName(a), Path.GetFileName(b)));
+        return files;
+    }
+
 }
 
 public sealed record AppendStagingPlan(

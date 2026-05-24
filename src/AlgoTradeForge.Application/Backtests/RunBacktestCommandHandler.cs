@@ -105,7 +105,7 @@ public sealed class RunBacktestCommandHandler(
             RunSummary runSummary;
             string runFolderPath;
 
-            using (var fileSink = runSinkFactory.Create(identity))
+            await using (var fileSink = runSinkFactory.Create(identity))
             {
                 var eventBus = new EventBus(ExportMode.Backtest, [fileSink]);
 
@@ -123,7 +123,7 @@ public sealed class RunBacktestCommandHandler(
                     result.Fills.Count,
                     result.Duration);
 
-                fileSink.WriteMeta(runSummary);
+                await fileSink.WriteMeta(runSummary, ct);
                 runFolderPath = fileSink.RunFolderPath;
             }
 

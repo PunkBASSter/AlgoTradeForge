@@ -8,9 +8,9 @@ namespace AlgoTradeForge.HistoryLoader.Application.Catalog;
 /// </summary>
 public interface IFeedCatalog
 {
-    ExchangeListResponse GetExchanges();
-    AssetListResponse GetAssetsByExchange(string exchange);
-    AssetListResponse GetAllAssets();
-    AssetCatalogEntry? GetAsset(string exchange, string assetSymbol);
-    FeedDefinition? GetFeed(string exchange, string assetSymbol, string feedId);
+    Task<ExchangeListResponse> GetExchanges(CancellationToken ct = default);
+    Task<AssetListResponse> GetAssetsByExchange(string exchange, CancellationToken ct = default);
+    Task<AssetListResponse> GetAllAssets(CancellationToken ct = default);
+    Task<AssetCatalogEntry?> GetAsset(string exchange, string assetSymbol, CancellationToken ct = default);
+    Task<FeedDefinition?> GetFeed(string exchange, string assetSymbol, string feedId, CancellationToken ct = default);
 }

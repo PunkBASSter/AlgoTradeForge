@@ -82,8 +82,8 @@ public sealed class BacktestPreparer(
             for (var i = 0; i < primaries.Count; i++)
             {
                 strategy.DataSubscriptions.Add(primaries[i].StrategySub);
-                seriesArray[i] = historyRepository.Load(
-                    primaries[i].SubAsset, primaries[i].FeedSub, fromDate, toDate);
+                seriesArray[i] = await historyRepository.Load(
+                    primaries[i].SubAsset, primaries[i].FeedSub, fromDate, toDate, ct);
             }
         }
         else
@@ -99,7 +99,7 @@ public sealed class BacktestPreparer(
                         $"Strategy pre-declared a non-TimeBar subscription (FeedKey='{preDeclared.FeedKey}'). " +
                         "Strategies must declare alt-bar / tick / side primaries via the command's " +
                         "DataSubscriptions (DataFeedSubscription), not strategy.DataSubscriptions.");
-                seriesArray[i] = historyRepository.Load(preDeclared, fromDate, toDate);
+                seriesArray[i] = await historyRepository.Load(preDeclared, fromDate, toDate, ct);
             }
         }
 
@@ -130,9 +130,11 @@ public sealed class BacktestPreparer(
             _ => null,
         };
 
-        var feedContext = feedContextBuilder?.Build(
-            storageOptions?.Value.DataRoot ?? CandleStorageOptions.DefaultDataRoot,
-            asset, fromDate, toDate, primaryFeedName: primaryTimeFrameCode);
+        var feedContext = feedContextBuilder is null
+            ? null
+            : await feedContextBuilder.Build(
+                storageOptions?.Value.DataRoot ?? CandleStorageOptions.DefaultDataRoot,
+                asset, fromDate, toDate, primaryFeedName: primaryTimeFrameCode, ct);
 
         return new BacktestSetup(asset, scale, options, strategy, seriesArray, FeedContext: feedContext);
     }

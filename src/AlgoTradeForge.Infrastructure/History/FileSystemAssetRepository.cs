@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
@@ -10,6 +11,7 @@ using Microsoft.Extensions.Options;
 namespace AlgoTradeForge.Infrastructure.History;
 
 public sealed class FileSystemAssetRepository(
+    IFileStorage storage,
     IAvailableAssetsProvider availableAssetsProvider,
     IOptions<CandleStorageOptions> storageOptions,
     ILogger<FileSystemAssetRepository> logger) : IAssetRepository
@@ -19,27 +21,49 @@ public sealed class FileSystemAssetRepository(
         PropertyNameCaseInsensitive = true
     };
 
-    private readonly Lazy<Dictionary<string, Asset>> _assets = new(() =>
-        BuildAssetDictionary(availableAssetsProvider, storageOptions.Value.DataRoot, logger));
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private Dictionary<string, Asset>? _assets;
 
-    public Task<Asset?> GetByNameAsync(string name, string exchange, CancellationToken ct = default)
-        => Task.FromResult(_assets.Value.GetValueOrDefault($"{name}|{exchange}"));
+    public async Task<Asset?> GetByNameAsync(string name, string exchange, CancellationToken ct = default)
+    {
+        var assets = await EnsureLoaded(ct);
+        return assets.GetValueOrDefault($"{name}|{exchange}");
+    }
 
-    public Task<IReadOnlyList<Asset>> GetAllAsync(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<Asset>>(_assets.Value.Values.ToList());
+    public async Task<IReadOnlyList<Asset>> GetAllAsync(CancellationToken ct = default)
+    {
+        var assets = await EnsureLoaded(ct);
+        return assets.Values.ToList();
+    }
 
-    private static Dictionary<string, Asset> BuildAssetDictionary(
+    private async Task<Dictionary<string, Asset>> EnsureLoaded(CancellationToken ct)
+    {
+        if (_assets is not null) return _assets;
+        await _gate.WaitAsync(ct);
+        try
+        {
+            return _assets ??= await BuildAssetDictionary(
+                storage, availableAssetsProvider, storageOptions.Value.DataRoot, logger, ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private static async Task<Dictionary<string, Asset>> BuildAssetDictionary(
+        IFileStorage storage,
         IAvailableAssetsProvider provider,
         string dataRoot,
-        ILogger logger)
+        ILogger logger,
+        CancellationToken ct)
     {
         var dict = new Dictionary<string, Asset>(StringComparer.OrdinalIgnoreCase);
 
-        // 1. Seed hardcoded overrides for known assets
         SeedHardcodedAssets(dict);
 
-        // 2. Discover assets from filesystem
-        foreach (var info in provider.GetAvailableAssets())
+        var available = await provider.GetAvailableAssets(ct);
+        foreach (var info in available)
         {
             var key = info.IsFutures
                 ? $"{info.Symbol}_PERP|{info.Exchange}"
@@ -50,7 +74,7 @@ public sealed class FileSystemAssetRepository(
             if (dict.ContainsKey(key))
                 continue;
 
-            var decimalDigits = ReadDecimalDigitsFromFeedsJson(dataRoot, info, logger);
+            var decimalDigits = await ReadDecimalDigitsFromFeedsJson(storage, dataRoot, info, logger, ct);
 
             Asset asset = info.IsFutures
                 ? CryptoPerpetualAsset.Create(info.Symbol, info.Exchange, decimalDigits, margin: 0.05m)
@@ -70,7 +94,6 @@ public sealed class FileSystemAssetRepository(
         dict["ETHUSDT|Binance"] = CryptoAsset.Create("ETHUSDT", "Binance", decimalDigits: 2,
             minOrderQuantity: 0.0001m, maxOrderQuantity: 9000m, quantityStepSize: 0.0001m);
 
-        // Perpetual variants for hardcoded crypto assets
         dict["BTCUSDT_PERP|Binance"] = CryptoPerpetualAsset.Create("BTCUSDT", "Binance", decimalDigits: 2,
             margin: 0.05m,
             minOrderQuantity: 0.001m, maxOrderQuantity: 500m, quantityStepSize: 0.001m);
@@ -84,18 +107,19 @@ public sealed class FileSystemAssetRepository(
         dict["MES|CME"] = new FutureAsset { Name = "MES", Exchange = "CME", Multiplier = 5m, TickSize = 0.25m, MarginRequirement = 1500m };
     }
 
-    private static int ReadDecimalDigitsFromFeedsJson(string dataRoot, AvailableAssetInfo info, ILogger logger)
+    private static async Task<int> ReadDecimalDigitsFromFeedsJson(
+        IFileStorage storage, string dataRoot, AvailableAssetInfo info, ILogger logger, CancellationToken ct)
     {
         var dirName = info.IsFutures ? $"{info.Symbol}_perp" : info.Symbol;
         var feedsJsonPath = Path.Combine(dataRoot, info.Exchange, dirName, "feeds.json");
 
-        if (!File.Exists(feedsJsonPath))
+        if (!await storage.Exists(feedsJsonPath, ct))
             return 2;
 
         try
         {
-            using var fs = new FileStream(feedsJsonPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var metadata = JsonSerializer.Deserialize<FeedMetadata>(fs, JsonOptions);
+            await using var stream = await storage.OpenRead(feedsJsonPath, ct);
+            var metadata = await JsonSerializer.DeserializeAsync<FeedMetadata>(stream, JsonOptions, ct);
 
             if (metadata?.Candles?.ScaleFactor is > 0)
                 return ScaleFactorToDecimalDigits(metadata.Candles.ScaleFactor);

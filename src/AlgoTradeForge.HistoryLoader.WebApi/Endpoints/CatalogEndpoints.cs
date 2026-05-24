@@ -10,32 +10,32 @@ internal static class CatalogEndpoints
     {
         var v1 = app.MapGroup("/api/v1");
 
-        v1.MapGet("/exchanges", (IFeedCatalog catalog) =>
-            Results.Json(catalog.GetExchanges()));
+        v1.MapGet("/exchanges", async (IFeedCatalog catalog, CancellationToken ct) =>
+            Results.Json(await catalog.GetExchanges(ct)));
 
-        v1.MapGet("/exchanges/{exchange}/assets", (string exchange, IFeedCatalog catalog) =>
-            Results.Json(catalog.GetAssetsByExchange(exchange)));
+        v1.MapGet("/exchanges/{exchange}/assets", async (string exchange, IFeedCatalog catalog, CancellationToken ct) =>
+            Results.Json(await catalog.GetAssetsByExchange(exchange, ct)));
 
-        v1.MapGet("/assets", (IFeedCatalog catalog) =>
-            Results.Json(catalog.GetAllAssets()));
+        v1.MapGet("/assets", async (IFeedCatalog catalog, CancellationToken ct) =>
+            Results.Json(await catalog.GetAllAssets(ct)));
 
         v1.MapGet("/exchanges/{exchange}/assets/{asset}/feeds/{feedId}/status",
-            (string exchange, string asset, string feedId, IFeedCatalog catalog) =>
+            async (string exchange, string asset, string feedId, IFeedCatalog catalog, CancellationToken ct) =>
             {
-                var def = catalog.GetFeed(exchange, asset, feedId);
+                var def = await catalog.GetFeed(exchange, asset, feedId, ct);
                 if (def is null)
                     return Results.NotFound(new { error = "feed not found", exchange, asset, feed_id = feedId });
                 return Results.Json(new { feed_id = feedId, definition = def });
             });
 
         v1.MapGet("/exchanges/{exchange}/assets/{asset}/feeds/{feedId}/aggregation-options",
-            (string exchange, string asset, string feedId, IFeedCatalog catalog) =>
+            async (string exchange, string asset, string feedId, IFeedCatalog catalog, CancellationToken ct) =>
             {
-                var entry = catalog.GetAsset(exchange, asset);
+                var entry = await catalog.GetAsset(exchange, asset, ct);
                 if (entry is null)
                     return Results.NotFound(new { error = "asset not found", exchange, asset });
 
-                var def = catalog.GetFeed(exchange, asset, feedId);
+                var def = await catalog.GetFeed(exchange, asset, feedId, ct);
                 if (def is null)
                     return Results.NotFound(new { error = "feed not found", exchange, asset, feed_id = feedId });
 

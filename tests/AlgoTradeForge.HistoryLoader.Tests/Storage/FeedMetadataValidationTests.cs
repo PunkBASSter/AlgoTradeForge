@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.Storage;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Storage;
@@ -37,12 +38,10 @@ public sealed class FeedMetadataValidationTests : IDisposable
     private static string FeedsJsonPath(string assetDir) =>
         Path.Combine(assetDir, "feeds.json");
 
-    // -------------------------------------------------------------------------
-    // P1a-7 — read-side rejection of malformed aggregated entry
-    // -------------------------------------------------------------------------
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public void Load_AggregatedFeedMissingImbalanceReconstructionMethod_Throws()
+    public async Task Load_AggregatedFeedMissingImbalanceReconstructionMethod_Throws()
     {
         var assetDir = AssetDir("BTCUSDT_BadAggregated");
 
@@ -68,15 +67,15 @@ public sealed class FeedMetadataValidationTests : IDisposable
         """;
         File.WriteAllText(FeedsJsonPath(assetDir), malformed);
 
-        var manager = new FeedSchemaManager();
-        var ex = Assert.Throws<FeedMetadataValidationException>(() => manager.Load(assetDir));
+        var manager = new FeedSchemaManager(new LocalFileStorage());
+        var ex = await Assert.ThrowsAsync<FeedMetadataValidationException>(() => manager.Load(assetDir, Ct));
 
         Assert.Contains("imbalanceReconstructionMethod", ex.Message, StringComparison.Ordinal);
         Assert.Contains("EqV_1m_1000", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Load_AggregatedFeedMissingFidelityBlock_Throws()
+    public async Task Load_AggregatedFeedMissingFidelityBlock_Throws()
     {
         var assetDir = AssetDir("BTCUSDT_NoFidelity");
 
@@ -93,13 +92,13 @@ public sealed class FeedMetadataValidationTests : IDisposable
         """;
         File.WriteAllText(FeedsJsonPath(assetDir), malformed);
 
-        var manager = new FeedSchemaManager();
-        var ex = Assert.Throws<FeedMetadataValidationException>(() => manager.Load(assetDir));
+        var manager = new FeedSchemaManager(new LocalFileStorage());
+        var ex = await Assert.ThrowsAsync<FeedMetadataValidationException>(() => manager.Load(assetDir, Ct));
         Assert.Contains("fidelity", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Load_AggregatedFeedWithExplicitNullImbalanceReconstructionMethod_Succeeds()
+    public async Task Load_AggregatedFeedWithExplicitNullImbalanceReconstructionMethod_Succeeds()
     {
         var assetDir = AssetDir("BTCUSDT_GoodAggregated");
 
@@ -123,8 +122,8 @@ public sealed class FeedMetadataValidationTests : IDisposable
         """;
         File.WriteAllText(FeedsJsonPath(assetDir), wellFormed);
 
-        var manager = new FeedSchemaManager();
-        var metadata = manager.Load(assetDir);
+        var manager = new FeedSchemaManager(new LocalFileStorage());
+        var metadata = await manager.Load(assetDir, Ct);
 
         Assert.NotNull(metadata);
         var def = metadata!.Feeds["EqV_1m_1000"];
@@ -134,7 +133,7 @@ public sealed class FeedMetadataValidationTests : IDisposable
     }
 
     [Fact]
-    public void Load_EqIWithTickSignedReconstructionMethod_Succeeds()
+    public async Task Load_EqIWithTickSignedReconstructionMethod_Succeeds()
     {
         var assetDir = AssetDir("BTCUSDT_EqI");
 
@@ -155,18 +154,13 @@ public sealed class FeedMetadataValidationTests : IDisposable
         """;
         File.WriteAllText(FeedsJsonPath(assetDir), wellFormed);
 
-        var manager = new FeedSchemaManager();
-        var metadata = manager.Load(assetDir);
+        var manager = new FeedSchemaManager(new LocalFileStorage());
+        var metadata = await manager.Load(assetDir, Ct);
 
         Assert.NotNull(metadata);
         Assert.Equal("tick_signed",
             metadata!.Feeds["EqIV_ticks_500000"].Fidelity!.ImbalanceReconstructionMethod);
     }
-
-    // -------------------------------------------------------------------------
-    // P1a-6 — write-side: imbalanceReconstructionMethod always serialized
-    //                    (even when null) on aggregated entries
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Serialize_AggregatedFeedWithNullImbalanceReconstructionMethod_EmitsKeyExplicitly()
@@ -195,12 +189,8 @@ public sealed class FeedMetadataValidationTests : IDisposable
         Assert.Contains("\"imbalanceReconstructionMethod\": null", json, StringComparison.Ordinal);
     }
 
-    // -------------------------------------------------------------------------
-    // Backward compatibility — legacy time-bar entries (no Kind) are unaffected
-    // -------------------------------------------------------------------------
-
     [Fact]
-    public void Load_LegacyFeedsJson_NoValidationErrors()
+    public async Task Load_LegacyFeedsJson_NoValidationErrors()
     {
         var assetDir = AssetDir("BTCUSDT_Legacy");
 
@@ -225,8 +215,8 @@ public sealed class FeedMetadataValidationTests : IDisposable
         """;
         File.WriteAllText(FeedsJsonPath(assetDir), legacy);
 
-        var manager = new FeedSchemaManager();
-        var metadata = manager.Load(assetDir);
+        var manager = new FeedSchemaManager(new LocalFileStorage());
+        var metadata = await manager.Load(assetDir, Ct);
 
         Assert.NotNull(metadata);
         Assert.Equal(2, metadata!.Feeds.Count);

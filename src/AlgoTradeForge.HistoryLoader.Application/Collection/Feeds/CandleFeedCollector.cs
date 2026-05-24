@@ -27,10 +27,10 @@ public sealed class CandleFeedCollector(
         var interval = feedConfig.Interval;
 
         // Ensure feeds.json has candle config
-        SchemaManager.EnsureCandleConfig(assetDir, assetConfig.DecimalDigits, interval);
+        await SchemaManager.EnsureCandleConfig(assetDir, assetConfig.DecimalDigits, interval, ct);
 
         // Resume from last written timestamp
-        var resumeTs = candleWriter.ResumeFrom(assetDir, interval);
+        var resumeTs = await candleWriter.ResumeFrom(assetDir, interval, ct);
         if (resumeTs.HasValue && resumeTs.Value >= fromMs)
             fromMs = resumeTs.Value + 1;
 
@@ -42,7 +42,7 @@ public sealed class CandleFeedCollector(
 
         if (extColumns is not null)
         {
-            SchemaManager.EnsureSchema(assetDir, FeedNames.CandleExt, interval, extColumns);
+            await SchemaManager.EnsureSchema(assetDir, FeedNames.CandleExt, interval, extColumns, ct: ct);
         }
 
         long recordCount = 0;
@@ -62,8 +62,8 @@ public sealed class CandleFeedCollector(
             catch (IOException ex)
             {
                 Logger.LogCritical(ex, "Disk I/O error writing {Feed} for {AssetDir}", FeedNames.Candles, assetDir);
-                UpdateFeedStatus(assetDir, FeedNames.Candles, interval, firstTs, lastTs, recordCount,
-                    CollectionHealth.Error, gaps);
+                await UpdateFeedStatus(assetDir, FeedNames.Candles, interval, firstTs, lastTs, recordCount,
+                    CollectionHealth.Error, gaps, ct);
                 throw;
             }
 
@@ -78,8 +78,8 @@ public sealed class CandleFeedCollector(
                 catch (IOException ex)
                 {
                     Logger.LogCritical(ex, "Disk I/O error writing {Feed} for {AssetDir}", FeedNames.CandleExt, assetDir);
-                    UpdateFeedStatus(assetDir, FeedNames.CandleExt, interval, firstTs, lastTs, recordCount,
-                        CollectionHealth.Error, gaps);
+                    await UpdateFeedStatus(assetDir, FeedNames.CandleExt, interval, firstTs, lastTs, recordCount,
+                        CollectionHealth.Error, gaps, ct);
                     throw;
                 }
             }
@@ -94,11 +94,11 @@ public sealed class CandleFeedCollector(
 
         if (recordCount > 0)
         {
-            UpdateFeedStatus(assetDir, FeedNames.Candles, interval, firstTs, lastTs, recordCount,
-                newGaps: gaps);
+            await UpdateFeedStatus(assetDir, FeedNames.Candles, interval, firstTs, lastTs, recordCount,
+                newGaps: gaps, ct: ct);
             if (extColumns is not null)
-                UpdateFeedStatus(assetDir, FeedNames.CandleExt, interval, firstTs, lastTs, recordCount,
-                    newGaps: gaps);
+                await UpdateFeedStatus(assetDir, FeedNames.CandleExt, interval, firstTs, lastTs, recordCount,
+                    newGaps: gaps, ct: ct);
         }
 
         if (recordCount > 0)

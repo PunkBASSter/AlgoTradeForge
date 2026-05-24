@@ -38,7 +38,7 @@ internal static class AggregationEndpoints
         string InputMode,
         string? ConvenienceInput);
 
-    private static IResult PostAggregate(
+    private static async Task<IResult> PostAggregate(
         string exchange,
         string asset,
         AggregateRequest body,
@@ -47,7 +47,8 @@ internal static class AggregationEndpoints
         ISchemaManager schema,
         IAggregationJobRegistry registry,
         IAggregationJobQueue queue,
-        IAggregationTickJobQueue tickQueue)
+        IAggregationTickJobQueue tickQueue,
+        CancellationToken ct)
     {
         // Path / input validation (422)
         if (!FeedIdValidator.TryValidatePathComponent(exchange, out var pathErr1))
@@ -68,11 +69,11 @@ internal static class AggregationEndpoints
             return Results.NotFound(new { error = "asset_not_configured", exchange, asset });
 
         // Source feed eligibility (422)
-        var sourceFeed = catalog.GetFeed(exchange, asset, body.SourceFeedId);
+        var sourceFeed = await catalog.GetFeed(exchange, asset, body.SourceFeedId, ct);
         if (sourceFeed is null)
             return Unprocessable("source_feed_not_found", $"source_feed_id '{body.SourceFeedId}' is not present in feeds.json.");
 
-        var assetEntry = catalog.GetAsset(exchange, asset)!;
+        var assetEntry = (await catalog.GetAsset(exchange, asset, ct))!;
         var hasCandleExt = assetEntry.Feeds.Any(f =>
             string.Equals(f.Id, "candle-ext", StringComparison.Ordinal));
 
@@ -187,7 +188,7 @@ internal static class AggregationEndpoints
         else
             sourceKind = DataFeedKind.TimeBar;
 
-        var manifest = schema.Load(assetDir);
+        var manifest = await schema.Load(assetDir, ct);
         if (manifest?.Feeds.TryGetValue(outcomeFeedId, out var existing) == true)
         {
             // Legacy feeds (no last_ts) can't be safely continued — Range/Renko drop trailing
@@ -332,13 +333,14 @@ internal static class AggregationEndpoints
         }
     }
 
-    private static IResult DeleteFeed(
+    private static async Task<IResult> DeleteFeed(
         string exchange,
         string asset,
         string feedId,
         IOptionsMonitor<HistoryLoaderOptions> options,
         ISchemaManager schema,
-        IAggregationJobRegistry registry)
+        IAggregationJobRegistry registry,
+        CancellationToken ct)
     {
         if (!FeedIdValidator.TryValidatePathComponent(exchange, out var pathErr1))
             return Unprocessable("invalid_path", pathErr1!);
@@ -355,7 +357,7 @@ internal static class AggregationEndpoints
             return Results.NotFound(new { error = "asset_not_configured", exchange, asset });
 
         var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, assetConfig);
-        var manifest = schema.Load(assetDir);
+        var manifest = await schema.Load(assetDir, ct);
         if (manifest is null || !manifest.Feeds.TryGetValue(feedId, out var def))
             return Results.NotFound(new { error = "feed_not_found", feed_id = feedId });
 
@@ -400,9 +402,9 @@ internal static class AggregationEndpoints
         if (sidecarDir is not null) SafeRecursiveDelete(sidecarDir);
 
         if (sidecarFeedId is not null)
-            schema.RemoveFeedAndSidecar(assetDir, feedId, sidecarFeedId);
+            await schema.RemoveFeedAndSidecar(assetDir, feedId, sidecarFeedId, ct);
         else
-            schema.RemoveFeed(assetDir, feedId);
+            await schema.RemoveFeed(assetDir, feedId, ct);
 
         return Results.NoContent();
     }

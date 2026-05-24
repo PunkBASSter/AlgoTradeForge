@@ -1,0 +1,331 @@
+using System.Text;
+using AlgoTradeForge.Storage;
+using Xunit;
+
+namespace AlgoTradeForge.Infrastructure.Tests.IO;
+
+/// <summary>Contract suite for any <see cref="IFileStorage"/> impl; subclasses inherit to run against their backend.</summary>
+public abstract class FileStorageContractTests : IDisposable
+{
+    protected abstract IFileStorage Storage { get; }
+    protected abstract string Prefix { get; }
+    public abstract void Dispose();
+
+    private string Key(string name) => $"{Prefix}/{name}";
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private static async Task<List<string>> Collect(IAsyncEnumerable<string> source)
+    {
+        var result = new List<string>();
+        await foreach (var item in source) result.Add(item);
+        return result;
+    }
+
+    [Fact]
+    public async Task RoundTripText_ReturnsSameContent()
+    {
+        var key = Key("hello.txt");
+        await Storage.WriteAllText(key, "hello world", Encoding.UTF8, Ct);
+
+        Assert.True(await Storage.Exists(key, Ct));
+        Assert.Equal("hello world", await Storage.ReadAllText(key, Ct));
+    }
+
+    [Fact]
+    public async Task RoundTripBytes_ReturnsSameContent()
+    {
+        var key = Key("blob.bin");
+        var payload = new byte[] { 0, 1, 2, 3, 4, 5, 250, 251, 252, 253, 254, 255 };
+        await Storage.WriteAllBytes(key, payload, Ct);
+
+        Assert.Equal(payload, await Storage.ReadAllBytes(key, Ct));
+    }
+
+    [Fact]
+    public async Task WriteAllLines_ReadAllLines_PreservesOrder()
+    {
+        var key = Key("lines.csv");
+        var lines = new[] { "a,1", "b,2", "c,3" };
+        await Storage.WriteAllLines(key, lines, Ct);
+
+        Assert.Equal(lines, await Storage.ReadAllLines(key, Ct));
+    }
+
+    [Fact]
+    public async Task ReadLines_Streams()
+    {
+        var key = Key("stream.csv");
+        await Storage.WriteAllLines(key, new[] { "x", "y", "z" }, Ct);
+
+        var collected = await Collect(Storage.ReadLines(key, Ct));
+        Assert.Equal(new[] { "x", "y", "z" }, collected);
+    }
+
+    [Fact]
+    public async Task Exists_ReturnsFalse_ForMissingKey()
+    {
+        Assert.False(await Storage.Exists(Key("does-not-exist.txt"), Ct));
+    }
+
+    [Fact]
+    public async Task ListKeys_FiltersBySuffix()
+    {
+        await Storage.WriteAllText(Key("list/a.csv"), "1", ct: Ct);
+        await Storage.WriteAllText(Key("list/b.csv"), "2", ct: Ct);
+        await Storage.WriteAllText(Key("list/c.txt"), "3", ct: Ct);
+
+        var csvKeys = await Collect(Storage.ListKeys(Key("list"), suffix: ".csv", ct: Ct));
+        Assert.Equal(2, csvKeys.Count);
+        Assert.All(csvKeys, k => Assert.EndsWith(".csv", k));
+    }
+
+    [Fact]
+    public async Task ListKeys_NonRecursive_ReturnsOnlyDirectChildren()
+    {
+        await Storage.WriteAllText(Key("flat/top.csv"), "1", ct: Ct);
+        await Storage.WriteAllText(Key("flat/nested/deep.csv"), "2", ct: Ct);
+
+        var topOnly = await Collect(Storage.ListKeys(Key("flat"), recursive: false, ct: Ct));
+        Assert.Single(topOnly);
+    }
+
+    [Fact]
+    public async Task OpenWriteSession_ExplicitCommit_PublishesAtomically()
+    {
+        var key = Key("session-commit.txt");
+        await using (var session = await Storage.OpenWriteSession(key, Ct))
+        {
+            await session.Stream.WriteAsync(Encoding.UTF8.GetBytes("committed"), Ct);
+            await session.Commit(Ct);
+        }
+
+        Assert.True(await Storage.Exists(key, Ct));
+        Assert.Equal("committed", await Storage.ReadAllText(key, Ct));
+    }
+
+    [Fact]
+    public async Task OpenWriteSession_ExplicitAbort_LeavesNoVisibleObject()
+    {
+        var key = Key("session-abort.txt");
+        await using (var session = await Storage.OpenWriteSession(key, Ct))
+        {
+            await session.Stream.WriteAsync(Encoding.UTF8.GetBytes("should not be visible"), Ct);
+            await session.Abort(Ct);
+        }
+
+        Assert.False(await Storage.Exists(key, Ct));
+    }
+
+    [Fact]
+    public async Task OpenWriteSession_DisposeWithoutCommit_LeavesNoVisibleObject()
+    {
+        // Default-abort protects against partial publish on cancellation/exception mid-write.
+        var key = Key("session-implicit-abort.txt");
+        await using (var session = await Storage.OpenWriteSession(key, Ct))
+        {
+            await session.Stream.WriteAsync(Encoding.UTF8.GetBytes("forgot to commit"), Ct);
+        }
+
+        Assert.False(await Storage.Exists(key, Ct));
+    }
+
+    [Fact]
+    public async Task OpenWriteSession_OverwritesExistingObject()
+    {
+        var key = Key("overwrite.txt");
+        await Storage.WriteAllText(key, "v1", Encoding.UTF8, Ct);
+
+        await using (var session = await Storage.OpenWriteSession(key, Ct))
+        {
+            await session.Stream.WriteAsync(Encoding.UTF8.GetBytes("v2"), Ct);
+            await session.Commit(Ct);
+        }
+
+        Assert.Equal("v2", await Storage.ReadAllText(key, Ct));
+    }
+
+    [Fact]
+    public async Task Move_RenamesKey()
+    {
+        var src = Key("move-src.txt");
+        var dst = Key("move-dst.txt");
+        await Storage.WriteAllText(src, "payload", Encoding.UTF8, Ct);
+
+        await Storage.Move(src, dst, overwrite: false, ct: Ct);
+
+        Assert.False(await Storage.Exists(src, Ct));
+        Assert.True(await Storage.Exists(dst, Ct));
+        Assert.Equal("payload", await Storage.ReadAllText(dst, Ct));
+    }
+
+    [Fact]
+    public async Task Delete_RemovesObject()
+    {
+        var key = Key("delete-me.txt");
+        await Storage.WriteAllText(key, "x", Encoding.UTF8, Ct);
+
+        await Storage.Delete(key, Ct);
+
+        Assert.False(await Storage.Exists(key, Ct));
+    }
+
+    [Fact]
+    public async Task Delete_IsNoOpForMissingKey()
+    {
+        // Should not throw — idempotent semantics.
+        await Storage.Delete(Key("never-existed.txt"), Ct);
+    }
+
+    [Fact]
+    public async Task DeleteByPrefix_ClearsNestedKeys()
+    {
+        await Storage.WriteAllText(Key("zone/a.csv"), "1", ct: Ct);
+        await Storage.WriteAllText(Key("zone/sub/b.csv"), "2", ct: Ct);
+        await Storage.WriteAllText(Key("zone/sub/c.csv"), "3", ct: Ct);
+
+        await Storage.DeleteByPrefix(Key("zone"), Ct);
+
+        Assert.Empty(await Collect(Storage.ListKeys(Key("zone"), ct: Ct)));
+    }
+
+    [Fact]
+    public async Task ReadWithEtag_ReturnsNull_WhenKeyAbsent()
+    {
+        var result = await Storage.ReadWithEtag(Key("absent.json"), Ct);
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task ReadWithEtag_ReturnsContentAndEtag_WhenPresent()
+    {
+        var key = Key("etag/present.json");
+        await Storage.WriteAllText(key, "{\"x\":1}", Encoding.UTF8, Ct);
+
+        var result = await Storage.ReadWithEtag(key, Ct);
+
+        Assert.NotNull(result);
+        Assert.Equal("{\"x\":1}", result!.Content);
+        Assert.False(string.IsNullOrEmpty(result.ETag));
+    }
+
+    [Fact]
+    public async Task ReadWithEtag_EtagIsStable_ForUnchangedContent()
+    {
+        var key = Key("etag/stable.json");
+        await Storage.WriteAllText(key, "stable-content", Encoding.UTF8, Ct);
+
+        var a = await Storage.ReadWithEtag(key, Ct);
+        var b = await Storage.ReadWithEtag(key, Ct);
+
+        Assert.Equal(a!.ETag, b!.ETag);
+    }
+
+    [Fact]
+    public async Task ReadWithEtag_EtagDiffers_AfterContentChange()
+    {
+        var key = Key("etag/changes.json");
+        await Storage.WriteAllText(key, "first", Encoding.UTF8, Ct);
+        var first = await Storage.ReadWithEtag(key, Ct);
+
+        await Storage.WriteAllText(key, "second", Encoding.UTF8, Ct);
+        var second = await Storage.ReadWithEtag(key, Ct);
+
+        Assert.NotEqual(first!.ETag, second!.ETag);
+    }
+
+    [Fact]
+    public async Task ReadWithEtag_EtagIsContentAddressed_SameBytesAtDifferentKeys()
+    {
+        var key1 = Key("etag/addr-a.json");
+        var key2 = Key("etag/addr-b.json");
+        await Storage.WriteAllText(key1, "same-content", Encoding.UTF8, Ct);
+        await Storage.WriteAllText(key2, "same-content", Encoding.UTF8, Ct);
+
+        var a = await Storage.ReadWithEtag(key1, Ct);
+        var b = await Storage.ReadWithEtag(key2, Ct);
+
+        Assert.Equal(a!.ETag, b!.ETag);
+    }
+
+    [Fact]
+    public async Task WriteIfMatch_CreatesFile_WhenExpectedNullAndAbsent()
+    {
+        var key = Key("cas/create.json");
+        var etag = await Storage.WriteIfMatch(key, "fresh", expectedETag: null, Ct);
+
+        Assert.False(string.IsNullOrEmpty(etag));
+        Assert.Equal("fresh", await Storage.ReadAllText(key, Ct));
+    }
+
+    [Fact]
+    public async Task WriteIfMatch_Throws_WhenExpectedNullButPresent()
+    {
+        var key = Key("cas/already-exists.json");
+        await Storage.WriteAllText(key, "existing", Encoding.UTF8, Ct);
+
+        var ex = await Assert.ThrowsAsync<ConcurrencyConflictException>(() =>
+            Storage.WriteIfMatch(key, "new", expectedETag: null, Ct));
+
+        Assert.Equal(key, ex.Key);
+        Assert.Null(ex.ExpectedETag);
+        Assert.False(string.IsNullOrEmpty(ex.ActualETag));
+        Assert.Equal("existing", await Storage.ReadAllText(key, Ct));
+    }
+
+    [Fact]
+    public async Task WriteIfMatch_Succeeds_WhenEtagMatches()
+    {
+        var key = Key("cas/match.json");
+        await Storage.WriteAllText(key, "v1", Encoding.UTF8, Ct);
+        var current = await Storage.ReadWithEtag(key, Ct);
+
+        var newEtag = await Storage.WriteIfMatch(key, "v2", current!.ETag, Ct);
+
+        Assert.NotEqual(current.ETag, newEtag);
+        Assert.Equal("v2", await Storage.ReadAllText(key, Ct));
+    }
+
+    [Fact]
+    public async Task WriteIfMatch_Throws_WhenEtagStale()
+    {
+        var key = Key("cas/stale.json");
+        await Storage.WriteAllText(key, "v1", Encoding.UTF8, Ct);
+        var stale = await Storage.ReadWithEtag(key, Ct);
+        await Storage.WriteAllText(key, "v2", Encoding.UTF8, Ct);
+
+        var ex = await Assert.ThrowsAsync<ConcurrencyConflictException>(() =>
+            Storage.WriteIfMatch(key, "v3", stale!.ETag, Ct));
+
+        Assert.Equal(stale!.ETag, ex.ExpectedETag);
+        Assert.NotEqual(stale.ETag, ex.ActualETag);
+        Assert.Equal("v2", await Storage.ReadAllText(key, Ct));
+    }
+
+    [Fact]
+    public async Task WriteIfMatch_CreatesParentDirectory()
+    {
+        var key = Key("cas/nested/deeper/leaf.json");
+
+        await Storage.WriteIfMatch(key, "hi", expectedETag: null, Ct);
+
+        Assert.Equal("hi", await Storage.ReadAllText(key, Ct));
+    }
+
+    [Fact]
+    public async Task Reader_DoesNotBlock_ConcurrentWriterRename()
+    {
+        var key = Key("share-delete/race.json");
+        await Storage.WriteAllText(key, "v1", Encoding.UTF8, Ct);
+
+        await using var openRead = await Storage.OpenRead(key, Ct);
+
+        await Storage.WriteAllText(key, "v2", Encoding.UTF8, Ct);
+
+        // The in-flight reader's handle retains its inode; it should still see v1.
+        using var reader = new StreamReader(openRead);
+        Assert.Equal("v1", await reader.ReadToEndAsync(Ct));
+
+        // A fresh read after the rename should see v2.
+        Assert.Equal("v2", await Storage.ReadAllText(key, Ct));
+    }
+}

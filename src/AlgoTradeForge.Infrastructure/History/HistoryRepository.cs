@@ -13,23 +13,23 @@ public sealed class HistoryRepository(
     IInt64BarLoader barLoader,
     IOptions<CandleStorageOptions> storageOptions) : IHistoryRepository
 {
-    public TimeSeries<Int64Bar> Load(DataSubscription subscription, DateOnly from, DateOnly to)
-        => LoadTimeBar(subscription.Asset, subscription.TimeFrame, from, to);
+    public Task<TimeSeries<Int64Bar>> Load(DataSubscription subscription, DateOnly from, DateOnly to, CancellationToken ct = default)
+        => LoadTimeBar(subscription.Asset, subscription.TimeFrame, from, to, ct);
 
-    public TimeSeries<Int64Bar> Load(Asset asset, DataFeedSubscription subscription, DateOnly from, DateOnly to)
+    public Task<TimeSeries<Int64Bar>> Load(Asset asset, DataFeedSubscription subscription, DateOnly from, DateOnly to, CancellationToken ct = default)
     {
         var dataRoot = storageOptions.Value.DataRoot;
         var assetDir = AssetDirectoryName.From(asset);
 
         return subscription switch
         {
-            TimeBarSubscription tb => LoadTimeBar(asset, tb.TimeFrame, from, to),
+            TimeBarSubscription tb => LoadTimeBar(asset, tb.TimeFrame, from, to, ct),
             AltBarSubscription ab => barLoader.Load(
                 new DataFeedDescriptor(dataRoot, asset.Exchange, assetDir, ab.FeedId, DataFeedKind.AltBar),
-                from, to),
+                from, to, ct),
             TickSubscription => barLoader.Load(
                 new DataFeedDescriptor(dataRoot, asset.Exchange, assetDir, "ticks", DataFeedKind.Tick),
-                from, to),
+                from, to, ct),
             SideFeedSubscription => throw new ArgumentException(
                 "Side feeds cannot be loaded as a primary OHLCV series. " +
                 "Side feeds are FeedSeries, not TimeSeries<Int64Bar> — bind them via IFeedContext / FeedContextBuilder.",
@@ -39,7 +39,7 @@ public sealed class HistoryRepository(
         };
     }
 
-    private TimeSeries<Int64Bar> LoadTimeBar(Asset asset, TimeFrame timeFrame, DateOnly from, DateOnly to)
+    private async Task<TimeSeries<Int64Bar>> LoadTimeBar(Asset asset, TimeFrame timeFrame, DateOnly from, DateOnly to, CancellationToken ct)
     {
         var sourceInterval = storageOptions.Value.SourceInterval;
 
@@ -55,7 +55,7 @@ public sealed class HistoryRepository(
             FeedId: TimeFrameFormatter.Format(sourceInterval),
             Kind: DataFeedKind.TimeBar);
 
-        var raw = barLoader.Load(descriptor, from, to);
+        var raw = await barLoader.Load(descriptor, from, to, ct);
 
         return timeFrame == sourceInterval ? raw : raw.Resample(timeFrame);
     }

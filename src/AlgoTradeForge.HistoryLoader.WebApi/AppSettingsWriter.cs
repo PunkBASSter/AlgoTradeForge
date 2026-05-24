@@ -1,11 +1,22 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using AlgoTradeForge.Storage.Threading;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.HistoryLoader.WebApi;
 
-internal sealed class AppSettingsWriter(string appSettingsPath, ILogger<AppSettingsWriter> logger)
+/// <summary>
+/// Persists discovered <c>HistoryStart</c> dates back to <c>appsettings.json</c>. Binds
+/// <see cref="LocalFileStorage"/> directly (not <c>IFileStorage</c>) because the binary's
+/// content-root <c>appsettings.json</c> is host configuration, not data-root content —
+/// "appsettings.json on S3" would be nonsense.
+/// </summary>
+internal sealed class AppSettingsWriter(
+    string appSettingsPath,
+    LocalFileStorage storage,
+    ILogger<AppSettingsWriter> logger)
     : ISettingsWriter
 {
     private static readonly JsonSerializerOptions WriteOptions = new()
@@ -13,24 +24,22 @@ internal sealed class AppSettingsWriter(string appSettingsPath, ILogger<AppSetti
         WriteIndented = true
     };
 
-    private readonly Lock _lock = new();
+    private readonly SemaphoreSlim _gate = new(1, 1);
 
-    public void UpdateFeedHistoryStart(string symbol, string assetType,
-        string feedName, string feedInterval, DateOnly historyStart)
+    public async Task UpdateFeedHistoryStart(string symbol, string assetType,
+        string feedName, string feedInterval, DateOnly historyStart, CancellationToken ct = default)
     {
-        lock (_lock)
-        {
-            UpdateFeedHistoryStartCore(symbol, assetType, feedName, feedInterval, historyStart);
-        }
+        using var _ = await _gate.LockAsync(ct);
+        await UpdateFeedHistoryStartCore(symbol, assetType, feedName, feedInterval, historyStart, ct);
     }
 
-    private void UpdateFeedHistoryStartCore(string symbol, string assetType,
-        string feedName, string feedInterval, DateOnly historyStart)
+    private async Task UpdateFeedHistoryStartCore(string symbol, string assetType,
+        string feedName, string feedInterval, DateOnly historyStart, CancellationToken ct)
     {
         JsonNode? root;
         try
         {
-            var json = File.ReadAllText(appSettingsPath);
+            var json = await storage.ReadAllText(appSettingsPath, ct);
             root = JsonNode.Parse(json);
         }
         catch (Exception ex)
@@ -57,10 +66,7 @@ internal sealed class AppSettingsWriter(string appSettingsPath, ILogger<AppSetti
 
         feedNode["HistoryStart"] = historyStart.ToString("O");
 
-        // Atomic write: write to tmp file, then rename over the original.
-        var tmpPath = appSettingsPath + ".tmp";
-        File.WriteAllText(tmpPath, root!.ToJsonString(WriteOptions));
-        File.Move(tmpPath, appSettingsPath, overwrite: true);
+        await storage.WriteAllText(appSettingsPath, root!.ToJsonString(WriteOptions), ct: ct);
 
         logger.LogInformation(
             "Persisted HistoryStart={HistoryStart} for {Symbol}/{Type}/{Feed}/{Interval}",

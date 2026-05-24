@@ -49,7 +49,7 @@ internal sealed class BookTickerStreamService(
             return;
         }
 
-        EnsureSchemas(spotSymbols, futuresSymbols);
+        await EnsureSchemas(spotSymbols, futuresSymbols, stoppingToken);
 
         var tasks = new List<Task>();
         if (spotSymbols.Count > 0)
@@ -220,7 +220,7 @@ internal sealed class BookTickerStreamService(
                     continue;
 
                 var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-                schemaManager.EnsureSchema(assetDir, FeedNames.BookTicker, "", BookTickerColumns);
+                await schemaManager.EnsureSchema(assetDir, FeedNames.BookTicker, "", BookTickerColumns, ct: ct);
                 bookTickerWriter.Write(assetDir, record);
                 totalWritten++;
 
@@ -240,7 +240,7 @@ internal sealed class BookTickerStreamService(
             var now = DateTimeOffset.UtcNow;
             if (now - lastStatusFlush >= StatusFlushInterval)
             {
-                FlushStatus(statusTracker);
+                await FlushStatus(statusTracker, ct);
                 lastStatusFlush = now;
             }
             if (now - lastHeartbeat >= HeartbeatInterval)
@@ -252,7 +252,7 @@ internal sealed class BookTickerStreamService(
             }
         }
 
-        FlushStatus(statusTracker);
+        await FlushStatus(statusTracker, ct);
     }
 
     /// <summary>
@@ -315,7 +315,7 @@ internal sealed class BookTickerStreamService(
         }
     }
 
-    private void EnsureSchemas(IReadOnlyList<string> spotSymbols, IReadOnlyList<string> futuresSymbols)
+    private async Task EnsureSchemas(IReadOnlyList<string> spotSymbols, IReadOnlyList<string> futuresSymbols, CancellationToken ct)
     {
         var config = options.CurrentValue;
         var spotSet = spotSymbols.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -329,18 +329,18 @@ internal sealed class BookTickerStreamService(
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
-            schemaManager.EnsureSchema(assetDir, FeedNames.BookTicker, "", BookTickerColumns);
+            await schemaManager.EnsureSchema(assetDir, FeedNames.BookTicker, "", BookTickerColumns, ct: ct);
         }
     }
 
-    private void FlushStatus(Dictionary<string, (long count, long? firstTs, long? lastTs)> tracker)
+    private async Task FlushStatus(Dictionary<string, (long count, long? firstTs, long? lastTs)> tracker, CancellationToken ct)
     {
         foreach (var (assetDir, st) in tracker)
         {
             if (st.count == 0) continue;
 
-            var existing = feedStatusStore.Load(assetDir, FeedNames.BookTicker, "");
-            feedStatusStore.Save(assetDir, FeedNames.BookTicker, "", new FeedStatus
+            var existing = await feedStatusStore.Load(assetDir, FeedNames.BookTicker, "", ct);
+            await feedStatusStore.Save(assetDir, FeedNames.BookTicker, "", new FeedStatus
             {
                 FeedName = FeedNames.BookTicker,
                 Interval = "",
@@ -349,7 +349,7 @@ internal sealed class BookTickerStreamService(
                 LastRunUtc = DateTimeOffset.UtcNow,
                 RecordCount = (existing?.RecordCount ?? 0) + st.count,
                 Health = CollectionHealth.Healthy
-            });
+            }, ct);
         }
 
         tracker.Clear();
