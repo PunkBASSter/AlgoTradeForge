@@ -16,6 +16,14 @@ namespace AlgoTradeForge.Storage;
 /// when that matters. <see cref="WriteIfMatch"/> is the exception: it serializes its CAS-commit
 /// critical section through a private per-key semaphore (<c>_writeLocks</c>), so multiple
 /// <see cref="WriteIfMatch"/> calls on the same key are safe without external coordination.
+/// <c>ct</c> propagation policy: honored on operations that can be slow or unbounded
+/// (<see cref="ListKeys"/>, <see cref="DeleteByPrefix"/>, <see cref="WriteIfMatch"/>'s lock
+/// acquire) so callers can abort them under load; intentionally NOT propagated to short
+/// fast-path file reads/writes (<see cref="ReadAllText"/>, <see cref="ReadWithEtag"/>, etc.)
+/// where the operation completes faster than the OS can deliver the cancel — propagating
+/// there only surfaces first-chance breaks on routine client disconnects with no behavioral
+/// benefit. S3FileStorage propagates <c>ct</c> everywhere because network latency makes
+/// mid-call cancellation meaningful for every operation.
 /// </summary>
 public sealed class LocalFileStorage : IFileStorage
 {
@@ -107,7 +115,7 @@ public sealed class LocalFileStorage : IFileStorage
     {
         await using var fs = new FileStream(Resolve(key), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, DefaultBufferSize, useAsync: true);
         using var reader = new StreamReader(fs);
-        return await reader.ReadToEndAsync(ct);
+        return await reader.ReadToEndAsync();
     }
 
     public async Task<string[]> ReadAllLines(string key, CancellationToken ct = default)
@@ -122,20 +130,20 @@ public sealed class LocalFileStorage : IFileStorage
     {
         await using var fs = new FileStream(Resolve(key), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, DefaultBufferSize, useAsync: true);
         using var reader = new StreamReader(fs);
-        while (await reader.ReadLineAsync(ct) is { } line)
+        while (await reader.ReadLineAsync() is { } line)
             yield return line;
     }
 
     public Task<byte[]> ReadAllBytes(string key, CancellationToken ct = default)
-        => File.ReadAllBytesAsync(Resolve(key), ct);
+        => File.ReadAllBytesAsync(Resolve(key));
 
     public async Task WriteAllText(string key, string content, Encoding? encoding = null, CancellationToken ct = default)
     {
         await using var session = await OpenWriteSession(key, ct);
         var enc = encoding ?? new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         var bytes = enc.GetBytes(content);
-        await session.Stream.WriteAsync(bytes, ct);
-        await session.Commit(ct);
+        await session.Stream.WriteAsync(bytes);
+        await session.Commit();
     }
 
     public async Task WriteAllLines(string key, IEnumerable<string> lines, CancellationToken ct = default)
@@ -144,18 +152,17 @@ public sealed class LocalFileStorage : IFileStorage
         var writer = new StreamWriter(session.Stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         foreach (var line in lines)
         {
-            ct.ThrowIfCancellationRequested();
-            await writer.WriteLineAsync(line.AsMemory(), ct);
+            await writer.WriteLineAsync(line.AsMemory());
         }
-        await writer.FlushAsync(ct);
-        await session.Commit(ct);
+        await writer.FlushAsync();
+        await session.Commit();
     }
 
     public async Task WriteAllBytes(string key, ReadOnlyMemory<byte> bytes, CancellationToken ct = default)
     {
         await using var session = await OpenWriteSession(key, ct);
-        await session.Stream.WriteAsync(bytes, ct);
-        await session.Commit(ct);
+        await session.Stream.WriteAsync(bytes);
+        await session.Commit();
     }
 
     public Task<IObjectWriteSession> OpenWriteSession(string key, CancellationToken ct = default)
@@ -210,7 +217,7 @@ public sealed class LocalFileStorage : IFileStorage
         await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read,
             FileShare.ReadWrite | FileShare.Delete, DefaultBufferSize, useAsync: true);
         using var reader = new StreamReader(fs);
-        var content = await reader.ReadToEndAsync(ct);
+        var content = await reader.ReadToEndAsync();
         return new StoredObject(content, EtagOf(content));
     }
 
@@ -223,14 +230,11 @@ public sealed class LocalFileStorage : IFileStorage
         return Convert.ToHexString(hash);
     }
 
-    // On Windows, File.Move(overwrite:true) fails with UnauthorizedAccessException when the
-    // destination has any open handle, regardless of FileShare.Delete on those handles.
-    // Deleting the destination first unlinks its directory entry; existing open handles retain
-    // their inode reference (reads continue), while the subsequent Move has no target to replace.
-    // Note: there is a brief window between Delete(dst) and Move(src, dst) where the destination
-    // filename does not exist. Concurrent readers in that window observe Exists == false /
-    // FileNotFoundException / ReadWithEtag → null. Callers must tolerate this transient state —
-    // FeedSchemaManager.UpdateWithRetry handles it via its conflict-retry loop.
+    // Windows MoveFileEx(REPLACE_EXISTING) denies access if dst has any open handle, even with
+    // FileShare.Delete. Delete-then-rename works because the unlink leaves open handles pointing
+    // at the now-detached inode; readers complete on their data while the new file takes the name.
+    // Brief window between Delete and Move where dst is absent — concurrent readers see null /
+    // FileNotFoundException; FeedSchemaManager.UpdateWithRetry's CAS-retry loop covers it.
     private static void AtomicReplace(string src, string dst)
     {
         File.Delete(dst); // no-op when dst is absent (BCL contract)
@@ -253,8 +257,8 @@ public sealed class LocalFileStorage : IFileStorage
                          FileShare.Read, DefaultBufferSize, useAsync: true))
         {
             var bytes = Encoding.UTF8.GetBytes(content);
-            await fs.WriteAsync(bytes, ct);
-            await fs.FlushAsync(ct);
+            await fs.WriteAsync(bytes);
+            await fs.FlushAsync();
             fs.Flush(flushToDisk: true);
         }
         AtomicReplace(tmp, path);
@@ -284,7 +288,7 @@ public sealed class LocalFileStorage : IFileStorage
             if (_aborted) throw new InvalidOperationException("Cannot commit a session that was aborted.");
             if (_stream is null) throw new ObjectDisposedException(nameof(LocalWriteSession));
 
-            await _stream.FlushAsync(ct);
+            await _stream.FlushAsync();
             // Drive contents past the OS cache before the rename. Without flushToDisk:true, NTFS
             // can commit the new file length on unclean shutdown but leave the data pages zeroed,
             // producing a same-size, all-zero file that crashes the next deserialize.

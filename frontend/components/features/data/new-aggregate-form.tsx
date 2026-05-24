@@ -33,17 +33,29 @@ interface Props {
    * lists `sourceFeed` plus these; when undefined, runs in single-source mode.
    */
   eligibleSources?: FeedCatalogEntry[];
+  /** Pre-populated when the user clicked a "-" cell whose column id parses to a known type. */
+  initialTypeCode?: string;
+  /** Pre-populated when the user clicked a "-" cell whose column id encodes a threshold. */
+  initialThreshold?: string;
   /** Called with the upstream-assigned jobId on 202; parent persists for SSE resume. */
   onJobAccepted?: (jobId: string, outcomeFeedIdHint: string) => void;
 }
 
-export function NewAggregateForm({ exchange, asset, sourceFeed, eligibleSources, onJobAccepted }: Props) {
+export function NewAggregateForm({
+  exchange,
+  asset,
+  sourceFeed,
+  eligibleSources,
+  initialTypeCode,
+  initialThreshold,
+  onJobAccepted,
+}: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const [selectedSourceId, setSelectedSourceId] = useState<string>(sourceFeed.id);
-  const [typeCode, setTypeCode] = useState<string>("");
-  const [thresholdInput, setThresholdInput] = useState("");
+  const [typeCode, setTypeCode] = useState<string>(initialTypeCode ?? "");
+  const [thresholdInput, setThresholdInput] = useState(initialThreshold ?? "");
 
   // Always include the primary sourceFeed; dedup against eligibleSources which may
   // include the same id when computed loosely upstream.
