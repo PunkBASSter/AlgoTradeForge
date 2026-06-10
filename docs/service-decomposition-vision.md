@@ -13,6 +13,37 @@ Owner decisions baked into this vision:
 - **HistoryLoader is also a role, not a place:** same binary, two instances, per-site collector config split by **backfillability**. Cloud instance: 24/7 collectors for feeds that cannot be re-fetched later (OI, ratios, taker volume, liquidations, funding as it happens) plus whatever its site needs locally (e.g. klines for LiveHost bar seeding). Local instance: deep-backfill importer + scheduled daily catch-up of re-fetchable feeds (klines via REST) + the S3 pull-sync running as one more scheduled collector. **Sole-writer-per-backend is held per instance:** HistoryLoader@cloud is the only writer of the S3 backend, HistoryLoader@local the only writer of the local DataRoot — including synced copies, since sync runs inside it. Exception: LiveHost-owned raw relay prefixes (see §2), which carry raw events only, never canonical partitions or manifests.
 - **Exchange connectivity is capability-driven, not uniform (Q7 resolved):** on venues with cheap concurrent access (crypto), LiveHost and HistoryLoader connect independently. On single-session venues (Interactive Brokers, MT/dealer FIX — one login per account, market data and orders share the session), LiveHost owns the session and relays raw market events through an append-only JSONL log on `IFileStorage`; HistoryLoader tails it as one more collector. **No broker, no connection proxy** — see §6 Q7 for rationale and the relay contract.
 - **LiveHost is also a role, not a place:** one binary, N instances partitioned by venue class via config — `LiveHost@crypto` (Binance/Bybit) now; `LiveHost@ib` (with its IB Gateway sidecar) or `LiveHost@fx` later, when those connectors exist. Blast-radius isolation (a crypto connector bug never restarts an IB session) and free placement per venue (latency/region). Build the second instance when the second venue class arrives, not before.
+- **IaC + CI/CD from day one (§0):** Terraform (hcloud) in a separate **private infra repo (does not exist yet — created at M1)**; GitHub Actions in the app repo builds, tests, publishes per-host images to GHCR, and deploys over SSH — automatically for stateless/recoverable services, manually gated for LiveHost. No k8s (Q5 stands); docker-compose remains the runtime.
+
+## 0. Repositories, IaC & CI/CD
+
+**Seam rule:** anything that changes when the *code* changes lives in the app repo; anything that changes when the *infrastructure* changes lives in the private IaC repo.
+
+| Layer | Lives in | Changes when |
+|---|---|---|
+| Dockerfiles (one per host), all compose files (incl. cloud), config profiles, Caddyfile | app repo `deploy/` + `src/*/Dockerfile` | code/topology changes |
+| Servers, firewall, DNS, bucket, cloud-init | IaC repo (private, to be created) | infrastructure changes |
+| Secrets | VPS `.env` + GitHub Actions secrets | rotation only |
+| Collection/runtime config | `collection.json` on `IFileStorage` | operationally, via API |
+
+The cloud compose file deliberately lives in the **app** repo: when a milestone adds a container (gateway at M5), the same PR adds code + compose entry. The IaC repo must never need a commit because the service topology evolved.
+
+**Config profiles:** one dimension, one env var — `ATF_PROFILE` — selects `appsettings.{profile}.json`, loaded explicitly in `Program.cs`. It unifies the three role-not-place axes: site for gateway/HistoryLoader (`local` | `cloud`), venue class for LiveHost (`binance` | `ib` | …). `DOTNET_ENVIRONMENT` keeps its stock meaning (Development/Production logging, exception pages) and is not overloaded. Do not name HistoryLoader's cloud profile "live" — it collides with LiveHost terminology. **Secrets are never in appsettings/profiles** — exchange keys, API keys, S3 credentials arrive as env vars from the server-side `.env` (compose `env_file:`), which exists only on the VPS.
+
+**Private IaC repo scaffold** (e.g. `AlgoTradeForge.Infra`; created at M1):
+- Terraform, `hcloud` provider: `hcloud_server` (+ `hcloud_volume` for data), `hcloud_firewall` (443/80 world, SSH from owner IP only), `hcloud_ssh_key`, DNS records (Hetzner DNS or Cloudflare provider), Object Storage bucket + keys via the `aws` provider pointed at Hetzner's S3 endpoint.
+- cloud-init: docker + compose plugin, deploy user, key-only SSH.
+- State: S3 backend on Hetzner Object Storage (bootstrap the state bucket manually once).
+- **Single workspace** — no multi-env machinery until a second environment actually exists.
+- Pipeline: `terraform plan` on PR, manual `apply`.
+
+**CI/CD (GitHub Actions, app repo):**
+- **CI:** build + tests on PR (sequential `dotnet test` — one process rule).
+- **Publish:** on main — per-host images → GHCR, tagged with git SHA (immutable) + `latest`.
+- **Deploy:** SSH to VPS, `docker compose pull && docker compose up -d` at the SHA tag. **Two gates:** `historyloader`/`gateway`/`caddy` auto-deploy on main (M1 exit criterion — redeploy loses no closed partition — is what makes this safe); `livehost` requires **manual approval** (GitHub Environment + required reviewer). The money host never redeploys because an unrelated commit landed; no watchtower-style auto-pull for it, ever.
+- **Plugins** keep their designed path: the private strategies repo's CI publishes DLLs to `plugins/{name}/{version}/` on object storage; LiveHost pulls its pinned version at startup — a plugin deploy is a version-bump config change, not an image rebuild.
+
+This supersedes Q5's earlier `deploy.ps1`/Makefile-over-SSH idea (the script's logic becomes the deploy job) and promotes Terraform from "optional sugar" to the provisioning path.
 
 ## What exploration established (key enablers)
 
@@ -129,7 +160,12 @@ src/
 deploy/
   docker-compose.cloud.yml            # caddy + gateway (M5) + historyloader@cloud + livehost (+ valkey later)
   docker-compose.local.yml            # computeworker + historyloader@local (backfill/catch-up/pull-sync)
-  .env.cloud.example  .env.local.example  hetzner.md
+  docker-compose.test.yml             # integration-test topology
+  profiles/                           # appsettings.{profile}.json for all hosts — no secrets (§0)
+  Caddyfile
+  .env.example                        # variable names only; the real .env lives on the VPS
+# Dockerfiles live next to each host project (src/*/Dockerfile)
+# provisioning (Terraform/cloud-init/hetzner docs) → private IaC repo (§0)
 ```
 
 Rules:
@@ -142,12 +178,12 @@ Rules:
 Each independently shippable; the frontend never breaks.
 
 **M0 — Monorepo prep + auth foundation** (small)
-Delete stale empty `Gateway/`/`CandleIngestor/` folders; create `ServiceClients` (move `HistoryLoaderClient` + promote shared DTOs) and `ServiceAuth` (API-key middleware + delegating handler); `deploy/` skeleton with compose files and env examples.
-*Exit:* solution builds with new projects; HistoryLoader proxying goes through `ServiceClients`; API-key middleware demonstrably guards HistoryLoader endpoints when enabled by config.
+Delete stale empty `Gateway/`/`CandleIngestor/` folders; create `ServiceClients` (move `HistoryLoaderClient` + promote shared DTOs) and `ServiceAuth` (API-key middleware + delegating handler); `deploy/` skeleton per §0 (compose files, `profiles/`, `.env.example`) + per-host Dockerfiles + CI workflow (build + sequential tests on PR).
+*Exit:* solution builds with new projects; HistoryLoader proxying goes through `ServiceClients`; API-key middleware demonstrably guards HistoryLoader endpoints when enabled by config; CI green on PR.
 
 **M1 — 24/7 collection in the cloud** (mostly ops)
-HistoryLoader on Hetzner VPS behind Caddy (TLS + API key), `Storage:Backend=S3`. Caddy→HistoryLoader direct routing with per-service `ServiceAuth` validation is interim — Gateway@cloud takes over validation at M5; an edge-level static-key check in Caddy is acceptable defense-in-depth meanwhile. Replace `ISettingsWriter` appsettings-writeback with CAS-protected `config/collection.json` on `IFileStorage` + `GET/PUT /api/v1/config` (containers must be config-immutable; discovered `historyStart` lands there or in `feeds.json`). Liveness alerting (uptime-kuma / healthchecks.io).
-*Exit:* 7 days unattended collection; `status.json` green; redeploy loses no closed partition; collection config editable without touching the image.
+Create the private IaC repo (§0) and provision the VPS + firewall + DNS + Object Storage via Terraform; stand up the publish (GHCR) + deploy (SSH, auto-gate) pipelines. HistoryLoader on the Hetzner VPS behind Caddy (TLS + API key), `Storage:Backend=S3`, profile `ATF_PROFILE=cloud`. Caddy→HistoryLoader direct routing with per-service `ServiceAuth` validation is interim — Gateway@cloud takes over validation at M5; an edge-level static-key check in Caddy is acceptable defense-in-depth meanwhile. Replace `ISettingsWriter` appsettings-writeback with CAS-protected `config/collection.json` on `IFileStorage` + `GET/PUT /api/v1/config` (containers must be config-immutable; discovered `historyStart` lands there or in `feeds.json`). Liveness alerting (uptime-kuma / healthchecks.io).
+*Exit:* 7 days unattended collection; `status.json` green; redeploy loses no closed partition; collection config editable without touching the image; the VPS is reproducible from `terraform apply` + cloud-init on a clean slate, and deploys go through the pipeline, not by hand.
 
 **M2 — HistoryLoader@local + pull-sync**
 Stand up the local HistoryLoader instance (same binary, local collector config): deep-backfill importer wiring, daily catch-up collectors for re-fetchable feeds, and the ETag-manifest pull-sync (§2) as a scheduled collector — include rules limited to un-backfillable feeds + config, manifest entries merged (not blind-copied) into the local `feeds.json`. DataSync ships as a thin CLI trigger over the local API (`--dry-run`, on-demand runs); recurring schedule via the instance's own Cronos config.
@@ -155,7 +191,7 @@ Stand up the local HistoryLoader instance (same binary, local collector config):
 
 **M3 — LiveHost extraction + durability** (the big one; two shippable sub-phases)
 *M3a:* new LiveHost host; move live DI wiring + `LiveEndpoints` out of WebApi; gateway proxies `/live/*` via `LiveHostClient`; plugin loading; in-host WS multiplexing (one connection per exchange shared across sessions, one user-data stream per account — Q7); run locally first.
-*M3b:* session persistence (storage decision made here — see §6 Q6) replacing `InMemoryLiveSessionStore`; boot-time session recovery replaying the existing 3-phase reconciliation against exchange state; heartbeat endpoint + staleness watchdog; Telegram/webhook alerting; plugin bootstrap-from-S3 with version pinning; deploy to VPS.
+*M3b:* session persistence (storage decision made here — see §6 Q6) replacing `InMemoryLiveSessionStore`; boot-time session recovery replaying the existing 3-phase reconciliation against exchange state; heartbeat endpoint + staleness watchdog; Telegram/webhook alerting; plugin bootstrap-from-S3 with version pinning; deploy to VPS through the manually-gated livehost pipeline (§0).
 *Exit:* kill -9 mid-session with an open position → restart resumes the session, position/orders reconciled, alert sent; one small strategy live on the VPS 14 days unattended.
 
 **M4 — ComputeWorker extraction + YARP adoption**
@@ -180,7 +216,7 @@ Promote `IBarAccumulator` + accumulators out of `internal` in `HistoryLoader.App
 
 **Q4 — Live equal-metric bar detection?** One fold, two cadences. *Canonical record:* incremental aggregation service in HistoryLoader tails new source rows and feeds the **same** `IBarAccumulator` implementations as the batch pipeline, persisting `{cursor, partial-bar state}` as CAS JSON; completed bars append via `BufferedPartitionWriter`; batch builder kept for rebuilds; golden test asserts incremental ≡ batch. *Signal timing:* LiveHost builds bars in-memory from its own stream with the same shared accumulators (promoted out of `internal`), seeded at session start from the historical feed + persisted partial state. Single fold source guarantees backtest/live parity.
 
-**Q5 — MQs/DBs on Hetzner?** **docker-compose on one VPS.** Caddy (TLS) → historyloader + livehost directly until M5, then Caddy → gateway → services (Traefik rejected: label-based discovery machinery a static 3-container topology doesn't need; Caddy wins on Caddyfile simplicity + automatic HTTPS); named volumes; Hetzner Object Storage as S3; `deploy.ps1`/Makefile over SSH for releases; uptime-kuma/healthchecks.io; nightly restic backup to the same object storage. **No MQ initially**; when a cache/stream server is earned it's **Valkey or Garnet** (not Redis) as one more compose service. Terraform (hcloud) optional sugar; a documented `deploy/hetzner.md` suffices at this scale. No k8s.
+**Q5 — MQs/DBs on Hetzner?** **docker-compose on one VPS.** Caddy (TLS) → historyloader + livehost directly until M5, then Caddy → gateway → services (Traefik rejected: label-based discovery machinery a static 3-container topology doesn't need; Caddy wins on Caddyfile simplicity + automatic HTTPS); named volumes; Hetzner Object Storage as S3; releases via the GitHub Actions deploy job over SSH (§0 — supersedes the earlier `deploy.ps1`/Makefile idea); uptime-kuma/healthchecks.io; nightly restic backup to the same object storage. **No MQ initially**; when a cache/stream server is earned it's **Valkey or Garnet** (not Redis) as one more compose service. Provisioning: Terraform (hcloud) in the private IaC repo from M1 (§0). No k8s.
 
 **Q6 — Storages for live + backtest reporting?**
 - *Backtest/optimization/validation:* keep exactly what exists — SQLite + run-folder JSONL on the ComputeWorker's local disk. Single-user, battle-tested.
