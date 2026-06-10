@@ -10,6 +10,7 @@ Owner decisions baked into this vision:
 - **Live reporting/persistence storage: deferred decision** — interim design must not lock anything in; weigh horizontal-scaling potential and lightweight DBs before committing.
 - **Gateway stays local for now**; the cloud part is used privately (host strategies + receive un-backfillable incremental feeds). Revisit placement later.
 - **Gateway is a role, not a place:** one YARP-based gateway binary deployed per site with site-specific route config — local instance (FE-facing) today, a second instance lands on the VPS at M5. Migrating a service = moving its cluster destination between the two config files. **Caddy is the cloud edge and stays permanently dumb** (TLS/ACME only); all gateway features — auth, routing, rate limits, transforms — live in C# middleware, never in edge config.
+- **HistoryLoader is also a role, not a place:** same binary, two instances, per-site collector config split by **backfillability**. Cloud instance: 24/7 collectors for feeds that cannot be re-fetched later (OI, ratios, taker volume, liquidations, funding as it happens) plus whatever its site needs locally (e.g. klines for LiveHost bar seeding). Local instance: deep-backfill importer + scheduled daily catch-up of re-fetchable feeds (klines via REST) + the S3 pull-sync running as one more scheduled collector. **Sole-writer-per-backend is held per instance:** HistoryLoader@cloud is the only writer of the S3 backend, HistoryLoader@local the only writer of the local DataRoot — including synced copies, since sync runs inside it. The live data fetching flow between LiveHost and HistoryLoader@cloud is **still open** — see §6 Q7.
 
 ## What exploration established (key enablers)
 
@@ -29,13 +30,14 @@ flowchart LR
         GW["Gateway@local (current WebApi, slimmed; YARP)\nFE-facing REST/SSE/WS, status aggregation\nroutes: compute→local, history/live→cloud\nattaches API key (delegating handler)"]
         CW["ComputeWorker (new host)\nbacktests, optimizations, validations, debug sessions\nowns: ComputeTaskQueue, SQLite run DBs, run JSONL, plugins/"]
         DH[("Deep history\nLocalFileStorage DataRoot")]
-        DS["DataSync (CLI, not a service)\nETag-manifest incremental mirror"]
+        HLL["HistoryLoader@local (same binary, local config)\ndeep-backfill importer (archive ZIPs → partitions),\ndaily catch-up collectors for re-fetchable feeds,\nETag pull-sync as a scheduled collector\nsole writer of local DataRoot"]
+        DS["DataSync (thin CLI)\non-demand sync trigger via HL@local API"]
     end
 
     subgraph CLOUD["Cloud site (24/7, Hetzner VPS) — nominal"]
         CADDY["Caddy — dumb TLS/ACME edge\ncert issuance+renewal, holds :443 across deploys,\nHTTP→HTTPS, absorbs scanner noise; no routing logic"]
         GWC["Gateway@cloud (same binary, cloud config; M5)\nvalidates API key once; routes to internal services\nuntil M5: Caddy → services directly, per-service auth"]
-        HL["HistoryLoader.WebApi (exists)\n11 collectors, backfill, alt-bar aggregation\nsole writer of feeds.json/status.json\ninternal docker network only"]
+        HL["HistoryLoader@cloud (existing WebApi)\n24/7 collectors for un-backfillable feeds\n(OI, ratios, taker vol, liquidations, funding)\n+ klines for LiveHost seeding; alt-bar aggregation\nsole writer of S3 backend (feeds.json/status.json)\ninternal docker network only"]
         LH["LiveHost (new host)\nILiveConnector sessions, reconciliation,\npersistence + recovery + heartbeat + alerting\nplugins/ bootstrapped from object storage\ninternal docker network only"]
         S3[("Hetzner Object Storage (S3)\nrecent history, manifests, collection config,\nlive session event logs, plugin DLLs")]
     end
@@ -50,24 +52,26 @@ flowchart LR
     GWC --> HL
     GWC --> LH
     CW --> DH
-    DS -- "pull changed partitions" --> S3
-    DS --> DH
+    DS -. "trigger / --dry-run" .-> HLL
+    HLL -- "pull changed partitions\n(un-backfillable feeds + config)" --> S3
+    HLL --> DH
+    HLL -- "daily REST catch-up\n(re-fetchable feeds)" --> EX
     HL --> S3
     LH --> S3
     HL <--> EX
     LH <--> EX
-    DV -- "one-time manual backfill" --> DH
+    DV -- "deep-backfill ZIPs" --> HLL
 ```
 
-**Four host projects, one CLI tool, no more** — the gateway deploys as two instances of the same binary, one per site, differing only in `appsettings.{site}.json`. Boundaries follow lifecycle and failure domain, not domain purity:
+**Four host projects, one CLI tool, no more** — the gateway and HistoryLoader each deploy as two instances of the same binary, one per site, differing only in `appsettings.{site}.json`. Boundaries follow lifecycle and failure domain, not domain purity:
 
 | Service | Lifecycle / failure domain | Owns | Moves out of current WebApi |
 |---|---|---|---|
 | **Gateway** (WebApi renamed, M5; YARP; 2 instances: local FE-facing + cloud behind Caddy) | stable FE contract, restart-anytime | nothing (per-site route config + proxy clients) | everything below; keeps endpoint contracts, JSON policy, CORS |
 | **ComputeWorker** (new) | restarted 20×/day during dev, CPU-bound | `ComputeTaskQueue`, executors, SQLite run/validation/threshold DBs, run JSONL folders, simulation cache, `RunProgressCache`, cancellation registry, `plugins/` | `ComputeQueueConsumer`, 3 task executors, engine wiring, debug WS handler, plugin loading |
 | **LiveHost** (new) | runs for months untouched, holds money + secrets | live session store (storage TBD, see §6 Q6), session JSONL event logs → S3, `plugins/`, exchange keys | `LiveEndpoints`, `BinanceLiveConnector`/`AccountManager`, `InMemoryLiveSessionStore` (replaced) |
-| **HistoryLoader.WebApi** (exists) | IO-bound 24/7, redeploy must never touch positions | market data partitions, `feeds.json` (sole writer), `status.json`, aggregation cursors | — (gains: remote-friendly config, incremental alt-bars) |
-| **DataSync** (CLI) | run-on-demand / scheduled, idempotent | `sync-state.json` manifest per mirrored prefix | — (new) |
+| **HistoryLoader.WebApi** (exists; 2 instances: cloud 24/7 un-backfillable + local backfill/catch-up/pull-sync) | cloud: IO-bound 24/7, redeploy must never touch positions; local: run-when-needed | per instance, its site's backend: market data partitions, `feeds.json`/`status.json` (sole writer per backend), aggregation cursors; local instance also owns `sync-state.json` | — (gains: remote-friendly config, incremental alt-bars, pull-sync collector) |
+| **DataSync** (thin CLI) | run-on-demand trigger, idempotent | nothing — sync logic + `sync-state.json` live with HistoryLoader@local | — (new, small) |
 
 Why LiveHost ≠ HistoryLoader even though both are 24/7 cloud: different failure domains — a collector redeploy must never touch open positions; the live host holds secrets and money, the collector neither. They share the VPS, not the process.
 
@@ -75,12 +79,14 @@ Why LiveHost ≠ HistoryLoader even though both are 24/7 cloud: different failur
 
 Two tiers, one abstraction — `IFileStorage` everywhere:
 
-- **Recent history (cloud):** Hetzner Object Storage via `S3FileStorage`. Writer: HistoryLoader. Contents: rolling partitions, ticks, manifests, collection config, live event logs, plugin DLLs.
-- **Deep history (local):** workstation disk via `LocalFileStorage`. Writers: DataSync (pull) + manual deep-backfill imports (data.binance.vision etc.).
+- **Recent history (cloud):** Hetzner Object Storage via `S3FileStorage`. Writer: HistoryLoader@cloud (sole). Contents: rolling partitions, ticks, manifests, collection config, live event logs, plugin DLLs.
+- **Deep history (local):** workstation disk via `LocalFileStorage`. Writer: HistoryLoader@local (sole) — its deep-backfill importer, daily catch-up collectors, and pull-sync collector are all in one process, so even mirrored data has a single local writer.
 
-**Sync (DataSync CLI):** the buffer-then-PUT writer model means partitions are only ever replaced whole, so **object ETag equality ⇔ content equality**. DataSync keeps `sync-state.json` (`key → {etag, size}`) per prefix; each run = one `ListObjectsV2` (ETags come free) → diff → download changed keys → atomic local publish → update manifest. Closed months never change, so steady state transfers only the current-month partitions + recent ticks + manifests. The mutable current-month partition is exactly what the manifest approach handles natively. Pull cloud→local by default; optional push local→cloud for deep backfills and plugin DLL publishing. No deletion mirroring by default (`--prune` opt-in).
+**Feed placement rule — backfillability:** feeds that can be re-fetched anytime (klines via REST) are collected per site by that site's instance — a gap from the workstation being off a week self-heals on the next catch-up run. Feeds that cannot be re-fetched (OI, ratios, taker volume, liquidations, funding-as-it-happens) are collected 24/7 by HistoryLoader@cloud only and reach the local backend via pull-sync. Sync include rules therefore cover only un-backfillable feeds + config — never feeds the local instance collects itself.
 
-**Manifest ownership:** `feeds.json`/`status.json` written exclusively by HistoryLoader against its primary backend via existing CAS. Local mirror copies are read-only replicas. Never two writers per backend.
+**Sync (pull-sync collector inside HistoryLoader@local; DataSync is a thin CLI trigger over its API):** the buffer-then-PUT writer model means partitions are only ever replaced whole, so **object ETag equality ⇔ content equality**. The sync collector keeps `sync-state.json` (`key → {etag, size}`) per prefix; each run = one `ListObjectsV2` (ETags come free) → diff → download changed keys → atomic local publish → update manifest. Closed months never change, so steady state transfers only the current-month partitions + recent ticks + manifests. The mutable current-month partition is exactly what the manifest approach handles natively. Pull cloud→local by default; optional push local→cloud for deep backfills and plugin DLL publishing. No deletion mirroring by default (`--prune` opt-in). Scheduling via the instance's own Cronos schedules; `--dry-run` and on-demand runs via the CLI.
+
+**Manifest ownership:** `feeds.json`/`status.json` written exclusively by the owning site's HistoryLoader instance via existing CAS — HL@cloud on S3, HL@local on the local DataRoot. Because `feeds.json` is per asset and covers *all* of that asset's feeds, a blind manifest copy from the cloud would clobber locally-collected feed entries — the sync collector instead **merges** cloud-owned feed entries into the local manifest under CAS. This semantic merge is possible precisely because sync runs inside the service that owns the local manifest; a standalone file-copy CLI could not do it safely. Never two writers per backend.
 
 ## 3. Control plane
 
@@ -113,16 +119,17 @@ src/
   AlgoTradeForge.LiveHost/            # new
   AlgoTradeForge.HistoryLoader.*/     # existing 4 projects, unchanged
   # tooling
-  AlgoTradeForge.DataSync/            # new CLI
+  AlgoTradeForge.DataSync/            # thin CLI trigger only — sync logic lives in HistoryLoader
+                                      #   (shared kernel) as the pull-sync collector
 deploy/
-  docker-compose.cloud.yml            # caddy + gateway (M5) + historyloader + livehost (+ valkey later)
-  docker-compose.local.yml            # computeworker (+ optional local historyloader for offline dev)
+  docker-compose.cloud.yml            # caddy + gateway (M5) + historyloader@cloud + livehost (+ valkey later)
+  docker-compose.local.yml            # computeworker + historyloader@local (backfill/catch-up/pull-sync)
   .env.cloud.example  .env.local.example  hetzner.md
 ```
 
 Rules:
 - **Hosts contain only `Program.cs`, endpoints, host-specific BackgroundServices, appsettings.** All logic stays in the shared kernel — that's what keeps 4 hosts cheap for one developer. Don't split `AlgoTradeForge.Infrastructure` per host; composition roots select what's active (HistoryLoader already proves this pattern).
-- **Plugins into both ComputeWorker and LiveHost:** `PluginLoader.LoadFrom(Plugins:Paths)` is path-configurable. Locally, the private repo's post-build copies to both hosts' `plugins/`. For the VPS, publish DLLs to an object-store prefix (`plugins/{name}/{version}/`) via DataSync push; LiveHost downloads its **pinned** version at startup before `PluginLoader` runs. Record plugin version per live session so a session is never silently resumed under a different strategy build.
+- **Plugins into both ComputeWorker and LiveHost:** `PluginLoader.LoadFrom(Plugins:Paths)` is path-configurable. Locally, the private repo's post-build copies to both hosts' `plugins/`. For the VPS, publish DLLs to an object-store prefix (`plugins/{name}/{version}/`) via the pull-sync collector's push mode (triggered through the DataSync CLI); LiveHost downloads its **pinned** version at startup before `PluginLoader` runs. Record plugin version per live session so a session is never silently resumed under a different strategy build.
 - **Contracts discipline:** gateway proxies must not re-model DTOs; `ServiceClients` is the single wire-type home.
 
 ## 5. Milestone roadmap (ordered by engineering convenience)
@@ -137,9 +144,9 @@ Delete stale empty `Gateway/`/`CandleIngestor/` folders; create `ServiceClients`
 HistoryLoader on Hetzner VPS behind Caddy (TLS + API key), `Storage:Backend=S3`. Caddy→HistoryLoader direct routing with per-service `ServiceAuth` validation is interim — Gateway@cloud takes over validation at M5; an edge-level static-key check in Caddy is acceptable defense-in-depth meanwhile. Replace `ISettingsWriter` appsettings-writeback with CAS-protected `config/collection.json` on `IFileStorage` + `GET/PUT /api/v1/config` (containers must be config-immutable; discovered `historyStart` lands there or in `feeds.json`). Liveness alerting (uptime-kuma / healthchecks.io).
 *Exit:* 7 days unattended collection; `status.json` green; redeploy loses no closed partition; collection config editable without touching the image.
 
-**M2 — DataSync CLI**
-ETag-manifest incremental pull (§2), per-prefix include rules, `--dry-run`, scheduled via Task Scheduler.
-*Exit:* steady-state sync transfers only changed keys (verified by manifest diff count); a backtest spanning deep-local + freshly-synced data is gap-free.
+**M2 — HistoryLoader@local + pull-sync**
+Stand up the local HistoryLoader instance (same binary, local collector config): deep-backfill importer wiring, daily catch-up collectors for re-fetchable feeds, and the ETag-manifest pull-sync (§2) as a scheduled collector — include rules limited to un-backfillable feeds + config, manifest entries merged (not blind-copied) into the local `feeds.json`. DataSync ships as a thin CLI trigger over the local API (`--dry-run`, on-demand runs); recurring schedule via the instance's own Cronos config.
+*Exit:* steady-state sync transfers only changed keys (verified by manifest diff count); a backtest spanning deep-local + freshly-synced data is gap-free; after a mixed run (local kline catch-up + sync of cloud-collected feeds) the local `feeds.json` correctly describes both, with no clobbered entries.
 
 **M3 — LiveHost extraction + durability** (the big one; two shippable sub-phases)
 *M3a:* new LiveHost host; move live DI wiring + `LiveEndpoints` out of WebApi; gateway proxies `/live/*` via `LiveHostClient`; plugin loading; run locally first.
@@ -158,11 +165,11 @@ Rename WebApi → `AlgoTradeForge.Gateway`; delete in-process engine/queue/live 
 Promote `IBarAccumulator` + accumulators out of `internal` in `HistoryLoader.Application/Aggregation/Accumulators/` into a shared project; incremental aggregation BackgroundService in HistoryLoader (persisted cursor + partial-bar state, CAS JSON next to the feed); in-process live bar building in LiveHost from its own stream using the same accumulators, seeded from the historical alt-bar feed; golden test incremental ≡ batch. Live dashboards.
 *Exit:* a live strategy consumes equal-volume bars whose historical record matches the live-computed sequence exactly over an overlap window; golden test green.
 
-## 6. Answers to the six open questions (from data-flows.png)
+## 6. Open questions & answers (Q1–Q6 from data-flows.png; Q7 added later)
 
 **Q1 — Feeds metadata: db or file?** **File.** Keep `feeds.json` per asset on `IFileStorage` — already CAS-protected, travels with the data under sync (a DB would need its own replication and lets metadata/data diverge), backend-agnostic, human-inspectable. Revisit only for cross-asset relational queries or multi-writer needs.
 
-**Q2 — Where to configure live data feeds to collect?** Move the `Assets`/`Feeds` tree from `appsettings.json` into **`config/collection.json` on the same `IFileStorage` backend as the data**, CAS-protected, exposed via `GET/PUT /api/v1/config` (FE page later). appsettings-writeback is incompatible with immutable containers/remote hosts; the storage backend is the durable, synced, CAS-capable place; DataSync mirrors the config for free. `appsettings.json` keeps infra-only settings (URLs, rate budgets, flush tuning).
+**Q2 — Where to configure live data feeds to collect?** Move the `Assets`/`Feeds` tree from `appsettings.json` into **`config/collection.json` on the same `IFileStorage` backend as the data**, CAS-protected, exposed via `GET/PUT /api/v1/config` (FE page later). appsettings-writeback is incompatible with immutable containers/remote hosts; the storage backend is the durable, synced, CAS-capable place; pull-sync mirrors the cloud config for free. Each HistoryLoader instance reads its own `collection.json` on its own backend — the collector enable-set per site (the backfillability split) lives there. `appsettings.json` keeps infra-only settings (URLs, rate budgets, flush tuning).
 
 **Q3 — Deep history availability:** **Binance** `data.binance.vision` — free daily/monthly ZIPs: spot klines/trades/aggTrades from 2017, USDⓈ-M futures from ~2019-09, futures metrics (OI/ratios ~2021-12+), fundingRate, bookTicker/bookDepth (limited ranges). Build the backfill importer against this first. **Bybit** `public.bybit.com` — free tick-level trade archives (~2020+) + REST klines. **MT/FX** — no central archive; broker-served, gappy; use **Dukascopy** (free ticks ~2003+) or TrueFX, imported via converter into the same partition format rather than live-collected.
 
@@ -174,18 +181,20 @@ Promote `IBarAccumulator` + accumulators out of `internal` in `HistoryLoader.App
 - *Backtest/optimization/validation:* keep exactly what exists — SQLite + run-folder JSONL on the ComputeWorker's local disk. Single-user, battle-tested.
 - *Live:* **decision deferred to M3b** (owner choice). Non-negotiable interim design that avoids lock-in: per-session **JSONL event logs written through the existing `IRunSink`/`JsonlFileSink` machinery and archived to Object Storage** — this is the replayable source of truth, so *any* queryable store can be (re)built from it later. Candidates to evaluate at M3b, weighing horizontal scaling: (a) SQLite per LiveHost + Litestream replication to S3 (lightest, scales by adding hosts since sessions are shard-friendly); (b) libSQL/Turso (SQLite-compatible with replication built in); (c) Postgres (only if multi-user/SaaS becomes real). Recovery state (sessions/orders/fills snapshots) needs only per-host durability, which every candidate satisfies.
 
+**Q7 — Live data fetching flow (LiveHost ↔ HistoryLoader@cloud) — OPEN.** Whether the two cloud hosts should share exchange stream data (and whether anything broker-shaped sits between them) is under active discussion. Until decided, the working default stands: each host talks to the exchange independently — HistoryLoader@cloud via its REST/WS collectors, LiveHost via its own WS streams — which is comfortably within exchange per-IP connection/weight budgets at current scale (order of 1024 streams per spot WS connection, ~200 futures; REST weight budgets in the thousands per minute vs. light 5m/15m/daily polling). Constraints any resolution must respect: the LiveHost/HistoryLoader failure-domain separation (a collector must never depend on the money-holding host's uptime, and vice versa), and the no-Redis decision (any future broker is Valkey/Garnet Streams as a compose service).
+
 ## Risks
 
 1. **M3b recovery semantics** (rehydrating sessions against live exchange state) is the only genuinely hard distributed-state problem — isolated in its own sub-phase with a kill-test exit criterion, built on the existing 3-phase reconciliation.
-2. **Two writers on `feeds.json`** would corrupt the manifest model — HistoryLoader stays sole writer per backend; CAS failures make violations loud.
+2. **Two writers on `feeds.json`** would corrupt the manifest model — the owning site's HistoryLoader instance is the sole writer of its backend. Folding pull-sync into HistoryLoader@local (rather than a standalone CLI writer) is what keeps even mirrored feeds single-writer, and enables the manifest *merge* instead of a clobbering copy; CAS failures make violations loud. The structural hazard to watch: any future tool writing partitions or manifests directly (scripts, manual fixes) reintroduces the second writer.
 3. **Plugin version skew** between compute (what you optimized) and live (what trades) — mitigated by per-session version pinning.
 4. **Exposed cloud API without VPN** — mitigated by TLS + API-key auth from M0/M1, secrets in env, and the LiveHost never accepting unauthenticated traffic; auth contract designed to grow into SaaS tokens. From M5, services additionally lose their public reachability entirely (internal docker network behind Caddy→Gateway@cloud).
-5. **Two-instance gateway config drift** — same binary, two site configs; divergence in route shape or transforms silently forks behavior between sites and is invisible until an env-specific bug surfaces. Mitigated structurally, not by vigilance: identical route IDs (only cluster destinations + auth direction differ), configs co-located in `deploy/`, single build artifact for both sites, first-hop `X-Correlation-Id` so cross-hop failures are attributable by grep.
+5. **Two-instance config drift** (gateway and HistoryLoader both deploy as same-binary site pairs) — divergence beyond the intended per-site differences silently forks behavior and is invisible until an env-specific bug surfaces. Mitigated structurally, not by vigilance: configs co-located in `deploy/`, single build artifact per service for both sites; gateway-specific — identical route IDs (only cluster destinations + auth direction differ), first-hop `X-Correlation-Id`; HistoryLoader-specific — the intended difference is exactly *which collectors are enabled* (split by backfillability) + storage backend, nothing else.
 
 ## Critical files
 
 - `src/AlgoTradeForge.WebApi/Program.cs` — composition root to split (queue consumer, live wiring, plugin loading, proxies)
-- `src/AlgoTradeForge.Storage.Abstractions/IO/IFileStorage.cs` — data-plane contract (CAS) that DataSync, collection config, live logs build on
+- `src/AlgoTradeForge.Storage.Abstractions/IO/IFileStorage.cs` — data-plane contract (CAS) that pull-sync, collection config, live logs build on
 - `src/AlgoTradeForge.HistoryLoader.WebApi/appsettings.json` + `AppSettingsWriter.cs` — config to relocate to `collection.json` (M1)
 - `src/AlgoTradeForge.WebApi/Endpoints/LiveEndpoints.cs` + `src/AlgoTradeForge.Application/Live/InMemoryLiveSessionStore.cs` — live surface + store replaced in M3
 - `src/AlgoTradeForge.HistoryLoader.Application/Aggregation/Accumulators/` — `internal` accumulators to promote for live alt-bar parity (M6)
