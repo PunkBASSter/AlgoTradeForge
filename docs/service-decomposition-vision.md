@@ -9,6 +9,7 @@ Owner decisions baked into this vision:
 - **No Redis** — if/when a cache/stream server is earned, use the free replacement (**Valkey**, or Microsoft **Garnet**); both are Redis-protocol-compatible so `IDistributedCache` still slots in.
 - **Live reporting/persistence storage: deferred decision** — interim design must not lock anything in; weigh horizontal-scaling potential and lightweight DBs before committing.
 - **Gateway stays local for now**; the cloud part is used privately (host strategies + receive un-backfillable incremental feeds). Revisit placement later.
+- **Gateway is a role, not a place:** one YARP-based gateway binary deployed per site with site-specific route config — local instance (FE-facing) today, a second instance lands on the VPS at M5. Migrating a service = moving its cluster destination between the two config files. **Caddy is the cloud edge and stays permanently dumb** (TLS/ACME only); all gateway features — auth, routing, rate limits, transforms — live in C# middleware, never in edge config.
 
 ## What exploration established (key enablers)
 
@@ -25,16 +26,17 @@ Owner decisions baked into this vision:
 flowchart LR
     subgraph LOCAL["Local site (on-demand, heavy compute) — nominal"]
         FE[Next.js Frontend :3000]
-        GW["Gateway (current WebApi, slimmed)\nFE-facing REST/SSE/WS, proxying, status aggregation"]
+        GW["Gateway@local (current WebApi, slimmed; YARP)\nFE-facing REST/SSE/WS, status aggregation\nroutes: compute→local, history/live→cloud\nattaches API key (delegating handler)"]
         CW["ComputeWorker (new host)\nbacktests, optimizations, validations, debug sessions\nowns: ComputeTaskQueue, SQLite run DBs, run JSONL, plugins/"]
         DH[("Deep history\nLocalFileStorage DataRoot")]
         DS["DataSync (CLI, not a service)\nETag-manifest incremental mirror"]
     end
 
     subgraph CLOUD["Cloud site (24/7, Hetzner VPS) — nominal"]
-        CADDY["Caddy/Traefik — TLS + API-key auth edge"]
-        HL["HistoryLoader.WebApi (exists)\n11 collectors, backfill, alt-bar aggregation\nsole writer of feeds.json/status.json"]
-        LH["LiveHost (new host)\nILiveConnector sessions, reconciliation,\npersistence + recovery + heartbeat + alerting\nplugins/ bootstrapped from object storage"]
+        CADDY["Caddy — dumb TLS/ACME edge\ncert issuance+renewal, holds :443 across deploys,\nHTTP→HTTPS, absorbs scanner noise; no routing logic"]
+        GWC["Gateway@cloud (same binary, cloud config; M5)\nvalidates API key once; routes to internal services\nuntil M5: Caddy → services directly, per-service auth"]
+        HL["HistoryLoader.WebApi (exists)\n11 collectors, backfill, alt-bar aggregation\nsole writer of feeds.json/status.json\ninternal docker network only"]
+        LH["LiveHost (new host)\nILiveConnector sessions, reconciliation,\npersistence + recovery + heartbeat + alerting\nplugins/ bootstrapped from object storage\ninternal docker network only"]
         S3[("Hetzner Object Storage (S3)\nrecent history, manifests, collection config,\nlive session event logs, plugin DLLs")]
     end
 
@@ -44,8 +46,9 @@ flowchart LR
     FE --> GW
     GW --> CW
     GW -- "HTTPS + API key" --> CADDY
-    CADDY --> HL
-    CADDY --> LH
+    CADDY --> GWC
+    GWC --> HL
+    GWC --> LH
     CW --> DH
     DS -- "pull changed partitions" --> S3
     DS --> DH
@@ -56,11 +59,11 @@ flowchart LR
     DV -- "one-time manual backfill" --> DH
 ```
 
-**Four hosts, one CLI tool, no more.** Boundaries follow lifecycle and failure domain, not domain purity:
+**Four host projects, one CLI tool, no more** — the gateway deploys as two instances of the same binary, one per site, differing only in `appsettings.{site}.json`. Boundaries follow lifecycle and failure domain, not domain purity:
 
 | Service | Lifecycle / failure domain | Owns | Moves out of current WebApi |
 |---|---|---|---|
-| **Gateway** (WebApi renamed, M5) | stable FE contract, restart-anytime | nothing (config + proxy clients) | everything below; keeps endpoint contracts, JSON policy, CORS |
+| **Gateway** (WebApi renamed, M5; YARP; 2 instances: local FE-facing + cloud behind Caddy) | stable FE contract, restart-anytime | nothing (per-site route config + proxy clients) | everything below; keeps endpoint contracts, JSON policy, CORS |
 | **ComputeWorker** (new) | restarted 20×/day during dev, CPU-bound | `ComputeTaskQueue`, executors, SQLite run/validation/threshold DBs, run JSONL folders, simulation cache, `RunProgressCache`, cancellation registry, `plugins/` | `ComputeQueueConsumer`, 3 task executors, engine wiring, debug WS handler, plugin loading |
 | **LiveHost** (new) | runs for months untouched, holds money + secrets | live session store (storage TBD, see §6 Q6), session JSONL event logs → S3, `plugins/`, exchange keys | `LiveEndpoints`, `BinanceLiveConnector`/`AccountManager`, `InMemoryLiveSessionStore` (replaced) |
 | **HistoryLoader.WebApi** (exists) | IO-bound 24/7, redeploy must never touch positions | market data partitions, `feeds.json` (sole writer), `status.json`, aggregation cursors | — (gains: remote-friendly config, incremental alt-bars) |
@@ -84,7 +87,9 @@ Two tiers, one abstraction — `IFileStorage` everywhere:
 **HTTP push + status polling, local→cloud only, authenticated.** No VPN, no MQ.
 
 - Gateway (local) → ComputeWorker (local): `POST /tasks`, proxy status/progress/cancel/debug-WS. The `ComputeTaskQueue` channel stays in-process inside the worker — enqueue just moves from an in-process call to an HTTP call. A down worker = immediate honest 503, not an invisibly growing queue.
-- Gateway (local) → LiveHost / HistoryLoader (cloud): HTTPS through Caddy with API-key auth. Live session commands (start/stop) are synchronous HTTP — they are not queue-shaped.
+- Gateway@local → LiveHost / HistoryLoader (cloud): HTTPS through Caddy to Gateway@cloud with API-key auth — the local instance *attaches* the key (delegating handler), the cloud instance *validates* it once; services behind it sit on the internal docker network and are never internet-reachable. Until Gateway@cloud exists (M5), Caddy routes to services directly and each validates via `ServiceAuth` middleware (interim). Live session commands (start/stop) are synchronous HTTP — they are not queue-shaped.
+- **Caddy stays dumb:** TLS/ACME issuance + renewal (Kestrel has no native ACME; LettuceEncrypt is a third-party dependency we don't want in the money path), holds :443 across gateway redeploys (clean 502s instead of connection-refused), HTTP→HTTPS redirect, absorbs internet scanner noise in a hardened Go binary before any byte reaches .NET. No routing/auth logic beyond "forward to gateway" — gateway features accrete in C# middleware, never in edge config.
+- **Two-gateway disciplines:** identical route IDs in both site configs — only cluster destinations and auth direction differ (a route with different transforms per site means two gateways, not one in two places); both `appsettings.{site}.json` co-located in `deploy/`; both instances always deployed from the same build artifact; response buffering off along the whole chain and outer-hop SSE/WS timeouts > inner-hop (phantom-disconnect prevention); `X-Correlation-Id` stamped at the first hop, logged by every host (Serilog enricher) so "which leg failed" is a grep.
 - **Auth (early, cross-cutting):** shared API-key middleware library used by every internet-exposed host. Keys in env/secret files. Designed so the principal model can later grow into SaaS users/tokens without changing call sites (auth header contract stable).
 - **Progress:** each service exposes its own `GET .../progress`; gateway proxies. Upgrade seam already exists: `RunProgressCache` is on `IDistributedCache` — if cross-host progress fan-out ever chafes, stand up **Valkey/Garnet** on the VPS and repoint both sides (config + one DI registration). Same story for a future multi-worker queue (Streams + consumer groups). Do not build speculatively.
 
@@ -100,7 +105,9 @@ src/
                                       #   move HistoryLoaderClient here) + shared wire DTOs
   AlgoTradeForge.ServiceAuth/         # API-key middleware + client auth handler (small)
   # hosts
-  AlgoTradeForge.Gateway/             # current WebApi, renamed at M5 (delete stale bin/obj-only
+  AlgoTradeForge.Gateway/             # current WebApi, renamed at M5; YARP proxy plumbing from M4;
+                                      #   one binary, two deployments — appsettings.{site}.json kept
+                                      #   side by side in deploy/ (delete stale bin/obj-only
                                       #   Gateway/ and CandleIngestor/ folders first)
   AlgoTradeForge.ComputeWorker/       # new
   AlgoTradeForge.LiveHost/            # new
@@ -108,7 +115,7 @@ src/
   # tooling
   AlgoTradeForge.DataSync/            # new CLI
 deploy/
-  docker-compose.cloud.yml            # caddy + historyloader + livehost (+ valkey later)
+  docker-compose.cloud.yml            # caddy + gateway (M5) + historyloader + livehost (+ valkey later)
   docker-compose.local.yml            # computeworker (+ optional local historyloader for offline dev)
   .env.cloud.example  .env.local.example  hetzner.md
 ```
@@ -127,7 +134,7 @@ Delete stale empty `Gateway/`/`CandleIngestor/` folders; create `ServiceClients`
 *Exit:* solution builds with new projects; HistoryLoader proxying goes through `ServiceClients`; API-key middleware demonstrably guards HistoryLoader endpoints when enabled by config.
 
 **M1 — 24/7 collection in the cloud** (mostly ops)
-HistoryLoader on Hetzner VPS behind Caddy (TLS + API key), `Storage:Backend=S3`. Replace `ISettingsWriter` appsettings-writeback with CAS-protected `config/collection.json` on `IFileStorage` + `GET/PUT /api/v1/config` (containers must be config-immutable; discovered `historyStart` lands there or in `feeds.json`). Liveness alerting (uptime-kuma / healthchecks.io).
+HistoryLoader on Hetzner VPS behind Caddy (TLS + API key), `Storage:Backend=S3`. Caddy→HistoryLoader direct routing with per-service `ServiceAuth` validation is interim — Gateway@cloud takes over validation at M5; an edge-level static-key check in Caddy is acceptable defense-in-depth meanwhile. Replace `ISettingsWriter` appsettings-writeback with CAS-protected `config/collection.json` on `IFileStorage` + `GET/PUT /api/v1/config` (containers must be config-immutable; discovered `historyStart` lands there or in `feeds.json`). Liveness alerting (uptime-kuma / healthchecks.io).
 *Exit:* 7 days unattended collection; `status.json` green; redeploy loses no closed partition; collection config editable without touching the image.
 
 **M2 — DataSync CLI**
@@ -139,13 +146,13 @@ ETag-manifest incremental pull (§2), per-prefix include rules, `--dry-run`, sch
 *M3b:* session persistence (storage decision made here — see §6 Q6) replacing `InMemoryLiveSessionStore`; boot-time session recovery replaying the existing 3-phase reconciliation against exchange state; heartbeat endpoint + staleness watchdog; Telegram/webhook alerting; plugin bootstrap-from-S3 with version pinning; deploy to VPS.
 *Exit:* kill -9 mid-session with an open position → restart resumes the session, position/orders reconciled, alert sent; one small strategy live on the VPS 14 days unattended.
 
-**M4 — ComputeWorker extraction**
-Move `ComputeQueueConsumer`, executors, engine wiring, plugin loading, SQLite run/validation repos, simulation cache, debug WS handler into the new host; gateway dispatches `POST /tasks` + proxies status/progress/reports/debug-WS; `ComputeWorker:BaseUrl` config (localhost default).
-*Exit:* all FE flows unchanged via gateway with worker as separate process; queue behavior (single consumer, cancellation, progress) identical.
+**M4 — ComputeWorker extraction + YARP adoption**
+Move `ComputeQueueConsumer`, executors, engine wiring, plugin loading, SQLite run/validation repos, simulation cache, debug WS handler into the new host; gateway dispatches `POST /tasks` + proxies status/progress/reports/debug-WS; `ComputeWorker:BaseUrl` config (localhost default). This is the YARP adoption point at the latest: the trigger is the hand-rolled forwarding pattern (`DataEndpoints.cs` HTTP+SSE proxying) being duplicated for a second upstream — which may already fire at M3a's `/live/*` proxying; adopt there if it chafes. Replace duplicated forwarding with declarative YARP routes + clusters (WS/SSE/HTTP2 pass through natively) — adopt infrastructure to delete code. Endpoints needing aggregation/business logic stay hand-written; pure pass-throughs become route config.
+*Exit:* all FE flows unchanged via gateway with worker as separate process; queue behavior (single consumer, cancellation, progress) identical; per-upstream forwarding code deleted in favor of route config.
 
-**M5 — Gateway slimming**
-Rename WebApi → `AlgoTradeForge.Gateway`; delete in-process engine/queue/live remnants; gateway stays local (cloud used privately); revisit placement later — gateway is stateless so moving it is config.
-*Exit:* gateway has no project reference to engine internals beyond contracts; all hosts start from compose/CLI with placement chosen purely by env.
+**M5 — Gateway slimming + second instance on the VPS**
+Rename WebApi → `AlgoTradeForge.Gateway`; delete in-process engine/queue/live remnants. Deploy a second instance of the same binary to the VPS behind Caddy with the cloud route config; cloud-side API-key validation moves from per-service middleware into Gateway@cloud, and HistoryLoader/LiveHost leave the public network (internal docker network only, no published ports). The FE-facing instance stays local. The pattern contains its own retirement plan: as services migrate, cluster destinations move from the local config to the cloud config; when the local config is pure "forward everything to cloud", delete the local instance and point the FE at Gateway@cloud.
+*Exit:* gateway has no project reference to engine internals beyond contracts; both instances run the same build artifact and differ only in `appsettings.{site}.json` (route IDs identical); HistoryLoader/LiveHost unreachable from the internet except via Caddy→Gateway@cloud; all hosts start from compose/CLI with placement chosen purely by env.
 
 **M6 — Live alt-bars + reporting polish**
 Promote `IBarAccumulator` + accumulators out of `internal` in `HistoryLoader.Application/Aggregation/Accumulators/` into a shared project; incremental aggregation BackgroundService in HistoryLoader (persisted cursor + partial-bar state, CAS JSON next to the feed); in-process live bar building in LiveHost from its own stream using the same accumulators, seeded from the historical alt-bar feed; golden test incremental ≡ batch. Live dashboards.
@@ -161,7 +168,7 @@ Promote `IBarAccumulator` + accumulators out of `internal` in `HistoryLoader.App
 
 **Q4 — Live equal-metric bar detection?** One fold, two cadences. *Canonical record:* incremental aggregation service in HistoryLoader tails new source rows and feeds the **same** `IBarAccumulator` implementations as the batch pipeline, persisting `{cursor, partial-bar state}` as CAS JSON; completed bars append via `BufferedPartitionWriter`; batch builder kept for rebuilds; golden test asserts incremental ≡ batch. *Signal timing:* LiveHost builds bars in-memory from its own stream with the same shared accumulators (promoted out of `internal`), seeded at session start from the historical feed + persisted partial state. Single fold source guarantees backtest/live parity.
 
-**Q5 — MQs/DBs on Hetzner?** **docker-compose on one VPS.** Caddy/Traefik (TLS) → historyloader + livehost; named volumes; Hetzner Object Storage as S3; `deploy.ps1`/Makefile over SSH for releases; uptime-kuma/healthchecks.io; nightly restic backup to the same object storage. **No MQ initially**; when a cache/stream server is earned it's **Valkey or Garnet** (not Redis) as one more compose service. Terraform (hcloud) optional sugar; a documented `deploy/hetzner.md` suffices at this scale. No k8s.
+**Q5 — MQs/DBs on Hetzner?** **docker-compose on one VPS.** Caddy (TLS) → historyloader + livehost directly until M5, then Caddy → gateway → services (Traefik rejected: label-based discovery machinery a static 3-container topology doesn't need; Caddy wins on Caddyfile simplicity + automatic HTTPS); named volumes; Hetzner Object Storage as S3; `deploy.ps1`/Makefile over SSH for releases; uptime-kuma/healthchecks.io; nightly restic backup to the same object storage. **No MQ initially**; when a cache/stream server is earned it's **Valkey or Garnet** (not Redis) as one more compose service. Terraform (hcloud) optional sugar; a documented `deploy/hetzner.md` suffices at this scale. No k8s.
 
 **Q6 — Storages for live + backtest reporting?**
 - *Backtest/optimization/validation:* keep exactly what exists — SQLite + run-folder JSONL on the ComputeWorker's local disk. Single-user, battle-tested.
@@ -172,7 +179,8 @@ Promote `IBarAccumulator` + accumulators out of `internal` in `HistoryLoader.App
 1. **M3b recovery semantics** (rehydrating sessions against live exchange state) is the only genuinely hard distributed-state problem — isolated in its own sub-phase with a kill-test exit criterion, built on the existing 3-phase reconciliation.
 2. **Two writers on `feeds.json`** would corrupt the manifest model — HistoryLoader stays sole writer per backend; CAS failures make violations loud.
 3. **Plugin version skew** between compute (what you optimized) and live (what trades) — mitigated by per-session version pinning.
-4. **Exposed cloud API without VPN** — mitigated by TLS + API-key auth from M0/M1, secrets in env, and the LiveHost never accepting unauthenticated traffic; auth contract designed to grow into SaaS tokens.
+4. **Exposed cloud API without VPN** — mitigated by TLS + API-key auth from M0/M1, secrets in env, and the LiveHost never accepting unauthenticated traffic; auth contract designed to grow into SaaS tokens. From M5, services additionally lose their public reachability entirely (internal docker network behind Caddy→Gateway@cloud).
+5. **Two-instance gateway config drift** — same binary, two site configs; divergence in route shape or transforms silently forks behavior between sites and is invisible until an env-specific bug surfaces. Mitigated structurally, not by vigilance: identical route IDs (only cluster destinations + auth direction differ), configs co-located in `deploy/`, single build artifact for both sites, first-hop `X-Correlation-Id` so cross-hop failures are attributable by grep.
 
 ## Critical files
 
