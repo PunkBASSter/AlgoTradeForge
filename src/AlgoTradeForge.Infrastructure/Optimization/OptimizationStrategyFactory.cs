@@ -75,14 +75,14 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
             ?? throw new InvalidOperationException(
                 $"Property '{propertyName}' not found on '{descriptor.ParamsType.Name}'.");
 
-        // Find the module slot axis to look up variant metadata
-        var slotAxis = descriptor.Axes.OfType<ModuleSlotAxis>()
-            .FirstOrDefault(a => a.Name == propertyName)
-            ?? throw new InvalidOperationException(
-                $"No module slot axis found for '{propertyName}'.");
-
-        var variant = slotAxis.Variants.FirstOrDefault(v => v.TypeKey == selection.TypeKey)
-            ?? throw new InvalidOperationException(
+        // Prefer the precomputed slot axis ([OptimizableModule] slots); fall back to
+        // on-demand discovery so explicit {typeKey, params} requests also bind to
+        // non-optimizable slots (echoed effective configs must be resubmittable).
+        var variant = descriptor.Axes.OfType<ModuleSlotAxis>()
+                .FirstOrDefault(a => a.Name == propertyName)
+                ?.Variants.FirstOrDefault(v => v.TypeKey == selection.TypeKey)
+            ?? _descriptorBuilder.ResolveModuleVariant(prop.PropertyType, selection.TypeKey)
+            ?? throw new ArgumentException(
                 $"Module variant '{selection.TypeKey}' not found for slot '{propertyName}'.");
 
         object moduleInstance;
@@ -162,13 +162,6 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
                     $"Module slot '{propertyName}' requires a 'typeKey' property to select the module implementation. " +
                     $"Use {{}} to keep the default. " +
                     $"Expected format: {{\"typeKey\": \"<key>\", \"params\": {{...}}}}");
-
-            // Need a ModuleSlotAxis to resolve the variant — requires [OptimizableModule] on the property
-            var slotAxis = descriptor.Axes.OfType<ModuleSlotAxis>()
-                .FirstOrDefault(a => a.Name == propertyName)
-                ?? throw new ArgumentException(
-                    $"Module slot '{propertyName}' is not configurable. " +
-                    $"Remove it from the request to use the default.");
 
             var subParams = new Dictionary<string, object>();
             if (element.TryGetProperty("params", out var paramsElement)

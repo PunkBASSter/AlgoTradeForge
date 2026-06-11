@@ -202,6 +202,35 @@ public class OptimizationStrategyFactoryTests
     }
 
     [Fact]
+    public void Create_ModuleSlotWithTypeKey_BindsWithoutOptimizableModuleAttribute()
+    {
+        // MoneyManagement is not an [OptimizableModule] slot — explicit {typeKey, params}
+        // must still bind, because echoed effective configs always use that shape.
+        var strategy = _factory.Create("DonchianBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
+        {
+            ["MoneyManagement"] = JsonDocument.Parse(
+                """{"typeKey":"mm.fixed-fractional","params":{"riskPercent":2.5}}""").RootElement,
+        });
+
+        var mm = GetParams<DonchianParams>(strategy).MoneyManagement;
+        var module = Assert.IsType<FixedFractionalModule>(mm);
+        var moduleParams = Assert.IsType<FixedFractionalParams>(module.ModuleParams);
+        Assert.Equal(2.5, moduleParams.RiskPercent);
+    }
+
+    [Fact]
+    public void Create_ModuleSlotWithUnknownTypeKey_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            _factory.Create("DonchianBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
+            {
+                ["MoneyManagement"] = JsonDocument.Parse(
+                    """{"typeKey":"mm.does-not-exist","params":{}}""").RootElement,
+            }));
+        Assert.Contains("mm.does-not-exist", ex.Message);
+    }
+
+    [Fact]
     public void Create_ModuleSlotWithoutTypeKey_Throws()
     {
         var ex = Assert.Throws<ArgumentException>(() =>

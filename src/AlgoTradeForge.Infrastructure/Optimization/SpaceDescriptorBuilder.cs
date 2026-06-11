@@ -69,6 +69,19 @@ public sealed class SpaceDescriptorBuilder : IOptimizationSpaceProvider
         return descriptors.GetValueOrDefault(strategyName);
     }
 
+    /// <summary>
+    /// Resolves a module variant by type key for any module-slot interface, independent
+    /// of [OptimizableModule]. Lets an explicit <c>{typeKey, params}</c> request bind to
+    /// slots that are not optimization axes — required for echoed effective configs
+    /// (which always render the explicit shape) to be resubmittable.
+    /// </summary>
+    public ModuleVariantDescriptor? ResolveModuleVariant(Type slotInterfaceType, string typeKey)
+    {
+        var allTypes = _assemblies.SelectMany(a => a.GetTypes()).ToArray();
+        return DiscoverModuleVariants(slotInterfaceType, allTypes, [], 0)
+            .FirstOrDefault(v => v.TypeKey == typeKey);
+    }
+
     public IReadOnlyDictionary<string, object> GetParameterDefaults(IOptimizationSpaceDescriptor descriptor)
     {
         var instance = Activator.CreateInstance(descriptor.ParamsType)!;
