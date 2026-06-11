@@ -1,6 +1,7 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Optimization.Space;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 namespace AlgoTradeForge.Application.Strategies;
 
@@ -156,14 +157,9 @@ public static class StrategyTemplateBuilder
             var assetName = i < assets.Count ? assets[i].LookupName
                 : i == 0 ? DefaultAsset : DefaultSecondaryAsset;
             var exchange = i < assets.Count ? assets[i].Exchange : DefaultExchange;
-            result.Add(new Dictionary<string, object>
-            {
-                ["kind"] = "TimeBar",
-                ["assetName"] = assetName,
-                ["exchange"] = exchange,
-                ["role"] = i == 0 ? 0 : 1,
-                ["timeFrame"] = timeFrame,
-            });
+            result.Add(Subscription(
+                assetName, exchange, timeFrame,
+                i == 0 ? DataFeedRole.Primary : DataFeedRole.Side));
         }
         return result;
     }
@@ -172,10 +168,12 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<AvailableAssetInfo> assets, string timeFrame)
     {
         if (assets.Count == 0)
-            return [Subscription(DefaultAsset, DefaultExchange, timeFrame, role: 0)];
+            return [Subscription(DefaultAsset, DefaultExchange, timeFrame, DataFeedRole.Primary)];
 
         return assets
-            .Select((a, i) => Subscription(a.LookupName, a.Exchange, timeFrame, role: i == 0 ? 0 : 1))
+            .Select((a, i) => Subscription(
+                a.LookupName, a.Exchange, timeFrame,
+                i == 0 ? DataFeedRole.Primary : DataFeedRole.Side))
             .ToList();
     }
 
@@ -184,13 +182,16 @@ public static class StrategyTemplateBuilder
     //   • Optimization axis groups: every entry is Role=Primary (fan-out candidate primaries —
     //     the optimizer runs |primaries| × |combos| per group). Side feeds in optimization
     //     templates require manual JSON edits.
+    // Role is emitted as the enum name ("Primary"/"Side"), never the ordinal — the template
+    // dictionary boxes values as object, so JsonStringEnumConverter cannot intervene, and the
+    // frontend matches on the string.
     private static Dictionary<string, object> Subscription(
-        string assetName, string exchange, string timeFrame, int role) => new()
+        string assetName, string exchange, string timeFrame, DataFeedRole role) => new()
     {
         ["kind"] = "TimeBar",
+        ["role"] = role.ToString(),
         ["assetName"] = assetName,
         ["exchange"] = exchange,
-        ["role"] = role,
         ["timeFrame"] = timeFrame,
     };
 
@@ -222,7 +223,7 @@ public static class StrategyTemplateBuilder
             var group = new List<Dictionary<string, object>>();
             for (var j = 0; j < groupSize; j++)
             {
-                group.Add(Subscription(assets[i + j].LookupName, assets[i + j].Exchange, timeFrame, role: 0));
+                group.Add(Subscription(assets[i + j].LookupName, assets[i + j].Exchange, timeFrame, DataFeedRole.Primary));
             }
             groups.Add(group);
         }
@@ -236,7 +237,7 @@ public static class StrategyTemplateBuilder
                         i == 0 ? DefaultAsset : $"{DefaultSecondaryAsset}_PERP",
                         DefaultExchange,
                         timeFrame,
-                        role: 0))
+                        DataFeedRole.Primary))
                     .ToList()
             };
     }
@@ -245,12 +246,12 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<AvailableAssetInfo> assets, string timeFrame)
     {
         if (assets.Count == 0)
-            return [[Subscription(DefaultAsset, DefaultExchange, timeFrame, role: 0)]];
+            return [[Subscription(DefaultAsset, DefaultExchange, timeFrame, DataFeedRole.Primary)]];
 
         return assets
             .Select(a => new List<Dictionary<string, object>>
             {
-                Subscription(a.LookupName, a.Exchange, timeFrame, role: 0),
+                Subscription(a.LookupName, a.Exchange, timeFrame, DataFeedRole.Primary),
             })
             .ToList();
     }
@@ -283,8 +284,8 @@ public static class StrategyTemplateBuilder
 
             pairs.Add(
             [
-                Subscription(baseAsset.LookupName, baseAsset.Exchange, timeFrame, role: 0),
-                Subscription(perpAsset.LookupName, perpAsset.Exchange, timeFrame, role: 0),
+                Subscription(baseAsset.LookupName, baseAsset.Exchange, timeFrame, DataFeedRole.Primary),
+                Subscription(perpAsset.LookupName, perpAsset.Exchange, timeFrame, DataFeedRole.Primary),
             ]);
         }
 

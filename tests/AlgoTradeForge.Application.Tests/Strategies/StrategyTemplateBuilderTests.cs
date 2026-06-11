@@ -110,6 +110,64 @@ public sealed class StrategyTemplateBuilderTests
     }
 
     // -----------------------------------------------------------------------
+    // Role serialization (UI matches on "Primary"/"Side" strings, not ordinals)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void BuildBacktestTemplate_EmitsRoleAsEnumName()
+    {
+        var assets = new List<AvailableAssetInfo>
+        {
+            new("Binance", "BTCUSDT", IsFutures: false),
+            new("Binance", "ETHUSDT", IsFutures: false),
+        };
+
+        var template = StrategyTemplateBuilder.BuildBacktestTemplate(
+            "Test", new Dictionary<string, object>(), NoAxes, assets, requiredSubscriptionCount: 2);
+
+        var subs = Assert.IsType<List<Dictionary<string, object>>>(template["dataSubscriptions"]);
+        Assert.Equal("Primary", GetRole(subs[0]));
+        Assert.Equal("Side", GetRole(subs[1]));
+    }
+
+    [Fact]
+    public void BuildDebugSessionTemplate_EmitsRoleAsEnumName()
+    {
+        var template = StrategyTemplateBuilder.BuildDebugSessionTemplate(
+            "Test", new Dictionary<string, object>(), NoAxes, [], requiredSubscriptionCount: 1);
+
+        var subs = Assert.IsType<List<Dictionary<string, object>>>(template["dataSubscriptions"]);
+        Assert.Equal("Primary", GetRole(subs[0]));
+    }
+
+    [Fact]
+    public void BuildLiveSessionTemplate_EmitsRoleAsEnumName()
+    {
+        var assets = new List<AvailableAssetInfo>
+        {
+            new("Binance", "BTCUSDT", IsFutures: false),
+            new("Binance", "ETHUSDT", IsFutures: false),
+        };
+
+        var template = StrategyTemplateBuilder.BuildLiveSessionTemplate(
+            "Test", new Dictionary<string, object>(), NoAxes, assets);
+
+        var subs = Assert.IsType<List<Dictionary<string, object>>>(template["dataSubscriptions"]);
+        Assert.Equal("Primary", GetRole(subs[0]));
+        Assert.Equal("Side", GetRole(subs[1]));
+    }
+
+    [Fact]
+    public void BuildOptimizationTemplate_EmitsRoleAsEnumName()
+    {
+        var template = StrategyTemplateBuilder.BuildOptimizationTemplate(
+            "Test", NoAxes, [], requiredSubscriptionCount: 1);
+
+        var groups = AssertSubscriptionAxis(template);
+        Assert.Equal("Primary", GetRole(groups[0][0]));
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
@@ -124,4 +182,7 @@ public sealed class StrategyTemplateBuilderTests
 
     private static string GetAssetName(Dictionary<string, object> sub) =>
         Assert.IsType<string>(sub["assetName"]);
+
+    private static string GetRole(Dictionary<string, object> sub) =>
+        sub["role"].ToString()!;
 }
