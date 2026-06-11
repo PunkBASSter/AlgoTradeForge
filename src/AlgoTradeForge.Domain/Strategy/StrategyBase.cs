@@ -1,13 +1,15 @@
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
+using AlgoTradeForge.Domain.Strategy.Modules;
 using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
 using AlgoTradeForge.Domain.Trading;
 
 namespace AlgoTradeForge.Domain.Strategy;
 
 public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactory? indicators = null)
-    : IInt64BarStrategy, IEventBusReceiver, IFeedContextReceiver, IOrderContextReceiver, ITradeRegistryProvider
+    : IInt64BarStrategy, IEventBusReceiver, IFeedContextReceiver, IOrderContextReceiver, ITradeRegistryProvider,
+      IStrategyParamsProvider
     where TParams : StrategyParamsBase
 {
     private readonly TradeRegistryModule _tradeRegistry = new(parameters.TradeRegistry);
@@ -28,6 +30,8 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
     protected IOrderContext Orders { get; private set; } = UninitializedOrderContext.Instance;
 
     TradeRegistryModule ITradeRegistryProvider.TradeRegistry => _tradeRegistry;
+
+    StrategyParamsBase IStrategyParamsProvider.StrategyParams => Params;
 
     public IList<DataSubscription> DataSubscriptions => Params.DataSubscriptions;
 
@@ -52,6 +56,9 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
         if (_tradeRegistry is IEventBusReceiver busReceiver)
             busReceiver.SetEventBus(EventBus);
         _tradeRegistry.SetClock(() => _currentBarTimestamp);
+
+        if (Params is ModularStrategyParamsBase { MoneyManagement: IEventBusReceiver mmReceiver })
+            mmReceiver.SetEventBus(EventBus);
     }
 
     public virtual void OnTrade(Fill fill, Order order)

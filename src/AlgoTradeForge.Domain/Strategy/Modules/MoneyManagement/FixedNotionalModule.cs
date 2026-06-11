@@ -8,12 +8,12 @@ namespace AlgoTradeForge.Domain.Strategy.Modules.MoneyManagement;
 /// </summary>
 [ModuleKey("mm.fixed-notional")]
 public sealed class FixedNotionalModule(FixedNotionalParams parameters)
-    : MoneyManagementModuleBase, IStrategyModule<FixedNotionalParams>
+    : MoneyManagementModuleBase<FixedNotionalParams>(parameters)
 {
     protected override decimal CalculateRawQuantity(
         long equity, long entryPrice, long stopLoss, long riskDistance, StrategyContextBase context)
     {
         if (entryPrice <= 0) return 0m;
-        return (decimal)parameters.Notional / entryPrice;
+        return (decimal)Params.Notional / entryPrice;
     }
 }

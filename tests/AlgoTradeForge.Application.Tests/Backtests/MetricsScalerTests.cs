@@ -140,8 +140,8 @@ public class MetricsScalerTests
     {
         var trades = new List<ClosedTrade>
         {
-            new(1000L, 5000L),   // win: 5000 ticks * 0.01 = 50.00
-            new(2000L, -3000L),  // loss: -3000 ticks * 0.01 = -30.00
+            new(1000L, 5000L, 500L),   // win: 5000 ticks * 0.01 = 50.00
+            new(2000L, -3000L, -300L), // loss: -3000 ticks * 0.01 = -30.00
         };
 
         var result = MetricsScaler.ScaleTradePnl(trades, _scale);

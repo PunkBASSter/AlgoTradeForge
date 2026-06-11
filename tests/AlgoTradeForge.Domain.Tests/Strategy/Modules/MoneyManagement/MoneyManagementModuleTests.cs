@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.Modules;
@@ -61,7 +62,7 @@ public sealed class MoneyManagementModuleTests
     }
 
     [Fact]
-    public void FixedFractional_QuantityBelowMinOrderQuantity_ReturnsZero()
+    public void FixedFractional_QuantityBelowMinOrderQuantity_ClampsToMin()
     {
         var module = CreateModule(riskPercent: 1.0);
         var context = CreateContext(cash: 100L);
@@ -69,7 +70,47 @@ public sealed class MoneyManagementModuleTests
 
         var qty = module.CalculateSize(entryPrice: 50_000, stopLoss: 48_000, context, asset);
 
-        Assert.Equal(0m, qty);
+        // Computed 0.0005 is positive but sub-minimum: trade the smallest executable
+        // lot instead of silently sitting out (settlement still vets affordability).
+        Assert.Equal(0.001m, qty);
+    }
+
+    [Fact]
+    public void ClampToMin_EmitsWarningOnTransitionOnly()
+    {
+        var module = CreateModule(riskPercent: 1.0);
+        var bus = new CapturingEventBus();
+        module.SetEventBus(bus);
+        var asset = CreateAsset(minOrderQuantity: 0.001m);
+        var richContext = CreateContext(cash: 100_000L);
+        var poorContext = CreateContext(cash: 100L);
+
+        module.CalculateSize(50_000, 48_000, richContext, asset); // normal — no event
+        module.CalculateSize(50_000, 48_000, poorContext, asset); // clamped — warn
+        module.CalculateSize(50_000, 48_000, poorContext, asset); // still clamped — no new event
+        module.CalculateSize(50_000, 48_000, richContext, asset); // recovered — warn
+
+        var warnings = bus.Events.OfType<WarningEvent>().ToList();
+        Assert.Equal(2, warnings.Count);
+        Assert.Contains("clamped", warnings[0].Message);
+        Assert.Contains("recovered", warnings[1].Message);
+    }
+
+    [Fact]
+    public void ZeroSizing_EmitsWarningOnTransition()
+    {
+        var module = CreateHalfKellyModule(winRate: 0.3, payoffRatio: 1.0); // negative Kelly → raw 0
+        var bus = new CapturingEventBus();
+        module.SetEventBus(bus);
+        var asset = CreateAsset();
+        var context = CreateContext(cash: 100_000L);
+
+        module.CalculateSize(50_000, 48_000, context, asset);
+        module.CalculateSize(50_000, 48_000, context, asset);
+
+        var warnings = bus.Events.OfType<WarningEvent>().ToList();
+        Assert.Single(warnings);
+        Assert.Contains("returned 0", warnings[0].Message);
     }
 
     [Fact]

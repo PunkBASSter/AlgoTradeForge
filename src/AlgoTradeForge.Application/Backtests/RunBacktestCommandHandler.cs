@@ -88,6 +88,7 @@ public sealed class RunBacktestCommandHandler(
     {
         try
         {
+            var effectiveParams = EffectiveParamsEcho.Build(command.StrategyParameters, setup.Strategy);
             var identity = new RunIdentity
             {
                 StrategyName = command.StrategyName,
@@ -98,7 +99,7 @@ public sealed class RunBacktestCommandHandler(
                 InitialCash = setup.Options.InitialCash,
                 RunMode = ExportMode.Backtest,
                 RunTimestamp = startedAt,
-                StrategyParameters = command.StrategyParameters,
+                StrategyParameters = effectiveParams,
             };
 
             BacktestResult result;
@@ -151,8 +152,7 @@ public sealed class RunBacktestCommandHandler(
                 Id = runId,
                 StrategyName = command.StrategyName,
                 StrategyVersion = setup.Strategy.Version,
-                Parameters = command.StrategyParameters?.AsReadOnly()
-                    ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
+                Parameters = effectiveParams.AsReadOnly(),
                 // Persist the wire shape; setup.Strategy.DataSubscriptions is the resolved
                 // (Asset, TimeFrame) form which would erase FeedId for AltBar/Tick/Side feeds.
                 DataSubscriptions = command.DataSubscriptions,
@@ -204,8 +204,7 @@ public sealed class RunBacktestCommandHandler(
                 Id = runId,
                 StrategyName = command.StrategyName,
                 StrategyVersion = setup.Strategy.Version,
-                Parameters = command.StrategyParameters?.AsReadOnly()
-                    ?? (IReadOnlyDictionary<string, object>)new Dictionary<string, object>(),
+                Parameters = EffectiveParamsEcho.Build(command.StrategyParameters, setup.Strategy).AsReadOnly(),
                 // Persist the wire shape; setup.Strategy.DataSubscriptions is the resolved
                 // (Asset, TimeFrame) form which would erase FeedId for AltBar/Tick/Side feeds.
                 DataSubscriptions = command.DataSubscriptions,
@@ -221,6 +220,7 @@ public sealed class RunBacktestCommandHandler(
                     TotalReturnPct = 0, AnnualizedReturnPct = 0,
                     SharpeRatio = 0, SortinoRatio = 0, MaxDrawdownPct = 0,
                     WinRatePct = 0, ProfitFactor = 0, AverageWin = 0, AverageLoss = 0,
+                    NetTicks = 0, AvgTicksPerTrade = 0, TickProfitFactor = 0,
                     InitialCapital = command.BacktestSettings.InitialCash, FinalEquity = command.BacktestSettings.InitialCash,
                     TradingDays = 0,
                 },

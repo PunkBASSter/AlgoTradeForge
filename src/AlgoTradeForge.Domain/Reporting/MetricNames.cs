@@ -18,6 +18,9 @@ public static class MetricNames
     public const string ProfitFactor = nameof(PerformanceMetrics.ProfitFactor);
     public const string AverageWin = nameof(PerformanceMetrics.AverageWin);
     public const string AverageLoss = nameof(PerformanceMetrics.AverageLoss);
+    public const string NetTicks = nameof(PerformanceMetrics.NetTicks);
+    public const string AvgTicksPerTrade = nameof(PerformanceMetrics.AvgTicksPerTrade);
+    public const string TickProfitFactor = nameof(PerformanceMetrics.TickProfitFactor);
     public const string InitialCapital = nameof(PerformanceMetrics.InitialCapital);
     public const string FinalEquity = nameof(PerformanceMetrics.FinalEquity);
     public const string TradingDays = nameof(PerformanceMetrics.TradingDays);

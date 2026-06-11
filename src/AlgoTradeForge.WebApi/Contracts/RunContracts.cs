@@ -58,6 +58,9 @@ public static class MetricsMapping
         AddIfFinite(dict, "profitFactor", m.ProfitFactor);
         AddIfFinite(dict, "averageWin", m.AverageWin);
         AddIfFinite(dict, "averageLoss", m.AverageLoss);
+        dict["netTicks"] = m.NetTicks;
+        AddIfFinite(dict, "avgTicksPerTrade", m.AvgTicksPerTrade);
+        AddIfFinite(dict, "tickProfitFactor", m.TickProfitFactor);
 
         if (fitnessScore is { } fs && double.IsFinite(fs))
             dict["fitness"] = fs;

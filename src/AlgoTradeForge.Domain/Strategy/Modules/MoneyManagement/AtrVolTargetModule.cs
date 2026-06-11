@@ -4,7 +4,7 @@ namespace AlgoTradeForge.Domain.Strategy.Modules.MoneyManagement;
 
 [ModuleKey("mm.atr-vol-target")]
 public sealed class AtrVolTargetModule(AtrVolTargetParams parameters)
-    : MoneyManagementModuleBase, IStrategyModule<AtrVolTargetParams>
+    : MoneyManagementModuleBase<AtrVolTargetParams>(parameters)
 {
     protected override decimal CalculateRawQuantity(
         long equity, long entryPrice, long stopLoss, long riskDistance, StrategyContextBase context)
@@ -16,7 +16,7 @@ public sealed class AtrVolTargetModule(AtrVolTargetParams parameters)
         if (atr <= 0) return 0m;
 
         // qty = (equity * volTarget) / ATR
-        var targetNotional = equity * parameters.VolTarget;
+        var targetNotional = equity * Params.VolTarget;
         return (decimal)(targetNotional / atr);
     }
 }

@@ -4,13 +4,13 @@ namespace AlgoTradeForge.Domain.Strategy.Modules.MoneyManagement;
 
 [ModuleKey("mm.fixed-fractional")]
 public sealed class FixedFractionalModule(FixedFractionalParams parameters)
-    : MoneyManagementModuleBase, IStrategyModule<FixedFractionalParams>
+    : MoneyManagementModuleBase<FixedFractionalParams>(parameters)
 {
     protected override decimal CalculateRawQuantity(
         long equity, long entryPrice, long stopLoss, long riskDistance, StrategyContextBase context)
     {
         // qty = (equity * riskPercent%) / riskDistance
-        var riskAmount = equity * parameters.RiskPercent / 100.0;
+        var riskAmount = equity * Params.RiskPercent / 100.0;
         return (decimal)(riskAmount / riskDistance);
     }
 }

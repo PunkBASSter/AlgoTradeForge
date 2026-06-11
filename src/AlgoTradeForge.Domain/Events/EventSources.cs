@@ -10,5 +10,7 @@ public static class EventSources
 
     public const string TradeRegistry = "trade-registry";
 
+    public const string MoneyManagement = "money-management";
+
     public static string Indicator(string indicatorName) => $"indicator.{indicatorName}";
 }

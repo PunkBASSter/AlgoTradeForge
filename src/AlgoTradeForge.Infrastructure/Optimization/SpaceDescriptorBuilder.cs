@@ -78,7 +78,11 @@ public sealed class SpaceDescriptorBuilder : IOptimizationSpaceProvider
             if (prop.Name == nameof(StrategyParamsBase.DataSubscriptions)) continue;
             if (!prop.CanWrite) continue;
             var value = prop.GetValue(instance);
-            if (value is not null)
+            if (value is IStrategyModule module)
+                // Render module slots as the resubmittable { typeKey, params } shape;
+                // serializing the module instance itself would yield an opaque {}.
+                defaults[prop.Name] = ModuleDescriptor.Describe(module);
+            else if (value is not null)
                 defaults[prop.Name] = value;
         }
         return defaults;

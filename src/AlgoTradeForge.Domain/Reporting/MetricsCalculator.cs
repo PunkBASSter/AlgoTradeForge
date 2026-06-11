@@ -44,6 +44,11 @@ public class MetricsCalculator : IMetricsCalculator
             ? tradeStats.GrossProfit / tradeStats.GrossLoss
             : tradeStats.GrossProfit > 0 ? 9999.99 : 0;
 
+        var netTicks = tradeStats.GrossTickProfit - tradeStats.GrossTickLoss;
+        var tickProfitFactor = tradeStats.GrossTickLoss > 0
+            ? (double)tradeStats.GrossTickProfit / tradeStats.GrossTickLoss
+            : tradeStats.GrossTickProfit > 0 ? 9999.99 : 0;
+
         var metrics = new PerformanceMetrics
         {
             TotalTrades = fills.Count,
@@ -62,6 +67,9 @@ public class MetricsCalculator : IMetricsCalculator
             ProfitFactor = profitFactor,
             AverageWin = tradeStats.WinningTrades > 0 ? tradeStats.GrossProfit / tradeStats.WinningTrades : 0,
             AverageLoss = tradeStats.LosingTrades > 0 ? tradeStats.GrossLoss / tradeStats.LosingTrades : 0,
+            NetTicks = netTicks,
+            AvgTicksPerTrade = tradeStats.RoundTrips > 0 ? (double)netTicks / tradeStats.RoundTrips : 0,
+            TickProfitFactor = tickProfitFactor,
             InitialCapital = initialCash,
             FinalEquity = finalEquity,
             TradingDays = tradingDays
@@ -94,7 +102,8 @@ public class MetricsCalculator : IMetricsCalculator
                 var grossPnl = MoneyConvert.ToLong(pos.Quantity * (fill.Price - pos.AvgEntry) * multiplier);
                 var roundTripCommission = pos.AccumulatedCommission + fill.Commission;
                 var netPnl = grossPnl - roundTripCommission;
-                RecordPnl(stats, grossPnl, netPnl, fill.Timestamp.ToUnixTimeMilliseconds());
+                var moveTicks = (fill.Price - pos.AvgEntry) * Math.Sign(pos.Quantity);
+                RecordPnl(stats, grossPnl, netPnl, moveTicks, fill.Timestamp.ToUnixTimeMilliseconds());
                 pos = (newQuantity, fill.Price, fill.Asset, 0L);
             }
             else if (pos.Quantity == 0)
@@ -110,7 +119,8 @@ public class MetricsCalculator : IMetricsCalculator
                 var attributedEntryCommission = MoneyConvert.ToLong(closeFraction * pos.AccumulatedCommission);
                 var roundTripCommission = attributedEntryCommission + fill.Commission;
                 var netPnl = grossPnl - roundTripCommission;
-                RecordPnl(stats, grossPnl, netPnl, fill.Timestamp.ToUnixTimeMilliseconds());
+                var moveTicks = (fill.Price - pos.AvgEntry) * Math.Sign(pos.Quantity);
+                RecordPnl(stats, grossPnl, netPnl, moveTicks, fill.Timestamp.ToUnixTimeMilliseconds());
                 pos = (newQuantity, pos.AvgEntry, fill.Asset, pos.AccumulatedCommission - attributedEntryCommission);
             }
             else
@@ -126,7 +136,7 @@ public class MetricsCalculator : IMetricsCalculator
         return stats;
     }
 
-    private static void RecordPnl(TradeStatistics stats, long grossPnl, long netPnl, long exitTimestampMs)
+    private static void RecordPnl(TradeStatistics stats, long grossPnl, long netPnl, long moveTicks, long exitTimestampMs)
     {
         if (grossPnl > 0)
         {
@@ -138,8 +148,14 @@ public class MetricsCalculator : IMetricsCalculator
             stats.LosingTrades++;
             stats.GrossLoss += (double)Math.Abs(grossPnl);
         }
+
+        if (moveTicks > 0)
+            stats.GrossTickProfit += moveTicks;
+        else
+            stats.GrossTickLoss += -moveTicks;
+
         stats.RoundTrips++;
-        stats.Trades.Add(new ClosedTrade(exitTimestampMs, netPnl));
+        stats.Trades.Add(new ClosedTrade(exitTimestampMs, netPnl, moveTicks));
     }
 
     private static List<double> BuildDoubleCurve(IReadOnlyList<long> equityCurve)
@@ -235,6 +251,7 @@ public class MetricsCalculator : IMetricsCalculator
             TotalReturnPct = 0, AnnualizedReturnPct = 0,
             SharpeRatio = 0, SortinoRatio = 0, MaxDrawdownPct = 0,
             WinRatePct = 0, ProfitFactor = 0, AverageWin = 0, AverageLoss = 0,
+            NetTicks = 0, AvgTicksPerTrade = 0, TickProfitFactor = 0,
             InitialCapital = initialCapital, FinalEquity = finalEquity, TradingDays = tradingDays
         };
     }
@@ -247,6 +264,8 @@ public class MetricsCalculator : IMetricsCalculator
         public double GrossProfit { get; set; }
         public double GrossLoss { get; set; }
         public double TotalCommissions { get; set; }
+        public long GrossTickProfit { get; set; }
+        public long GrossTickLoss { get; set; }
         public List<ClosedTrade> Trades { get; } = [];
     }
 }
