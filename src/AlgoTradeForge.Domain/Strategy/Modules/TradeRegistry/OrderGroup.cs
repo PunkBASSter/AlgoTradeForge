@@ -18,7 +18,13 @@ public sealed class OrderGroup
     public long EntryOrderId { get; internal set; }
     public required OrderSide EntrySide { get; init; }
     public required decimal EntryQuantity { get; init; }
+    /// <summary>Fill price; 0 until the entry order fills.</summary>
     public long EntryPrice { get; internal set; }
+    /// <summary>Limit price of the entry order, when it was a limit/stop-limit order.</summary>
+    public long? EntryLimitPrice { get; init; }
+    /// <summary>Stop price of the entry order, when it was a stop order. Lets callers
+    /// compare a PendingEntry group against the currently desired entry level.</summary>
+    public long? EntryStopPrice { get; init; }
 
     // Stop-loss
     public long SlOrderId { get; internal set; }

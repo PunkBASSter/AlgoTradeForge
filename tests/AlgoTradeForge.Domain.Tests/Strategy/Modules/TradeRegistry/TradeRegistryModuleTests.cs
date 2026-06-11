@@ -983,4 +983,142 @@ public class TradeRegistryModuleTests
         Assert.Equal(OrderGroupStatus.Closed, group.Status);
         Assert.Equal(entryBarTimestamp, group.EntryFilledAt);
     }
+
+    // ── Lifecycle regressions: orphan orders / naked positions ──
+
+    [Fact]
+    public void TpFill_PartialClosure_AllTpsFilled_KeepsSlForResidual()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
+
+        // Single TP closing only 50% — residual must stay SL-covered per OpenGroup contract
+        var group = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000,
+            tpLevels: [new TpLevel { Price = 16000, ClosurePercentage = 0.5m }])!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId));
+
+        var firstSlId = group.SlOrderId;
+        var tpOrderId = group.TpLevels[0].OrderId;
+        module.OnFill(
+            MakeFill(tpOrderId, 16000, 5m, OrderSide.Sell),
+            MakeOrder(tpOrderId));
+
+        // Group must NOT close: 5 units remain open and need protection
+        Assert.Equal(OrderGroupStatus.ProtectionActive, group.Status);
+        Assert.Equal(5m, group.RemainingQuantity);
+        Assert.NotEqual(0, group.SlOrderId);
+        Assert.NotEqual(firstSlId, group.SlOrderId); // SL replaced with reduced qty
+        Assert.Contains(group, module.ActiveGroups);
+
+        // Residual exits via the replaced SL
+        module.OnFill(
+            MakeFill(group.SlOrderId, 14000, 5m, OrderSide.Sell),
+            MakeOrder(group.SlOrderId));
+        Assert.Equal(OrderGroupStatus.Closed, group.Status);
+        Assert.Equal(0m, group.RemainingQuantity);
+    }
+
+    [Fact]
+    public void EntryFill_AfterCancel_DoesNotResurrectGroup()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
+
+        var group = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Stop,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp,
+            entryStopPrice: 15000)!;
+
+        Assert.True(module.CancelGroup(group.GroupId));
+
+        // Late fill after cancel (live race / duplicate event) must not flip the
+        // group back to life or submit protective orders nothing tracks.
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId));
+
+        Assert.Equal(OrderGroupStatus.Cancelled, group.Status);
+        Assert.Equal(0, module.ActiveGroupCount);
+        ctx.Received(1).Submit(Arg.Any<Order>()); // entry only — no SL/TP
+    }
+
+    [Fact]
+    public void DuplicateExitFills_DoNotDoubleCountPnl()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
+
+        var group = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId));
+
+        var slId = group.SlOrderId;
+        module.OnFill(MakeFill(slId, 14000, 10m, OrderSide.Sell), MakeOrder(slId));
+        var pnlAfterClose = group.RealizedPnl;
+
+        // Replay the same SL fill — consumed order ids must be dropped from routing
+        module.OnFill(MakeFill(slId, 14000, 10m, OrderSide.Sell), MakeOrder(slId));
+
+        Assert.Equal(pnlAfterClose, group.RealizedPnl);
+        Assert.Equal(OrderGroupStatus.Closed, group.Status);
+    }
+
+    [Fact]
+    public void CancelGroup_WhileLiquidationInFlight_ReturnsFalse()
+    {
+        var module = CreateModule();
+        var ctx = MockOrderContext();
+        module.SetOrderContext(ctx);
+
+        var group = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Market,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp)!;
+
+        module.OnFill(
+            MakeFill(group.EntryOrderId, 15000, 10m, OrderSide.Buy),
+            MakeOrder(group.EntryOrderId));
+
+        Assert.True(module.LiquidateGroup(group.GroupId));
+
+        // The group must stay alive to route the liquidation fill
+        Assert.False(module.CancelGroup(group.GroupId));
+        Assert.Equal(OrderGroupStatus.ProtectionActive, group.Status);
+
+        var liqId = group.LiquidationOrderId;
+        module.OnFill(MakeFill(liqId, 15500, 10m, OrderSide.Sell), MakeOrder(liqId));
+        Assert.Equal(OrderGroupStatus.Closed, group.Status);
+    }
+
+    [Fact]
+    public void OpenGroup_StoresEntryPrices()
+    {
+        var module = CreateModule();
+        module.SetOrderContext(MockOrderContext());
+
+        var stopGroup = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Stop,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp,
+            entryStopPrice: 15200)!;
+        Assert.Equal(15200, stopGroup.EntryStopPrice);
+        Assert.Null(stopGroup.EntryLimitPrice);
+
+        var limitGroup = module.OpenGroup(
+            DefaultAsset, OrderSide.Buy, OrderType.Limit,
+            quantity: 10m, slPrice: 14000, tpLevels: SingleTp,
+            entryLimitPrice: 14800)!;
+        Assert.Equal(14800, limitGroup.EntryLimitPrice);
+        Assert.Null(limitGroup.EntryStopPrice);
+    }
 }

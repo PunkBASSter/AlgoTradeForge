@@ -97,6 +97,8 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
             CreatedAt = _clock(),
             Tag = tag,
             EntryOrderId = entryOrderId,
+            EntryLimitPrice = entryLimitPrice,
+            EntryStopPrice = entryStopPrice,
         };
 
         _groups[groupId] = group;
@@ -141,6 +143,13 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
     private void HandleEntryFill(OrderGroup group, Fill fill)
     {
+        // A fill can race a cancel (live: cancel sent, fill already in flight) or arrive
+        // as a duplicate event. Processing it would resurrect a terminal group outside
+        // _activeGroups and submit protective orders nothing tracks — orphans by construction.
+        if (group.Status != OrderGroupStatus.PendingEntry)
+            return;
+
+        _orderToGroup.Remove(group.EntryOrderId);
         group.Status = OrderGroupStatus.ProtectionActive;
         group.EntryPrice = fill.Price;
         group.EntryFilledAt = _clock();
@@ -157,6 +166,10 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
         EmitEvent(group, OrderGroupTransition.SlFilled, fill.OrderId, fill.Price, fill.Quantity);
 
+        // The SL order is consumed by the fill — drop tracking before cancelling TPs
+        _orderToGroup.Remove(fill.OrderId);
+        group.SlOrderId = 0;
+
         // Cancel ALL pending TPs
         CancelAllPendingTps(group);
 
@@ -172,9 +185,17 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
         // Remove filled TP from tracking
         _orderToGroup.Remove(fill.OrderId);
+        for (var i = 0; i < group.TpLevels.Length; i++)
+        {
+            if (group.TpLevels[i].OrderId == fill.OrderId)
+            {
+                group.TpLevels[i].OrderId = 0;
+                break;
+            }
+        }
         group.FilledTpCount++;
 
-        if (group.RemainingQuantity <= 0m || group.FilledTpCount >= group.TpLevels.Length)
+        if (group.RemainingQuantity <= 0m)
         {
             // Fully closed — cancel SL + any remaining TPs
             CancelSl(group);
@@ -183,7 +204,10 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         }
         else
         {
-            // Partially closed — replace SL with reduced qty (TPs already on exchange)
+            // Residual remains (partial TP coverage or more TP levels outstanding) —
+            // replace SL with reduced qty so the residual stays protected. The group
+            // closes only when flat (SL/liquidation/remaining TPs); total TP closure
+            // below 100% leaves the residual covered by SL per the OpenGroup contract.
             ReplaceSl(group);
         }
     }
@@ -270,6 +294,15 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
     // ── CancelGroup ──────────────────────────────────────────────
 
+    /// <summary>
+    /// PendingEntry: cancels the entry order and marks the group Cancelled.
+    /// ProtectionActive: cancels the working SL/TP orders and marks the group Closed
+    /// WITHOUT closing the position — the remaining position becomes the caller's
+    /// responsibility (used by strategies that submit their own exit order). Use
+    /// <see cref="LiquidateGroup"/> to flatten through the registry instead.
+    /// Returns false while a liquidation is in flight: the group must stay alive
+    /// to route the liquidation fill.
+    /// </summary>
     public bool CancelGroup(long groupId)
     {
         if (!_groups.TryGetValue(groupId, out var group))
@@ -278,6 +311,7 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         if (group.Status == OrderGroupStatus.PendingEntry)
         {
             Orders.Cancel(group.EntryOrderId);
+            _orderToGroup.Remove(group.EntryOrderId);
             group.Status = OrderGroupStatus.Cancelled;
             _activeGroups.Remove(group);
             EmitEvent(group, OrderGroupTransition.EntryCancelled, group.EntryOrderId, null, null);
@@ -286,6 +320,9 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
 
         if (group.Status == OrderGroupStatus.ProtectionActive)
         {
+            if (group.LiquidationOrderId != 0)
+                return false;
+
             CancelSl(group);
             CancelAllPendingTps(group);
             CloseGroup(group);
@@ -349,11 +386,11 @@ public sealed class TradeRegistryModule(TradeRegistryParams parameters) : IStrat
         for (var i = 0; i < group.TpLevels.Length; i++)
         {
             var tpOrderId = group.TpLevels[i].OrderId;
-            if (tpOrderId != 0 && _orderToGroup.ContainsKey(tpOrderId))
+            if (tpOrderId != 0 && _orderToGroup.Remove(tpOrderId))
             {
                 Orders.Cancel(tpOrderId);
                 EmitEvent(group, OrderGroupTransition.ProtectiveCancelled, tpOrderId, null, null);
-                _orderToGroup.Remove(tpOrderId);
+                group.TpLevels[i].OrderId = 0;
             }
         }
     }
