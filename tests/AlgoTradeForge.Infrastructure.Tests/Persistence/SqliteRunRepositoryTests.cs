@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Domain.Reporting;
@@ -140,6 +141,35 @@ public class SqliteRunRepositoryTests : IDisposable
         Assert.Equal("BTCUSDT", loaded.DataSubscriptions[0].AssetName);
         Assert.Equal("Binance", loaded.DataSubscriptions[0].Exchange);
         Assert.Equal("1h", Assert.IsType<TimeBarSubscription>(loaded.DataSubscriptions[0]).TimeFrame.Code);
+    }
+
+    // ── Object-valued parameters (module configs) survive the round-trip ─
+
+    [Fact]
+    public async Task SaveAndGetById_PreservesObjectParametersAsJsonObjects()
+    {
+        var original = MakeBacktestRecord() with
+        {
+            Parameters = new Dictionary<string, object>
+            {
+                ["AtrPeriod"] = 14L,
+                ["MoneyManagement"] = new Dictionary<string, object?>
+                {
+                    ["typeKey"] = "mm.fixed-notional",
+                    ["params"] = new Dictionary<string, object?> { ["notional"] = 100000m },
+                },
+            },
+        };
+
+        await _repo.SaveAsync(original, TestContext.Current.CancellationToken);
+        var loaded = await _repo.GetByIdAsync(original.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(14L, loaded.Parameters["AtrPeriod"]);
+        var mm = Assert.IsType<JsonElement>(loaded.Parameters["MoneyManagement"]);
+        Assert.Equal(JsonValueKind.Object, mm.ValueKind);
+        Assert.Equal("mm.fixed-notional", mm.GetProperty("typeKey").GetString());
+        Assert.Equal(100000m, mm.GetProperty("params").GetProperty("notional").GetDecimal());
     }
 
     // ── GetById returns null for non-existent ──────────────────────────

@@ -986,6 +986,9 @@ public sealed class SqliteRunRepository : IRunRepository, IDisposable
                 JsonValueKind.String => prop.Value.GetString()!,
                 JsonValueKind.True => true,
                 JsonValueKind.False => false,
+                // Module configs etc. must stay JSON objects — flattening to raw text
+                // makes the echoed parameters unresubmittable. Clone detaches from doc.
+                JsonValueKind.Object or JsonValueKind.Array => prop.Value.Clone(),
                 _ => prop.Value.GetRawText()
             };
         }

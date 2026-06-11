@@ -219,6 +219,38 @@ public class OptimizationStrategyFactoryTests
     }
 
     [Fact]
+    public void Create_ModuleSlotAsJsonElementString_BindsModule()
+    {
+        // Wire shape from rows persisted before DeserializeParameters preserved objects:
+        // the module config arrives as a JSON string value, not an object.
+        using var doc = JsonDocument.Parse(
+            """{"MoneyManagement": "{\"typeKey\":\"mm.fixed-fractional\",\"params\":{\"riskPercent\":2.5}}"}""");
+
+        var strategy = _factory.Create("DonchianBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
+        {
+            ["MoneyManagement"] = doc.RootElement.GetProperty("MoneyManagement"),
+        });
+
+        var mm = GetParams<DonchianParams>(strategy).MoneyManagement;
+        var module = Assert.IsType<FixedFractionalModule>(mm);
+        var moduleParams = Assert.IsType<FixedFractionalParams>(module.ModuleParams);
+        Assert.Equal(2.5, moduleParams.RiskPercent);
+    }
+
+    [Fact]
+    public void Create_ModuleSlotWithMalformedJsonString_ThrowsArgumentException()
+    {
+        using var doc = JsonDocument.Parse("""{"MoneyManagement": "{broken json"}""");
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            _factory.Create("DonchianBreakout", PassthroughIndicatorFactory.Instance, new Dictionary<string, object>
+            {
+                ["MoneyManagement"] = doc.RootElement.GetProperty("MoneyManagement"),
+            }));
+        Assert.Contains("MoneyManagement", ex.Message);
+    }
+
+    [Fact]
     public void Create_ModuleSlotWithUnknownTypeKey_Throws()
     {
         var ex = Assert.Throws<ArgumentException>(() =>

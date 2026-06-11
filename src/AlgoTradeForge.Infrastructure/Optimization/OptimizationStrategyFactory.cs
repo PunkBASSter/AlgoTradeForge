@@ -137,9 +137,17 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
             {
                 obj = el;
             }
+            else if (value is JsonElement { ValueKind: JsonValueKind.String } strEl
+                && strEl.GetString() is { } embedded && embedded.TrimStart().StartsWith('{'))
+            {
+                // Rows persisted before objects survived the DB round-trip echo module
+                // configs as JSON strings; clients resubmit that shape verbatim.
+                ownedDoc = ParseModuleJson(propertyName, embedded);
+                obj = ownedDoc.RootElement;
+            }
             else if (value is string json && json.TrimStart().StartsWith('{'))
             {
-                ownedDoc = JsonDocument.Parse(json);
+                ownedDoc = ParseModuleJson(propertyName, json);
                 obj = ownedDoc.RootElement;
             }
             else
@@ -178,6 +186,19 @@ public sealed class OptimizationStrategyFactory : IStrategyFactory, IOptimizatio
         finally
         {
             ownedDoc?.Dispose();
+        }
+    }
+
+    private static JsonDocument ParseModuleJson(string propertyName, string json)
+    {
+        try
+        {
+            return JsonDocument.Parse(json);
+        }
+        catch (JsonException ex)
+        {
+            throw new ArgumentException(
+                $"Module slot '{propertyName}' contains malformed JSON: {ex.Message}");
         }
     }
 
