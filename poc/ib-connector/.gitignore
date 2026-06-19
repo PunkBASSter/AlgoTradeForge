@@ -1,0 +1,9 @@
+.env
+# Root .gitignore excludes .env* — re-include the committed template (real .env stays ignored).
+!.env.example
+bin/
+obj/
+
+# Vendored third-party IBApi source (re-fetch per README). Keep our IBApi.csproj tracked.
+/ibapi/*.cs
+/ibapi/protobuf/
