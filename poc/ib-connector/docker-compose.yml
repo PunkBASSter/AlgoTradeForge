@@ -1,0 +1,34 @@
+services:
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    restart: "no"
+    # Compose auto-loads ./.env for ${VAR} substitution; secrets never live in this file.
+    environment:
+      TWS_USERID: ${TWS_USERID}
+      TWS_PASSWORD: ${TWS_PASSWORD}
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      READ_ONLY_API: "no"
+      TWS_ACCEPT_INCOMING: accept   # auto-accept API connections (no manual dialog)
+      BYPASS_WARNING: "yes"         # auto-tick the API precaution checkboxes IBC navigates
+      VNC_SERVER_PASSWORD: ${VNC_SERVER_PASSWORD:-}
+    # Guide fix for "API port fails to start": raise file-descriptor limit so the JVM can bind the socket.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "127.0.0.1:5900:5900"   # VNC (debug only); API port stays on the internal network
+
+  ib-poc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - ib-gateway
+    environment:
+      IB_HOST: ib-gateway
+      IB_PORT: "4004"           # gnzsnz socat-exposed PAPER port (forks internal 4002 -> 0.0.0.0:4004); live = 4003
+      IB_CLIENT_ID: "10"
+      IB_PHASE: "${IB_PHASE:-all}"
+      IB_REALTIME: "${IB_REALTIME:-true}"
+    command: ["${IB_PHASE:-all}"]
