@@ -3,26 +3,25 @@ using AlgoTradeForge.Domain.History;
 
 namespace AlgoTradeForge.Live.Relay;
 
-public sealed class TickRelayWriter : IAsyncDisposable
+public sealed class StreamPipeline<T> : IAsyncDisposable where T : struct, IFramePayload<T>
 {
-    private const int HeartbeatCommandId = -1;
+    private const int DrainSentinelId = -1;
 
-    private readonly ITickSegmentSink _sink;
-    private readonly TickRelayOptions _options;
+    private readonly ISegmentSink _sink;
+    private readonly StreamPipelineOptions _options;
     private readonly TimeProvider _time;
     private readonly Channel<Envelope> _channel;
     // Copy-on-write: appended under _registrationLock, read lock-free by the drain thread.
     private volatile InstrumentState[] _instruments = [];
     private readonly Lock _registrationLock = new();
     private readonly Task _drain;
-    private readonly Task _heartbeat;
     private readonly CancellationTokenSource _cts = new();
 
     private long _dropped;
     private bool _disposed;
     private TaskCompletionSource _drainIdle = NewIdleSource();
 
-    public TickRelayWriter(ITickSegmentSink sink, TickRelayOptions options, TimeProvider time)
+    public StreamPipeline(ISegmentSink sink, StreamPipelineOptions options, TimeProvider time)
     {
         _sink = sink;
         _options = options;
@@ -33,7 +32,6 @@ public sealed class TickRelayWriter : IAsyncDisposable
             FullMode = BoundedChannelFullMode.Wait,
         });
         _drain = Task.Run(DrainLoop);
-        _heartbeat = Task.Run(HeartbeatLoop);
     }
 
     public long DroppedCount => Interlocked.Read(ref _dropped);
@@ -55,21 +53,21 @@ public sealed class TickRelayWriter : IAsyncDisposable
         }
     }
 
-    public bool TryEnqueue(int instrumentId, in TradeTick tick)
+    public bool TryEnqueue(int instrumentId, in T payload)
     {
-        if (_channel.Writer.TryWrite(new Envelope(instrumentId, tick))) return true;
+        if (_channel.Writer.TryWrite(new Envelope(instrumentId, payload))) return true;
         Interlocked.Increment(ref _dropped);
         return false;
     }
 
-    public ValueTask Enqueue(int instrumentId, TradeTick tick, CancellationToken ct = default) =>
-        _channel.Writer.WriteAsync(new Envelope(instrumentId, tick), ct);
+    public ValueTask Enqueue(int instrumentId, T payload, CancellationToken ct = default) =>
+        _channel.Writer.WriteAsync(new Envelope(instrumentId, payload), ct);
 
     // Test support: completes once the drain has caught up to everything enqueued so far.
     public Task WaitForDrain()
     {
         var probe = Volatile.Read(ref _drainIdle);
-        _channel.Writer.TryWrite(new Envelope(HeartbeatCommandId, default));
+        _channel.Writer.TryWrite(new Envelope(DrainSentinelId, default));
         return probe.Task;
     }
 
@@ -92,32 +90,26 @@ public sealed class TickRelayWriter : IAsyncDisposable
         {
             var instruments = _instruments;
             foreach (var st in instruments)
-                await CloseSegment(st, SessionBoundaryReason.SessionEnd).ConfigureAwait(false);
+                await CloseSegment(st).ConfigureAwait(false);
             Volatile.Read(ref _drainIdle).TrySetResult();
         }
     }
 
     private async Task Handle(Envelope env)
     {
+        if (env.InstrumentId == DrainSentinelId) return;
+
         var instruments = _instruments;
-        if (env.InstrumentId == HeartbeatCommandId)
-        {
-            long now = _time.GetUtcNow().ToUnixTimeMilliseconds();
-            foreach (var st in instruments)
-                st.Writer?.WriteHeartbeat(now);
-            return;
-        }
-
         var state = instruments[env.InstrumentId];
-        await EnsureSegment(state, env.Trade.Sequence).ConfigureAwait(false);
-        if (state.BytesInSegment + RelayFormat.FrameSize > _options.MaxSegmentBytes)
+        await EnsureSegment(state, env.Payload.Sequence).ConfigureAwait(false);
+        if (state.BytesInSegment + T.PayloadSize > _options.MaxSegmentBytes)
         {
-            await CloseSegment(state, null).ConfigureAwait(false);
-            await EnsureSegment(state, env.Trade.Sequence).ConfigureAwait(false);
+            await CloseSegment(state).ConfigureAwait(false);
+            await EnsureSegment(state, env.Payload.Sequence).ConfigureAwait(false);
         }
 
-        state.Writer!.WriteTick(env.Trade);
-        state.BytesInSegment += RelayFormat.FrameSize;
+        state.Writer!.Write(env.Payload);
+        state.BytesInSegment += T.PayloadSize;
     }
 
     private async ValueTask EnsureSegment(InstrumentState st, long firstSequence)
@@ -125,12 +117,11 @@ public sealed class TickRelayWriter : IAsyncDisposable
         if (st.Writer is not null) return;
 
         long now = _time.GetUtcNow().ToUnixTimeMilliseconds();
-        // Segment open is part of the drain's normal work — uncancellable, like CloseSegment's finalize.
-        st.Stream = await _sink.BeginSegment(st.Instrument, firstSequence, now, CancellationToken.None).ConfigureAwait(false);
-        var header = new TickSegmentHeader(st.PriceScaleExp, st.QtyScaleExp, 0, now, firstSequence);
+        st.Stream = await _sink.BeginSegment(T.StreamName, st.Instrument, firstSequence, now, CancellationToken.None).ConfigureAwait(false);
+        var header = new SegmentHeader(st.PriceScaleExp, st.QtyScaleExp, 0, now, firstSequence, (ushort)T.PayloadSize);
         try
         {
-            st.Writer = new TickSegmentWriter(st.Stream, header, leaveOpen: true);
+            st.Writer = new SegmentWriter<T>(st.Stream, header, leaveOpen: true);
         }
         catch
         {
@@ -138,61 +129,42 @@ public sealed class TickRelayWriter : IAsyncDisposable
             st.Stream = null;
             throw;
         }
-        st.BytesInSegment = RelayFormat.HeaderSize;
-        st.Writer.WriteSessionBoundary(now, SessionBoundaryReason.SessionStart);
-        st.BytesInSegment += RelayFormat.FrameSize;
+        st.BytesInSegment = SegmentHeader.Size;
     }
 
-    private async Task CloseSegment(InstrumentState st, SessionBoundaryReason? finalMarker)
+    private async Task CloseSegment(InstrumentState st)
     {
         if (st.Writer is null || st.Stream is null) return;
 
-        if (finalMarker is { } reason)
-            st.Writer.WriteSessionBoundary(_time.GetUtcNow().ToUnixTimeMilliseconds(), reason);
-
         st.Writer.Flush(toDisk: true);
-        await _sink.CompleteSegment(st.Instrument, st.Stream, CancellationToken.None).ConfigureAwait(false);
+        await _sink.CompleteSegment(T.StreamName, st.Instrument, st.Stream, CancellationToken.None).ConfigureAwait(false);
         st.Writer = null;
         st.Stream = null;
         st.BytesInSegment = 0;
-    }
-
-    private async Task HeartbeatLoop()
-    {
-        try
-        {
-            // PeriodicTimer(TimeSpan, TimeProvider) overload lets FakeTimeProvider drive ticks deterministically.
-            using var timer = new PeriodicTimer(_options.HeartbeatInterval, _time);
-            while (await timer.WaitForNextTickAsync(_cts.Token).ConfigureAwait(false))
-                _channel.Writer.TryWrite(new Envelope(HeartbeatCommandId, default));
-        }
-        catch (OperationCanceledException) { }
     }
 
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
         _disposed = true;
-        // Complete the channel before cancelling _cts so the drain finishes every queued
-        // envelope and writes each instrument's SessionEnd boundary before heartbeat teardown.
+        // Complete the channel before cancelling _cts so the drain finishes every queued envelope before teardown.
         _channel.Writer.TryComplete();
         await _drain.ConfigureAwait(false);
         _cts.Cancel();
-        try { await _heartbeat.ConfigureAwait(false); } catch (OperationCanceledException) { }
         _cts.Dispose();
     }
 
     private static TaskCompletionSource NewIdleSource() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    private readonly record struct Envelope(int InstrumentId, TradeTick Trade);
+    private readonly record struct Envelope(int InstrumentId, T Payload);
 
     private sealed class InstrumentState
     {
         public required string Instrument { get; init; }
         public sbyte PriceScaleExp { get; init; }
         public sbyte QtyScaleExp { get; init; }
-        public TickSegmentWriter? Writer { get; set; }
+        public SegmentWriter<T>? Writer { get; set; }
         public Stream? Stream { get; set; }
         public long BytesInSegment { get; set; }
     }

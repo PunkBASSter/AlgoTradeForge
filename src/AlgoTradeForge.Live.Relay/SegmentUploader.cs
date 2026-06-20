@@ -16,9 +16,8 @@ public sealed class SegmentUploader(IFileStorage storage, string localRoot, stri
             var marker = path + ".uploaded";
             if (File.Exists(marker)) continue;
 
-            var instrument = Path.GetFileName(Path.GetDirectoryName(path))!;
-            var fileName = Path.GetFileName(path);
-            var key = $"{keyPrefix}/{instrument}/{fileName}";
+            var relPath = Path.GetRelativePath(localRoot, path).Replace('\\', '/');
+            var key = $"{keyPrefix}/{relPath}";
 
             var bytes = await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
             await storage.WriteAllBytes(key, bytes, ct).ConfigureAwait(false);

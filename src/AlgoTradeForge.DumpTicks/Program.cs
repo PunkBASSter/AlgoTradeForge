@@ -6,17 +6,26 @@ if (args.Length != 1)
     return 1;
 }
 
-using var file = File.OpenRead(args[0]);
-using var reader = new TickSegmentReader(file);
+var path = args[0];
+var stream = Path.GetFileName(Path.GetDirectoryName(path))
+    ?? throw new ArgumentException("Cannot determine stream name from path.");
 
-var h = reader.Header;
-Console.WriteLine($"HEADER priceScaleExp={h.PriceScaleExp} qtyScaleExp={h.QtyScaleExp} " +
-                  $"createdAtMs={h.CreatedAtMs} firstSeq={h.FirstSequence}");
+var codec = FrameCodecRegistry.For(stream);
 
+using var file = File.OpenRead(path);
+
+Span<byte> headerBuf = stackalloc byte[SegmentHeader.Size];
+file.ReadExactly(headerBuf);
+var header = SegmentHeader.ReadFrom(headerBuf);
+Console.WriteLine($"HEADER priceScaleExp={header.PriceScaleExp} qtyScaleExp={header.QtyScaleExp} " +
+                  $"createdAtMs={header.CreatedAtMs} firstSeq={header.FirstSequence}");
+
+var frameBuf = new byte[codec.PayloadSize];
 long count = 0;
-while (reader.TryReadFrame(out var frame))
+int read;
+while ((read = file.ReadAtLeast(frameBuf, codec.PayloadSize, throwOnEndOfStream: false)) > 0)
 {
-    Console.WriteLine(RelayFrameFormatter.Format(frame));
+    Console.WriteLine(codec.FormatFrame(frameBuf.AsSpan(0, read)));
     count++;
 }
 Console.WriteLine($"# {count} frames");
