@@ -34,7 +34,7 @@ A single `LiveHost@<venue>` process, internally partitioned into planes that sha
 
 ```
  IB Gateway sidecar(s)  ──socket──►  [Ingest plane]      one reader task per connection
-                                          │  normalize → struct Tick (pooled)
+                                          │  normalize → struct TradeTick (pooled)
                           ┌───────────────┴───────────────┐
                           ▼                                ▼
                  [Archival plane]                  [Dispatch plane]      instrument-keyed
@@ -53,13 +53,26 @@ Protection that a hard process boundary would give is bought back by two invaria
 
 **Cardinality asymmetry (the key enabler):** archival fans out *all* ~1000 instruments to the binary log; strategy dispatch fans out only the *executed subset* (tens of instruments). The heavy path never touches strategy code; the latency-sensitive path never carries the full firehose. They diverge immediately after normalization on the ingest thread.
 
-**GC profile:** Server GC; `Tick` is a `readonly record struct`; ingest fills from `ArrayPool<Tick>`; the binary segment writer reuses a pinned buffer. Target = zero per-tick heap allocation on the ingest and archival paths. Reuses the codebase's existing hot-path discipline (`RingBuffer<T>`, struct `Int64Bar`, lock-free `Volatile` order status).
+**GC profile:** Server GC; `TradeTick` is a `readonly record struct`; ingest fills from `ArrayPool<TradeTick>`; the binary segment writer reuses a pinned buffer. Target = zero per-tick heap allocation on the ingest and archival paths. Reuses the codebase's existing hot-path discipline (`RingBuffer<T>`, struct `Int64Bar`, lock-free `Volatile` order status).
+
+## A½. Canonical tick model — uniform internal, named external
+
+Tick data is **not** uniform across asset classes, but the divergence splits cleanly, so the internal model stays uniform while external shapes are named explicitly. Three layers:
+
+1. **Named external/source shapes** (per venue, parser-local): `BinanceAggTrade`, `IbLast` / `IbBidAsk`, OPRA/SIP shapes, etc. Each venue parser normalizes its DTO into a canonical struct — these names never leak inward.
+2. **Canonical internal structs** (uniform, hot, GC-free; share the binary framing):
+   - **`TradeTick`** `(TimestampMs, Price, Quantity, Sequence, AggressorSide)` — one executed print. Uniform across crypto/equity/futures/options. Aggressor side is asset-neutral `AggressorSide { Unknown, Buy, Sell }` (crypto `is_buyer_maker` maps in; equities default `Unknown`). The crypto-specific `TickFlags { BuyerMaker, Bid, Ask }` was replaced by this; `Bid`/`Ask` belonged to quotes, not trades.
+   - **`QuoteTick`** `(TimestampMs, BidPrice, BidSize, AskPrice, AskSize, Sequence)` — the BBO snapshot, canonical form of the existing `bookTicker` feed. Its own binary stream, same header+frame machinery. *(Added with the first venue needing live BBO; not in the Plan-1 relay.)*
+   - *(later)* a computed `GreekTick` / IV form for options, only when options go live.
+3. **Asset-class metadata off the hot path**: trade-condition codes, exchange/tape, option greeks/underlying ride the `FeedSeries` sidecar channel keyed by sequence/time — never bloating the canonical struct.
+
+This mirrors the bar pipeline's existing layering (`BinanceKlineMessage` → `Int64Bar` → `FeedSeries` sidecar), applied to ticks. The Plan-1 relay implements `TradeTick` (+ `AggressorSide`); `QuoteTick`/greeks are deferred.
 
 ## B. Data plane — instrument-keyed dispatch
 
 The market-data stream is **extracted out of the connector** (today `BinanceLiveConnector` owns both data and orders for one account) into a shared `ITickRouter`:
 
-- A **market-data session** — the connection that holds the broker subscription (e.g. account A) — pushes normalized `Tick`s into the router keyed by **instrument**, not account.
+- A **market-data session** — the connection that holds the broker subscription (e.g. account A) — pushes normalized `TradeTick`s into the router keyed by **instrument**, not account.
 - `IStrategyDispatch` (the seam) fans each instrument's ticks + completed bars to the subset of strategies subscribed to it. In-process implementation now = per-strategy bounded `Channel` + `SingleReader` processing task (today's per-session model, extended to carry ticks). Future implementation = a consumer reading the same instrument stream off Valkey/Garnet Streams on another node.
 - **Shared accumulators:** one `IBarAccumulator` per `(instrument, bar-spec)` runs once on the tick stream; its completed bars are delivered to every subscribed strategy. Seeded at session start from the historical alt-bar feed + persisted partial-bar state (vision M6 parity: live bars ≡ historical bars).
 
@@ -75,13 +88,13 @@ Orders route by an `IOrderRouter` keyed by **account**, fully decoupled from the
 
 ## D. Strategy event model & interface changes
 
-- Add a tick entry point — `OnTick(in Tick tick, DataSubscription sub)` on a new `ITickStrategy` (or an extension of `IInt64BarStrategy`), gated by an extended `LiveEventRouting` (`OnTick` flag added to the existing `OnBarStart | OnBarComplete | OnTrade`).
+- Add a tick entry point — `OnTick(in TradeTick tick, DataSubscription sub)` on a new `ITickStrategy` (or an extension of `IInt64BarStrategy`), gated by an extended `LiveEventRouting` (`OnTick` flag added to the existing `OnBarStart | OnBarComplete | OnTrade`).
 - `TickSubscription` (already a Domain type) becomes a first-class live subscription. Today `StartLiveSessionCommandHandler` rejects anything but `TimeBarSubscription` for live — that restriction is lifted once live bar-building (§B) and the tick path exist.
 - Bar-triggered strategies are driven by the shared accumulators; tick-triggered strategies receive raw ticks; a single strategy may use both. "Other events" (fills, session boundaries) keep flowing through the existing `IEventBus` / `IOrderContext` receiver interfaces.
 
 ## E. Lossless capture & relay format
 
-- **Tick feeds → binary framed append log** at `live-md/{venue}/ticks/{instrument-or-shard}/{segment}`: versioned header + fixed-width records (`ts:8 / price:8 / size:8 / flags:4 / seq:4`, 32 B) + periodic **heartbeat** frames and **session-boundary** markers so HistoryLoader distinguishes "producer was down" from "market was quiet."
+- **Tick feeds → binary framed append log** at `live-md/{venue}/ticks/{instrument-or-shard}/{segment}`: a versioned 64-byte segment header (magic `ATFT`, format version, frame size, price/qty scale exponents, created-at, first sequence) + fixed-width **40-byte frames** (`frameType:1 / aggressorOrReason:1 / reserved:6 / ts:8 / price:8 / qty:8 / seq:8`). One uniform frame width carries all three frame types — `Trade` (byte 1 = `AggressorSide`, price/qty/seq populated), `Heartbeat`, `SessionBoundary` (byte 1 = boundary reason) — so HistoryLoader distinguishes "producer was down" from "market was quiet." *(As-built in Plan 1; the earlier "32 B / flags:4" sketch was superseded — a uniform 40-byte frame gives trivial random access and a one-byte frame-type discriminator.)*
 - **Order / fill / session events → JSONL** at `live-md/{venue}/events/...` — unchanged vision relay contract; low rate, inspectability valuable.
 - **Losslessness is a durability property, not a format property.** Mechanism (identical for both formats): append → `fsync` on segment rotation → bounded ingest channel with disk-backed spill, so a stalled S3 push applies backpressure but never drops or OOMs. HistoryLoader tails segments with a persisted `{cursor}` under CAS (existing M6 incremental pattern) and remains sole canonicalizer — LiveHost publishes raw, never touches canonical partitions or `feeds.json`.
 - A small `dump-ticks` CLI restores human-inspectability of the binary log.
@@ -105,7 +118,7 @@ Unchanged direction: per-session JSONL event logs are the replayable source of t
 
 ## I. Vision-doc changes this implies
 
-1. **§2 (Data plane):** the relay is an append-only **framed** log — **binary for tick feeds, JSONL for low-rate events** — plus a binary tick-record spec paragraph (header + 32 B fixed record + heartbeat/boundary frames).
+1. **§2 (Data plane):** the relay is an append-only **framed** log — **binary for tick feeds, JSONL for low-rate events** — plus a binary tick-record spec paragraph (64 B header + 40 B fixed frame + heartbeat/boundary frames).
 2. **§2 / Q7:** add the **data-plane / execution-plane decomposition** (instrument-keyed dispatch vs account-keyed routing) as the LiveHost-internal model; state that data account and order account are independent axes.
 3. **§1 LiveHost row:** note multi-account (data session vs order session, B pays no data lines) and the `IStrategyDispatch` / `IOrderRouter` seams.
 
