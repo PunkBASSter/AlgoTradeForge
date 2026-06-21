@@ -11,6 +11,8 @@
     <InternalsVisibleTo Include="AlgoTradeForge.Domain.Tests" />
     <InternalsVisibleTo Include="AlgoTradeForge.Infrastructure" />
     <InternalsVisibleTo Include="AlgoTradeForge.Infrastructure.Tests" />
+    <InternalsVisibleTo Include="AlgoTradeForge.LiveHost.Infrastructure" />
+    <InternalsVisibleTo Include="AlgoTradeForge.LiveHost.Infrastructure.Tests" />
   </ItemGroup>
 
   <ItemGroup>

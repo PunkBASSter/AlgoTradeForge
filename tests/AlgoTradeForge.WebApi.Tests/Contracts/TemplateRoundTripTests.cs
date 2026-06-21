@@ -66,24 +66,6 @@ public sealed class TemplateRoundTripTests
     }
 
     [Fact]
-    public void LiveSessionTemplate_RoundTrips()
-    {
-        var template = StrategyTemplateBuilder.BuildLiveSessionTemplate(
-            "BuyAndHold", EmptyParams, NoAxes, SampleAssets);
-
-        var json = JsonSerializer.Serialize(template, Json);
-        var request = JsonSerializer.Deserialize<StartLiveSessionRequest>(json, Json);
-
-        Assert.NotNull(request);
-        Assert.Equal("BuyAndHold", request.StrategyName);
-        Assert.True(request.InitialCash > 0, "InitialCash should be positive");
-        Assert.NotNull(request.DataSubscriptions);
-        Assert.NotEmpty(request.DataSubscriptions);
-        Assert.Equal("BTCUSDT", request.DataSubscriptions[0].AssetName);
-        Assert.Equal("Binance", request.DataSubscriptions[0].Exchange);
-    }
-
-    [Fact]
     public void DebugSessionTemplate_RoundTrips()
     {
         var template = StrategyTemplateBuilder.BuildDebugSessionTemplate(

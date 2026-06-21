@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="AlgoTradeForge.Application.Tests" />
+    <InternalsVisibleTo Include="AlgoTradeForge.LiveHost.Application" />
   </ItemGroup>
 
   <ItemGroup>

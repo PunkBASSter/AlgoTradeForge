@@ -3,7 +3,6 @@ using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Storage;
-using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
 using AlgoTradeForge.Application.Validation;
@@ -14,7 +13,6 @@ using AlgoTradeForge.Application.Repositories;
 using AlgoTradeForge.Infrastructure;
 using AlgoTradeForge.WebApi;
 using AlgoTradeForge.Infrastructure.History;
-using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Plugins;
 using System.Text;
 using AlgoTradeForge.WebApi.Data;
@@ -72,10 +70,6 @@ builder.Services.Configure<RunTimeoutOptions>(
 // Register run persistence config
 builder.Services.Configure<RunStorageOptions>(
     builder.Configuration.GetSection("RunStorage"));
-
-// Register live trading config
-builder.Services.Configure<BinanceLiveOptions>(
-    builder.Configuration.GetSection("BinanceLive"));
 
 // Register simulation cache config
 builder.Services.Configure<SimulationCacheOptions>(
@@ -172,7 +166,6 @@ DebugWebSocketHandler.MapDebugWebSocket(app);
 app.MapValidationEndpoints();
 app.MapTaskQueueEndpoints();
 app.MapThresholdProfileEndpoints();
-app.MapLiveEndpoints();
 app.MapDataEndpoints();
 
 app.Run();
