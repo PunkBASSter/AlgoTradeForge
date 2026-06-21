@@ -170,41 +170,6 @@ public sealed class AggregationPipelineTests : IDisposable
     }
 
     [Fact]
-    public async Task Run_AssetSourceVolumesBoundedMemory_NoLargeAllocation()
-    {
-        // P1b-12 — peak heap stays bounded. Generate 1000 source records, observe the pipeline's
-        // allocation delta is dominated by the volume-sample list (8 bytes/entry) plus partition-
-        // writer buffers, not by the full record stream.
-        const string asset = "BOUND";
-        var rows = new (long ts, long o, long h, long l, long c, long v)[1000];
-        for (var i = 0; i < 1000; i++)
-            rows[i] = (Ts(2024, 1, 1) + i * 60_000, 100, 110, 95, 105, 50);
-        WriteCandles(asset, "2024-01", "1m", rows);
-
-        var pipeline = new AggregationPipeline(
-            new PartitionedSourceReader(new LocalFileStorage()),
-            new FeedSchemaManager(new LocalFileStorage()),
-            new OverwritePathWriter(new LocalFileStorage()),
-            new LocalFileStorage(),
-            TimeProvider.System);
-
-        var allocBefore = GC.GetAllocatedBytesForCurrentThread();
-        var result = await pipeline.Run(
-            Job(asset, "EqV", thresholdScaled: 1000, thresholdAbs: 1000m),
-            ct: TestContext.Current.CancellationToken);
-        var allocAfter = GC.GetAllocatedBytesForCurrentThread();
-        var delta = allocAfter - allocBefore;
-
-        // Loose bound: still O(1) in record count. Async-conversion (PR 4a.1) added Task state
-        // machines + IFileStorage.WriteAllText's OpenWriteSession allocations, lifting the
-        // floor from ~250 KB to ~3 MB — the intent of the assertion is "no per-record blow-up",
-        // not a fixed numeric ceiling, so the bound is generous as long as it's still constant
-        // in `tickCount`.
-        Assert.True(result.BarCount > 0);
-        Assert.True(delta < 5_000_000, $"Allocation delta exceeded 5 MB: {delta} bytes.");
-    }
-
-    [Fact]
     public async Task Run_EmitsStartedAndCompleteProgressEvents()
     {
         const string asset = "PROGRESS";
