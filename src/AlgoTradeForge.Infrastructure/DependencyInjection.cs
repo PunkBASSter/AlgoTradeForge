@@ -2,11 +2,8 @@ using System.Reflection;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Application.Persistence;
-using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Optimization;
 using AlgoTradeForge.Infrastructure.Events;
-using AlgoTradeForge.Application.Live;
-using AlgoTradeForge.Infrastructure.Live.Binance;
 using AlgoTradeForge.Infrastructure.Optimization;
 using AlgoTradeForge.Application.Validation;
 using AlgoTradeForge.Infrastructure.Persistence;
@@ -43,11 +40,6 @@ public static class DependencyInjection
         services.AddSingleton<IValidationRepository, SqliteValidationRepository>();
         services.AddSingleton<ISimulationCacheFileStore, SimulationCacheFileStore>();
         services.AddSingleton<IThresholdProfileRepository, SqliteThresholdProfileRepository>();
-
-        // Live trading
-        services.Configure<BinanceLiveOptions>(_ => { });
-        services.AddSingleton<ILiveAccountManager, BinanceLiveAccountManager>();
-        services.AddSingleton<ILiveSessionDataProvider, BinanceLiveSessionDataProvider>();
 
         return services;
     }

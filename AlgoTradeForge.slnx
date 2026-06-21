@@ -18,9 +18,15 @@
   <Project Path="src\AlgoTradeForge.HistoryLoader.WebApi\AlgoTradeForge.HistoryLoader.WebApi.csproj" />
   <Project Path="src\AlgoTradeForge.Live.Relay\AlgoTradeForge.Live.Relay.csproj" />
   <Project Path="src\AlgoTradeForge.DumpTicks\AlgoTradeForge.DumpTicks.csproj" />
+  <Project Path="src\AlgoTradeForge.LiveHost.Application\AlgoTradeForge.LiveHost.Application.csproj" />
+  <Project Path="src\AlgoTradeForge.LiveHost.Infrastructure\AlgoTradeForge.LiveHost.Infrastructure.csproj" />
+  <Project Path="src\AlgoTradeForge.LiveHost.WebApi\AlgoTradeForge.LiveHost.WebApi.csproj" />
   <Project Path="tests\AlgoTradeForge.Domain.Tests\AlgoTradeForge.Domain.Tests.csproj" />
   <Project Path="tests\AlgoTradeForge.Application.Tests\AlgoTradeForge.Application.Tests.csproj" />
   <Project Path="tests\AlgoTradeForge.Infrastructure.Tests\AlgoTradeForge.Infrastructure.Tests.csproj" />
   <Project Path="tests\AlgoTradeForge.HistoryLoader.Tests\AlgoTradeForge.HistoryLoader.Tests.csproj" />
   <Project Path="tests\AlgoTradeForge.Live.Relay.Tests\AlgoTradeForge.Live.Relay.Tests.csproj" />
+  <Project Path="tests\AlgoTradeForge.LiveHost.Application.Tests\AlgoTradeForge.LiveHost.Application.Tests.csproj" />
+  <Project Path="tests\AlgoTradeForge.LiveHost.Infrastructure.Tests\AlgoTradeForge.LiveHost.Infrastructure.Tests.csproj" />
+  <Project Path="tests\AlgoTradeForge.LiveHost.WebApi.Tests\AlgoTradeForge.LiveHost.WebApi.Tests.csproj" />
 </Solution>

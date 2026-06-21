@@ -10,6 +10,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="AlgoTradeForge.HistoryLoader.Tests" />
     <InternalsVisibleTo Include="AlgoTradeForge.Benchmarks" />
+    <InternalsVisibleTo Include="AlgoTradeForge.LiveHost.WebApi.Tests" />
   </ItemGroup>
 
   <ItemGroup>

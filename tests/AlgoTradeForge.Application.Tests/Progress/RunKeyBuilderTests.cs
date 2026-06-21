@@ -1,5 +1,5 @@
 using AlgoTradeForge.Application.Backtests;
-using AlgoTradeForge.Application.Live;
+using AlgoTradeForge.LiveHost.Application.Live;
 using AlgoTradeForge.Application.Progress;
 using Xunit;
 using AlgoTradeForge.Domain.Strategy;
@@ -68,8 +68,8 @@ public sealed class RunKeyBuilderTests
     {
         var cmd = MakeLiveCommand(new Dictionary<string, object> { ["lookback"] = 14, ["threshold"] = 0.5 });
 
-        var fp1 = RunKeyBuilder.Build(cmd);
-        var fp2 = RunKeyBuilder.Build(cmd);
+        var fp1 = LiveRunKeyBuilder.Build(cmd);
+        var fp2 = LiveRunKeyBuilder.Build(cmd);
 
         Assert.Equal(fp1, fp2);
     }
@@ -77,9 +77,9 @@ public sealed class RunKeyBuilderTests
     [Fact]
     public void Build_Live_DiffersForDifferentParams()
     {
-        var fp1 = RunKeyBuilder.Build(
+        var fp1 = LiveRunKeyBuilder.Build(
             MakeLiveCommand(new Dictionary<string, object> { ["lookback"] = 14 }));
-        var fp2 = RunKeyBuilder.Build(
+        var fp2 = LiveRunKeyBuilder.Build(
             MakeLiveCommand(new Dictionary<string, object> { ["lookback"] = 20 }));
 
         Assert.NotEqual(fp1, fp2);
@@ -97,13 +97,13 @@ public sealed class RunKeyBuilderTests
             DataSubscriptions = [new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))]
         };
 
-        Assert.NotEqual(RunKeyBuilder.Build(cmd1), RunKeyBuilder.Build(cmd2));
+        Assert.NotEqual(LiveRunKeyBuilder.Build(cmd1), LiveRunKeyBuilder.Build(cmd2));
     }
 
     [Fact]
     public void Build_Live_Returns_SHA256_Hex_Format()
     {
-        var fp = RunKeyBuilder.Build(MakeLiveCommand());
+        var fp = LiveRunKeyBuilder.Build(MakeLiveCommand());
 
         Assert.Equal(64, fp.Length);
         Assert.Matches("^[0-9a-f]{64}$", fp);
@@ -112,9 +112,9 @@ public sealed class RunKeyBuilderTests
     [Fact]
     public void Build_Live_ParameterOrderIndependence()
     {
-        var fp1 = RunKeyBuilder.Build(
+        var fp1 = LiveRunKeyBuilder.Build(
             MakeLiveCommand(new Dictionary<string, object> { ["a"] = 1, ["b"] = 2 }));
-        var fp2 = RunKeyBuilder.Build(
+        var fp2 = LiveRunKeyBuilder.Build(
             MakeLiveCommand(new Dictionary<string, object> { ["b"] = 2, ["a"] = 1 }));
 
         Assert.Equal(fp1, fp2);

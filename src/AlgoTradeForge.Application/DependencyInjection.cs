@@ -2,7 +2,6 @@ using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Debug;
 using AlgoTradeForge.Application.Events;
-using AlgoTradeForge.Application.Live;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
@@ -85,12 +84,6 @@ public static class DependencyInjection
         services.AddSingleton<IDebugSessionStore, InMemoryDebugSessionStore>();
         services.AddScoped<ICommandHandler<StartDebugSessionCommand, DebugSessionDto>, StartDebugSessionCommandHandler>();
         services.AddScoped<ICommandHandler<SendDebugCommandRequest, DebugStepResultDto>, SendDebugCommandHandler>();
-
-        // Live trading
-        services.AddSingleton<ILiveSessionStore, InMemoryLiveSessionStore>();
-        services.AddScoped<ICommandHandler<StartLiveSessionCommand, LiveSessionSubmissionDto>, StartLiveSessionCommandHandler>();
-        services.AddScoped<ICommandHandler<StopLiveSessionCommand, bool>, StopLiveSessionCommandHandler>();
-        services.AddScoped<IQueryHandler<GetLiveSessionDataQuery, LiveSessionDataDto?>, GetLiveSessionDataQueryHandler>();
 
         return services;
     }
