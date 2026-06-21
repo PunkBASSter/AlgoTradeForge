@@ -68,6 +68,8 @@ Tick data is **not** uniform across asset classes, but the divergence splits cle
 
 This mirrors the bar pipeline's existing layering (`BinanceKlineMessage` → `Int64Bar` → `FeedSeries` sidecar), applied to ticks. The Plan-1 relay implements `TradeTick` (+ `AggressorSide`); `QuoteTick`/greeks are deferred.
 
+**Venue-published bars (2026-06-21 addendum).** Some venues publish bars directly (e.g. a Binance 1m kline WebSocket). These drop into the open/closed relay as a **new `IFramePayload<T>` frame type** (`StreamName="bars"`, `Int64Bar`-shaped) — archived as their own `.atft` stream and canonicalized to the existing `candles/` feed with **zero canonicalizer edits** (the same drop-in proof Plan 2 demonstrated with `DepthTick`). A venue's published time-bar **is** the exchange's own truth for that exact spec; it is authoritative over a tick-aggregated reconstruction of the same spec. See §B for how the live data plane resolves bar source per `(instrument, bar-spec)`.
+
 ## B. Data plane — instrument-keyed dispatch
 
 The market-data stream is **extracted out of the connector** (today `BinanceLiveConnector` owns both data and orders for one account) into a shared `ITickRouter`:
@@ -75,6 +77,17 @@ The market-data stream is **extracted out of the connector** (today `BinanceLive
 - A **market-data session** — the connection that holds the broker subscription (e.g. account A) — pushes normalized `TradeTick`s into the router keyed by **instrument**, not account.
 - `IStrategyDispatch` (the seam) fans each instrument's ticks + completed bars to the subset of strategies subscribed to it. In-process implementation now = per-strategy bounded `Channel` + `SingleReader` processing task (today's per-session model, extended to carry ticks). Future implementation = a consumer reading the same instrument stream off Valkey/Garnet Streams on another node.
 - **Shared accumulators:** one `IBarAccumulator` per `(instrument, bar-spec)` runs once on the tick stream; its completed bars are delivered to every subscribed strategy. Seeded at session start from the historical alt-bar feed + persisted partial-bar state (vision M6 parity: live bars ≡ historical bars).
+
+**Live alt-bar aggregation — one engine fed twice (2026-06-21 addendum).** The alt-bar accumulator engine already exists as a **batch** layer: `IBarAccumulator.TryAdvance(in SourceRecord, out AggregatedBar)` + `Accumulators/` (EqV/EqT/EqD volume/tick/dollar bars, EqIV/EqID/EqIT imbalance bars with sidecars, Renko, Range) + `ThresholdResolver`/`StreamingMedianEstimator`, today in `AlgoTradeForge.HistoryLoader.Application/Aggregation/`. The contract is already streaming and **source-agnostic** — `SourceRecord` is documented as "a time-bar from `candles/` **or** a tick from `ticks/`", and `AggregatedBar` is the 6-long `Int64Bar` shape. So "aggregation happens twice" must mean **two drivers feeding one engine**, never two implementations:
+
+- **Batch driver** (exists): `AggregationPipeline` + `PartitionedSourceReader` over archived partitions → stored alt-bar feeds (the warmup / long-term truth).
+- **Live driver** (this plane, TODO): `IStrategyDispatch` feeds live ticks (via a trivial tick→`SourceRecord` adapter: `O=H=L=C=price`, `V=qty`) into the same accumulators → live alt-bar events.
+
+Three decisions for the Plan-4/6 implementation:
+
+1. **PREREQUISITE — extract the engine to a shared lib before Plan 4.** It currently lives in `HistoryLoader.Application` (host-coupled); LiveHost must not depend on the history host. Move the core (`IBarAccumulator`, `SourceRecord`, `AggregatedBar`, `Accumulators/`, `ThresholdResolver`) into a shared library (e.g. `AlgoTradeForge.Aggregation`, or fold into Domain) referenced by both hosts. Then the M6 golden property (batch ≡ replay ≡ live) holds **by construction**, not by parallel maintenance.
+2. **Bar-source resolver.** For each subscribed `(instrument, bar-spec)`, resolve the bar **source**: a venue-published bar (§A½) if available and matching the spec, else tick-aggregation. Design the seam to treat "bar arrives from a feed" as a first-class source — do not assume every bar is tick-derived. Specs no venue publishes (volume/range/dollar/imbalance/Renko/ZigZag) always require tick-aggregation.
+3. **Parity guards (M6).** (a) **Freeze thresholds:** alt-bar thresholds are derived from historical statistics (`ThresholdResolver`); resolve once at session start and freeze as a session parameter fed to the live accumulator — if live re-derives, live bars silently stop continuing the historical series. (b) **Seed partial-bar state:** seed the live accumulator with the mid-bar state from the warmup tail (the last historical bar may be incomplete), persisted as CAS JSON (§H), so the first live bar continues seamlessly.
 
 ## C. Execution plane — account-keyed order routing
 
@@ -129,6 +142,8 @@ Unchanged direction: per-session JSONL event logs are the replayable source of t
 This is not a new milestone — it refines the **internals** of:
 - **M3 (LiveHost extraction + durability):** the data-plane/execution-plane split, bounded channels, `ITickRouter` / `IStrategyDispatch` / `IOrderRouter` seams, tick entry point, account-scoped order routing, binary tick relay + JSONL events.
 - **M6 (live alt-bars):** shared `IBarAccumulator`-driven live bars, seeded from history, with the golden test (incremental ≡ batch ≡ live).
+
+**Prerequisite for the data plane (2026-06-21 addendum, see §B):** before Plan 4 wires the live driver, extract the alt-bar accumulator engine out of `HistoryLoader.Application` into a shared library so both the batch and live drivers use one implementation. The bar-source resolver (§B) and the threshold-freeze + partial-bar-seed parity guards (§B) land with the M3/M6 work respectively. Venue-published bars (§A½) are a cheap open/closed relay drop-in whenever a venue that publishes them comes online.
 
 A standalone POC of the GC-free ingest→binary-archival path (synthetic 1000-instrument firehose, allocation + latency measured via the BenchmarkDotNet harness) is worth front-running before M3 wiring, mirroring how the IB-connector POC de-risked the broker path.
 

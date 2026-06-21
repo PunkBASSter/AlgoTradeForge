@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO.Enumeration;
 using AlgoTradeForge.Storage;
 using AlgoTradeForge.HistoryLoader.Application;
 using Microsoft.Extensions.Logging;
@@ -89,6 +90,25 @@ internal abstract class BufferedPartitionWriter : IBufferedPartitionWriter
         {
             sem.Release();
         }
+    }
+
+    /// <summary>
+    /// Enumerates partition files in <paramref name="feedDir"/> whose names match <paramref name="glob"/>,
+    /// via the async <see cref="IFileStorage.ListKeys"/>; returns ABSOLUTE paths sorted descending by
+    /// file name. Empty when the dir has no matching objects.
+    /// </summary>
+    protected async Task<IReadOnlyList<string>> ListPartitionFilesDescending(
+        string feedDir, string glob, CancellationToken ct)
+    {
+        var matches = new List<string>();
+        await foreach (var key in Storage.ListKeys(feedDir, suffix: ".csv", recursive: false, ct))
+        {
+            var name = Path.GetFileName(key);
+            if (FileSystemName.MatchesSimpleExpression(glob, name))
+                matches.Add(Path.Combine(feedDir, name)); // absolute path preserves the watermark-key invariant
+        }
+        matches.Sort((a, b) => string.CompareOrdinal(Path.GetFileName(b), Path.GetFileName(a)));
+        return matches;
     }
 
     /// <summary>Seed the partition's dedup watermark from disk (subclass-resolved field).</summary>

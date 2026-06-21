@@ -3,6 +3,7 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
+using AlgoTradeForge.HistoryLoader.Application.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Application.Catalog;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
@@ -11,6 +12,7 @@ using AlgoTradeForge.HistoryLoader.WebApi.Aggregation;
 using AlgoTradeForge.HistoryLoader.WebApi.Collection;
 using AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 using AlgoTradeForge.HistoryLoader.Infrastructure;
+using AlgoTradeForge.HistoryLoader.Infrastructure.Canonicalization;
 using Microsoft.Extensions.Options;
 using Serilog;
 
@@ -52,6 +54,16 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 builder.Services.AddHealthChecks();
 
 builder.Services.AddHistoryLoaderInfrastructure();
+
+builder.Services.Configure<CanonicalizerOptions>(
+    builder.Configuration.GetSection(CanonicalizerOptions.SectionName));
+builder.Services.PostConfigure<CanonicalizerOptions>(opt =>
+{
+    if (string.IsNullOrEmpty(opt.AssetDirBase))
+        opt.AssetDirBase = builder.Configuration.GetSection("Storage:Local:DataRoot").Value ?? "";
+});
+builder.Services.AddTickCanonicalizer();
+builder.Services.AddHostedService<TickCanonicalizerService>();
 
 builder.Services.AddSingleton<IFeedCollector, CandleFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, FundingRateFeedCollector>();

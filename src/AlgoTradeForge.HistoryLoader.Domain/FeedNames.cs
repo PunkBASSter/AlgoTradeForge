@@ -16,4 +16,5 @@ public static class FeedNames
     public const string Liquidations = "liquidations";
     public const string Ticks = "ticks";
     public const string BookTicker = "book-ticker";
+    public const string Session = "_session";
 }
