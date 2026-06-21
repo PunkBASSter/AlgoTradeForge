@@ -58,12 +58,8 @@ internal sealed class DailyTickCsvWriter : BufferedPartitionWriter, ITickFeedWri
     public async Task<TickResumeState?> ResumeFrom(string assetDir, CancellationToken ct = default)
     {
         var feedDir = Path.Combine(assetDir, FeedNames.Ticks);
-        if (!Directory.Exists(feedDir)) return null;
-
-        var files = Directory.GetFiles(feedDir, "????-??-??.csv")
-            .OrderByDescending(f => f, StringComparer.Ordinal)
-            .ToArray();
-        if (files.Length == 0) return null;
+        var files = await ListPartitionFilesDescending(feedDir, "????-??-??.csv", ct);
+        if (files.Count == 0) return null;
 
         var latestFile = files[0];
         var lastLine = await TailIndex.GetLastLine(latestFile, ct);

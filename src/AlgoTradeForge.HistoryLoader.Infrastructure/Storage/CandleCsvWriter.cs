@@ -43,14 +43,11 @@ internal sealed class CandleCsvWriter : BufferedPartitionWriter, ICandleWriter
     public async Task<long?> ResumeFrom(string assetDir, string interval, CancellationToken ct = default)
     {
         // PR3: partitions are addressed by absolute path (matching PR2's hand-built loader path).
-        // PR4 migrates both Write and ResumeFrom to StorageKeys.CandlePartition and routes through
-        // IFileStorage.ListKeys end-to-end, dropping this Directory.GetFiles call.
+        // PR4 migrates the Write path to StorageKeys.CandlePartition.
         var candlesDir = Path.Combine(assetDir, "candles");
-        if (!Directory.Exists(candlesDir)) return null;
-
         var pattern = $"*_{interval}.csv";
-        var files = Directory.GetFiles(candlesDir, pattern).OrderByDescending(Path.GetFileName).ToArray();
-        if (files.Length == 0) return null;
+        var files = await ListPartitionFilesDescending(candlesDir, pattern, ct);
+        if (files.Count == 0) return null;
 
         foreach (var file in files)
         {

@@ -34,11 +34,9 @@ internal sealed class FeedCsvWriter : BufferedPartitionWriter, IFeedWriter
     {
         // PR3: absolute paths until PR4's StorageKeys migration.
         var feedDir = Path.Combine(assetDir, feedName);
-        if (!Directory.Exists(feedDir)) return null;
-
         var pattern = string.IsNullOrEmpty(interval) ? "????-??.csv" : $"????-??_{interval}.csv";
-        var files = Directory.GetFiles(feedDir, pattern).OrderByDescending(f => f).ToArray();
-        if (files.Length == 0) return null;
+        var files = await ListPartitionFilesDescending(feedDir, pattern, ct);
+        if (files.Count == 0) return null;
 
         var latestFile = files[0];
         var ts = await TailIndex.GetLastTimestamp(latestFile, ct);
