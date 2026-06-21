@@ -1,0 +1,350 @@
+using AlgoTradeForge.Domain.Trading;
+using AlgoTradeForge.LiveHost.Infrastructure.Tests.TestUtilities;
+using Xunit;
+
+namespace AlgoTradeForge.LiveHost.Infrastructure.Tests.Live.Testnet;
+
+[Collection("BinanceTestnet")]
+[Trait("Category", "BinanceTestnet")]
+public sealed class ConnectorOrderTests(TestnetConnectorFixture fixture)
+{
+    private static readonly TimeSpan FillTimeout = TimeSpan.FromSeconds(90);
+    private const decimal MinQty = 0.00010m;
+
+    private TestnetOrderStrategy Strategy => fixture.Strategy!;
+    private long ReferencePrice => fixture.LastPrice;
+
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
+    public async Task MarketBuy_ReceivesFill()
+    {
+        if (!BinanceTestnetCredentials.IsConfigured)
+            Assert.Skip(BinanceTestnetCredentials.SkipReason);
+
+        Strategy.ResetFillTcs();
+        Strategy.OnNextBar = () =>
+        {
+            Strategy.Orders.Submit(new Order
+            {
+                Id = 0,
+                Asset = fixture.Asset!,
+                Side = OrderSide.Buy,
+                Type = OrderType.Market,
+                Quantity = MinQty,
+            });
+        };
+
+        var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+
+        Assert.Equal(OrderSide.Buy, fill.Side);
+        Assert.True(fill.Price > 0);
+        Assert.Equal(MinQty, fill.Quantity);
+    }
+
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
+    public async Task MarketSell_AfterBuy_ReceivesFill()
+    {
+        if (!BinanceTestnetCredentials.IsConfigured)
+            Assert.Skip(BinanceTestnetCredentials.SkipReason);
+
+        // Buy first
+        Strategy.ResetFillTcs();
+        Strategy.OnNextBar = () =>
+        {
+            Strategy.Orders.Submit(new Order
+            {
+                Id = 0,
+                Asset = fixture.Asset!,
+                Side = OrderSide.Buy,
+                Type = OrderType.Market,
+                Quantity = MinQty,
+            });
+        };
+        await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+
+        // Sell
+        Strategy.ResetFillTcs();
+        Strategy.OnNextBar = () =>
+        {
+            Strategy.Orders.Submit(new Order
+            {
+                Id = 0,
+                Asset = fixture.Asset!,
+                Side = OrderSide.Sell,
+                Type = OrderType.Market,
+                Quantity = MinQty,
+            });
+        };
+
+        var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+        Assert.Equal(OrderSide.Sell, fill.Side);
+    }
+
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
+    public async Task LimitBuy_AggressivePrice_ReceivesFill()
+    {
+        if (!BinanceTestnetCredentials.IsConfigured)
+            Assert.Skip(BinanceTestnetCredentials.SkipReason);
+
+        var limitPrice = ReferencePrice + (long)(100m / fixture.Asset!.TickSize); // far above market
+
+        Strategy.ResetFillTcs();
+        Strategy.OnNextBar = () =>
+        {
+            Strategy.Orders.Submit(new Order
+            {
+                Id = 0,
+                Asset = fixture.Asset!,
+                Side = OrderSide.Buy,
+                Type = OrderType.Limit,
+                Quantity = MinQty,
+                LimitPrice = limitPrice,
+            });
+        };
+
+        var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+
+        Assert.Equal(OrderSide.Buy, fill.Side);
+        Assert.True(fill.Price <= limitPrice);
+    }
+
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
+    public async Task LimitSell_AggressivePrice_ReceivesFill()
+    {
+        if (!BinanceTestnetCredentials.IsConfigured)
+            Assert.Skip(BinanceTestnetCredentials.SkipReason);
+
+        // Buy first to have position
+        Strategy.ResetFillTcs();
+        Strategy.OnNextBar = () =>
+        {
+            Strategy.Orders.Submit(new Order
+            {
+                Id = 0,
+                Asset = fixture.Asset!,
+                Side = OrderSide.Buy,
+                Type = OrderType.Market,
+                Quantity = MinQty,
+            });
+        };
+        await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+
+        var limitPrice = ReferencePrice - (long)(100m / fixture.Asset!.TickSize); // far below market
+
+        Strategy.ResetFillTcs();
+        Strategy.OnNextBar = () =>
+        {
+            Strategy.Orders.Submit(new Order
+            {
+                Id = 0,
+                Asset = fixture.Asset!,
+                Side = OrderSide.Sell,
+                Type = OrderType.Limit,
+                Quantity = MinQty,
+                LimitPrice = limitPrice,
+            });
+        };
+
+        var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+
+        Assert.Equal(OrderSide.Sell, fill.Side);
+        Assert.True(fill.Price >= limitPrice);
+    }
+
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
+    public async Task StopBuy_AlreadyTriggered_ReceivesFill()
+    {
+        if (!BinanceTestnetCredentials.IsConfigured)
+            Assert.Skip(BinanceTestnetCredentials.SkipReason);
+
+        var stopPrice = ReferencePrice - (long)(500m / fixture.Asset!.TickSize); // well below market, should trigger immediately
+
+        Strategy.ResetFillTcs();
+        try
+        {
+            Strategy.OnNextBar = () =>
+            {
+                Strategy.Orders.Submit(new Order
+                {
+                    Id = 0,
+                    Asset = fixture.Asset!,
+                    Side = OrderSide.Buy,
+                    Type = OrderType.Stop,
+                    Quantity = MinQty,
+                    StopPrice = stopPrice,
+                });
+            };
+
+            var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+            Assert.Equal(OrderSide.Buy, fill.Side);
+        }
+        catch (HttpRequestException)
+        {
+            Assert.Skip("Binance testnet rejected STOP_LOSS order — filter restriction.");
+        }
+    }
+
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
+    public async Task StopSell_AlreadyTriggered_ReceivesFill()
+    {
+        if (!BinanceTestnetCredentials.IsConfigured)
+            Assert.Skip(BinanceTestnetCredentials.SkipReason);
+
+        // Buy first
+        Strategy.ResetFillTcs();
+        Strategy.OnNextBar = () =>
+        {
+            Strategy.Orders.Submit(new Order
+            {
+                Id = 0,
+                Asset = fixture.Asset!,
+                Side = OrderSide.Buy,
+                Type = OrderType.Market,
+                Quantity = MinQty,
+            });
+        };
+        await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+
+        var stopPrice = ReferencePrice + (long)(500m / fixture.Asset!.TickSize); // well above market
+
+        Strategy.ResetFillTcs();
+        try
+        {
+            Strategy.OnNextBar = () =>
+            {
+                Strategy.Orders.Submit(new Order
+                {
+                    Id = 0,
+                    Asset = fixture.Asset!,
+                    Side = OrderSide.Sell,
+                    Type = OrderType.Stop,
+                    Quantity = MinQty,
+                    StopPrice = stopPrice,
+                });
+            };
+
+            var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+            Assert.Equal(OrderSide.Sell, fill.Side);
+        }
+        catch (HttpRequestException)
+        {
+            Assert.Skip("Binance testnet rejected STOP_LOSS order — filter restriction.");
+        }
+    }
+
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
+    public async Task StopLimitBuy_ReceivesFill()
+    {
+        if (!BinanceTestnetCredentials.IsConfigured)
+            Assert.Skip(BinanceTestnetCredentials.SkipReason);
+
+        var stopPrice = ReferencePrice - (long)(500m / fixture.Asset!.TickSize);
+        var limitPrice = ReferencePrice + (long)(100m / fixture.Asset!.TickSize);
+
+        Strategy.ResetFillTcs();
+        try
+        {
+            Strategy.OnNextBar = () =>
+            {
+                Strategy.Orders.Submit(new Order
+                {
+                    Id = 0,
+                    Asset = fixture.Asset!,
+                    Side = OrderSide.Buy,
+                    Type = OrderType.StopLimit,
+                    Quantity = MinQty,
+                    StopPrice = stopPrice,
+                    LimitPrice = limitPrice,
+                });
+            };
+
+            var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+            Assert.Equal(OrderSide.Buy, fill.Side);
+        }
+        catch (HttpRequestException)
+        {
+            Assert.Skip("Binance testnet rejected STOP_LOSS_LIMIT order — filter restriction.");
+        }
+    }
+
+    [Fact(
+#if DEBUG
+        Skip = "Requires responsive Binance testnet — run in Release for full integration"
+#endif
+    )]
+    public async Task StopLimitSell_ReceivesFill()
+    {
+        if (!BinanceTestnetCredentials.IsConfigured)
+            Assert.Skip(BinanceTestnetCredentials.SkipReason);
+
+        // Buy first
+        Strategy.ResetFillTcs();
+        Strategy.OnNextBar = () =>
+        {
+            Strategy.Orders.Submit(new Order
+            {
+                Id = 0,
+                Asset = fixture.Asset!,
+                Side = OrderSide.Buy,
+                Type = OrderType.Market,
+                Quantity = MinQty,
+            });
+        };
+        await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+
+        var stopPrice = ReferencePrice + (long)(500m / fixture.Asset!.TickSize);
+        var limitPrice = ReferencePrice - (long)(100m / fixture.Asset!.TickSize);
+
+        Strategy.ResetFillTcs();
+        try
+        {
+            Strategy.OnNextBar = () =>
+            {
+                Strategy.Orders.Submit(new Order
+                {
+                    Id = 0,
+                    Asset = fixture.Asset!,
+                    Side = OrderSide.Sell,
+                    Type = OrderType.StopLimit,
+                    Quantity = MinQty,
+                    StopPrice = stopPrice,
+                    LimitPrice = limitPrice,
+                });
+            };
+
+            var fill = await Strategy.NextFillTcs.Task.WaitAsync(FillTimeout, TestContext.Current.CancellationToken);
+            Assert.Equal(OrderSide.Sell, fill.Side);
+        }
+        catch (HttpRequestException)
+        {
+            Assert.Skip("Binance testnet rejected STOP_LOSS_LIMIT order — filter restriction.");
+        }
+    }
+}
