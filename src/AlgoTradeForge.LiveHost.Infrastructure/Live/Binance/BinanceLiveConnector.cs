@@ -221,7 +221,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 _apiClient.Sign, _apiClient.GetTimestamp, OnExecutionReport);
 
             _reconciler = new OrderGroupReconciler(_apiClient, _logger);
-            _reconcileTask = RunReconciliationLoopAsync(_cts.Token);
+            _reconcileTask = RunReconciliationLoop(_cts.Token);
 
             Status = LiveSessionStatus.Running;
             _logger.LogInformation(
@@ -447,12 +447,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
         && stoppingToken.IsCancellationRequested
         && oce.CancellationToken == stoppingToken;
 
-    private async Task RunReconciliationLoopAsync(CancellationToken ct)
+    private async Task RunReconciliationLoop(CancellationToken ct)
     {
-        // Known edge case: if a fill is in-progress (WebSocket report received but not yet
-        // processed on the event queue), reconciliation may see the protective order as missing
-        // and submit a duplicate. The duplicate will be rejected by the exchange (order already
-        // exists) or cleaned up on the next reconciliation cycle as an orphan.
         using var timer = new PeriodicTimer(_sharedOptions.ReconciliationInterval);
         var consecutiveFailures = 0;
         try
@@ -463,59 +459,75 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 {
                     if (entry.Strategy is not ITradeRegistryProvider provider)
                         continue;
-
                     try
                     {
-                        // Phase 1: Snapshot expected orders on EventQueue (thread-safe read).
-                        // WriteAsync (not TryWrite): on a bounded queue a full buffer would make
-                        // TryWrite drop the action, leaving `await tcs.Task` hung forever. The
-                        // single-reader ProcessingTask drains independently, so WriteAsync always
-                        // gets a slot and the round-trip completes.
-                        var tcs = new TaskCompletionSource<IReadOnlyList<ExpectedOrder>>();
-                        await entry.EventQueue.Writer.WriteAsync(() =>
-                            tcs.SetResult(provider.TradeRegistry.GetExpectedOrders()), ct);
-                        var expected = await tcs.Task;
-
-                        // Phase 2: Detect on timer thread (exchange query, pure comparison)
-                        var pendingIds = entry.OrderContext.GetPendingOrders()
-                            .Select(o => o.Id).Where(id => id > 0).ToHashSet();
-                        var result = await _reconciler!.DetectAsync(
-                            entry.PrimaryAsset.Name, expected,
-                            entry.OrderContext.ResolveExchangeOrderId, pendingIds, ct);
-
-                        // Phase 3a: Repair on EventQueue (module mutation serialized)
-                        if (result.MissingByGroup.Count > 0)
-                        {
-                            var repairTcs = new TaskCompletionSource();
-                            await entry.EventQueue.Writer.WriteAsync(() =>
-                            {
-                                foreach (var (groupId, missingIds) in result.MissingByGroup)
-                                    provider.TradeRegistry.RepairGroup(groupId, missingIds);
-                                repairTcs.SetResult();
-                            }, ct);
-                            await repairTcs.Task;
-                        }
-
-                        // Phase 3b: Cancel orphans directly on exchange (no module state)
-                        if (result.OrphanIds.Count > 0)
-                            await _reconciler.CancelOrphansAsync(entry.PrimaryAsset.Name, result.OrphanIds, ct);
-
+                        await ReconcileSession(entry, provider, ct);
                         consecutiveFailures = 0;
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    catch (Exception ex) when (!IsTrueShutdown(ex, ct))
                     {
                         consecutiveFailures++;
-                        if (consecutiveFailures >= 3)
-                            _logger.LogWarning(ex,
-                                "Reconciliation has failed {Count} consecutive times for session {SessionId}",
-                                consecutiveFailures, entry.SessionId);
-                        else
-                            _logger.LogError(ex, "Reconciliation failed for session {SessionId}", entry.SessionId);
+                        LogReconciliationFailure(ex, entry.SessionId, consecutiveFailures);
                     }
                 }
             }
         }
         catch (OperationCanceledException) { }
+    }
+
+    private async Task ReconcileSession(
+        LiveSessionEntry entry, ITradeRegistryProvider provider, CancellationToken ct)
+    {
+        // Known edge case: if a fill is in-progress (WebSocket report received but not yet
+        // processed on the event queue), reconciliation may see the protective order as missing
+        // and submit a duplicate. The duplicate will be rejected by the exchange (order already
+        // exists) or cleaned up on the next reconciliation cycle as an orphan.
+
+        // Phase 1: Snapshot expected orders on EventQueue (thread-safe read).
+        // WriteAsync (not TryWrite): on a bounded queue a full buffer would make
+        // TryWrite drop the action, leaving `await tcs.Task` hung forever. The
+        // single-reader ProcessingTask drains independently, so WriteAsync always
+        // gets a slot and the round-trip completes.
+        var tcs = new TaskCompletionSource<IReadOnlyList<ExpectedOrder>>();
+        await entry.EventQueue.Writer.WriteAsync(() =>
+            tcs.SetResult(provider.TradeRegistry.GetExpectedOrders()), ct);
+        var expected = await tcs.Task;
+
+        // Phase 2: Detect on timer thread (exchange query, pure comparison)
+        var pendingIds = entry.OrderContext.GetPendingOrders()
+            .Select(o => o.Id).Where(id => id > 0).ToHashSet();
+        var result = await _reconciler!.DetectAsync(
+            entry.PrimaryAsset.Name, expected,
+            entry.OrderContext.ResolveExchangeOrderId, pendingIds, ct);
+
+        // Phase 3a: Repair on EventQueue (module mutation serialized)
+        if (result.MissingByGroup.Count > 0)
+        {
+            var repairTcs = new TaskCompletionSource();
+            await entry.EventQueue.Writer.WriteAsync(() =>
+            {
+                foreach (var (groupId, missingIds) in result.MissingByGroup)
+                    provider.TradeRegistry.RepairGroup(groupId, missingIds);
+                repairTcs.SetResult();
+            }, ct);
+            await repairTcs.Task;
+        }
+
+        // Phase 3b: Cancel orphans directly on exchange (no module state)
+        if (result.OrphanIds.Count > 0)
+            await _reconciler.CancelOrphansAsync(entry.PrimaryAsset.Name, result.OrphanIds, ct);
+    }
+
+    private void LogReconciliationFailure(Exception ex, Guid sessionId, int consecutiveFailures)
+    {
+        if (consecutiveFailures >= 3)
+            _logger.LogError(ex,
+                "Reconciliation has failed {Count} consecutive times for session {SessionId}",
+                consecutiveFailures, sessionId);
+        else
+            _logger.LogWarning(ex,
+                "Reconciliation failed for session {SessionId} (attempt {Count})",
+                sessionId, consecutiveFailures);
     }
 
     private void OnExecutionReport(BinanceExecutionReport report)

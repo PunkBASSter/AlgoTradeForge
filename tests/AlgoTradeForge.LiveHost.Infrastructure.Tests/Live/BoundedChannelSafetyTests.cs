@@ -91,7 +91,7 @@ public class BoundedChannelSafetyTests
     [Fact]
     public async Task WriteAsync_IntoFullBoundedChannel_CompletesRoundTrip_WhenReaderDrains()
     {
-        // This proves the deadlock fix mechanism used in BinanceLiveConnector.RunReconciliationLoopAsync:
+        // This proves the deadlock fix mechanism used in BinanceLiveConnector.ReconcileSession:
         // a bounded Channel<Action> that is full does NOT hang a marshal-and-await round trip when the
         // write uses WriteAsync (which awaits a slot) instead of TryWrite (which drops on full).
         const int capacity = 2;
