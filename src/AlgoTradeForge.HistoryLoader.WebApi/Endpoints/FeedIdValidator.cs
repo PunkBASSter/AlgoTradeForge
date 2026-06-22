@@ -1,4 +1,4 @@
-using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.Domain.Aggregation;
 
 namespace AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 

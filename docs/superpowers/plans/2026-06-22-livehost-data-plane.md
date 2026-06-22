@@ -8,6 +8,20 @@
 
 **Tech Stack:** C# 14 / .NET 10, `System.Threading.Channels` (bounded), xUnit + NSubstitute, Serilog, BenchmarkDotNet (dispatch hot-path).
 
+## As-Built Amendments (post-implementation — read FIRST)
+
+The task list below is the *original* plan and remains accurate for sequencing/rationale, but the as-built code differs in a few deliberate ways discovered during implementation. Where this section conflicts with a task body, **this section governs.**
+
+**Commit structure (squashed for review):** the branch was restructured to 4 commits — `cc1dfe0` (design doc), `2ab0815` (this plan), `2ae5f5b` (engine → `Domain.Aggregation`, Tasks 1–3), `d86ec18` (data plane + §D + wiring, Tasks 4–17), plus `4dadd12` (the capability-routing amendment below). Task-level commit SHAs in the bodies are historical.
+
+**§D tick path — SUPERSEDED by capability-driven routing (Task 4 / Task 8 / Task 10 / Task 15).** The plan's design (a defaulted `IInt64BarStrategy.OnTick` + a `LiveEventRouting.OnTick` flag gating delivery) was replaced because the flag duplicates what the type already declares. As built:
+- Trade-tick entry point lives on a dedicated capability interface **`ITradeTickStrategy.OnTradeTick(in TradeTick, DataSubscription)`** (`Domain.Strategy`), NOT a defaulted method on `IInt64BarStrategy`.
+- **`LiveEventRouting.OnTick` does NOT exist** — the enum is `OnBarStart | OnBarComplete | OnTrade` only.
+- **Tick routing is capability-driven:** `StrategyDispatch.DispatchTick` delivers iff `session.Strategy is ITradeTickStrategy` AND the session has a `TickSubscription` for the instrument — the implemented interface IS the opt-in, so flag and method can't drift. `SessionInterest` caches the `ITradeTickStrategy?` cast and drops tick subscriptions on non-tick-capable strategies.
+- **Bars remain flag-routed** (`OnBarStart`/`OnBarComplete`) — unchanged. The full bar/quote capability split (`IBarStrategy`, `IQuoteTickStrategy`, backtest-side capability routing) is deferred to **Strategy Framework v2**, along with the `OnQuoteTick` entry point (no quote-driven strategy exists yet).
+
+**Other as-built deltas (already reflected in the design doc):** `ScaleTagAssertion` moved to Domain with `AccumulatorEntry` (Task 2); the ingest fan-out uses a `Live.Relay`-local `IRelayTradeTap` bridged by `TickRouterTradeTap` rather than an `ITickRouter` param (Task 13, avoids a layering inversion); `AltBarFeedId` moved to `Domain.Aggregation` + new `ThresholdResolver.ResolveParsed` for the threshold freeze (Task 12); the Renko resume seam crosses the now-internal boundary via public `IBarAccumulator.SeedResumeState`/`TryGetResumeState` (Task 2); `IBarSource.Start()` is awaited once-on-create in `EnsureSources` so kline sources actually subscribe (Task 15 fix); `TickAggregationBarSource.Recent` is lock-guarded for the cross-thread snapshot read (Task 16 fix).
+
 ## Global Constraints
 
 - **One `dotnet` process at a time** — build/test/run strictly sequential, never parallel. Use `powershell.exe` (not `pwsh`).

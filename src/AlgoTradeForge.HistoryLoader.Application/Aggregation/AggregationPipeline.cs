@@ -1,9 +1,9 @@
 using System.Globalization;
 using System.Text;
 using AlgoTradeForge.Storage;
+using AlgoTradeForge.Domain.Aggregation;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
-using AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -86,10 +86,9 @@ public sealed class AggregationPipeline
 
         // Renko is the only accumulator with path-dependent state the cutoff filter can't
         // reconstruct from records alone (_lastBrickClose).
-        if (job.Resume is { LastBrickClose: { } anchor }
-            && accumulator is RenkoAccumulator renko)
+        if (job.Resume is { LastBrickClose: { } anchor })
         {
-            renko.Seed(anchor);
+            accumulator.SeedResumeState(anchor);
         }
 
         long bytesBudget = (long)job.MaxPartitionSizeMB * 1024 * 1024;
@@ -371,8 +370,8 @@ public sealed class AggregationPipeline
             : WMerge(priorSpec.Fidelity?.EstimatedOvershootPct, estimatedOvershootPct);
 
         long? lastBrickClose = null;
-        if (accumulator is RenkoAccumulator renkoAcc)
-            lastBrickClose = renkoAcc.LastBrickClose;
+        if (accumulator.TryGetResumeState(out var resumeClose))
+            lastBrickClose = resumeClose;
 
         // Defensive fallback for zero-record runs (endpoint guards against this).
         var lastSourceTsForSpec = sourceRecordsConsumed > 0

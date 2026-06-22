@@ -1,0 +1,20 @@
+%% TimeBar — venue-published via kline WS (OnBarStart on new open-time + OnBarComplete on close)
+sequenceDiagram
+    participant K as Binance kline WS
+    participant KS as KlineVenueBarSource
+    participant D as StrategyDispatch
+    participant Q as session MarketDataQueue
+    participant ST as Strategy (IInt64BarStrategy)
+
+    K->>KS: kline (new open-time, not closed)
+    Note over KS: open-time changed → bar opened
+    KS->>D: DispatchBar(instrument, TimeBar-spec, formingBar, isStart:true)
+    D->>Q: enqueue ()=>OnBarStart(bar, sub)
+    Q->>ST: OnBarStart(bar, sub)
+    K->>KS: kline updates (same open-time)
+    Note over KS: ignored (not closed, no new open)
+    K->>KS: kline (IsClosed=true)
+    KS->>KS: add to Recent
+    KS->>D: DispatchBar(instrument, TimeBar-spec, closedBar, isStart:false)
+    D->>Q: enqueue ()=>OnBarComplete(bar, sub)
+    Q->>ST: OnBarComplete(bar, sub) → submit order

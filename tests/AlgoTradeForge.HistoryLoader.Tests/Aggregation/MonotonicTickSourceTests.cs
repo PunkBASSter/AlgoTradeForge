@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Aggregation;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using Xunit;
 

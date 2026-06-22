@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using AlgoTradeForge.Storage;
 using AlgoTradeForge.Domain;
+using AlgoTradeForge.Domain.Aggregation;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 

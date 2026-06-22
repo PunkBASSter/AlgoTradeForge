@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using AlgoTradeForge.Domain;
+using AlgoTradeForge.Domain.Aggregation;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;

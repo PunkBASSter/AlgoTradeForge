@@ -3,7 +3,9 @@ using AlgoTradeForge.Domain.Engine;
 using Xunit;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
+using AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane;
 using AlgoTradeForge.LiveHost.Infrastructure.Tests.TestUtilities;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -29,7 +31,15 @@ public sealed class TestnetConnectorFixture : IAsyncLifetime
         var validator = new OrderValidator();
         var logger = NullLogger<BinanceLiveConnector>.Instance;
 
-        Connector = new BinanceLiveConnector("testnet", accountConfig, sharedOptions, validator, logger);
+        var klineWs = new BinanceWebSocketManager(
+            accountConfig.MarketStreamUrl, sharedOptions.ReconnectDelay,
+            sharedOptions.MaxReconnectAttempts, NullLogger.Instance);
+        var resolver = new BarSourceResolver(klineWs);
+        var dispatch = new StrategyDispatch(NullLogger<StrategyDispatch>.Instance);
+        var router = new TickRouter(resolver, dispatch, NullLogger<TickRouter>.Instance);
+
+        Connector = new BinanceLiveConnector(
+            "testnet", accountConfig, sharedOptions, validator, router, dispatch, logger);
         await Connector.ConnectAsync();
 
         Asset = CryptoAsset.Create("BTCUSDT", "Binance", decimalDigits: 2,
@@ -49,9 +59,9 @@ public sealed class TestnetConnectorFixture : IAsyncLifetime
             SessionId = SessionId,
             Strategy = Strategy,
             Subscriptions = [new DataSubscription(Asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
+            RawSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
             PrimaryAsset = Asset,
             InitialCash = initialCash,
-            Routing = LiveEventRouting.All,
             AccountName = "testnet",
         };
 

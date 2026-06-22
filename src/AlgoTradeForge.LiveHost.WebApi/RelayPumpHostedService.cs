@@ -10,6 +10,7 @@ public sealed class RelayPumpHostedService(
     IVenueConnector connector,
     IOptions<RelayPumpOptions> opts,
     IFileStorage storage,
+    IRelayTradeTap tap,
     TimeProvider time,
     ILogger<RelayPumpHostedService> logger) : BackgroundService
 {
@@ -45,7 +46,7 @@ public sealed class RelayPumpHostedService(
             var uploadLoop = UploadLoop(uploader, o.UploadInterval, uploadCts.Token);
             try
             {
-                await RelayIngest.Pump(connector, writer, instruments, ct).ConfigureAwait(false);
+                await RelayIngest.Pump(connector, writer, instruments, tap: tap, ct: ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

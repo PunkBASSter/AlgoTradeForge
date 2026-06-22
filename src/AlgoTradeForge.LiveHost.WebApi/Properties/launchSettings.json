@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "AlgoTradeForge.LiveHost.WebApi": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:64807;http://localhost:64808"
+    }
+  }
+}

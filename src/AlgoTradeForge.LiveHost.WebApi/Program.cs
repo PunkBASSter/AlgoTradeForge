@@ -93,6 +93,26 @@ foreach (var asm in pluginAssemblies)
 Assembly[] strategyAssemblies = [typeof(AlgoTradeForge.Domain.Strategy.StrategyBase<>).Assembly, .. pluginAssemblies];
 builder.Services.AddInfrastructure(strategyAssemblies);
 
+// Data plane: HOST-LEVEL SINGLETONS (one shared plane per node). The relay pump publishes ticks
+// to the router at startup, before any session exists; sessions register with the SAME router.
+// The kline market-data WS needs no account auth (public klines) — shared market-data manager.
+builder.Services.AddSingleton(sp =>
+{
+    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceLiveOptions>>().Value;
+    var log = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceWebSocketManager>>();
+    return new AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceWebSocketManager(
+        opts.MarketStreamUrl, opts.ReconnectDelay, opts.MaxReconnectAttempts, log);
+});
+builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.DataPlane.IBarSourceResolver>(sp =>
+    new AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane.BarSourceResolver(
+        sp.GetRequiredService<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceWebSocketManager>()));
+builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.DataPlane.IStrategyDispatch,
+    AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane.StrategyDispatch>();
+builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.DataPlane.ITickRouter,
+    AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane.TickRouter>();
+builder.Services.AddSingleton<AlgoTradeForge.Live.Relay.IRelayTradeTap,
+    AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane.TickRouterTradeTap>();
+
 // Live host services (BinanceLiveOptions, ILiveSessionStore, handlers, ILiveAccountManager, etc.)
 builder.Services.AddLiveHost(builder.Configuration);
 

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Live;
+using AlgoTradeForge.LiveHost.Application.Live.DataPlane;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -9,12 +10,16 @@ namespace AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
 public sealed class BinanceLiveAccountManager(
     IOptions<BinanceLiveOptions> options,
     IOrderValidator orderValidator,
+    ITickRouter tickRouter,
+    IStrategyDispatch dispatch,
     ILoggerFactory loggerFactory) : ILiveAccountManager, IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, ILiveConnector> _connectors = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _accountLocks = new(StringComparer.OrdinalIgnoreCase);
     private readonly BinanceLiveOptions _options = options.Value;
     private readonly IOrderValidator _orderValidator = orderValidator;
+    private readonly ITickRouter _tickRouter = tickRouter;
+    private readonly IStrategyDispatch _dispatch = dispatch;
     private readonly ILoggerFactory _loggerFactory = loggerFactory;
 
     internal Func<string, BinanceAccountConfig, ILiveConnector>? ConnectorFactory;
@@ -51,6 +56,8 @@ public sealed class BinanceLiveAccountManager(
                     accountConfig,
                     _options,
                     _orderValidator,
+                    _tickRouter,
+                    _dispatch,
                     _loggerFactory.CreateLogger<BinanceLiveConnector>());
 
             await connector.ConnectAsync(ct);

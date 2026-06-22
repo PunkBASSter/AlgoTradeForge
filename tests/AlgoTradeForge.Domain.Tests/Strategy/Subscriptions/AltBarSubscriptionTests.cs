@@ -1,5 +1,5 @@
+using AlgoTradeForge.Domain.Aggregation;
 using AlgoTradeForge.Domain.Strategy.Subscriptions;
-using AlgoTradeForge.HistoryLoader.Domain;
 using Xunit;
 
 namespace AlgoTradeForge.Domain.Tests.Strategy.Subscriptions;
@@ -12,9 +12,8 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Subscriptions;
 /// <c>EqV_5m_500m</c>).
 /// </summary>
 /// <remarks>
-/// The Domain project doesn't reference HistoryLoader.Domain (layering — history is a
-/// peripheral concern). The test project DOES reference it so we can assert grammar
-/// conformance here without polluting the production graph.
+/// <see cref="AltBarFeedId"/> lives in <c>Domain.Aggregation</c> (BCL-only), so grammar
+/// conformance can be asserted here directly against the Domain graph.
 /// </remarks>
 public class AltBarSubscriptionTests
 {

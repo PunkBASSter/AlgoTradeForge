@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using AlgoTradeForge.LiveHost.Application.Live;
+using AlgoTradeForge.LiveHost.Application.Live.DataPlane;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
@@ -9,6 +11,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Trading;
 using Microsoft.Extensions.Logging;
 
@@ -25,6 +28,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
     private readonly BinanceAccountConfig _accountConfig;
     private readonly BinanceLiveOptions _sharedOptions;
     private readonly IOrderValidator _orderValidator;
+    private readonly ITickRouter _tickRouter;
+    private readonly IStrategyDispatch _dispatch;
     private readonly ILogger<BinanceLiveConnector> _logger;
 
     private CancellationTokenSource? _cts;
@@ -52,20 +57,118 @@ public sealed class BinanceLiveConnector : ILiveConnector
     public LiveSessionStatus Status { get; private set; } = LiveSessionStatus.Idle;
     public int SessionCount => _sessions.Count;
 
-    private sealed record LiveSessionEntry(
-        Guid SessionId,
-        IInt64BarStrategy Strategy,
-        LiveOrderContext OrderContext,
-        IList<DataSubscription> Subscriptions,
-        LiveEventRouting Routing,
-        Asset PrimaryAsset,
-        string QuoteAsset,
-        int EventQueueCapacity)
+    private sealed class LiveSessionEntry
     {
-        public Channel<Action> EventQueue { get; } = Channel.CreateBounded<Action>(
-            new BoundedChannelOptions(EventQueueCapacity)
-            { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
+        private readonly StrongBox<long> _droppedMarketData = new(0L);
+
+        public Guid SessionId { get; }
+        public IInt64BarStrategy Strategy { get; }
+        public LiveOrderContext OrderContext { get; }
+        public IList<DataSubscription> Subscriptions { get; }
+        public IReadOnlyList<DataFeedSubscription> RawSubscriptions { get; }
+        public Asset PrimaryAsset { get; }
+        public string QuoteAsset { get; }
+
+        public Channel<Action> EventQueue { get; }
+
+        // Market data is best-effort: drop the newest item under saturation so a flood
+        // never back-pressures or starves the exec queue (fills/orders).
+        public Channel<Action> MarketDataQueue { get; }
+
+        public long DroppedMarketDataCount => Interlocked.Read(ref _droppedMarketData.Value);
+
         public Task? ProcessingTask { get; set; }
+
+        public LiveSessionEntry(
+            Guid sessionId,
+            IInt64BarStrategy strategy,
+            LiveOrderContext orderContext,
+            IList<DataSubscription> subscriptions,
+            IReadOnlyList<DataFeedSubscription> rawSubscriptions,
+            Asset primaryAsset,
+            string quoteAsset,
+            int eventQueueCapacity,
+            int marketDataQueueCapacity,
+            ILogger logger)
+        {
+            SessionId = sessionId;
+            Strategy = strategy;
+            OrderContext = orderContext;
+            Subscriptions = subscriptions;
+            RawSubscriptions = rawSubscriptions;
+            PrimaryAsset = primaryAsset;
+            QuoteAsset = quoteAsset;
+
+            EventQueue = Channel.CreateBounded<Action>(
+                new BoundedChannelOptions(eventQueueCapacity)
+                { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
+
+            var box = _droppedMarketData;
+            MarketDataQueue = Channel.CreateBounded<Action>(
+                new BoundedChannelOptions(marketDataQueueCapacity)
+                { SingleReader = true, FullMode = BoundedChannelFullMode.DropNewest },
+                itemDropped: _ =>
+                {
+                    var n = Interlocked.Increment(ref box.Value);
+                    if ((n & 0x3FF) == 0)
+                        logger.LogDebug("Session {SessionId} dropped {Count} market-data callbacks (queue saturated)",
+                            sessionId, n);
+                });
+        }
+    }
+
+    // Single-reader drain of both per-session channels. Exec (fills/orders, FullMode.Wait) is
+    // drained to empty FIRST every iteration so a market-data flood can never starve or delay a
+    // fill; market data (DropNewest) is best-effort. Callbacks run serialized on this one task.
+    // Termination: both writers completed and both drained => clean exit; CTS cancel => OCE caught.
+    internal static async Task DrainSessionQueues(
+        ChannelReader<Action> exec,
+        ChannelReader<Action> data,
+        ILogger logger,
+        Guid sessionId,
+        CancellationToken ct)
+    {
+        try
+        {
+            while (true)
+            {
+                while (exec.TryRead(out var execAction))
+                    RunCallback(execAction, logger, sessionId);
+
+                if (data.TryRead(out var dataAction))
+                {
+                    RunCallback(dataAction, logger, sessionId);
+                    continue;
+                }
+
+                var execWait = exec.WaitToReadAsync(ct).AsTask();
+                var dataWait = data.WaitToReadAsync(ct).AsTask();
+                await Task.WhenAny(execWait, dataWait).ConfigureAwait(false);
+
+                // WaitToReadAsync returns false only when its writer is completed and drained.
+                // Both false => nothing left and nothing more coming => exit. Either true => loop
+                // re-checks both readers (exec first). Exceptions (e.g. OCE) propagate to the catch.
+                var execMore = execWait.IsCompletedSuccessfully && execWait.Result;
+                var dataMore = dataWait.IsCompletedSuccessfully && dataWait.Result;
+                if (!execMore && !dataMore)
+                {
+                    // Surface a faulted/cancelled wait if one of them did not complete successfully.
+                    if (!execWait.IsCompletedSuccessfully) await execWait.ConfigureAwait(false);
+                    if (!dataWait.IsCompletedSuccessfully) await dataWait.ConfigureAwait(false);
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+    }
+
+    private static void RunCallback(Action action, ILogger logger, Guid sessionId)
+    {
+        try { action(); }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error in session {SessionId} event callback", sessionId);
+        }
     }
 
     public BinanceLiveConnector(
@@ -73,12 +176,16 @@ public sealed class BinanceLiveConnector : ILiveConnector
         BinanceAccountConfig accountConfig,
         BinanceLiveOptions sharedOptions,
         IOrderValidator orderValidator,
+        ITickRouter tickRouter,
+        IStrategyDispatch dispatch,
         ILogger<BinanceLiveConnector> logger)
     {
         AccountName = accountName;
         _accountConfig = accountConfig;
         _sharedOptions = sharedOptions;
         _orderValidator = orderValidator;
+        _tickRouter = tickRouter;
+        _dispatch = dispatch;
         _logger = logger;
     }
 
@@ -194,29 +301,33 @@ public sealed class BinanceLiveConnector : ILiveConnector
             config.Strategy,
             orderContext,
             config.Subscriptions,
-            config.Routing,
+            config.RawSubscriptions,
             asset,
             symbolInfo.QuoteAsset,
-            _sharedOptions.LiveChannelCapacity);
+            _sharedOptions.LiveChannelCapacity,
+            _sharedOptions.MarketDataChannelCapacity,
+            _logger);
 
         _sessions.TryAdd(config.SessionId, entry);
 
-        // Start event processing loop for this session
-        entry.ProcessingTask = Task.Run(async () =>
-        {
-            try
-            {
-                await foreach (var action in entry.EventQueue.Reader.ReadAllAsync(_cts!.Token))
-                {
-                    try { action(); }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error in session {SessionId} event callback", entry.SessionId);
-                    }
-                }
-            }
-            catch (OperationCanceledException) { }
-        });
+        // Single reader drains exec (fills/orders) with priority over market data.
+        entry.ProcessingTask = Task.Run(() => DrainSessionQueues(
+            entry.EventQueue.Reader, entry.MarketDataQueue.Reader,
+            _logger, entry.SessionId, _cts!.Token));
+
+        // Register-before-first-tick: dispatch must know this session before EnsureSources wires
+        // its bar sources, so the very first emitted bar/tick already fans out to it.
+        var registration = new LiveSessionRegistration(
+            config.SessionId,
+            config.Strategy,
+            entry.Subscriptions.ToList(),
+            config.RawSubscriptions,
+            entry.MarketDataQueue.Writer);
+        _dispatch.Register(registration);
+
+        // Plan-4 single-asset-per-session: every instrument scales off the session asset.
+        var sessionScale = new ScaleContext(asset);
+        await _tickRouter.EnsureSources(registration, _ => sessionScale);
 
         _logger.LogInformation(
             "Session {SessionId} added to account '{Account}' for {Asset} with {SubCount} subscription(s)",
@@ -228,14 +339,20 @@ public sealed class BinanceLiveConnector : ILiveConnector
         if (!_sessions.TryRemove(sessionId, out var entry))
             return;
 
+        // Unregister-before-drain: stop new market-data actions from being enqueued before we
+        // complete the writers and drain, so nothing races into a queue we are tearing down.
+        _dispatch.Unregister(sessionId);
+        await _tickRouter.RemoveSources(sessionId);
+
         // Cancel pending orders via API
         foreach (var order in entry.OrderContext.GetPendingOrders())
             entry.OrderContext.Cancel(order.Id);
 
         entry.OrderContext.OrderMapped -= DrainBufferedReports;
 
-        // Drain event queue before stopping
+        // Drain both queues before stopping
         entry.EventQueue.Writer.TryComplete();
+        entry.MarketDataQueue.Writer.TryComplete();
         if (entry.ProcessingTask is not null)
         {
             try { await entry.ProcessingTask; }
@@ -261,10 +378,15 @@ public sealed class BinanceLiveConnector : ILiveConnector
             //    BEFORE cancelling CTS so queued callbacks (fills, protectives) are not dropped
             foreach (var entry in _sessions.Values)
             {
+                // Unregister-before-drain: stop the data plane from enqueuing new market data.
+                _dispatch.Unregister(entry.SessionId);
+                await _tickRouter.RemoveSources(entry.SessionId);
+
                 foreach (var order in entry.OrderContext.GetPendingOrders())
                     entry.OrderContext.Cancel(order.Id);
 
                 entry.EventQueue.Writer.TryComplete();
+                entry.MarketDataQueue.Writer.TryComplete();
                 if (entry.ProcessingTask is not null)
                 {
                     try { await entry.ProcessingTask; }
@@ -488,19 +610,17 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 }
             }
 
-            if (entry.Routing.HasFlag(LiveEventRouting.OnTrade))
+            // Fills always deliver — every IStrategy implements OnTrade(Fill, Order).
+            var order = pendingOrder ?? new Order
             {
-                var order = pendingOrder ?? new Order
-                {
-                    Id = report.OrderId,
-                    Asset = asset,
-                    Side = side,
-                    Type = ParseBinanceOrderType(report.OrderType),
-                    Quantity = decimal.Parse(report.OriginalQuantity, CultureInfo.InvariantCulture),
-                };
+                Id = report.OrderId,
+                Asset = asset,
+                Side = side,
+                Type = ParseBinanceOrderType(report.OrderType),
+                Quantity = decimal.Parse(report.OriginalQuantity, CultureInfo.InvariantCulture),
+            };
 
-                entry.Strategy.OnTrade(fill, order);
-            }
+            entry.Strategy.OnTrade(fill, order);
 
             _logger.LogInformation(
                 "Trade execution: {Side} {Qty} {Symbol} @ {Price} (status={Status}, session={SessionId})",
@@ -543,16 +663,18 @@ public sealed class BinanceLiveConnector : ILiveConnector
         if (!_sessions.TryGetValue(sessionId, out var entry))
             return null;
 
-        // Bars and last-bar-per-subscription are populated by the Plan-4 data plane.
-        List<Int64Bar> bars = [];
-        List<SubscriptionLastBar> lastBars = [];
+        // Bars + last-bar-per-subscription come from the data-plane bar sources' Recent rings.
+        var barFields = SessionSnapshotBars.Build(
+            entry.RawSubscriptions,
+            entry.Subscriptions.ToList(),
+            _tickRouter.RecentBars);
 
         var exchangeBalance = await GetCachedQuoteBalanceAsync(entry.QuoteAsset, ct);
         var exchangeTrades = await GetCachedTradesAsync(entry.PrimaryAsset.Name, ct);
 
         var ctx = entry.OrderContext;
         return new LiveSessionSnapshot(
-            bars,
+            barFields.Bars,
             ctx.GetAllFills(),
             ctx.GetPendingOrders(),
             ctx.GetPositions(),
@@ -561,7 +683,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
             exchangeBalance,
             entry.PrimaryAsset,
             entry.Subscriptions.ToList(),
-            lastBars,
+            barFields.LastBarsPerSubscription,
             exchangeTrades);
     }
 

@@ -16,7 +16,7 @@ public static class AccumulatorEntry
         DataFeedKind sourceKind = DataFeedKind.Tick)
     {
         ArgumentException.ThrowIfNullOrEmpty(typeCode);
-        ScaleTagAssertion.Assert(sourceScale, accumulatorScale);
+        AssertScalesMatch(sourceScale, accumulatorScale);
 
         // EqID/EqIT need the source kind to pick their contribution path: tick path computes
         // signed dollars / ±1; time-bar path consumes pre-aggregated quote-volume / trade
@@ -37,5 +37,22 @@ public static class AccumulatorEntry
                 $"Unknown alt-bar type code '{typeCode}' (allowed: EqT, EqV, EqD, EqIV, EqID, EqIT, Range, Renko).",
                 nameof(typeCode)),
         };
+    }
+
+    private static void AssertScalesMatch(ScaleContext source, ScaleContext accumulator)
+    {
+        if (source.TickSize != accumulator.TickSize)
+        {
+            throw new InvalidOperationException(
+                $"Scale-tag mismatch: source.TickSize={source.TickSize}, " +
+                $"accumulator.TickSize={accumulator.TickSize}. Aggregator inputs MUST share scale.");
+        }
+
+        if (source.QuantityScale != accumulator.QuantityScale)
+        {
+            throw new InvalidOperationException(
+                $"Scale-tag mismatch: source.QuantityScale={source.QuantityScale}, " +
+                $"accumulator.QuantityScale={accumulator.QuantityScale}. Aggregator inputs MUST share scale.");
+        }
     }
 }

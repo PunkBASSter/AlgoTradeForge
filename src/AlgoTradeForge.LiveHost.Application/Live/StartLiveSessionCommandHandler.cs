@@ -21,21 +21,24 @@ public sealed class StartLiveSessionCommandHandler(
         if (command.DataSubscriptions is null or { Count: 0 })
             throw new ArgumentException("At least one data subscription must be provided.");
 
-        // Live trading is TimeBar-only: the connector aggregator pipeline doesn't yet emit
-        // alt-bars in real time. Silently coercing a non-TimeBar primary to 1m would deliver
-        // wrong data, so reject explicitly.
-        var resolvedSubscriptions = new List<DataSubscription>();
+        // Resolve each typed subscription 1:1, same-order, into a DataSubscription. Alt-bar/tick
+        // identity is carried by FeedKey (alt-bar feed-id or "tick"); the data plane pairs the
+        // resolved list with command.DataSubscriptions positionally — they must stay equal-length.
+        var resolvedSubscriptions = new List<DataSubscription>(command.DataSubscriptions.Count);
         foreach (var sub in command.DataSubscriptions)
         {
             var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
                 ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
-            if (sub is not TimeBarSubscription tb)
-                throw new NotSupportedException(
-                    $"Live trading currently supports TimeBarSubscription only; got {sub.GetType().Name}. " +
-                    "Alt-bar / tick primaries are supported for backtest and optimization only.");
-
-            resolvedSubscriptions.Add(new DataSubscription(asset, tb.TimeFrame));
+            DataSubscription resolved = sub switch
+            {
+                TimeBarSubscription tb => new DataSubscription(asset, tb.TimeFrame),
+                AltBarSubscription ab => new DataSubscription(asset, default, FeedKey: ab.FeedId),
+                TickSubscription => new DataSubscription(asset, default, FeedKey: "tick"),
+                _ => throw new NotSupportedException(
+                    $"Unsupported live subscription kind: {sub.GetType().Name}"),
+            };
+            resolvedSubscriptions.Add(resolved);
         }
 
         var primaryAsset = resolvedSubscriptions[0].Asset;
@@ -57,8 +60,8 @@ public sealed class StartLiveSessionCommandHandler(
                 strategy.DataSubscriptions.Add(sub);
         }
 
-        var subscriptions = strategy.DataSubscriptions;
-
+        // config.Subscriptions MUST stay 1:1 same-order with RawSubscriptions (data-plane pairing),
+        // so use the resolved list — not strategy.DataSubscriptions, which a strategy may pre-populate.
         var fingerprint = LiveRunKeyBuilder.Build(command);
 
         var sessionId = Guid.NewGuid();
@@ -68,14 +71,14 @@ public sealed class StartLiveSessionCommandHandler(
         {
             SessionId = sessionId,
             Strategy = strategy,
-            Subscriptions = subscriptions,
+            Subscriptions = resolvedSubscriptions,
+            RawSubscriptions = command.DataSubscriptions,
             PrimaryAsset = primaryAsset,
             InitialCash = initialCashScaled,
-            Routing = command.Routing,
             AccountName = command.AccountName,
         };
 
-        var exchange = subscriptions[0].Asset.Exchange;
+        var exchange = primaryAsset.Exchange;
         var connector = await accountManager.GetOrCreateAsync(command.AccountName, ct);
 
         var details = new SessionDetails(

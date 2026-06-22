@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using AlgoTradeForge.Domain.Aggregation;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
