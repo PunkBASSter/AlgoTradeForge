@@ -1,4 +1,6 @@
-namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
+using AlgoTradeForge.Domain.Aggregation;
+
+namespace AlgoTradeForge.Domain.Aggregation.Accumulators;
 
 // Range-bar accumulator. Emits a bar when running (high - low) crosses the price threshold.
 // Tick-only — time-bar collapses would distort actual_overshoot_pct. No sidecar:

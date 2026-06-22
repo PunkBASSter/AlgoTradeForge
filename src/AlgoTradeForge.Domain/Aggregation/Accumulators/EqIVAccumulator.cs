@@ -1,6 +1,7 @@
 using AlgoTradeForge.Domain;
+using AlgoTradeForge.Domain.Aggregation;
 
-namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
+namespace AlgoTradeForge.Domain.Aggregation.Accumulators;
 
 // Equal-Imbalance accumulator. Accumulates signed buy/sell volume and emits a bar each time
 // abs(signed_acc) >= threshold. Two source paths feed it: tick (is_buyer_maker drives signed

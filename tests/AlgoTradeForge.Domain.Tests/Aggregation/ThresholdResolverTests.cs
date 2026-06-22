@@ -1,8 +1,8 @@
-using AlgoTradeForge.Domain;
-using AlgoTradeForge.HistoryLoader.Application.Aggregation;
+﻿using AlgoTradeForge.Domain;
+using AlgoTradeForge.Domain.Aggregation;
 using Xunit;
 
-namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
+namespace AlgoTradeForge.Domain.Tests.Aggregation;
 
 /// <summary>
 /// P1b-38 / P0-5 — threshold wire schema (absolute vs convenience input modes) and

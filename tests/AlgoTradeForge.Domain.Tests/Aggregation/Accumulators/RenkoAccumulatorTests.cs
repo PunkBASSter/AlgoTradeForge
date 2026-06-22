@@ -1,8 +1,8 @@
-using AlgoTradeForge.HistoryLoader.Application.Aggregation;
-using AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
+﻿using AlgoTradeForge.Domain.Aggregation;
+using AlgoTradeForge.Domain.Aggregation.Accumulators;
 using Xunit;
 
-namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation.Accumulators;
+namespace AlgoTradeForge.Domain.Tests.Aggregation.Accumulators;
 
 /// <summary>P5-7 / P5-9 — Renko bar accumulator (TRD §6.3, ADR P5-1 D3-D6).</summary>
 public sealed class RenkoAccumulatorTests
@@ -255,7 +255,7 @@ public sealed class RenkoAccumulatorTests
         // Without seed: first record's close becomes _lastBrickClose (no-emit).
         // With seed: _lastBrickClose is pre-set, the first record can immediately emit.
         var acc = new RenkoAccumulator(brickSize: 10);
-        acc.Seed(lastBrickClose: 100);
+        acc.SeedResumeState(lastBrickClose: 100);
 
         // Price moves to 110 — one brick up against the seeded wall, NOT a no-op seed.
         Assert.True(acc.TryAdvance(Tick(1000, 110, 7), out var bar));
@@ -263,7 +263,8 @@ public sealed class RenkoAccumulatorTests
         Assert.Equal(110, bar.Close);
         Assert.Equal(7, bar.Volume);
 
-        Assert.Equal(110, acc.LastBrickClose);
+        Assert.True(acc.TryGetResumeState(out var lastClose));
+        Assert.Equal(110, lastClose);
     }
 
     [Fact]
@@ -294,7 +295,7 @@ public sealed class RenkoAccumulatorTests
         Assert.Equal(120, anchor);
 
         var resumed = new RenkoAccumulator(brickSize: 10);
-        resumed.Seed(lastBrickClose: anchor);
+        resumed.SeedResumeState(lastBrickClose: anchor);
         var resumedBricks = new List<AggregatedBar>();
         foreach (var t in ticks[3..])                 // tick4 + tick5
         {

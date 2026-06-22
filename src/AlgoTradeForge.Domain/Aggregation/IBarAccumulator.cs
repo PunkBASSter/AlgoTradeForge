@@ -1,4 +1,4 @@
-namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
+namespace AlgoTradeForge.Domain.Aggregation;
 
 /// <summary>
 /// Streaming accumulator contract. One instance per aggregation job; the source reader feeds
@@ -40,6 +40,11 @@ public interface IBarAccumulator
         emitted = default;
         return false;
     }
+
+    // Renko resume seam: persist/restore the last brick close across partition boundaries.
+    // Default no-op/false; only path-dependent accumulators (Renko) override.
+    void SeedResumeState(long lastBrickClose) { }
+    bool TryGetResumeState(out long lastBrickClose) { lastBrickClose = 0L; return false; }
 }
 
 /// <summary>

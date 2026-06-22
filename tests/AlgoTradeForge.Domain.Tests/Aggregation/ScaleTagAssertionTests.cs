@@ -1,8 +1,8 @@
-using AlgoTradeForge.Domain;
-using AlgoTradeForge.HistoryLoader.Application.Aggregation;
+﻿using AlgoTradeForge.Domain;
+using AlgoTradeForge.Domain.Aggregation;
 using Xunit;
 
-namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
+namespace AlgoTradeForge.Domain.Tests.Aggregation;
 
 /// <summary>
 /// P1a-22, P1a-23 — scale-tag assertion at accumulator entry.

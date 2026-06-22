@@ -1,4 +1,6 @@
-namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
+using AlgoTradeForge.Domain.Aggregation;
+
+namespace AlgoTradeForge.Domain.Aggregation.Accumulators;
 
 // Renko-bar accumulator. 1x neutral bricks (no 2x reversal); each brick is a clean rectangle
 // [lastBrickClose, lastBrickClose +/- brick_size] with no wicks. One source tick can trigger
@@ -31,7 +33,7 @@ internal sealed class RenkoAccumulator : IBarAccumulator
     }
 
     // Skips the first-record-as-anchor branch so resumed bricks chain off the prior wall.
-    public void Seed(long lastBrickClose)
+    public void SeedResumeState(long lastBrickClose)
     {
         _lastBrickClose = lastBrickClose;
         _seeded = true;
@@ -39,7 +41,11 @@ internal sealed class RenkoAccumulator : IBarAccumulator
         _lastEmittedTs = 0;
     }
 
-    public long LastBrickClose => _lastBrickClose;
+    public bool TryGetResumeState(out long lastBrickClose)
+    {
+        lastBrickClose = _lastBrickClose;
+        return true;
+    }
 
     public bool TryAdvance(in SourceRecord r, out AggregatedBar emitted)
     {

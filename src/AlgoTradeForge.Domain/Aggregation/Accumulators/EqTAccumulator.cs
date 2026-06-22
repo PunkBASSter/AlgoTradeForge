@@ -1,4 +1,6 @@
-namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
+using AlgoTradeForge.Domain.Aggregation;
+
+namespace AlgoTradeForge.Domain.Aggregation.Accumulators;
 
 // Equal-Tick accumulator. Emits a bar every `threshold` source records. The bar's Volume still
 // reports the summed base volume so the on-disk schema is uniform across alt-bar types.

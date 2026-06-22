@@ -1,4 +1,4 @@
-namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
+namespace AlgoTradeForge.Domain.Aggregation;
 
 /// <summary>
 /// Single-pass online median estimator using the P² algorithm (Jain &amp; Chlamtac, 1985) with

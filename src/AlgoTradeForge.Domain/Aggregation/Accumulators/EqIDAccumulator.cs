@@ -1,6 +1,7 @@
 using AlgoTradeForge.Domain;
+using AlgoTradeForge.Domain.Aggregation;
 
-namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
+namespace AlgoTradeForge.Domain.Aggregation.Accumulators;
 
 /// <summary>
 /// Equal-Dollar-Imbalance accumulator. Accumulates signed buy/sell <i>quote-asset</i> volume

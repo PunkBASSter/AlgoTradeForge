@@ -1,7 +1,7 @@
-using AlgoTradeForge.HistoryLoader.Application.Aggregation;
+﻿using AlgoTradeForge.Domain.Aggregation;
 using Xunit;
 
-namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
+namespace AlgoTradeForge.Domain.Tests.Aggregation;
 
 /// <summary>
 /// Phase 2a hidden task: P² streaming median estimator. Replaces the unbounded

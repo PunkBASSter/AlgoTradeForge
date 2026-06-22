@@ -1,4 +1,6 @@
-namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
+using AlgoTradeForge.Domain.Aggregation;
+
+namespace AlgoTradeForge.Domain.Aggregation.Accumulators;
 
 // Equal-Volume accumulator. Emits a bar each time the base-volume sum reaches or exceeds
 // threshold. Threshold and contribution are both in the source's quantity-scaled long units;

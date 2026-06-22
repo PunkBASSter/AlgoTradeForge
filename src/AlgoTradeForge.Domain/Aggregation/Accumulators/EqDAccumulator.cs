@@ -1,4 +1,6 @@
-namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
+using AlgoTradeForge.Domain.Aggregation;
+
+namespace AlgoTradeForge.Domain.Aggregation.Accumulators;
 
 // Equal-Dollar (quote-volume) accumulator. Emits a bar each time the quote-volume sum reaches
 // or exceeds threshold. Quote-volume is approximated per source record as Close × Volume

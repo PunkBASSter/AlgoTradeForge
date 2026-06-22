@@ -1,4 +1,6 @@
-namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
+using AlgoTradeForge.Domain.Aggregation;
+
+namespace AlgoTradeForge.Domain.Aggregation.Accumulators;
 
 // Common bar-emission scaffolding for the EqV / EqT / EqD family. Subclasses contribute one
 // quantity per source record via ThresholdContribution; the base handles OHLC tracking,

@@ -1,8 +1,7 @@
 using System.Globalization;
 using AlgoTradeForge.Domain;
-using AlgoTradeForge.HistoryLoader.Domain;
 
-namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
+namespace AlgoTradeForge.Domain.Aggregation;
 
 /// <summary>
 /// Converts the <c>POST /aggregate</c> threshold (absolute or convenience form) into the
@@ -100,6 +99,25 @@ public static class ThresholdResolver
                 "This indicates a MinimumAbsolute bug — please report.");
 
         return new Resolved(absolute, scaled, feedIdComponent, preservedConvenienceInput);
+    }
+
+    /// <summary>
+    /// Freezes a parsed alt-bar feed-id threshold to the scaled <c>long</c> the live accumulator
+    /// compares against. The implicit unit is derived from <paramref name="typeCode"/> (so the
+    /// scaled value matches what the batch pipeline produced), and the canonical threshold string
+    /// is fed through convenience mode so sub-unit values (e.g. <c>500m</c> = 0.5 base) scale
+    /// without the absolute-mode integral restriction. This is the M6 parity freeze — live MUST
+    /// NOT re-derive the threshold from anything but the feed-id.
+    /// </summary>
+    public static long ResolveParsed(string typeCode, ThresholdValue threshold, ScaleContext scale)
+    {
+        var unit = GetImplicitUnit(typeCode);
+        return Resolve(
+            unit,
+            inputMode: "convenience",
+            thresholdValue: null,
+            convenienceInput: threshold.ToCanonicalString(),
+            scale: scale).Scaled;
     }
 
     /// <summary>

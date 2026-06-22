@@ -1,4 +1,6 @@
-namespace AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
+using AlgoTradeForge.Domain.Aggregation;
+
+namespace AlgoTradeForge.Domain.Aggregation.Accumulators;
 
 /// <summary>
 /// Equal-Tick-count-Imbalance accumulator. Accumulates signed buy/sell <i>trade counts</i>

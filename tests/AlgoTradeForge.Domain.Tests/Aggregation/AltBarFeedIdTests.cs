@@ -1,8 +1,8 @@
 using System.Globalization;
-using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.Domain.Aggregation;
 using Xunit;
 
-namespace AlgoTradeForge.HistoryLoader.Tests.Storage;
+namespace AlgoTradeForge.Domain.Tests.Aggregation;
 
 /// <summary>
 /// P1a-3, P1a-4 — positional alt-bar feed-id grammar (TRD §3.3).

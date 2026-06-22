@@ -1,8 +1,8 @@
-using AlgoTradeForge.HistoryLoader.Application.Aggregation;
-using AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
+﻿using AlgoTradeForge.Domain.Aggregation;
+using AlgoTradeForge.Domain.Aggregation.Accumulators;
 using Xunit;
 
-namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation.Accumulators;
+namespace AlgoTradeForge.Domain.Tests.Aggregation.Accumulators;
 
 /// <summary>P5-4 / P5-6 — Range bar accumulator (TRD §6.3, ADR P5-1 D2).</summary>
 public sealed class RangeAccumulatorTests

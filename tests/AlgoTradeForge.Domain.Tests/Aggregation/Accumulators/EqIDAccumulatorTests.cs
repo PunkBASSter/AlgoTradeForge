@@ -1,9 +1,9 @@
-using AlgoTradeForge.Domain;
-using AlgoTradeForge.HistoryLoader.Application.Aggregation;
-using AlgoTradeForge.HistoryLoader.Application.Aggregation.Accumulators;
+﻿using AlgoTradeForge.Domain;
+using AlgoTradeForge.Domain.Aggregation;
+using AlgoTradeForge.Domain.Aggregation.Accumulators;
 using Xunit;
 
-namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation.Accumulators;
+namespace AlgoTradeForge.Domain.Tests.Aggregation.Accumulators;
 
 /// <summary>
 /// Equal-Dollar-Imbalance accumulator (Lopez de Prado DIB). Two source paths:
