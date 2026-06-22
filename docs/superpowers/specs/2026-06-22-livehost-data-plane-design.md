@@ -43,8 +43,12 @@ Relocate the **source-agnostic core** to `src/AlgoTradeForge.Domain/Aggregation/
 - `AccumulatorEntry` — the public factory `Open(typeCode, threshold, sourceScale, accumulatorScale, sourceKind) → IBarAccumulator`. **Split it out of `ScaleTagAssertion.cs` into its own `AccumulatorEntry.cs`** (one-type-per-file constitution).
 - `ThresholdValue` — move from `HistoryLoader.Domain` into `Domain.Aggregation`. Verify no other `HistoryLoader.Domain` consumer breaks; update HistoryLoader references.
 
+**Also moves to Domain:** `ScaleTagAssertion` — it depends only on `ScaleContext`, and `AccumulatorEntry.Open` calls it, so leaving it in HistoryLoader would invert the dependency (Domain → HistoryLoader). It moves with the factory. *(Correction to the original draft, which said it stays.)*
+
 **Stays in `HistoryLoader.Application/Aggregation/` (the batch driver, behavior unchanged):**
-`AggregationPipeline`, `PartitionedSourceReader`, `AggregationJob`, `MonotonicTickSource`, `CandleExtJoiningSource`, `OverwritePathWriter`, `PartitionedSinkWriter`, `EligibilityRules`, `ScaleTagAssertion` (the remaining assertion helper), `SourceTailProbe`, `AggregatedDirSweeper`, `StartupSweepService`, `ProgressEvent`, `Jobs/`, `AssetScaleContextFactory`, `PartitionFilenameParser`, `AltBarWarnings`. These keep their `IFileStorage`/`ISchemaManager` host coupling and now consume `Domain.Aggregation` types.
+`AggregationPipeline`, `PartitionedSourceReader`, `AggregationJob`, `MonotonicTickSource`, `CandleExtJoiningSource`, `OverwritePathWriter`, `PartitionedSinkWriter`, `EligibilityRules`, `SourceTailProbe`, `AggregatedDirSweeper`, `StartupSweepService`, `ProgressEvent`, `Jobs/`, `AssetScaleContextFactory`, `PartitionFilenameParser`, `AltBarWarnings`. These keep their `IFileStorage`/`ISchemaManager` host coupling and now consume `Domain.Aggregation` types.
+
+> **Renko cross-assembly note:** `AggregationPipeline` currently pattern-matches `accumulator is RenkoAccumulator` to drain multi-emit bars. Once accumulators are `internal` to Domain, that cast is unreachable from HistoryLoader. Replace it with the existing public `IBarAccumulator.TryDrainQueued(out AggregatedBar)` contract (the same drain the cast reached) — a behavior-equivalent change, guarded by the unchanged Renko tests.
 
 **Visibility:** accumulators stay `internal` to Domain; `AccumulatorEntry.Open` is the only construction path used by both drivers. Add `InternalsVisibleTo("AlgoTradeForge.Domain.Tests")` so engine unit tests can reach internals; the batch and live drivers never `new` an accumulator.
 
@@ -117,7 +121,7 @@ The ingest pump reads `IVenueConnector.Stream` **once** and fans each `IMarketEv
 1. **Archival (unchanged, lossless):** `RelayWriter` → `.atft` → `SegmentUploader` → `IFileStorage`.
 2. **Dispatch (new, best-effort):** `ITickRouter.Publish` → bar sources + per-strategy channels.
 
-`RelayIngest.Pump` gains an optional `ITickRouter? router` **parameter** (not a field — it stays a stateless static, consistent with the Plan-3 design note; promote to `IRelayIngest` only if it later gains call-independent state/policy). The router manages the venue-connector subscription set so a session's instruments are streamed; in Plan 4 this is the union of archival-config instruments and active-session instruments.
+`RelayIngest.Pump` gains an optional **`IRelayTradeTap? tap`** parameter (not a field — it stays a stateless static, consistent with the Plan-3 design note). The tap interface is defined **in `AlgoTradeForge.Live.Relay`** (`void OnTrade(string instrument, in TradeTick tick)`), because `Live.Relay` is a lower layer than `LiveHost.Application` where `ITickRouter` lives (the router needs `IInt64BarStrategy`/`DataSubscription`). `LiveHost.Infrastructure` provides `TickRouterTradeTap : IRelayTradeTap` bridging the tap to `ITickRouter.Publish`. *(Correction to the original draft, which said `Pump` takes an `ITickRouter?` param — that would invert the dependency.)* The router manages the venue-connector subscription set so a session's instruments are streamed; in Plan 4 this is the union of archival-config instruments and active-session instruments.
 
 ## §6 — Snapshot / query population
 
