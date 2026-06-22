@@ -442,6 +442,11 @@ public sealed class BinanceLiveConnector : ILiveConnector
         }
     }
 
+    internal static bool IsTrueShutdown(Exception ex, CancellationToken stoppingToken) =>
+        ex is OperationCanceledException oce
+        && stoppingToken.IsCancellationRequested
+        && oce.CancellationToken == stoppingToken;
+
     private async Task RunReconciliationLoopAsync(CancellationToken ct)
     {
         // Known edge case: if a fill is in-progress (WebSocket report received but not yet
