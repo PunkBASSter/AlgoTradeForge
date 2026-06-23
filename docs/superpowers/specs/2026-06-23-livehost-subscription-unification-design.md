@@ -27,7 +27,7 @@ Two parallel subscription representations exist, paired positionally:
 
 - **Resolved type:** attach the resolved `Asset` onto the `DataFeedSubscription` hierarchy; retire flat `DataSubscription`.
 - **MarketDataSnapshot:** delete it + its test.
-- **PrimaryAsset:** derive from the `Role == Primary` subscription; drop the separate field.
+- **PrimaryAsset → `ExecutionAsset`:** rename the (asset-vs-subscription-conflating) `PrimaryAsset` to an execution-explicit `ExecutionAsset`, derived from the trade-target subscription (`Role == Primary`, else index-0 fallback); drop the stored field. `DataFeedRole.Primary` is retained as the *backtest clock* distinction. Multiple execution targets / multiple backtest clocks are deferred to Plan 5/6 (live already multi-triggers).
 - **IsExportable home (sub-decision A):** keep on the record as a `[JsonIgnore] bool`.
 - **§B shape (sub-decision B):** a separate `IBarStartStrategy` opt-in interface.
 - **Migration (sub-decision C):** direct retire of `DataSubscription` — no temporary bridge/alias.
@@ -52,9 +52,22 @@ public abstract record DataFeedSubscription(string AssetName, string Exchange, D
 
 Collapse `StrategySubscriptionFactory.FromPrimary` and the inline switch in `StartLiveSessionCommandHandler` into a single resolver: `DataFeedSubscription Resolve(DataFeedSubscription spec, Asset asset) => spec with { Asset = asset }`. Both the backtest preparer (`BacktestPreparer.cs:77`), optimization (`OptimizationSetupHelper.cs:152`), and the live handler call it. The three divergences vanish.
 
-### 3. §A′ — PrimaryAsset derives from `Role == Primary`
+### 3. §A′ — `ExecutionAsset` (not `PrimaryAsset`), derived from the trade-target subscription
 
-`LiveSessionConfig` collapses to a single `IReadOnlyList<DataFeedSubscription>` (resolved). Drop `PrimaryAsset`, `Subscriptions`+`RawSubscriptions` dual list. The execution/denomination asset is `subscriptions.Single(s => s.Role == DataFeedRole.Primary).RequireAsset()`. The live path begins honoring `DataFeedRole` (today it ignores it). Consumers updated to read the primary subscription's asset: balance validation + `ScaleContext` (`BinanceLiveConnector.cs:251,262,329`), `LiveOrderContext` order submission (`LiveOrderContext.cs:225`), portfolio init (`BinanceLiveConnector.cs:281`), fill parsing (`BinanceLiveConnector.cs:593`), cancel-all (`:417`), 3-phase reconciliation `DetectAsync`/`CancelOrphansAsync` (`:500,518`). The `SessionInterest`/`SessionSnapshotBars` length-guards are deleted — the positional invariant no longer exists. `LiveSessionEntry.PrimaryAsset` derives once at registration.
+`LiveSessionConfig` collapses to a single `IReadOnlyList<DataFeedSubscription>` (resolved). Drop the stored `PrimaryAsset` field and the `Subscriptions`+`RawSubscriptions` dual list.
+
+**Two concepts were conflated in `PrimaryAsset`** (they coincide only under the Plan-4 single-asset-per-session constraint):
+- the **backtest clock** — `DataFeedRole.Primary` is the subscription that drives `BacktestEngine`'s single bar-advance loop; `Side` feeds are not triggers, they're queried on demand via `IFeedContext`. This stays.
+- the **execution / denomination asset** — what orders, `ScaleContext`, portfolio, and reconciliation key off. This is an *execution* concept, not a data role.
+
+`DataFeedRole.Primary/Side` is retained as the backtest-clock distinction. The execution asset becomes an execution-explicit derived value, **`ExecutionAsset`**, with a `Role == Primary` selection and an **index-0 fallback**:
+```csharp
+Asset ExecutionAsset => (subscriptions.FirstOrDefault(s => s.Role == DataFeedRole.Primary)
+                         ?? subscriptions[0]).RequireAsset();
+```
+The live path begins honoring `DataFeedRole` (today it ignores it and blindly takes index 0). Consumers renamed from the primary-asset field to `ExecutionAsset`: balance validation + `ScaleContext` (`BinanceLiveConnector.cs:251,262,329`), `LiveOrderContext` order submission (`LiveOrderContext.cs:225`), portfolio init (`BinanceLiveConnector.cs:281`), fill parsing (`BinanceLiveConnector.cs:593`), cancel-all (`:417`), 3-phase reconciliation `DetectAsync`/`CancelOrphansAsync` (`:500,518`). `LiveSessionEntry.PrimaryAsset` → `LiveSessionEntry.ExecutionAsset`, derived once at registration. The `SessionInterest`/`SessionSnapshotBars` length-guards are deleted — the positional invariant no longer exists.
+
+**Deliberately deferred (not §A′):** multiple execution targets is Plan 5 (account-scoped `IOrderRouter`); multiple simultaneous backtest clocks is a deeper engine change (Plan 6+). Live *already* fans events from every bar/tick subscription via `StrategyDispatch`, so multi-trigger listening (e.g. arbitrage on several tick feeds) needs no new work — what is single today is only the execution asset and the backtest clock. Keeping role-on-subscription + asset-derived means neither needs undoing when Plan 5/6 extends to multiple.
 
 ### 4. §B — bar capability split
 
@@ -91,7 +104,7 @@ Direct retire, no bridge. Every signature flips type:
 - **Backtest behavior-identical:** §A touches the core engine, so the existing engine/golden tests are the safety net. A backtest-equivalence check (golden run unchanged before/after) gates the engine-touching tasks.
 - **Private solution green:** Private strategies (`ZigZag*`, `AtrZigZag*`, Pairs) + their tests build against these signatures — `../AlgoTradeForge.Private/AlgoTradeForge.Full.slnx` must build and `dotnet test` green.
 - **Single resolver behavior:** a test pins that the unified resolver produces the (previously divergent) values consistently for AltBar/Tick/Side across both the backtest and live entry points.
-- **§A′:** a test that `Role == Primary` selection drives the denomination asset (orders/scale/reconciliation), including a config where the primary is not at index 0.
+- **§A′:** tests that `ExecutionAsset` selection drives the execution/denomination asset (orders/scale/reconciliation): (a) `Role == Primary` chosen when present, including a config where the primary is not at index 0; (b) the **index-0 fallback** when no subscription has `Role == Primary`.
 - **§B:** dispatch tests that `OnBarStart` reaches only `IBarStartStrategy` implementers and `OnBarComplete` reaches all `IBarStrategy`.
 - **Perf/alloc:** if the callback parameter-type change touches the engine hot path, run the BenchmarkDotNet harness (`run-benchmarks`) and compare Mean + Allocated against the pre-change baseline.
 - **Conventions:** Int64 money (`MoneyConvert.ToLong`/`ScaleContext`), no `Async` suffix (`[[feedback_no_async_suffix]]`), one-type-per-file, Domain zero ProjectReferences, no backward-compat shims, nothing left dead.
@@ -99,7 +112,7 @@ Direct retire, no bridge. Every signature flips type:
 ## Acceptance
 
 - One subscription type end-to-end (`DataFeedSubscription`, resolved via `[JsonIgnore] Asset`); flat `DataSubscription` deleted; no compatibility shim remains.
-- `LiveSessionConfig` carries a single resolved list; `PrimaryAsset` field gone; `SessionInterest`/`SessionSnapshotBars` positional length-guards gone.
+- `LiveSessionConfig` carries a single resolved list; the `PrimaryAsset` field is replaced by a derived `ExecutionAsset` (`Role == Primary`, index-0 fallback); `SessionInterest`/`SessionSnapshotBars` positional length-guards gone.
 - One resolver; the three live/backtest divergences eliminated.
 - `IBarStrategy` + `IBarStartStrategy`; `IInt64BarStrategy` retired; live dispatch fans `OnBarStart` by capability; backtest behavior identical.
 - `MarketDataSnapshot` + its test deleted.
