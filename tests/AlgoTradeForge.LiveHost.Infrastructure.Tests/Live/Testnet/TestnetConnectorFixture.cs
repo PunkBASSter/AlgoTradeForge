@@ -59,8 +59,6 @@ public sealed class TestnetConnectorFixture : IAsyncLifetime
             SessionId = SessionId,
             Strategy = Strategy,
             Subscriptions = [TestSubs.Of(Asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
-            RawSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
-            PrimaryAsset = Asset,
             InitialCash = initialCash,
             AccountName = "testnet",
         };

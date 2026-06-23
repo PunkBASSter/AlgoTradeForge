@@ -69,7 +69,7 @@ public class StrategyDispatchTests
             new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.DropNewest, SingleReader = true });
         var strat = new RecordingStrategy();
         var reg = new LiveSessionRegistration(
-            Guid.NewGuid(), strat, [resolved], [raw], ch.Writer);
+            Guid.NewGuid(), strat, [resolved], ch.Writer);
         return (reg, ch, strat);
     }
 
@@ -83,7 +83,7 @@ public class StrategyDispatchTests
             new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.DropNewest, SingleReader = true });
         var strat = new RecordingStrategy();
         var reg = new LiveSessionRegistration(
-            Guid.NewGuid(), strat, [resolved], [raw], ch.Writer);
+            Guid.NewGuid(), strat, [resolved], ch.Writer);
         return (reg, ch, strat);
     }
 
@@ -96,7 +96,7 @@ public class StrategyDispatchTests
         var ch = Channel.CreateBounded<Action>(
             new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.DropNewest, SingleReader = true });
         var reg = new LiveSessionRegistration(
-            Guid.NewGuid(), new NonTickStrategy(), [resolved], [raw], ch.Writer);
+            Guid.NewGuid(), new NonTickStrategy(), [resolved], ch.Writer);
         return (reg, ch);
     }
 

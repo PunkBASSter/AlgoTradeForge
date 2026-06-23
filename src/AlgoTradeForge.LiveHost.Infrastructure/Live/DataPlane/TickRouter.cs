@@ -68,7 +68,7 @@ public sealed class TickRouter(IBarSourceResolver resolver, IStrategyDispatch di
             if (_sessionKeys.ContainsKey(r.SessionId)) return;
 
             var keys = new List<(string, BarSpecKey)>();
-            foreach (var raw in r.RawSubscriptions)
+            foreach (var raw in r.Subscriptions)
             {
                 // INSTRUMENT KEY CONTRACT (matches StrategyDispatch/SessionInterest): instrument == AssetName.
                 var instrument = raw.AssetName;

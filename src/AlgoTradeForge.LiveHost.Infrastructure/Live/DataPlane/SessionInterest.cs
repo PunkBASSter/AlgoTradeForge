@@ -24,40 +24,27 @@ internal sealed class SessionInterest(
 
     public static SessionInterest Build(LiveSessionRegistration r)
     {
-        // RawSubscriptions pair positionally with resolved Subscriptions (both built from the
-        // same source subscriptions in order; see StartLiveSession wiring, T15). The handler
-        // guarantees equal length — a mismatch is a wiring regression that must fail loudly
-        // rather than silently truncate (and thus misroute) under a Math.Min.
-        if (r.RawSubscriptions.Count != r.Subscriptions.Count)
-            throw new InvalidOperationException(
-                $"Subscription pairing mismatch: {r.RawSubscriptions.Count} raw vs " +
-                $"{r.Subscriptions.Count} resolved for session {r.SessionId}.");
-
         var bars = new List<BarInterest>();
         var ticks = new List<TickInterest>();
 
         var tradeTickStrategy = r.Strategy as ITradeTickStrategy;
 
-        var count = r.RawSubscriptions.Count;
-        for (var i = 0; i < count; i++)
+        foreach (var sub in r.Subscriptions)
         {
-            var raw = r.RawSubscriptions[i];
-            var resolved = r.Subscriptions[i];
-
             // INSTRUMENT KEY CONTRACT (T11/T15 must match): the instrument string is the
             // subscription's AssetName (== resolved DataFeedSubscription.Asset.Name).
-            var instrument = raw.AssetName;
+            var instrument = sub.AssetName;
 
-            switch (raw)
+            switch (sub)
             {
                 case TimeBarSubscription tb:
-                    bars.Add(new BarInterest(instrument, BarSpecKey.TimeBar(tb.TimeFrame), resolved));
+                    bars.Add(new BarInterest(instrument, BarSpecKey.TimeBar(tb.TimeFrame), sub));
                     break;
                 case AltBarSubscription ab:
-                    bars.Add(new BarInterest(instrument, BarSpecKey.AltBar(ab.FeedId), resolved));
+                    bars.Add(new BarInterest(instrument, BarSpecKey.AltBar(ab.FeedId), sub));
                     break;
                 case TickSubscription when tradeTickStrategy is not null:
-                    ticks.Add(new TickInterest(instrument, resolved));
+                    ticks.Add(new TickInterest(instrument, sub));
                     break;
             }
         }

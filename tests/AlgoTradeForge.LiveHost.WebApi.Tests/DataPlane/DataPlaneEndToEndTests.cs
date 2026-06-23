@@ -132,12 +132,11 @@ public sealed class DataPlaneEndToEndTests : IDisposable
                 action();
         });
 
-        var resolved = TestSubs.Of(Asset, TimeFrame.Parse("1m"), FeedKey: "live");
+        var resolved = SubscriptionResolver.Resolve(raw, Asset);
         var registration = new LiveSessionRegistration(
             SessionId: Guid.NewGuid(),
             Strategy: strategy,
             Subscriptions: [resolved],
-            RawSubscriptions: [raw],
             DataWriter: channel.Writer);
 
         return new Session(strategy, registration, channel, drain);

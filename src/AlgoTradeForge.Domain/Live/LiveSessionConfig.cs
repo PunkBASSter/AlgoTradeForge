@@ -7,12 +7,9 @@ public sealed record LiveSessionConfig
 {
     public required Guid SessionId { get; init; }
     public required IInt64BarStrategy Strategy { get; init; }
-    public required IList<DataFeedSubscription> Subscriptions { get; init; } //TODO: can one of subs be removed?
+    public required IReadOnlyList<DataFeedSubscription> Subscriptions { get; init; }
 
-    // Typed kinds, 1:1 same-order with Subscriptions; the data plane pairs them positionally.
-    public required IReadOnlyList<DataFeedSubscription> RawSubscriptions { get; init; }
-
-    public required Asset PrimaryAsset { get; init; }
     public required long InitialCash { get; init; }
     public required string AccountName { get; init; }
+    public Asset ExecutionAsset => Subscriptions.ResolveExecutionAsset();
 }

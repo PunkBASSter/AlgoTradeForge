@@ -14,9 +14,10 @@ public sealed record LiveSessionSnapshot(
     long Cash,
     long InitialCash,
     decimal ExchangeBalance,
-    Asset PrimaryAsset,
+    Asset ExecutionAsset,
     IReadOnlyList<DataFeedSubscription> Subscriptions,
     IReadOnlyList<SubscriptionLastBar> LastBarsPerSubscription,
     IReadOnlyList<ExchangeTradeDto> ExchangeTrades);
 
-public sealed record SubscriptionLastBar(DataFeedSubscription Subscription, Int64Bar Bar); //TODO: investigate/confirm purpose
+// The most recent bar per bar-subscription, surfaced in the session snapshot for the UI's per-feed display. TODO: See N last bars, the last close should be mutable with incoming ticks
+public sealed record SubscriptionLastBar(DataFeedSubscription Subscription, Int64Bar Bar);

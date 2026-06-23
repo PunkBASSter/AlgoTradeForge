@@ -95,7 +95,7 @@ public class StartLiveSessionSubscriptionKindsTests
     }
 
     [Fact]
-    public async Task HandleAsync_ResolvedAndRawSubscriptions_AreEqualLengthSameOrder()
+    public async Task HandleAsync_ResolvesSubscriptions_PreservingKindAndOrder()
     {
         var h = NewHarness();
         DataFeedSubscription[] raw =
@@ -116,9 +116,13 @@ public class StartLiveSessionSubscriptionKindsTests
 
         Assert.NotNull(h.Captured);
         Assert.Equal(raw.Length, h.Captured!.Subscriptions.Count);
-        Assert.Equal(raw.Length, h.Captured.RawSubscriptions.Count);
+        // One resolved list preserves the input kind + order; each now carries its resolved Asset.
         for (var i = 0; i < raw.Length; i++)
-            Assert.Same(raw[i], h.Captured.RawSubscriptions[i]);
+        {
+            Assert.Equal(raw[i].GetType(), h.Captured.Subscriptions[i].GetType());
+            Assert.Equal(raw[i].AssetName, h.Captured.Subscriptions[i].AssetName);
+            Assert.NotNull(h.Captured.Subscriptions[i].Asset);
+        }
 
         Assert.Equal(TimeFrame.Parse("1m"), ((TimeBarSubscription)h.Captured.Subscriptions[0]).TimeFrame);
         Assert.Equal("EqV_1m_500", h.Captured.Subscriptions[1].FeedKey());

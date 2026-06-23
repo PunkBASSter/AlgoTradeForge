@@ -109,8 +109,6 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
             SessionId = _sessionIdA,
             Strategy = _strategyA,
             Subscriptions = [TestSubs.Of(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
-            RawSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
-            PrimaryAsset = _asset,
             InitialCash = initialCash,
             AccountName = "testnet-e2e",
         });
@@ -123,8 +121,6 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
             SessionId = _sessionIdB,
             Strategy = _strategyB,
             Subscriptions = [TestSubs.Of(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
-            RawSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
-            PrimaryAsset = _asset,
             InitialCash = initialCash,
             AccountName = "testnet-e2e",
         });

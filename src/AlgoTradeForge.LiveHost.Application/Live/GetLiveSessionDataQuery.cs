@@ -46,7 +46,7 @@ public sealed class GetLiveSessionDataQueryHandler(
         if (snapshot is null)
             return null;
 
-        var asset = snapshot.PrimaryAsset;
+        var asset = snapshot.ExecutionAsset;
         var tickSize = asset.TickSize;
 
         var primarySub = snapshot.Subscriptions.Count > 0 ? snapshot.Subscriptions[0] : null;

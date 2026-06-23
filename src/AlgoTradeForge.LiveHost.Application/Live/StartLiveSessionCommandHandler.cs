@@ -33,10 +33,10 @@ public sealed class StartLiveSessionCommandHandler(
             resolvedSubscriptions.Add(SubscriptionResolver.Resolve(sub, asset));
         }
 
-        var primaryAsset = resolvedSubscriptions.ResolveExecutionAsset();
+        var executionAsset = resolvedSubscriptions.ResolveExecutionAsset();
 
         // Scale QuoteAsset strategy params from human-readable to tick units
-        var scale = new ScaleContext(primaryAsset);
+        var scale = new ScaleContext(executionAsset);
         var scaledParams = ParameterScaler.ScaleQuoteAssetParams(
             spaceProvider, command.StrategyName, command.StrategyParameters, scale);
 
@@ -52,8 +52,6 @@ public sealed class StartLiveSessionCommandHandler(
                 strategy.DataSubscriptions.Add(sub);
         }
 
-        // config.Subscriptions MUST stay 1:1 same-order with RawSubscriptions (data-plane pairing),
-        // so use the resolved list — not strategy.DataSubscriptions, which a strategy may pre-populate.
         var fingerprint = LiveRunKeyBuilder.Build(command);
 
         var sessionId = Guid.NewGuid();
@@ -64,13 +62,11 @@ public sealed class StartLiveSessionCommandHandler(
             SessionId = sessionId,
             Strategy = strategy,
             Subscriptions = resolvedSubscriptions,
-            RawSubscriptions = command.DataSubscriptions,
-            PrimaryAsset = primaryAsset,
             InitialCash = initialCashScaled,
             AccountName = command.AccountName,
         };
 
-        var exchange = primaryAsset.Exchange;
+        var exchange = executionAsset.Exchange;
         var connector = await accountManager.GetOrCreateAsync(command.AccountName, ct);
 
         var details = new SessionDetails(
@@ -79,7 +75,7 @@ public sealed class StartLiveSessionCommandHandler(
             command.StrategyName,
             strategy.Version,
             exchange,
-            primaryAsset.Name,
+            executionAsset.Name,
             fingerprint,
             DateTimeOffset.UtcNow);
 

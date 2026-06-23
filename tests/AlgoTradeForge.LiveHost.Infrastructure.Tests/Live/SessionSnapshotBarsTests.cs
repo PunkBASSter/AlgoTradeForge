@@ -24,7 +24,7 @@ public class SessionSnapshotBarsTests
         var resolved = new[] { TestSubs.Of(Btc, OneMin) };
         var bars = new[] { Bar(1000, 100), Bar(2000, 110) };
 
-        var result = SessionSnapshotBars.Build(raw, resolved, (_, _) => bars);
+        var result = SessionSnapshotBars.Build(resolved, (_, _) => bars);
 
         Assert.Equal(2, result.Bars.Count);
         Assert.Equal(110, result.Bars[^1].Close);
@@ -36,13 +36,9 @@ public class SessionSnapshotBarsTests
     [Fact]
     public void Build_skips_tick_subscriptions_and_empty_sources()
     {
-        var raw = new DataFeedSubscription[]
-        {
-            new TickSubscription("BTCUSDT", "Binance", DataFeedRole.Primary),
-        };
-        var resolved = new[] { TestSubs.Of(Btc, default) };
+        var subs = new[] { TestSubs.Of(Btc, default, FeedKey: "tick") };
 
-        var result = SessionSnapshotBars.Build(raw, resolved, (_, _) => throw new Exception("tick must not query"));
+        var result = SessionSnapshotBars.Build(subs, (_, _) => throw new Exception("tick must not query"));
 
         Assert.Empty(result.Bars);
         Assert.Empty(result.LastBarsPerSubscription);
@@ -51,11 +47,6 @@ public class SessionSnapshotBarsTests
     [Fact]
     public void Build_flat_bars_come_from_primary_subscription_zero()
     {
-        var raw = new DataFeedSubscription[]
-        {
-            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, OneMin),
-            new AltBarSubscription("BTCUSDT", "Binance", DataFeedRole.Side, "EqV_1m_500"),
-        };
         var resolved = new[]
         {
             TestSubs.Of(Btc, OneMin),
@@ -65,7 +56,7 @@ public class SessionSnapshotBarsTests
         var primaryBars = new[] { Bar(1000, 100) };
         var altBars = new[] { Bar(1500, 200), Bar(1600, 210) };
 
-        var result = SessionSnapshotBars.Build(raw, resolved, (_, spec) =>
+        var result = SessionSnapshotBars.Build(resolved, (_, spec) =>
             spec == BarSpecKey.TimeBar(OneMin) ? primaryBars : altBars);
 
         // Flat Bars = subscription[0] (the primary time-bar), not the alt feed.
@@ -75,16 +66,4 @@ public class SessionSnapshotBarsTests
         Assert.Equal(2, result.LastBarsPerSubscription.Count);
     }
 
-    [Fact]
-    public void Build_throws_on_pairing_mismatch()
-    {
-        var raw = new DataFeedSubscription[]
-        {
-            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, OneMin),
-        };
-        var resolved = Array.Empty<DataFeedSubscription>();
-
-        Assert.Throws<InvalidOperationException>(() =>
-            SessionSnapshotBars.Build(raw, resolved, (_, _) => []));
-    }
 }

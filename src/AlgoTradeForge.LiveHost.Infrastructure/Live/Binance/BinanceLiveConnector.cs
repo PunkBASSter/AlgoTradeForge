@@ -64,9 +64,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
         public Guid SessionId { get; }
         public IInt64BarStrategy Strategy { get; }
         public LiveOrderContext OrderContext { get; }
-        public IList<DataFeedSubscription> Subscriptions { get; }
-        public IReadOnlyList<DataFeedSubscription> RawSubscriptions { get; }
-        public Asset PrimaryAsset { get; }
+        public IReadOnlyList<DataFeedSubscription> Subscriptions { get; }
+        public Asset ExecutionAsset { get; }
         public string QuoteAsset { get; }
 
         public Channel<Action> EventQueue { get; }
@@ -83,9 +82,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
             Guid sessionId,
             IInt64BarStrategy strategy,
             LiveOrderContext orderContext,
-            IList<DataFeedSubscription> subscriptions,
-            IReadOnlyList<DataFeedSubscription> rawSubscriptions,
-            Asset primaryAsset,
+            IReadOnlyList<DataFeedSubscription> subscriptions,
+            Asset executionAsset,
             string quoteAsset,
             int eventQueueCapacity,
             int marketDataQueueCapacity,
@@ -95,8 +93,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
             Strategy = strategy;
             OrderContext = orderContext;
             Subscriptions = subscriptions;
-            RawSubscriptions = rawSubscriptions;
-            PrimaryAsset = primaryAsset;
+            ExecutionAsset = executionAsset;
             QuoteAsset = quoteAsset;
 
             EventQueue = Channel.CreateBounded<Action>(
@@ -248,7 +245,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
         if (Status != LiveSessionStatus.Running)
             throw new InvalidOperationException($"Connector for account '{AccountName}' is not running.");
 
-        var asset = config.PrimaryAsset;
+        var asset = config.ExecutionAsset;
 
         // Validate InitialCash against actual Binance account balance
         var symbolInfo = await _apiClient!.GetExchangeInfoAsync(asset.Name, ct);
@@ -301,7 +298,6 @@ public sealed class BinanceLiveConnector : ILiveConnector
             config.Strategy,
             orderContext,
             config.Subscriptions,
-            config.RawSubscriptions,
             asset,
             symbolInfo.QuoteAsset,
             _sharedOptions.LiveChannelCapacity,
@@ -321,7 +317,6 @@ public sealed class BinanceLiveConnector : ILiveConnector
             config.SessionId,
             config.Strategy,
             entry.Subscriptions.ToList(),
-            config.RawSubscriptions,
             entry.MarketDataQueue.Writer);
         _dispatch.Register(registration);
 
@@ -414,11 +409,11 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 {
                     try
                     {
-                        await _apiClient.CancelAllOpenOrdersAsync(entry.PrimaryAsset.Name);
+                        await _apiClient.CancelAllOpenOrdersAsync(entry.ExecutionAsset.Name);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Safety-net cancel-all failed for {Symbol}", entry.PrimaryAsset.Name);
+                        _logger.LogError(ex, "Safety-net cancel-all failed for {Symbol}", entry.ExecutionAsset.Name);
                     }
                 }
             }
@@ -497,7 +492,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
         var pendingIds = entry.OrderContext.GetPendingOrders()
             .Select(o => o.Id).Where(id => id > 0).ToHashSet();
         var result = await _reconciler!.DetectAsync(
-            entry.PrimaryAsset.Name, expected,
+            entry.ExecutionAsset.Name, expected,
             entry.OrderContext.ResolveExchangeOrderId, pendingIds, ct);
 
         // Phase 3a: Repair on EventQueue (module mutation serialized)
@@ -515,7 +510,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         // Phase 3b: Cancel orphans directly on exchange (no module state)
         if (result.OrphanIds.Count > 0)
-            await _reconciler.CancelOrphansAsync(entry.PrimaryAsset.Name, result.OrphanIds, ct);
+            await _reconciler.CancelOrphansAsync(entry.ExecutionAsset.Name, result.OrphanIds, ct);
     }
 
     private void LogReconciliationFailure(Exception ex, Guid sessionId, int consecutiveFailures)
@@ -590,7 +585,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
             return;
         }
 
-        var asset = entry.PrimaryAsset;
+        var asset = entry.ExecutionAsset;
         var scale = new ScaleContext(asset);
 
         // Parse outside the callback for efficiency
@@ -682,12 +677,11 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         // Bars + last-bar-per-subscription come from the data-plane bar sources' Recent rings.
         var barFields = SessionSnapshotBars.Build(
-            entry.RawSubscriptions,
             entry.Subscriptions.ToList(),
             _tickRouter.RecentBars);
 
         var exchangeBalance = await GetCachedQuoteBalanceAsync(entry.QuoteAsset, ct);
-        var exchangeTrades = await GetCachedTradesAsync(entry.PrimaryAsset.Name, ct);
+        var exchangeTrades = await GetCachedTradesAsync(entry.ExecutionAsset.Name, ct);
 
         var ctx = entry.OrderContext;
         return new LiveSessionSnapshot(
@@ -698,7 +692,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
             ctx.Cash,
             ctx.Portfolio.InitialCash,
             exchangeBalance,
-            entry.PrimaryAsset,
+            entry.ExecutionAsset,
             entry.Subscriptions.ToList(),
             barFields.LastBarsPerSubscription,
             exchangeTrades);

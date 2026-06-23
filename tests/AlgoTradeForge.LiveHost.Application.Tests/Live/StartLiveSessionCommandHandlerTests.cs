@@ -80,7 +80,7 @@ public class StartLiveSessionCommandHandlerTests
             Arg.Is<LiveSessionConfig>(c =>
                 c.SessionId == result.SessionId &&
                 c.AccountName == "paper" &&
-                c.PrimaryAsset == BtcUsdt),
+                c.ExecutionAsset == BtcUsdt),
             Arg.Any<CancellationToken>());
 
         var entry = sessionStore.Get(result.SessionId);
@@ -395,7 +395,7 @@ public class StartLiveSessionCommandHandlerTests
         await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         await connector.Received(1).AddSessionAsync(
-            Arg.Is<LiveSessionConfig>(c => c.PrimaryAsset == ethUsdt),
+            Arg.Is<LiveSessionConfig>(c => c.ExecutionAsset == ethUsdt),
             Arg.Any<CancellationToken>());
     }
 }

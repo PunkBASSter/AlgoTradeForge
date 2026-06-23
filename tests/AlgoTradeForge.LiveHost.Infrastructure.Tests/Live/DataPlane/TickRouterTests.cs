@@ -83,7 +83,7 @@ public class TickRouterTests
         var ch = Channel.CreateBounded<Action>(
             new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.DropNewest, SingleReader = true });
         return new LiveSessionRegistration(
-            Guid.NewGuid(), new NoopStrategy(), [resolved], [raw], ch.Writer);
+            Guid.NewGuid(), new NoopStrategy(), [resolved], ch.Writer);
     }
 
     private static ScaleContext ScaleFor(string instrument) => new(0.01m);

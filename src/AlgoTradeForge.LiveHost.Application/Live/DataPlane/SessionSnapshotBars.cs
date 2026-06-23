@@ -12,26 +12,21 @@ public static class SessionSnapshotBars
         IReadOnlyList<Int64Bar> Bars,
         IReadOnlyList<SubscriptionLastBar> LastBarsPerSubscription);
 
-    // raw[i] pairs positionally with resolved[i] (data-plane pairing contract; see SessionInterest/T15).
     // recentBars((instrument, spec)) returns the source's Recent (empty when none).
     public static Result Build(
-        IReadOnlyList<DataFeedSubscription> raw,
-        IReadOnlyList<DataFeedSubscription> resolved, //TODO: can one be removed?
+        IReadOnlyList<DataFeedSubscription> subscriptions,
         Func<string, BarSpecKey, IReadOnlyList<Int64Bar>> recentBars)
     {
-        if (raw.Count != resolved.Count)
-            throw new InvalidOperationException(
-                $"Subscription pairing mismatch: {raw.Count} raw vs {resolved.Count} resolved.");
-
         var lastBars = new List<SubscriptionLastBar>();
         IReadOnlyList<Int64Bar> primaryBars = [];
 
-        for (var i = 0; i < raw.Count; i++)
+        for (var i = 0; i < subscriptions.Count; i++)
         {
-            var spec = SpecFor(raw[i]);
+            var sub = subscriptions[i];
+            var spec = SpecFor(sub);
             if (spec is null) continue; // Tick / unknown -> no bars
 
-            var instrument = raw[i].AssetName;
+            var instrument = sub.AssetName;
             var recent = recentBars(instrument, spec.Value);
             if (recent.Count == 0) continue;
 
@@ -41,7 +36,7 @@ public static class SessionSnapshotBars
             if (i == 0 || primaryBars.Count == 0)
                 primaryBars = recent;
 
-            lastBars.Add(new SubscriptionLastBar(resolved[i], recent[^1]));
+            lastBars.Add(new SubscriptionLastBar(sub, recent[^1]));
         }
 
         return new Result(primaryBars, lastBars);
