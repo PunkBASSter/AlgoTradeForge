@@ -53,14 +53,14 @@ public class DebugSessionHandlerTests
         _assetRepo.GetByNameAsync("AAPL", "NASDAQ", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
 
-        var sub = new DataSubscription(asset, OneMinute, IsExportable: true);
+        var sub = TestSubs.Of(asset, OneMinute, IsExportable: true);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
         _strategyFactory.Create("TestStrategy", Arg.Any<IIndicatorFactory>(), Arg.Any<IDictionary<string, object>?>())
             .Returns(strategy);
 
         var bars = TestBars.CreateSeries(Start, OneMinute, barCount);
-        _historyRepo.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+        _historyRepo.Load(Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(bars);
     }
 

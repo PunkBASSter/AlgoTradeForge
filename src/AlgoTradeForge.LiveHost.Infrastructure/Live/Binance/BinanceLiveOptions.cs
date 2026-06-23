@@ -8,6 +8,7 @@ public sealed class BinanceLiveOptions
     public TimeSpan ReconciliationInterval { get; init; } = TimeSpan.FromSeconds(30);
     public int IngestChannelCapacity { get; init; } = 4096;
     public int LiveChannelCapacity { get; init; } = 1024;
+    public int MarketDataChannelCapacity { get; init; } = 4096;
     public string MarketStreamUrl { get; init; } = "wss://stream.binance.com:9443";
     public Dictionary<string, TickScale> InstrumentScales { get; init; } = new();
 }

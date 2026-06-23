@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
@@ -8,7 +9,7 @@ namespace AlgoTradeForge.Application.Indicators;
 public sealed class EmittingIndicatorDecorator<TInp, TBuff>(
     IIndicator<TInp, TBuff> inner,
     IEventBus bus,
-    DataSubscription subscription) : IIndicator<TInp, TBuff>
+    DataFeedSubscription subscription) : IIndicator<TInp, TBuff>
 {
     private int _lastSeriesLength = -1;
     private bool _hooked;

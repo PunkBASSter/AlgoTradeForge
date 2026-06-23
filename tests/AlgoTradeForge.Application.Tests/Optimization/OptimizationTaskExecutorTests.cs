@@ -66,7 +66,7 @@ public sealed class OptimizationTaskExecutorTests
         var asset = TestAssets.BtcUsdt;
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
-        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+        _historyRepository.Load(Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
         _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
@@ -96,7 +96,7 @@ public sealed class OptimizationTaskExecutorTests
         var asset = TestAssets.BtcUsdt;
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
-        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+        _historyRepository.Load(Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
         _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
@@ -130,7 +130,7 @@ public sealed class OptimizationTaskExecutorTests
         var asset = TestAssets.BtcUsdt;
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
-        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+        _historyRepository.Load(Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
         _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
@@ -138,7 +138,7 @@ public sealed class OptimizationTaskExecutorTests
         var strategy = Substitute.For<IInt64BarStrategy>();
         // Use a real backing list so .Clear()/.Add() actually mutates — the substitute's
         // auto-stub does nothing, which would mismatch BacktestEngine's series.Length assertion.
-        strategy.DataSubscriptions.Returns(new List<DataSubscription>());
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription>());
         _strategyFactory.Create(Arg.Any<string>(), Arg.Any<ParameterCombination>())
             .Returns(strategy);
         _metricsCalculator.Calculate(
@@ -175,14 +175,14 @@ public sealed class OptimizationTaskExecutorTests
         var asset = TestAssets.BtcUsdt;
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Asset?>(asset));
-        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+        _historyRepository.Load(Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
         _historyRepository.Load(Arg.Any<Asset>(), Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(TestBars.CreateSeries(10));
         var strategy = Substitute.For<IInt64BarStrategy>();
         // Use a real backing list so .Clear()/.Add() actually mutates — the substitute's
         // auto-stub does nothing, which would mismatch BacktestEngine's series.Length assertion.
-        strategy.DataSubscriptions.Returns(new List<DataSubscription>());
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription>());
         _strategyFactory.Create(Arg.Any<string>(), Arg.Any<ParameterCombination>())
             .Returns(strategy);
         _metricsCalculator.Calculate(

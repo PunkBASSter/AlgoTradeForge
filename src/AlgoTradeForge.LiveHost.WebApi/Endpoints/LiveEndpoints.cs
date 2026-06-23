@@ -1,7 +1,6 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.LiveHost.Application.Live;
 using AlgoTradeForge.LiveHost.WebApi.Contracts;
-using AlgoTradeForge.Domain.Live;
 
 namespace AlgoTradeForge.LiveHost.WebApi.Endpoints;
 
@@ -52,15 +51,12 @@ public static class LiveEndpoints
         ICommandHandler<StartLiveSessionCommand, LiveSessionSubmissionDto> handler,
         CancellationToken ct)
     {
-        var routing = ParseRouting(request.EnabledEvents);
-
         var command = new StartLiveSessionCommand
         {
             StrategyName = request.StrategyName,
             InitialCash = request.InitialCash,
             StrategyParameters = request.StrategyParameters,
             DataSubscriptions = request.DataSubscriptions,
-            Routing = routing,
             AccountName = request.AccountName,
         };
 
@@ -162,21 +158,5 @@ public static class LiveEndpoints
         };
 
         return Results.Ok(response);
-    }
-
-    private static LiveEventRouting ParseRouting(string[]? enabledEvents)
-    {
-        if (enabledEvents is null || enabledEvents.Length == 0)
-            return LiveEventRouting.OnBarComplete | LiveEventRouting.OnTrade;
-
-        var routing = LiveEventRouting.None;
-        foreach (var evt in enabledEvents)
-        {
-            if (Enum.TryParse<LiveEventRouting>(evt, ignoreCase: true, out var flag))
-                routing |= flag;
-        }
-        return routing == LiveEventRouting.None
-            ? LiveEventRouting.OnBarComplete | LiveEventRouting.OnTrade
-            : routing;
     }
 }

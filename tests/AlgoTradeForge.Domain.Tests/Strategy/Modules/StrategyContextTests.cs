@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.Modules;
@@ -9,8 +10,8 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules;
 
 public sealed class StrategyContextTests
 {
-    private static readonly DataSubscription DefaultSubscription =
-        new(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)));
+    private static readonly DataFeedSubscription DefaultSubscription =
+        TestSubs.Of(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)));
 
     private static readonly Int64Bar SampleBar =
         new(1_700_000_000_000L, 5000L, 5100L, 4900L, 5050L, 100L);

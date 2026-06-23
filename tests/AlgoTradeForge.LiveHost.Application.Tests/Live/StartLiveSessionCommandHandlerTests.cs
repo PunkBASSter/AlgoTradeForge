@@ -26,11 +26,11 @@ public class StartLiveSessionCommandHandlerTests
     ];
 
     private static IInt64BarStrategy CreateStrategyWithSubscriptions(
-        string version = "1.0", params DataSubscription[] subs)
+        string version = "1.0", params DataFeedSubscription[] subs)
     {
         var strategy = Substitute.For<IInt64BarStrategy>();
         strategy.Version.Returns(version);
-        strategy.DataSubscriptions.Returns(new List<DataSubscription>(subs));
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription>(subs));
         return strategy;
     }
 
@@ -80,7 +80,7 @@ public class StartLiveSessionCommandHandlerTests
             Arg.Is<LiveSessionConfig>(c =>
                 c.SessionId == result.SessionId &&
                 c.AccountName == "paper" &&
-                c.PrimaryAsset == BtcUsdt),
+                c.ExecutionAsset == BtcUsdt),
             Arg.Any<CancellationToken>());
 
         var entry = sessionStore.Get(result.SessionId);
@@ -122,7 +122,7 @@ public class StartLiveSessionCommandHandlerTests
 
         Assert.Single(strategy.DataSubscriptions);
         Assert.Equal(BtcUsdt, strategy.DataSubscriptions[0].Asset);
-        Assert.Equal(new TimeFrame(TimeSpan.FromMinutes(1)), strategy.DataSubscriptions[0].TimeFrame);
+        Assert.Equal(new TimeFrame(TimeSpan.FromMinutes(1)), ((TimeBarSubscription)strategy.DataSubscriptions[0]).TimeFrame);
     }
 
     [Fact]
@@ -395,7 +395,7 @@ public class StartLiveSessionCommandHandlerTests
         await handler.HandleAsync(command, TestContext.Current.CancellationToken);
 
         await connector.Received(1).AddSessionAsync(
-            Arg.Is<LiveSessionConfig>(c => c.PrimaryAsset == ethUsdt),
+            Arg.Is<LiveSessionConfig>(c => c.ExecutionAsset == ethUsdt),
             Arg.Any<CancellationToken>());
     }
 }

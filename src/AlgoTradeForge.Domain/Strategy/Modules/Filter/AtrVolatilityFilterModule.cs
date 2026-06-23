@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
@@ -11,7 +12,7 @@ public sealed class AtrVolatilityFilterModule(AtrVolatilityFilterParams paramete
 {
     internal Atr? _indicator;
 
-    public void Initialize(IIndicatorFactory factory, DataSubscription subscription)
+    public void Initialize(IIndicatorFactory factory, DataFeedSubscription subscription)
     {
         _indicator = new Atr(parameters.Period);
         factory.Create(_indicator, subscription);

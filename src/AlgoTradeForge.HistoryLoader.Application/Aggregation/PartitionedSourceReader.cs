@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using AlgoTradeForge.Storage;
+using AlgoTradeForge.Domain.Aggregation;
 using AlgoTradeForge.Domain.History;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;

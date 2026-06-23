@@ -78,16 +78,16 @@ public class RunBacktestCommandHandlerTests
 
         var strategy = Substitute.For<IInt64BarStrategy>();
         strategy.Version.Returns("1.0");
-        strategy.DataSubscriptions.Returns(new List<DataSubscription>
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription>
         {
-            new(asset, new TimeFrame(TimeSpan.FromMinutes(1)))
+            TestSubs.Of(asset, new TimeFrame(TimeSpan.FromMinutes(1)))
         });
 
         _strategyFactory.Create("TestStrategy", Arg.Any<IIndicatorFactory>(), Arg.Any<IDictionary<string, object>?>())
             .Returns(strategy);
 
         var series = TestBars.CreateSeries(10);
-        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+        _historyRepository.Load(Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(series);
     }
 
@@ -216,7 +216,7 @@ public class RunBacktestCommandHandlerTests
         // P4-12 lifted the previous TimeBar-only guard. AltBar primaries now route through the
         // polymorphic IHistoryRepository.Load(Asset, DataFeedSubscription, ...) overload.
         // BacktestPreparer's command-driven branch (strategy.DataSubscriptions empty) synthesizes
-        // a strategy-side DataSubscription with a placeholder TimeFrame derived from the AltBar
+        // a strategy-side DataFeedSubscription with a placeholder TimeFrame derived from the AltBar
         // source code (TRD §3.3 grammar — `EqV_1m_500m` source = "1m" → TimeFrame.Parse("1m")).
         SetupBackgroundMocks();
         var asset = TestAssets.BtcUsdt;
@@ -225,7 +225,7 @@ public class RunBacktestCommandHandlerTests
 
         var strategy = Substitute.For<IInt64BarStrategy>();
         strategy.Version.Returns("1.0");
-        var strategySubs = new List<DataSubscription>();  // mutable — preparer adds to it
+        var strategySubs = new List<DataFeedSubscription>();  // mutable — preparer adds to it
         strategy.DataSubscriptions.Returns(strategySubs);
 
         _strategyFactory.Create("TestStrategy", Arg.Any<IIndicatorFactory>(), Arg.Any<IDictionary<string, object>?>())
@@ -256,12 +256,12 @@ public class RunBacktestCommandHandlerTests
         var altBar = Assert.IsType<AltBarSubscription>(capturedSub);
         Assert.Equal("EqV_1m_500m", altBar.FeedId);
         Assert.Same((object)asset, capturedAsset!);
-        // The strategy-side DataSubscription gets a placeholder TimeFrame derived from the
+        // The strategy-side DataFeedSubscription gets a placeholder TimeFrame derived from the
         // AltBar source code (TRD §3.3) so engine indicator wiring continues to work; FeedKey
         // carries the alt-bar identity.
         Assert.Single(strategySubs);
-        Assert.Equal("1m", strategySubs[0].TimeFrame.Code);
-        Assert.Equal("EqV_1m_500m", strategySubs[0].FeedKey);
+        Assert.IsType<AltBarSubscription>(strategySubs[0]);
+        Assert.Equal("EqV_1m_500m", strategySubs[0].FeedKey());
 
         await WaitForBackgroundCompletion(submission.Id, ct: TestContext.Current.CancellationToken);
     }
@@ -382,15 +382,15 @@ public class RunBacktestCommandHandlerTests
         var enteredBar = new ManualResetEventSlim(false);
         var strategy = Substitute.For<IInt64BarStrategy>();
         strategy.Version.Returns("1.0");
-        strategy.DataSubscriptions.Returns(new List<DataSubscription>
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription>
         {
-            new(asset, new TimeFrame(TimeSpan.FromMinutes(1)))
+            TestSubs.Of(asset, new TimeFrame(TimeSpan.FromMinutes(1)))
         });
         // Block engine briefly on OnBarComplete — long enough for the test to cancel,
         // short enough that the engine reaches ct.ThrowIfCancellationRequested() between bars
         strategy.When(s => s.OnBarComplete(
                 Arg.Any<Domain.History.Int64Bar>(),
-                Arg.Any<DataSubscription>()))
+                Arg.Any<DataFeedSubscription>()))
             .Do(_ =>
             {
                 enteredBar.Set();
@@ -401,7 +401,7 @@ public class RunBacktestCommandHandlerTests
             .Returns(strategy);
 
         var series = TestBars.CreateSeries(10);
-        _historyRepository.Load(Arg.Any<DataSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+        _historyRepository.Load(Arg.Any<DataFeedSubscription>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(series);
 
         SetupBackgroundMocks();

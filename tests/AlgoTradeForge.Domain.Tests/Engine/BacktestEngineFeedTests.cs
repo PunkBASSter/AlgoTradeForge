@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
@@ -43,7 +44,7 @@ public class BacktestEngineFeedTests
     {
         var bars = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 50000);
         var strategy = new FeedAwareTestStrategy();
-        strategy.DataSubscriptions.Add(new DataSubscription(PerpAsset, OneMinute));
+        strategy.DataSubscriptions.Add(TestSubs.Of(PerpAsset, OneMinute));
 
         var feedContext = new BacktestFeedContext();
         feedContext.Register("funding",
@@ -61,7 +62,7 @@ public class BacktestEngineFeedTests
     {
         var bars = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 50000);
         var strategy = new FeedAwareTestStrategy();
-        strategy.DataSubscriptions.Add(new DataSubscription(PerpAsset, OneMinute));
+        strategy.DataSubscriptions.Add(TestSubs.Of(PerpAsset, OneMinute));
 
         _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
@@ -87,7 +88,7 @@ public class BacktestEngineFeedTests
 
         double? capturedFundingRate = null;
         var strategy = new FeedAwareTestStrategy();
-        strategy.DataSubscriptions.Add(new DataSubscription(PerpAsset, OneMinute));
+        strategy.DataSubscriptions.Add(TestSubs.Of(PerpAsset, OneMinute));
         strategy.OnBarCompleteAction = (bar, sub, orders) =>
         {
             if (strategy.Feeds!.HasNewData("funding") &&
@@ -116,7 +117,7 @@ public class BacktestEngineFeedTests
 
         bool feedAvailableInOnBarStart = false;
         var strategy = new FeedAwareTestStrategy();
-        strategy.DataSubscriptions.Add(new DataSubscription(PerpAsset, OneMinute));
+        strategy.DataSubscriptions.Add(TestSubs.Of(PerpAsset, OneMinute));
         strategy.OnBarStartAction = (bar, sub, orders) =>
         {
             if (strategy.Feeds!.HasNewData("funding"))
@@ -141,7 +142,7 @@ public class BacktestEngineFeedTests
 
         var hasNewPerBar = new List<bool>();
         var strategy = new FeedAwareTestStrategy();
-        strategy.DataSubscriptions.Add(new DataSubscription(PerpAsset, OneMinute));
+        strategy.DataSubscriptions.Add(TestSubs.Of(PerpAsset, OneMinute));
         strategy.OnBarCompleteAction = (bar, sub, orders) =>
         {
             hasNewPerBar.Add(strategy.Feeds!.HasNewData("funding"));
@@ -179,7 +180,7 @@ public class BacktestEngineFeedTests
             .Returns(50000L);
 
         var strategy = new FeedAwareTestStrategy();
-        strategy.DataSubscriptions.Add(new DataSubscription(PerpAsset, OneMinute));
+        strategy.DataSubscriptions.Add(TestSubs.Of(PerpAsset, OneMinute));
         var orderPlaced = false;
         strategy.OnBarStartAction = (bar, sub, orders) =>
         {
@@ -215,7 +216,7 @@ public class BacktestEngineFeedTests
             .Returns(50000L);
 
         var strategy = new FeedAwareTestStrategy();
-        strategy.DataSubscriptions.Add(new DataSubscription(PerpAsset, OneMinute));
+        strategy.DataSubscriptions.Add(TestSubs.Of(PerpAsset, OneMinute));
         var orderPlaced = false;
         strategy.OnBarStartAction = (bar, sub, orders) =>
         {
@@ -246,7 +247,7 @@ public class BacktestEngineFeedTests
             asset: PerpAsset);
 
         var strategy = new FeedAwareTestStrategy();
-        strategy.DataSubscriptions.Add(new DataSubscription(PerpAsset, OneMinute));
+        strategy.DataSubscriptions.Add(TestSubs.Of(PerpAsset, OneMinute));
 
         var result = _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken, feedContext: feedContext);
 
@@ -272,7 +273,7 @@ public class BacktestEngineFeedTests
             .Returns(50000L);
 
         var strategy = new FeedAwareTestStrategy();
-        strategy.DataSubscriptions.Add(new DataSubscription(PerpAsset, OneMinute));
+        strategy.DataSubscriptions.Add(TestSubs.Of(PerpAsset, OneMinute));
         var orderPlaced = false;
         strategy.OnBarStartAction = (bar, sub, orders) =>
         {
@@ -299,9 +300,9 @@ public class BacktestEngineFeedTests
     public void Run_WithoutFeedContext_WorksNormally()
     {
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 10000);
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var result = _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
@@ -320,16 +321,16 @@ public class BacktestEngineFeedTests
         private IOrderContext _orders = null!;
 
         public string Version => "1.0";
-        public IList<DataSubscription> DataSubscriptions { get; } = new List<DataSubscription>();
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = new List<DataFeedSubscription>();
         public IFeedContext? Feeds { get; private set; }
 
-        public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarStartAction { get; set; }
-        public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarCompleteAction { get; set; }
+        public Action<Int64Bar, DataFeedSubscription, IOrderContext>? OnBarStartAction { get; set; }
+        public Action<Int64Bar, DataFeedSubscription, IOrderContext>? OnBarCompleteAction { get; set; }
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription)
+        public void OnBarStart(Int64Bar bar, DataFeedSubscription subscription)
             => OnBarStartAction?.Invoke(bar, subscription, _orders);
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription)
             => OnBarCompleteAction?.Invoke(bar, subscription, _orders);
 
         public void OnInit() { }

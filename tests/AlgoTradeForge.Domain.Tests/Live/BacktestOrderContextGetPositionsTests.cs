@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
@@ -40,7 +41,7 @@ public class BacktestOrderContextGetPositionsTests
     [Fact]
     public void OnTrade_ReceivesOrderContext()
     {
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         bool tradeFired = false;
 
         var strategy = new OnTradeCapturingStrategy(sub)
@@ -75,17 +76,17 @@ public class BacktestOrderContextGetPositionsTests
         Assert.True(strategy.Orders.Cash > 0);
     }
 
-    private sealed class OnTradeCapturingStrategy(DataSubscription subscription) : IInt64BarStrategy, IOrderContextReceiver
+    private sealed class OnTradeCapturingStrategy(DataFeedSubscription subscription) : IInt64BarStrategy, IOrderContextReceiver
     {
         public string Version => "1.0.0";
-        public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = [subscription];
         public IOrderContext Orders { get; private set; } = null!;
 
         public Action<Fill, Order>? OnTradeAction { get; init; }
-        public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarCompleteAction { get; init; }
+        public Action<Int64Bar, DataFeedSubscription, IOrderContext>? OnBarCompleteAction { get; init; }
 
         public void OnInit() { }
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) =>
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription) =>
             OnBarCompleteAction?.Invoke(bar, subscription, Orders);
         public void OnTrade(Fill fill, Order order) =>
             OnTradeAction?.Invoke(fill, order);

@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
@@ -36,13 +37,13 @@ public class BacktestEngineTests
         public IOrderContext Value { get; set; } = null!;
     }
 
-    private static IInt64BarStrategy MockStrategy(params DataSubscription[] subs) =>
+    private static IInt64BarStrategy MockStrategy(params DataFeedSubscription[] subs) =>
         MockStrategy(null, subs);
 
-    private static IInt64BarStrategy MockStrategy(OrderContextRef? capture, params DataSubscription[] subs)
+    private static IInt64BarStrategy MockStrategy(OrderContextRef? capture, params DataFeedSubscription[] subs)
     {
         var strategy = Substitute.For<IInt64BarStrategy, IOrderContextReceiver>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription>(subs));
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription>(subs));
         if (capture != null)
         {
             ((IOrderContextReceiver)strategy)
@@ -58,11 +59,11 @@ public class BacktestEngineTests
     public void Run_SingleSubscription_DeliversAllBars()
     {
         var bars = TestBars.CreateSeries(Start, OneMinute, 5);
-        var sub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
+        var sub = TestSubs.Of(TestAssets.BtcUsdt, OneMinute);
         var strategy = MockStrategy(sub);
-        var delivered = new List<(Int64Bar Bar, DataSubscription Sub)>();
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
-            .Do(ci => delivered.Add((ci.ArgAt<Int64Bar>(0), ci.ArgAt<DataSubscription>(1))));
+        var delivered = new List<(Int64Bar Bar, DataFeedSubscription Sub)>();
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
+            .Do(ci => delivered.Add((ci.ArgAt<Int64Bar>(0), ci.ArgAt<DataFeedSubscription>(1))));
 
         var result = _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
@@ -74,21 +75,21 @@ public class BacktestEngineTests
     [Fact]
     public void Run_TwoSubscriptions_SameTimeframe_ChronologicalOrder()
     {
-        var btcSub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
+        var btcSub = TestSubs.Of(TestAssets.BtcUsdt, OneMinute);
         var ethAsset = CryptoAsset.Create("ETHUSDT", "Binance", 2);
-        var ethSub = new DataSubscription(ethAsset, OneMinute);
+        var ethSub = TestSubs.Of(ethAsset, OneMinute);
 
         var btcBars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 40000);
         var ethBars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 2000);
 
-        var delivered = new List<(DateTimeOffset Ts, DataSubscription Sub)>();
+        var delivered = new List<(DateTimeOffset Ts, DataFeedSubscription Sub)>();
         var strategy = MockStrategy(btcSub, ethSub);
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 var bar = ci.ArgAt<Int64Bar>(0);
-                delivered.Add((bar.Timestamp, ci.ArgAt<DataSubscription>(1)));
+                delivered.Add((bar.Timestamp, ci.ArgAt<DataFeedSubscription>(1)));
             });
 
         var result = _engine.Run([btcBars, ethBars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
@@ -119,18 +120,18 @@ public class BacktestEngineTests
     [Fact]
     public void Run_DifferentTimeframes_ChronologicalMerge()
     {
-        var btcSub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
+        var btcSub = TestSubs.Of(TestAssets.BtcUsdt, OneMinute);
         var ethAsset = CryptoAsset.Create("ETHUSDT", "Binance", 2);
-        var ethSub = new DataSubscription(ethAsset, FiveMinutes);
+        var ethSub = TestSubs.Of(ethAsset, FiveMinutes);
 
         // 5 one-minute BTC bars, 1 five-minute ETH bar (same start time)
         var btcBars = TestBars.CreateSeries(Start, OneMinute, 5, startPrice: 40000);
         var ethBars = TestBars.CreateSeries(Start, FiveMinutes, 1, startPrice: 2000);
 
-        var deliveryOrder = new List<DataSubscription>();
+        var deliveryOrder = new List<DataFeedSubscription>();
         var strategy = MockStrategy(btcSub, ethSub);
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
-            .Do(ci => deliveryOrder.Add(ci.ArgAt<DataSubscription>(1)));
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
+            .Do(ci => deliveryOrder.Add(ci.ArgAt<DataFeedSubscription>(1)));
 
         _engine.Run([btcBars, ethBars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
@@ -145,19 +146,19 @@ public class BacktestEngineTests
     [Fact]
     public void Run_DataGap_SkipsGapContinuesNormally()
     {
-        var btcSub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
+        var btcSub = TestSubs.Of(TestAssets.BtcUsdt, OneMinute);
         var ethAsset = CryptoAsset.Create("ETHUSDT", "Binance", 2);
-        var ethSub = new DataSubscription(ethAsset, OneMinute);
+        var ethSub = TestSubs.Of(ethAsset, OneMinute);
 
         // BTC: 3 bars starting at T+0
         var btcBars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 40000);
         // ETH: 1 bar starting at T+2 (gap at T+0 and T+1)
         var ethBars = TestBars.CreateSeries(Start + TimeSpan.FromMinutes(2), OneMinute, 1, startPrice: 2000);
 
-        var deliveryOrder = new List<DataSubscription>();
+        var deliveryOrder = new List<DataFeedSubscription>();
         var strategy = MockStrategy(btcSub, ethSub);
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
-            .Do(ci => deliveryOrder.Add(ci.ArgAt<DataSubscription>(1)));
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
+            .Do(ci => deliveryOrder.Add(ci.ArgAt<DataFeedSubscription>(1)));
 
         var result = _engine.Run([btcBars, ethBars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
 
@@ -172,7 +173,7 @@ public class BacktestEngineTests
     [Fact]
     public void Run_EmptyData_ReturnsEmptyResult()
     {
-        var sub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
+        var sub = TestSubs.Of(TestAssets.BtcUsdt, OneMinute);
         var emptyBars = new TimeSeries<Int64Bar>();
         var strategy = MockStrategy(sub);
 
@@ -187,7 +188,7 @@ public class BacktestEngineTests
     public void Run_CancellationRequested_Throws()
     {
         var bars = TestBars.CreateSeries(Start, OneMinute, 100);
-        var sub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
+        var sub = TestSubs.Of(TestAssets.BtcUsdt, OneMinute);
         var strategy = MockStrategy(sub);
         var cts = new CancellationTokenSource();
         cts.Cancel();
@@ -209,11 +210,11 @@ public class BacktestEngineTests
     [Fact]
     public void Run_StrategyReceivesSingleBar_NotFullSeries()
     {
-        var sub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
+        var sub = TestSubs.Of(TestAssets.BtcUsdt, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 10000);
         var receivedBars = new List<Int64Bar>();
         var strategy = MockStrategy(sub);
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci => receivedBars.Add(ci.ArgAt<Int64Bar>(0)));
 
         _engine.Run([bars], strategy, CreateOptions(), ct: TestContext.Current.CancellationToken);
@@ -234,14 +235,14 @@ public class BacktestEngineTests
     {
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         // 3 bars: strategy places a market buy on bar 0, fill processed on bar 1
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 15000);
         var ctx = new OrderContextRef();
         var strategy = MockStrategy(ctx, sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -270,7 +271,7 @@ public class BacktestEngineTests
     {
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         // 5 bars with ascending opens (15000, 15100, ..., 15400)
         // Place a limit sell at 15350 -- should fill when bar high >= limit
         var bars = TestBars.CreateSeries(Start, OneMinute, 5, startPrice: 15000);
@@ -278,7 +279,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(ctx, sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -308,13 +309,13 @@ public class BacktestEngineTests
     {
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 5, startPrice: 15000);
         var ctx = new OrderContextRef();
         var strategy = MockStrategy(ctx, sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -344,13 +345,13 @@ public class BacktestEngineTests
     {
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 5, startPrice: 15000);
         var ctx = new OrderContextRef();
         var strategy = MockStrategy(ctx, sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -380,14 +381,14 @@ public class BacktestEngineTests
     {
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 15000);
         var ctx = new OrderContextRef();
         var strategy = MockStrategy(ctx, sub);
         var barCount = 0;
         IReadOnlyList<Fill>? observedFills = null;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 barCount++;
@@ -424,13 +425,13 @@ public class BacktestEngineTests
     {
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 15000);
         var ctx = new OrderContextRef();
         var strategy = MockStrategy(ctx, sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -467,14 +468,14 @@ public class BacktestEngineTests
         // SC-005: 100 orders processed without queue corruption, lost orders, or duplicate fills
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         // 200 bars with low prices so limit buys are affordable (price 10..210, 1 share each = ~$100 per fill)
         var bars = TestBars.CreateSeries(Start, OneMinute, 200, startPrice: 10, priceIncrement: 1);
         var ctx = new OrderContextRef();
         var strategy = MockStrategy(ctx, sub);
         var barIdx = 0;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 barIdx++;
@@ -520,7 +521,7 @@ public class BacktestEngineTests
     {
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
 
         // Bar 0: Open=100, H=102, L=99, C=101 -- market buy fills at Open=101 (bar 1)
         // Bar 1: Open=101, H=103, L=100, C=102 -- entry fill here
@@ -534,7 +535,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(ctx, sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -564,7 +565,7 @@ public class BacktestEngineTests
     {
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
 
         var bars = TestBars.CreateSeries(Start, OneMinute,
             TestBars.Create(10000, 10200, 9900, 10100),
@@ -575,7 +576,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(ctx, sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -604,7 +605,7 @@ public class BacktestEngineTests
     {
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
 
         // Use lower prices so 10 shares fit in $100K budget
         var bars = TestBars.CreateSeries(Start, OneMinute,
@@ -617,7 +618,7 @@ public class BacktestEngineTests
         var strategy = MockStrategy(ctx, sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -663,7 +664,7 @@ public class BacktestEngineTests
         const int barCount = 500_000;
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
+        var sub = TestSubs.Of(TestAssets.BtcUsdt, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, barCount, startPrice: 10000, priceIncrement: 1);
 
         // No-op strategy -- pure engine throughput measurement
@@ -685,11 +686,11 @@ public class BacktestEngineTests
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
 
-        var btcSub = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
+        var btcSub = TestSubs.Of(TestAssets.BtcUsdt, OneMinute);
         var ethAsset = CryptoAsset.Create("ETHUSDT", "Binance", 2);
-        var ethSub = new DataSubscription(ethAsset, OneMinute);
+        var ethSub = TestSubs.Of(ethAsset, OneMinute);
         var solAsset = CryptoAsset.Create("SOLUSDT", "Binance", 2);
-        var solSub = new DataSubscription(solAsset, OneMinute);
+        var solSub = TestSubs.Of(solAsset, OneMinute);
 
         var btcBars = TestBars.CreateSeries(Start, OneMinute, barsPerSub, startPrice: 40000, priceIncrement: 1);
         var ethBars = TestBars.CreateSeries(Start, OneMinute, barsPerSub, startPrice: 2000, priceIncrement: 1);
@@ -718,13 +719,13 @@ public class BacktestEngineTests
         var asset = new EquityAsset { Name = "TEST", Exchange = "TEST", MinOrderQuantity = 10m, MaxOrderQuantity = 1000m, QuantityStepSize = 1m };
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(asset, OneMinute);
+        var sub = TestSubs.Of(asset, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 100);
         var ctx = new OrderContextRef();
         var strategy = MockStrategy(ctx, sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -759,13 +760,13 @@ public class BacktestEngineTests
         var asset = new EquityAsset { Name = "TEST", Exchange = "TEST", MinOrderQuantity = 1m, MaxOrderQuantity = 10m, QuantityStepSize = 1m };
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(asset, OneMinute);
+        var sub = TestSubs.Of(asset, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 100);
         var ctx = new OrderContextRef();
         var strategy = MockStrategy(ctx, sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -800,13 +801,13 @@ public class BacktestEngineTests
         var asset = new EquityAsset { Name = "TEST", Exchange = "TEST", MinOrderQuantity = 1m, MaxOrderQuantity = 1000m, QuantityStepSize = 5m };
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(asset, OneMinute);
+        var sub = TestSubs.Of(asset, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 100);
         var ctx = new OrderContextRef();
         var strategy = MockStrategy(ctx, sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 if (!orderPlaced)
@@ -841,13 +842,13 @@ public class BacktestEngineTests
         var asset = new EquityAsset { Name = "TEST", Exchange = "TEST", MinOrderQuantity = 1m, MaxOrderQuantity = 100m, QuantityStepSize = 5m };
         var realMatcher = new BarMatcher();
         var engine = new BacktestEngine(realMatcher, new OrderValidator());
-        var sub = new DataSubscription(asset, OneMinute);
+        var sub = TestSubs.Of(asset, OneMinute);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3, startPrice: 100);
         var ctx = new OrderContextRef();
         var strategy = MockStrategy(ctx, sub);
         var orderPlaced = false;
 
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(ci =>
             {
                 if (!orderPlaced)

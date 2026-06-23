@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.LiveHost.Application.Live;
 using AlgoTradeForge.Domain;
@@ -15,7 +16,7 @@ public class GetLiveSessionDataQueryHandlerTests
 {
     private static readonly CryptoAsset TestAsset = CryptoAsset.Create("BTCUSDT", "Binance", 2);
 
-    private static readonly DataSubscription TestSubscription = new(TestAsset, new TimeFrame(TimeSpan.FromMinutes(1)));
+    private static readonly DataFeedSubscription TestSubscription = TestSubs.Of(TestAsset, new TimeFrame(TimeSpan.FromMinutes(1)));
 
     private readonly ILiveSessionStore _store = new InMemoryLiveSessionStore();
     private readonly ILiveSessionDataProvider _dataProvider = Substitute.For<ILiveSessionDataProvider>();

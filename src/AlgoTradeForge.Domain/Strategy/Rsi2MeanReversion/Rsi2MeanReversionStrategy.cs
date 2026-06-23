@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
@@ -39,14 +40,14 @@ public sealed class Rsi2MeanReversionStrategy(
         RegisterIndicator(_filterAtr);
     }
 
-    protected override void OnContextUpdated(Int64Bar bar, DataSubscription sub)
+    protected override void OnContextUpdated(Int64Bar bar, DataFeedSubscription sub)
     {
         var atrValues = _atr.Buffers["Value"];
         if (atrValues.Count > 0)
             Context.CurrentVolatility = atrValues[^1];
     }
 
-    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub)
+    protected override void EvaluateEntry(Int64Bar bar, DataFeedSubscription sub)
     {
         var signalStrength = GenerateSignal(bar, Context);
         if (signalStrength == 0)
@@ -69,14 +70,14 @@ public sealed class Rsi2MeanReversionStrategy(
         }
 
         var quantity = Params.MoneyManagement.CalculateSize(
-            entryPrice != 0 ? entryPrice : bar.Close, stopLoss, Context, sub.Asset);
-        if (quantity < sub.Asset.MinOrderQuantity)
+            entryPrice != 0 ? entryPrice : bar.Close, stopLoss, Context, sub.RequireAsset());
+        if (quantity < sub.RequireAsset().MinOrderQuantity)
             return;
 
-        CreateEntryGroup(sub.Asset, direction, orderType, entryPrice,
+        CreateEntryGroup(sub.RequireAsset(), direction, orderType, entryPrice,
             stopLoss, takeProfits, quantity, Context);
 
-        EmitSignal(bar.Timestamp, "Entry", sub.Asset.Name,
+        EmitSignal(bar.Timestamp, "Entry", sub.RequireAsset().Name,
             direction.ToString(), signalStrength,
             $"type={orderType}, sl={stopLoss}, qty={quantity}");
     }

@@ -1,0 +1,28 @@
+%% TradeTick — one stream, two consumers: a tick strategy (OnTradeTick) and an alt-bar (OnBarComplete)
+sequenceDiagram
+    participant V as Binance aggTrade WS
+    participant VC as BinanceVenueConnector
+    participant P as RelayIngest.Pump
+    participant RW as RelayWriter (archival)
+    participant TR as TickRouter
+    participant S as TickAggregationBarSource (EqV)
+    participant D as StrategyDispatch
+    participant Q as session MarketDataQueue
+    participant ST as Strategy (ITradeTickStrategy + bar)
+
+    V->>VC: aggTrade
+    VC->>P: TradeEvent(TradeTick)
+    P->>RW: WriteTrade (lossless, FIRST)
+    P->>TR: tap.OnTrade → Publish(instrument, tick)
+    TR->>D: DispatchTick(instrument, tick)
+    D->>Q: enqueue ()=>OnTradeTick(tick, sub)
+    TR->>S: Feed(in tick)
+    Note over S: TickToSourceRecord → IBarAccumulator.TryAdvance
+    alt threshold crossed (bar closes)
+        S-->>TR: onBar(bar, isStart:false)
+        TR->>D: DispatchBar(instrument, EqV-spec, bar, false)
+        D->>Q: enqueue ()=>OnBarComplete(bar, sub)
+    end
+    Q->>ST: OnTradeTick(tick, sub)
+    Q->>ST: OnBarComplete(bar, sub)
+    ST->>ST: decide → submit order (per callback)

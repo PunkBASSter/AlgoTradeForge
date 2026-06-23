@@ -1,0 +1,58 @@
+%% LiveHost data plane — component & role map
+%% Archival is lossless and always runs; dispatch is best-effort (DropNewest);
+%% fills ride a separate Wait queue so market data can never drop them;
+%% one single per-session reader keeps all strategy callbacks serialized.
+flowchart TB
+    subgraph VENUE["Venue (Binance)"]
+        WSt["aggTrade WS"]
+        WSq["bookTicker WS"]
+        WSk["kline WS"]
+    end
+
+    subgraph INGEST["Ingest plane"]
+        VC["BinanceVenueConnector : IVenueConnector<br/>aggTrade→TradeEvent(TradeTick)<br/>bookTicker→QuoteEvent(QuoteTick)"]
+        PUMP["RelayIngest.Pump<br/>(RelayPumpHostedService)"]
+    end
+
+    subgraph ARCHIVE["Archival plane (lossless)"]
+        RW["RelayWriter"]
+        SINK["LocalSegmentSink (.atft)"]
+        UP["SegmentUploader → IFileStorage"]
+    end
+
+    subgraph DATAPLANE["Data plane (instrument-keyed, best-effort)"]
+        TAP["TickRouterTradeTap : IRelayTradeTap"]
+        ROUTER["TickRouter : ITickRouter<br/>shared IBarSource per (instrument, BarSpecKey)"]
+        TAGG["TickAggregationBarSource : ITickFedBarSource<br/>→ AccumulatorEntry → IBarAccumulator"]
+        KLINE["KlineVenueBarSource : IBarSource<br/>(self-driven from kline WS)"]
+        DISP["StrategyDispatch : IStrategyDispatch"]
+    end
+
+    subgraph SESSION["Execution plane (per account/session) — BinanceLiveConnector"]
+        MDQ["MarketDataQueue<br/>(bounded, DropNewest)"]
+        EXQ["EventQueue<br/>(bounded, Wait — fills)"]
+        PROC["single processing task<br/>(exec-priority drain)"]
+        OC["LiveOrderContext"]
+    end
+
+    STRAT["Strategy<br/>IInt64BarStrategy (+ ITradeTickStrategy)"]
+
+    WSt --> VC --> PUMP
+    WSq --> VC
+    PUMP -->|"TradeEvent: archive FIRST"| RW
+    PUMP -->|"QuoteEvent: archive only"| RW
+    PUMP -->|"TradeEvent: then tap"| TAP
+    RW --> SINK --> UP
+
+    TAP --> ROUTER
+    ROUTER -->|"Feed(in tick)"| TAGG
+    TAGG -->|"onBar(bar,false)"| DISP
+    WSk --> KLINE -->|"onBar(bar,isStart)"| DISP
+    ROUTER -->|"DispatchTick"| DISP
+
+    DISP -->|"enqueue Action"| MDQ
+    OC -->|"fill Action"| EXQ
+    MDQ --> PROC
+    EXQ --> PROC
+    PROC -->|"OnBarStart/OnBarComplete/OnTradeTick/OnTrade(fill)"| STRAT
+    STRAT -->|"submit order"| OC --> WSt

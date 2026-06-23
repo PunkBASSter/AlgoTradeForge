@@ -47,6 +47,11 @@ public sealed class LiveRoundTripTests : IDisposable
             Directory.Delete(_root, recursive: true);
     }
 
+    private sealed class NoopTap : IRelayTradeTap
+    {
+        public void OnTrade(string instrument, in TradeTick tick) { }
+    }
+
     private sealed class FakeVenueConnector(IReadOnlyList<IMarketEvent> events) : IVenueConnector
     {
         public string Venue => "FAKE";
@@ -79,7 +84,7 @@ public sealed class LiveRoundTripTests : IDisposable
             UploadInterval = TimeSpan.FromMinutes(60),
         });
         return new RelayPumpHostedService(
-            connector, opts, _storage, timeProvider,
+            connector, opts, _storage, new NoopTap(), timeProvider,
             NullLogger<RelayPumpHostedService>.Instance);
     }
 

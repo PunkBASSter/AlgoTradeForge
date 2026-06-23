@@ -1,5 +1,6 @@
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Live;
+using AlgoTradeForge.LiveHost.Application.Live.DataPlane;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -10,6 +11,11 @@ namespace AlgoTradeForge.LiveHost.Infrastructure.Tests.Live;
 
 public class BinanceLiveAccountManagerTests
 {
+    private static BinanceLiveAccountManager NewManager(BinanceLiveOptions options) =>
+        new(Options.Create(options), Substitute.For<IOrderValidator>(),
+            Substitute.For<ITickRouter>(), Substitute.For<IStrategyDispatch>(),
+            NullLoggerFactory.Instance);
+
     private static BinanceLiveOptions CreateOptions(params string[] accountNames)
     {
         var options = new BinanceLiveOptions();
@@ -30,9 +36,7 @@ public class BinanceLiveAccountManagerTests
     [Fact]
     public void Get_NonExistent_ReturnsNull()
     {
-        var options = Options.Create(CreateOptions("paper"));
-        var manager = new BinanceLiveAccountManager(
-            options, Substitute.For<IOrderValidator>(), NullLoggerFactory.Instance);
+        var manager = NewManager(CreateOptions("paper"));
 
         Assert.Null(manager.Get("nonexistent"));
     }
@@ -40,9 +44,7 @@ public class BinanceLiveAccountManagerTests
     [Fact]
     public async Task GetOrCreateAsync_UnconfiguredAccount_Throws()
     {
-        var options = Options.Create(CreateOptions("paper"));
-        var manager = new BinanceLiveAccountManager(
-            options, Substitute.For<IOrderValidator>(), NullLoggerFactory.Instance);
+        var manager = NewManager(CreateOptions("paper"));
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => manager.GetOrCreateAsync("nonexistent", TestContext.Current.CancellationToken));
@@ -51,9 +53,7 @@ public class BinanceLiveAccountManagerTests
     [Fact]
     public void GetActiveAccountNames_Empty_Initially()
     {
-        var options = Options.Create(CreateOptions("paper"));
-        var manager = new BinanceLiveAccountManager(
-            options, Substitute.For<IOrderValidator>(), NullLoggerFactory.Instance);
+        var manager = NewManager(CreateOptions("paper"));
 
         Assert.Empty(manager.GetActiveAccountNames());
     }
@@ -61,9 +61,7 @@ public class BinanceLiveAccountManagerTests
     [Fact]
     public async Task GetOrCreateAsync_DisposesOldConnector_WhenReplacingErrored()
     {
-        var options = Options.Create(CreateOptions("paper"));
-        var manager = new BinanceLiveAccountManager(
-            options, Substitute.For<IOrderValidator>(), NullLoggerFactory.Instance);
+        var manager = NewManager(CreateOptions("paper"));
 
         var erroredConnector = Substitute.For<ILiveConnector>();
         erroredConnector.Status.Returns(LiveSessionStatus.Error);
@@ -100,9 +98,7 @@ public class BinanceLiveAccountManagerTests
     [Fact]
     public async Task GetOrCreateAsync_ConcurrentCalls_OnlyCreatesOneConnector()
     {
-        var options = Options.Create(CreateOptions("paper"));
-        var manager = new BinanceLiveAccountManager(
-            options, Substitute.For<IOrderValidator>(), NullLoggerFactory.Instance);
+        var manager = NewManager(CreateOptions("paper"));
 
         var factoryCallCount = 0;
         var connector = Substitute.For<ILiveConnector>();

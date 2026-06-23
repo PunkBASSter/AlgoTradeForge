@@ -6,8 +6,10 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Trading;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
+using AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane;
 using AlgoTradeForge.LiveHost.Infrastructure.Tests.Live.Testnet;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -34,7 +36,7 @@ public sealed class TradeRegistryTestStrategy(TradeRegistryTestParams p)
     public void ResetFillTcs() => NextFillTcs = new TaskCompletionSource<Fill>();
     public void ResetBarTcs() => NextBarTcs = new TaskCompletionSource<Int64Bar>();
 
-    protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
+    protected override void OnBarCompleteInner(Int64Bar bar, DataFeedSubscription subscription)
     {
         NextBarTcs.TrySetResult(bar);
 
@@ -80,7 +82,15 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         var validator = new OrderValidator();
         var logger = NullLogger<BinanceLiveConnector>.Instance;
 
-        _connector = new BinanceLiveConnector("testnet-e2e", accountConfig, sharedOptions, validator, logger);
+        var klineWs = new BinanceWebSocketManager(
+            accountConfig.MarketStreamUrl, sharedOptions.ReconnectDelay,
+            sharedOptions.MaxReconnectAttempts, NullLogger.Instance);
+        var resolver = new BarSourceResolver(klineWs);
+        var dispatch = new StrategyDispatch(NullLogger<StrategyDispatch>.Instance);
+        var router = new TickRouter(resolver, dispatch, NullLogger<TickRouter>.Instance);
+
+        _connector = new BinanceLiveConnector(
+            "testnet-e2e", accountConfig, sharedOptions, validator, router, dispatch, logger);
         await _connector.ConnectAsync();
 
         _asset = CryptoAsset.Create("BTCUSDT", "Binance", decimalDigits: 2,
@@ -98,10 +108,8 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         {
             SessionId = _sessionIdA,
             Strategy = _strategyA,
-            Subscriptions = [new DataSubscription(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
-            PrimaryAsset = _asset,
+            Subscriptions = [TestSubs.Of(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
             InitialCash = initialCash,
-            Routing = LiveEventRouting.All,
             AccountName = "testnet-e2e",
         });
 
@@ -112,10 +120,8 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         {
             SessionId = _sessionIdB,
             Strategy = _strategyB,
-            Subscriptions = [new DataSubscription(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
-            PrimaryAsset = _asset,
+            Subscriptions = [TestSubs.Of(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
             InitialCash = initialCash,
-            Routing = LiveEventRouting.All,
             AccountName = "testnet-e2e",
         });
     }
@@ -250,24 +256,36 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         Assert.Single(groupIdsB);
     }
 
-    // ── Snapshot candles are empty (bar delivery deferred to Plan 4) ──
+    // ── Snapshot bars come from the data-plane bar sources (Plan 4) ──
 
     [Fact(
 #if DEBUG
         Skip = "Requires responsive Binance testnet — run in Release for full integration"
 #endif
     )]
-    public async Task GetSessionSnapshot_Candles_AreEmpty()
+    public async Task GetSessionSnapshot_Bars_ComeFromDataPlaneSources()
     {
         if (!BinanceTestnetCredentials.IsConfigured)
             Assert.Skip(BinanceTestnetCredentials.SkipReason);
 
-        // Wait briefly so any accumulated kline callbacks could have arrived
+        // Wait briefly so any accumulated kline callbacks could have arrived. A 1m bar may not have
+        // closed yet (Recent could be empty), so we assert the data-plane CONSISTENCY invariant
+        // rather than non-emptiness: every last-bar entry's bar must appear in the flat Bars list,
+        // and the flat list's tail equals the primary subscription's latest bar.
         await Task.Delay(500, TestContext.Current.CancellationToken);
 
         var snap = await _connector!.GetSessionSnapshotAsync(_sessionIdA, TestContext.Current.CancellationToken);
         Assert.NotNull(snap);
-        Assert.Empty(snap!.Bars);   // bar delivery deferred to Plan 4
+
+        if (snap!.Bars.Count > 0)
+        {
+            var primaryLast = Assert.Single(snap.LastBarsPerSubscription);
+            Assert.Equal(snap.Bars[^1].TimestampMs, primaryLast.Bar.TimestampMs);
+        }
+        else
+        {
+            Assert.Empty(snap.LastBarsPerSubscription);
+        }
     }
 
     // ── Shutdown: cancels all open orders ─────────────────────────

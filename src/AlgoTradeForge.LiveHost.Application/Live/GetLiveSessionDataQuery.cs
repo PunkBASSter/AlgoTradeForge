@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain.History;
 using Microsoft.Extensions.Logging;
@@ -45,7 +46,7 @@ public sealed class GetLiveSessionDataQueryHandler(
         if (snapshot is null)
             return null;
 
-        var asset = snapshot.PrimaryAsset;
+        var asset = snapshot.ExecutionAsset;
         var tickSize = asset.TickSize;
 
         var primarySub = snapshot.Subscriptions.Count > 0 ? snapshot.Subscriptions[0] : null;
@@ -58,7 +59,7 @@ public sealed class GetLiveSessionDataQueryHandler(
         {
             try
             {
-                var interval = MapTimeFrameToInterval(primarySub.TimeFrame);
+                var interval = MapTimeFrameToInterval((primarySub as TimeBarSubscription)?.TimeFrame.Duration ?? TimeSpan.FromMinutes(1));
                 recentBars.AddRange(
                     await dataProvider.GetRecentKlinesAsync(
                         query.SessionId, asset.Name, interval, tickSize, BackfillLimit, ct));
@@ -130,7 +131,7 @@ public sealed class GetLiveSessionDataQueryHandler(
 
         // Preserve historical "hh:mm:ss" wire shape (vs TimeFrame.Code "1m") so existing FE
         // consumers keep parsing. Migrate to TimeFrame.Code via a coordinated FE/BE change.
-        var timeFrame = primarySub?.TimeFrame.Duration.ToString() ?? "00:01:00";
+        var timeFrame = (primarySub as TimeBarSubscription)?.TimeFrame.Duration.ToString() ?? "00:01:00";
 
         var dto = new LiveSessionDataDto
         {
@@ -161,8 +162,8 @@ public sealed class GetLiveSessionDataQueryHandler(
     {
         return snapshot.LastBarsPerSubscription
             .Select(entry => new LastBarDto(
-                entry.Subscription.Asset.Name,
-                entry.Subscription.TimeFrame.Duration.ToString(),
+                entry.Subscription.RequireAsset().Name,
+                (entry.Subscription as TimeBarSubscription)?.TimeFrame.Duration.ToString() ?? entry.Subscription.FeedKey(),
                 entry.Bar.TimestampMs / 1000,
                 entry.Bar.Open * tickSize,
                 entry.Bar.High * tickSize,

@@ -1,5 +1,3 @@
-using AlgoTradeForge.Domain.Live;
-
 namespace AlgoTradeForge.Domain.Events;
 
 public sealed record LiveSessionStartEvent(
@@ -7,8 +5,7 @@ public sealed record LiveSessionStartEvent(
     string Source,
     Guid SessionId,
     string StrategyName,
-    string AssetName,
-    LiveEventRouting Routing) : IBacktestEvent
+    string AssetName) : IBacktestEvent
 {
     public static string TypeId => "live.start";
     public static ExportMode DefaultExportMode => ExportMode.Live;

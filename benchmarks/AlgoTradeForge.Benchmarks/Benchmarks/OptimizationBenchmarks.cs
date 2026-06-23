@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using System.Collections.Concurrent;
 using AlgoTradeForge.Benchmarks.Loaders;
 using AlgoTradeForge.Domain;
@@ -95,7 +96,7 @@ public class OptimizationBenchmarks
     // 1000 reject-path runs and the Mean would still look "stable".
     private void SanityCheckMedianTrial()
     {
-        var sub = new DataSubscription(_btc, new TimeFrame(TimeSpan.FromHours(1)));
+        var sub = SubscriptionResolver.Resolve(new TimeBarSubscription(_btc.Name, _btc.Exchange, DataFeedRole.Primary, new TimeFrame(TimeSpan.FromHours(1))), _btc);
         var trialParams = new PrevBarBreakoutParams
         {
             DataSubscriptions = [sub],
@@ -140,7 +141,7 @@ public class OptimizationBenchmarks
                     while (partition.MoveNext())
                     {
                         var template = partition.Current;
-                        var sub = new DataSubscription(_btc, new TimeFrame(TimeSpan.FromHours(1)));
+                        var sub = SubscriptionResolver.Resolve(new TimeBarSubscription(_btc.Name, _btc.Exchange, DataFeedRole.Primary, new TimeFrame(TimeSpan.FromHours(1))), _btc);
                         var trialParams = new PrevBarBreakoutParams
                         {
                             DataSubscriptions = [sub],

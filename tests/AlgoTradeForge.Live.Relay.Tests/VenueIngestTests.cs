@@ -71,7 +71,7 @@ public class VenueIngestTests
 
             await using (var writer = new RelayWriter("FAKE", sink, options, time, TimeSpan.FromSeconds(60)))
             {
-                await RelayIngest.Pump(connector, writer, ["ESZ5"], TestContext.Current.CancellationToken);
+                await RelayIngest.Pump(connector, writer, ["ESZ5"], ct: TestContext.Current.CancellationToken);
             }
 
             var trades = ReadAllFrames<TradeTick>(dir, "ESZ5");
@@ -104,7 +104,7 @@ public class VenueIngestTests
 
             await using (var writer = new RelayWriter("FAKE", sink, options, time, TimeSpan.FromSeconds(60)))
             {
-                await RelayIngest.Pump(connector, writer, ["BTCUSDT"], TestContext.Current.CancellationToken);
+                await RelayIngest.Pump(connector, writer, ["BTCUSDT"], ct: TestContext.Current.CancellationToken);
             }
 
             var header = ReadFirstHeader<TradeTick>(dir, "BTCUSDT");

@@ -76,7 +76,7 @@ public sealed class GeneticOptimizationTaskExecutor(
         var fromDate = DateOnly.FromDateTime(settings.StartTime.UtcDateTime);
         var toDate = DateOnly.FromDateTime(settings.EndTime.UtcDateTime);
 
-        var resolvedSubs = new List<DataSubscription>();
+        var resolvedSubs = new List<DataFeedSubscription>();
         var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
         foreach (var sub in ctx.Subscriptions)
             await helper.ResolveAndCacheAsync(sub, resolvedSubs, dataCache, fromDate, toDate, ct);
@@ -182,7 +182,7 @@ public sealed class GeneticOptimizationTaskExecutor(
         BacktestSettingsDto settings,
         IOptimizationStrategyFactory factory,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
-        List<DataSubscription> resolvedSubs,
+        List<DataFeedSubscription> resolvedSubs, //TODO: Do we still need both?
         List<DataFeedSubscription> feedSubs,
         IFitnessFunction fitnessFunction,
         TrialFilter filter,

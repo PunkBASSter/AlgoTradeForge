@@ -21,27 +21,22 @@ public sealed class StartLiveSessionCommandHandler(
         if (command.DataSubscriptions is null or { Count: 0 })
             throw new ArgumentException("At least one data subscription must be provided.");
 
-        // Live trading is TimeBar-only: the connector aggregator pipeline doesn't yet emit
-        // alt-bars in real time. Silently coercing a non-TimeBar primary to 1m would deliver
-        // wrong data, so reject explicitly.
-        var resolvedSubscriptions = new List<DataSubscription>();
+        // Resolve each typed subscription 1:1, same-order, into a DataFeedSubscription. Alt-bar/tick
+        // identity is carried by FeedKey (alt-bar feed-id or "tick"); the data plane pairs the
+        // resolved list with command.DataSubscriptions positionally — they must stay equal-length.
+        var resolvedSubscriptions = new List<DataFeedSubscription>(command.DataSubscriptions.Count);
         foreach (var sub in command.DataSubscriptions)
         {
             var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
                 ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
-            if (sub is not TimeBarSubscription tb)
-                throw new NotSupportedException(
-                    $"Live trading currently supports TimeBarSubscription only; got {sub.GetType().Name}. " +
-                    "Alt-bar / tick primaries are supported for backtest and optimization only.");
-
-            resolvedSubscriptions.Add(new DataSubscription(asset, tb.TimeFrame));
+            resolvedSubscriptions.Add(SubscriptionResolver.Resolve(sub, asset));
         }
 
-        var primaryAsset = resolvedSubscriptions[0].Asset;
+        var executionAsset = resolvedSubscriptions.ResolveExecutionAsset();
 
         // Scale QuoteAsset strategy params from human-readable to tick units
-        var scale = new ScaleContext(primaryAsset);
+        var scale = new ScaleContext(executionAsset);
         var scaledParams = ParameterScaler.ScaleQuoteAssetParams(
             spaceProvider, command.StrategyName, command.StrategyParameters, scale);
 
@@ -57,8 +52,6 @@ public sealed class StartLiveSessionCommandHandler(
                 strategy.DataSubscriptions.Add(sub);
         }
 
-        var subscriptions = strategy.DataSubscriptions;
-
         var fingerprint = LiveRunKeyBuilder.Build(command);
 
         var sessionId = Guid.NewGuid();
@@ -68,14 +61,12 @@ public sealed class StartLiveSessionCommandHandler(
         {
             SessionId = sessionId,
             Strategy = strategy,
-            Subscriptions = subscriptions,
-            PrimaryAsset = primaryAsset,
+            Subscriptions = resolvedSubscriptions,
             InitialCash = initialCashScaled,
-            Routing = command.Routing,
             AccountName = command.AccountName,
         };
 
-        var exchange = subscriptions[0].Asset.Exchange;
+        var exchange = executionAsset.Exchange;
         var connector = await accountManager.GetOrCreateAsync(command.AccountName, ct);
 
         var details = new SessionDetails(
@@ -84,7 +75,7 @@ public sealed class StartLiveSessionCommandHandler(
             command.StrategyName,
             strategy.Version,
             exchange,
-            primaryAsset.Name,
+            executionAsset.Name,
             fingerprint,
             DateTimeOffset.UtcNow);
 

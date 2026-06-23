@@ -1,0 +1,11 @@
+%% QuoteTick — archival only today (BBO state, no bar semantics). Strategy path deferred to Framework v2.
+sequenceDiagram
+    participant V as Binance bookTicker WS
+    participant VC as BinanceVenueConnector
+    participant P as RelayIngest.Pump
+    participant RW as RelayWriter (archival)
+    Note over P: QuoteEvent has NO dispatch tap
+    V->>VC: bookTicker (BBO)
+    VC->>P: QuoteEvent(QuoteTick)
+    P->>RW: WriteQuote (lossless)
+    Note over RW: archived only — no strategy delivery<br/>(IQuoteTickStrategy / OnQuoteTick = Framework v2)

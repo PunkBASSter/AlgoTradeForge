@@ -100,13 +100,13 @@ public sealed class GeneticFitnessCacheTests
 
         var combo1 = new ParameterCombination(new Dictionary<string, object>
         {
-            ["sub"] = new DataSubscription(btcAsset, new TimeFrame(TimeSpan.FromHours(1))),
+            ["sub"] = TestSubs.Of(btcAsset, new TimeFrame(TimeSpan.FromHours(1))),
             ["period"] = 14,
         });
 
         var combo2 = new ParameterCombination(new Dictionary<string, object>
         {
-            ["sub"] = new DataSubscription(ethAsset, new TimeFrame(TimeSpan.FromHours(1))),
+            ["sub"] = TestSubs.Of(ethAsset, new TimeFrame(TimeSpan.FromHours(1))),
             ["period"] = 14,
         });
 

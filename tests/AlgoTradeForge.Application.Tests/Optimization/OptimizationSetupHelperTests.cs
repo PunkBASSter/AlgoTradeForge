@@ -61,7 +61,7 @@ public sealed class OptimizationSetupHelperTests
 
         var helper = CreateHelper();
         var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
-        var resolvedSubs = new List<DataSubscription>();
+        var resolvedSubs = new List<DataFeedSubscription>();
 
         var sub1 = new AltBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, "EqV_1m_1000");
         var sub2 = new AltBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, "EqV_1m_5000");
@@ -85,7 +85,7 @@ public sealed class OptimizationSetupHelperTests
     [Fact]
     public async Task ResolveAndCacheAsync_AltBarPrimary_SynthesizesSourceTimeFrameOnStrategySide()
     {
-        // P4-12: strategy-side DataSubscription gets a placeholder TimeFrame derived from the
+        // P4-12: strategy-side DataFeedSubscription gets a placeholder TimeFrame derived from the
         // alt-bar source code. EqV_1m_500m → source = "1m" → TimeFrame.Parse("1m").
         var asset = TestAssets.BtcUsdt;
         _assetRepository.GetByNameAsync("BTCUSDT", "Binance", Arg.Any<CancellationToken>())
@@ -96,7 +96,7 @@ public sealed class OptimizationSetupHelperTests
 
         var helper = CreateHelper();
         var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
-        var resolvedSubs = new List<DataSubscription>();
+        var resolvedSubs = new List<DataFeedSubscription>();
 
         await helper.ResolveAndCacheAsync(
             new AltBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, "EqV_1m_500m"),
@@ -105,8 +105,8 @@ public sealed class OptimizationSetupHelperTests
             TestContext.Current.CancellationToken);
 
         var resolved = Assert.Single(resolvedSubs);
-        Assert.Equal("1m", resolved.TimeFrame.Code);
-        Assert.Equal("EqV_1m_500m", resolved.FeedKey);
+        Assert.IsType<AltBarSubscription>(resolved);
+        Assert.Equal("EqV_1m_500m", resolved.FeedKey());
     }
 
     [Fact]
@@ -121,7 +121,7 @@ public sealed class OptimizationSetupHelperTests
 
         var helper = CreateHelper();
         var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
-        var resolvedSubs = new List<DataSubscription>();
+        var resolvedSubs = new List<DataFeedSubscription>();
 
         await helper.ResolveAndCacheAsync(
             new TickSubscription("BTCUSDT", "Binance", DataFeedRole.Primary),
@@ -130,8 +130,8 @@ public sealed class OptimizationSetupHelperTests
             TestContext.Current.CancellationToken);
 
         var resolved = Assert.Single(resolvedSubs);
-        Assert.Equal("1m", resolved.TimeFrame.Code);  // sentinel
-        Assert.Equal("ticks", resolved.FeedKey);
+        Assert.IsType<TickSubscription>(resolved);
+        Assert.Equal("ticks", resolved.FeedKey());
     }
 
     // -------- Phase 4 (P4-14, TRD §9.6): ExpandMultiPrimary --------

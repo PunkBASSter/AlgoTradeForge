@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Application.Indicators;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
@@ -14,8 +15,8 @@ namespace AlgoTradeForge.Application.Tests.Indicators;
 public class IndicatorFactoryTests
 {
     private static readonly Asset Aapl = TestAssets.Aapl;
-    private static readonly DataSubscription ExportableSub = new(Aapl, new TimeFrame(TimeSpan.FromMinutes(1)), IsExportable: true);
-    private static readonly DataSubscription NonExportableSub = new(Aapl, new TimeFrame(TimeSpan.FromMinutes(1)), IsExportable: false);
+    private static readonly DataFeedSubscription ExportableSub = TestSubs.Of(Aapl, new TimeFrame(TimeSpan.FromMinutes(1)), IsExportable: true);
+    private static readonly DataFeedSubscription NonExportableSub = TestSubs.Of(Aapl, new TimeFrame(TimeSpan.FromMinutes(1)), IsExportable: false);
 
     [Fact]
     public void PassthroughFactory_ReturnsSameInstance()
@@ -274,8 +275,8 @@ public class IndicatorFactoryTests
         var bus = new CapturingEventBus();
         var factory = new EmittingIndicatorFactory(bus);
 
-        var m1Sub = new DataSubscription(Aapl, new TimeFrame(TimeSpan.FromMinutes(1)), IsExportable: true);
-        var h1Sub = new DataSubscription(Aapl, new TimeFrame(TimeSpan.FromHours(1)), IsExportable: true);
+        var m1Sub = TestSubs.Of(Aapl, new TimeFrame(TimeSpan.FromMinutes(1)), IsExportable: true);
+        var h1Sub = TestSubs.Of(Aapl, new TimeFrame(TimeSpan.FromHours(1)), IsExportable: true);
 
         var strategy = new DualTfStrategy(new DualTfParams { DataSubscriptions = [m1Sub, h1Sub] }, factory);
 
@@ -330,7 +331,7 @@ public class IndicatorFactoryTests
             _h1Dzz = Indicators.Create(new NamedDeltaZigZag("DeltaZigZag_H1", 0.5, 10.0), DataSubscriptions[1]);
         }
 
-        protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
+        protected override void OnBarCompleteInner(Int64Bar bar, DataFeedSubscription subscription)
         {
             if (subscription == DataSubscriptions[0])
             {

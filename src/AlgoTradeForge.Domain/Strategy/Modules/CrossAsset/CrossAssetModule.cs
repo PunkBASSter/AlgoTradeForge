@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
@@ -13,18 +14,18 @@ namespace AlgoTradeForge.Domain.Strategy.Modules.CrossAsset;
 public sealed class CrossAssetModule(CrossAssetParams parameters)
     : IStrategyModule<CrossAssetParams>
 {
-    private DataSubscription _sub1 = null!;
-    private DataSubscription _sub2 = null!;
+    private DataFeedSubscription _sub1 = null!;
+    private DataFeedSubscription _sub2 = null!;
     private readonly List<double> _prices1 = [];
     private readonly List<double> _prices2 = [];
 
-    public void Initialize(IIndicatorFactory factory, DataSubscription sub1, DataSubscription sub2)
+    public void Initialize(IIndicatorFactory factory, DataFeedSubscription sub1, DataFeedSubscription sub2)
     {
         _sub1 = sub1;
         _sub2 = sub2;
     }
 
-    public void Update(Int64Bar bar, DataSubscription sub, ICrossAssetContext context)
+    public void Update(Int64Bar bar, DataFeedSubscription sub, ICrossAssetContext context)
     {
         if (sub == _sub1)
             _prices1.Add(bar.Close);

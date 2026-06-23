@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
@@ -16,7 +17,7 @@ public sealed class RegimeDetectorModule(RegimeDetectorParams parameters)
     private IIndicator<Int64Bar, double>? _adx;
     private bool _initialized;
 
-    public void Initialize(IIndicatorFactory factory, DataSubscription subscription)
+    public void Initialize(IIndicatorFactory factory, DataFeedSubscription subscription)
     {
         _adx = factory.Create<Int64Bar, double>(new Adx(parameters.AdxPeriod), subscription);
         _initialized = true;

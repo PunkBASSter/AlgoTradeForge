@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
@@ -32,9 +33,9 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
         OnStrategyInit();
     }
 
-    protected sealed override void OnBarStartInner(Int64Bar bar, DataSubscription subscription) { }
+    protected sealed override void OnBarStartInner(Int64Bar bar, DataFeedSubscription subscription) { }
 
-    protected sealed override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
+    protected sealed override void OnBarCompleteInner(Int64Bar bar, DataFeedSubscription subscription)
     {
 
         // ── PHASE 1: UPDATE CONTEXT ──
@@ -77,13 +78,13 @@ public abstract class ModularStrategyBase<TParams, TContext>(TParams parameters,
     // ── Virtual hooks ──
 
     protected virtual void OnStrategyInit() { }
-    protected virtual void OnContextUpdated(Int64Bar bar, DataSubscription sub) { }
+    protected virtual void OnContextUpdated(Int64Bar bar, DataFeedSubscription sub) { }
     protected virtual void OnOrderFilled(Fill fill, Order order) { }
 
     protected virtual void ManagePositions(
         TradeRegistryModule tradeRegistry, TContext context) { }
 
-    protected virtual void EvaluateEntry(Int64Bar bar, DataSubscription sub) { }
+    protected virtual void EvaluateEntry(Int64Bar bar, DataFeedSubscription sub) { }
 
     // ── Entry pipeline hooks (used by strategies that override EvaluateEntry) ──
 

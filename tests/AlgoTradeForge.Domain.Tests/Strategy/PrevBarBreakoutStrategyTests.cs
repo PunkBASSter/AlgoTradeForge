@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
@@ -35,7 +36,7 @@ public sealed class PrevBarBreakoutStrategyTests
         MinVolatilityPct = 0.0,
         MoneyManagement = new FixedNotionalModule(new FixedNotionalParams { Notional = 1000_000 }),
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 2 },
-        DataSubscriptions = [new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)))],
+        DataSubscriptions = [TestSubs.Of(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)))],
     };
 
     [Fact]

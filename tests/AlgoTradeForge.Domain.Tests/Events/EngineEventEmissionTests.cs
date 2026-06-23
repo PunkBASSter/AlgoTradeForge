@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
@@ -30,7 +31,7 @@ public class EngineEventEmissionTests
     public void EmptyData_EmitsRunStartAndRunEnd()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = new ActionStrategy(sub);
         var empty = new TimeSeries<Int64Bar>();
 
@@ -45,7 +46,7 @@ public class EngineEventEmissionTests
     public void NonEmptyData_EmitsRunStart_Bars_RunEnd()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = new ActionStrategy(sub);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3);
 
@@ -64,7 +65,7 @@ public class EngineEventEmissionTests
     public void OrderSubmission_EmitsOrdPlace()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var submitted = false;
 
         var strategy = new ActionStrategy(sub)
@@ -100,7 +101,7 @@ public class EngineEventEmissionTests
     public void OrderFill_EmitsOrdFillAndPos()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var submitted = false;
 
         var strategy = new ActionStrategy(sub)
@@ -141,7 +142,7 @@ public class EngineEventEmissionTests
     public void InsufficientCash_EmitsOrdReject_Warning()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var submitted = false;
 
         var strategy = new ActionStrategy(sub)
@@ -177,7 +178,7 @@ public class EngineEventEmissionTests
     public void StrategyCancelsOrder_EmitsOrdCancel()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var barCount = 0;
 
         var strategy = new ActionStrategy(sub)
@@ -221,7 +222,7 @@ public class EngineEventEmissionTests
     public void SlTpTrigger_EmitsOrdFillAndPos()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var submitted = false;
 
         var strategy = new ActionStrategy(sub)
@@ -265,7 +266,7 @@ public class EngineEventEmissionTests
     public void PositionLifecycle_Open_Increase_Close()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var barCount = 0;
 
         var strategy = new ActionStrategy(sub)
@@ -324,7 +325,7 @@ public class EngineEventEmissionTests
     public void FullRun_EventStreamOrdering()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var submitted = false;
 
         var strategy = new ActionStrategy(sub)
@@ -371,7 +372,7 @@ public class EngineEventEmissionTests
     public void StrategyException_EmitsErrorEvent()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
 
         var strategy = new ActionStrategy(sub)
         {
@@ -392,7 +393,7 @@ public class EngineEventEmissionTests
     public void Cancellation_DoesNotEmitErrorEvent()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = new ActionStrategy(sub);
         var bars = TestBars.CreateSeries(Start, OneMinute, 100);
         var cts = new CancellationTokenSource();
@@ -409,7 +410,7 @@ public class EngineEventEmissionTests
     [Fact]
     public void DefaultNullBus_NoEventsEmitted()
     {
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = new ActionStrategy(sub);
         var bars = TestBars.CreateSeries(Start, OneMinute, 3);
 
@@ -425,7 +426,7 @@ public class EngineEventEmissionTests
     public void RunStartEvent_ContainsCorrectFields()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = new ActionStrategy(sub);
         var empty = new TimeSeries<Int64Bar>();
         var opts = CreateOptions(initialCash: 50_000L);
@@ -445,7 +446,7 @@ public class EngineEventEmissionTests
     public void RunEndEvent_ContainsCorrectFields()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var submitted = false;
 
         var strategy = new ActionStrategy(sub)
@@ -480,7 +481,7 @@ public class EngineEventEmissionTests
     public void StrategyEmitSignal_EndToEnd_CapturedByBus()
     {
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = new SignalEmittingTestStrategy(new SignalTestParams { DataSubscriptions = [sub] });
         var bars = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 1000);
 
@@ -503,7 +504,7 @@ public class EngineEventEmissionTests
     {
         var asset = new EquityAsset { Name = "TEST", Exchange = "TEST", MinOrderQuantity = 10m, MaxOrderQuantity = 1000m, QuantityStepSize = 1m };
         var bus = new CapturingEventBus();
-        var sub = new DataSubscription(asset, OneMinute);
+        var sub = TestSubs.Of(asset, OneMinute);
         var submitted = false;
 
         var strategy = new ActionStrategy(sub)
@@ -542,23 +543,23 @@ public class EngineEventEmissionTests
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    private sealed class ActionStrategy(DataSubscription subscription) : IInt64BarStrategy, IOrderContextReceiver
+    private sealed class ActionStrategy(DataFeedSubscription subscription) : IInt64BarStrategy, IOrderContextReceiver
     {
         private IOrderContext _orders = null!;
 
         public string Version => "1.0.0";
-        public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = [subscription];
 
-        public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarStartAction { get; init; }
-        public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarCompleteAction { get; init; }
+        public Action<Int64Bar, DataFeedSubscription, IOrderContext>? OnBarStartAction { get; init; }
+        public Action<Int64Bar, DataFeedSubscription, IOrderContext>? OnBarCompleteAction { get; init; }
 
         public void SetOrderContext(IOrderContext context) => _orders = context;
         public void OnInit() { }
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription) =>
+        public void OnBarStart(Int64Bar bar, DataFeedSubscription subscription) =>
             OnBarStartAction?.Invoke(bar, subscription, _orders);
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) =>
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription) =>
             OnBarCompleteAction?.Invoke(bar, subscription, _orders);
 
         public void OnTrade(Fill fill, Order order) { }
@@ -569,9 +570,9 @@ public class EngineEventEmissionTests
     private sealed class SignalEmittingTestStrategy(SignalTestParams p) : StrategyBase<SignalTestParams>(p)
     {
         public override string Version => "1.0.0";
-        protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
+        protected override void OnBarCompleteInner(Int64Bar bar, DataFeedSubscription subscription)
         {
-            EmitSignal(bar.Timestamp, "CrossUp", subscription.Asset.Name, "Long", 0.9m, "Test reason");
+            EmitSignal(bar.Timestamp, "CrossUp", subscription.RequireAsset().Name, "Long", 0.9m, "Test reason");
         }
     }
 }

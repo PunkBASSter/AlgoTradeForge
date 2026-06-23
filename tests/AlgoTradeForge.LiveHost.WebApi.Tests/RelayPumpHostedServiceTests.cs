@@ -11,6 +11,11 @@ namespace AlgoTradeForge.LiveHost.WebApi.Tests;
 
 public class RelayPumpHostedServiceTests
 {
+    private sealed class NoopTap : IRelayTradeTap
+    {
+        public void OnTrade(string instrument, in TradeTick tick) { }
+    }
+
     private sealed class FakeVenueConnector(IReadOnlyList<IMarketEvent> events) : IVenueConnector
     {
         public string Venue => "FAKE";
@@ -53,7 +58,7 @@ public class RelayPumpHostedServiceTests
             });
 
             var svc = new RelayPumpHostedService(
-                connector, opts, storage, timeProvider,
+                connector, opts, storage, new NoopTap(), timeProvider,
                 NullLogger<RelayPumpHostedService>.Instance);
 
             await svc.RunPumpOnce(["BTCUSDT"], TestContext.Current.CancellationToken);

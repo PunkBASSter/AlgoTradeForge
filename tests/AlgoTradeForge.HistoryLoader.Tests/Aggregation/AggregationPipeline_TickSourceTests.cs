@@ -1,4 +1,5 @@
 using AlgoTradeForge.Domain;
+using AlgoTradeForge.Domain.Aggregation;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;

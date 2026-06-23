@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using System.Text.Json.Serialization;
 
 namespace AlgoTradeForge.Domain.Strategy.Subscriptions;
@@ -14,4 +15,11 @@ namespace AlgoTradeForge.Domain.Strategy.Subscriptions;
 [JsonDerivedType(typeof(AltBarSubscription), typeDiscriminator: "AltBar")]
 [JsonDerivedType(typeof(TickSubscription), typeDiscriminator: "Tick")]
 [JsonDerivedType(typeof(SideFeedSubscription), typeDiscriminator: "Side")]
-public abstract record DataFeedSubscription(string AssetName, string Exchange, DataFeedRole Role);
+public abstract record DataFeedSubscription(string AssetName, string Exchange, DataFeedRole Role)
+{
+    [JsonIgnore] public Asset? Asset { get; init; }
+    /// <summary>
+    /// Exportable data in debug mode
+    /// </summary>
+    [JsonIgnore] public bool IsExportable { get; init; }
+}

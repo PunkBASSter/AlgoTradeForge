@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
@@ -13,7 +14,7 @@ public sealed class BuyAndHoldStrategy(BuyAndHoldParams parameters, IIndicatorFa
 
     private bool _entered;
 
-    protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
+    protected override void OnBarCompleteInner(Int64Bar bar, DataFeedSubscription subscription)
     {
         if (_entered)
             return;
@@ -21,17 +22,17 @@ public sealed class BuyAndHoldStrategy(BuyAndHoldParams parameters, IIndicatorFa
         _entered = true;
 
         var quantity = Math.Clamp(Params.Quantity,
-            subscription.Asset.MinOrderQuantity,
-            subscription.Asset.MaxOrderQuantity);
-        quantity = subscription.Asset.RoundQuantityDown(quantity);
+            subscription.RequireAsset().MinOrderQuantity,
+            subscription.RequireAsset().MaxOrderQuantity);
+        quantity = subscription.RequireAsset().RoundQuantityDown(quantity);
 
-        if (quantity < subscription.Asset.MinOrderQuantity)
+        if (quantity < subscription.RequireAsset().MinOrderQuantity)
             return;
 
         Orders.Submit(new Order
         {
             Id = 0,
-            Asset = subscription.Asset,
+            Asset = subscription.RequireAsset(),
             Side = OrderSide.Buy,
             Type = OrderType.Market,
             Quantity = quantity

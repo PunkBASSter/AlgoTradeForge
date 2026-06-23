@@ -1,0 +1,22 @@
+%% AltBar — tick-aggregated (no venue publisher; OnBarComplete only). Threshold frozen at session start.
+sequenceDiagram
+    participant P as RelayIngest.Pump
+    participant TR as TickRouter
+    participant S as TickAggregationBarSource (e.g. EqD/Renko)
+    participant A as IBarAccumulator (frozen threshold)
+    participant D as StrategyDispatch
+    participant ST as Strategy (IInt64BarStrategy)
+
+    Note over S,A: at session start: ThresholdResolver.ResolveParsed(feedId)<br/>→ frozen threshold → AccumulatorEntry.Open
+    loop each TradeTick
+        P->>TR: Publish(instrument, tick)
+        TR->>S: Feed(in tick)
+        S->>A: TryAdvance(TickToSourceRecord.From(tick))
+        alt threshold crossed
+            A-->>S: emitted bar (+ Renko TryDrainQueued)
+            S->>D: onBar(bar,false) → DispatchBar(AltBar-spec)
+            D->>ST: OnBarComplete(bar, sub) → submit order
+        else still accumulating
+            A-->>S: no bar
+        end
+    end

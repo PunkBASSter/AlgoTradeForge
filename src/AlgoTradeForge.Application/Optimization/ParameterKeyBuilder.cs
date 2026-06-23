@@ -33,17 +33,6 @@ internal static class ParameterKeyBuilder
             case long l:
                 sb.Append(l.ToString(CultureInfo.InvariantCulture));
                 break;
-            case List<DataSubscription> subs:
-                sb.Append('[');
-                for (var si = 0; si < subs.Count; si++)
-                {
-                    if (si > 0) sb.Append('+');
-                    sb.Append(subs[si].Asset.Name).Append(':')
-                      .Append(subs[si].Asset.Exchange).Append(':')
-                      .Append(subs[si].TimeFrame);
-                }
-                sb.Append(']');
-                break;
             case List<DataFeedSubscription> feedSubs:
                 // Kind-aware key — asset:exchange:feed:role so AltBar/Tick carriers don't
                 // alias with TimeBar carriers at the same nominal interval.

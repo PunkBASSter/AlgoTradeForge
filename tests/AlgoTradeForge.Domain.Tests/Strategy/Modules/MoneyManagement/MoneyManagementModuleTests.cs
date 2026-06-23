@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
@@ -11,8 +12,8 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules.MoneyManagement;
 
 public sealed class MoneyManagementModuleTests
 {
-    private static readonly DataSubscription DefaultSubscription =
-        new(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromHours(1)));
+    private static readonly DataFeedSubscription DefaultSubscription =
+        TestSubs.Of(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromHours(1)));
 
     private static CryptoAsset CreateAsset(
         decimal minOrderQuantity = 0.001m,

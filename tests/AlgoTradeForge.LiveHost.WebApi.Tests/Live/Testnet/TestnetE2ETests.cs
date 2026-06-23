@@ -44,7 +44,6 @@ public sealed class TestnetE2ETests(TestnetApiFactory factory) : IDisposable
                 new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")),
                 new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")),
             ],
-            EnabledEvents = ["OnBarComplete", "OnTrade"],
         };
 
         var startResponse = await _client.PostAsJsonAsync("/api/live/sessions", request, Json, TestContext.Current.CancellationToken);

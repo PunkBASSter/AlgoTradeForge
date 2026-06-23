@@ -63,7 +63,7 @@ public sealed class BacktestPreparer(
         {
             // Side entries are bound via FeedContextBuilder below; they are FeedSeries, not
             // TimeSeries<Int64Bar>, so they don't enter strategy.DataSubscriptions/seriesArray.
-            var primaries = new List<(DataFeedSubscription FeedSub, Asset SubAsset, DataSubscription StrategySub)>();
+            var primaries = new List<(DataFeedSubscription FeedSub, Asset SubAsset, DataFeedSubscription StrategySub)>();
             for (var i = 0; i < command.DataSubscriptions.Count; i++)
             {
                 var sub = command.DataSubscriptions[i];
@@ -74,7 +74,7 @@ public sealed class BacktestPreparer(
                     : await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
                       ?? throw new ArgumentException($"Asset '{sub.AssetName}' not found.");
 
-                var strategySub = StrategySubscriptionFactory.FromPrimary(sub, subAsset);
+                var strategySub = SubscriptionResolver.Resolve(sub, subAsset);
                 primaries.Add((sub, subAsset, strategySub));
             }
 
@@ -88,13 +88,13 @@ public sealed class BacktestPreparer(
         }
         else
         {
-            // Pre-declared subscriptions: legacy Load(DataSubscription, ...) only knows TimeBar.
+            // Pre-declared subscriptions: legacy Load(DataFeedSubscription, ...) only knows TimeBar.
             // Reject non-TimeBar FeedKeys to prevent silent coercion to a 1m load.
             seriesArray = new TimeSeries<Int64Bar>[strategy.DataSubscriptions.Count];
             for (var i = 0; i < strategy.DataSubscriptions.Count; i++)
             {
                 var preDeclared = strategy.DataSubscriptions[i];
-                if (preDeclared.FeedKey != "ohlcv")
+                if (preDeclared.FeedKey() != "ohlcv")
                     throw new NotSupportedException(
                         $"Strategy pre-declared a non-TimeBar subscription (FeedKey='{preDeclared.FeedKey}'). " +
                         "Strategies must declare alt-bar / tick / side primaries via the command's " +

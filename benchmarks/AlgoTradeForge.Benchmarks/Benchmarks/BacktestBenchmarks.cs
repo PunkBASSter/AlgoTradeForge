@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Benchmarks.Loaders;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
@@ -59,7 +60,7 @@ public class BacktestBenchmarks
     [Benchmark]
     public BacktestResult Backtest_5y_Hourly()
     {
-        var sub = new DataSubscription(_btc, new TimeFrame(TimeSpan.FromHours(1)));
+        var sub = SubscriptionResolver.Resolve(new TimeBarSubscription(_btc.Name, _btc.Exchange, DataFeedRole.Primary, new TimeFrame(TimeSpan.FromHours(1))), _btc);
         var strategy = new PrevBarBreakoutStrategy(new PrevBarBreakoutParams
         {
             DataSubscriptions = [sub],
