@@ -1,4 +1,4 @@
-# §A + §A′ + §B — Subscription-model unification + bar capability split — Design
+# §A + §A′ + §B — Subscription-model unification (ExecutionAsset + bar callback retype) — Design
 
 **Date:** 2026-06-23
 **Scope items:** §A, §A′, §B of `docs/superpowers/specs/2026-06-23-livehost-data-plane-followups.md`
@@ -29,7 +29,7 @@ Two parallel subscription representations exist, paired positionally:
 - **MarketDataSnapshot:** delete it + its test.
 - **PrimaryAsset → `ExecutionAsset`:** rename the (asset-vs-subscription-conflating) `PrimaryAsset` to an execution-explicit `ExecutionAsset`, derived from the trade-target subscription (`Role == Primary`, else index-0 fallback); drop the stored field. `DataFeedRole.Primary` is retained as the *backtest clock* distinction. Multiple execution targets / multiple backtest clocks are deferred to Plan 5/6 (live already multi-triggers).
 - **IsExportable home (sub-decision A):** keep on the record as a `[JsonIgnore] bool`.
-- **§B shape (sub-decision B):** a separate `IBarStartStrategy` opt-in interface.
+- **§B shape (sub-decision B):** keep `IInt64BarStrategy` (concrete `Int64Bar` → concrete-typed name) carrying **both** `OnBarStart` + `OnBarComplete`; **no** `IBarStartStrategy` split and **no** `IBarStrategy` rename. §B reduces to retyping the callback's subscription parameter (a §A change); the bar interface is otherwise unchanged.
 - **Migration (sub-decision C):** direct retire of `DataSubscription` — no temporary bridge/alias.
 
 ## Target design
@@ -69,16 +69,21 @@ The live path begins honoring `DataFeedRole` (today it ignores it and blindly ta
 
 **Deliberately deferred (not §A′):** multiple execution targets is Plan 5 (account-scoped `IOrderRouter`); multiple simultaneous backtest clocks is a deeper engine change (Plan 6+). Live *already* fans events from every bar/tick subscription via `StrategyDispatch`, so multi-trigger listening (e.g. arbitrage on several tick feeds) needs no new work — what is single today is only the execution asset and the backtest clock. Keeping role-on-subscription + asset-derived means neither needs undoing when Plan 5/6 extends to multiple.
 
-### 4. §B — bar capability split
+### 4. §B — existing `IInt64BarStrategy` left as-is (only the subscription param retypes)
+
+The existing interface is kept unchanged in name and shape — the callbacks use the concrete `Int64Bar`, so `IInt64BarStrategy` is the correctly-named bar capability:
 
 ```csharp
-public interface IBarStrategy : IStrategy { void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription); }
-public interface IBarStartStrategy : IStrategy { void OnBarStart(Int64Bar bar, DataFeedSubscription subscription); }
+public interface IInt64BarStrategy : IStrategy
+{
+    void OnBarStart(Int64Bar bar, DataFeedSubscription subscription) { }  // defaulted; opt-in override
+    void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription);  // required
+}
 ```
 
-- `IInt64BarStrategy` is replaced by `IBarStrategy` (rename + drop the defaulted `OnBarStart`). `StrategyBase` implements **both** `IBarStrategy` and `IBarStartStrategy`, retaining the existing `OnBarStart` timestamp-capture machinery → `OnBarStartInner` virtual hook. This is a deliberate **behavior-preserving** choice for the engine-critical path: every `StrategyBase`-derived strategy keeps receiving `OnBarStart` exactly as today. The capability split's segregation benefit therefore lands at the *interface contract* (a strategy can implement `IBarStrategy` alone) and *live dispatch* (fans by `is IBarStartStrategy`), not in forcing `StrategyBase` strategies to opt in. (Tightening `StrategyBase` to drop `IBarStartStrategy` so bar-start becomes a true rare opt-in is a possible future change but is OUT OF SCOPE here — it would alter the mid-bar `_currentBarTimestamp` capture window and break backtest-identical behavior.)
-- `BacktestEngine` calls `OnBarComplete` directly; `OnBarStart` only when `strategy is IBarStartStrategy` (behavior-identical — `StrategyBase` implements it, so the call still happens). Live `StrategyDispatch` fans `OnBarStart` only to `is IBarStartStrategy` implementers, replacing the defaulted-method dispatch.
-- `LiveSessionConfig.Strategy`, `SessionInterest.Strategy`, `LiveSessionRegistration.Strategy` retype `IInt64BarStrategy` → `IBarStrategy`.
+- **No split, no rename.** The handover proposed splitting `OnBarStart` into a separate `IBarStartStrategy` and renaming the interface to a generic `IBarStrategy`; both are rejected. Bar-start and bar-complete are two phases of one bar-consumption capability (and `OnBarStart` matters for intra-bar execution tracking in backtest), and the concrete `Int64Bar` callbacks warrant the concrete `IInt64BarStrategy` name. `OnBarStart` stays a default-interface-method; `StrategyBase`'s `OnBarStart` → `OnBarStartInner` machinery is untouched.
+- **The capability separation the handover wanted already exists** (Plan 4): a tick-only strategy implements `ITradeTickStrategy` without `IInt64BarStrategy`. The post-effort model is `IInt64BarStrategy` (bars) + `ITradeTickStrategy` (trade ticks) + `IQuoteTickStrategy` (deferred, §C). No new interface is introduced here.
+- **Net §B change:** only the callback's *subscription* parameter retypes (`DataSubscription` → `DataFeedSubscription`), which is the §A signature change. `BacktestEngine` and live `StrategyDispatch` keep calling `OnBarStart`/`OnBarComplete` exactly as today. `LiveSessionConfig.Strategy`, `SessionInterest.Strategy`, `LiveSessionRegistration.Strategy` keep type `IInt64BarStrategy` (no retype).
 
 ### 5. `MarketDataSnapshot` — deleted
 
@@ -87,7 +92,7 @@ Delete `src/AlgoTradeForge.Domain/History/MarketDataSnapshot.cs` and `tests/Algo
 ### 6. Callback/consumer signature changes (`DataSubscription` → `DataFeedSubscription`)
 
 Direct retire, no bridge. Every signature flips type:
-- **Strategy callbacks:** `IBarStrategy.OnBarComplete`, `IBarStartStrategy.OnBarStart`, `ITradeTickStrategy.OnTradeTick`; `StrategyBase.OnBar*`/`OnBar*Inner`; `ModularStrategyBase.OnBar*Inner`/`OnContextUpdated`/`EvaluateEntry`; `StrategyContextBase.Update`/`CurrentSubscription`; `IStrategy.DataSubscriptions`/`StrategyParamsBase.DataSubscriptions` list element type.
+- **Strategy callbacks:** `IInt64BarStrategy.OnBarStart`/`OnBarComplete`, `ITradeTickStrategy.OnTradeTick`; `StrategyBase.OnBar*`/`OnBar*Inner`; `ModularStrategyBase.OnBar*Inner`/`OnContextUpdated`/`EvaluateEntry`; `StrategyContextBase.Update`/`CurrentSubscription`; `IStrategy.DataSubscriptions`/`StrategyParamsBase.DataSubscriptions` list element type.
 - **Engine/indicators:** `BacktestEngine` `OnBarStart`/`OnBarComplete`/`EmitBar` call sites + `RunState.Subscriptions`; `IIndicatorFactory.Create`, `EmittingIndicatorFactory`/`EmittingIndicatorDecorator`, `PassthroughIndicatorFactory`.
 - **Modules:** `IFilterModule.Initialize`; `AtrVolatilityFilterModule`, `RegimeFilterModule`, `RegimeDetectorModule`, `CrossAssetModule.Initialize(2 subs)`/`Update`, `ArimaForecastFilterModule` (Private).
 - **Application/optimization/persistence:** `IHistoryRepository.Load(DataSubscription…)` legacy overload (collapse onto the typed overload), `BacktestPreparer`, `OptimizationSetupHelper`/`OptimizationTaskExecutor`/`BoundedTrialQueue`/`ParameterKeyBuilder` (the `List<DataSubscription>` cases → `List<DataFeedSubscription>`).
@@ -105,7 +110,7 @@ Direct retire, no bridge. Every signature flips type:
 - **Private solution green:** Private strategies (`ZigZag*`, `AtrZigZag*`, Pairs) + their tests build against these signatures — `../AlgoTradeForge.Private/AlgoTradeForge.Full.slnx` must build and `dotnet test` green.
 - **Single resolver behavior:** a test pins that the unified resolver produces the (previously divergent) values consistently for AltBar/Tick/Side across both the backtest and live entry points.
 - **§A′:** tests that `ExecutionAsset` selection drives the execution/denomination asset (orders/scale/reconciliation): (a) `Role == Primary` chosen when present, including a config where the primary is not at index 0; (b) the **index-0 fallback** when no subscription has `Role == Primary`.
-- **§B:** dispatch tests that `OnBarStart` reaches only `IBarStartStrategy` implementers and `OnBarComplete` reaches all `IBarStrategy`.
+- **§B:** no new interface — the existing `OnBarStart`/`OnBarComplete` dispatch tests (backtest + live `StrategyDispatch`) must stay green after the subscription-param retype.
 - **Perf/alloc:** if the callback parameter-type change touches the engine hot path, run the BenchmarkDotNet harness (`run-benchmarks`) and compare Mean + Allocated against the pre-change baseline.
 - **Conventions:** Int64 money (`MoneyConvert.ToLong`/`ScaleContext`), no `Async` suffix (`[[feedback_no_async_suffix]]`), one-type-per-file, Domain zero ProjectReferences, no backward-compat shims, nothing left dead.
 
@@ -114,7 +119,7 @@ Direct retire, no bridge. Every signature flips type:
 - One subscription type end-to-end (`DataFeedSubscription`, resolved via `[JsonIgnore] Asset`); flat `DataSubscription` deleted; no compatibility shim remains.
 - `LiveSessionConfig` carries a single resolved list; the `PrimaryAsset` field is replaced by a derived `ExecutionAsset` (`Role == Primary`, index-0 fallback); `SessionInterest`/`SessionSnapshotBars` positional length-guards gone.
 - One resolver; the three live/backtest divergences eliminated.
-- `IBarStrategy` + `IBarStartStrategy`; `IInt64BarStrategy` retired; live dispatch fans `OnBarStart` by capability; backtest behavior identical.
+- `IInt64BarStrategy` kept unchanged in name and shape (only the subscription parameter retyped to `DataFeedSubscription`); no `IBarStartStrategy`/`IBarStrategy` introduced; backtest + live dispatch behavior identical.
 - `MarketDataSnapshot` + its test deleted.
 - `dotnet build AlgoTradeForge.slnx` + full test suite green; `../AlgoTradeForge.Private/AlgoTradeForge.Full.slnx` build + tests green; backtest golden unchanged; benchmarks within noise (or justified).
 
