@@ -68,17 +68,17 @@ public class TickRouterTests
     private sealed class NoopStrategy : IInt64BarStrategy
     {
         public string Version => "test";
-        public IList<DataSubscription> DataSubscriptions { get; } = [];
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = [];
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription) { }
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) { }
+        public void OnBarStart(Int64Bar bar, DataFeedSubscription subscription) { }
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription) { }
     }
 
     private static LiveSessionRegistration AltBarReg(string instrument, string feedId)
     {
         var asset = CryptoAsset.Create(instrument, "Binance", 2);
-        var resolved = new DataSubscription(asset, default, FeedKey: feedId);
+        var resolved = TestSubs.Of(asset, default, FeedKey: feedId);
         var raw = new AltBarSubscription(instrument, "Binance", DataFeedRole.Primary, feedId);
         var ch = Channel.CreateBounded<Action>(
             new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.DropNewest, SingleReader = true });

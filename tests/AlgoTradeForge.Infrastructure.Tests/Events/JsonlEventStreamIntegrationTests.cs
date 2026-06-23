@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using System.Text.Json;
 using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Application.Indicators;
@@ -55,7 +56,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         await using var sink = new JsonlFileSink(identity, options, _fs);
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
-        var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
+        var sub = TestSubs.Of(Aapl, OneMinute, IsExportable: true);
         var strategy = new BuyOnFirstBarStrategy(new BuyOnFirstBarParams { DataSubscriptions = [sub] });
 
         var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
@@ -143,7 +144,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         await using var sink = new JsonlFileSink(identity, options, _fs);
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
-        var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
+        var sub = TestSubs.Of(Aapl, OneMinute, IsExportable: true);
         var strategy = new BuyOnFirstBarStrategy(new BuyOnFirstBarParams { DataSubscriptions = [sub] });
 
         var bars = CreateSeries(Start, OneMinute, 1, startPrice: 1000);
@@ -197,7 +198,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         var bus = new EventBus(ExportMode.Backtest, [sink]);
         var indicatorFactory = new EmittingIndicatorFactory(bus);
 
-        var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
+        var sub = TestSubs.Of(Aapl, OneMinute, IsExportable: true);
         var strategy = new IndicatorUsingStrategy(new IndicatorUsingParams { DataSubscriptions = [sub] }, indicatorFactory);
 
         var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
@@ -253,7 +254,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
         await using var sink = new JsonlFileSink(identity, options, _fs);
         var bus = new EventBus(ExportMode.Backtest, [sink]);
 
-        var sub = new DataSubscription(Aapl, OneMinute, IsExportable: true);
+        var sub = TestSubs.Of(Aapl, OneMinute, IsExportable: true);
         var strategy = new IndicatorUsingStrategy(new IndicatorUsingParams { DataSubscriptions = [sub] });
 
         var bars = CreateSeries(Start, OneMinute, 3, startPrice: 1000);
@@ -316,7 +317,7 @@ public class JsonlEventStreamIntegrationTests : IDisposable
             _dzz = Indicators.Create(new DeltaZigZag(0.5, 10.0), DataSubscriptions[0]);
         }
 
-        protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
+        protected override void OnBarCompleteInner(Int64Bar bar, DataFeedSubscription subscription)
         {
             _barHistory.Add(bar);
             _dzz.Compute(_barHistory);

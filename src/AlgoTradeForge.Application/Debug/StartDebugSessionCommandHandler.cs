@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Backtests;
 using AlgoTradeForge.Application.Events;
@@ -59,7 +60,7 @@ public sealed class StartDebugSessionCommandHandler(
         var runSink = sink ?? throw new InvalidOperationException("Indicator factory callback was not invoked.");
 
         // Normalize asset name from the resolved asset (consistent with optimization path)
-        resolvedAssetName = AssetLookupName.From(setup.Strategy.DataSubscriptions[0].Asset);
+        resolvedAssetName = AssetLookupName.From(setup.Strategy.DataSubscriptions[0].RequireAsset());
         capturedIdentity = capturedIdentity! with { AssetName = resolvedAssetName };
 
         // Debug sessions must export bar/indicator events for the visual debugger.

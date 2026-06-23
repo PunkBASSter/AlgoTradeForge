@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading.Channels;
@@ -47,9 +48,9 @@ public sealed class DebugWebSocketIntegrationTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         wsSink.Attach(serverWs, cts.Token);
 
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute, IsExportable: true);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute, IsExportable: true);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 5);
         var eventBus = new EventBus(ExportMode.Backtest, [wsSink]);
@@ -129,11 +130,11 @@ public sealed class DebugWebSocketIntegrationTests
         sink1.Attach(server1, cts.Token);
         sink2.Attach(server2, cts.Token);
 
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute, IsExportable: true);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute, IsExportable: true);
         var strategy1 = Substitute.For<IInt64BarStrategy>();
-        strategy1.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy1.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
         var strategy2 = Substitute.For<IInt64BarStrategy>();
-        strategy2.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy2.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars1 = TestBars.CreateSeries(Start, OneMinute, 3);
         var bars2 = TestBars.CreateSeries(Start, OneMinute, 4);

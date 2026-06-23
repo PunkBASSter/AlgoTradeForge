@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
@@ -38,8 +39,8 @@ public sealed class PairsTradingStrategyTests
         TradeRegistry = new TradeRegistryParams { MaxConcurrentGroups = 1 },
         DataSubscriptions =
         [
-            new DataSubscription(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1))),
-            new DataSubscription(TestAssets.Aapl, new TimeFrame(TimeSpan.FromMinutes(1))),
+            TestSubs.Of(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1))),
+            TestSubs.Of(TestAssets.Aapl, new TimeFrame(TimeSpan.FromMinutes(1))),
         ],
     };
 

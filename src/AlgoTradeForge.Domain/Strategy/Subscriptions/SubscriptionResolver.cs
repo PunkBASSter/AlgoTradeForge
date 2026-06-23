@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 namespace AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 public static class SubscriptionResolver

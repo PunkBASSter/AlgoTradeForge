@@ -64,7 +64,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
         public Guid SessionId { get; }
         public IInt64BarStrategy Strategy { get; }
         public LiveOrderContext OrderContext { get; }
-        public IList<DataSubscription> Subscriptions { get; }
+        public IList<DataFeedSubscription> Subscriptions { get; }
         public IReadOnlyList<DataFeedSubscription> RawSubscriptions { get; }
         public Asset PrimaryAsset { get; }
         public string QuoteAsset { get; }
@@ -83,7 +83,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
             Guid sessionId,
             IInt64BarStrategy strategy,
             LiveOrderContext orderContext,
-            IList<DataSubscription> subscriptions,
+            IList<DataFeedSubscription> subscriptions,
             IReadOnlyList<DataFeedSubscription> rawSubscriptions,
             Asset primaryAsset,
             string quoteAsset,

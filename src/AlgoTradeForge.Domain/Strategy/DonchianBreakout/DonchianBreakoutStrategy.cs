@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
@@ -53,10 +54,10 @@ public sealed class DonchianBreakoutStrategy(
 
         // Exit config
         _maxHoldBars = Params.MaxHoldBars;
-        _barIntervalMs = (long)DataSubscriptions[0].TimeFrame.Duration.TotalMilliseconds;
+        _barIntervalMs = (long)((TimeBarSubscription)DataSubscriptions[0]).TimeFrame.Duration.TotalMilliseconds;
     }
 
-    protected override void OnContextUpdated(Int64Bar bar, DataSubscription sub)
+    protected override void OnContextUpdated(Int64Bar bar, DataFeedSubscription sub)
     {
         var atrValues = _atr.Buffers["Value"];
         if (atrValues.Count > 0)
@@ -66,7 +67,7 @@ public sealed class DonchianBreakoutStrategy(
         _regimeDetector.Update(bar, Context);
     }
 
-    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub)
+    protected override void EvaluateEntry(Int64Bar bar, DataFeedSubscription sub)
     {
         var signalStrength = GenerateSignal(bar, Context);
         if (signalStrength == 0)
@@ -89,14 +90,14 @@ public sealed class DonchianBreakoutStrategy(
         }
 
         var quantity = Params.MoneyManagement.CalculateSize(
-            entryPrice != 0 ? entryPrice : bar.Close, stopLoss, Context, sub.Asset);
-        if (quantity < sub.Asset.MinOrderQuantity)
+            entryPrice != 0 ? entryPrice : bar.Close, stopLoss, Context, sub.RequireAsset());
+        if (quantity < sub.RequireAsset().MinOrderQuantity)
             return;
 
-        CreateEntryGroup(sub.Asset, direction, orderType, entryPrice,
+        CreateEntryGroup(sub.RequireAsset(), direction, orderType, entryPrice,
             stopLoss, takeProfits, quantity, Context);
 
-        EmitSignal(bar.Timestamp, "Entry", sub.Asset.Name,
+        EmitSignal(bar.Timestamp, "Entry", sub.RequireAsset().Name,
             direction.ToString(), signalStrength,
             $"type={orderType}, sl={stopLoss}, qty={quantity}");
     }
@@ -181,7 +182,7 @@ public sealed class DonchianBreakoutStrategy(
                 tradeRegistry.LiquidateGroup(group.GroupId);
                 _trailingStopModule.Remove(group.GroupId);
                 _entryRegimes.Remove(group.GroupId);
-                EmitSignal(bar.Timestamp, "Exit", context.CurrentSubscription.Asset.Name,
+                EmitSignal(bar.Timestamp, "Exit", context.CurrentSubscription.RequireAsset().Name,
                     "Close", exitSignal, $"exit_score={exitSignal}");
             }
             else if (newStop is not null && newStop.Value != group.SlPrice)

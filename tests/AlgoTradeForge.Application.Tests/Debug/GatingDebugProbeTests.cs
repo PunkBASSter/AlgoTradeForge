@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Application.Debug;
 using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Domain.Engine;
@@ -31,9 +32,9 @@ public class GatingDebugProbeTests
     public async Task NextBar_StepsOneBarAtATime()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 5);
 
@@ -62,9 +63,9 @@ public class GatingDebugProbeTests
     public async Task Continue_RunsToCompletion()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 10);
 
@@ -83,10 +84,10 @@ public class GatingDebugProbeTests
     public async Task Next_SkipsNonExportableSubscriptions()
     {
         using var probe = new GatingDebugProbe();
-        var nonExportable = new DataSubscription(TestAssets.Aapl, OneMinute, IsExportable: false);
-        var exportable = new DataSubscription(TestAssets.BtcUsdt, OneMinute, IsExportable: true);
+        var nonExportable = TestSubs.Of(TestAssets.Aapl, OneMinute, IsExportable: false);
+        var exportable = TestSubs.Of(TestAssets.BtcUsdt, OneMinute, IsExportable: true);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { nonExportable, exportable });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { nonExportable, exportable });
 
         // Both have 1 bar at the same timestamp — 2 bars total per timestamp
         var bars0 = TestBars.CreateSeries(Start, OneMinute, 2, startPrice: 1000);
@@ -109,7 +110,7 @@ public class GatingDebugProbeTests
     public async Task NextTrade_SkipsBarsWithNoFills()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
 
         var strategy = new OrderOnBar2Strategy(sub);
 
@@ -133,9 +134,9 @@ public class GatingDebugProbeTests
     public async Task RunToSequence_RunsToTargetAndPauses()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 10);
 
@@ -156,9 +157,9 @@ public class GatingDebugProbeTests
     public async Task RunToTimestamp_RunsToTargetAndPauses()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 10);
 
@@ -178,7 +179,7 @@ public class GatingDebugProbeTests
     public async Task Pause_AfterContinue_StopsAtNextBar()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
 
         // Use a strategy that signals when it's mid-run, so we can reliably pause
         var midRunSignal = new ManualResetEventSlim(false);
@@ -228,9 +229,9 @@ public class GatingDebugProbeTests
     public async Task Dispose_UnblocksEngineThread()
     {
         var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 100);
 
@@ -250,9 +251,9 @@ public class GatingDebugProbeTests
     public async Task SendCommand_AfterRunCompletes_ReturnsLastSnapshot()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 3);
 
@@ -275,7 +276,7 @@ public class GatingDebugProbeTests
     public async Task ConcurrentSendCommand_ThrowsInvalidOperation()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
 
         // Use a strategy that blocks the engine at bar 3 so the first command stays pending
         var gate = new ManualResetEventSlim(false);
@@ -320,7 +321,7 @@ public class GatingDebugProbeTests
     public async Task SendCommand_WithCancelledToken_ThrowsTaskCanceled()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
 
         // Use a strategy that blocks so the probe stays paused
         var gate = new ManualResetEventSlim(false);
@@ -368,9 +369,9 @@ public class GatingDebugProbeTests
     public async Task RunToSequence_AlreadyPastTarget_BreaksImmediately()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 10);
 
@@ -391,16 +392,16 @@ public class GatingDebugProbeTests
         await engineTask;
     }
 
-    private sealed class OrderOnBar2Strategy(DataSubscription subscription) : IInt64BarStrategy, IOrderContextReceiver
+    private sealed class OrderOnBar2Strategy(DataFeedSubscription subscription) : IInt64BarStrategy, IOrderContextReceiver
     {
         private bool _submitted;
         private IOrderContext _orders = null!;
         public string Version => "1.0.0";
-        public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = [subscription];
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription sub)
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription sub)
         {
             if (_submitted) return;
             _submitted = true;
@@ -421,7 +422,7 @@ public class GatingDebugProbeTests
     public async Task NextType_OrdFill_StepsToFillEvent()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = new OrderOnBar2Strategy(sub);
         var sink = new NullSink();
         var bus = new EventBus(ExportMode.Backtest, [sink], probe);
@@ -447,7 +448,7 @@ public class GatingDebugProbeTests
     public async Task NextSignal_StepsToSignalEvent()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = new SignalEmittingStrategy(sub);
         var sink = new NullSink();
         var bus = new EventBus(ExportMode.Backtest, [sink], probe);
@@ -472,9 +473,9 @@ public class GatingDebugProbeTests
     public async Task BarLevel_Commands_Still_Work_With_EventBus_Wired()
     {
         using var probe = new GatingDebugProbe();
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
         var sink = new NullSink();
         var bus = new EventBus(ExportMode.Backtest, [sink], probe);
 
@@ -497,15 +498,15 @@ public class GatingDebugProbeTests
     }
 
     private sealed class CallbackStrategy(
-        DataSubscription subscription,
-        Action<Int64Bar, DataSubscription>? onBarComplete = null) : IInt64BarStrategy
+        DataFeedSubscription subscription,
+        Action<Int64Bar, DataFeedSubscription>? onBarComplete = null) : IInt64BarStrategy
     {
         public string Version => "1.0.0";
-        public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = [subscription];
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription sub)
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription sub)
             => onBarComplete?.Invoke(bar, sub);
     }
 
@@ -513,22 +514,22 @@ public class GatingDebugProbeTests
     /// Strategy that emits a signal event on bar index 1.
     /// Implements IEventBusReceiver so the engine injects the EventBus.
     /// </summary>
-    private sealed class SignalEmittingStrategy(DataSubscription subscription) : IInt64BarStrategy, IEventBusReceiver
+    private sealed class SignalEmittingStrategy(DataFeedSubscription subscription) : IInt64BarStrategy, IEventBusReceiver
     {
         private IEventBus _bus = NullEventBus.Instance;
         private int _barIndex;
 
         public string Version => "1.0.0";
-        public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = [subscription];
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription sub)
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription sub)
         {
             if (_barIndex == 1)
             {
                 _bus.Emit(new SignalEvent(
-                    bar.Timestamp, "test", "TestSignal", sub.Asset.Name, "Long", 1.0m, null));
+                    bar.Timestamp, "test", "TestSignal", sub.RequireAsset().Name, "Long", 1.0m, null));
             }
             _barIndex++;
         }

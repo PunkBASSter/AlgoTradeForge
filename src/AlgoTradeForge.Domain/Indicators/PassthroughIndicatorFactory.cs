@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Strategy;
 
 namespace AlgoTradeForge.Domain.Indicators;
@@ -13,5 +14,5 @@ public sealed class PassthroughIndicatorFactory : IIndicatorFactory
 
     public IIndicator<TInp, TBuff> Create<TInp, TBuff>(
         IIndicator<TInp, TBuff> indicator,
-        DataSubscription subscription) => indicator;
+        DataFeedSubscription subscription) => indicator;
 }

@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
 using AlgoTradeForge.Domain.Optimization.Space;
@@ -126,7 +127,7 @@ public class SpaceDescriptorBuilderTests
 public sealed class BadStrategyWithNonNumericOptimizable(BadNonNumericParams p) : StrategyBase<BadNonNumericParams>(p)
 {
     public override string Version => "1.0.0";
-    protected override void OnBarCompleteInner(Domain.History.Int64Bar bar, DataSubscription sub) { }
+    protected override void OnBarCompleteInner(Domain.History.Int64Bar bar, DataFeedSubscription sub) { }
 }
 
 public class BadNonNumericParams : StrategyParamsBase
@@ -154,7 +155,7 @@ public class TestModuleParams : ModuleParamsBase
 public sealed class StrategyWithModule(StrategyWithModuleParams p, IIndicatorFactory? indicators = null) : StrategyBase<StrategyWithModuleParams>(p, indicators)
 {
     public override string Version => "1.0.0";
-    protected override void OnBarCompleteInner(Domain.History.Int64Bar bar, DataSubscription sub) { }
+    protected override void OnBarCompleteInner(Domain.History.Int64Bar bar, DataFeedSubscription sub) { }
 }
 
 public class StrategyWithModuleParams : StrategyParamsBase

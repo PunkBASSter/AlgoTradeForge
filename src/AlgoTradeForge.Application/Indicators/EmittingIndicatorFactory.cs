@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Strategy;
@@ -13,6 +14,6 @@ public sealed class EmittingIndicatorFactory(IEventBus bus) : IIndicatorFactory
 {
     public IIndicator<TInp, TBuff> Create<TInp, TBuff>(
         IIndicator<TInp, TBuff> indicator,
-        DataSubscription subscription)
+        DataFeedSubscription subscription)
         => new EmittingIndicatorDecorator<TInp, TBuff>(indicator, bus, subscription);
 }

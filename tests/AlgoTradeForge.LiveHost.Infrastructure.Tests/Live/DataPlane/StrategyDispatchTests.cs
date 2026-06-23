@@ -18,30 +18,30 @@ public class StrategyDispatchTests
     private sealed class RecordingStrategy : IInt64BarStrategy, ITradeTickStrategy
     {
         public string Version => "test";
-        public IList<DataSubscription> DataSubscriptions { get; } = [];
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = [];
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
 
         public Int64Bar? LastBarComplete;
         public Int64Bar? LastBarStart;
         public TradeTick? LastTick;
-        public DataSubscription? LastBarCompleteSub;
-        public DataSubscription? LastBarStartSub;
-        public DataSubscription? LastTickSub;
+        public DataFeedSubscription? LastBarCompleteSub;
+        public DataFeedSubscription? LastBarStartSub;
+        public DataFeedSubscription? LastTickSub;
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription)
+        public void OnBarStart(Int64Bar bar, DataFeedSubscription subscription)
         {
             LastBarStart = bar;
             LastBarStartSub = subscription;
         }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription)
         {
             LastBarComplete = bar;
             LastBarCompleteSub = subscription;
         }
 
-        public void OnTradeTick(in TradeTick tick, DataSubscription subscription)
+        public void OnTradeTick(in TradeTick tick, DataFeedSubscription subscription)
         {
             LastTick = tick;
             LastTickSub = subscription;
@@ -53,17 +53,17 @@ public class StrategyDispatchTests
     private sealed class NonTickStrategy : IInt64BarStrategy
     {
         public string Version => "test";
-        public IList<DataSubscription> DataSubscriptions { get; } = [];
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = [];
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) { }
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription) { }
     }
 
     private static (LiveSessionRegistration reg, Channel<Action> ch, RecordingStrategy strat) FakeTimeBarReg(
         string instrument, TimeFrame tf)
     {
         var asset = CryptoAsset.Create(instrument, "Binance", 2);
-        var resolved = new DataSubscription(asset, tf);
+        var resolved = TestSubs.Of(asset, tf);
         var raw = new TimeBarSubscription(instrument, "Binance", DataFeedRole.Primary, tf);
         var ch = Channel.CreateBounded<Action>(
             new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.DropNewest, SingleReader = true });
@@ -77,7 +77,7 @@ public class StrategyDispatchTests
         string instrument)
     {
         var asset = CryptoAsset.Create(instrument, "Binance", 2);
-        var resolved = new DataSubscription(asset, default, FeedKey: "tick");
+        var resolved = TestSubs.Of(asset, default, FeedKey: "tick");
         var raw = new TickSubscription(instrument, "Binance", DataFeedRole.Primary);
         var ch = Channel.CreateBounded<Action>(
             new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.DropNewest, SingleReader = true });
@@ -91,7 +91,7 @@ public class StrategyDispatchTests
     private static (LiveSessionRegistration reg, Channel<Action> ch) FakeNonTickCapableTickReg(string instrument)
     {
         var asset = CryptoAsset.Create(instrument, "Binance", 2);
-        var resolved = new DataSubscription(asset, default, FeedKey: "tick");
+        var resolved = TestSubs.Of(asset, default, FeedKey: "tick");
         var raw = new TickSubscription(instrument, "Binance", DataFeedRole.Primary);
         var ch = Channel.CreateBounded<Action>(
             new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.DropNewest, SingleReader = true });
@@ -118,7 +118,7 @@ public class StrategyDispatchTests
         bAction!();
         Assert.Equal(105, stratA.LastBarComplete!.Value.Close);
         Assert.Equal(105, stratB.LastBarComplete!.Value.Close);
-        Assert.Equal("BTCUSDT", stratA.LastBarCompleteSub!.Asset.Name);
+        Assert.Equal("BTCUSDT", stratA.LastBarCompleteSub!.RequireAsset().Name);
     }
 
     [Fact]
@@ -181,7 +181,7 @@ public class StrategyDispatchTests
         Assert.True(tickCh.Reader.TryRead(out var action));
         action!();
         Assert.Equal(99, tickStrat.LastTick!.Value.Sequence);
-        Assert.Equal("tick", tickStrat.LastTickSub!.FeedKey);
+        Assert.Equal("ticks", tickStrat.LastTickSub!.FeedKey());
 
         // Bar-only subscription (no TickSubscription) gets nothing.
         Assert.False(barCh.Reader.TryRead(out _));

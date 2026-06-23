@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Strategy;
@@ -10,8 +11,8 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules.Filter;
 
 public sealed class AtrVolatilityFilterModuleTests
 {
-    private static readonly DataSubscription DefaultSubscription =
-        new(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)));
+    private static readonly DataFeedSubscription DefaultSubscription =
+        TestSubs.Of(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(1)));
 
     private static readonly AtrVolatilityFilterParams DefaultParams = new()
     {

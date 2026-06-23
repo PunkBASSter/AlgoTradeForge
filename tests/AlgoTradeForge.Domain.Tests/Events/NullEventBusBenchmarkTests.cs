@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using System.Diagnostics;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
@@ -23,7 +24,7 @@ public class NullEventBusBenchmarkTests
     {
         // Arrange: generate 500K bars
         var series = Generate500KBars();
-        var sub = new DataSubscription(TestAssets.Aapl, new TimeFrame(TimeSpan.FromMinutes(1)));
+        var sub = TestSubs.Of(TestAssets.Aapl, new TimeFrame(TimeSpan.FromMinutes(1)));
         var strategy = new NoOpStrategy(sub);
         var engine = new BacktestEngine(new BarMatcher(), new OrderValidator());
         var options = new BacktestOptions
@@ -65,14 +66,14 @@ public class NullEventBusBenchmarkTests
         return series;
     }
 
-    private sealed class NoOpStrategy(DataSubscription subscription) : IInt64BarStrategy
+    private sealed class NoOpStrategy(DataFeedSubscription subscription) : IInt64BarStrategy
     {
         public string Version => "1.0.0";
-        public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = [subscription];
 
         public void OnInit() { }
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription) { }
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) { }
+        public void OnBarStart(Int64Bar bar, DataFeedSubscription subscription) { }
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription) { }
         public void OnTrade(Fill fill, Order order) { }
     }
 }

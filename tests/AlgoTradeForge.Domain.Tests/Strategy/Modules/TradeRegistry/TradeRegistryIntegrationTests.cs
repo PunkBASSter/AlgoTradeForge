@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
@@ -31,12 +32,12 @@ public class TradeRegistryIntegrationTests
     private sealed class TestStrategy : IInt64BarStrategy, IEventBusReceiver, IOrderContextReceiver
     {
         private readonly TradeRegistryModule _registry;
-        private readonly Action<Int64Bar, DataSubscription, TradeRegistryModule, int>? _onBar;
+        private readonly Action<Int64Bar, DataFeedSubscription, TradeRegistryModule, int>? _onBar;
         private int _barIndex;
 
         public TestStrategy(
             TradeRegistryModule registry,
-            Action<Int64Bar, DataSubscription, TradeRegistryModule, int>? onBar = null)
+            Action<Int64Bar, DataFeedSubscription, TradeRegistryModule, int>? onBar = null)
         {
             _registry = registry;
             _onBar = onBar;
@@ -48,7 +49,7 @@ public class TradeRegistryIntegrationTests
         private DateTimeOffset _simulationTime = DateTimeOffset.MinValue;
 
         public string Version => "1.0";
-        public IList<DataSubscription> DataSubscriptions { get; init; } = new List<DataSubscription>();
+        public IList<DataFeedSubscription> DataSubscriptions { get; init; } = new List<DataFeedSubscription>();
         public void OnInit() { }
 
         public void SetEventBus(IEventBus bus) => _registry.SetEventBus(bus);
@@ -61,7 +62,7 @@ public class TradeRegistryIntegrationTests
             _registry.OnFill(fill, order);
         }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription)
         {
             _simulationTime = DateTimeOffset.FromUnixTimeMilliseconds(bar.TimestampMs);
             _onBar?.Invoke(bar, subscription, _registry, _barIndex);
@@ -75,7 +76,7 @@ public class TradeRegistryIntegrationTests
     public void EntryThenSlHit()
     {
         var registry = new TradeRegistryModule(new TradeRegistryParams());
-        var sub = new DataSubscription(TestAsset, OneMinute);
+        var sub = TestSubs.Of(TestAsset, OneMinute);
         OrderGroup? group = null;
 
         var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
@@ -113,7 +114,7 @@ public class TradeRegistryIntegrationTests
     public void EntryThenTpHit()
     {
         var registry = new TradeRegistryModule(new TradeRegistryParams());
-        var sub = new DataSubscription(TestAsset, OneMinute);
+        var sub = TestSubs.Of(TestAsset, OneMinute);
         OrderGroup? group = null;
 
         var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
@@ -155,7 +156,7 @@ public class TradeRegistryIntegrationTests
     public void SameBarSlAndTpReachable_SlWins()
     {
         var registry = new TradeRegistryModule(new TradeRegistryParams());
-        var sub = new DataSubscription(TestAsset, OneMinute);
+        var sub = TestSubs.Of(TestAsset, OneMinute);
         OrderGroup? group = null;
 
         var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
@@ -191,7 +192,7 @@ public class TradeRegistryIntegrationTests
     public void MultiTp_PartialClose()
     {
         var registry = new TradeRegistryModule(new TradeRegistryParams());
-        var sub = new DataSubscription(TestAsset, OneMinute);
+        var sub = TestSubs.Of(TestAsset, OneMinute);
         OrderGroup? group = null;
 
         var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
@@ -233,7 +234,7 @@ public class TradeRegistryIntegrationTests
     public void ConcurrentGroups_IndependentLifecycles()
     {
         var registry = new TradeRegistryModule(new TradeRegistryParams());
-        var sub = new DataSubscription(TestAsset, OneMinute);
+        var sub = TestSubs.Of(TestAsset, OneMinute);
         OrderGroup? group1 = null, group2 = null;
 
         var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
@@ -274,7 +275,7 @@ public class TradeRegistryIntegrationTests
     public void TrailingStop_UpdateSlOnEachBar()
     {
         var registry = new TradeRegistryModule(new TradeRegistryParams());
-        var sub = new DataSubscription(TestAsset, OneMinute);
+        var sub = TestSubs.Of(TestAsset, OneMinute);
         OrderGroup? group = null;
         long highestClose = 0;
 
@@ -324,7 +325,7 @@ public class TradeRegistryIntegrationTests
     public void EventsEmitted_AllTransitions()
     {
         var registry = new TradeRegistryModule(new TradeRegistryParams());
-        var sub = new DataSubscription(TestAsset, OneMinute);
+        var sub = TestSubs.Of(TestAsset, OneMinute);
         var events = new List<OrderGroupEvent>();
         var bus = new CapturingEventBus(events);
 
@@ -365,7 +366,7 @@ public class TradeRegistryIntegrationTests
     public void MultiTp_SlHit_CancelsBothTps()
     {
         var registry = new TradeRegistryModule(new TradeRegistryParams());
-        var sub = new DataSubscription(TestAsset, OneMinute);
+        var sub = TestSubs.Of(TestAsset, OneMinute);
         OrderGroup? group = null;
 
         var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
@@ -406,7 +407,7 @@ public class TradeRegistryIntegrationTests
     public void ConcurrentLimitEntries_OneFills_OtherPending()
     {
         var registry = new TradeRegistryModule(new TradeRegistryParams());
-        var sub = new DataSubscription(TestAsset, OneMinute);
+        var sub = TestSubs.Of(TestAsset, OneMinute);
         OrderGroup? groupA = null, groupB = null;
 
         var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
@@ -451,7 +452,7 @@ public class TradeRegistryIntegrationTests
     public void ConcurrentGroups_SlOnOne_TpOnAnother()
     {
         var registry = new TradeRegistryModule(new TradeRegistryParams());
-        var sub = new DataSubscription(TestAsset, OneMinute);
+        var sub = TestSubs.Of(TestAsset, OneMinute);
         OrderGroup? groupA = null, groupB = null;
 
         var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
@@ -502,7 +503,7 @@ public class TradeRegistryIntegrationTests
     public void LiquidateGroup_Integration_MarketCloseNextBar()
     {
         var registry = new TradeRegistryModule(new TradeRegistryParams());
-        var sub = new DataSubscription(TestAsset, OneMinute);
+        var sub = TestSubs.Of(TestAsset, OneMinute);
         OrderGroup? group = null;
 
         var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>
@@ -547,7 +548,7 @@ public class TradeRegistryIntegrationTests
     public void LiquidateGroup_ConcurrentGroups_OnlyTargetLiquidated()
     {
         var registry = new TradeRegistryModule(new TradeRegistryParams());
-        var sub = new DataSubscription(TestAsset, OneMinute);
+        var sub = TestSubs.Of(TestAsset, OneMinute);
         OrderGroup? groupA = null, groupB = null;
 
         var strategy = new TestStrategy(registry, onBar: (bar, sub, reg, i) =>

@@ -21,7 +21,7 @@ public class SessionSnapshotBarsTests
         {
             new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, OneMin),
         };
-        var resolved = new[] { new DataSubscription(Btc, OneMin) };
+        var resolved = new[] { TestSubs.Of(Btc, OneMin) };
         var bars = new[] { Bar(1000, 100), Bar(2000, 110) };
 
         var result = SessionSnapshotBars.Build(raw, resolved, (_, _) => bars);
@@ -40,7 +40,7 @@ public class SessionSnapshotBarsTests
         {
             new TickSubscription("BTCUSDT", "Binance", DataFeedRole.Primary),
         };
-        var resolved = new[] { new DataSubscription(Btc, default) };
+        var resolved = new[] { TestSubs.Of(Btc, default) };
 
         var result = SessionSnapshotBars.Build(raw, resolved, (_, _) => throw new Exception("tick must not query"));
 
@@ -58,8 +58,8 @@ public class SessionSnapshotBarsTests
         };
         var resolved = new[]
         {
-            new DataSubscription(Btc, OneMin),
-            new DataSubscription(Btc, default, FeedKey: "EqV_1m_500"),
+            TestSubs.Of(Btc, OneMin),
+            TestSubs.Of(Btc, default, FeedKey: "EqV_1m_500"),
         };
 
         var primaryBars = new[] { Bar(1000, 100) };
@@ -82,7 +82,7 @@ public class SessionSnapshotBarsTests
         {
             new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, OneMin),
         };
-        var resolved = Array.Empty<DataSubscription>();
+        var resolved = Array.Empty<DataFeedSubscription>();
 
         Assert.Throws<InvalidOperationException>(() =>
             SessionSnapshotBars.Build(raw, resolved, (_, _) => []));

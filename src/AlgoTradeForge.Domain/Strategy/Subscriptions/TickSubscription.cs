@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 namespace AlgoTradeForge.Domain.Strategy.Subscriptions;
 
 /// <summary>Tick subscription. The type alone identifies the storage path; no further payload.</summary>

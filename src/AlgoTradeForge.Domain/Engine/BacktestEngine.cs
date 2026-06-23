@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using System.Diagnostics;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
@@ -111,7 +112,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
                 DateTimeOffset.UtcNow,
                 Source,
                 strategy.GetType().Name,
-                subscriptions[0].Asset.Name,
+                subscriptions[0].RequireAsset().Name,
                 options.InitialCash,
                 options.StartTime,
                 options.EndTime,
@@ -225,14 +226,14 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
             do
             {
                 fillsBefore = state.Fills.Count;
-                ProcessPendingOrders(state, subscription.Asset, bar, barTimestamp);
+                ProcessPendingOrders(state, subscription.RequireAsset(), bar, barTimestamp);
                 if (state.Fills.Count > fillsBefore)
                     AssignOrderIds(state, barTimestamp);
             }
             while (state.Fills.Count > fillsBefore && ++pass < 4);
 
             // Evaluate SL/TP for active positions using attached levels (non-module path)
-            EvaluateSlTpPositions(state, subscription.Asset, bar, barTimestamp);
+            EvaluateSlTpPositions(state, subscription.RequireAsset(), bar, barTimestamp);
 
             // Deliver completed bar to strategy
             state.Strategy.OnBarComplete(bar, subscription);
@@ -247,13 +248,13 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
             do
             {
                 fillsBefore = state.Fills.Count;
-                ProcessPendingOrders(state, subscription.Asset, bar, barTimestamp, skipMarketOrders: true);
+                ProcessPendingOrders(state, subscription.RequireAsset(), bar, barTimestamp, skipMarketOrders: true);
                 if (state.Fills.Count > fillsBefore)
                     AssignOrderIds(state, barTimestamp);
             }
             while (state.Fills.Count > fillsBefore && ++pass < 4);
 
-            state.LastPrices[subscription.Asset.Name] = bar.Close;
+            state.LastPrices[subscription.RequireAsset().Name] = bar.Close;
             state.Cursors[s]++;
             state.TotalBarsDelivered++;
             state.OnBarsProcessed?.Invoke(state.TotalBarsDelivered);
@@ -486,7 +487,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
         }
     }
 
-    private static void EmitBar(RunState state, Int64Bar bar, DataSubscription subscription)
+    private static void EmitBar(RunState state, Int64Bar bar, DataFeedSubscription subscription)
     {
         if (!state.BusActive)
             return;
@@ -494,8 +495,8 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
         state.Bus.Emit(new BarEvent(
             bar.Timestamp,
             Source,
-            subscription.Asset.Name,
-            TimeFrameFormatter.Format(subscription.TimeFrame),
+            subscription.RequireAsset().Name,
+            subscription is TimeBarSubscription tb ? TimeFrameFormatter.Format(tb.TimeFrame) : subscription.FeedKey(),
             bar.Open,
             bar.High,
             bar.Low,
@@ -597,7 +598,7 @@ public sealed class BacktestEngine(IBarMatcher barMatcher, IOrderValidator order
         public required bool BusActive;
         public required IInt64BarStrategy Strategy;
         public required BacktestOptions Options;
-        public required IList<DataSubscription> Subscriptions;
+        public required IList<DataFeedSubscription> Subscriptions;
         public required TimeSeries<Int64Bar>[] Series;
 
         // Aux feed state (null when no aux feeds supplied)

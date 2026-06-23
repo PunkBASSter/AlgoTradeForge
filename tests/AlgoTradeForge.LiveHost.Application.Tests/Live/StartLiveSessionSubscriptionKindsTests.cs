@@ -28,7 +28,7 @@ public class StartLiveSessionSubscriptionKindsTests
     {
         var strategy = Substitute.For<IInt64BarStrategy>();
         strategy.Version.Returns("1.0");
-        strategy.DataSubscriptions.Returns(new List<DataSubscription>());
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription>());
 
         var strategyFactory = Substitute.For<IStrategyFactory>();
         strategyFactory.Create(Arg.Any<string>(), Arg.Any<IIndicatorFactory>(), Arg.Any<IDictionary<string, object>?>())
@@ -70,7 +70,7 @@ public class StartLiveSessionSubscriptionKindsTests
         Assert.NotEqual(Guid.Empty, result.SessionId);
         Assert.NotNull(h.Captured);
         var resolved = Assert.Single(h.Captured!.Subscriptions);
-        Assert.Equal("tick", resolved.FeedKey);
+        Assert.Equal("ticks", resolved.FeedKey());
         Assert.Equal(BtcUsdt, resolved.Asset);
     }
 
@@ -91,7 +91,7 @@ public class StartLiveSessionSubscriptionKindsTests
         Assert.NotEqual(Guid.Empty, result.SessionId);
         Assert.NotNull(h.Captured);
         var resolved = Assert.Single(h.Captured!.Subscriptions);
-        Assert.Equal("EqV_1m_500", resolved.FeedKey);
+        Assert.Equal("EqV_1m_500", resolved.FeedKey());
     }
 
     [Fact]
@@ -120,9 +120,9 @@ public class StartLiveSessionSubscriptionKindsTests
         for (var i = 0; i < raw.Length; i++)
             Assert.Same(raw[i], h.Captured.RawSubscriptions[i]);
 
-        Assert.Equal(TimeFrame.Parse("1m"), h.Captured.Subscriptions[0].TimeFrame);
-        Assert.Equal("EqV_1m_500", h.Captured.Subscriptions[1].FeedKey);
-        Assert.Equal("tick", h.Captured.Subscriptions[2].FeedKey);
+        Assert.Equal(TimeFrame.Parse("1m"), ((TimeBarSubscription)h.Captured.Subscriptions[0]).TimeFrame);
+        Assert.Equal("EqV_1m_500", h.Captured.Subscriptions[1].FeedKey());
+        Assert.Equal("ticks", h.Captured.Subscriptions[2].FeedKey());
     }
 
     [Fact]

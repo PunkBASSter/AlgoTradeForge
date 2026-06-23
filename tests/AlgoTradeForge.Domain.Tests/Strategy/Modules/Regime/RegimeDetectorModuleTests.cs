@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Strategy;
@@ -11,12 +12,12 @@ namespace AlgoTradeForge.Domain.Tests.Strategy.Modules.Regime;
 
 public sealed class RegimeDetectorModuleTests
 {
-    private static readonly DataSubscription DefaultSub = new(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromHours(1)));
+    private static readonly DataFeedSubscription DefaultSub = TestSubs.Of(TestAssets.BtcUsdt, new TimeFrame(TimeSpan.FromHours(1)));
 
     private static IIndicatorFactory CreateMockFactory()
     {
         var factory = Substitute.For<IIndicatorFactory>();
-        factory.Create(Arg.Any<IIndicator<Int64Bar, double>>(), Arg.Any<DataSubscription>())
+        factory.Create(Arg.Any<IIndicator<Int64Bar, double>>(), Arg.Any<DataFeedSubscription>())
             .Returns(callInfo => callInfo.ArgAt<IIndicator<Int64Bar, double>>(0));
         return factory;
     }

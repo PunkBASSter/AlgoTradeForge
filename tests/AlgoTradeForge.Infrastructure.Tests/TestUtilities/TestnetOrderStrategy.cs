@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using System.Collections.Concurrent;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
@@ -14,7 +15,7 @@ public sealed class TestnetOrderStrategy(TestnetOrderStrategyParams p)
 
     public new IOrderContext Orders => base.Orders;
 
-    public ConcurrentBag<(Int64Bar Bar, DataSubscription Subscription)> ReceivedBars { get; } = [];
+    public ConcurrentBag<(Int64Bar Bar, DataFeedSubscription Subscription)> ReceivedBars { get; } = [];
     public ConcurrentBag<Fill> ReceivedFills { get; } = [];
 
     public Action? OnNextBar;
@@ -24,7 +25,7 @@ public sealed class TestnetOrderStrategy(TestnetOrderStrategyParams p)
     public void ResetFillTcs() => NextFillTcs = new TaskCompletionSource<Fill>();
     public void ResetBarTcs() => NextBarTcs = new TaskCompletionSource<Int64Bar>();
 
-    protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
+    protected override void OnBarCompleteInner(Int64Bar bar, DataFeedSubscription subscription)
     {
         ReceivedBars.Add((bar, subscription));
         NextBarTcs.TrySetResult(bar);

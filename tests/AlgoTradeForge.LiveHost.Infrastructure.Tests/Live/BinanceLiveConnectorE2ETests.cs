@@ -36,7 +36,7 @@ public sealed class TradeRegistryTestStrategy(TradeRegistryTestParams p)
     public void ResetFillTcs() => NextFillTcs = new TaskCompletionSource<Fill>();
     public void ResetBarTcs() => NextBarTcs = new TaskCompletionSource<Int64Bar>();
 
-    protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
+    protected override void OnBarCompleteInner(Int64Bar bar, DataFeedSubscription subscription)
     {
         NextBarTcs.TrySetResult(bar);
 
@@ -108,7 +108,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         {
             SessionId = _sessionIdA,
             Strategy = _strategyA,
-            Subscriptions = [new DataSubscription(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
+            Subscriptions = [TestSubs.Of(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
             RawSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
             PrimaryAsset = _asset,
             InitialCash = initialCash,
@@ -122,7 +122,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         {
             SessionId = _sessionIdB,
             Strategy = _strategyB,
-            Subscriptions = [new DataSubscription(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
+            Subscriptions = [TestSubs.Of(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
             RawSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
             PrimaryAsset = _asset,
             InitialCash = initialCash,

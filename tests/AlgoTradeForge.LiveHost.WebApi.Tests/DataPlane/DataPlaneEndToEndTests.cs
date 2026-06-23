@@ -102,13 +102,13 @@ public sealed class DataPlaneEndToEndTests : IDisposable
         public string Version => "1.0";
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
-        public IList<DataSubscription> DataSubscriptions { get; } = [];
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = [];
 
         public List<Int64Bar> CompletedBars { get; } = [];
         public List<TradeTick> Ticks { get; } = [];
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) => CompletedBars.Add(bar);
-        public void OnTradeTick(in TradeTick tick, DataSubscription subscription) => Ticks.Add(tick);
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription) => CompletedBars.Add(bar);
+        public void OnTradeTick(in TradeTick tick, DataFeedSubscription subscription) => Ticks.Add(tick);
     }
 
     // A per-session market-data queue + a single-reader drain that invokes queued actions —
@@ -132,7 +132,7 @@ public sealed class DataPlaneEndToEndTests : IDisposable
                 action();
         });
 
-        var resolved = new DataSubscription(Asset, TimeFrame.Parse("1m"), FeedKey: "live");
+        var resolved = TestSubs.Of(Asset, TimeFrame.Parse("1m"), FeedKey: "live");
         var registration = new LiveSessionRegistration(
             SessionId: Guid.NewGuid(),
             Strategy: strategy,

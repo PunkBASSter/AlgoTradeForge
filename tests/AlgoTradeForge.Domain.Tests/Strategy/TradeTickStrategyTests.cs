@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
@@ -10,21 +11,21 @@ public class TradeTickStrategyTests
     private sealed class BarOnlyStrategy : IInt64BarStrategy
     {
         public string Version => "1";
-        public IList<DataSubscription> DataSubscriptions { get; } = new List<DataSubscription>();
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = new List<DataFeedSubscription>();
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) { }
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription) { }
     }
 
     private sealed class TickStrategy : IInt64BarStrategy, ITradeTickStrategy
     {
         public string Version => "1";
-        public IList<DataSubscription> DataSubscriptions { get; } = new List<DataSubscription>();
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = new List<DataFeedSubscription>();
         public TradeTick? Last;
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) { }
-        public void OnTradeTick(in TradeTick tick, DataSubscription subscription) => Last = tick;
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription) { }
+        public void OnTradeTick(in TradeTick tick, DataFeedSubscription subscription) => Last = tick;
     }
 
     [Fact]
@@ -41,7 +42,7 @@ public class TradeTickStrategyTests
         Assert.True(s is ITradeTickStrategy);
 
         var tick = new TradeTick(1, 100, 5, 7, AggressorSide.Buy);
-        ((ITradeTickStrategy)s).OnTradeTick(in tick, new DataSubscription(null!, default));
+        ((ITradeTickStrategy)s).OnTradeTick(in tick, TestSubs.Of(null!, default));
         Assert.Equal(7, s.Last!.Value.Sequence);
     }
 }

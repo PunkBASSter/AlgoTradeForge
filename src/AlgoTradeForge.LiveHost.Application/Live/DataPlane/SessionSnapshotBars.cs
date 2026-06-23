@@ -16,7 +16,7 @@ public static class SessionSnapshotBars
     // recentBars((instrument, spec)) returns the source's Recent (empty when none).
     public static Result Build(
         IReadOnlyList<DataFeedSubscription> raw,
-        IReadOnlyList<DataSubscription> resolved,
+        IReadOnlyList<DataFeedSubscription> resolved, //TODO: can one be removed?
         Func<string, BarSpecKey, IReadOnlyList<Int64Bar>> recentBars)
     {
         if (raw.Count != resolved.Count)

@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
@@ -27,9 +28,9 @@ public class DebugProbeTests
     [Fact]
     public void Run_WithoutProbe_DoesNotThrow()
     {
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 3);
 
@@ -50,9 +51,9 @@ public class DebugProbeTests
         var probe = Substitute.For<IDebugProbe>();
         probe.IsActive.Returns(false);
 
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 5);
 
@@ -69,9 +70,9 @@ public class DebugProbeTests
         var calls = new List<string>();
         var probe = new RecordingDebugProbe(calls);
 
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 3);
 
@@ -91,9 +92,9 @@ public class DebugProbeTests
         var snapshots = new List<DebugSnapshot>();
         var probe = new RecordingDebugProbe(snapshots: snapshots);
 
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 5);
 
@@ -110,9 +111,9 @@ public class DebugProbeTests
         var snapshots = new List<DebugSnapshot>();
         var probe = new RecordingDebugProbe(snapshots: snapshots);
 
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 2);
 
@@ -128,9 +129,9 @@ public class DebugProbeTests
         var snapshots = new List<DebugSnapshot>();
         var probe = new RecordingDebugProbe(snapshots: snapshots);
 
-        var exportable = new DataSubscription(TestAssets.Aapl, OneMinute, IsExportable: true);
+        var exportable = TestSubs.Of(TestAssets.Aapl, OneMinute, IsExportable: true);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { exportable });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { exportable });
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 1);
 
@@ -146,7 +147,7 @@ public class DebugProbeTests
         var snapshots = new List<DebugSnapshot>();
         var probe = new RecordingDebugProbe(snapshots: snapshots);
 
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var submitted = false;
 
         var strategy = new SimpleOrderStrategy(sub, (_, _, orders) =>
@@ -179,10 +180,10 @@ public class DebugProbeTests
         var snapshots = new List<DebugSnapshot>();
         var probe = new RecordingDebugProbe(snapshots: snapshots);
 
-        var sub0 = new DataSubscription(TestAssets.Aapl, OneMinute);
-        var sub1 = new DataSubscription(TestAssets.BtcUsdt, OneMinute);
+        var sub0 = TestSubs.Of(TestAssets.Aapl, OneMinute);
+        var sub1 = TestSubs.Of(TestAssets.BtcUsdt, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub0, sub1 });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub0, sub1 });
 
         var bars0 = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 1000);
         var bars1 = TestBars.CreateSeries(Start, OneMinute, 1, startPrice: 5000);
@@ -201,10 +202,10 @@ public class DebugProbeTests
         var calls = new List<string>();
         var probe = new RecordingDebugProbe(calls);
 
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(_ => throw new InvalidOperationException("Strategy error"));
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 1);
@@ -221,11 +222,11 @@ public class DebugProbeTests
         var calls = new List<string>();
         var probe = new RecordingDebugProbe(calls);
 
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         using var cts = new CancellationTokenSource();
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
-        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataSubscription>()))
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
+        strategy.When(s => s.OnBarComplete(Arg.Any<Int64Bar>(), Arg.Any<DataFeedSubscription>()))
             .Do(_ => cts.Cancel());
 
         var bars = TestBars.CreateSeries(Start, OneMinute, 2);
@@ -242,9 +243,9 @@ public class DebugProbeTests
         var calls = new List<string>();
         var probe = new RecordingDebugProbe(calls);
 
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var strategy = Substitute.For<IInt64BarStrategy>();
-        strategy.DataSubscriptions.Returns(new List<DataSubscription> { sub });
+        strategy.DataSubscriptions.Returns(new List<DataFeedSubscription> { sub });
 
         var bars = new TimeSeries<Int64Bar>();
 
@@ -271,19 +272,19 @@ public class DebugProbeTests
     }
 
     private sealed class SimpleOrderStrategy(
-        DataSubscription subscription,
-        Action<Int64Bar, DataSubscription, IOrderContext> onBarComplete) : IInt64BarStrategy, IOrderContextReceiver
+        DataFeedSubscription subscription,
+        Action<Int64Bar, DataFeedSubscription, IOrderContext> onBarComplete) : IInt64BarStrategy, IOrderContextReceiver
     {
         private IOrderContext _orders = null!;
 
         public string Version => "1.0.0";
-        public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = [subscription];
 
         public void SetOrderContext(IOrderContext context) => _orders = context;
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription)
             => onBarComplete(bar, subscription, _orders);
     }
 }

@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
@@ -275,13 +276,13 @@ public class CryptoFuturesIntegrationTests
             _asset = asset;
             _buyOnBar = buyOnBar;
             _sellOnBar = sellOnBar;
-            DataSubscriptions.Add(new DataSubscription(asset, new TimeFrame(TimeSpan.FromMinutes(1))));
+            DataSubscriptions.Add(TestSubs.Of(asset, new TimeFrame(TimeSpan.FromMinutes(1))));
         }
 
         public string Version => "1.0";
-        public IList<DataSubscription> DataSubscriptions { get; } = new List<DataSubscription>();
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = new List<DataFeedSubscription>();
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription)
+        public void OnBarStart(Int64Bar bar, DataFeedSubscription subscription)
         {
             if (_barIndex == _buyOnBar)
                 _orders.Submit(new Order { Id = 0, Asset = _asset, Side = OrderSide.Buy, Type = OrderType.Market, Quantity = 1m });
@@ -289,7 +290,7 @@ public class CryptoFuturesIntegrationTests
                 _orders.Submit(new Order { Id = 0, Asset = _asset, Side = OrderSide.Sell, Type = OrderType.Market, Quantity = 1m });
         }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) =>
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription) =>
             _barIndex++;
 
         public void OnInit() { }
@@ -313,14 +314,14 @@ public class CryptoFuturesIntegrationTests
         {
             _spotAsset = spotAsset;
             _perpAsset = perpAsset;
-            DataSubscriptions.Add(new DataSubscription(spotAsset, new TimeFrame(TimeSpan.FromMinutes(1))));
-            DataSubscriptions.Add(new DataSubscription(perpAsset, new TimeFrame(TimeSpan.FromMinutes(1))));
+            DataSubscriptions.Add(TestSubs.Of(spotAsset, new TimeFrame(TimeSpan.FromMinutes(1))));
+            DataSubscriptions.Add(TestSubs.Of(perpAsset, new TimeFrame(TimeSpan.FromMinutes(1))));
         }
 
         public string Version => "1.0";
-        public IList<DataSubscription> DataSubscriptions { get; } = new List<DataSubscription>();
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = new List<DataFeedSubscription>();
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription)
+        public void OnBarStart(Int64Bar bar, DataFeedSubscription subscription)
         {
             if (_ordered) return;
             _orders.Submit(new Order { Id = 0, Asset = _spotAsset, Side = OrderSide.Buy, Type = OrderType.Market, Quantity = 1m });
@@ -328,7 +329,7 @@ public class CryptoFuturesIntegrationTests
             _ordered = true;
         }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription) { }
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription) { }
         public void OnInit() { }
         public void OnTrade(Fill fill, Order order) { }
         void IFeedContextReceiver.SetFeedContext(IFeedContext context) { }
@@ -348,14 +349,14 @@ public class CryptoFuturesIntegrationTests
         public FeedQueryStrategy(Asset asset, Action<IFeedContext, int> onBar)
         {
             _onBar = onBar;
-            DataSubscriptions.Add(new DataSubscription(asset, new TimeFrame(TimeSpan.FromMinutes(1))));
+            DataSubscriptions.Add(TestSubs.Of(asset, new TimeFrame(TimeSpan.FromMinutes(1))));
         }
 
         public string Version => "1.0";
-        public IList<DataSubscription> DataSubscriptions { get; } = new List<DataSubscription>();
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = new List<DataFeedSubscription>();
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription) { }
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+        public void OnBarStart(Int64Bar bar, DataFeedSubscription subscription) { }
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription)
         {
             _onBar(_feeds, _barIndex);
             _barIndex++;

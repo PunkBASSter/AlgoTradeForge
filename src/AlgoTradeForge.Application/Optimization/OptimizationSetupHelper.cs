@@ -33,7 +33,7 @@ public sealed class OptimizationSetupHelper(
     /// Resolves subscription axis groups into domain objects and pre-loads all market data.
     /// Each group is a list of subscriptions that will be used together in a single trial.
     /// </summary>
-    public async Task<(List<List<DataSubscription>> AxisSubscriptionGroups,
+    public async Task<(List<List<DataFeedSubscription>> AxisSubscriptionGroups,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> DataCache)>
         ResolveSubscriptionsAsync(
             List<List<DataFeedSubscription>>? axisGroups,
@@ -43,12 +43,12 @@ public sealed class OptimizationSetupHelper(
         if (axisGroups is not { Count: > 0 })
             throw new ArgumentException("At least one SubscriptionAxis group must be provided.");
 
-        var axisSubscriptionGroups = new List<List<DataSubscription>>();
+        var axisSubscriptionGroups = new List<List<DataFeedSubscription>>();
         var dataCache = new Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)>();
 
         foreach (var group in axisGroups)
         {
-            var resolvedGroup = new List<DataSubscription>();
+            var resolvedGroup = new List<DataFeedSubscription>();
             foreach (var sub in group)
                 await ResolveAndCacheAsync(sub, resolvedGroup, dataCache, fromDate, toDate, ct);
             axisSubscriptionGroups.Add(resolvedGroup);
@@ -63,7 +63,7 @@ public sealed class OptimizationSetupHelper(
     public static void ValidateSubscriptionCounts(
         string strategyName,
         int requiredSubscriptionCount,
-        List<List<DataSubscription>> axisSubscriptionGroups)
+        List<List<DataFeedSubscription>> axisSubscriptionGroups)
     {
         for (var i = 0; i < axisSubscriptionGroups.Count; i++)
         {
@@ -86,11 +86,11 @@ public sealed class OptimizationSetupHelper(
 
     /// <summary>
     /// Appends axis subscription groups as a discrete axis and filters out empty axes.
-    /// Each group is a <c>List&lt;DataSubscription&gt;</c> that becomes one axis value.
+    /// Each group is a <c>List&lt;DataFeedSubscription&gt;</c> that becomes one axis value.
     /// </summary>
     public static List<ResolvedAxis> AppendSubscriptionAxisAndFilter(
         IReadOnlyList<ResolvedAxis> resolvedAxes,
-        List<List<DataSubscription>> axisSubscriptionGroups)
+        List<List<DataFeedSubscription>> axisSubscriptionGroups)
     {
         return AppendSubscriptionAxisAndFilter(resolvedAxes, axisSubscriptionGroups.Count,
             axisSubscriptionGroups.Cast<object>().ToList());
@@ -139,7 +139,7 @@ public sealed class OptimizationSetupHelper(
 
     public async Task ResolveAndCacheAsync(
         DataFeedSubscription sub,
-        List<DataSubscription> target,
+        List<DataFeedSubscription> target,
         Dictionary<string, (Asset Asset, TimeSeries<Int64Bar> Series)> dataCache,
         DateOnly fromDate, DateOnly toDate,
         CancellationToken ct)
@@ -149,7 +149,7 @@ public sealed class OptimizationSetupHelper(
 
         // Strategy-side slot gets a placeholder TimeFrame for non-TimeBar primaries; the
         // polymorphic loader receives the original DataFeedSubscription.
-        var subscription = StrategySubscriptionFactory.FromPrimary(sub, asset);
+        var subscription = SubscriptionResolver.Resolve(sub, asset);
         target.Add(subscription);
 
         // Kind-aware cache key — distinguishes alt-bar feeds at the same source
@@ -178,7 +178,7 @@ public sealed class OptimizationSetupHelper(
         // Dual-key carrier: FeedSubscriptions holds the polymorphic originals (cache lookup +
         // run record fidelity); DataSubscriptions holds the strategy-side projection.
         var trialSubscriptions = combination.Values.TryGetValue("DataSubscriptions", out var subObj)
-            && subObj is List<DataSubscription> group
+            && subObj is List<DataFeedSubscription> group
             ? group
             : throw new InvalidOperationException("Trial has no data subscriptions — this indicates a bug in subscription resolution.");
 
@@ -190,7 +190,7 @@ public sealed class OptimizationSetupHelper(
                 "alongside DataSubscriptions.");
 
         // 2. Scale QuoteAsset params using this trial's actual asset
-        var trialAsset = trialSubscriptions[0].Asset;
+        var trialAsset = trialSubscriptions[0].RequireAsset();
         var scale = new ScaleContext(trialAsset);
         var mutableParams = new Dictionary<string, object>(combination.Values);
         var scaledParams = ParameterScaler.ScaleQuoteAssetParams(

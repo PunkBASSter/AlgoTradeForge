@@ -40,7 +40,7 @@ public class HistoryRepositoryTests
     [Fact]
     public async Task Load_SameTimeframe_ReturnsRawData()
     {
-        var sub = new DataSubscription(BtcUsdt, OneMinute);
+        var sub = TestSubs.Of(BtcUsdt, OneMinute);
         var raw = MakeMinuteSeries(10);
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(raw);
@@ -53,7 +53,7 @@ public class HistoryRepositoryTests
     [Fact]
     public async Task Load_HigherTimeframe_Resamples()
     {
-        var sub = new DataSubscription(BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(5)));
+        var sub = TestSubs.Of(BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(5)));
         var raw = MakeMinuteSeries(10);
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(raw);
@@ -66,7 +66,7 @@ public class HistoryRepositoryTests
     [Fact]
     public async Task Load_LowerTimeframe_Throws()
     {
-        var sub = new DataSubscription(BtcUsdt, new TimeFrame(TimeSpan.FromSeconds(30)));
+        var sub = TestSubs.Of(BtcUsdt, new TimeFrame(TimeSpan.FromSeconds(30)));
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             _repo.Load(sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct));
@@ -75,7 +75,7 @@ public class HistoryRepositoryTests
     [Fact]
     public async Task Load_EmptyData_ReturnsEmptySeries()
     {
-        var sub = new DataSubscription(BtcUsdt, OneMinute);
+        var sub = TestSubs.Of(BtcUsdt, OneMinute);
         var raw = new TimeSeries<Int64Bar>();
         _loader.Load(Arg.Any<DataFeedDescriptor>(),
             Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>()).Returns(raw);
@@ -88,7 +88,7 @@ public class HistoryRepositoryTests
     [Fact]
     public async Task Load_ResampledOhlcv_IsCorrect()
     {
-        var sub = new DataSubscription(BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(5)));
+        var sub = TestSubs.Of(BtcUsdt, new TimeFrame(TimeSpan.FromMinutes(5)));
         var series = new TimeSeries<Int64Bar>();
         var ms = Start.ToUnixTimeMilliseconds();
         var step = (long)OneMinute.Duration.TotalMilliseconds;

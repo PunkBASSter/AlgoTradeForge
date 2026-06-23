@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
@@ -26,7 +27,7 @@ public class BacktestEventOrderingTests
     [Fact]
     public void OnBarStart_ReceivesSyntheticBar_OpenOnlyAndZeroVolume()
     {
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         Int64Bar? received = null;
 
         var strategy = new EventRecordingStrategy(sub)
@@ -51,7 +52,7 @@ public class BacktestEventOrderingTests
     [Fact]
     public void EventOrder_OnBarStart_OnTrade_OnBarComplete()
     {
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var submitted = false;
 
         var strategy = new EventRecordingStrategy(sub)
@@ -87,7 +88,7 @@ public class BacktestEventOrderingTests
     [Fact]
     public void OnBarStart_MarketOrder_FillVisibleInOnBarComplete()
     {
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         IReadOnlyList<Fill>? fillsSeenInComplete = null;
 
         var strategy = new EventRecordingStrategy(sub)
@@ -123,7 +124,7 @@ public class BacktestEventOrderingTests
     [Fact]
     public void OnBarStart_EntryWithSl_FullLifecycleOnSameBar()
     {
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var submitted = false;
 
         var strategy = new EventRecordingStrategy(sub)
@@ -164,7 +165,7 @@ public class BacktestEventOrderingTests
     [Fact]
     public void TwoOrdersFillOnSameBar_OnTradeFiresInSubmissionOrder()
     {
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var submitted = false;
 
         var strategy = new EventRecordingStrategy(sub)
@@ -210,7 +211,7 @@ public class BacktestEventOrderingTests
     [Fact]
     public void OnBarComplete_OrderDoesNotFillOnSameBar()
     {
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var barCount = 0;
         IReadOnlyList<Fill>? fillsOnBar0 = null;
         IReadOnlyList<Fill>? fillsOnBar1 = null;
@@ -252,7 +253,7 @@ public class BacktestEventOrderingTests
     [Fact]
     public void TwoPendingBuys_SecondRejectedDueToReducedCash()
     {
-        var sub = new DataSubscription(TestAssets.Aapl, OneMinute);
+        var sub = TestSubs.Of(TestAssets.Aapl, OneMinute);
         var submitted = false;
 
         var strategy = new EventRecordingStrategy(sub)
@@ -290,27 +291,27 @@ public class BacktestEventOrderingTests
         Assert.Equal(7m, result.Fills[0].Quantity);
     }
 
-    private sealed class EventRecordingStrategy(DataSubscription subscription) : IInt64BarStrategy, IOrderContextReceiver
+    private sealed class EventRecordingStrategy(DataFeedSubscription subscription) : IInt64BarStrategy, IOrderContextReceiver
     {
         private IOrderContext _orders = null!;
 
         public string Version => "1.0.0";
-        public IList<DataSubscription> DataSubscriptions { get; } = [subscription];
+        public IList<DataFeedSubscription> DataSubscriptions { get; } = [subscription];
         public List<string> Events { get; } = [];
 
-        public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarStartAction { get; init; }
-        public Action<Int64Bar, DataSubscription, IOrderContext>? OnBarCompleteAction { get; init; }
+        public Action<Int64Bar, DataFeedSubscription, IOrderContext>? OnBarStartAction { get; init; }
+        public Action<Int64Bar, DataFeedSubscription, IOrderContext>? OnBarCompleteAction { get; init; }
 
         public void SetOrderContext(IOrderContext context) => _orders = context;
         public void OnInit() => Events.Add("OnInit");
 
-        public void OnBarStart(Int64Bar bar, DataSubscription subscription)
+        public void OnBarStart(Int64Bar bar, DataFeedSubscription subscription)
         {
             Events.Add($"OnBarStart:{bar.Open}");
             OnBarStartAction?.Invoke(bar, subscription, _orders);
         }
 
-        public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+        public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription)
         {
             Events.Add($"OnBarComplete:{bar.Open}");
             OnBarCompleteAction?.Invoke(bar, subscription, _orders);

@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
@@ -22,7 +23,7 @@ public sealed class RegimeFilterModule : IFilterModule
         _allowedRegimes = new HashSet<MarketRegime>(allowedRegimes);
     }
 
-    public void Initialize(IIndicatorFactory factory, DataSubscription subscription)
+    public void Initialize(IIndicatorFactory factory, DataFeedSubscription subscription)
     {
         // No indicators needed — reads from context
     }

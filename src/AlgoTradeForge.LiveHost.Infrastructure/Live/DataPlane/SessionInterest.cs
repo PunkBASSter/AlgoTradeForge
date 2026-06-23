@@ -6,7 +6,7 @@ using AlgoTradeForge.LiveHost.Application.Live.DataPlane;
 namespace AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane;
 
 // Precomputed routing index for one registered session: its bar/tick interests
-// (each paired with the resolved DataSubscription the strategy callback receives)
+// (each paired with the resolved DataFeedSubscription the strategy callback receives)
 // plus the session's market-data writer. Bars route unconditionally (the strategy is
 // IInt64BarStrategy); ticks route by ITradeTickStrategy capability.
 internal sealed class SessionInterest(
@@ -45,7 +45,7 @@ internal sealed class SessionInterest(
             var resolved = r.Subscriptions[i];
 
             // INSTRUMENT KEY CONTRACT (T11/T15 must match): the instrument string is the
-            // subscription's AssetName (== resolved DataSubscription.Asset.Name).
+            // subscription's AssetName (== resolved DataFeedSubscription.Asset.Name).
             var instrument = raw.AssetName;
 
             switch (raw)

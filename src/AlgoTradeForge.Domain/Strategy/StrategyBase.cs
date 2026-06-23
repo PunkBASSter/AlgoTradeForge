@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
@@ -33,23 +34,23 @@ public abstract class StrategyBase<TParams>(TParams parameters, IIndicatorFactor
 
     StrategyParamsBase IStrategyParamsProvider.StrategyParams => Params;
 
-    public IList<DataSubscription> DataSubscriptions => Params.DataSubscriptions;
+    public IList<DataFeedSubscription> DataSubscriptions => Params.DataSubscriptions;
 
-    public void OnBarStart(Int64Bar bar, DataSubscription subscription)
+    public void OnBarStart(Int64Bar bar, DataFeedSubscription subscription)
     {
         _currentBarTimestamp = bar.Timestamp;
         OnBarStartInner(bar, subscription);
     }
 
-    public void OnBarComplete(Int64Bar bar, DataSubscription subscription)
+    public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription)
     {
         _currentBarTimestamp = bar.Timestamp;
         OnBarCompleteInner(bar, subscription);
     }
 
-    protected virtual void OnBarStartInner(Int64Bar bar, DataSubscription subscription) { }
+    protected virtual void OnBarStartInner(Int64Bar bar, DataFeedSubscription subscription) { }
 
-    protected virtual void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription) { }
+    protected virtual void OnBarCompleteInner(Int64Bar bar, DataFeedSubscription subscription) { }
 
     public virtual void OnInit()
     {

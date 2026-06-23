@@ -13,8 +13,9 @@ public sealed class HistoryRepository(
     IInt64BarLoader barLoader,
     IOptions<CandleStorageOptions> storageOptions) : IHistoryRepository
 {
-    public Task<TimeSeries<Int64Bar>> Load(DataSubscription subscription, DateOnly from, DateOnly to, CancellationToken ct = default)
-        => LoadTimeBar(subscription.Asset, subscription.TimeFrame, from, to, ct);
+    //TODO: investigate if upcast is required
+    public Task<TimeSeries<Int64Bar>> Load(DataFeedSubscription subscription, DateOnly from, DateOnly to, CancellationToken ct = default)
+        => LoadTimeBar(subscription.RequireAsset(), ((TimeBarSubscription)subscription).TimeFrame, from, to, ct);
 
     public Task<TimeSeries<Int64Bar>> Load(Asset asset, DataFeedSubscription subscription, DateOnly from, DateOnly to, CancellationToken ct = default)
     {

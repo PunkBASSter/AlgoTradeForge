@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
@@ -14,8 +15,8 @@ public sealed record LiveSessionSnapshot(
     long InitialCash,
     decimal ExchangeBalance,
     Asset PrimaryAsset,
-    IReadOnlyList<DataSubscription> Subscriptions,
+    IReadOnlyList<DataFeedSubscription> Subscriptions,
     IReadOnlyList<SubscriptionLastBar> LastBarsPerSubscription,
     IReadOnlyList<ExchangeTradeDto> ExchangeTrades);
 
-public sealed record SubscriptionLastBar(DataSubscription Subscription, Int64Bar Bar);
+public sealed record SubscriptionLastBar(DataFeedSubscription Subscription, Int64Bar Bar); //TODO: investigate/confirm purpose

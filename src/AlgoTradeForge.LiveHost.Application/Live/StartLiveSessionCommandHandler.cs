@@ -21,27 +21,19 @@ public sealed class StartLiveSessionCommandHandler(
         if (command.DataSubscriptions is null or { Count: 0 })
             throw new ArgumentException("At least one data subscription must be provided.");
 
-        // Resolve each typed subscription 1:1, same-order, into a DataSubscription. Alt-bar/tick
+        // Resolve each typed subscription 1:1, same-order, into a DataFeedSubscription. Alt-bar/tick
         // identity is carried by FeedKey (alt-bar feed-id or "tick"); the data plane pairs the
         // resolved list with command.DataSubscriptions positionally — they must stay equal-length.
-        var resolvedSubscriptions = new List<DataSubscription>(command.DataSubscriptions.Count);
+        var resolvedSubscriptions = new List<DataFeedSubscription>(command.DataSubscriptions.Count);
         foreach (var sub in command.DataSubscriptions)
         {
             var asset = await assetRepository.GetByNameAsync(sub.AssetName, sub.Exchange, ct)
                 ?? throw new ArgumentException($"Asset '{sub.AssetName}' on exchange '{sub.Exchange}' not found.");
 
-            DataSubscription resolved = sub switch
-            {
-                TimeBarSubscription tb => new DataSubscription(asset, tb.TimeFrame),
-                AltBarSubscription ab => new DataSubscription(asset, default, FeedKey: ab.FeedId),
-                TickSubscription => new DataSubscription(asset, default, FeedKey: "tick"),
-                _ => throw new NotSupportedException(
-                    $"Unsupported live subscription kind: {sub.GetType().Name}"),
-            };
-            resolvedSubscriptions.Add(resolved);
+            resolvedSubscriptions.Add(SubscriptionResolver.Resolve(sub, asset));
         }
 
-        var primaryAsset = resolvedSubscriptions[0].Asset;
+        var primaryAsset = resolvedSubscriptions.ResolveExecutionAsset();
 
         // Scale QuoteAsset strategy params from human-readable to tick units
         var scale = new ScaleContext(primaryAsset);

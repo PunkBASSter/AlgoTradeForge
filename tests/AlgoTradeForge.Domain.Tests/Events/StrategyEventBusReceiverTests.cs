@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Events;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
@@ -18,9 +19,9 @@ public class StrategyEventBusReceiverTests
     private sealed class SignalEmittingStrategy(TestParams p) : StrategyBase<TestParams>(p)
     {
         public override string Version => "1.0.0";
-        protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
+        protected override void OnBarCompleteInner(Int64Bar bar, DataFeedSubscription subscription)
         {
-            EmitSignal(bar.Timestamp, "BuySignal", subscription.Asset.Name, "Long", 0.85m, "MA crossover");
+            EmitSignal(bar.Timestamp, "BuySignal", subscription.RequireAsset().Name, "Long", 0.85m, "MA crossover");
         }
     }
 
@@ -37,7 +38,7 @@ public class StrategyEventBusReceiverTests
     {
         var bus = new CapturingEventBus();
         var asset = new EquityAsset { Name = "TEST", Exchange = "XTEST" };
-        var sub = new DataSubscription(asset, new TimeFrame(TimeSpan.FromMinutes(1)));
+        var sub = TestSubs.Of(asset, new TimeFrame(TimeSpan.FromMinutes(1)));
         var strategy = new SignalEmittingStrategy(new TestParams { DataSubscriptions = [sub] });
 
         ((IEventBusReceiver)strategy).SetEventBus(bus);
@@ -59,7 +60,7 @@ public class StrategyEventBusReceiverTests
     {
         var bus = new CapturingEventBus();
         var asset = new EquityAsset { Name = "TEST", Exchange = "XTEST" };
-        var sub = new DataSubscription(asset, new TimeFrame(TimeSpan.FromMinutes(1)));
+        var sub = TestSubs.Of(asset, new TimeFrame(TimeSpan.FromMinutes(1)));
 
         // Use a strategy that emits without a reason
         var strategy = new NoReasonSignalStrategy(new TestParams { DataSubscriptions = [sub] });
@@ -78,7 +79,7 @@ public class StrategyEventBusReceiverTests
         // StrategyBase defaults EventBus to NullEventBus.Instance
         // EmitSignal should be a no-op — no exception means NullEventBus works
         var asset = new EquityAsset { Name = "TEST", Exchange = "XTEST" };
-        var sub = new DataSubscription(asset, new TimeFrame(TimeSpan.FromMinutes(1)));
+        var sub = TestSubs.Of(asset, new TimeFrame(TimeSpan.FromMinutes(1)));
         var strategy = new SignalEmittingStrategy(new TestParams { DataSubscriptions = [sub] });
 
         var bar = new Int64Bar(0, 100, 110, 90, 105, 1000);
@@ -88,9 +89,9 @@ public class StrategyEventBusReceiverTests
     private sealed class NoReasonSignalStrategy(TestParams p) : StrategyBase<TestParams>(p)
     {
         public override string Version => "1.0.0";
-        protected override void OnBarCompleteInner(Int64Bar bar, DataSubscription subscription)
+        protected override void OnBarCompleteInner(Int64Bar bar, DataFeedSubscription subscription)
         {
-            EmitSignal(bar.Timestamp, "SellSignal", subscription.Asset.Name, "Short", 0.5m);
+            EmitSignal(bar.Timestamp, "SellSignal", subscription.RequireAsset().Name, "Short", 0.5m);
         }
     }
 

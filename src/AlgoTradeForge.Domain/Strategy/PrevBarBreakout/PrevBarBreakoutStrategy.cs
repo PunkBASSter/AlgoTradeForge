@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Optimization.Attributes;
@@ -52,10 +53,10 @@ public sealed class PrevBarBreakoutStrategy(
         _atr = Indicators.Create(new Atr(Params.AtrPeriod), DataSubscriptions[0]);
         RegisterIndicator(_atr);
 
-        _barIntervalMs = (long)DataSubscriptions[0].TimeFrame.Duration.TotalMilliseconds;
+        _barIntervalMs = (long)((TimeBarSubscription)DataSubscriptions[0]).TimeFrame.Duration.TotalMilliseconds;
     }
 
-    protected override void OnContextUpdated(Int64Bar bar, DataSubscription sub)
+    protected override void OnContextUpdated(Int64Bar bar, DataFeedSubscription sub)
     {
         var atrValues = _atr.Buffers["Value"];
         if (atrValues.Count > 0)
@@ -154,7 +155,7 @@ public sealed class PrevBarBreakoutStrategy(
         return false;
     }
 
-    protected override void EvaluateEntry(Int64Bar bar, DataSubscription sub)
+    protected override void EvaluateEntry(Int64Bar bar, DataFeedSubscription sub)
     {
         // Hold-while-active: skip placing new pending pairs while a position from a previous
         // bar is still ProtectionActive. Keeps "one position at a time" absolute even when
@@ -179,7 +180,7 @@ public sealed class PrevBarBreakoutStrategy(
                 return;
         }
 
-        var asset = sub.Asset;
+        var asset = sub.RequireAsset();
 
         // Buy-stop @ bar.High + offset, SL = bar.Low - buffer.
         var buyEntry = bar.High + Params.EntryOffsetTicks;
