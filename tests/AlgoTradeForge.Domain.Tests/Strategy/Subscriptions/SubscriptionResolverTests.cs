@@ -18,6 +18,7 @@ public class SubscriptionResolverTests
         var resolved = SubscriptionResolver.Resolve(spec, Btc());
 
         Assert.Equal("BTCUSDT", resolved.AssetName);
+        Assert.Equal("binance", resolved.Exchange);
         Assert.Equal(DataFeedRole.Primary, resolved.Role);
         Assert.Equal("BTCUSDT", resolved.RequireAsset().Name);
     }
@@ -45,6 +46,13 @@ public class SubscriptionResolverTests
     {
         var spec = new AltBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, "EqV_1m_500");
         Assert.Equal("EqV_1m_500", spec.FeedKey());
+    }
+
+    [Fact]
+    public void FeedKey_Side_IsFeedId()
+    {
+        var spec = new SideFeedSubscription("BTCUSDT", "binance", DataFeedRole.Side, "OI_1m");
+        Assert.Equal("OI_1m", spec.FeedKey());
     }
 
     [Fact]
