@@ -8,6 +8,7 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 using AlgoTradeForge.Live.Relay;
+using AlgoTradeForge.LiveHost.Application.Collection;
 using AlgoTradeForge.LiveHost.Application.Live.DataPlane;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane;
@@ -16,6 +17,7 @@ using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
 using Xunit;
 
 namespace AlgoTradeForge.LiveHost.WebApi.Tests.DataPlane;
@@ -175,12 +177,12 @@ public sealed class DataPlaneEndToEndTests : IDisposable
         {
             LocalRoot = _root,
             KeyPrefix = "live-md",
-            Instruments = [Instrument],
             HeartbeatInterval = TimeSpan.FromMinutes(60),
             UploadInterval = TimeSpan.FromMinutes(60),
         });
         var pump = new RelayPumpHostedService(
-            connector, opts, _storage, tap, time, NullLogger<RelayPumpHostedService>.Instance);
+            connector, opts, _storage, tap, time, NullLogger<RelayPumpHostedService>.Instance,
+            Substitute.For<ICollectionConfigStore>());
 
         await pump.RunPumpOnce([Instrument], Ct);
 

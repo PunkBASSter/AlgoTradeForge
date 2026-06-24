@@ -3,11 +3,13 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 using AlgoTradeForge.Live.Relay;
+using AlgoTradeForge.LiveHost.Application.Collection;
 using AlgoTradeForge.LiveHost.WebApi;
 using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
 using Xunit;
 
 namespace AlgoTradeForge.LiveHost.WebApi.Tests;
@@ -79,13 +81,13 @@ public sealed class LiveRoundTripTests : IDisposable
         {
             LocalRoot = _root,
             KeyPrefix = "live-md",
-            Instruments = [Instrument],
             HeartbeatInterval = TimeSpan.FromMinutes(60),
             UploadInterval = TimeSpan.FromMinutes(60),
         });
         return new RelayPumpHostedService(
             connector, opts, _storage, new NoopTap(), timeProvider,
-            NullLogger<RelayPumpHostedService>.Instance);
+            NullLogger<RelayPumpHostedService>.Instance,
+            Substitute.For<ICollectionConfigStore>());
     }
 
     private StreamCanonicalizer<T> BuildCanonicalizer<T>(IStreamProjection<T> projection)

@@ -1,10 +1,12 @@
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Live.Relay;
+using AlgoTradeForge.LiveHost.Application.Collection;
 using AlgoTradeForge.LiveHost.WebApi;
 using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
 using Xunit;
 
 namespace AlgoTradeForge.LiveHost.WebApi.Tests;
@@ -52,14 +54,14 @@ public class RelayPumpHostedServiceTests
             {
                 LocalRoot = dir,
                 KeyPrefix = "live-md",
-                Instruments = ["BTCUSDT"],
                 HeartbeatInterval = TimeSpan.FromMinutes(60),
                 UploadInterval = TimeSpan.FromMinutes(60),
             });
 
             var svc = new RelayPumpHostedService(
                 connector, opts, storage, new NoopTap(), timeProvider,
-                NullLogger<RelayPumpHostedService>.Instance);
+                NullLogger<RelayPumpHostedService>.Instance,
+                Substitute.For<ICollectionConfigStore>());
 
             await svc.RunPumpOnce(["BTCUSDT"], TestContext.Current.CancellationToken);
 

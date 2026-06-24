@@ -52,6 +52,8 @@ public class ConfigEndpointsTests
     public async Task Put_returns_409_on_stale_etag()
     {
         var store = Substitute.For<ICollectionConfigStore>();
+        store.Load(Arg.Any<CancellationToken>())
+            .Returns(new StoredCollectionConfig(new CollectionConfig([]), null));
         store.Save(Arg.Any<CollectionConfig>(), "stale", Arg.Any<CancellationToken>())
             .Throws(new ConcurrencyConflictException("collection.json", "stale", "current"));
         using var client = FactoryWith(store).CreateClient();
@@ -71,6 +73,8 @@ public class ConfigEndpointsTests
     public async Task Put_returns_200_and_new_etag_on_success()
     {
         var store = Substitute.For<ICollectionConfigStore>();
+        store.Load(Arg.Any<CancellationToken>())
+            .Returns(new StoredCollectionConfig(new CollectionConfig([]), null));
         store.Save(Arg.Any<CollectionConfig>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns("etag-2");
         using var client = FactoryWith(store).CreateClient();
@@ -86,6 +90,8 @@ public class ConfigEndpointsTests
     public async Task Put_strips_quotes_from_If_Match_before_passing_to_store()
     {
         var store = Substitute.For<ICollectionConfigStore>();
+        store.Load(Arg.Any<CancellationToken>())
+            .Returns(new StoredCollectionConfig(new CollectionConfig([]), null));
         store.Save(Arg.Any<CollectionConfig>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns("etag-new");
         using var client = FactoryWith(store).CreateClient();
