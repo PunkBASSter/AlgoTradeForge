@@ -7,7 +7,7 @@ internal static class Orders
     public static async Task MarketRoundTripAsync(IbConnection conn, DemoWrapper wrapper,
         Contract contract, int orderId, decimal qty)
     {
-        var order = new Order { Action = "BUY", OrderType = "MKT", TotalQuantity = qty };
+        var order = new Order { Action = "BUY", OrderType = "MKT", TotalQuantity = qty, Tif = "DAY" };
         var filled = wrapper.WaitForStatusAsync(orderId, "Filled");
         Log.Line($"placeOrder MKT BUY {qty} id={orderId}");
         conn.Client.placeOrder(orderId, contract, order);
@@ -20,7 +20,7 @@ internal static class Orders
     {
         var order = new Order
         {
-            Action = "BUY", OrderType = "LMT", TotalQuantity = qty, LmtPrice = farLimitPrice,
+            Action = "BUY", OrderType = "LMT", TotalQuantity = qty, LmtPrice = farLimitPrice, Tif = "DAY",
         };
         var submitted = wrapper.WaitForStatusAsync(orderId, "Submitted");
         var cancelled = wrapper.WaitForStatusAsync(orderId, "Cancelled");
@@ -40,17 +40,17 @@ internal static class Orders
         var parent = new Order
         {
             OrderId = parentId, Action = "BUY", OrderType = "MKT",
-            TotalQuantity = qty, Transmit = false,
+            TotalQuantity = qty, Tif = "DAY", Transmit = false,
         };
         var tp = new Order
         {
             OrderId = parentId + 1, Action = "SELL", OrderType = "LMT",
-            TotalQuantity = qty, LmtPrice = takeProfit, ParentId = parentId, Transmit = false,
+            TotalQuantity = qty, LmtPrice = takeProfit, ParentId = parentId, Tif = "DAY", Transmit = false,
         };
         var sl = new Order
         {
             OrderId = parentId + 2, Action = "SELL", OrderType = "STP",
-            TotalQuantity = qty, AuxPrice = stopLoss, ParentId = parentId, Transmit = true,
+            TotalQuantity = qty, AuxPrice = stopLoss, ParentId = parentId, Tif = "DAY", Transmit = true,
         };
 
         var parentAck = wrapper.WaitForStatusAsync(parentId, "PreSubmitted");

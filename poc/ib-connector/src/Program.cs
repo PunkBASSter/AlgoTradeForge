@@ -1,3 +1,5 @@
+using IBApi;
+
 namespace IbPoc;
 
 internal static class Program
@@ -26,28 +28,55 @@ internal static class Program
             return 0;
         }
 
+        if (phase == "cancel")
+        {
+            Log.Line("reqAllOpenOrders -> reqGlobalCancel");
+            conn.Client.reqAllOpenOrders();
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            conn.Client.reqGlobalCancel(new OrderCancel());
+            await Task.Delay(TimeSpan.FromSeconds(5));   // let orderStatus=Cancelled callbacks arrive
+            conn.Disconnect();
+            Log.Line("done");
+            return 0;
+        }
+
         var contract = Contracts.Aapl();
         await Contracts.ResolveAsync(conn, wrapper, contract, reqId: 1);
 
+        // In "all" mode each phase is independent: a single failure (e.g. a market order that
+        // never fills off-hours) is logged and the run continues so every phase is still exercised.
+        async Task RunPhase(string name, Func<Task> body)
+        {
+            try { await body(); }
+            catch (Exception ex) { Log.Line($"PHASE '{name}' FAILED: {ex.GetType().Name}: {ex.Message}"); }
+        }
+
         if (phase is "data" or "all")
-            await MarketData.StreamAsync(conn, wrapper, contract, aggSeconds: 10,
-                duration: TimeSpan.FromSeconds(30), realtime);
+            await RunPhase("data", () => MarketData.StreamAsync(conn, wrapper, contract, aggSeconds: 10,
+                duration: TimeSpan.FromSeconds(30), realtime));
 
         if (phase is "market-order" or "all")
-            await Orders.MarketRoundTripAsync(conn, wrapper, contract, nextOrderId++, qty: 1);
+        {
+            var id = nextOrderId++;
+            await RunPhase("market-order", () => Orders.MarketRoundTripAsync(conn, wrapper, contract, id, qty: 1));
+        }
 
         if (phase is "limit-cancel" or "all")
-            await Orders.LimitThenCancelAsync(conn, wrapper, contract, nextOrderId++, qty: 1, farLimitPrice: 1.00);
+        {
+            var id = nextOrderId++;
+            await RunPhase("limit-cancel", () => Orders.LimitThenCancelAsync(conn, wrapper, contract, id, qty: 1, farLimitPrice: 1.00));
+        }
 
         if (phase is "bracket" or "all")
         {
-            await Orders.PlaceBracketAsync(conn, wrapper, contract, nextOrderId, qty: 1,
-                takeProfit: 10_000.0, stopLoss: 1.0);   // far-from-market so nothing fills during the spike
+            var id = nextOrderId;
             nextOrderId += 3;
+            await RunPhase("bracket", () => Orders.PlaceBracketAsync(conn, wrapper, contract, id, qty: 1,
+                takeProfit: 10_000.0, stopLoss: 1.0));   // far-from-market so nothing fills during the spike
         }
 
         if (phase is "readback" or "all")
-            await AccountReadback.DumpAsync(conn, wrapper);
+            await RunPhase("readback", () => AccountReadback.DumpAsync(conn, wrapper));
 
         conn.Disconnect();
         Log.Line("done");
