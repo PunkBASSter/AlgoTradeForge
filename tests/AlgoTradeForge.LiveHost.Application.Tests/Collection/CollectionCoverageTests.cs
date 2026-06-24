@@ -70,4 +70,12 @@ public class CollectionCoverageTests
         var missing = new[] { new AltBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, "EqV_5m_1000") };
         Assert.NotNull(CollectionCoverage.FindUnmet(Collected, missing));
     }
+
+    [Fact]
+    public void Malformed_altbar_feedid_is_unmet_not_thrown()
+    {
+        var required = new[] { new AltBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, "not-a-valid-feedid") };
+        var unmet = CollectionCoverage.FindUnmet(Collected, required);
+        Assert.NotNull(unmet);
+    }
 }

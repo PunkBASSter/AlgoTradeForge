@@ -33,7 +33,9 @@ public static class CollectionCoverage
     private static bool AltBarRootSatisfied(IReadOnlyList<DataFeedSubscription> collected, AltBarSubscription ab)
     {
         // "ticks" source code means the alt-bar is built from raw tick data.
-        var source = AltBarFeedId.Parse(ab.FeedId).SourceCode;
+        if (!AltBarFeedId.TryParse(ab.FeedId, out var parsed, out _))
+            return false;
+        var source = parsed!.SourceCode;
         return source == "ticks"
             ? collected.OfType<TickSubscription>().Any(c => SameAsset(c, ab))
             : collected.OfType<TimeBarSubscription>().Any(c => SameAsset(c, ab) && c.TimeFrame.Code == source);
@@ -46,7 +48,9 @@ public static class CollectionCoverage
     private static string Describe(DataFeedSubscription r) => r switch
     {
         TimeBarSubscription tb => $"{r.AssetName}@{r.Exchange} time-bar {tb.TimeFrame.Code}",
-        AltBarSubscription ab => $"{r.AssetName}@{r.Exchange} alt-bar {ab.FeedId} (root '{AltBarFeedId.Parse(ab.FeedId).SourceCode}')",
+        AltBarSubscription ab => AltBarFeedId.TryParse(ab.FeedId, out var parsed, out _)
+            ? $"{r.AssetName}@{r.Exchange} alt-bar {ab.FeedId} (root '{parsed!.SourceCode}')"
+            : $"{r.AssetName}@{r.Exchange} alt-bar {ab.FeedId} (root '(unparseable feed-id)')",
         SideFeedSubscription sf => $"{r.AssetName}@{r.Exchange} side feed '{sf.FeedId}'",
         _ => $"{r.AssetName}@{r.Exchange} {r.KindOf()}",
     };
