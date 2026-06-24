@@ -6,6 +6,7 @@ using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.Subscriptions;
+using AlgoTradeForge.LiveHost.Application.Collection;
 
 namespace AlgoTradeForge.LiveHost.Application.Live;
 
@@ -14,7 +15,8 @@ public sealed class StartLiveSessionCommandHandler(
     ILiveAccountManager accountManager,
     ILiveSessionStore sessionStore,
     IAssetRepository assetRepository,
-    IOptimizationSpaceProvider spaceProvider) : ICommandHandler<StartLiveSessionCommand, LiveSessionSubmissionDto>
+    IOptimizationSpaceProvider spaceProvider,
+    ICollectionConfigStore collectionStore) : ICommandHandler<StartLiveSessionCommand, LiveSessionSubmissionDto>
 {
     public async Task<LiveSessionSubmissionDto> HandleAsync(StartLiveSessionCommand command, CancellationToken ct = default)
     {
@@ -32,6 +34,11 @@ public sealed class StartLiveSessionCommandHandler(
 
             resolvedSubscriptions.Add(SubscriptionResolver.Resolve(sub, asset));
         }
+
+        var collected = await collectionStore.Load(ct);
+        var unmet = CollectionCoverage.FindUnmet(collected.Config.Feeds, resolvedSubscriptions);
+        if (unmet is not null)
+            throw new ArgumentException($"Cannot execute on uncollected feed: {unmet}. Add it to collection.json first.");
 
         var executionAsset = resolvedSubscriptions.ResolveExecutionAsset();
 

@@ -6,6 +6,7 @@ using AlgoTradeForge.Domain.Indicators;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.Subscriptions;
+using AlgoTradeForge.LiveHost.Application.Collection;
 using AlgoTradeForge.LiveHost.Application.Live;
 using NSubstitute;
 using Xunit;
@@ -24,7 +25,15 @@ public class StartLiveSessionSubscriptionKindsTests
         public LiveSessionConfig? Captured { get; set; }
     }
 
-    private static Harness NewHarness()
+    private static ICollectionConfigStore CreateCollectionStore(params DataFeedSubscription[] collectedFeeds)
+    {
+        var store = Substitute.For<ICollectionConfigStore>();
+        store.Load(Arg.Any<CancellationToken>())
+            .Returns(new StoredCollectionConfig(new CollectionConfig(collectedFeeds), "etag"));
+        return store;
+    }
+
+    private static Harness NewHarness(params DataFeedSubscription[] collectedFeeds)
     {
         var strategy = Substitute.For<IInt64BarStrategy>();
         strategy.Version.Returns("1.0");
@@ -49,14 +58,16 @@ public class StartLiveSessionSubscriptionKindsTests
         var spaceProvider = Substitute.For<IOptimizationSpaceProvider>();
 
         harness.Handler = new StartLiveSessionCommandHandler(
-            strategyFactory, accountManager, new InMemoryLiveSessionStore(), assetRepo, spaceProvider);
+            strategyFactory, accountManager, new InMemoryLiveSessionStore(), assetRepo, spaceProvider,
+            CreateCollectionStore(collectedFeeds));
         return harness;
     }
 
     [Fact]
     public async Task HandleAsync_AcceptsTickSubscription()
     {
-        var h = NewHarness();
+        // Submits [Tick BTCUSDT Binance Primary] — collected set must contain a Tick for BTCUSDT.
+        var h = NewHarness(new TickSubscription("BTCUSDT", "Binance", DataFeedRole.Primary));
         var command = new StartLiveSessionCommand
         {
             StrategyName = "BuyAndHold",
@@ -77,7 +88,8 @@ public class StartLiveSessionSubscriptionKindsTests
     [Fact]
     public async Task HandleAsync_AcceptsAltBarSubscription()
     {
-        var h = NewHarness();
+        // Submits [AltBar EqV_1m_500] — SourceCode="1m" -> collected set must contain TimeBar 1m.
+        var h = NewHarness(new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")));
         var command = new StartLiveSessionCommand
         {
             StrategyName = "BuyAndHold",
@@ -97,7 +109,12 @@ public class StartLiveSessionSubscriptionKindsTests
     [Fact]
     public async Task HandleAsync_ResolvesSubscriptions_PreservingKindAndOrder()
     {
-        var h = NewHarness();
+        // Submits [TimeBar 1m, AltBar EqV_1m_500 (root=1m), Tick].
+        // Collected must cover: TimeBar 1m (satisfies both TimeBar and EqV_1m_500 root) + Tick.
+        var h = NewHarness(
+            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")),
+            new TickSubscription("BTCUSDT", "Binance", DataFeedRole.Primary));
+
         DataFeedSubscription[] raw =
         [
             new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")),
@@ -139,8 +156,10 @@ public class StartLiveSessionSubscriptionKindsTests
             .Returns((Asset?)null);
         var spaceProvider = Substitute.For<IOptimizationSpaceProvider>();
 
+        // Asset-not-found throws before collection check fires; any store works.
         var handler = new StartLiveSessionCommandHandler(
-            strategyFactory, accountManager, new InMemoryLiveSessionStore(), assetRepo, spaceProvider);
+            strategyFactory, accountManager, new InMemoryLiveSessionStore(), assetRepo, spaceProvider,
+            CreateCollectionStore());
 
         var command = new StartLiveSessionCommand
         {
