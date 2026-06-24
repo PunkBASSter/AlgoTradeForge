@@ -14,68 +14,39 @@ public class CollectionCoverageTests
         new SideFeedSubscription("BTCUSDT", "binance", DataFeedRole.Side, "funding-rate"),
     ];
 
-    [Fact]
-    public void Null_when_tick_collected()
+    // kind, asset, detail (interval/feedId; null for tick), expectedSatisfied
+    [Theory]
+    [InlineData("tick", "BTCUSDT", null, true)]            // tick collected
+    [InlineData("tick", "ETHUSDT", null, false)]           // wrong asset
+    [InlineData("timebar", "BTCUSDT", "1m", true)]         // interval matches
+    [InlineData("timebar", "BTCUSDT", "1h", false)]        // interval differs (exact, not divisor)
+    [InlineData("side", "BTCUSDT", "funding-rate", true)]  // side feed collected
+    [InlineData("side", "BTCUSDT", "open-interest", false)] // side feed wrong FeedId
+    [InlineData("altbar", "BTCUSDT", "EqV_ticks_1000", true)]   // root = collected tick
+    [InlineData("altbar", "BTCUSDT", "EqV_1m_1000", true)]      // root = collected 1m candle
+    [InlineData("altbar", "BTCUSDT", "EqV_5m_1000", false)]     // root = 5m candle (not collected)
+    [InlineData("altbar", "BTCUSDT", "not-a-valid-feedid", false)] // malformed -> unmet, not thrown
+    public void Coverage_against_collected_set(string kind, string asset, string? detail, bool expectedSatisfied)
     {
-        var required = new[] { new TickSubscription("BTCUSDT", "binance", DataFeedRole.Primary) };
-        Assert.Null(CollectionCoverage.FindUnmet(Collected, required));
-    }
+        DataFeedSubscription required = kind switch
+        {
+            "tick" => new TickSubscription(asset, "binance", DataFeedRole.Primary),
+            "timebar" => new TimeBarSubscription(asset, "binance", DataFeedRole.Primary, TimeFrame.Parse(detail!)),
+            "side" => new SideFeedSubscription(asset, "binance", DataFeedRole.Side, detail!),
+            "altbar" => new AltBarSubscription(asset, "binance", DataFeedRole.Primary, detail!),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "unknown subscription kind"),
+        };
 
-    [Fact]
-    public void Reports_when_tick_not_collected()
-    {
-        var required = new[] { new TickSubscription("ETHUSDT", "binance", DataFeedRole.Primary) };
-        var unmet = CollectionCoverage.FindUnmet(Collected, required);
-        Assert.NotNull(unmet);
-        Assert.Contains("ETHUSDT", unmet);
-    }
+        var unmet = CollectionCoverage.FindUnmet(Collected, [required]);
 
-    [Fact]
-    public void Null_when_timebar_interval_matches()
-    {
-        var required = new[] { new TimeBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1m")) };
-        Assert.Null(CollectionCoverage.FindUnmet(Collected, required));
-    }
-
-    [Fact]
-    public void Reports_when_timebar_interval_differs()
-    {
-        var required = new[] { new TimeBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, TimeFrame.Parse("1h")) };
-        Assert.NotNull(CollectionCoverage.FindUnmet(Collected, required));
-    }
-
-    [Fact]
-    public void Null_when_sidefeed_collected()
-    {
-        var required = new[] { new SideFeedSubscription("BTCUSDT", "binance", DataFeedRole.Side, "funding-rate") };
-        Assert.Null(CollectionCoverage.FindUnmet(Collected, required));
-    }
-
-    [Fact]
-    public void AltBar_validates_against_tick_root()
-    {
-        // EqV_ticks_1000 derives from the collected Tick root -> satisfied.
-        var required = new[] { new AltBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, "EqV_ticks_1000") };
-        Assert.Null(CollectionCoverage.FindUnmet(Collected, required));
-    }
-
-    [Fact]
-    public void AltBar_validates_against_candle_root()
-    {
-        // EqV_1m_1000 derives from the collected 1m candle root -> satisfied.
-        var required = new[] { new AltBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, "EqV_1m_1000") };
-        Assert.Null(CollectionCoverage.FindUnmet(Collected, required));
-
-        // EqV_5m_1000 needs a 5m candle root we did not collect -> reported.
-        var missing = new[] { new AltBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, "EqV_5m_1000") };
-        Assert.NotNull(CollectionCoverage.FindUnmet(Collected, missing));
-    }
-
-    [Fact]
-    public void Malformed_altbar_feedid_is_unmet_not_thrown()
-    {
-        var required = new[] { new AltBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, "not-a-valid-feedid") };
-        var unmet = CollectionCoverage.FindUnmet(Collected, required);
-        Assert.NotNull(unmet);
+        if (expectedSatisfied)
+        {
+            Assert.Null(unmet);
+        }
+        else
+        {
+            Assert.NotNull(unmet);
+            Assert.Contains(asset, unmet);
+        }
     }
 }
