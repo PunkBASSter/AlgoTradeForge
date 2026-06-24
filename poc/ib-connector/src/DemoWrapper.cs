@@ -11,6 +11,18 @@ internal sealed class DemoWrapper : DefaultEWrapper
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConcurrentDictionary<int, TaskCompletionSource<int>> _conIdByReq = new();
     private readonly ConcurrentDictionary<(int orderId, string status), TaskCompletionSource<bool>> _statusWaiters = new();
+    private readonly ConcurrentDictionary<string, decimal> _positions = new();
+    private TaskCompletionSource<bool> _positionEnd = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public IReadOnlyDictionary<string, decimal> Positions => _positions;
+    public Task PositionsReceived => _positionEnd.Task;
+
+    // Re-arm before each reqPositions round: PositionsReceived is a single-use TCS completed by positionEnd().
+    public void ResetPositions()
+    {
+        _positions.Clear();
+        _positionEnd = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
 
     public Task<int> NextValidIdAsync => _nextValidId.Task;
     public event Action<TradeTick>? OnTrade;
@@ -74,9 +86,16 @@ internal sealed class DemoWrapper : DefaultEWrapper
         => Log.Line($"commissionAndFeesReport exec={report.ExecId} commissionAndFees={report.CommissionAndFees}");
 
     public override void position(string account, Contract contract, decimal pos, double avgCost)
-        => Log.Line($"position {contract.Symbol} qty={pos} avgCost={avgCost}");
+    {
+        Log.Line($"position {contract.Symbol} qty={pos} avgCost={avgCost}");
+        _positions[contract.Symbol] = pos;
+    }
 
-    public override void positionEnd() => Log.Line("positionEnd");
+    public override void positionEnd()
+    {
+        Log.Line("positionEnd");
+        _positionEnd.TrySetResult(true);
+    }
 
     public override void accountSummary(int reqId, string account, string tag, string value, string currency)
         => Log.Line($"accountSummary {tag}={value} {currency}");

@@ -22,6 +22,8 @@ internal sealed class IbConnection : IAsyncDisposable
 
     public EClientSocket Client => _client ?? throw new InvalidOperationException("not connected");
 
+    // 90 attempts (~3 min): gateway cold start (IBC login + API socket bind) routinely exceeds 60s, and the
+    // first successful socket is often reset once by the 10141 paper-trading disclaimer before the API binds.
     public async Task ConnectAsync(int maxAttempts = 90, int retryDelayMs = 2000, CancellationToken ct = default)
     {
         for (var attempt = 1; attempt <= maxAttempts; attempt++)

@@ -28,6 +28,8 @@ internal static class Program
             return 0;
         }
 
+        // Cancels all open ORDERS account-wide (incl. bracket parent+children); does NOT flatten positions
+        // a filled order leaves behind — use the "flatten" phase for that.
         if (phase == "cancel")
         {
             Log.Line("reqAllOpenOrders -> reqGlobalCancel");
@@ -42,6 +44,14 @@ internal static class Program
 
         var contract = Contracts.Aapl();
         await Contracts.ResolveAsync(conn, wrapper, contract, reqId: 1);
+
+        if (phase == "flatten")
+        {
+            await Orders.FlattenAsync(conn, wrapper, contract, nextOrderId);
+            conn.Disconnect();
+            Log.Line("done");
+            return 0;
+        }
 
         // In "all" mode each phase is independent: a single failure (e.g. a market order that
         // never fills off-hours) is logged and the run continues so every phase is still exercised.
