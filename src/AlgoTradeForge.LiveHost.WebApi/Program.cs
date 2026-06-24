@@ -157,6 +157,7 @@ app.UseCors();
 
 app.MapGet("/health", () => Results.Ok("livehost"));
 app.MapLiveEndpoints();
+app.MapConfigEndpoints();
 
 app.Run();
 

@@ -1,6 +1,8 @@
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Domain.Live;
+using AlgoTradeForge.LiveHost.Application.Collection;
 using AlgoTradeForge.LiveHost.Application.Live;
+using AlgoTradeForge.LiveHost.Infrastructure.Collection;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +20,7 @@ public static class LiveHostServiceCollectionExtensions
         services.AddScoped<ICommandHandler<StartLiveSessionCommand, LiveSessionSubmissionDto>, StartLiveSessionCommandHandler>();
         services.AddScoped<ICommandHandler<StopLiveSessionCommand, bool>, StopLiveSessionCommandHandler>();
         services.AddScoped<IQueryHandler<GetLiveSessionDataQuery, LiveSessionDataDto?>, GetLiveSessionDataQueryHandler>();
+        services.AddSingleton<ICollectionConfigStore, CollectionConfigStore>();
         return services;
     }
 }
