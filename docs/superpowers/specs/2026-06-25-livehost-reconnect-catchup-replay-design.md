@@ -155,7 +155,7 @@ The FE today **polls** `GET /live/{id}/data`, which assembles bars from the shar
 
 The M6 golden (**batch ≡ replay ≡ live**) holds across catch-up by construction (shared engine + deterministic replay from a clean boundary):
 
-- **Inline runtime golden:** every catch-up suppresses the re-derived bar at `LastBarTs` and asserts it equals the persisted bar — so the golden runs on every reconnect, not only in tests.
+- **Suppress-known-bars (the mechanism):** every catch-up suppresses the re-derived bar(s) at/under `LastBarTs` (already-known history is not re-dispatched). The batch≡replay equivalence at that boundary is guarded by the offline restart `[Theory]` golden below. *(A future enhancement could add an always-on runtime self-check — compare the re-derived boundary bar to the seeded warmup bar and **log** a divergence — once the bar source carries a logger; it is NOT implemented as a throwing assert, to avoid faulting a live session on a benign mismatch.)*
 - **Restart golden ([Theory] over all 8 families + CumSum when added):** single uninterrupted batch run vs a run split inside an in-progress bar, replayed from `LastBarTs` through `IReplaySource` + `WatermarkGate`; assert element-wise `Int64Bar` equality across the seam.
 - **Watermark dedupe:** replay/live overlap (duplicate ts/aggId) produces no double-counted records; an out-of-order record is dropped.
 - **Gap policy B:** synthetic true gap → with a generous budget and a stub backfill that fills, replay is contiguous (no `Discontinuity`); with budget=0, a `Discontinuity` is emitted and a fresh accumulator is re-opened at a clean boundary.
