@@ -34,8 +34,61 @@ public class BarSourceResolverCatchupTests
         // the tick-aggregation source for an alt-bar sub without throwing when catch-up deps are present.
     }
 
+    // Fence test: Renko alt-bar starts cold (no catch-up plan), EqV starts warm (warmup bars seeded).
+    // Asserts the resolver fence in BarSourceResolver.ResolveAltBar: Renko → no CatchupPlan,
+    // all other alt-bar families → CatchupPlan with warmup seeding.
+    [Fact]
+    public async Task Renko_altbar_starts_cold_whereas_EqV_seeds_Recent()
+    {
+        var warmupBar = new Int64Bar(TimestampMs: 1_000, Open: 100, High: 110, Low: 90, Close: 105, Volume: 50);
+        var warmupSeries = new TimeSeries<Int64Bar>(1);
+        warmupSeries.Add(warmupBar);
+
+        var replaySource = Substitute.For<IReplaySource>();
+        replaySource.Replay(Arg.Any<ReplayRequest>(), Arg.Any<CancellationToken>())
+            .Returns(EmptyAsyncEnumerable());
+
+        var backfill = Substitute.For<IBackfillRequester>();
+        var warmupLoader = Substitute.For<IInt64BarLoader>();
+        warmupLoader.Load(Arg.Any<DataFeedDescriptor>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(warmupSeries));
+
+        var ws = new BinanceWebSocketManager("wss://example.invalid", TimeSpan.FromSeconds(1), 1, NullLogger.Instance);
+        var options = new CatchupOptions { RelayKeyPrefix = "live-md", DataRoot = Path.GetTempPath() };
+        var resolver = new BarSourceResolver(ws, replaySource, backfill, warmupLoader, options);
+        var scale = new ScaleContext(tickSize: 0.01m, quantityStepSize: 0.001m);
+
+        var renkoSub = new AltBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, "Renko_1m_50")
+        {
+            Asset = Btc()
+        };
+        var eqvSub = new AltBarSubscription("BTCUSDT", "binance", DataFeedRole.Primary, "EqV_1m_500m")
+        {
+            Asset = Btc()
+        };
+
+        var renkoSource = (TickAggregationBarSource)resolver.Resolve("BTCUSDT", renkoSub, scale, (_, _) => { })!;
+        var eqvSource   = (TickAggregationBarSource)resolver.Resolve("BTCUSDT", eqvSub,   scale, (_, _) => { })!;
+
+        var ct = TestContext.Current.CancellationToken;
+        await renkoSource.Start(ct);
+        await eqvSource.Start(ct);
+
+        // Renko fence: cold start — no warmup bars seeded into Recent.
+        Assert.Empty(renkoSource.Recent);
+
+        // EqV contrast: warmup loader returned one bar → Recent is non-empty after Start.
+        Assert.NotEmpty(eqvSource.Recent);
+    }
+
     private static Asset Btc() =>
         CryptoPerpetualAsset.Create("BTCUSDT", "binance", decimalDigits: 2);
+
+    private static async IAsyncEnumerable<TradeTick> EmptyAsyncEnumerable()
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
 }
 
 internal static class BarSourceResolverTestFactory

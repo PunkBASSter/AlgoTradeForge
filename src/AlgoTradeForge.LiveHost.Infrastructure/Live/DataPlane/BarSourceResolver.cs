@@ -51,6 +51,11 @@ public sealed class BarSourceResolver(
         var feedId = AltBarFeedId.Parse(ab.FeedId);
         var frozenThreshold = ThresholdResolver.ResolveParsed(feedId.TypeCode, feedId.Threshold, scale);
 
+        // Renko catch-up is disabled: cross-bar _pendingVolume is not reconstructed by
+        // replay-from-last-completed-bar, so live Renko starts cold. Tracked follow-up.
+        if (feedId.TypeCode == "Renko")
+            return new TickAggregationBarSource(feedId.TypeCode, frozenThreshold, scale, onBar);
+
         var asset = ab.RequireAsset();
         var assetDir = AssetDirectoryName.From(asset);
 
