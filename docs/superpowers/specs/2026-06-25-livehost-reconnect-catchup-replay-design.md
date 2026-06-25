@@ -24,7 +24,7 @@
 2. **Two record streams, one accumulator.** The *N completed warmup bars* the strategy needs for indicator history are **read** from HistoryLoader's already-aggregated alt-bar feed (they *are* the batch bars — the golden holds by construction; not re-derived). Source-record **replay** covers only the **tail** from the last completed bar's open forward.
 3. **Contiguity via a monotonic source watermark.** Replayed records and live ticks enter the accumulator through one gate that tracks the last-consumed source identity (aggId, ts fallback) and drops anything `<=` it. Catch-up and live become a single ordered stream; the overlap self-dedupes; a true gap shows up as a watermark **jump**. (Chosen over a phased pre-roll/attach barrier: it reuses the batch side's existing `MonotonicTickSource` ordering invariant and turns coordination into ordering — stateless-per-record, idempotent, degrades gracefully.)
 4. **Gap policy = bounded-wait-then-declare (per-venue budget).** On a true gap (records missing from relay AND archive): emit a `Discontinuity` marker, request inline backfill, poll up to a per-venue `BackfillBudget`. Filled → replay continues contiguous (no discontinuity surfaced). Expired → reset the accumulator at a clean boundary (fresh bar at first contiguous live tick) and go live. Binance budget generous (REST backfill closes it); IB budget ≈ 0 (tick-by-tick history unrecoverable) → always falls back to declare-and-continue. Same code path; the venue difference is the budget value.
-5. **Shared recovery seam, separate impls.** Market-data catch-up and M3b order-state recovery share a small vocabulary (`Discontinuity{from,to,reason}`, `RecoveryPolicy{BackfillBudget}`, the detect→request→bounded-wait→reconcile→resume contract). They do **not** share reconcile logic: market data reconciles a watermark+accumulator; orders reconcile via `OrderGroupReconciler` + exchange query.
+5. **Shared recovery seam, separate impls.** Market-data catch-up and M3b order-state recovery share a small vocabulary (`Discontinuity{FromTs, ToTs, Reason}` — **time-based and venue-agnostic**; the gap *detection* mechanism is venue-specific and encapsulated, see below — `RecoveryPolicy{BackfillBudget}`, the detect→request→bounded-wait→reconcile→resume contract). They do **not** share reconcile logic: market data reconciles a watermark+accumulator; orders reconcile via `OrderGroupReconciler` + exchange query.
 6. **Identity alignment by mapping, not unification.** The live dispatch plane keeps `instrument == AssetName` as its routing key (untouched). The replay-source locator takes the resolved `Asset` (already obtained in `StartLiveSessionCommandHandler`) and derives the on-disk location via the existing `AssetDirectoryName.From(asset)`. One-way deterministic mapping at the replay boundary; no hot-path change.
 
 ## Layering (venue-agnostic abstraction → optional shared base → venue-specific impl)
@@ -38,7 +38,7 @@ LiveHost.Application/Live/Recovery/  — venue-agnostic abstractions + shared ba
     Discontinuity, DiscontinuityReason
     RecoveryPolicy { BackfillBudget }
     IReplaySource                    — yields SourceRecord by (Asset, sourceFeedId, fromTs), ts-ordered
-    IBackfillRequester               — TryClose(gap, policy, ct): detect→request→bounded-wait
+    IBackfillRequester               — TryBackfill(gap, policy, ct): detect→request→bounded-wait
     WatermarkGate                    — monotonic source-identity dedupe (shared, venue-agnostic)
     CatchupCoordinator               — shared base: seed warmup, run replay loop, drive the gate,
                                        apply gap policy B, suppress-known-bars, drain live buffer
@@ -98,12 +98,13 @@ Note the manifest does **not** literally store "last completed bar's last consum
 - **Binance:** relay `SessionStart`/`Heartbeat`/`SessionEnd` + the source-ts watermark. Heartbeats present, no trades, watermark not advancing = quiet market (no gap). Heartbeat gap and/or watermark **jump** across reconnect = candidate gap.
 - **IB:** connection-state callbacks (`connectionClosed`/`error`) + the same watermark-jump confirmation.
 - A candidate gap is a **true** gap only when `IReplaySource` cannot supply records to bridge the jump (relay + archive both empty for `[from,to]`).
+- **Detection vs marker (venue layering):** the *signal* is venue-specific and stays inside the detector — Binance's `WatermarkGate` decides a gap from aggId discontinuity; IB decides from connection-state callbacks + a time window. The *marker* that crosses the venue boundary (`Discontinuity`) carries only `{FromTs, ToTs, Reason}` — the one descriptor every venue and every consumer (backfill REST `startTime/endTime`, HistoryLoader heal, FE) shares. The aggId never leaves the gate; time-range backfill self-corrects because replay re-reads through the same aggId watermark, which dedupes the overlap.
 
 **Policy B** on a true gap found mid-replay:
 
 ```
 emit Discontinuity{from, to, reason}
-→ IBackfillRequester.TryClose(gap, policy)               // venue-specific
+→ IBackfillRequester.TryBackfill(gap, policy)            // venue-specific
     poll up to RecoveryPolicy.BackfillBudget:
       filled  → records now in archive → replay continues contiguous (no Discontinuity surfaced)
       expired → re-open a fresh accumulator (AccumulatorEntry.Open) at a clean boundary
@@ -112,6 +113,8 @@ emit Discontinuity{from, to, reason}
 ```
 
 The coordinator owns the accumulator instance, so "reset at a clean boundary" is a fresh `AccumulatorEntry.Open` — no new `IBarAccumulator` method, consistent with "replay never inspects accumulator internals." Budget=0 makes B behave as "declare and continue." Healing the historical record (HistoryLoader re-aggregation once it backfills) is a separate, offline concern; the seam (`Discontinuity` + `IBackfillRequester`) is built now.
+
+**Edge cases.** A `Discontinuity` is a **closed interval between two observed ticks** (`FromTs` = last consumed tick, `ToTs` = first tick after the gap) — never an open-ended "…till now." Because the live connection is opened and buffered *before* replay, the gap's far edge is pinned to a specific buffered reconnect tick; the still-growing present accumulates in the (bounded) live buffer and drains after the bridge, so a slow/long catch-up faces a bigger drain, not a moving target. If that buffer overflows during a long catch-up, the dropped live ticks are still in the relay archive, so replay picks them up (open point #1) and the watermark dedupes — catch-up always converges. **Multiple gaps** in one window are each backfilled once, keyed by the gap's low boundary; a backfill that reports success without actually closing a gap is declared (not retried), so catch-up always terminates.
 
 ## Multi-strategy / shared-source semantics
 
