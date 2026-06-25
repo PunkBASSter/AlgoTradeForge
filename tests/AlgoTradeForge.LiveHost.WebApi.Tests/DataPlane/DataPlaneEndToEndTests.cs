@@ -8,10 +8,13 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 using AlgoTradeForge.Live.Relay;
+using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.LiveHost.Application.Collection;
 using AlgoTradeForge.LiveHost.Application.Live.DataPlane;
+using AlgoTradeForge.LiveHost.Application.Live.Recovery;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane;
+using AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery;
 using AlgoTradeForge.LiveHost.WebApi;
 using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -152,7 +155,13 @@ public sealed class DataPlaneEndToEndTests : IDisposable
         var ws = new BinanceWebSocketManager(
             "wss://unused.invalid", TimeSpan.FromSeconds(1), maxReconnectAttempts: 0,
             NullLogger.Instance); // AltBar/Tick paths never touch the WS; constructed only to satisfy the resolver.
-        var resolver = new BarSourceResolver(ws);
+        var catchupOptions = new CatchupOptions { RelayKeyPrefix = "live-md", DataRoot = Path.GetTempPath() };
+        var resolver = new BarSourceResolver(
+            ws,
+            Substitute.For<IReplaySource>(),
+            Substitute.For<IBackfillRequester>(),
+            Substitute.For<IInt64BarLoader>(),
+            catchupOptions);
         var router = new TickRouter(resolver, dispatch, NullLogger<TickRouter>.Instance);
 
         // Bar-path session: AltBar subscription; bars route unconditionally.

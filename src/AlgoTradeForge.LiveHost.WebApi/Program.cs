@@ -93,6 +93,29 @@ foreach (var asm in pluginAssemblies)
 Assembly[] strategyAssemblies = [typeof(AlgoTradeForge.Domain.Strategy.StrategyBase<>).Assembly, .. pluginAssemblies];
 builder.Services.AddInfrastructure(strategyAssemblies);
 
+// Catch-up / recovery options: RelayKeyPrefix MUST equal RelayPumpOptions.KeyPrefix (no venue suffix).
+// RelayArchiveReplaySource appends "/{venue}" when listing, matching the relay's upload path
+// "{KeyPrefix}/{venue}/{instrument}/trades/{file}".
+builder.Services.Configure<AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.CatchupOptions>(opts =>
+{
+    builder.Configuration.GetSection("Catchup").Bind(opts);
+    // Ensure relay key prefix matches the relay pump's upload prefix.
+    if (string.IsNullOrEmpty(opts.RelayKeyPrefix))
+        opts.RelayKeyPrefix = builder.Configuration.GetValue<string>("RelayPump:KeyPrefix") ?? "live-md";
+    if (string.IsNullOrEmpty(opts.DataRoot))
+        opts.DataRoot = builder.Configuration.GetValue<string>("CandleStorage:DataRoot") ?? "data";
+});
+builder.Services.AddSingleton(sp =>
+    sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.CatchupOptions>>().Value);
+builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.Recovery.IReplaySource>(sp =>
+    new AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.RelayArchiveReplaySource(
+        sp.GetRequiredService<AlgoTradeForge.Storage.IFileStorage>(),
+        sp.GetRequiredService<AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.CatchupOptions>().RelayKeyPrefix));
+builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.IAggTradeBackfillClient,
+    AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.NullAggTradeBackfillClient>();
+builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.Recovery.IBackfillRequester,
+    AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.BinanceBackfillRequester>();
+
 // Data plane: HOST-LEVEL SINGLETONS (one shared plane per node). The relay pump publishes ticks
 // to the router at startup, before any session exists; sessions register with the SAME router.
 // The kline market-data WS needs no account auth (public klines) — shared market-data manager.
@@ -105,7 +128,11 @@ builder.Services.AddSingleton(sp =>
 });
 builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.DataPlane.IBarSourceResolver>(sp =>
     new AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane.BarSourceResolver(
-        sp.GetRequiredService<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceWebSocketManager>()));
+        sp.GetRequiredService<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceWebSocketManager>(),
+        sp.GetRequiredService<AlgoTradeForge.LiveHost.Application.Live.Recovery.IReplaySource>(),
+        sp.GetRequiredService<AlgoTradeForge.LiveHost.Application.Live.Recovery.IBackfillRequester>(),
+        sp.GetRequiredService<AlgoTradeForge.Application.CandleIngestion.IInt64BarLoader>(),
+        sp.GetRequiredService<AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.CatchupOptions>()));
 builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.DataPlane.IStrategyDispatch,
     AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane.StrategyDispatch>();
 builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.DataPlane.ITickRouter,

@@ -6,6 +6,7 @@ using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane;
+using AlgoTradeForge.LiveHost.Infrastructure.Tests.Live.DataPlane;
 using AlgoTradeForge.LiveHost.Infrastructure.Tests.TestUtilities;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -34,7 +35,7 @@ public sealed class TestnetConnectorFixture : IAsyncLifetime
         var klineWs = new BinanceWebSocketManager(
             accountConfig.MarketStreamUrl, sharedOptions.ReconnectDelay,
             sharedOptions.MaxReconnectAttempts, NullLogger.Instance);
-        var resolver = new BarSourceResolver(klineWs);
+        var resolver = BarSourceResolverTestFactory.CreateWithWs(klineWs);
         var dispatch = new StrategyDispatch(NullLogger<StrategyDispatch>.Instance);
         var router = new TickRouter(resolver, dispatch, NullLogger<TickRouter>.Instance);
 
