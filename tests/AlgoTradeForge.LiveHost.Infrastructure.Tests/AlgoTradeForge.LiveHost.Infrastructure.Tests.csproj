@@ -26,6 +26,8 @@
     <ProjectReference Include="..\..\src\AlgoTradeForge.Domain\AlgoTradeForge.Domain.csproj" />
     <ProjectReference Include="..\..\src\AlgoTradeForge.Application\AlgoTradeForge.Application.csproj" />
     <ProjectReference Include="..\..\src\AlgoTradeForge.LiveHost.Application\AlgoTradeForge.LiveHost.Application.csproj" />
+    <ProjectReference Include="..\..\src\AlgoTradeForge.Live.Relay\AlgoTradeForge.Live.Relay.csproj" />
+    <ProjectReference Include="..\..\src\AlgoTradeForge.Storage\AlgoTradeForge.Storage.csproj" />
   </ItemGroup>
 
 </Project>
