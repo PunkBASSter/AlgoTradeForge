@@ -1,7 +1,9 @@
 # LiveHost — M6 Partial-Bar Seeding (Plan 0) — Design
 
+> ⛔ **SUPERSEDED / REVERTED (2026-06-25).** Implemented (10 commits) then reverted. The core premise — that mid-bar state must be *persisted* — was rejected: the partial bar is redundant with the lossless tick archive (relay + HistoryLoader). At reconnect we replay archived source records from the last completed bar (bounded by one partial bar's worth, done once), rebuilding the partial as a free by-product of the live catch-up the host needs anyway. The true-disconnect boundary-shift problem (event-driven EqV/imbalance bars) is solved by neither persist nor replay — it needs separate gap-detection + backfill + resync. Mid-bar continuity now rides with the live reconnect/catch-up mechanism (Plan 3 / vision M3b). Retained as a record of the rejected approach.
+
 **Date:** 2026-06-25
-**Status:** Approved (brainstorming) — ready for writing-plans
+**Status:** SUPERSEDED — see banner above (was: Approved, implemented, reverted)
 **Scope:** Close out vision **M6** by seeding live alt-bar accumulators with the **mid-bar (partial) state** from the warmup tail, so the first live bar continues the historical series seamlessly. Generalizes the accumulator resume seam beyond `RenkoAccumulator`'s single `long` and persists partial state as CAS JSON (§H). Plan 0 of the IB re-plan phase (`2026-06-25-livehost-ib-replan-phase-design.md`) — **independent of IB**; the live-alt-bar M6 closeout.
 
 ## Context

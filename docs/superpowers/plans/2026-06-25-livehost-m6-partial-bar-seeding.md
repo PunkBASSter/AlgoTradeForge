@@ -1,5 +1,7 @@
 # M6 Partial-Bar Seeding (Plan 0) Implementation Plan
 
+> ⛔ **SUPERSEDED / REVERTED (2026-06-25).** This plan was fully implemented (10 commits `acfe3a2..620e1a4`) and then **reverted** — the persisted partial-bar state is redundant with the already-lossless tick archive. Mid-bar continuity will instead be rebuilt by **replaying archived source records at reconnect**, as a by-product of the live reconnect/catch-up mechanism (Plan 3 / vision M3b), paired with gap-detection/resync for true disconnects. The old Renko `long` resume seam is restored. Kept as a record of the rejected approach. See `2026-06-25-livehost-ib-replan-phase-design.md` (Plan 0 row).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Generalize the alt-bar accumulator resume seam beyond Renko's single `long` so live accumulators can be seeded with the full mid-bar (partial) state of any family, persisted as JSON on `IFileStorage`, closing vision M6 (live bars continue the historical series).

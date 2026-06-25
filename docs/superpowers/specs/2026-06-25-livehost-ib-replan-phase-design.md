@@ -59,7 +59,7 @@ The internal ownership detail (who reads the pump, how writes are serialized ont
 
 | # | Plan | Owns | Depends on | Review tier |
 |---|------|------|-----------|-------------|
-| **0** | **M6 partial-bar seeding** (was "6b") | Generalize the accumulator resume seam beyond `RenkoAccumulator`'s single `long` (`SeedResumeState`/`TryGetResumeState`); seed mid-bar state from the warmup tail as CAS JSON (§H), so the first live alt-bar continues the historical series. Threshold-freeze is already DONE (Plan 4). Closes M6. **Zero IB coupling.** | — | opus (M6 golden) |
+| **0** | ~~**M6 partial-bar seeding** (was "6b")~~ — **SUPERSEDED / DROPPED** | Persisting mid-bar accumulator state as CAS JSON was built (10 commits) then **reverted** as over-engineered: the partial bar is redundant with the already-lossless tick archive. M6 mid-bar continuity moves into the future **live reconnect/catch-up replay** mechanism (rides with Plan 3 / vision M3b), where the partial bar is rebuilt by replaying archived source records from the last completed bar — a free by-product of catch-up, bounded by one partial bar. The old Renko `long` seam (`SeedResumeState`/`TryGetResumeState`) is restored unchanged. See the superseded spec/plan for the rejected approach. | — | (folded into reconnect work) |
 | **1** | **Venue-neutral contract identity** | `IbContract` venue model in the IB slice; boundary mapper Domain `Asset` ↔ `IbContract`; `IbContractResolver` (conId resolution + cache); any genuinely-neutral Domain addition (e.g. `Currency`) only if forced. Configured-tier identity round-trips through config. | — | sonnet |
 | **2** | **Plan 5: `IOrderRouter` + multi-account** | Account-keyed `IOrderRouter` (processing task → router → per-account execution); account-scoped `LiveOrderContext`; **per-target `ScaleContext`** (each target scales off ITS OWN asset — removes the Plan-4 single-`ScaleContext`-for-all assumption); per-session 3-phase reconciliation; strategy binding `{ dataSubscriptions[], executionAccount }`. Binance single-account = degenerate case (the general model with one account). | 1 | **opus** (order-path) |
 | **3** | **`IbVenueConnector` (data) + single-session** | `IbSession` owns `EClientSocket`+`EReader`; `IbVenueConnector` bridges `EWrapper` callbacks → bounded channel → `IAsyncEnumerable<IMarketEvent>` (tick-by-tick `TradeTick` + `reqRealTimeBars` venue-published bars + contract resolution); relay archival of IB ticks; `IBarSourceResolver` venue-bar case; `MarketDataSessionPolicy` host wiring. | 1 | sonnet/opus |
@@ -67,10 +67,10 @@ The internal ownership detail (who reads the pump, how writes are serialized ont
 | **5** | **Deployment: `LiveHost@ib` runtime** | gnzsnz/ib-gateway sidecar in compose; `ATF_PROFILE=ib`; livehost manual-approval gate (never auto-pull the money host); real paper E2E run (reuses the POC's verified credential/port/clientId facts). | 4 | controller + owner |
 | **S** | **Live-2FA spike** (LIVE-ONLY) | IBKR Mobile push approval at session start / kept-alive session. Paper needs none — does **not** block the paper endpoint. | — | spike |
 
-**Dependency spine:** `1 → {2, 3} → 4 → 5`. Plan 0 and Spike S float free. The **working paper `LiveHost@ib`** endpoint is reached at **Plan 5**.
+**Dependency spine:** `1 → {2, 3} → 4 → 5`. Spike S floats free. The **working paper `LiveHost@ib`** endpoint is reached at **Plan 5**.
 
 **Sequencing notes:**
-- **Plan 0 first** as an independent warm-up: it closes M6 and completes the live-alt-bar path before the IB reshape, and cannot conflict with anything else. (It is genuinely orthogonal — it may equally go last if the owner prefers to sprint at IB first.)
+- **Plan 0 dropped (superseded).** The persisted-state seeding approach was implemented then reverted (redundant with the tick archive). M6 mid-bar continuity is folded into the live reconnect/catch-up replay mechanism (Plan 3 / vision M3b), paired with gap-detection/resync for true disconnects. The old Renko `long` resume seam is restored. **NEXT is Plan 1.**
 - **Plans 3 and 4 are split** (data plane vs order session) though they share the `IbSession` socket, because the two planes have very different review profiles — Plan 4 is order-integrity/concurrency-critical (opus), Plan 3 is mostly ingest plumbing.
 - **§E cosmetic cleanups** (unused `_logger` in `TickRouter`/`StrategyDispatch`; `Program.cs` FQ DI names; UTF-8 BOM on relocated engine test files; double-`ToList`) fold in opportunistically where a file is already open.
 
@@ -88,7 +88,7 @@ The internal ownership detail (who reads the pump, how writes are serialized ont
 
 This is a phase/roadmap design doc. It is "done" when the owner signs off on the endpoint (working paper `LiveHost@ib`), the three locked cross-cutting abstraction decisions (data-seam bridge, contract identity incl. two-tier resolution, single-session transport), and the 6-plan + 1-spike decomposition with its dependency spine. Per-plan implementation verification lands in each plan's own spec:
 
-- **Plan 0:** M6 golden (batch ≡ replay ≡ live) holds across a mid-bar restart, all 8 alt-bar families, element-wise `Int64Bar` equality.
+- ~~**Plan 0:** M6 golden across a mid-bar restart~~ — **superseded**; mid-bar continuity is now verified inside the reconnect/catch-up replay mechanism (Plan 3 / M3b), not via persisted state.
 - **Plan 1:** round-trip `IbContract` ↔ Domain `Asset` mapper; `IbContractResolver` resolves `{AAPL,STK,SMART,USD}` → conId (against POC-verified behavior).
 - **Plan 2:** two-account routing test (strategy set X → account A, set Y → account B, shared A data; orders isolated per account); per-target scaling correctness.
 - **Plan 3:** IB ticks → relay `.atft` → real `StreamCanonicalizer<TradeTick>` → canonical CSV row-exact (mirrors `LiveRoundTripTests`); venue-published 5s bars resolve via `IBarSourceResolver`.
