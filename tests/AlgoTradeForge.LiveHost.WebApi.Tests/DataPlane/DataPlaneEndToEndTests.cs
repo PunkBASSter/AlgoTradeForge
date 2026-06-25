@@ -156,11 +156,17 @@ public sealed class DataPlaneEndToEndTests : IDisposable
             "wss://unused.invalid", TimeSpan.FromSeconds(1), maxReconnectAttempts: 0,
             NullLogger.Instance); // AltBar/Tick paths never touch the WS; constructed only to satisfy the resolver.
         var catchupOptions = new CatchupOptions { RelayKeyPrefix = "live-md", DataRoot = Path.GetTempPath() };
+        var replaySource = Substitute.For<IReplaySource>();
+        replaySource.Replay(Arg.Any<ReplayRequest>(), Arg.Any<CancellationToken>())
+            .Returns(EmptyTicks(Ct));
+        var warmupLoader = Substitute.For<IInt64BarLoader>();
+        warmupLoader.Load(Arg.Any<DataFeedDescriptor>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new TimeSeries<Int64Bar>(1)));
         var resolver = new BarSourceResolver(
             ws,
-            Substitute.For<IReplaySource>(),
+            replaySource,
             Substitute.For<IBackfillRequester>(),
-            Substitute.For<IInt64BarLoader>(),
+            warmupLoader,
             catchupOptions);
         var router = new TickRouter(resolver, dispatch, NullLogger<TickRouter>.Instance);
 
@@ -241,5 +247,12 @@ public sealed class DataPlaneEndToEndTests : IDisposable
         Assert.True(archivedRows > 0, "expected archived rows > 0");
         Assert.True(barSession.Strategy.CompletedBars.Count > 0, "expected completed bars > 0");
         Assert.True(tickSession.Strategy.Ticks.Count > 0, "expected ticks > 0");
+    }
+
+    private static async IAsyncEnumerable<TradeTick> EmptyTicks(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await Task.CompletedTask;
+        yield break;
     }
 }

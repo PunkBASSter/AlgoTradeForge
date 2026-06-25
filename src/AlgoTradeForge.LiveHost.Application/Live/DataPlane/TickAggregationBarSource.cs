@@ -61,6 +61,11 @@ public sealed class TickAggregationBarSource : ITickDrivenBarSource, IDisposable
         return ct.CanBeCanceled ? t.WaitAsync(ct) : t;
     }
 
+    // Explicit bridge so callers holding an IBarSource reference (e.g. TickRouter) invoke the full
+    // catch-up path. The ct-overload is the real implementation; callers that hold the concrete type
+    // (e.g. tests) should prefer Start(ct) to pass a meaningful cancellation token.
+    Task IBarSource.Start() => Start(CancellationToken.None);
+
     public async Task Start(CancellationToken ct = default)
     {
         if (_catchup is null) return;
