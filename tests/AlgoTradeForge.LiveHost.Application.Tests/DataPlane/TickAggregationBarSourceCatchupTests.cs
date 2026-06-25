@@ -54,7 +54,7 @@ public class TickAggregationBarSourceCatchupTests
         Assert.Empty(dispatched);
 
         // Now start — replay runs, buffer drains (the early-fed tick is processed), phase goes Live.
-        await src.Start();
+        await src.Start(TestContext.Current.CancellationToken);
 
         // The buffered tick was admitted: warmup bar is in Recent, no exception thrown.
         Assert.Contains(warmupBar, src.Recent);
@@ -93,7 +93,7 @@ public class TickAggregationBarSourceCatchupTests
         var src = new TickAggregationBarSource("EqV", frozenThreshold: 40, Scale(),
             onBar: (b, _) => dispatched.Add(b), catchup: plan);
 
-        await src.Start();
+        await src.Start(TestContext.Current.CancellationToken);
 
         // Recent seeded with the warmup bar; no NEW completed bar dispatched yet (partial = 30 < 40).
         Assert.Contains(warmupBar, src.Recent);
