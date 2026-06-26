@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Vendored Interactive Brokers TWS API C# source (version 10.45.01).
+    Third-party, not ours to maintain: nullable OFF (predates NRT), implicit usings OFF
+    (source carries explicit usings), warnings NOT errors (the root Directory.Build.props
+    forces TreatWarningsAsErrors=true solution-wide; override it only here).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>IBApi</AssemblyName>
+    <RootNamespace>IBApi</RootNamespace>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS8981</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.29.5" />
+  </ItemGroup>
+</Project>

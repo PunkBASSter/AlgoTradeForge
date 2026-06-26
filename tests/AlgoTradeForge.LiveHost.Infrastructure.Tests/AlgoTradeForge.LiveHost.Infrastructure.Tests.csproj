@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AlgoTradeForge.LiveHost.Infrastructure\AlgoTradeForge.LiveHost.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\AlgoTradeForge.IbApi\AlgoTradeForge.IbApi.csproj" />
     <ProjectReference Include="..\..\src\AlgoTradeForge.Domain\AlgoTradeForge.Domain.csproj" />
     <ProjectReference Include="..\..\src\AlgoTradeForge.Application\AlgoTradeForge.Application.csproj" />
     <ProjectReference Include="..\..\src\AlgoTradeForge.LiveHost.Application\AlgoTradeForge.LiveHost.Application.csproj" />
