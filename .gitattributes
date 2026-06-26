@@ -1,0 +1,4 @@
+# Vendored third-party Interactive Brokers TWS API 10.45.01 — external code, not
+# maintained here. Mark as vendored so GitHub collapses it in diffs and excludes
+# it from the repo's language statistics.
+src/AlgoTradeForge.IbApi/** linguist-vendored=true
