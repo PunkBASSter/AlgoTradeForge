@@ -76,9 +76,15 @@ public sealed class FileSystemAssetRepository(
 
             var decimalDigits = await ReadDecimalDigitsFromFeedsJson(storage, dataRoot, info, logger, ct);
 
-            Asset asset = info.IsFutures
-                ? CryptoPerpetualAsset.Create(info.Symbol, info.Exchange, decimalDigits, margin: 0.05m)
-                : CryptoAsset.Create(info.Symbol, info.Exchange, decimalDigits);
+            Asset asset = info switch
+            {
+                { IsFutures: true } => CryptoPerpetualAsset.Create(info.Symbol, info.Exchange, decimalDigits, margin: 0.05m),
+                // US cash-equity exchanges (e.g. the imported Stooq archive) settle cash-and-carry,
+                // not as crypto spot. Filesystem discovery can't carry per-symbol tick/lot metadata,
+                // so these use the EquityAsset defaults ($0.01 tick, multiplier 1).
+                _ when IsUsEquityExchange(info.Exchange) => new EquityAsset { Name = info.Symbol, Exchange = info.Exchange },
+                _ => CryptoAsset.Create(info.Symbol, info.Exchange, decimalDigits),
+            };
 
             dict[key] = asset;
         }
@@ -134,4 +140,9 @@ public sealed class FileSystemAssetRepository(
 
     private static int ScaleFactorToDecimalDigits(decimal scaleFactor)
         => Math.Clamp((int)Math.Round(Math.Log10((double)scaleFactor)), 0, 10);
+
+    private static readonly HashSet<string> UsEquityExchanges =
+        new(StringComparer.OrdinalIgnoreCase) { "NASDAQ", "NYSE", "NYSEMKT", "AMEX", "ARCA", "BATS" };
+
+    private static bool IsUsEquityExchange(string exchange) => UsEquityExchanges.Contains(exchange);
 }
