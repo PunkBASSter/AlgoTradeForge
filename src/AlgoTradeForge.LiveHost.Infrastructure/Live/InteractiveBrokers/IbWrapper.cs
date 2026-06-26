@@ -23,8 +23,12 @@ internal sealed class IbWrapper : DefaultEWrapper
 
     public Task<int> NextValidId => _nextValidId.Task;
 
-    public Task<IReadOnlyList<IbContractDetailsResult>> AwaitContractDetails(int reqId) =>
-        _byReq.GetOrAdd(reqId, _ => new Pending()).Completion.Task;
+    // Register BEFORE issuing reqContractDetails (callbacks fire on the pump thread). The returned scope carries
+    // the awaiter and evicts the reqId on Dispose; release via `using` so an abandoned request can't leak.
+    public ContractDetailsRequest RegisterContractDetails(int reqId) =>
+        new(this, reqId, _byReq.GetOrAdd(reqId, _ => new Pending()).Completion.Task);
+
+    public void ReleaseContractDetails(int reqId) => _byReq.TryRemove(reqId, out _);
 
     public override void nextValidId(int orderId) => _nextValidId.TrySetResult(orderId);
 

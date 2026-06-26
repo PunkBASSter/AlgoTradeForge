@@ -13,13 +13,13 @@ public class IbWrapperTests
     public async Task ContractDetailsEnd_CompletesWithAllAccumulated()
     {
         var w = new IbWrapper();
-        var awaiter = w.AwaitContractDetails(1);
+        using var request = w.RegisterContractDetails(1);
 
         w.contractDetails(1, Details(1, "GCZ6", "20261229"));
         w.contractDetails(1, Details(2, "GCG7", "20270226"));
         w.contractDetailsEnd(1);
 
-        var results = await awaiter;
+        var results = await request.Completion;
         Assert.Equal(2, results.Count);
         Assert.Equal(1, results[0].ConId);
         Assert.Equal("20261229", results[0].LastTradeDate);
@@ -30,12 +30,12 @@ public class IbWrapperTests
     public async Task SingleStk_CompletesWithOne()
     {
         var w = new IbWrapper();
-        var awaiter = w.AwaitContractDetails(3);
+        using var request = w.RegisterContractDetails(3);
 
         w.contractDetails(3, Details(265598, "AAPL"));
         w.contractDetailsEnd(3);
 
-        var results = await awaiter;
+        var results = await request.Completion;
         var only = Assert.Single(results);
         Assert.Equal(265598, only.ConId);
         Assert.Equal("AAPL", only.LocalSymbol);
@@ -45,11 +45,11 @@ public class IbWrapperTests
     public async Task Error_OnRequestId_FaultsAwaiter()
     {
         var w = new IbWrapper();
-        var awaiter = w.AwaitContractDetails(7);
+        using var request = w.RegisterContractDetails(7);
 
         w.error(7, 0L, 200, "No security definition has been found", "");
 
-        var ex = await Assert.ThrowsAsync<IbRequestException>(async () => await awaiter);
+        var ex = await Assert.ThrowsAsync<IbRequestException>(async () => await request.Completion);
         Assert.Equal(200, ex.ErrorCode);
     }
 
@@ -67,5 +67,23 @@ public class IbWrapperTests
         var w = new IbWrapper();
         w.nextValidId(42);
         Assert.Equal(42, await w.NextValidId);
+    }
+
+    [Fact]
+    public void DisposingRequest_DropsPending_SoReqIdDoesNotLeak()
+    {
+        var w = new IbWrapper();
+        var first = w.RegisterContractDetails(9);
+        w.contractDetailsEnd(9);
+        Assert.True(first.Completion.IsCompleted);
+
+        first.Dispose();
+
+        // After the scope's Dispose the reqId is gone: re-registering yields a new, still-pending task rather
+        // than the completed one — proving the Pending entry was evicted instead of accumulating for the
+        // connection's life.
+        using var second = w.RegisterContractDetails(9);
+        Assert.NotSame(first.Completion, second.Completion);
+        Assert.False(second.Completion.IsCompleted);
     }
 }

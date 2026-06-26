@@ -7,7 +7,6 @@ namespace AlgoTradeForge.LiveHost.Infrastructure.Live.InteractiveBrokers;
 // socket). The wrapper is supplied so the data/order planes can share one callback sink.
 internal sealed class IbConnection(IbWrapper wrapper, IbConnectionOptions options) : IAsyncDisposable
 {
-    private readonly EReaderMonitorSignal _signal = new();
     private EClientSocket? _client;
     private Thread? _readerThread;
 
@@ -17,42 +16,73 @@ internal sealed class IbConnection(IbWrapper wrapper, IbConnectionOptions option
     // first socket is often reset once by the 10141 paper-trading disclaimer before the API binds.
     public async Task Connect(int maxAttempts = 90, int retryDelayMs = 2000, CancellationToken ct = default)
     {
+        Exception? lastError = null;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             ct.ThrowIfCancellationRequested();
-            _client = new EClientSocket(wrapper, _signal);
+            // Fresh signal per attempt: a torn-down attempt's parked pump thread must never share a signal
+            // with the next attempt's EReader, or signals dispatch to the wrong (dead) socket.
+            var signal = new EReaderMonitorSignal();
+            var client = new EClientSocket(wrapper, signal);
+            var connected = false;
             try
             {
-                _client.eConnect(options.Host, options.Port, options.ClientId);
-                if (_client.IsConnected())
+                client.eConnect(options.Host, options.Port, options.ClientId);
+                if (client.IsConnected())
                 {
-                    StartReaderPump(_client);
+                    _client = client;
+                    StartReaderPump(client, signal);
                     await wrapper.NextValidId.WaitAsync(TimeSpan.FromSeconds(15), ct);
+                    connected = true;
                     return;
                 }
             }
-            catch (Exception) when (attempt < maxAttempts)
+            catch (OperationCanceledException)
             {
-                // transient gateway-cold-start failure; retry below
+                throw; // teardown runs in finally; rethrow so cancellation propagates instead of retrying
             }
-            await Task.Delay(retryDelayMs, ct);
+            catch (Exception ex)
+            {
+                // transient gateway-cold-start / disclaimer-reset failure; tear down (finally) and retry below
+                lastError = ex;
+            }
+            finally
+            {
+                if (!connected)
+                    Teardown(client);
+            }
+            if (attempt < maxAttempts)
+                await Task.Delay(retryDelayMs, ct);
         }
-        throw new TimeoutException($"Could not connect to IB Gateway at {options.Host}:{options.Port}.");
+        throw new TimeoutException($"Could not connect to IB Gateway at {options.Host}:{options.Port}.", lastError);
     }
 
-    private void StartReaderPump(EClientSocket client)
+    private void StartReaderPump(EClientSocket client, EReaderSignal signal)
     {
-        var reader = new EReader(client, _signal);
+        var reader = new EReader(client, signal);
         reader.Start();
         _readerThread = new Thread(() =>
         {
             while (client.IsConnected())
             {
-                _signal.waitForSignal();
+                signal.waitForSignal();
                 reader.processMsgs();
             }
         }) { IsBackground = true, Name = "ib-ereader" };
         _readerThread.Start();
+    }
+
+    // Disconnects a failed attempt's socket so its pump thread's while(IsConnected) loop exits, and clears the
+    // active references so Client stays "not established" until a real success.
+    private void Teardown(EClientSocket client)
+    {
+        if (client.IsConnected())
+            client.eDisconnect();
+        if (ReferenceEquals(_client, client))
+        {
+            _client = null;
+            _readerThread = null;
+        }
     }
 
     public void Disconnect()

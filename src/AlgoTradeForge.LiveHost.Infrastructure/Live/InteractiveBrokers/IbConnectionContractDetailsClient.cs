@@ -11,9 +11,9 @@ internal sealed class IbConnectionContractDetailsClient(
     public async Task<ResolvedIbContract> FetchContractDetails(IbContract spec, CancellationToken ct = default)
     {
         var reqId = Interlocked.Increment(ref _reqId);
-        var awaiter = wrapper.AwaitContractDetails(reqId);
+        using var request = wrapper.RegisterContractDetails(reqId);
         connection.Client.reqContractDetails(reqId, spec.ToIbApiContract());
-        var details = await awaiter.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        var details = await request.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
         var chosen = Select(spec, details);
         return new ResolvedIbContract(spec, chosen.ConId, chosen.LocalSymbol, chosen.LastTradeDate);
     }
