@@ -104,10 +104,10 @@ This is the **full real resolver** validated against live paper IB (owner decisi
 
 ### 6. Vendored IBApi integration
 
-- New project `src/AlgoTradeForge.IbApi/IBApi.csproj`: `net10.0`, `OutputType=Library`, `<Nullable>disable</Nullable>`, `<ImplicitUsings>disable</ImplicitUsings>`, `AssemblyName/RootNamespace = IBApi`, `NoWarn` for the vendored-source warnings, `PackageReference Google.Protobuf 3.29.5`. Vendored TWS API 10.45.01 C# source (≈271 `.cs`) + the `protobuf/` source folder. Added to `AlgoTradeForge.slnx`.
+- The vendored IBApi project (`AlgoTradeForge.IbApi.csproj`: `net10.0`, `OutputType=Library`, `<Nullable>disable</Nullable>`, `<ImplicitUsings>disable</ImplicitUsings>`, `<TreatWarningsAsErrors>false</TreatWarningsAsErrors>` — overriding the root props — `AssemblyName/RootNamespace = IBApi`, `PackageReference Google.Protobuf 3.29.5`) plus the TWS API 10.45.01 C# source (≈271 `.cs`) + `protobuf/` folder live in a **private git submodule** at `src/AlgoTradeForge.IbApi`. Referenced in `AlgoTradeForge.slnx`.
 - `LiveHost.Infrastructure` adds a `ProjectReference` to it. No other project references it.
 
-**Decision (locked):** the vendored IBApi source is **committed to the repo** (not gitignored + re-fetched per README as the POC did), so CI / GHCR image builds are deterministic with no manual fetch step. (TWS API license permits redistribution of the client source within the consuming application.)
+**Decision (locked, REVISED during implementation — owner-directed):** the vendored IBApi is NOT committed in-tree. It lives in a **private git submodule** (`PunkBASSter/twsapi-vendor`, pinned by SHA) so the main repo carries one gitlink instead of 271 third-party files, while staying deterministic (pinned), version-correct (we own it = exactly 10.45.01), and free of third-party-package trust issues (no public IBApi package matches 10.45.01 — only an outdated 9.76.1 exists, and IB does not endorse any package). CI / clean checkouts run `git submodule update --init`. The submodule gitignores `bin/obj`. (Supersedes the original "commit in-tree" decision.)
 
 ## Verification
 
