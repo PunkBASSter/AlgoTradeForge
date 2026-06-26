@@ -13,18 +13,20 @@ namespace AlgoTradeForge.LiveHost.Infrastructure.Tests.Live.DataPlane;
 
 public class BarSourceResolverTests
 {
-    private static BinanceWebSocketManager FakeWs() =>
-        // Constructor only stores config — no socket opens until Start()/SubscribeKline.
-        new("wss://example.invalid", TimeSpan.FromSeconds(1), 1, NullLogger.Instance);
+    private static BarSourceResolver Resolver() => BarSourceResolverTestFactory.Create();
 
-    private static BarSourceResolver Resolver() => new(FakeWs());
+    private static Asset Btc() =>
+        CryptoPerpetualAsset.Create("BTCUSDT", "binance", decimalDigits: 2);
 
     [Fact]
     public void Resolve_AltBar_ReturnsTickFedSource_WithFrozenThreshold()
     {
         // 0.5-base (500m) is only valid where the asset's quantity step admits it (QuantityScale>=2).
         var scale = new ScaleContext(tickSize: 0.01m, quantityStepSize: 0.001m);
-        var sub = new AltBarSubscription("BTC", "ex", DataFeedRole.Primary, "EqV_1m_500m");
+        var sub = new AltBarSubscription("BTC", "ex", DataFeedRole.Primary, "EqV_1m_500m")
+        {
+            Asset = Btc()
+        };
 
         var source = Resolver().Resolve("BTCUSDT", sub, scale, (_, _) => { });
 
@@ -40,7 +42,10 @@ public class BarSourceResolverTests
     public void Resolve_AltBar_EqD_FreezesQuoteAssetThreshold()
     {
         var scale = new ScaleContext(0.01m);
-        var sub = new AltBarSubscription("BTC", "ex", DataFeedRole.Primary, "EqD_1h_2M");
+        var sub = new AltBarSubscription("BTC", "ex", DataFeedRole.Primary, "EqD_1h_2M")
+        {
+            Asset = Btc()
+        };
 
         var source = Resolver().Resolve("BTCUSDT", sub, scale, (_, _) => { });
 

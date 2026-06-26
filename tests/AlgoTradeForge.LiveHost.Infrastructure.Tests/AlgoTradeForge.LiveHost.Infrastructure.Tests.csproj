@@ -11,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.10.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
     <PackageReference Include="xunit.v3" Version="3.2.2" />
@@ -26,6 +27,8 @@
     <ProjectReference Include="..\..\src\AlgoTradeForge.Domain\AlgoTradeForge.Domain.csproj" />
     <ProjectReference Include="..\..\src\AlgoTradeForge.Application\AlgoTradeForge.Application.csproj" />
     <ProjectReference Include="..\..\src\AlgoTradeForge.LiveHost.Application\AlgoTradeForge.LiveHost.Application.csproj" />
+    <ProjectReference Include="..\..\src\AlgoTradeForge.Live.Relay\AlgoTradeForge.Live.Relay.csproj" />
+    <ProjectReference Include="..\..\src\AlgoTradeForge.Storage\AlgoTradeForge.Storage.csproj" />
   </ItemGroup>
 
 </Project>

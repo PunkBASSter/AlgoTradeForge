@@ -1,4 +1,5 @@
 using AlgoTradeForge.Application.Abstractions;
+using AlgoTradeForge.LiveHost.Application.Collection;
 using AlgoTradeForge.LiveHost.Application.Live;
 using AlgoTradeForge.Application.Optimization;
 using AlgoTradeForge.Application.Repositories;
@@ -44,6 +45,19 @@ public class StartLiveSessionCommandHandlerTests
         return (assetRepo, spaceProvider);
     }
 
+    /// <summary>
+    /// Returns a collection store whose loaded config satisfies the given subscriptions.
+    /// The subscriptions passed here are the ROOT feeds that must be collected; for alt-bar
+    /// submissions pass the root (Tick or TimeBar), not the alt-bar itself.
+    /// </summary>
+    private static ICollectionConfigStore CreateCollectionStore(params DataFeedSubscription[] collectedFeeds)
+    {
+        var store = Substitute.For<ICollectionConfigStore>();
+        store.Load(Arg.Any<CancellationToken>())
+            .Returns(new StoredCollectionConfig(new CollectionConfig(collectedFeeds), "etag"));
+        return store;
+    }
+
     [Fact]
     public async Task HandleAsync_CreatesSession_WithAccountName()
     {
@@ -61,8 +75,12 @@ public class StartLiveSessionCommandHandlerTests
         var (assetRepo, spaceProvider) = CreateDeps();
         var sessionStore = new InMemoryLiveSessionStore();
 
+        // DefaultSubscriptions is [TimeBar BTCUSDT Binance 1m] — collected set must contain it.
+        var collectionStore = CreateCollectionStore(
+            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")));
+
         var handler = new StartLiveSessionCommandHandler(
-            strategyFactory, accountManager, sessionStore, assetRepo, spaceProvider);
+            strategyFactory, accountManager, sessionStore, assetRepo, spaceProvider, collectionStore);
 
         var command = new StartLiveSessionCommand
         {
@@ -108,8 +126,12 @@ public class StartLiveSessionCommandHandlerTests
         var (assetRepo, spaceProvider) = CreateDeps();
         var sessionStore = new InMemoryLiveSessionStore();
 
+        // DefaultSubscriptions is [TimeBar BTCUSDT Binance 1m] — collected set must contain it.
+        var collectionStore = CreateCollectionStore(
+            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")));
+
         var handler = new StartLiveSessionCommandHandler(
-            strategyFactory, accountManager, sessionStore, assetRepo, spaceProvider);
+            strategyFactory, accountManager, sessionStore, assetRepo, spaceProvider, collectionStore);
 
         var command = new StartLiveSessionCommand
         {
@@ -128,12 +150,14 @@ public class StartLiveSessionCommandHandlerTests
     [Fact]
     public async Task HandleAsync_NoSubscriptions_Throws()
     {
+        // The empty-subscriptions guard fires before the collection check; any store works.
         var handler = new StartLiveSessionCommandHandler(
             Substitute.For<IStrategyFactory>(),
             Substitute.For<ILiveAccountManager>(),
             new InMemoryLiveSessionStore(),
             Substitute.For<IAssetRepository>(),
-            Substitute.For<IOptimizationSpaceProvider>());
+            Substitute.For<IOptimizationSpaceProvider>(),
+            CreateCollectionStore());
 
         var command = new StartLiveSessionCommand
         {
@@ -174,8 +198,12 @@ public class StartLiveSessionCommandHandlerTests
         });
         spaceProvider.GetDescriptor("TestStrategy").Returns(descriptor);
 
+        // DefaultSubscriptions is [TimeBar BTCUSDT Binance 1m] — collected set must contain it.
+        var collectionStore = CreateCollectionStore(
+            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")));
+
         var handler = new StartLiveSessionCommandHandler(
-            strategyFactory, accountManager, new InMemoryLiveSessionStore(), assetRepo, spaceProvider);
+            strategyFactory, accountManager, new InMemoryLiveSessionStore(), assetRepo, spaceProvider, collectionStore);
 
         var command = new StartLiveSessionCommand
         {
@@ -216,8 +244,13 @@ public class StartLiveSessionCommandHandlerTests
 
         var (assetRepo, spaceProvider) = CreateDeps();
         var sessionStore = new InMemoryLiveSessionStore();
+
+        // DefaultSubscriptions is [TimeBar BTCUSDT Binance 1m] — collected set must contain it.
+        var collectionStore = CreateCollectionStore(
+            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")));
+
         var handler = new StartLiveSessionCommandHandler(
-            strategyFactory, accountManager, sessionStore, assetRepo, spaceProvider);
+            strategyFactory, accountManager, sessionStore, assetRepo, spaceProvider, collectionStore);
 
         var cmd1 = new StartLiveSessionCommand
         {
@@ -256,8 +289,13 @@ public class StartLiveSessionCommandHandlerTests
 
         var (assetRepo, spaceProvider) = CreateDeps();
         var sessionStore = new InMemoryLiveSessionStore();
+
+        // DefaultSubscriptions is [TimeBar BTCUSDT Binance 1m] — collected set must contain it.
+        var collectionStore = CreateCollectionStore(
+            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")));
+
         var handler = new StartLiveSessionCommandHandler(
-            strategyFactory, accountManager, sessionStore, assetRepo, spaceProvider);
+            strategyFactory, accountManager, sessionStore, assetRepo, spaceProvider, collectionStore);
 
         var command = new StartLiveSessionCommand
         {
@@ -291,8 +329,13 @@ public class StartLiveSessionCommandHandlerTests
 
         var (assetRepo, spaceProvider) = CreateDeps();
         var sessionStore = new InMemoryLiveSessionStore();
+
+        // DefaultSubscriptions is [TimeBar BTCUSDT Binance 1m] — collected set must contain it.
+        var collectionStore = CreateCollectionStore(
+            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")));
+
         var handler = new StartLiveSessionCommandHandler(
-            strategyFactory, accountManager, sessionStore, assetRepo, spaceProvider);
+            strategyFactory, accountManager, sessionStore, assetRepo, spaceProvider, collectionStore);
 
         var cmd1 = new StartLiveSessionCommand
         {
@@ -334,8 +377,13 @@ public class StartLiveSessionCommandHandlerTests
 
         var (assetRepo, spaceProvider) = CreateDeps();
         var sessionStore = new InMemoryLiveSessionStore();
+
+        // DefaultSubscriptions is [TimeBar BTCUSDT Binance 1m] — collected set must contain it.
+        var collectionStore = CreateCollectionStore(
+            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")));
+
         var handler = new StartLiveSessionCommandHandler(
-            strategyFactory, accountManager, sessionStore, assetRepo, spaceProvider);
+            strategyFactory, accountManager, sessionStore, assetRepo, spaceProvider, collectionStore);
 
         var cmd1 = new StartLiveSessionCommand
         {
@@ -379,8 +427,13 @@ public class StartLiveSessionCommandHandlerTests
 
         var spaceProvider = Substitute.For<IOptimizationSpaceProvider>();
 
+        // This test submits [TimeBar ETHUSDT Binance 5m, TimeBar BTCUSDT Binance 1m].
+        var collectionStore = CreateCollectionStore(
+            new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("5m")),
+            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")));
+
         var handler = new StartLiveSessionCommandHandler(
-            strategyFactory, accountManager, new InMemoryLiveSessionStore(), assetRepo, spaceProvider);
+            strategyFactory, accountManager, new InMemoryLiveSessionStore(), assetRepo, spaceProvider, collectionStore);
 
         var command = new StartLiveSessionCommand
         {
@@ -397,5 +450,45 @@ public class StartLiveSessionCommandHandlerTests
         await connector.Received(1).AddSessionAsync(
             Arg.Is<LiveSessionConfig>(c => c.ExecutionAsset == ethUsdt),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleAsync_UncollectedSubscription_ThrowsArgumentException()
+    {
+        var strategy = CreateStrategyWithSubscriptions("1.0");
+
+        var strategyFactory = Substitute.For<IStrategyFactory>();
+        strategyFactory.Create("BuyAndHold", Arg.Any<IIndicatorFactory>(), Arg.Any<IDictionary<string, object>?>())
+            .Returns(strategy);
+
+        var connector = Substitute.For<ILiveConnector>();
+        var accountManager = Substitute.For<ILiveAccountManager>();
+        accountManager.GetOrCreateAsync("paper", Arg.Any<CancellationToken>())
+            .Returns(connector);
+
+        var (assetRepo, spaceProvider) = CreateDeps();
+
+        // Strategy requests BTCUSDT 1h, but collection only has BTCUSDT 1m.
+        var collectionStore = CreateCollectionStore(
+            new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")));
+
+        var handler = new StartLiveSessionCommandHandler(
+            strategyFactory, accountManager, new InMemoryLiveSessionStore(), assetRepo, spaceProvider, collectionStore);
+
+        var command = new StartLiveSessionCommand
+        {
+            StrategyName = "BuyAndHold",
+            InitialCash = 10000m,
+            AccountName = "paper",
+            DataSubscriptions =
+            [
+                new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1h")),
+            ],
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(
+            () => handler.HandleAsync(command, TestContext.Current.CancellationToken));
+        Assert.Contains("uncollected feed", ex.Message);
+        Assert.Contains("BTCUSDT", ex.Message);
     }
 }

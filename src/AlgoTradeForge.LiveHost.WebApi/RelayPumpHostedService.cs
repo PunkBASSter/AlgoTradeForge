@@ -1,4 +1,5 @@
 using AlgoTradeForge.Live.Relay;
+using AlgoTradeForge.LiveHost.Application.Collection;
 using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -12,19 +13,21 @@ public sealed class RelayPumpHostedService(
     IFileStorage storage,
     IRelayTradeTap tap,
     TimeProvider time,
-    ILogger<RelayPumpHostedService> logger) : BackgroundService
+    ILogger<RelayPumpHostedService> logger,
+    ICollectionConfigStore collectionStore) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        var o = opts.Value;
-        if (o.Instruments.Length == 0)
+        var stored = await collectionStore.Load(ct).ConfigureAwait(false);
+        var instruments = RelayInstrumentSelector.StreamableInstruments(stored.Config);
+        if (instruments.Length == 0)
         {
-            logger.LogInformation("RelayPumpHostedService: no instruments configured, skipping relay pump.");
+            logger.LogInformation("RelayPumpHostedService: no streamable instruments in collection.json, skipping relay pump.");
             return;
         }
         try
         {
-            await RunPumpOnce(o.Instruments, ct).ConfigureAwait(false);
+            await RunPumpOnce(instruments, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

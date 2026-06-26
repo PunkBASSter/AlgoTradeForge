@@ -10,6 +10,7 @@ using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Trading;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane;
+using AlgoTradeForge.LiveHost.Infrastructure.Tests.Live.DataPlane;
 using AlgoTradeForge.LiveHost.Infrastructure.Tests.Live.Testnet;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -85,7 +86,7 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         var klineWs = new BinanceWebSocketManager(
             accountConfig.MarketStreamUrl, sharedOptions.ReconnectDelay,
             sharedOptions.MaxReconnectAttempts, NullLogger.Instance);
-        var resolver = new BarSourceResolver(klineWs);
+        var resolver = BarSourceResolverTestFactory.CreateWithWs(klineWs);
         var dispatch = new StrategyDispatch(NullLogger<StrategyDispatch>.Instance);
         var router = new TickRouter(resolver, dispatch, NullLogger<TickRouter>.Instance);
 
