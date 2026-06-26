@@ -1,0 +1,3 @@
+[submodule "src/AlgoTradeForge.IbApi"]
+	path = src/AlgoTradeForge.IbApi
+	url = https://github.com/PunkBASSter/twsapi-vendor.git

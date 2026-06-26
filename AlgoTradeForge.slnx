@@ -19,6 +19,7 @@
   <Project Path="src\AlgoTradeForge.Live.Relay\AlgoTradeForge.Live.Relay.csproj" />
   <Project Path="src\AlgoTradeForge.DumpTicks\AlgoTradeForge.DumpTicks.csproj" />
   <Project Path="src\AlgoTradeForge.LiveHost.Application\AlgoTradeForge.LiveHost.Application.csproj" />
+  <Project Path="src\AlgoTradeForge.IbApi\AlgoTradeForge.IbApi.csproj" />
   <Project Path="src\AlgoTradeForge.LiveHost.Infrastructure\AlgoTradeForge.LiveHost.Infrastructure.csproj" />
   <Project Path="src\AlgoTradeForge.LiveHost.WebApi\AlgoTradeForge.LiveHost.WebApi.csproj" />
   <Project Path="tests\AlgoTradeForge.Domain.Tests\AlgoTradeForge.Domain.Tests.csproj" />

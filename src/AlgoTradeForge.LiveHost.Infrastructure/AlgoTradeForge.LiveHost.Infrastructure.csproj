@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AlgoTradeForge.IbApi\AlgoTradeForge.IbApi.csproj" />
     <ProjectReference Include="..\AlgoTradeForge.LiveHost.Application\AlgoTradeForge.LiveHost.Application.csproj" />
     <ProjectReference Include="..\AlgoTradeForge.Domain\AlgoTradeForge.Domain.csproj" />
     <ProjectReference Include="..\AlgoTradeForge.Application\AlgoTradeForge.Application.csproj" />
