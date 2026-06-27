@@ -78,6 +78,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         public Task? ProcessingTask { get; set; }
 
+        // Stored so the shim lambda can be removed from OrderMapped on session teardown.
+        public Action<long, Guid>? OrderMappedHandler { get; set; }
+
         public LiveSessionEntry(
             Guid sessionId,
             IInt64BarStrategy strategy,
@@ -279,17 +282,21 @@ public sealed class BinanceLiveConnector : ILiveConnector
         portfolio.Initialize();
 
         var orderContext = new LiveOrderContext(
-            portfolio, _orderValidator, _logger, _apiClient!,
-            config.SessionId, _binanceOrderToSession, _sharedOptions.LiveChannelCapacity);
+            portfolio, _orderValidator, _logger, _apiClient!, _sharedOptions.LiveChannelCapacity);
         orderContext.Start(_cts!.Token);
-        orderContext.OrderMapped += DrainBufferedReports;
+        Action<long, Guid> orderMappedHandler = (exchangeId, _) =>
+        {
+            _binanceOrderToSession.TryAdd(exchangeId, config.SessionId);
+            DrainBufferedReports(exchangeId);
+        };
+        orderContext.OrderMapped += orderMappedHandler;
 
         // Set event bus on strategy if supported
         if (config.Strategy is IEventBusReceiver receiver)
             receiver.SetEventBus(NullEventBus.Instance);
 
         if (config.Strategy is IOrderContextReceiver orderReceiver)
-            orderReceiver.SetOrderContext(orderContext);
+            orderReceiver.SetOrderContext(new SessionOrderContext(config.SessionId, orderContext));
 
         config.Strategy.OnInit();
 
@@ -302,7 +309,10 @@ public sealed class BinanceLiveConnector : ILiveConnector
             symbolInfo.QuoteAsset,
             _sharedOptions.LiveChannelCapacity,
             _sharedOptions.MarketDataChannelCapacity,
-            _logger);
+            _logger)
+        {
+            OrderMappedHandler = orderMappedHandler
+        };
 
         _sessions.TryAdd(config.SessionId, entry);
 
@@ -343,7 +353,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
         foreach (var order in entry.OrderContext.GetPendingOrders())
             entry.OrderContext.Cancel(order.Id);
 
-        entry.OrderContext.OrderMapped -= DrainBufferedReports;
+        if (entry.OrderMappedHandler is not null)
+            entry.OrderContext.OrderMapped -= entry.OrderMappedHandler;
 
         // Drain both queues before stopping
         entry.EventQueue.Writer.TryComplete();

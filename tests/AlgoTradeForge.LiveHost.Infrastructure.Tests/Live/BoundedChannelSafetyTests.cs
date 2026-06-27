@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Threading.Channels;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
@@ -52,7 +51,6 @@ public class BoundedChannelSafetyTests
         return new LiveOrderContext(
             portfolio, new OrderValidator(),
             NullLogger.Instance, client,
-            Guid.NewGuid(), new ConcurrentDictionary<long, Guid>(),
             channelCapacity: capacity);
     }
 
@@ -72,7 +70,7 @@ public class BoundedChannelSafetyTests
         for (var i = 0; i < capacity + 10; i++)
         {
             var order = NewLimitOrder();
-            ctx.Submit(order);
+            ctx.Submit(order, Guid.NewGuid());
             if (order.Status == OrderStatus.Rejected)
             {
                 overflow = order;

@@ -4,23 +4,21 @@ using AlgoTradeForge.LiveHost.Application.Live;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Collections;
 using AlgoTradeForge.Domain.Engine;
-using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Trading;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.LiveHost.Infrastructure.Live;
 
-public sealed class LiveOrderContext : IOrderContext
+public sealed class LiveOrderContext
 {
     private readonly IExchangeOrderClient _orderClient;
     private readonly IOrderValidator _orderValidator;
     private readonly Portfolio _portfolio;
     private readonly ILogger _logger;
-    private readonly Guid _sessionId;
-    private readonly ConcurrentDictionary<long, Guid> _exchangeOrderToSession;
 
     private readonly ConcurrentDictionary<long, Order> _pendingOrders = new();
     private readonly ConcurrentDictionary<long, long> _localToExchangeId = new();
+    private readonly ConcurrentDictionary<long, Guid> _localToSession = new();
     private readonly ConcurrentDictionary<long, byte> _restFilledOrders = new();
     private readonly Lock _recentFillsLock = new();
     private readonly List<Fill> _recentFills = [];
@@ -42,16 +40,12 @@ public sealed class LiveOrderContext : IOrderContext
         IOrderValidator orderValidator,
         ILogger logger,
         IExchangeOrderClient orderClient,
-        Guid sessionId,
-        ConcurrentDictionary<long, Guid> exchangeOrderToSession,
         int channelCapacity = 1024)
     {
         _portfolio = portfolio;
         _orderValidator = orderValidator;
         _logger = logger;
         _orderClient = orderClient;
-        _sessionId = sessionId;
-        _exchangeOrderToSession = exchangeOrderToSession;
 
         _orderChannel = Channel.CreateBounded<OrderRequest>(
             new BoundedChannelOptions(channelCapacity)
@@ -94,7 +88,7 @@ public sealed class LiveOrderContext : IOrderContext
         }
     }
 
-    public long Submit(Order order)
+    public long Submit(Order order, Guid sessionId)
     {
         var rejection = _orderValidator.ValidateSubmission(order);
         if (rejection is not null)
@@ -110,6 +104,7 @@ public sealed class LiveOrderContext : IOrderContext
         order.Status = OrderStatus.Pending;
 
         _pendingOrders.TryAdd(id, order);
+        _localToSession.TryAdd(id, sessionId);
 
         // Bounded channel: a full queue must reject (not silently drop). Sync method —
         // no blocking, no sync-over-async. Capacity is sized above realistic burst rates.
@@ -117,6 +112,7 @@ public sealed class LiveOrderContext : IOrderContext
         {
             order.Status = OrderStatus.Rejected;
             _pendingOrders.TryRemove(id, out _);
+            _localToSession.TryRemove(id, out _);
             _logger.LogError(
                 "Order channel full (capacity reached) — rejecting order {LocalId} ({Side} {Qty} {Asset})",
                 id, order.Side, order.Quantity, order.Asset.Name);
@@ -196,12 +192,12 @@ public sealed class LiveOrderContext : IOrderContext
             order.Id = exchangeOrderId;
             _pendingOrders.TryAdd(exchangeOrderId, order);
             _localToExchangeId.TryAdd(localId, exchangeOrderId);
-            _exchangeOrderToSession.TryAdd(exchangeOrderId, _sessionId);
-            OrderMapped?.Invoke(exchangeOrderId);
+            if (_localToSession.TryGetValue(localId, out var sId))
+                OrderMapped?.Invoke(exchangeOrderId, sId);
         }
     }
 
-    internal event Action<long>? OrderMapped;
+    public event Action<long, Guid>? OrderMapped;
 
     internal long ResolveExchangeOrderId(long localOrderId) =>
         _localToExchangeId.TryGetValue(localOrderId, out var exchangeId) ? exchangeId : localOrderId;
@@ -239,10 +235,10 @@ public sealed class LiveOrderContext : IOrderContext
                     if (pending is not null)
                     {
                         pending.Id = exchangeOrderId;
-                        _exchangeOrderToSession.TryAdd(exchangeOrderId, _sessionId);
                         _pendingOrders.TryAdd(exchangeOrderId, pending);
                         _localToExchangeId.TryAdd(request.LocalId, exchangeOrderId);
-                        OrderMapped?.Invoke(exchangeOrderId);
+                        if (_localToSession.TryGetValue(request.LocalId, out var pendingSession))
+                            OrderMapped?.Invoke(exchangeOrderId, pendingSession);
                     }
 
                     // Process fills from REST response (reliable path for MARKET orders)

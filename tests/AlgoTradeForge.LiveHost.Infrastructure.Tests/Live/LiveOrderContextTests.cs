@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Trading;
@@ -27,9 +26,7 @@ public class LiveOrderContextTests
             "https://testnet.binance.vision", "fake", "fake", NullLogger.Instance);
 
         return new LiveOrderContext(
-            portfolio, new OrderValidator(),
-            NullLogger.Instance, apiClient,
-            Guid.NewGuid(), new ConcurrentDictionary<long, Guid>());
+            portfolio, new OrderValidator(), NullLogger.Instance, apiClient);
     }
 
     [Fact]
@@ -110,7 +107,7 @@ public class LiveOrderContextTests
             Quantity = -1m,
         };
 
-        ctx.Submit(order);
+        ctx.Submit(order, Guid.NewGuid());
 
         Assert.Equal(OrderStatus.Rejected, order.Status);
     }
@@ -138,7 +135,7 @@ public class LiveOrderContextTests
             LimitPrice = 5000000L,
         };
 
-        var id = ctx.Submit(order);
+        var id = ctx.Submit(order, Guid.NewGuid());
 
         Assert.True(id > 0);
         Assert.Equal(OrderStatus.Pending, order.Status);
@@ -176,7 +173,7 @@ public class LiveOrderContextTests
             LimitPrice = 5000000L,
         };
 
-        var localId = ctx.Submit(order);
+        var localId = ctx.Submit(order, Guid.NewGuid());
 
         // Simulate Binance order placement response rekeying
         const long binanceOrderId = 9999999L;
@@ -210,7 +207,7 @@ public class LiveOrderContextTests
             LimitPrice = 5000000L,
         };
 
-        var localId = ctx.Submit(order);
+        var localId = ctx.Submit(order, Guid.NewGuid());
 
         // Cancel immediately before any placement (no rekeying happened)
         var cancelled = ctx.Cancel(localId);
@@ -221,29 +218,27 @@ public class LiveOrderContextTests
     }
 
     [Fact]
-    public void OrderMapped_FiredAfterRekeyToExchangeId()
+    public void OrderMapped_CarriesOriginatingSessionId_AfterRekey()
     {
-        var ctx = CreateContext();
+        var portfolio = new Portfolio { InitialCash = 100_000_00L };
+        portfolio.Initialize();
+        var ctx = new LiveOrderContext(
+            portfolio, new OrderValidator(), NullLogger.Instance,
+            Substitute.For<IExchangeOrderClient>());
         ctx.Start(CancellationToken.None);
 
-        long? mappedOrderId = null;
-        ctx.OrderMapped += id => mappedOrderId = id;
+        var sessionId = Guid.NewGuid();
+        (long mappedExchangeId, Guid mappedSession)? captured = null;
+        ctx.OrderMapped += (exId, sId) => captured = (exId, sId);
 
-        var order = new Order
-        {
-            Id = 0,
-            Asset = BtcUsdt,
-            Side = OrderSide.Buy,
-            Type = OrderType.Limit,
-            Quantity = 0.001m,
-            LimitPrice = 5000000L,
-        };
+        var order = new Order { Id = 0, Asset = BtcUsdt, Side = OrderSide.Buy,
+            Type = OrderType.Limit, Quantity = 0.001m, LimitPrice = 5000000L };
+        var localId = ctx.Submit(order, sessionId);
 
-        var localId = ctx.Submit(order);
-        const long binanceOrderId = 12345L;
-        ctx.RekeyToExchangeId(localId, binanceOrderId);
+        const long exchangeId = 4242L;
+        ctx.RekeyToExchangeId(localId, exchangeId);
 
-        Assert.Equal(binanceOrderId, mappedOrderId);
+        Assert.Equal((exchangeId, sessionId), captured);
     }
 
     [Fact]
@@ -280,14 +275,13 @@ public class LiveOrderContextTests
         var portfolio = new Portfolio { InitialCash = 100_000_00L };
         portfolio.Initialize();
         var ctx = new LiveOrderContext(
-            portfolio, new OrderValidator(), NullLogger.Instance, client,
-            Guid.NewGuid(), new ConcurrentDictionary<long, Guid>());
+            portfolio, new OrderValidator(), NullLogger.Instance, client);
         ctx.Start(TestContext.Current.CancellationToken);
 
         // LimitPrice is tick-denominated: 3000.00 ETH at 0.01 tick = 300000 ticks.
         var order = new Order { Id = 0, Asset = ethUsdt, Side = OrderSide.Buy,
             Type = OrderType.Limit, Quantity = 0.01m, LimitPrice = 300000L };
-        ctx.Submit(order);
+        ctx.Submit(order, Guid.NewGuid());
 
         // Poll until the single-reader order task drains the channel.
         var ct = TestContext.Current.CancellationToken;
