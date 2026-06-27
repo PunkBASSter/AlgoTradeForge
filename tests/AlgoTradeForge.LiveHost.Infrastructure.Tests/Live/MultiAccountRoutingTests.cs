@@ -264,6 +264,60 @@ public class MultiAccountRoutingTests
     }
 
     /// <summary>
+    /// Concurrent read-during-write: one task floods AddFill while another reads AvailableMargin
+    /// and iterates GetPositions(). Without locking reads through _recentFillsLock, this throws
+    /// InvalidOperationException ("collection was modified") or returns torn margin. With the fix,
+    /// it completes cleanly and the final net position equals the sum of fills.
+    /// </summary>
+    [Fact]
+    public async Task CoTenant_ConcurrentReadDuringFill_NoTornStateOrThrow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var client = Substitute.For<IExchangeOrderClient>();
+        var target = new InMemoryAccountTarget("A", client, 500_000_00L);
+        var ctx = target.Context;
+
+        const int iterations = 300;
+
+        var writer = Task.Run(() =>
+        {
+            for (var i = 0; i < iterations; i++)
+                ctx.AddFill(new Fill(
+                    OrderId: i + 1L,
+                    Asset: BtcUsdt,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Price: 5_000_000L,
+                    Quantity: 0.001m,
+                    Side: OrderSide.Buy,
+                    Commission: 0L));
+        }, ct);
+
+        var reader = Task.Run(() =>
+        {
+            for (var i = 0; i < iterations; i++)
+            {
+                _ = ctx.AvailableMargin;
+                foreach (var _ in ctx.GetPositions()) { }
+            }
+        }, ct);
+
+        // Pre-fix: one of these tasks would throw InvalidOperationException.
+        await Task.WhenAll(writer, reader);
+
+        // All fills must be recorded.
+        var allFills = ctx.GetAllFills();
+        Assert.Equal(iterations, allFills.Count);
+
+        // The position for BTCUSDT must reflect all buy fills (net quantity = iterations * 0.001m).
+        var positions = ctx.GetPositions();
+        Assert.True(positions.ContainsKey(BtcUsdt.Name));
+        Assert.Equal(iterations * 0.001m, positions[BtcUsdt.Name].Quantity);
+
+        await target.DisposeAsync();
+    }
+
+    /// <summary>
     /// Reference-counted lifecycle: the target is disposed only when the last resolve is released.
     /// One release with refcount 2 leaves the target alive; the second release disposes it and
     /// removes it from the router's live set.

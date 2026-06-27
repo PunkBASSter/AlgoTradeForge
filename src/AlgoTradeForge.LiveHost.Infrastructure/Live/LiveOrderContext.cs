@@ -55,9 +55,10 @@ public sealed class LiveOrderContext
             { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
     }
 
-    public long Cash => _portfolio.Cash;
-    public long UsedMargin => _portfolio.ComputeUsedMargin();
-    public long AvailableMargin => Cash - UsedMargin;
+    public long Cash { get { lock (_recentFillsLock) return _portfolio.Cash; } }
+    public long UsedMargin { get { lock (_recentFillsLock) return _portfolio.ComputeUsedMargin(); } }
+    // Single lock acquisition — avoids deadlock since System.Threading.Lock is not reentrant.
+    public long AvailableMargin { get { lock (_recentFillsLock) return _portfolio.Cash - _portfolio.ComputeUsedMargin(); } }
 
     public void Start(CancellationToken ct)
     {
@@ -158,8 +159,11 @@ public sealed class LiveOrderContext
             return _recentFills.ToList();
     }
 
-    public IReadOnlyDictionary<string, Position> GetPositions() =>
-        _portfolio.Positions;
+    public IReadOnlyDictionary<string, Position> GetPositions()
+    {
+        lock (_recentFillsLock)
+            return new Dictionary<string, Position>(_portfolio.Positions);
+    }
 
     internal void AddFill(Fill fill)
     {
