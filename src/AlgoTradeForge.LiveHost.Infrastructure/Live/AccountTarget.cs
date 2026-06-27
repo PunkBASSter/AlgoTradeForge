@@ -13,7 +13,7 @@ public sealed class AccountTarget : IAccountTarget
 {
     private readonly LiveOrderContext _orderContext;
     private readonly IExchangeOrderClient _orderClient;
-    private readonly IReadOnlyList<string> _symbolsToCancelOnDispose;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _symbols = new(StringComparer.Ordinal);
     private readonly ILogger _logger;
     private int _disposed;
 
@@ -25,20 +25,20 @@ public sealed class AccountTarget : IAccountTarget
         Portfolio portfolio,
         LiveOrderContext orderContext,
         IExchangeOrderClient orderClient,
-        IEnumerable<string> symbolsToCancelOnDispose,
         ILogger logger)
     {
         AccountName = accountName;
         Portfolio = portfolio;
         _orderContext = orderContext;
         _orderClient = orderClient;
-        _symbolsToCancelOnDispose = symbolsToCancelOnDispose.ToList();
         _logger = logger;
     }
 
     public IOrderContext OrderContextFor(Guid sessionId) => new SessionOrderContext(sessionId, _orderContext);
 
     internal LiveOrderContext OrderContext => _orderContext;
+
+    internal void RegisterSymbol(string symbol) => _symbols.TryAdd(symbol, 0);
 
     public async ValueTask DisposeAsync()
     {
@@ -48,7 +48,7 @@ public sealed class AccountTarget : IAccountTarget
         // Graceful: flush queued orders/cancels first (StopAsync awaits the drain tasks).
         await _orderContext.StopAsync();
 
-        foreach (var symbol in _symbolsToCancelOnDispose)
+        foreach (var symbol in _symbols.Keys)
         {
             try { await _orderClient.CancelAllOpenOrdersAsync(symbol); }
             catch (Exception ex)

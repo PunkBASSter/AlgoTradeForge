@@ -17,7 +17,7 @@ public class AccountTargetTests
         portfolio.Initialize();
         var ctx = new LiveOrderContext(portfolio, new OrderValidator(), NullLogger.Instance, client);
         ctx.Start(CancellationToken.None);
-        return new AccountTarget("acctA", portfolio, ctx, client, ["BTCUSDT"], NullLogger.Instance);
+        return new AccountTarget("acctA", portfolio, ctx, client, NullLogger.Instance);
     }
 
     [Fact]
@@ -34,10 +34,22 @@ public class AccountTargetTests
     {
         var client = Substitute.For<IExchangeOrderClient>();
         var target = CreateTarget(client, out _);
+        target.RegisterSymbol("BTCUSDT");
 
         await target.DisposeAsync();
         await target.DisposeAsync();   // second dispose is a no-op
 
         await client.Received(1).CancelAllOpenOrdersAsync("BTCUSDT", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DisposeAsync_NoRegisteredSymbols_DoesNotCancelAll()
+    {
+        var client = Substitute.For<IExchangeOrderClient>();
+        var target = CreateTarget(client, out _);
+
+        await target.DisposeAsync();
+
+        await client.DidNotReceive().CancelAllOpenOrdersAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 }

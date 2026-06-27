@@ -19,9 +19,7 @@ public class BinanceAccountTargetFactoryTests
             Substitute.For<IExchangeOrderClient>(),
             new OrderValidator(),
             NullLogger.Instance,
-            channelCapacity: 64,
-            assetForAccount: () => TestAsset,
-            symbolsForAccount: () => ["BTCUSDT"]);
+            channelCapacity: 64);
 
     [Fact]
     public async Task Create_SeedsPortfolioInitialCash_FromDiscoveredFunds()
@@ -34,7 +32,7 @@ public class BinanceAccountTargetFactoryTests
             .Returns(expectedSeed);
 
         var factory = BuildFactory(fundsSource);
-        await using var target = await factory.Create("acctA", ct);
+        await using var target = await factory.Create("acctA", TestAsset, ct);
 
         Assert.Equal(expectedSeed, target.Portfolio.InitialCash);
     }

@@ -48,9 +48,6 @@ public sealed class BinanceLiveConnector : ILiveConnector
     private BinanceAccountFundsSource? _fundsSource;
     private BinanceAccountTargetFactory? _factory;
 
-    // Set by AddSessionAsync before ResolveTarget so the factory's assetForAccount() resolves.
-    private Asset? _accountAsset;
-
     private readonly ConcurrentDictionary<Guid, LiveSessionEntry> _sessions = new();
     private readonly ConcurrentDictionary<long, ConcurrentQueue<BinanceExecutionReport>> _bufferedReports = new();
 
@@ -231,17 +228,13 @@ public sealed class BinanceLiveConnector : ILiveConnector
             await _apiClient.SyncTimeAsync(ct);
 
             // Build the order + data seams now that _apiClient exists. The factory discovers
-            // funds + symbols-to-cancel lazily per account at ResolveTarget time.
+            // funds lazily per account at ResolveTarget time; the execution asset is threaded
+            // per-session into ResolveTarget.
             _source = new BinanceMarketDataSource(_dispatch, _tickRouter);
             _fundsSource = new BinanceAccountFundsSource(_apiClient);
             _factory = new BinanceAccountTargetFactory(
                 _fundsSource, _apiClient, _orderValidator, _logger,
-                _sharedOptions.LiveChannelCapacity,
-                assetForAccount: () => _accountAsset!,
-                symbolsForAccount: () => _sessions.Values
-                    .Select(e => e.ExecutionAsset.Name)
-                    .Distinct()
-                    .ToList());
+                _sharedOptions.LiveChannelCapacity);
             _router = new OrderRouter(_factory, NullLogger<OrderRouter>.Instance);
 
             _wsManager = new BinanceWebSocketManager(
@@ -288,10 +281,11 @@ public sealed class BinanceLiveConnector : ILiveConnector
         // Quote asset is still needed by GetSessionSnapshotAsync for exchange-balance display.
         var symbolInfo = await _apiClient!.GetExchangeInfoAsync(asset.Name, ct);
 
-        // Resolve (or attach to) the account target. The factory reads _accountAsset, so it MUST
-        // be set before ResolveTarget. Funds are discovered by the factory.
-        _accountAsset = asset;
-        var target = await _router!.ResolveTarget(config.AccountName, ct);
+        // Resolve (or attach to) the account target. The execution asset is threaded through so
+        // the factory seeds the account with no shared mutable state. Funds are discovered by the
+        // factory. RegisterSymbol accumulates this session's symbol for cancel-on-dispose.
+        var target = await _router!.ResolveTarget(config.AccountName, asset, ct);
+        ((AccountTarget)target).RegisterSymbol(asset.Name);
         var accountContext = ((AccountTarget)target).OrderContext;
 
         // Order→session routing now lives in the router. The account context fires OrderMapped
@@ -363,6 +357,14 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         if (entry.OrderMappedHandler is not null)
             entry.OrderContext.OrderMapped -= entry.OrderMappedHandler;
+
+        // Cancel this session's resting orders before releasing the target — a co-tenant account
+        // stays alive, so the target's dispose-time cancel won't fire for this session. Filter by the
+        // router's order->session map so we don't touch a co-tenant session's orders.
+        var ctx = entry.OrderContext;
+        foreach (var order in ctx.GetPendingOrders())
+            if (_router!.TryResolveSession(order.Id, out var owner) && owner == sessionId)
+                ctx.Cancel(order.Id);
 
         // Drain both queues before releasing the account target.
         entry.EventQueue.Writer.TryComplete();

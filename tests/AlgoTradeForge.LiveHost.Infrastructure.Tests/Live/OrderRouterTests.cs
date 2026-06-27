@@ -1,3 +1,4 @@
+using AlgoTradeForge.Domain;
 using AlgoTradeForge.LiveHost.Application.Live;
 using AlgoTradeForge.LiveHost.Infrastructure.Live;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -8,6 +9,9 @@ namespace AlgoTradeForge.LiveHost.Infrastructure.Tests.Live;
 
 public class OrderRouterTests
 {
+    private static readonly Asset TestAsset =
+        CryptoAsset.Create("BTCUSDT", "Binance", 2, 0.00001m, 9000m, 0.00001m);
+
     private static IAccountTarget FakeTarget(string name)
     {
         var t = Substitute.For<IAccountTarget>();
@@ -20,14 +24,16 @@ public class OrderRouterTests
     {
         var ct = TestContext.Current.CancellationToken;
         var factory = Substitute.For<IAccountTargetFactory>();
-        factory.Create("A", Arg.Any<CancellationToken>()).Returns(_ => FakeTarget("A"));
+        factory.Create("A", Arg.Any<Asset>(), Arg.Any<CancellationToken>()).Returns(_ => FakeTarget("A"));
         var router = new OrderRouter(factory, NullLogger<OrderRouter>.Instance);
 
-        var tasks = Enumerable.Range(0, 16).Select(_ => router.ResolveTarget("A", ct)).ToArray();
+        var tasks = Enumerable.Range(0, 16).Select(_ => router.ResolveTarget("A", TestAsset, ct)).ToArray();
         var results = await Task.WhenAll(tasks);
 
         Assert.All(results, r => Assert.Same(results[0], r));
-        await factory.Received(1).Create("A", Arg.Any<CancellationToken>());
+        await factory.Received(1).Create("A", Arg.Any<Asset>(), Arg.Any<CancellationToken>());
+        // The execution asset is threaded through to the factory.
+        await factory.Received(1).Create("A", TestAsset, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -36,11 +42,11 @@ public class OrderRouterTests
         var ct = TestContext.Current.CancellationToken;
         var target = FakeTarget("A");
         var factory = Substitute.For<IAccountTargetFactory>();
-        factory.Create("A", Arg.Any<CancellationToken>()).Returns(target);
+        factory.Create("A", Arg.Any<Asset>(), Arg.Any<CancellationToken>()).Returns(target);
         var router = new OrderRouter(factory, NullLogger<OrderRouter>.Instance);
 
-        await router.ResolveTarget("A", ct);   // refcount 1
-        await router.ResolveTarget("A", ct);   // refcount 2 (same target)
+        await router.ResolveTarget("A", TestAsset, ct);   // refcount 1
+        await router.ResolveTarget("A", TestAsset, ct);   // refcount 2 (same target)
 
         await router.ReleaseTarget("A", ct);   // -> 1, not disposed
         await target.DidNotReceive().DisposeAsync();

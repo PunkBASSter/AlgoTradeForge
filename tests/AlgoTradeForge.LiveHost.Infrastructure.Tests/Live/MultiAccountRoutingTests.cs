@@ -48,7 +48,7 @@ internal sealed class FakeAccountTargetFactory(
     params (string Account, IExchangeOrderClient Client, long Cash)[] accounts)
     : IAccountTargetFactory
 {
-    public Task<IAccountTarget> Create(string account, CancellationToken ct = default)
+    public Task<IAccountTarget> Create(string account, Asset executionAsset, CancellationToken ct = default)
     {
         var (_, client, cash) = accounts.First(a => a.Account == account);
         return Task.FromResult<IAccountTarget>(new InMemoryAccountTarget(account, client, cash));
@@ -96,8 +96,8 @@ public class MultiAccountRoutingTests
 
         var router = new OrderRouter(factory, NullLogger<OrderRouter>.Instance);
 
-        var targetA = await router.ResolveTarget("A", ct);
-        var targetB = await router.ResolveTarget("B", ct);
+        var targetA = await router.ResolveTarget("A", BtcUsdt, ct);
+        var targetB = await router.ResolveTarget("B", BtcUsdt, ct);
 
         var sessX = Guid.NewGuid();
         var ctxX = targetA.OrderContextFor(sessX);
@@ -148,8 +148,8 @@ public class MultiAccountRoutingTests
         var router = new OrderRouter(factory, NullLogger<OrderRouter>.Instance);
 
         // Resolve same account twice — should return the same target (refcount 2).
-        var targetA1 = await router.ResolveTarget("A", ct);
-        var targetA2 = await router.ResolveTarget("A", ct);
+        var targetA1 = await router.ResolveTarget("A", BtcUsdt, ct);
+        var targetA2 = await router.ResolveTarget("A", BtcUsdt, ct);
         Assert.Same(targetA1, targetA2);
 
         var target = (InMemoryAccountTarget)targetA1;
@@ -248,19 +248,83 @@ public class MultiAccountRoutingTests
         var factory = new FakeAccountTargetFactory(("A", client, discoveredCash));
         var router = new OrderRouter(factory, NullLogger<OrderRouter>.Instance);
 
-        var target = await router.ResolveTarget("A", ct);
+        var target = await router.ResolveTarget("A", BtcUsdt, ct);
 
         // Portfolio is seeded from the factory's discovered funds.
         Assert.Equal(discoveredCash, target.Portfolio.InitialCash);
 
         // Resolving again returns the same cached target (factory called only once).
-        var target2 = await router.ResolveTarget("A", ct);
+        var target2 = await router.ResolveTarget("A", BtcUsdt, ct);
         Assert.Same(target, target2);
 
         // InitialCash is unchanged (no re-seed on second resolve).
         Assert.Equal(discoveredCash, target2.Portfolio.InitialCash);
 
         await ((InMemoryAccountTarget)target).DisposeAsync();
+    }
+
+    /// <summary>
+    /// FIX #3 regression: when a co-tenant session leaves, only ITS resting orders are cancelled.
+    /// Two sessions on the same account each place an order; the filter loop (mirroring
+    /// RemoveSessionAsync) cancels only the leaving session's order, matched via the router's
+    /// order->session map. The co-tenant's order stays live on the exchange.
+    /// </summary>
+    [Fact]
+    public async Task CoTenant_RemoveSession_CancelsOnlyLeavingSessionsOrders()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var client = Substitute.For<IExchangeOrderClient>();
+        long nextExchangeId = 100L;
+        client.PlaceOrderAsync(Arg.Any<string>(), Arg.Any<OrderSide>(), Arg.Any<OrderType>(),
+                Arg.Any<decimal>(), Arg.Any<decimal?>(), Arg.Any<decimal?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ExchangeOrderResult(Interlocked.Increment(ref nextExchangeId), []));
+
+        var factory = new FakeAccountTargetFactory(("A", client, 200_000_00L));
+        var router = new OrderRouter(factory, NullLogger<OrderRouter>.Instance);
+
+        var target = (InMemoryAccountTarget)await router.ResolveTarget("A", BtcUsdt, ct);
+        var ctx = target.Context;
+        ctx.OrderMapped += (exId, sId) => router.TrackOrder(exId, sId);
+
+        var sessA = Guid.NewGuid();
+        var sessB = Guid.NewGuid();
+
+        target.OrderContextFor(sessA).Submit(new Order
+        {
+            Id = 0, Asset = BtcUsdt, Side = OrderSide.Buy, Type = OrderType.Limit,
+            Quantity = 0.001m, LimitPrice = 5000000L,
+        });
+        target.OrderContextFor(sessB).Submit(new Order
+        {
+            Id = 0, Asset = BtcUsdt, Side = OrderSide.Sell, Type = OrderType.Limit,
+            Quantity = 0.002m, LimitPrice = 5100000L,
+        });
+
+        // Wait for both to be placed (re-keyed to exchange ids + OrderMapped -> TrackOrder fired).
+        await Poll(() => client.ReceivedCalls().Count() >= 2);
+        await Poll(() => ctx.GetPendingOrders().Count(o => o.Id > 0) >= 2);
+
+        // Capture exchange ids before cancelling (Cancel removes them from the pending set).
+        var sessAExchangeId = ctx.GetPendingOrders()
+            .Select(o => o.Id)
+            .Single(id => router.TryResolveSession(id, out var s) && s == sessA);
+        var sessBExchangeId = ctx.GetPendingOrders()
+            .Select(o => o.Id)
+            .Single(id => router.TryResolveSession(id, out var s) && s == sessB);
+
+        // Mirror RemoveSessionAsync's filter: cancel only sessA's resting orders.
+        foreach (var order in ctx.GetPendingOrders())
+            if (router.TryResolveSession(order.Id, out var owner) && owner == sessA)
+                ctx.Cancel(order.Id);
+
+        await Poll(() => client.ReceivedCalls()
+            .Any(c => c.GetMethodInfo().Name == nameof(IExchangeOrderClient.CancelOrderAsync)));
+
+        await client.Received(1).CancelOrderAsync("BTCUSDT", sessAExchangeId, Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CancelOrderAsync("BTCUSDT", sessBExchangeId, Arg.Any<CancellationToken>());
+
+        await router.ReleaseTarget("A", ct);
     }
 
     /// <summary>
@@ -332,8 +396,8 @@ public class MultiAccountRoutingTests
         var router = new OrderRouter(factory, NullLogger<OrderRouter>.Instance);
 
         // Acquire twice: refcount = 2.
-        var target1 = await router.ResolveTarget("A", ct);
-        var target2 = await router.ResolveTarget("A", ct);
+        var target1 = await router.ResolveTarget("A", BtcUsdt, ct);
+        var target2 = await router.ResolveTarget("A", BtcUsdt, ct);
         Assert.Same(target1, target2);
 
         var target = (InMemoryAccountTarget)target1;

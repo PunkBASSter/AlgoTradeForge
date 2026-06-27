@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using AlgoTradeForge.Domain;
 using AlgoTradeForge.LiveHost.Application.Live;
 using AlgoTradeForge.Storage.Threading;
 using Microsoft.Extensions.Logging;
@@ -16,14 +17,14 @@ public sealed class OrderRouter(IAccountTargetFactory factory, ILogger<OrderRout
     public IReadOnlyCollection<IAccountTarget> Targets =>
         _targets.Values.Select(e => e.Target).ToList();
 
-    public async Task<IAccountTarget> ResolveTarget(string account, CancellationToken ct = default)
+    public async Task<IAccountTarget> ResolveTarget(string account, Asset executionAsset, CancellationToken ct = default)
     {
         var gate = _gates.GetOrAdd(account, _ => new SemaphoreSlim(1, 1));
         using var _ = await gate.LockAsync(ct);
 
         var entry = _targets.TryGetValue(account, out var existing)
             ? existing
-            : _targets[account] = new Entry(await factory.Create(account, ct));
+            : _targets[account] = new Entry(await factory.Create(account, executionAsset, ct));
 
         entry.RefCount++;
         return entry.Target;
