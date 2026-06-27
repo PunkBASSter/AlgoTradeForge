@@ -11,6 +11,8 @@ using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Infrastructure;
 using AlgoTradeForge.Infrastructure.History;
 using AlgoTradeForge.Infrastructure.Plugins;
+using AlgoTradeForge.LiveHost.Infrastructure.Live;
+using AlgoTradeForge.LiveHost.Infrastructure.Live.InteractiveBrokers;
 using AlgoTradeForge.LiveHost.WebApi;
 using AlgoTradeForge.LiveHost.WebApi.Endpoints;
 using AlgoTradeForge.Storage;
@@ -111,28 +113,44 @@ builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.Recovery.
     new AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.RelayArchiveReplaySource(
         sp.GetRequiredService<AlgoTradeForge.Storage.IFileStorage>(),
         sp.GetRequiredService<AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.CatchupOptions>().RelayKeyPrefix));
-builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.IAggTradeBackfillClient,
-    AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.NullAggTradeBackfillClient>();
-builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.Recovery.IBackfillRequester,
-    AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.BinanceBackfillRequester>();
+// Data plane: venue-specific registrations (IVenueConnector, IBarSourceResolver, IBackfillRequester).
+// Venue-agnostic services (ITickRouter, IStrategyDispatch, relay pump) are registered outside this branch.
+var venue = VenueSelector.Parse(builder.Configuration.GetValue<string>("Venue"));
 
-// Data plane: HOST-LEVEL SINGLETONS (one shared plane per node). The relay pump publishes ticks
-// to the router at startup, before any session exists; sessions register with the SAME router.
-// The kline market-data WS needs no account auth (public klines) — shared market-data manager.
-builder.Services.AddSingleton(sp =>
+if (venue == VenueKind.Ib)
 {
-    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceLiveOptions>>().Value;
-    var log = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceWebSocketManager>>();
-    return new AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceWebSocketManager(
-        opts.MarketStreamUrl, opts.ReconnectDelay, opts.MaxReconnectAttempts, log);
-});
-builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.DataPlane.IBarSourceResolver>(sp =>
-    new AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane.BarSourceResolver(
-        sp.GetRequiredService<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceWebSocketManager>(),
-        sp.GetRequiredService<AlgoTradeForge.LiveHost.Application.Live.Recovery.IReplaySource>(),
-        sp.GetRequiredService<AlgoTradeForge.LiveHost.Application.Live.Recovery.IBackfillRequester>(),
-        sp.GetRequiredService<AlgoTradeForge.Application.CandleIngestion.IInt64BarLoader>(),
-        sp.GetRequiredService<AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.CatchupOptions>()));
+    builder.Services.AddIbDataPlane(builder.Configuration);
+}
+else
+{
+    // Binance data plane
+    builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.IAggTradeBackfillClient,
+        AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.NullAggTradeBackfillClient>();
+    builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.Recovery.IBackfillRequester,
+        AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.BinanceBackfillRequester>();
+    builder.Services.AddSingleton(sp =>
+    {
+        var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceLiveOptions>>().Value;
+        var log = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceWebSocketManager>>();
+        return new AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceWebSocketManager(
+            opts.MarketStreamUrl, opts.ReconnectDelay, opts.MaxReconnectAttempts, log);
+    });
+    builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.DataPlane.IBarSourceResolver>(sp =>
+        new AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane.BarSourceResolver(
+            sp.GetRequiredService<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceWebSocketManager>(),
+            sp.GetRequiredService<AlgoTradeForge.LiveHost.Application.Live.Recovery.IReplaySource>(),
+            sp.GetRequiredService<AlgoTradeForge.LiveHost.Application.Live.Recovery.IBackfillRequester>(),
+            sp.GetRequiredService<AlgoTradeForge.Application.CandleIngestion.IInt64BarLoader>(),
+            sp.GetRequiredService<AlgoTradeForge.LiveHost.Infrastructure.Live.Recovery.CatchupOptions>()));
+    builder.Services.AddSingleton<AlgoTradeForge.Live.Relay.IVenueConnector>(sp =>
+    {
+        var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceLiveOptions>>().Value;
+        var log = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceVenueConnector>>();
+        return new AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceVenueConnector(opts, log);
+    });
+}
+
+// Venue-agnostic data-plane services (shared by all venues)
 builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.DataPlane.IStrategyDispatch,
     AlgoTradeForge.LiveHost.Infrastructure.Live.DataPlane.StrategyDispatch>();
 builder.Services.AddSingleton<AlgoTradeForge.LiveHost.Application.Live.DataPlane.ITickRouter,
@@ -146,12 +164,6 @@ builder.Services.AddLiveHost(builder.Configuration);
 // Relay pump (ingest → local segment files → IFileStorage archival)
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<RelayPumpOptions>(builder.Configuration.GetSection("RelayPump"));
-builder.Services.AddSingleton<AlgoTradeForge.Live.Relay.IVenueConnector>(sp =>
-{
-    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceLiveOptions>>().Value;
-    var log = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceVenueConnector>>();
-    return new AlgoTradeForge.LiveHost.Infrastructure.Live.Binance.BinanceVenueConnector(opts, log);
-});
 builder.Services.AddHostedService<RelayPumpHostedService>();
 
 builder.Services.AddCors(options =>

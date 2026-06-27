@@ -33,4 +33,19 @@ public class IbContractTranslationTests
         // expiry-less so IB returns all listed months for front-month selection
         Assert.True(string.IsNullOrEmpty(ib.LastTradeDateOrContractMonth));
     }
+
+    [Fact]
+    public void ToIbApiContract_ResolvedContract_SetsConIdAndPreservesSpecFields()
+    {
+        var spec = new IbContract("AAPL", IbSecType.Stk, "SMART", "NASDAQ", "USD");
+        var resolved = new ResolvedIbContract(spec, ConId: 265598, LocalSymbol: "AAPL", LastTradeDate: "");
+
+        var ib = resolved.ToIbApiContract();
+
+        Assert.Equal(265598, ib.ConId);
+        Assert.Equal("AAPL", ib.Symbol);
+        Assert.Equal("STK", ib.SecType);
+        Assert.Equal("SMART", ib.Exchange);
+        Assert.Equal("USD", ib.Currency);
+    }
 }

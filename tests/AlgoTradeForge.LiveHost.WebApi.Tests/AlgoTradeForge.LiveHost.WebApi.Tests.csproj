@@ -33,6 +33,7 @@
     <ProjectReference Include="..\..\src\AlgoTradeForge.LiveHost.WebApi\AlgoTradeForge.LiveHost.WebApi.csproj" />
     <ProjectReference Include="..\..\src\AlgoTradeForge.Infrastructure\AlgoTradeForge.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\AlgoTradeForge.HistoryLoader.Infrastructure\AlgoTradeForge.HistoryLoader.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\AlgoTradeForge.LiveHost.Infrastructure\AlgoTradeForge.LiveHost.Infrastructure.csproj" />
     <ProjectReference Include="..\AlgoTradeForge.Infrastructure.Tests\AlgoTradeForge.Infrastructure.Tests.csproj" />
     <ProjectReference Include="..\AlgoTradeForge.LiveHost.Infrastructure.Tests\AlgoTradeForge.LiveHost.Infrastructure.Tests.csproj" />
   </ItemGroup>

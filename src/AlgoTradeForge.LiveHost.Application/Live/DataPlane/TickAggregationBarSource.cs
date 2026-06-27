@@ -16,7 +16,7 @@ public sealed class TickAggregationBarSource : ITickDrivenBarSource, IDisposable
     private readonly int _recentCapacity;
     private readonly Lock _gate = new(); // guards _recent and _buffer.
     private readonly CatchupPlan? _catchup;
-    private readonly ICatchupGate _watermark = new SequenceWatermarkGate();
+    private readonly ICatchupGate _watermark;
 
     // Live ticks that arrive during catch-up are buffered, then drained in order.
     private readonly Queue<TradeTick> _buffer = new();
@@ -36,7 +36,7 @@ public sealed class TickAggregationBarSource : ITickDrivenBarSource, IDisposable
 
     public TickAggregationBarSource(
         string typeCode, long frozenThreshold, ScaleContext scale, Action<Int64Bar, bool> onBar,
-        int recentCapacity = 256, CatchupPlan? catchup = null)
+        int recentCapacity = 256, CatchupPlan? catchup = null, ICatchupGate? gate = null)
     {
         ArgumentNullException.ThrowIfNull(onBar);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(recentCapacity);
@@ -47,6 +47,7 @@ public sealed class TickAggregationBarSource : ITickDrivenBarSource, IDisposable
         _recentCapacity = recentCapacity;
         _recent = new Queue<Int64Bar>(recentCapacity);
         _catchup = catchup;
+        _watermark = gate ?? new SequenceWatermarkGate();
         _phase = catchup is null ? Phase.Live : Phase.Cold;
     }
 

@@ -6,11 +6,9 @@ namespace AlgoTradeForge.LiveHost.Infrastructure.Live.InteractiveBrokers;
 internal sealed class IbConnectionContractDetailsClient(
     IbConnection connection, IbWrapper wrapper, TimeProvider timeProvider) : IIbContractDetailsClient
 {
-    private int _reqId;
-
     public async Task<ResolvedIbContract> FetchContractDetails(IbContract spec, CancellationToken ct = default)
     {
-        var reqId = Interlocked.Increment(ref _reqId);
+        var reqId = connection.NextReqId();
         using var request = wrapper.RegisterContractDetails(reqId);
         connection.Client.reqContractDetails(reqId, spec.ToIbApiContract());
         var details = await request.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
