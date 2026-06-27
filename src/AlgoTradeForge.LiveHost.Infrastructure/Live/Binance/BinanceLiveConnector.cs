@@ -279,7 +279,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
         portfolio.Initialize();
 
         var orderContext = new LiveOrderContext(
-            portfolio, asset, _orderValidator, _logger, _apiClient!,
+            portfolio, _orderValidator, _logger, _apiClient!,
             config.SessionId, _binanceOrderToSession, _sharedOptions.LiveChannelCapacity);
         orderContext.Start(_cts!.Token);
         orderContext.OrderMapped += DrainBufferedReports;

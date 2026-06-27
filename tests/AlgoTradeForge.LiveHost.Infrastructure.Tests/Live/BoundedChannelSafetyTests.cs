@@ -50,7 +50,7 @@ public class BoundedChannelSafetyTests
         portfolio.Initialize();
 
         return new LiveOrderContext(
-            portfolio, BtcUsdt, new OrderValidator(),
+            portfolio, new OrderValidator(),
             NullLogger.Instance, client,
             Guid.NewGuid(), new ConcurrentDictionary<long, Guid>(),
             channelCapacity: capacity);

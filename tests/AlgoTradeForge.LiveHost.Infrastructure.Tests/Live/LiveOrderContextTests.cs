@@ -2,9 +2,11 @@ using System.Collections.Concurrent;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Trading;
+using AlgoTradeForge.LiveHost.Application.Live;
 using AlgoTradeForge.LiveHost.Infrastructure.Live;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Xunit;
 
 namespace AlgoTradeForge.LiveHost.Infrastructure.Tests.Live;
@@ -25,7 +27,7 @@ public class LiveOrderContextTests
             "https://testnet.binance.vision", "fake", "fake", NullLogger.Instance);
 
         return new LiveOrderContext(
-            portfolio, BtcUsdt, new OrderValidator(),
+            portfolio, new OrderValidator(),
             NullLogger.Instance, apiClient,
             Guid.NewGuid(), new ConcurrentDictionary<long, Guid>());
     }
@@ -260,5 +262,39 @@ public class LiveOrderContextTests
         var positions = ctx.GetPositions();
         Assert.Single(positions);
         Assert.Equal(0.001m, positions["BTCUSDT"].Quantity);
+    }
+
+    [Fact]
+    public async Task ProcessOrders_ScalesPrice_OffOrderAsset_NotAConstant()
+    {
+        // EthUsdt has a coarser tick (0.01) than a hypothetical 8-dp asset; the order's OWN
+        // asset must drive scaling. Build the context, submit a LIMIT order, capture the price.
+        var ethUsdt = CryptoAsset.Create("ETHUSDT", "Binance",
+            decimalDigits: 2, minOrderQuantity: 0.0001m, maxOrderQuantity: 9000m, quantityStepSize: 0.0001m);
+
+        var client = Substitute.For<IExchangeOrderClient>();
+        client.PlaceOrderAsync(Arg.Any<string>(), Arg.Any<OrderSide>(), Arg.Any<OrderType>(),
+                Arg.Any<decimal>(), Arg.Any<decimal?>(), Arg.Any<decimal?>(), Arg.Any<CancellationToken>())
+            .Returns(new ExchangeOrderResult(7777L, []));
+
+        var portfolio = new Portfolio { InitialCash = 100_000_00L };
+        portfolio.Initialize();
+        var ctx = new LiveOrderContext(
+            portfolio, new OrderValidator(), NullLogger.Instance, client,
+            Guid.NewGuid(), new ConcurrentDictionary<long, Guid>());
+        ctx.Start(TestContext.Current.CancellationToken);
+
+        // LimitPrice is tick-denominated: 3000.00 ETH at 0.01 tick = 300000 ticks.
+        var order = new Order { Id = 0, Asset = ethUsdt, Side = OrderSide.Buy,
+            Type = OrderType.Limit, Quantity = 0.01m, LimitPrice = 300000L };
+        ctx.Submit(order);
+
+        // Poll until the single-reader order task drains the channel.
+        var ct = TestContext.Current.CancellationToken;
+        for (var i = 0; i < 50 && client.ReceivedCalls().Count() == 0; i++)
+            await Task.Delay(20, ct);
+
+        await client.Received().PlaceOrderAsync("ETHUSDT", OrderSide.Buy, OrderType.Limit,
+            0.01m, 3000.00m, null, Arg.Any<CancellationToken>());
     }
 }

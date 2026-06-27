@@ -15,7 +15,6 @@ public sealed class LiveOrderContext : IOrderContext
     private readonly IExchangeOrderClient _orderClient;
     private readonly IOrderValidator _orderValidator;
     private readonly Portfolio _portfolio;
-    private readonly Asset _primaryAsset;
     private readonly ILogger _logger;
     private readonly Guid _sessionId;
     private readonly ConcurrentDictionary<long, Guid> _exchangeOrderToSession;
@@ -40,7 +39,6 @@ public sealed class LiveOrderContext : IOrderContext
 
     public LiveOrderContext(
         Portfolio portfolio,
-        Asset primaryAsset,
         IOrderValidator orderValidator,
         ILogger logger,
         IExchangeOrderClient orderClient,
@@ -49,7 +47,6 @@ public sealed class LiveOrderContext : IOrderContext
         int channelCapacity = 1024)
     {
         _portfolio = portfolio;
-        _primaryAsset = primaryAsset;
         _orderValidator = orderValidator;
         _logger = logger;
         _orderClient = orderClient;
@@ -222,7 +219,7 @@ public sealed class LiveOrderContext : IOrderContext
                 try
                 {
                     var order = request.Order;
-                    var scale = new ScaleContext(_primaryAsset);
+                    var scale = new ScaleContext(order.Asset);
                     decimal? price = order.LimitPrice.HasValue
                         ? scale.ToMarketPrice(order.LimitPrice.Value)
                         : null;
