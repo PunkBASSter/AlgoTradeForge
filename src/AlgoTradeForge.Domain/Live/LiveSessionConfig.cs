@@ -9,7 +9,6 @@ public sealed record LiveSessionConfig
     public required IInt64BarStrategy Strategy { get; init; }
     public required IReadOnlyList<DataFeedSubscription> Subscriptions { get; init; }
 
-    public required long InitialCash { get; init; }
     public required string AccountName { get; init; }
     public Asset ExecutionAsset => Subscriptions.ResolveExecutionAsset();
 }

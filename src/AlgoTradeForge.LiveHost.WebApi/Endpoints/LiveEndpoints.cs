@@ -54,7 +54,6 @@ public static class LiveEndpoints
         var command = new StartLiveSessionCommand
         {
             StrategyName = request.StrategyName,
-            InitialCash = request.InitialCash,
             StrategyParameters = request.StrategyParameters,
             DataSubscriptions = request.DataSubscriptions,
             AccountName = request.AccountName,

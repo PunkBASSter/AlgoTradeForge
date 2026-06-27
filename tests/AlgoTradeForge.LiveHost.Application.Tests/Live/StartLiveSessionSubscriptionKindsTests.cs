@@ -71,7 +71,6 @@ public class StartLiveSessionSubscriptionKindsTests
         var command = new StartLiveSessionCommand
         {
             StrategyName = "BuyAndHold",
-            InitialCash = 10000m,
             AccountName = "paper",
             DataSubscriptions = [new TickSubscription("BTCUSDT", "Binance", DataFeedRole.Primary)],
         };
@@ -93,7 +92,6 @@ public class StartLiveSessionSubscriptionKindsTests
         var command = new StartLiveSessionCommand
         {
             StrategyName = "BuyAndHold",
-            InitialCash = 10000m,
             AccountName = "paper",
             DataSubscriptions = [new AltBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, "EqV_1m_500")],
         };
@@ -124,7 +122,6 @@ public class StartLiveSessionSubscriptionKindsTests
         var command = new StartLiveSessionCommand
         {
             StrategyName = "BuyAndHold",
-            InitialCash = 10000m,
             AccountName = "paper",
             DataSubscriptions = raw,
         };
@@ -164,7 +161,6 @@ public class StartLiveSessionSubscriptionKindsTests
         var command = new StartLiveSessionCommand
         {
             StrategyName = "BuyAndHold",
-            InitialCash = 10000m,
             AccountName = "paper",
             DataSubscriptions = [new TickSubscription("NOPE", "Binance", DataFeedRole.Primary)],
         };

@@ -53,14 +53,11 @@ public sealed class TestnetConnectorFixture : IAsyncLifetime
         Strategy = new TestnetOrderStrategy(new TestnetOrderStrategyParams());
         SessionId = Guid.NewGuid();
 
-        var initialCash = (long)(100m / Asset.TickSize); // 100 USDT scaled
-
         var config = new LiveSessionConfig
         {
             SessionId = SessionId,
             Strategy = Strategy,
             Subscriptions = [TestSubs.Of(Asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
-            InitialCash = initialCash,
             AccountName = "testnet",
         };
 

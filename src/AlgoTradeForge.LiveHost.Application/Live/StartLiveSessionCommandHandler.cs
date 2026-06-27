@@ -62,14 +62,12 @@ public sealed class StartLiveSessionCommandHandler(
         var fingerprint = LiveRunKeyBuilder.Build(command);
 
         var sessionId = Guid.NewGuid();
-        var initialCashScaled = scale.AmountToTicks(command.InitialCash);
 
         var config = new LiveSessionConfig
         {
             SessionId = sessionId,
             Strategy = strategy,
             Subscriptions = resolvedSubscriptions,
-            InitialCash = initialCashScaled,
             AccountName = command.AccountName,
         };
 

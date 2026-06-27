@@ -100,8 +100,6 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
         var tickerPrice = await _connector.GetTickerPriceAsync("BTCUSDT");
         _lastPrice = (long)(tickerPrice / _asset.TickSize);
 
-        var initialCash = (long)(200m / _asset.TickSize); // 200 USDT scaled
-
         // Strategy A
         _strategyA = new TradeRegistryTestStrategy(new TradeRegistryTestParams());
         _sessionIdA = Guid.NewGuid();
@@ -110,7 +108,6 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
             SessionId = _sessionIdA,
             Strategy = _strategyA,
             Subscriptions = [TestSubs.Of(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
-            InitialCash = initialCash,
             AccountName = "testnet-e2e",
         });
 
@@ -122,7 +119,6 @@ public sealed class BinanceLiveConnectorE2ETests : IAsyncLifetime
             SessionId = _sessionIdB,
             Strategy = _strategyB,
             Subscriptions = [TestSubs.Of(_asset, new TimeFrame(TimeSpan.FromMinutes(1)))],
-            InitialCash = initialCash,
             AccountName = "testnet-e2e",
         });
     }

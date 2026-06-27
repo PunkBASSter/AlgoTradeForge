@@ -289,7 +289,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
         var symbolInfo = await _apiClient!.GetExchangeInfoAsync(asset.Name, ct);
 
         // Resolve (or attach to) the account target. The factory reads _accountAsset, so it MUST
-        // be set before ResolveTarget. Funds are discovered by the factory — InitialCash ignored.
+        // be set before ResolveTarget. Funds are discovered by the factory.
         _accountAsset = asset;
         var target = await _router!.ResolveTarget(config.AccountName, ct);
         var accountContext = ((AccountTarget)target).OrderContext;

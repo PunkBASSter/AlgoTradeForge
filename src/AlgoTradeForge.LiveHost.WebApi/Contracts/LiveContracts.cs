@@ -6,7 +6,6 @@ namespace AlgoTradeForge.LiveHost.WebApi.Contracts;
 public sealed record StartLiveSessionRequest
 {
     public required string StrategyName { get; init; }
-    public required decimal InitialCash { get; init; }
     public Dictionary<string, object>? StrategyParameters { get; init; }
     public IReadOnlyList<DataFeedSubscription>? DataSubscriptions { get; init; }
     public string AccountName { get; init; } = "paper";
