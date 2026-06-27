@@ -11,10 +11,9 @@ internal sealed class IbVenueBarSource(
     IIbMarketDataSession session, IIbContractResolver resolver, IbContract spec, ScaleContext scale,
     Action<Int64Bar, bool> onBar, int recentCapacity = 256) : IBarSource
 {
-    private readonly Queue<Int64Bar> _recent = new(recentCapacity);
-    private readonly Lock _gate = new();
+    private readonly BoundedRecent<Int64Bar> _recent = new(recentCapacity);
 
-    public IReadOnlyList<Int64Bar> Recent { get { lock (_gate) return _recent.ToArray(); } }
+    public IReadOnlyList<Int64Bar> Recent => _recent.Snapshot();
 
     public async Task Start()
     {
@@ -35,11 +34,7 @@ internal sealed class IbVenueBarSource(
             scale.FromMarketPrice((decimal)b.Low),
             scale.FromMarketPrice((decimal)b.Close),
             MoneyConvert.ToLong(b.Volume));
-        lock (_gate)
-        {
-            if (_recent.Count >= recentCapacity) _recent.Dequeue();
-            _recent.Enqueue(bar);
-        }
+        _recent.Add(bar);
         onBar(bar, false);
     }
 }

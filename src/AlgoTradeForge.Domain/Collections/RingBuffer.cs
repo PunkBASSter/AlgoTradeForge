@@ -52,6 +52,16 @@ public sealed class RingBuffer<T>(int capacity) : IReadOnlyList<T>
     private int SlotFor(int age) =>
         ((_head - 1 - age) % _items.Length + _items.Length) % _items.Length;
 
+    public T[] ToArray()
+    {
+        var stored = Math.Min(Count, _items.Length);
+        var result = new T[stored];
+        var start = (_head - stored + _items.Length) % _items.Length;
+        for (var i = 0; i < stored; i++)
+            result[i] = _items[(start + i) % _items.Length];
+        return result;
+    }
+
     public IEnumerator<T> GetEnumerator()
     {
         var stored = Math.Min(Count, _items.Length);

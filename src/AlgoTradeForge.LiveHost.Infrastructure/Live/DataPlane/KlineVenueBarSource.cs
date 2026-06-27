@@ -18,9 +18,7 @@ public sealed class KlineVenueBarSource : IBarSource, IAsyncDisposable
     private readonly string _interval;
     private readonly ScaleContext _scale;
     private readonly Action<Int64Bar, bool> _onBar;
-    private readonly int _recentCapacity;
-    private readonly Queue<Int64Bar> _recent;
-    private readonly Lock _gate = new();
+    private readonly BoundedRecent<Int64Bar> _recent;
     private long? _lastOpenTimeMs; // last open-time seen; a change means a new bar opened (emit OnBarStart once)
     private volatile bool _disposed;
 
@@ -46,14 +44,10 @@ public sealed class KlineVenueBarSource : IBarSource, IAsyncDisposable
         _interval = interval;
         _scale = scale;
         _onBar = onBar;
-        _recentCapacity = recentCapacity;
-        _recent = new Queue<Int64Bar>(recentCapacity);
+        _recent = new BoundedRecent<Int64Bar>(recentCapacity);
     }
 
-    public IReadOnlyList<Int64Bar> Recent
-    {
-        get { lock (_gate) return _recent.ToArray(); }
-    }
+    public IReadOnlyList<Int64Bar> Recent => _recent.Snapshot();
 
     /// <summary>Subscribe the kline WS. The returned task completes once the stream is connected.</summary>
     public Task Start() =>
@@ -80,12 +74,8 @@ public sealed class KlineVenueBarSource : IBarSource, IAsyncDisposable
             return;
 
         var bar = MapKline(in msg, _scale);
-        lock (_gate)
-        {
-            if (_disposed) return;
-            if (_recent.Count >= _recentCapacity) _recent.Dequeue();
-            _recent.Enqueue(bar);
-        }
+        if (_disposed) return;
+        _recent.Add(bar);
         _onBar(bar, false); // isStart
     }
 
