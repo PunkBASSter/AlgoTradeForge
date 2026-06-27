@@ -12,9 +12,8 @@ public sealed class TickAggregationBarSource : ITickDrivenBarSource, IDisposable
 
     private readonly IBarAccumulator _acc;
     private readonly Action<Int64Bar, bool> _onBar;
-    private readonly Queue<Int64Bar> _recent;
-    private readonly int _recentCapacity;
-    private readonly Lock _gate = new(); // guards _recent and _buffer.
+    private readonly BoundedRecent<Int64Bar> _recent;
+    private readonly Lock _gate = new(); // guards _buffer and the phase transition.
     private readonly CatchupPlan? _catchup;
     private readonly ICatchupGate _watermark;
 
@@ -44,14 +43,13 @@ public sealed class TickAggregationBarSource : ITickDrivenBarSource, IDisposable
         // Source==accumulator scale: live ticks already carry the instrument's scale (frozen at session start).
         _acc = AccumulatorEntry.Open(typeCode, frozenThreshold, scale, scale, DataFeedKind.Tick);
         _onBar = onBar;
-        _recentCapacity = recentCapacity;
-        _recent = new Queue<Int64Bar>(recentCapacity);
+        _recent = new BoundedRecent<Int64Bar>(recentCapacity);
         _catchup = catchup;
         _watermark = gate ?? new SequenceWatermarkGate();
         _phase = catchup is null ? Phase.Live : Phase.Cold;
     }
 
-    public IReadOnlyList<Int64Bar> Recent { get { lock (_gate) return _recent.ToArray(); } }
+    public IReadOnlyList<Int64Bar> Recent => _recent.Snapshot();
 
     internal bool IsLive => _phase == Phase.Live;
 
@@ -194,14 +192,7 @@ public sealed class TickAggregationBarSource : ITickDrivenBarSource, IDisposable
         _onBar(bar, false);
     }
 
-    private void PushRecent(Int64Bar bar)
-    {
-        lock (_gate)
-        {
-            if (_recent.Count >= _recentCapacity) _recent.Dequeue();
-            _recent.Enqueue(bar);
-        }
-    }
+    private void PushRecent(Int64Bar bar) => _recent.Add(bar);
 
     public void Dispose()
     {
