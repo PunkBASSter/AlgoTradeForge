@@ -13,6 +13,7 @@ public sealed class SessionOrderContext(Guid sessionId, LiveOrderContext account
     public long AvailableMargin => account.AvailableMargin;
     public long Submit(Order order) => account.Submit(order, sessionId);
     public Order? Cancel(long orderId) => account.Cancel(orderId);
+    // Account-wide by design: the Portfolio/order book is the shared broker account (broker-true).
     public IReadOnlyList<Order> GetPendingOrders() => account.GetPendingOrders();
     public IReadOnlyList<Fill> GetFills() => account.GetFills();
     public IReadOnlyDictionary<string, Position> GetPositions() => account.GetPositions();

@@ -131,6 +131,10 @@ public sealed class LiveOrderContext
             !_pendingOrders.TryRemove(orderId, out order))
             return null;
 
+        // Pre-placement cancel: drop the local→session entry Submit inserted (no-op if already
+        // re-keyed, since the re-key path removes it). Keyed by the local id Submit used.
+        _localToSession.TryRemove(orderId, out _);
+
         order.Status = OrderStatus.Cancelled;
 
         // Bounded channel: a full queue must not silently drop the cancel request.
@@ -192,7 +196,7 @@ public sealed class LiveOrderContext
             order.Id = exchangeOrderId;
             _pendingOrders.TryAdd(exchangeOrderId, order);
             _localToExchangeId.TryAdd(localId, exchangeOrderId);
-            if (_localToSession.TryGetValue(localId, out var sId))
+            if (_localToSession.TryRemove(localId, out var sId))
                 OrderMapped?.Invoke(exchangeOrderId, sId);
         }
     }
@@ -237,7 +241,7 @@ public sealed class LiveOrderContext
                         pending.Id = exchangeOrderId;
                         _pendingOrders.TryAdd(exchangeOrderId, pending);
                         _localToExchangeId.TryAdd(request.LocalId, exchangeOrderId);
-                        if (_localToSession.TryGetValue(request.LocalId, out var pendingSession))
+                        if (_localToSession.TryRemove(request.LocalId, out var pendingSession))
                             OrderMapped?.Invoke(exchangeOrderId, pendingSession);
                     }
 
