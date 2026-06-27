@@ -13,19 +13,33 @@ public sealed class OrderRouter(IAccountTargetFactory factory, ILogger<OrderRout
     private readonly ConcurrentDictionary<string, Entry> _targets = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<long, Guid> _orderToSession = new();
+    private volatile bool _disposed;
 
     public IReadOnlyCollection<IAccountTarget> Targets =>
         _targets.Values.Select(e => e.Target).ToList();
 
     public async Task<IAccountTarget> ResolveTarget(string account, Asset executionAsset, CancellationToken ct = default)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         var gate = _gates.GetOrAdd(account, _ => new SemaphoreSlim(1, 1));
         using var _ = await gate.LockAsync(ct);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
-        var entry = _targets.TryGetValue(account, out var existing)
-            ? existing
-            : _targets[account] = new Entry(await factory.Create(account, executionAsset, ct));
+        if (_targets.TryGetValue(account, out var existing))
+        {
+            existing.RefCount++;
+            return existing.Target;
+        }
 
+        var target = await factory.Create(account, executionAsset, ct);
+        if (_disposed)
+        {
+            // Disposed while we were creating — don't insert a live target the router won't tear down.
+            await target.DisposeAsync();
+            throw new ObjectDisposedException(GetType().FullName);
+        }
+
+        var entry = _targets[account] = new Entry(target);
         entry.RefCount++;
         return entry.Target;
     }
@@ -57,11 +71,16 @@ public sealed class OrderRouter(IAccountTargetFactory factory, ILogger<OrderRout
 
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
         foreach (var entry in _targets.Values)
         {
             try { await entry.Target.DisposeAsync(); }
             catch (Exception ex) { logger.LogError(ex, "Disposing target {Account} on router shutdown failed", entry.Target.AccountName); }
         }
         _targets.Clear();
+
+        foreach (var gate in _gates.Values)
+            gate.Dispose();
+        _gates.Clear();
     }
 }

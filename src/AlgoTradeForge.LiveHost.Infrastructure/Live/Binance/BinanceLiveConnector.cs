@@ -74,7 +74,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         public Guid SessionId { get; }
         public IInt64BarStrategy Strategy { get; }
-        public IAccountTarget Target { get; }
+        // Concrete AccountTarget: a Binance connector only ever handles Binance targets (its own
+        // factory produces them), so narrowing once at construction avoids scattered downcasts.
+        public AccountTarget Target { get; }
         public string AccountName { get; }
         public IReadOnlyList<DataFeedSubscription> Subscriptions { get; }
         public Asset ExecutionAsset { get; }
@@ -95,12 +97,12 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         // The account-scoped order ledger backing this session (shared across sessions on the
         // same account). Reached via Target for fills/pending-order/reconciliation paths.
-        public LiveOrderContext OrderContext => ((AccountTarget)Target).OrderContext;
+        public LiveOrderContext OrderContext => Target.OrderContext;
 
         public LiveSessionEntry(
             Guid sessionId,
             IInt64BarStrategy strategy,
-            IAccountTarget target,
+            AccountTarget target,
             string accountName,
             IReadOnlyList<DataFeedSubscription> subscriptions,
             Asset executionAsset,
@@ -284,9 +286,22 @@ public sealed class BinanceLiveConnector : ILiveConnector
         // Resolve (or attach to) the account target. The execution asset is threaded through so
         // the factory seeds the account with no shared mutable state. Funds are discovered by the
         // factory. RegisterSymbol accumulates this session's symbol for cancel-on-dispose.
-        var target = await _router!.ResolveTarget(config.AccountName, asset, ct);
-        ((AccountTarget)target).RegisterSymbol(asset.Name);
-        var accountContext = ((AccountTarget)target).OrderContext;
+        var target = (AccountTarget)await _router!.ResolveTarget(config.AccountName, asset, ct);
+
+        // Co-tenant fence: one account = one money scale. A session whose asset has a different
+        // price tick than the account's seed asset would apply fills in mismatched units to the
+        // shared ledger (corrupting cash/margin). Reject it (releasing the refcount we just took).
+        if (target.SeedAsset.TickSize != asset.TickSize)
+        {
+            await _router.ReleaseTarget(config.AccountName, ct);
+            throw new ArgumentException(
+                $"Session asset '{asset.Name}' (tick {asset.TickSize}) cannot share account " +
+                $"'{config.AccountName}' seeded by '{target.SeedAsset.Name}' (tick {target.SeedAsset.TickSize}) " +
+                $"— one account shares one money scale.");
+        }
+
+        target.RegisterSymbol(asset.Name);
+        var accountContext = target.OrderContext;
 
         // Order→session routing now lives in the router. The account context fires OrderMapped
         // once an exchange order id is assigned; we record it and replay any buffered reports.
@@ -472,34 +487,35 @@ public sealed class BinanceLiveConnector : ILiveConnector
     private async Task RunReconciliationLoop(CancellationToken ct)
     {
         using var timer = new PeriodicTimer(_sharedOptions.ReconciliationInterval);
-        var consecutiveFailures = 0;
+        // Per-session failure counter so a healthy session can't reset (mask) a persistently-failing one.
+        var consecutiveFailures = new Dictionary<Guid, int>();
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
-                // Reconcile per account target. A target may back multiple sessions; each
-                // session with a TradeRegistry contributes its own expected-orders snapshot.
-                foreach (var target in _router!.Targets)
+                // Each session reconciles its own TradeRegistry against the shared account ledger
+                // (entry.OrderContext). One account backs all its co-tenant sessions.
+                foreach (var entry in _sessions.Values)
                 {
-                    var accountContext = ((AccountTarget)target).OrderContext;
-                    foreach (var entry in _sessions.Values)
+                    if (entry.Strategy is not ITradeRegistryProvider provider)
+                        continue;
+                    try
                     {
-                        if (!string.Equals(entry.AccountName, target.AccountName, StringComparison.OrdinalIgnoreCase))
-                            continue;
-                        if (entry.Strategy is not ITradeRegistryProvider provider)
-                            continue;
-                        try
-                        {
-                            await ReconcileSession(entry, provider, accountContext, ct);
-                            consecutiveFailures = 0;
-                        }
-                        catch (Exception ex) when (!IsTrueShutdown(ex, ct))
-                        {
-                            consecutiveFailures++;
-                            LogReconciliationFailure(ex, entry.SessionId, consecutiveFailures);
-                        }
+                        await ReconcileSession(entry, provider, entry.OrderContext, ct);
+                        consecutiveFailures.Remove(entry.SessionId);
+                    }
+                    catch (Exception ex) when (!IsTrueShutdown(ex, ct))
+                    {
+                        var count = consecutiveFailures.GetValueOrDefault(entry.SessionId) + 1;
+                        consecutiveFailures[entry.SessionId] = count;
+                        LogReconciliationFailure(ex, entry.SessionId, count);
                     }
                 }
+
+                // Drop counters for sessions that have since been removed.
+                if (consecutiveFailures.Count > 0)
+                    foreach (var id in consecutiveFailures.Keys.Where(id => !_sessions.ContainsKey(id)).ToList())
+                        consecutiveFailures.Remove(id);
             }
         }
         catch (OperationCanceledException) { }

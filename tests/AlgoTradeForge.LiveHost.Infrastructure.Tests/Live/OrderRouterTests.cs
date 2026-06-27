@@ -57,6 +57,20 @@ public class OrderRouterTests
     }
 
     [Fact]
+    public async Task ResolveTarget_AfterDispose_Throws()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var factory = Substitute.For<IAccountTargetFactory>();
+        factory.Create("A", Arg.Any<Asset>(), Arg.Any<CancellationToken>()).Returns(_ => FakeTarget("A"));
+        var router = new OrderRouter(factory, NullLogger<OrderRouter>.Instance);
+
+        await router.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => router.ResolveTarget("A", TestAsset, ct));
+    }
+
+    [Fact]
     public void TrackOrder_Then_TryResolveSession_RoundTrips()
     {
         var router = new OrderRouter(Substitute.For<IAccountTargetFactory>(), NullLogger<OrderRouter>.Instance);

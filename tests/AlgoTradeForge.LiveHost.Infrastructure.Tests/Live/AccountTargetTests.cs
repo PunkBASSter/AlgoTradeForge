@@ -11,13 +11,23 @@ namespace AlgoTradeForge.LiveHost.Infrastructure.Tests.Live;
 
 public class AccountTargetTests
 {
+    private static readonly CryptoAsset BtcUsdt = CryptoAsset.Create("BTCUSDT", "Binance",
+        decimalDigits: 2, minOrderQuantity: 0.00001m, maxOrderQuantity: 9000m, quantityStepSize: 0.00001m);
+
     private static AccountTarget CreateTarget(IExchangeOrderClient client, out Portfolio portfolio)
     {
         portfolio = new Portfolio { InitialCash = 50_000_00L };
         portfolio.Initialize();
         var ctx = new LiveOrderContext(portfolio, new OrderValidator(), NullLogger.Instance, client);
         ctx.Start(CancellationToken.None);
-        return new AccountTarget("acctA", portfolio, ctx, client, NullLogger.Instance);
+        return new AccountTarget("acctA", portfolio, ctx, client, BtcUsdt, NullLogger.Instance);
+    }
+
+    [Fact]
+    public void SeedAsset_ExposesTheSeedingAsset()
+    {
+        var target = CreateTarget(Substitute.For<IExchangeOrderClient>(), out _);
+        Assert.Same(BtcUsdt, target.SeedAsset);
     }
 
     [Fact]

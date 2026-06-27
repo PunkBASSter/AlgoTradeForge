@@ -20,6 +20,6 @@ public sealed class BinanceAccountTargetFactory(
         portfolio.Initialize();
         var ctx = new LiveOrderContext(portfolio, orderValidator, logger, orderClient, channelCapacity);
         ctx.Start(ct);
-        return new AccountTarget(account, portfolio, ctx, orderClient, logger);
+        return new AccountTarget(account, portfolio, ctx, orderClient, executionAsset, logger);
     }
 }
