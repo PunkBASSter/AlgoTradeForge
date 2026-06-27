@@ -74,3 +74,6 @@ frontend/out/
 *.log
 *.tsbuildinfo
 next-env.d.ts
+
+# Harness-created agent worktrees (scratch)
+.claude/worktrees/

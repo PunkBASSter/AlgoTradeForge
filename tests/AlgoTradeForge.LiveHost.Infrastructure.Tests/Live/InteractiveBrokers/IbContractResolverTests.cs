@@ -53,4 +53,22 @@ public class IbContractResolverTests
         Assert.Equal(1, (await resolver.Resolve(a, TestContext.Current.CancellationToken)).ConId);
         Assert.Equal(2, (await resolver.Resolve(b, TestContext.Current.CancellationToken)).ConId);
     }
+
+    [Fact]
+    public async Task Resolve_FaultedFetch_IsNotCached_AndRetried()
+    {
+        var spec = Spec();
+        var client = Substitute.For<IIbContractDetailsClient>();
+        client.FetchContractDetails(spec, Arg.Any<CancellationToken>())
+            .Returns(
+                _ => throw new IbRequestException(200, "No security definition has been found"),
+                _ => Task.FromResult(new ResolvedIbContract(spec, 265598, "AAPL", "")));
+        var resolver = new IbContractResolver(client);
+
+        await Assert.ThrowsAsync<IbRequestException>(() => resolver.Resolve(spec, TestContext.Current.CancellationToken));
+        var ok = await resolver.Resolve(spec, TestContext.Current.CancellationToken);
+
+        Assert.Equal(265598, ok.ConId);
+        await client.Received(2).FetchContractDetails(spec, Arg.Any<CancellationToken>());
+    }
 }

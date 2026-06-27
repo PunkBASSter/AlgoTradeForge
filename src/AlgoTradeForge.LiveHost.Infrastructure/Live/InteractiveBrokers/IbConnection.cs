@@ -1,3 +1,4 @@
+using AlgoTradeForge.Storage.Threading;
 using IBApi;
 
 namespace AlgoTradeForge.LiveHost.Infrastructure.Live.InteractiveBrokers;
@@ -9,19 +10,40 @@ internal sealed class IbConnection(IbWrapper wrapper, IbConnectionOptions option
 {
     private EClientSocket? _client;
     private Thread? _readerThread;
+    private EReaderMonitorSignal? _signal;
+    private int _nextReqId; // single connection-scoped request-id source (tick subs, contract details, historical)
+    // Serializes Connect so concurrent callers (relay pump Stream, a bar-source Start, the reconnect worker)
+    // cannot race two establish sequences onto one transport.
+    private readonly SemaphoreSlim _connectGate = new(1, 1);
 
     public EClientSocket Client => _client ?? throw new InvalidOperationException("IB connection is not established.");
 
+    // One id source for every request type on this socket: TWS correlates responses by (reqId, message-type)
+    // but ALSO rejects a second active subscription reusing a live ticker id (error 322). Minting subscription,
+    // contract-details, and historical-tick ids from separate counters collides; this is the shared allocator.
+    public int NextReqId() => Interlocked.Increment(ref _nextReqId);
+
     // 90 attempts (~3 min): gateway cold start (IBC login + API socket bind) routinely exceeds 60s, and the
     // first socket is often reset once by the 10141 paper-trading disclaimer before the API binds.
+    // Idempotent: a call while the socket is already alive is a no-op (so a defensive Connect from a bar source,
+    // or a 1101 "re-subscribe" recovery on a still-alive socket, costs nothing). A reconnect after a real drop
+    // reaches the establish path with IsConnected()==false.
     public async Task Connect(int maxAttempts = 90, int retryDelayMs = 2000, CancellationToken ct = default)
     {
+        using var _ = await _connectGate.LockAsync(ct).ConfigureAwait(false);
+        if (_client?.IsConnected() == true) return;
+
+        // Tear down any prior (now-dropped) socket + parked pump BEFORE re-establishing, so a successful
+        // reconnect never leaks the old EReader thread or an orphaned socket dispatching into the shared wrapper.
+        Disconnect();
+
         Exception? lastError = null;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             ct.ThrowIfCancellationRequested();
             // Fresh signal per attempt: a torn-down attempt's parked pump thread must never share a signal
             // with the next attempt's EReader, or signals dispatch to the wrong (dead) socket.
+            wrapper.ResetForReconnect();
             var signal = new EReaderMonitorSignal();
             var client = new EClientSocket(wrapper, signal);
             var connected = false;
@@ -57,8 +79,9 @@ internal sealed class IbConnection(IbWrapper wrapper, IbConnectionOptions option
         throw new TimeoutException($"Could not connect to IB Gateway at {options.Host}:{options.Port}.", lastError);
     }
 
-    private void StartReaderPump(EClientSocket client, EReaderSignal signal)
+    private void StartReaderPump(EClientSocket client, EReaderMonitorSignal signal)
     {
+        _signal = signal;
         var reader = new EReader(client, signal);
         reader.Start();
         _readerThread = new Thread(() =>
@@ -78,22 +101,33 @@ internal sealed class IbConnection(IbWrapper wrapper, IbConnectionOptions option
     {
         if (client.IsConnected())
             client.eDisconnect();
+        WakeAndJoinPump();
         if (ReferenceEquals(_client, client))
-        {
             _client = null;
-            _readerThread = null;
-        }
     }
 
     public void Disconnect()
     {
         if (_client?.IsConnected() == true)
-            _client.eDisconnect();
+            _client.eDisconnect();          // breaks the while(IsConnected) loop condition
+        WakeAndJoinPump();
+    }
+
+    // Unparks a pump blocked in waitForSignal() and waits for it to exit. Safe as a no-op when
+    // no pump was started (both fields are null) or after a prior call already cleared them.
+    private void WakeAndJoinPump()
+    {
+        var thread = _readerThread;
+        _signal?.issueSignal();              // unpark a pump blocked in waitForSignal()
+        thread?.Join(TimeSpan.FromSeconds(5)); // bounded: never hang on a stuck pump
+        _readerThread = null;
+        _signal = null;
     }
 
     public ValueTask DisposeAsync()
     {
         Disconnect();
+        _connectGate.Dispose();
         return ValueTask.CompletedTask;
     }
 }

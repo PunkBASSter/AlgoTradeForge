@@ -14,4 +14,12 @@ internal static class IbContractTranslation
         PrimaryExch = spec.PrimaryExch,
         Currency = spec.Currency,
     };
+
+    // Market-data requests: reuse spec fields + stamp the runtime ConId so IB resolves unambiguously.
+    public static IBApi.Contract ToIbApiContract(this ResolvedIbContract resolved)
+    {
+        var c = resolved.Spec.ToIbApiContract();
+        c.ConId = resolved.ConId;
+        return c;
+    }
 }
