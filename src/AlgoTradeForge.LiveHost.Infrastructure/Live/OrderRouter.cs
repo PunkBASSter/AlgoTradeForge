@@ -48,6 +48,9 @@ public sealed class OrderRouter(IAccountTargetFactory factory, ILogger<OrderRout
     public void TrackOrder(long exchangeOrderId, Guid sessionId) =>
         _orderToSession[exchangeOrderId] = sessionId;
 
+    public void UntrackOrder(long exchangeOrderId) =>
+        _orderToSession.TryRemove(exchangeOrderId, out _);
+
     public bool TryResolveSession(long exchangeOrderId, out Guid sessionId) =>
         _orderToSession.TryGetValue(exchangeOrderId, out sessionId);
 

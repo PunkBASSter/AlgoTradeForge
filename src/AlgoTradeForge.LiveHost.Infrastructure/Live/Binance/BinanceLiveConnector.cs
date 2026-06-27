@@ -650,6 +650,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 {
                     pendingOrder.Status = OrderStatus.Filled;
                     accountContext.RemovePendingOrder(report.OrderId);
+                    _router!.UntrackOrder(report.OrderId);
                 }
                 else if (report.OrderStatus == "PARTIALLY_FILLED")
                 {
@@ -693,6 +694,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 pendingOrder.Status = terminalStatus;
                 accountContext.RemovePendingOrder(report.OrderId);
             }
+
+            _router!.UntrackOrder(report.OrderId);
         });
 
         if (!enqueued)

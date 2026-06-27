@@ -61,4 +61,13 @@ public class OrderRouterTests
         Assert.Equal(session, resolved);
         Assert.False(router.TryResolveSession(999L, out _));
     }
+
+    [Fact]
+    public void UntrackOrder_RemovesMapping()
+    {
+        var router = new OrderRouter(Substitute.For<IAccountTargetFactory>(), NullLogger<OrderRouter>.Instance);
+        router.TrackOrder(55L, Guid.NewGuid());
+        router.UntrackOrder(55L);
+        Assert.False(router.TryResolveSession(55L, out _));
+    }
 }
