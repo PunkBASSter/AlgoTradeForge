@@ -51,6 +51,11 @@ public sealed class BinanceLiveConnector : ILiveConnector
     private readonly ConcurrentDictionary<Guid, LiveSessionEntry> _sessions = new();
     private readonly ConcurrentDictionary<long, ConcurrentQueue<BinanceExecutionReport>> _bufferedReports = new();
 
+    // Sessions removed while their account stays alive (co-tenant). An in-flight order a removed
+    // session submitted before removal is placed by the shared order context after removal; when it
+    // re-keys (OrderMapped), we cancel it so no order rests under an already-removed session.
+    private readonly ConcurrentDictionary<Guid, byte> _removedSessions = new();
+
     private OrderGroupReconciler? _reconciler;
     private Task? _reconcileTask;
 
@@ -309,6 +314,12 @@ public sealed class BinanceLiveConnector : ILiveConnector
         {
             _router.TrackOrder(exchangeId, sId);
             DrainBufferedReports(exchangeId);
+
+            // An in-flight order for an already-removed session just got placed — cancel it so it
+            // doesn't rest unmanaged. Fires via any still-subscribed co-tenant handler (the event
+            // carries the ORIGINATING session); the last-session case is covered by dispose cancel-all.
+            if (_removedSessions.ContainsKey(sId))
+                accountContext.Cancel(exchangeId);
         };
         accountContext.OrderMapped += orderMappedHandler;
 
@@ -364,6 +375,11 @@ public sealed class BinanceLiveConnector : ILiveConnector
     {
         if (!_sessions.TryRemove(sessionId, out var entry))
             return;
+
+        // Mark removed BEFORE unsubscribing this session's OrderMapped handler, so an in-flight order
+        // this session submitted (still draining the shared order context) is cancelled the moment it
+        // re-keys — caught by a co-tenant's still-subscribed handler. (Last-session: dispose cancel-all.)
+        _removedSessions.TryAdd(sessionId, 0);
 
         // Unregister-before-drain: stop new market-data actions from being enqueued before we
         // complete the writers and drain, so nothing races into a queue we are tearing down.

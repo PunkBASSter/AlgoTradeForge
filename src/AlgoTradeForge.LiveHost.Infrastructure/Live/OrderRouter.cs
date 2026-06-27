@@ -22,7 +22,7 @@ public sealed class OrderRouter(IAccountTargetFactory factory, ILogger<OrderRout
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var gate = _gates.GetOrAdd(account, _ => new SemaphoreSlim(1, 1));
-        using var _ = await gate.LockAsync(ct);
+        using var gateLease = await gate.LockAsync(ct);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (_targets.TryGetValue(account, out var existing))
@@ -32,14 +32,19 @@ public sealed class OrderRouter(IAccountTargetFactory factory, ILogger<OrderRout
         }
 
         var target = await factory.Create(account, executionAsset, ct);
+        var entry = _targets[account] = new Entry(target);
+
+        // Insert-then-verify: DisposeAsync sets _disposed before it enumerates/clears _targets, but
+        // without the per-account gate it may snapshot or clear without seeing this just-inserted
+        // entry. Re-checking _disposed AFTER the insert closes that window — any interleaving where
+        // dispose began is caught here, so no live target is ever orphaned.
         if (_disposed)
         {
-            // Disposed while we were creating — don't insert a live target the router won't tear down.
+            _targets.TryRemove(account, out _);
             await target.DisposeAsync();
             throw new ObjectDisposedException(GetType().FullName);
         }
 
-        var entry = _targets[account] = new Entry(target);
         entry.RefCount++;
         return entry.Target;
     }
