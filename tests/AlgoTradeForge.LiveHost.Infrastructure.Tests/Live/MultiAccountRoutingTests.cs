@@ -185,6 +185,9 @@ public class MultiAccountRoutingTests
         });
 
         // Wait until the background channel drains both orders.
+        // Once PlaceOrderAsync has returned twice, both re-keys (and the OrderMapped -> TrackOrder
+        // callbacks they fire) have already run on the same drain continuation, so the order->session
+        // map is populated. If the re-key ever moves off the drain task, wait on OrderMapped explicitly.
         await Poll(() => client.ReceivedCalls().Count() >= 2);
 
         // Both sessions read the same shared portfolio object.
@@ -223,10 +226,10 @@ public class MultiAccountRoutingTests
         var stressFills = allFills.Where(f => f.OrderId >= 1000L).ToList();
         Assert.Equal(20, stressFills.Count);
 
-        await router.ReleaseTarget("A", ct); // refcount 2 → 1
-        Assert.False(target.Disposed);
-        await router.ReleaseTarget("A", ct); // refcount 1 → 0
-        Assert.True(target.Disposed);
+        // Drain the refcount to 0 so the real LiveOrderContext loop is stopped (no leak).
+        // Lifecycle assertions live in Target_DisposedOnly_OnLastSessionRelease, not here.
+        await router.ReleaseTarget("A", ct);
+        await router.ReleaseTarget("A", ct);
     }
 
     /// <summary>
