@@ -32,7 +32,7 @@ public sealed class OrderRouter(IAccountTargetFactory factory, ILogger<OrderRout
     public async Task ReleaseTarget(string account, CancellationToken ct = default)
     {
         var gate = _gates.GetOrAdd(account, _ => new SemaphoreSlim(1, 1));
-        using var _ = await gate.LockAsync(ct);
+        using var gateLease = await gate.LockAsync(ct);
 
         if (!_targets.TryGetValue(account, out var entry))
             return;
@@ -40,7 +40,7 @@ public sealed class OrderRouter(IAccountTargetFactory factory, ILogger<OrderRout
         if (--entry.RefCount > 0)
             return;
 
-        _targets.TryRemove(account, out var removed);
+        _targets.TryRemove(account, out _);
         try { await entry.Target.DisposeAsync(); }
         catch (Exception ex) { logger.LogError(ex, "Disposing target for account {Account} failed", account); }
     }
