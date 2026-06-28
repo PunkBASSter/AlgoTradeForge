@@ -45,7 +45,7 @@
 - Create `IbExchangeOrderClient.cs` (`: IExchangeOrderClient`) — per-account, tags `Order.Account`, maps `OrderType`.
 - Create `IbAccountFundsSource.cs` (`: IAccountFundsSource`) — `reqAccountSummary` funds.
 - Rename `Binance/BinanceAccountTargetFactory.cs` → `Live/AccountTargetFactory.cs` (neutral), generalize the order-client dependency to a per-account provider.
-- Create `IbMarketDataSource.cs` (`: IMarketDataSource`) — delegates to `IStrategyDispatch`/`ITickRouter`.
+- Rename `Binance/BinanceMarketDataSource.cs` → `Live/DispatchMarketDataSource.cs` (neutral; already venue-agnostic) and reuse it for both venues — no IB-specific copy.
 - Tests for each.
 
 **Phase D — wiring:**
@@ -738,17 +738,24 @@ Rationale: Binance passes constant providers (its single funds source + single c
 
 ---
 
-### Task C4: `IbMarketDataSource : IMarketDataSource`
+### Task C4: Neutralize `BinanceMarketDataSource` → `DispatchMarketDataSource` (shared)
 
-**Files:** Create `src/.../InteractiveBrokers/IbMarketDataSource.cs`; Test `IbMarketDataSourceTests.cs`.
+`BinanceMarketDataSource` is already fully venue-neutral (delegates `Register`/`EnsureSources`/`RecentBars`/`RemoveSources` to `IStrategyDispatch`/`ITickRouter`, zero Binance vocab). Per the reuse directive (same principle as C3's factory), **rename and share it** rather than create a duplicate IB copy.
 
-**Interfaces:** Mirror `BinanceMarketDataSource` exactly — delegate `Register`/`EnsureSources`/`RecentBars`/`RemoveSources` to injected `IStrategyDispatch` + `ITickRouter` (both venue-neutral). Body is identical to Binance's; the type names the IB transport's shared data plane.
+**Files:**
+- Rename/Create: `src/.../Live/DispatchMarketDataSource.cs` (move out of `Binance/`, drop the `Binance` prefix; body unchanged).
+- Delete: `src/.../Live/Binance/BinanceMarketDataSource.cs`.
+- Modify: `BinanceLiveConnector.cs` (construct `DispatchMarketDataSource`).
+- Modify: `tests/.../Live/BinanceMarketDataSourceTests.cs` → `DispatchMarketDataSourceTests.cs`.
+- (D1 wires the same `DispatchMarketDataSource` for `IbLiveConnector`.)
 
-- [ ] **Step 1:** Write a test asserting `EnsureSources(reg, scaleFor)` forwards to `tickRouter.EnsureSources(reg, scaleFor)` (NSubstitute `Received(1)`), mirroring any existing `BinanceMarketDataSource` test.
-- [ ] **Step 2:** Run → FAIL.
-- [ ] **Step 3:** Implement (copy `BinanceMarketDataSource` with the new type name in the IB namespace).
-- [ ] **Step 4:** Run → PASS.
-- [ ] **Step 5:** Commit `feat(livehost): IbMarketDataSource over venue-neutral dispatch/tick-router`.
+**Interfaces:** `DispatchMarketDataSource(IStrategyDispatch dispatch, ITickRouter tickRouter) : IMarketDataSource` — identical body to today's `BinanceMarketDataSource`, neutral name + namespace (`...Live`, not `...Live.Binance`).
+
+- [ ] **Step 1:** Rename the test type to `DispatchMarketDataSourceTests`; add the 2 missing delegation asserts (`RecentBars`/`RemoveSources` → `tickRouter` `Received(1)`) flagged in the Plan 2 minor roll-up (T6). Keep `EnsureSources`/`Register` asserts.
+- [ ] **Step 2:** Run → FAIL (type missing).
+- [ ] **Step 3:** Move the file to `Live/DispatchMarketDataSource.cs`, rename the type, change the namespace to `AlgoTradeForge.LiveHost.Infrastructure.Live`; update `BinanceLiveConnector.ConnectAsync` to `new DispatchMarketDataSource(_dispatch, _tickRouter)`.
+- [ ] **Step 4:** Run the renamed test + the Binance regression suites → PASS.
+- [ ] **Step 5:** Commit `refactor(livehost): neutralize BinanceMarketDataSource → DispatchMarketDataSource (shared)`.
 
 ---
 
@@ -762,7 +769,7 @@ Rationale: Binance passes constant providers (its single funds source + single c
 - Test: `tests/.../InteractiveBrokers/IbLiveConnectorTests.cs`
 
 **Interfaces:**
-- Consumes: one shared `IbSession`/`IbConnection`/`IbWrapper` (Plan 3), `IbOrderGateway` (B4), neutral `AccountTargetFactory` (C3) with IB providers (C1/C2), `IbMarketDataSource` (C4), `OrderRouter`, `LiveSessionDispatcher` (A2), `IbContractResolver` (Plan 1).
+- Consumes: one shared `IbSession`/`IbConnection`/`IbWrapper` (Plan 3), `IbOrderGateway` (B4), neutral `AccountTargetFactory` (C3) with IB providers (C1/C2), `DispatchMarketDataSource` (C4), `OrderRouter`, `LiveSessionDispatcher` (A2), `IbContractResolver` (Plan 1).
 - Produces: an `ILiveConnector`-shaped composition root (match the `ILiveConnector` surface the host expects — `ConnectAsync`/`AddSessionAsync`/`RemoveSessionAsync`/`StopAsync`/`Status`/`AccountName`). `ConnectAsync` connects the shared `IbSession` (seeds order id), builds the order gateway + router + dispatcher, wires `gateway.onReport → dispatcher.OnExecutionReport`, subscribes `IbSession.Reconnected`. `AddSessionAsync` resolves the per-session quote currency (from the contract/funds) then `dispatcher.AddSession(config, quoteAsset, ct)`.
 
 - [ ] **Step 1:** Write a test (using fakes for `IIbOrderClient` + a fake market-data session) asserting: `ConnectAsync` → `Status == Running`; `AddSessionAsync` resolves a target and binds the strategy's order context; a synthetic `execDetails` for a placed order drives the strategy's `OnTrade`. Mirror the structure of `IbVenueConnectorTests` + `MultiAccountRoutingTests`.
@@ -832,7 +839,7 @@ public async Task ReconcileFromSnapshot_DoesNotCancelCoTenantWorkingOrders()
 
 ## Self-Review
 
-**Spec coverage:** Decision 1 (account-aware/single-live) → C1/C2/C3 + E2; Decision 2 (await-ack/push) → B4 (`Place` awaits ack) + C1 (`(id, [])`) + A2 (`OnExecutionReport` push); Decision 3 (extract) → A1/A2; Decision 4 (individual-order-only/brackets strategy-side) → C1 (no bracket method) + E2 (TradeRegistry lifecycle); Decision 5 (gross-at-emit/execId-dedup) → B3 (`MarkExecSeen`, commission deferred) + B4. Error-handling #1 (off-pump lane) → B4; #2 (ack-timeout) → B4; #3 (reject) → B3/B4; #4 (dedup bound) → B3; #5 (re-arm) → B1; #6 (warnings) → B3; #7 (contract reject) → C1; #8 (co-tenancy union) → E1. Components: `ExecutionReport`/`LiveSessionDispatcher` (A), `NextOrderId` (B1), `IbWrapper` order callbacks (B3), `IbOrderGateway` (B4), `IbExchangeOrderClient` (C1), `IbAccountFundsSource` (C2), `AccountTargetFactory` (C3), `IbMarketDataSource` (C4), `IbLiveConnector` (D1). Tests #1-#11 map to B1/B3/B4/C1/E1/D1/E2.
+**Spec coverage:** Decision 1 (account-aware/single-live) → C1/C2/C3 + E2; Decision 2 (await-ack/push) → B4 (`Place` awaits ack) + C1 (`(id, [])`) + A2 (`OnExecutionReport` push); Decision 3 (extract) → A1/A2; Decision 4 (individual-order-only/brackets strategy-side) → C1 (no bracket method) + E2 (TradeRegistry lifecycle); Decision 5 (gross-at-emit/execId-dedup) → B3 (`MarkExecSeen`, commission deferred) + B4. Error-handling #1 (off-pump lane) → B4; #2 (ack-timeout) → B4; #3 (reject) → B3/B4; #4 (dedup bound) → B3; #5 (re-arm) → B1; #6 (warnings) → B3; #7 (contract reject) → C1; #8 (co-tenancy union) → E1. Components: `ExecutionReport`/`LiveSessionDispatcher` (A), `NextOrderId` (B1), `IbWrapper` order callbacks (B3), `IbOrderGateway` (B4), `IbExchangeOrderClient` (C1), `IbAccountFundsSource` (C2), `AccountTargetFactory` (C3), `DispatchMarketDataSource` (C4), `IbLiveConnector` (D1). Tests #1-#11 map to B1/B3/B4/C1/E1/D1/E2.
 
 **Placeholder scan:** The IBApi callback arities (`orderStatus` 11-arg, `execDetails`, `commissionAndFeesReport`, `error`) and the exact `RejectCodes` set MUST be confirmed against the vendored `src/AlgoTradeForge.IbApi` `EWrapper` during B3 — flagged inline, not deferred work. The `IIbOrderGateway` interface extraction (C1) and the account-summary seam (C2) are named, not vague.
 
