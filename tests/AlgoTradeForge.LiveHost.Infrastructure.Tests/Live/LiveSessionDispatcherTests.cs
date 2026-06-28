@@ -74,8 +74,10 @@ public sealed class LiveSessionDispatcherTests
         // strategy's received trade — the order→session map is intentionally untracked once Filled.
         await fixture.DrainEventQueue(ct);
 
+        // The replayed fill is re-stamped to the strategy's OWN (local) order id — the Id=0 submission
+        // gets ledger id 1 — not the exchange id (unmappedOrderId) the report carried.
         Assert.Single(fixture.Strategy.ReceivedTrades);
-        Assert.Equal(unmappedOrderId, fixture.Strategy.ReceivedTrades[0].OrderId);
+        Assert.Equal(1L, fixture.Strategy.ReceivedTrades[0].OrderId);
 
         await fixture.DisposeAsync();
     }

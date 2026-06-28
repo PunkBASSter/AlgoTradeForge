@@ -573,10 +573,14 @@ public sealed class LiveSessionDispatcher
         var commission = scale.FromMarketPrice(report.Commission);
         var side = report.Side;
 
+        // Re-stamp the fill to the strategy's OWN (local/module) order id so the module's _orderToGroup
+        // lookup hits (matching backtest). ALL router/pending-order bookkeeping below stays exchange-keyed.
+        var localOrderId = accountContext.ResolveLocalOrderId(report.OrderId);
+
         var enqueued = entry.EventQueue.Writer.TryWrite(() =>
         {
             var fill = new Fill(
-                report.OrderId,
+                localOrderId,
                 asset,
                 report.TransactionTime,
                 fillPrice,
@@ -605,7 +609,7 @@ public sealed class LiveSessionDispatcher
             // Fills always deliver — every IStrategy implements OnTrade(Fill, Order).
             var order = pendingOrder ?? new Order
             {
-                Id = report.OrderId,
+                Id = localOrderId,
                 Asset = asset,
                 Side = side,
                 Type = report.Type,

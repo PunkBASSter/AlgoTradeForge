@@ -71,8 +71,11 @@ public sealed class IbLiveConnectorTests
 
         await Poll(() => h.Strategy.ReceivedTrades.Count > 0);
 
+        // The fill is re-stamped to the strategy's OWN (local) order id — the first Id=0 submission
+        // gets ledger id 1 — so a module's _orderToGroup lookup hits (matching backtest), not the
+        // exchange id the venue reported.
         var fill = Assert.Single(h.Strategy.ReceivedTrades);
-        Assert.Equal(orderId, fill.OrderId);
+        Assert.Equal(1L, fill.OrderId);
         Assert.Equal(OrderSide.Buy, fill.Side);
     }
 

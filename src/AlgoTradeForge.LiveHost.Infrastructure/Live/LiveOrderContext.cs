@@ -22,6 +22,7 @@ public sealed class LiveOrderContext
 
     private readonly ConcurrentDictionary<long, Order> _pendingOrders = new();
     private readonly ConcurrentDictionary<long, long> _localToExchangeId = new();
+    private readonly ConcurrentDictionary<long, long> _exchangeToLocal = new();
     private readonly ConcurrentDictionary<long, Guid> _localToSession = new();
     private readonly ConcurrentDictionary<long, byte> _restFilledOrders = new();
     private readonly Lock _recentFillsLock = new();
@@ -209,6 +210,7 @@ public sealed class LiveOrderContext
             order.Id = exchangeOrderId;
             _pendingOrders.TryAdd(exchangeOrderId, order);
             _localToExchangeId.TryAdd(localId, exchangeOrderId);
+            _exchangeToLocal.TryAdd(exchangeOrderId, localId);
             if (_localToSession.TryRemove(localId, out var sId))
                 OrderMapped?.Invoke(exchangeOrderId, sId);
         }
@@ -218,6 +220,12 @@ public sealed class LiveOrderContext
 
     internal long ResolveExchangeOrderId(long localOrderId) =>
         _localToExchangeId.TryGetValue(localOrderId, out var exchangeId) ? exchangeId : localOrderId;
+
+    // Reverse of the re-key: present a fill to the strategy with the SAME (local/module) id it
+    // submitted with (matching backtest). Falls through to the input when unmapped — a plain
+    // strategy's positive ledger id, or an order that never re-keyed.
+    internal long ResolveLocalOrderId(long exchangeOrderId) =>
+        _exchangeToLocal.TryGetValue(exchangeOrderId, out var local) ? local : exchangeOrderId;
 
     internal bool IsOrderRestFilled(long orderId) => _restFilledOrders.ContainsKey(orderId);
 
@@ -254,6 +262,7 @@ public sealed class LiveOrderContext
                         pending.Id = exchangeOrderId;
                         _pendingOrders.TryAdd(exchangeOrderId, pending);
                         _localToExchangeId.TryAdd(request.LocalId, exchangeOrderId);
+                        _exchangeToLocal.TryAdd(exchangeOrderId, request.LocalId);
                         if (_localToSession.TryRemove(request.LocalId, out var pendingSession))
                             OrderMapped?.Invoke(exchangeOrderId, pendingSession);
                     }
