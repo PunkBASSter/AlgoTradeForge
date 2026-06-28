@@ -3,6 +3,7 @@ using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.LiveHost.Application.Live;
 using AlgoTradeForge.LiveHost.Application.Live.DataPlane;
+using AlgoTradeForge.Storage.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -42,6 +43,9 @@ internal sealed class IbLiveConnector : ILiveConnector
     private OrderGroupReconciler? _reconciler;
     private LiveSessionDispatcher? _dispatcher;
     private Task? _reconcileOnReconnect;
+    // Serializes concurrent reconnect-reconcile passes so two rapid gateway flaps can't run two
+    // ReconcileFromSnapshot sweeps concurrently against the same targets.
+    private readonly SemaphoreSlim _reconcileGate = new(1, 1);
 
     public string AccountName { get; }
     public LiveSessionStatus Status { get; private set; } = LiveSessionStatus.Idle;
@@ -139,6 +143,16 @@ internal sealed class IbLiveConnector : ILiveConnector
         var quoteAsset = ResolveQuoteCurrency(config.ExecutionAsset);
 
         await _dispatcher!.AddSession(config, quoteAsset, ct);
+
+        // Contract-currency and funds-currency must agree until the units-bearing Money model lands.
+        // A mismatch here means IbAccountFundsSource and the IB contract report different currencies for
+        // the same account — fail loud so this surfaces immediately rather than silently mis-fencing.
+        var target = (AccountTarget)_router!.Targets.First(t => t.AccountName == config.AccountName);
+        if (!string.Equals(target.SeedQuoteAsset, quoteAsset, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"IB contract currency '{quoteAsset}' for asset '{config.ExecutionAsset.Name}' does not match " +
+                $"the funds-discovered quote currency '{target.SeedQuoteAsset}' for account '{config.AccountName}'. " +
+                "Both sources must agree until a units-bearing Money model is in place.");
     }
 
     private static string ResolveQuoteCurrency(Asset executionAsset)
@@ -182,6 +196,8 @@ internal sealed class IbLiveConnector : ILiveConnector
 
             if (_gateway is IAsyncDisposable disposableGateway)
                 await disposableGateway.DisposeAsync();
+
+            _reconcileGate.Dispose();
         }
         catch (Exception ex)
         {
@@ -210,6 +226,7 @@ internal sealed class IbLiveConnector : ILiveConnector
             return;
         try
         {
+            using var _ = await _reconcileGate.LockAsync(ct);
             _logger.LogInformation("IB session reconnected for '{Account}'; reconciling open orders against the co-tenant union", AccountName);
             var byAccount = await _gateway.SnapshotOpenOrders(ct);
             foreach (var (account, ids) in byAccount)
