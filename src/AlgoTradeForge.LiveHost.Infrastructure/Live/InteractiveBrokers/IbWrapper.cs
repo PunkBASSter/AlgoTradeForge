@@ -24,6 +24,7 @@ internal sealed class IbWrapper : DefaultEWrapper
     private readonly ConcurrentDictionary<int, Action<IbTradeUpdate>> _tickSinks = new();
     private readonly ConcurrentDictionary<int, Action<IbRealtimeBar>> _barSinks = new();
     private readonly ConcurrentDictionary<int, (List<IbHistoricalTick> Items, TaskCompletionSource<IReadOnlyList<IbHistoricalTick>> Tcs)> _histByReq = new();
+    private readonly ConcurrentDictionary<int, (List<IbAccountSummaryRow> Items, TaskCompletionSource<IReadOnlyList<IbAccountSummaryRow>> Tcs)> _acctByReq = new();
 
     private Action<IbOrderStatusUpdate>? _onStatus;
     private Action<IbFill>? _onFill;
@@ -61,6 +62,13 @@ internal sealed class IbWrapper : DefaultEWrapper
     public Task<IReadOnlyList<IbHistoricalTick>> RegisterHistoricalTicks(int reqId)
     {
         var entry = _histByReq.GetOrAdd(reqId, _ => ([], new(TaskCreationOptions.RunContinuationsAsynchronously)));
+        return entry.Tcs.Task;
+    }
+
+    // Register BEFORE issuing reqAccountSummary. Accumulates rows until accountSummaryEnd completes the task.
+    public Task<IReadOnlyList<IbAccountSummaryRow>> RegisterAccountSummary(int reqId)
+    {
+        var entry = _acctByReq.GetOrAdd(reqId, _ => ([], new(TaskCreationOptions.RunContinuationsAsynchronously)));
         return entry.Tcs.Task;
     }
 
@@ -146,6 +154,8 @@ internal sealed class IbWrapper : DefaultEWrapper
             pending.Completion.TrySetException(new IbRequestException(errorCode, errorMsg));
         else if (_histByReq.TryRemove(id, out var hist))
             hist.Tcs.TrySetException(new IbRequestException(errorCode, errorMsg));
+        else if (_acctByReq.TryRemove(id, out var acct))
+            acct.Tcs.TrySetException(new IbRequestException(errorCode, errorMsg));
     }
 
     public override void historicalTicksLast(int reqId, HistoricalTickLast[] ticks, bool done)
@@ -154,6 +164,18 @@ internal sealed class IbWrapper : DefaultEWrapper
         foreach (var t in ticks) entry.Items.Add(new IbHistoricalTick(t.Time, t.Price, t.Size));
         if (done && _histByReq.TryRemove(reqId, out var finished))
             finished.Tcs.TrySetResult(finished.Items.ToArray());
+    }
+
+    public override void accountSummary(int reqId, string account, string tag, string value, string currency)
+    {
+        if (_acctByReq.TryGetValue(reqId, out var entry))
+            entry.Items.Add(new IbAccountSummaryRow(account, tag, value, currency));
+    }
+
+    public override void accountSummaryEnd(int reqId)
+    {
+        if (_acctByReq.TryRemove(reqId, out var entry))
+            entry.Tcs.TrySetResult(entry.Items.ToArray());
     }
 
     public override void tickByTickAllLast(int reqId, int tickType, long time, double price, decimal size,
