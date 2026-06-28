@@ -1,10 +1,11 @@
 using System.Globalization;
-using AlgoTradeForge.LiveHost.Application.Live;
-using AlgoTradeForge.LiveHost.Application.Live.DataPlane;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.Live;
 using AlgoTradeForge.Domain.Trading;
+using AlgoTradeForge.LiveHost.Application.Live;
+using AlgoTradeForge.LiveHost.Application.Live.DataPlane;
+using AlgoTradeForge.LiveHost.Infrastructure.Live;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -38,7 +39,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
     private IMarketDataSource? _source;
     private IOrderRouter? _router;
     private BinanceAccountFundsSource? _fundsSource;
-    private BinanceAccountTargetFactory? _factory;
+    private AccountTargetFactory? _factory;
 
     private OrderGroupReconciler? _reconciler;
     private LiveSessionDispatcher? _dispatcher;
@@ -100,8 +101,9 @@ public sealed class BinanceLiveConnector : ILiveConnector
             // per-session into ResolveTarget.
             _source = new BinanceMarketDataSource(_dispatch, _tickRouter);
             _fundsSource = new BinanceAccountFundsSource(_apiClient);
-            _factory = new BinanceAccountTargetFactory(
-                _fundsSource, _apiClient, _orderValidator, _logger,
+            _factory = new AccountTargetFactory(
+                (_, _) => _fundsSource, (_, _) => _apiClient,
+                _orderValidator, _logger,
                 _sharedOptions.LiveChannelCapacity);
             _router = new OrderRouter(_factory, NullLogger<OrderRouter>.Instance);
 

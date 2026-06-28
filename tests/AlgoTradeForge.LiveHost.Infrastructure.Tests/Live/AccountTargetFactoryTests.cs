@@ -2,22 +2,21 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.LiveHost.Application.Live;
 using AlgoTradeForge.LiveHost.Infrastructure.Live;
-using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
 namespace AlgoTradeForge.LiveHost.Infrastructure.Tests.Live;
 
-public class BinanceAccountTargetFactoryTests
+public class AccountTargetFactoryTests
 {
     private static readonly Asset TestAsset =
         CryptoAsset.Create("BTCUSDT", "Binance", decimalDigits: 2);
 
-    private static BinanceAccountTargetFactory BuildFactory(IAccountFundsSource fundsSource) =>
+    private static AccountTargetFactory BuildFactory(IAccountFundsSource fundsSource) =>
         new(
-            fundsSource,
-            Substitute.For<IExchangeOrderClient>(),
+            (_, _) => fundsSource,
+            (_, _) => Substitute.For<IExchangeOrderClient>(),
             new OrderValidator(),
             NullLogger.Instance,
             channelCapacity: 64);
