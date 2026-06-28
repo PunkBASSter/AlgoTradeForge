@@ -38,7 +38,6 @@ public sealed class TestnetE2ETests(TestnetApiFactory factory) : IDisposable
         {
             StrategyName = "TestnetE2E",
             AccountName = "paper",
-            InitialCash = 100m,
             DataSubscriptions =
             [
                 new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m")),

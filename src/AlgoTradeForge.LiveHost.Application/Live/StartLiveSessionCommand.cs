@@ -6,7 +6,6 @@ namespace AlgoTradeForge.LiveHost.Application.Live;
 public sealed record StartLiveSessionCommand : ICommand<LiveSessionSubmissionDto>
 {
     public required string StrategyName { get; init; }
-    public required decimal InitialCash { get; init; }
     public IDictionary<string, object>? StrategyParameters { get; init; }
     public IReadOnlyList<DataFeedSubscription>? DataSubscriptions { get; init; }
     public string AccountName { get; init; } = "paper";

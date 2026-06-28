@@ -32,7 +32,6 @@ public sealed class LiveSessionTemplateRoundTripTests
 
         Assert.NotNull(request);
         Assert.Equal("BuyAndHold", request.StrategyName);
-        Assert.True(request.InitialCash > 0, "InitialCash should be positive");
         Assert.NotNull(request.DataSubscriptions);
         Assert.NotEmpty(request.DataSubscriptions);
         Assert.Equal("BTCUSDT", request.DataSubscriptions[0].AssetName);

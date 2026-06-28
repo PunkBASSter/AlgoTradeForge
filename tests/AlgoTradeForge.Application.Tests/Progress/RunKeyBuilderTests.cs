@@ -143,7 +143,6 @@ public sealed class RunKeyBuilderTests
         IDictionary<string, object>? parameters = null) => new()
     {
         StrategyName = "Strat",
-        InitialCash = 10000m,
         StrategyParameters = parameters,
         DataSubscriptions = [new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1m"))],
     };

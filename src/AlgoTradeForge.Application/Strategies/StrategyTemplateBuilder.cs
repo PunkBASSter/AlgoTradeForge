@@ -114,7 +114,6 @@ public static class StrategyTemplateBuilder
         IReadOnlyList<AvailableAssetInfo> availableAssets) => new()
     {
         ["strategyName"] = strategyName,
-        ["initialCash"] = 10000,
         ["accountName"] = "paper",
         ["dataSubscriptions"] = BuildSubscriptions(availableAssets, "1m"),
         ["strategyParameters"] = ConvertToHumanReadable(paramDefaults, axes),

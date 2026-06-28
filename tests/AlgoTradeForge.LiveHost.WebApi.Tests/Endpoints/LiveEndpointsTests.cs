@@ -50,7 +50,6 @@ public class LiveEndpointsTests : IClassFixture<LiveHostApiFactory>
         var request = new StartLiveSessionRequest
         {
             StrategyName = "NonExistentStrategy",
-            InitialCash = 10000m,
             AccountName = "paper",
         };
 
@@ -66,7 +65,6 @@ public class LiveEndpointsTests : IClassFixture<LiveHostApiFactory>
         var request = new StartLiveSessionRequest
         {
             StrategyName = "BuyAndHold",
-            InitialCash = 10000m,
             AccountName = "paper",
         };
 

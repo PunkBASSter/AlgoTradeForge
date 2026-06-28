@@ -85,7 +85,6 @@ public class StartLiveSessionCommandHandlerTests
         var command = new StartLiveSessionCommand
         {
             StrategyName = "BuyAndHold",
-            InitialCash = 10000m,
             AccountName = "paper",
             DataSubscriptions = DefaultSubscriptions,
         };
@@ -136,7 +135,6 @@ public class StartLiveSessionCommandHandlerTests
         var command = new StartLiveSessionCommand
         {
             StrategyName = "BuyAndHold",
-            InitialCash = 10000m,
             DataSubscriptions = DefaultSubscriptions,
         };
 
@@ -161,7 +159,7 @@ public class StartLiveSessionCommandHandlerTests
 
         var command = new StartLiveSessionCommand
         {
-            StrategyName = "BuyAndHold", InitialCash = 10000m,
+            StrategyName = "BuyAndHold",
         };
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(command, TestContext.Current.CancellationToken));
@@ -208,7 +206,6 @@ public class StartLiveSessionCommandHandlerTests
         var command = new StartLiveSessionCommand
         {
             StrategyName = "TestStrategy",
-            InitialCash = 10000m,
             DataSubscriptions = DefaultSubscriptions,
             StrategyParameters = new Dictionary<string, object>
             {
@@ -254,13 +251,13 @@ public class StartLiveSessionCommandHandlerTests
 
         var cmd1 = new StartLiveSessionCommand
         {
-            StrategyName = "BuyAndHold", InitialCash = 10000m, AccountName = "paper",
+            StrategyName = "BuyAndHold", AccountName = "paper",
             DataSubscriptions = DefaultSubscriptions,
             StrategyParameters = new Dictionary<string, object> { ["lookback"] = 10 },
         };
         var cmd2 = new StartLiveSessionCommand
         {
-            StrategyName = "BuyAndHold", InitialCash = 5000m, AccountName = "paper",
+            StrategyName = "BuyAndHold", AccountName = "paper",
             DataSubscriptions = DefaultSubscriptions,
             StrategyParameters = new Dictionary<string, object> { ["lookback"] = 20 },
         };
@@ -299,7 +296,7 @@ public class StartLiveSessionCommandHandlerTests
 
         var command = new StartLiveSessionCommand
         {
-            StrategyName = "BuyAndHold", InitialCash = 10000m, AccountName = "paper",
+            StrategyName = "BuyAndHold", AccountName = "paper",
             DataSubscriptions = DefaultSubscriptions,
         };
 
@@ -339,12 +336,12 @@ public class StartLiveSessionCommandHandlerTests
 
         var cmd1 = new StartLiveSessionCommand
         {
-            StrategyName = "BuyAndHold", InitialCash = 10000m, AccountName = "paper",
+            StrategyName = "BuyAndHold", AccountName = "paper",
             DataSubscriptions = DefaultSubscriptions,
         };
         var cmd2 = new StartLiveSessionCommand
         {
-            StrategyName = "BuyAndHold", InitialCash = 10000m, AccountName = "live",
+            StrategyName = "BuyAndHold", AccountName = "live",
             DataSubscriptions = DefaultSubscriptions,
         };
 
@@ -387,12 +384,12 @@ public class StartLiveSessionCommandHandlerTests
 
         var cmd1 = new StartLiveSessionCommand
         {
-            StrategyName = "BuyAndHold", InitialCash = 10000m, AccountName = "paper",
+            StrategyName = "BuyAndHold", AccountName = "paper",
             DataSubscriptions = DefaultSubscriptions,
         };
         var cmd2 = new StartLiveSessionCommand
         {
-            StrategyName = "MeanReversion", InitialCash = 10000m, AccountName = "live",
+            StrategyName = "MeanReversion", AccountName = "live",
             DataSubscriptions = DefaultSubscriptions,
         };
 
@@ -437,7 +434,7 @@ public class StartLiveSessionCommandHandlerTests
 
         var command = new StartLiveSessionCommand
         {
-            StrategyName = "MultiAsset", InitialCash = 10000m,
+            StrategyName = "MultiAsset",
             DataSubscriptions =
             [
                 new TimeBarSubscription("ETHUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("5m")),
@@ -478,7 +475,6 @@ public class StartLiveSessionCommandHandlerTests
         var command = new StartLiveSessionCommand
         {
             StrategyName = "BuyAndHold",
-            InitialCash = 10000m,
             AccountName = "paper",
             DataSubscriptions =
             [
