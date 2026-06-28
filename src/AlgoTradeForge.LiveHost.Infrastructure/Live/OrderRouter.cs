@@ -27,6 +27,9 @@ public sealed class OrderRouter(IAccountTargetFactory factory, ILogger<OrderRout
 
         if (_targets.TryGetValue(account, out var existing))
         {
+            // No post-_disposed re-check here: a cached target stays tracked, so a resolve racing
+            // DisposeAsync can't orphan it — at worst the caller gets a target being StopAsync'd,
+            // whose Submit/Cancel fail gracefully. Only the create path below can leak, so only it re-checks.
             existing.RefCount++;
             return existing.Target;
         }
