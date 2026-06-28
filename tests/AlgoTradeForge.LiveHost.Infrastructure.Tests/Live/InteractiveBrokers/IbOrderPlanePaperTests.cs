@@ -23,8 +23,8 @@ namespace AlgoTradeForge.LiveHost.Infrastructure.Tests.Live.InteractiveBrokers;
 //
 // SKIP in CI (IB_PAPER_HOST not set). Run against a real gnzsnz ib-gateway paper stack when
 // IB_PAPER_HOST / IB_PAPER_PORT (default 4004) / IB_PAPER_CLIENT_ID (default 11) are set.
-// Set IB_PAPER_ACCOUNT to the paper account id (e.g. "DU123456") if known; otherwise the
-// harness derives it from reqAccountSummary.
+// Set IB_PAPER_ACCOUNT to the paper account id (e.g. "DU123456"); the connector uses it directly
+// (no reqAccountSummary discovery).
 //
 // Wiring: real IbWrapper → IbConnection → IbSession + IbConnectionAccountSummaryClient +
 // IbConnectionOrderClient → IbOrderGateway → IbLiveConnector → LiveSessionDispatcher.
@@ -171,7 +171,7 @@ public sealed class IbOrderPlanePaperTests
             quantity: 1m,
             slPrice: slTicks,
             tpLevels: [new TpLevel { Price = tpTicks, ClosurePercentage = 1m }],
-            entryStopPrice: 0);
+            entryStopPrice: null);
         Assert.NotNull(group);
         var groupId = group.GroupId;
 
@@ -251,7 +251,11 @@ public sealed class IbOrderPlanePaperTests
         h.Wrapper.connectionClosed();
 
         // Allow ample time for: reconnect handshake + reqAllOpenOrders pushback + reconciliation.
-        await Task.Delay(12_000, Ct);
+        // Capped at 15 s under a local CTS so the delay cannot outlive the test budget.
+        using var delayCts = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        delayCts.CancelAfter(TimeSpan.FromSeconds(15));
+        try { await Task.Delay(12_000, delayCts.Token); }
+        catch (OperationCanceledException) when (delayCts.IsCancellationRequested && !Ct.IsCancellationRequested) { /* local cap hit — proceed */ }
 
         // The resting order must still be present — expected, not orphan-cancelled.
         var afterPending = h.Strategy.Orders.GetPendingOrders();
@@ -290,7 +294,7 @@ public sealed class IbOrderPlanePaperTests
         tickDrainCts.CancelAfter(TimeSpan.FromSeconds(35)); // outlives the 30 s fill window
 
         // Drain ticks in the background — purely to exercise the pump while the order is in flight.
-        _ = Task.Run(async () =>
+        var drainTask = Task.Run(async () =>
         {
             try
             {
@@ -318,6 +322,7 @@ public sealed class IbOrderPlanePaperTests
         var fill = await fillTcs.Task.WaitAsync(TimeSpan.FromSeconds(30), Ct);
 
         tickDrainCts.Cancel(); // stop the background drain
+        try { await drainTask; } catch (OperationCanceledException) { }
         Assert.Equal(OrderSide.Buy, fill.Side);
         Assert.True(fill.Price > 0, "fill price must be positive despite concurrent tick load");
     }
@@ -342,25 +347,26 @@ public sealed class IbOrderPlanePaperTests
     private sealed class Harness : IAsyncDisposable
     {
         private readonly IbConnection _connection;
+        private readonly IbSession _session;
 
         public IbLiveConnector Connector { get; }
         public HarnessStrategy Strategy { get; }
-        public IIbMarketDataSession Session { get; }
+        public IIbMarketDataSession Session => _session;
         public IIbContractResolver ContractResolver { get; }
         public IbWrapper Wrapper { get; }
 
         private Harness(
             IbConnection connection,
+            IbSession session,
             IbLiveConnector connector,
             HarnessStrategy strategy,
-            IIbMarketDataSession session,
             IIbContractResolver contractResolver,
             IbWrapper wrapper)
         {
             _connection = connection;
+            _session = session;
             Connector = connector;
             Strategy = strategy;
-            Session = session;
             ContractResolver = contractResolver;
             Wrapper = wrapper;
         }
@@ -408,7 +414,7 @@ public sealed class IbOrderPlanePaperTests
             await connector.ConnectAsync(ct);
             await connector.AddSessionAsync(sessionConfig, ct);
 
-            return new Harness(connection, connector, strategy, session, contractResolver, wrapper);
+            return new Harness(connection, session, connector, strategy, contractResolver, wrapper);
         }
 
         public async ValueTask DisposeAsync()
@@ -416,6 +422,7 @@ public sealed class IbOrderPlanePaperTests
             // StopAsync → AccountTarget.DisposeAsync cancel-alls open orders so re-runs start clean.
             await Connector.StopAsync();
             await Connector.DisposeAsync();
+            await _session.DisposeAsync();
             await _connection.DisposeAsync();
         }
     }
@@ -447,7 +454,11 @@ public sealed class IbOrderPlanePaperTests
 
         public void OnInit() { }
 
-        public void OnTrade(Fill fill, Order order) => TradeCallback?.Invoke(fill, order);
+        public void OnTrade(Fill fill, Order order)
+        {
+            _registry?.OnFill(fill, order);
+            TradeCallback?.Invoke(fill, order);
+        }
 
         public void OnBarComplete(Int64Bar bar, DataFeedSubscription subscription) { }
 

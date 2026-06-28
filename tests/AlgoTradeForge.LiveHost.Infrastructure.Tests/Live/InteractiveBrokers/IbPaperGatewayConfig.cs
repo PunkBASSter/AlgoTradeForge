@@ -11,8 +11,8 @@ internal static class IbPaperGatewayConfig
     public static int ClientId =>
         int.TryParse(Environment.GetEnvironmentVariable("IB_PAPER_CLIENT_ID"), out var c) ? c : 11;
 
-    // IB paper account id (e.g. "DU123456"). Required by order-plane tests; discovered at runtime
-    // via reqAccountSummary if not explicitly set. Set IB_PAPER_ACCOUNT to avoid the summary round-trip.
+    // IB paper account id (e.g. "DU123456"). Used directly by the connector — no reqAccountSummary
+    // discovery is implemented. Set IB_PAPER_ACCOUNT to the real DUxxxxxx value for the paper account.
     public static string AccountName =>
         Environment.GetEnvironmentVariable("IB_PAPER_ACCOUNT") ?? "DU_PAPER";
 
