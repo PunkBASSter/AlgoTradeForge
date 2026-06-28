@@ -94,8 +94,10 @@ internal sealed class IbOrderGateway : IIbOrderGateway, IAsyncDisposable
 
     private void EmitReport(IbFill fill)
     {
-        _orderInfo.TryGetValue(fill.OrderId, out var ctx);
-        var side = ResolveSide(fill.Side, ctx.Side);
+        var known = _orderInfo.TryGetValue(fill.OrderId, out var ctx);
+        // Stored side is authoritative for orders this gateway placed. For unmapped fills (reconnect replay /
+        // external orders), ctx is default and asset is null; parse the IB side string as the only available signal.
+        var side = known ? ctx.Side : ParseIbSide(fill.Side);
         // Unmapped fill (reconnect replay / external order): asset is null and OriginalQuantity 0; the
         // dispatcher re-stamps Asset from the session, so emit with what we have rather than dropping.
         var status = MapStatus(_latestStatus.GetValueOrDefault(fill.OrderId));
@@ -114,16 +116,13 @@ internal sealed class IbOrderGateway : IIbOrderGateway, IAsyncDisposable
         _onReport(report);
     }
 
-    // The per-order map's side is authoritative (the order's intent); the IB side string ("BOT"/"SLD" from
-    // Execution.Side, "BUY"/"SELL" on some paths) is the fallback for an unmapped order.
-    private static OrderSide ResolveSide(string ibSide, OrderSide stored)
+    // Only called for fills from orders not in the per-order map (reconnect replay / external orders).
+    // Parses IB's "BOT"/"BUY" or "SLD"/"SELL" strings; defaults to Buy when unrecognised.
+    private static OrderSide ParseIbSide(string ibSide)
     {
-        if (ibSide is { Length: > 0 })
-        {
-            if (ibSide.StartsWith("B", StringComparison.OrdinalIgnoreCase)) return OrderSide.Buy;
-            if (ibSide.StartsWith("S", StringComparison.OrdinalIgnoreCase)) return OrderSide.Sell;
-        }
-        return stored;
+        if (ibSide is { Length: > 0 } && ibSide.StartsWith("S", StringComparison.OrdinalIgnoreCase))
+            return OrderSide.Sell;
+        return OrderSide.Buy;
     }
 
     private static OrderStatus MapStatus(string? ibStatus) => ibStatus switch

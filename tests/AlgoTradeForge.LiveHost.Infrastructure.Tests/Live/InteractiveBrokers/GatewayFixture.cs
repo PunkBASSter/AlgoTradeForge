@@ -21,6 +21,9 @@ internal static class GatewayFixture
     public static IbOrderRequest MktBuy(decimal qty) =>
         new(Account: "DU1", Action: "BUY", OrderType: "MKT", Quantity: qty, LmtPrice: null, AuxPrice: null);
 
+    public static IbOrderRequest LmtSell(decimal qty, double lmtPrice) =>
+        new(Account: "DU1", Action: "SELL", OrderType: "LMT", Quantity: qty, LmtPrice: lmtPrice, AuxPrice: null);
+
     public static IbOrderGateway Build(FakeIbOrderClient client, IbWrapper wrapper, Action<ExecutionReport> onReport) =>
         new(client, wrapper, onReport, NullLogger<IbOrderGateway>.Instance);
 
@@ -33,6 +36,12 @@ internal static class GatewayFixture
     public static async Task WaitForReport(List<ExecutionReport> reports, CancellationToken ct)
     {
         for (var i = 0; i < 100 && reports.Count == 0; i++)
+            await Task.Delay(20, ct);
+    }
+
+    public static async Task WaitForReportCount(List<ExecutionReport> reports, int count, CancellationToken ct)
+    {
+        for (var i = 0; i < 100 && reports.Count < count; i++)
             await Task.Delay(20, ct);
     }
 }

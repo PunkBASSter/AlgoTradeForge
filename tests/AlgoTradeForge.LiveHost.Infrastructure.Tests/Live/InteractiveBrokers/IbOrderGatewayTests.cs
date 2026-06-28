@@ -56,4 +56,92 @@ public sealed class IbOrderGatewayTests
         Assert.Equal(OrderSide.Buy, reports[0].Side);
         Assert.Equal(0m, reports[0].Commission); // gross at emit
     }
+
+    // Asserts all 11 ExecutionReport fields are correctly mapped for a Sell/Limit order with a known fill.
+    // The stored side is authoritative; the IB fill string ("SLD") happens to agree here, so this verifies
+    // correct field plumbing. For the mismatched-string case see ExecDetails_StoredSideWins_WhenFillStringDisagrees.
+    [Fact]
+    public async Task ExecDetails_MapsAllElevenFields_SellLimitOrder()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = new FakeIbOrderClient(seedId: 200);
+        var wrapper = new IbWrapper();
+        var reports = new List<ExecutionReport>();
+        await using var gw = GatewayFixture.Build(client, wrapper, reports.Add);
+
+        var request = GatewayFixture.LmtSell(qty: 7m, lmtPrice: 195.50);
+        var placeTask = gw.Place("DU1", GatewayFixture.AaplAsset, GatewayFixture.Aapl, request,
+            OrderSide.Sell, OrderType.Limit, originalQuantity: 7m, ct);
+        client.SignalAck(wrapper, "Filled"); // "Filled" acks the TCS and records Status → Filled in _latestStatus
+        var orderId = await placeTask;
+
+        const long fillTimeUnixSec = 1_750_000_000L;
+        wrapper.execDetails(1, IbExecFactory.Contract(),
+            IbExecFactory.Make(200, "EXEC-42", shares: 3m, price: 194.75, side: "SLD",
+                time: fillTimeUnixSec.ToString()));
+        await GatewayFixture.WaitForReport(reports, ct);
+
+        Assert.Single(reports);
+        var r = reports[0];
+        Assert.Equal(orderId,                                              r.OrderId);
+        Assert.Equal(OrderSide.Sell,                                       r.Side);
+        Assert.Equal(OrderType.Limit,                                      r.Type);
+        Assert.Equal(7m,                                                   r.OriginalQuantity);
+        Assert.Equal(194.75m,                                              r.LastFillPrice);
+        Assert.Equal(3m,                                                   r.LastFillQty);
+        Assert.Equal(0m,                                                   r.Commission);
+        Assert.Equal(ExecType.Trade,                                       r.ExecType);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(fillTimeUnixSec),  r.TransactionTime);
+        Assert.Equal(GatewayFixture.AaplAsset,                             r.Asset);
+        Assert.Equal(OrderStatus.Filled,                                   r.Status);
+    }
+
+    // Stored order side wins even when the IB fill string disagrees. Place a Sell; fire execDetails with
+    // side "BOT" (wrong string); the report must carry OrderSide.Sell (the intent we placed).
+    [Fact]
+    public async Task ExecDetails_StoredSideWins_WhenFillStringDisagrees()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = new FakeIbOrderClient(seedId: 400);
+        var wrapper = new IbWrapper();
+        var reports = new List<ExecutionReport>();
+        await using var gw = GatewayFixture.Build(client, wrapper, reports.Add);
+
+        var request = GatewayFixture.LmtSell(qty: 5m, lmtPrice: 200.00);
+        var placeTask = gw.Place("DU1", GatewayFixture.AaplAsset, GatewayFixture.Aapl, request,
+            OrderSide.Sell, OrderType.Limit, originalQuantity: 5m, ct);
+        client.SignalAck(wrapper, "Submitted");
+        var orderId = await placeTask;
+
+        // Deliberately wrong fill string ("BOT" instead of "SLD") — stored side must prevail.
+        wrapper.execDetails(1, IbExecFactory.Contract(),
+            IbExecFactory.Make((int)orderId, "EXEC-MISMATCH", shares: 5m, price: 199.00, side: "BOT"));
+        await GatewayFixture.WaitForReport(reports, ct);
+
+        Assert.Single(reports);
+        Assert.Equal(OrderSide.Sell, reports[0].Side);
+    }
+
+    // Verifies DisposeAsync drains fills already written to the lane before exiting the worker.
+    [Fact]
+    public async Task DisposeAsync_DrainsQueuedFills_BeforeExiting()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = new FakeIbOrderClient(seedId: 300);
+        var wrapper = new IbWrapper();
+        var reports = new List<ExecutionReport>();
+        var gw = GatewayFixture.Build(client, wrapper, reports.Add);
+
+        var placeTask = gw.Place("DU1", GatewayFixture.Aapl, GatewayFixture.MktBuy(1), ct);
+        client.SignalAck(wrapper, "Submitted");
+        await placeTask;
+
+        // Write a fill onto the lane, then immediately dispose — the worker must drain it before stopping.
+        wrapper.execDetails(1, IbExecFactory.Contract(), IbExecFactory.Make(300, "DRAIN-1", 1, 100));
+        await gw.DisposeAsync();
+
+        // No further async wait needed: DisposeAsync completes only after the worker exits.
+        Assert.Single(reports);
+        Assert.Equal(ExecType.Trade, reports[0].ExecType);
+    }
 }
