@@ -76,6 +76,22 @@ public sealed class IbLiveConnectorTests
         Assert.Equal(OrderSide.Buy, fill.Side);
     }
 
+    [Fact]
+    public async Task SessionReconnect_DrivesReconcileFromSnapshot_CancelsOrphan()
+    {
+        await using var h = await Harness.ConnectedAsync(Ct);
+        await h.Connector.AddSessionAsync(h.SessionConfig, Ct);
+
+        // The session has no expected (TradeRegistry) orders, so a broker open order on its account is an orphan
+        // the union reconcile must cancel. The gateway hands the reconnect pushback back grouped by account.
+        h.Gateway.OpenOrdersToReturn = new Dictionary<string, IReadOnlyList<long>> { ["DU1"] = [7777L] };
+
+        h.Session.TriggerReconnect();
+
+        await Poll(() => h.Gateway.Cancelled.Contains(7777L));
+        Assert.Contains(7777L, h.Gateway.Cancelled);
+    }
+
     private static async Task Poll(Func<bool> cond)
     {
         for (var i = 0; i < 200 && !cond(); i++)
@@ -165,7 +181,13 @@ public sealed class IbLiveConnectorTests
             return Task.FromResult(id);
         }
 
-        public void Cancel(long orderId) { }
+        public List<long> Cancelled { get; } = [];
+        public void Cancel(long orderId) { lock (Cancelled) Cancelled.Add(orderId); }
+
+        public IReadOnlyDictionary<string, IReadOnlyList<long>> OpenOrdersToReturn { get; set; } =
+            new Dictionary<string, IReadOnlyList<long>>();
+        public Task<IReadOnlyDictionary<string, IReadOnlyList<long>>> SnapshotOpenOrders(CancellationToken ct = default) =>
+            Task.FromResult(OpenOrdersToReturn);
 
         public void EmitTrade(long orderId, Asset asset, OrderSide side, decimal price, decimal qty) =>
             _onReport!(new ExecutionReport(
@@ -177,7 +199,8 @@ public sealed class IbLiveConnectorTests
     private sealed class FakeReconnectingSession : IIbMarketDataSession
     {
         public int ConnectCount { get; private set; }
-        public event Action? Reconnected { add { } remove { } }
+        public event Action? Reconnected;
+        public void TriggerReconnect() => Reconnected?.Invoke();
 
         public Task Connect(CancellationToken ct = default)
         {

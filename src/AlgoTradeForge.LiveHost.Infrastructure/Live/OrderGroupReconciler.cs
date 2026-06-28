@@ -70,14 +70,21 @@ public sealed class OrderGroupReconciler(IExchangeOrderClient orderClient, ILogg
     /// <summary>
     /// Phase 2: Cancel orphans directly on exchange. No module state involved.
     /// </summary>
-    public async Task CancelOrphansAsync(string symbol, IReadOnlyList<long> orphanIds, CancellationToken ct)
+    public Task CancelOrphansAsync(string symbol, IReadOnlyList<long> orphanIds, CancellationToken ct) =>
+        CancelOrphansAsync(orderClient, symbol, orphanIds, ct);
+
+    // Per-target cancel: the IB reconnect path cancels through the ACCOUNT's order client (the connector-level
+    // reconciler client is NullExchangeOrderClient for IB — its CancelOrderAsync is a no-op). Reuses the same
+    // log + swallow-and-continue policy as the bound-client overload.
+    public async Task CancelOrphansAsync(
+        IExchangeOrderClient client, string symbol, IReadOnlyList<long> orphanIds, CancellationToken ct)
     {
         foreach (var orphanId in orphanIds)
         {
             logger.LogWarning("Reconciler: Orphaned order {OrderId} on exchange. Cancelling.", orphanId);
             try
             {
-                await orderClient.CancelOrderAsync(symbol, orphanId, ct);
+                await client.CancelOrderAsync(symbol, orphanId, ct);
             }
             catch (Exception ex)
             {

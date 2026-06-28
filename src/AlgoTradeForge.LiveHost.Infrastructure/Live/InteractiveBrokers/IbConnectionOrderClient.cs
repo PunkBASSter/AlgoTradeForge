@@ -12,6 +12,8 @@ internal sealed class IbConnectionOrderClient(IbConnection connection) : IIbOrde
     public void CancelOrder(int orderId) =>
         connection.Client.cancelOrder(orderId, new IBApi.OrderCancel());
 
+    public void RequestOpenOrders() => connection.Client.reqAllOpenOrders();
+
     internal static IBApi.Order BuildIbOrder(IbOrderRequest request)
     {
         var order = new IBApi.Order

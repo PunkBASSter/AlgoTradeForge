@@ -50,6 +50,10 @@ public sealed class AccountTarget : IAccountTarget
 
     internal LiveOrderContext OrderContext => _orderContext;
 
+    // The account-scoped exchange order client. The reconnect reconcile cancels orphans through THIS (the IB
+    // connector-level reconciler is NullExchangeOrderClient; only the per-target client reaches the broker).
+    internal IExchangeOrderClient OrderClient => _orderClient;
+
     internal void RegisterSymbol(string symbol) => _symbols.TryAdd(symbol, 0);
 
     public async ValueTask DisposeAsync()

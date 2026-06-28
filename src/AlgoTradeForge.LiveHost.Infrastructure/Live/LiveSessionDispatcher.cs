@@ -325,93 +325,176 @@ public sealed class LiveSessionDispatcher
     private async Task RunReconciliationLoop(CancellationToken ct)
     {
         using var timer = new PeriodicTimer(_options.ReconciliationInterval);
-        // Per-session failure counter so a healthy session can't reset (mask) a persistently-failing one.
-        var consecutiveFailures = new Dictionary<Guid, int>();
+        // Per-target failure counter so a healthy target can't reset (mask) a persistently-failing one.
+        var consecutiveFailures = new Dictionary<AccountTarget, int>();
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
-                // Each session reconciles its own TradeRegistry against the shared account ledger
-                // (entry.OrderContext). One account backs all its co-tenant sessions.
-                foreach (var entry in _sessions.Values)
+                // Reconcile per TARGET, not per session: the broker open-order pushback is account-wide,
+                // so the "expected" set must be the UNION of every co-tenant session's TradeRegistry. Diffing
+                // it against one session's registry would orphan-cancel a co-tenant's live protective order (#8).
+                foreach (var group in _sessions.Values.GroupBy(e => e.Target))
                 {
-                    if (entry.Strategy is not ITradeRegistryProvider provider)
-                        continue;
+                    var target = group.Key;
                     try
                     {
-                        await ReconcileSession(entry, provider, entry.OrderContext, ct);
-                        consecutiveFailures.Remove(entry.SessionId);
+                        await ReconcileTarget(target, group.ToList(), ct);
+                        consecutiveFailures.Remove(target);
                     }
                     catch (Exception ex) when (!IsTrueShutdown(ex, ct))
                     {
-                        var count = consecutiveFailures.GetValueOrDefault(entry.SessionId) + 1;
-                        consecutiveFailures[entry.SessionId] = count;
-                        LogReconciliationFailure(ex, entry.SessionId, count);
+                        var count = consecutiveFailures.GetValueOrDefault(target) + 1;
+                        consecutiveFailures[target] = count;
+                        LogReconciliationFailure(ex, target.AccountName, count);
                     }
                 }
 
-                // Drop counters for sessions that have since been removed.
+                // Drop counters for targets that no longer back any session.
                 if (consecutiveFailures.Count > 0)
-                    foreach (var id in consecutiveFailures.Keys.Where(id => !_sessions.ContainsKey(id)).ToList())
-                        consecutiveFailures.Remove(id);
+                {
+                    var live = _sessions.Values.Select(e => e.Target).ToHashSet();
+                    foreach (var t in consecutiveFailures.Keys.Where(t => !live.Contains(t)).ToList())
+                        consecutiveFailures.Remove(t);
+                }
             }
         }
         catch (OperationCanceledException) { }
     }
 
-    private async Task ReconcileSession(
-        LiveSessionEntry entry, ITradeRegistryProvider provider, LiveOrderContext accountContext, CancellationToken ct)
+    // Periodic per-target reconcile: query the account's exchange open orders (via the reconciler's client)
+    // and diff against the UNION of every co-tenant session's expected orders. Binance degenerate case is one
+    // session per target, so the union equals that single session's registry and behavior is unchanged.
+    private async Task ReconcileTarget(AccountTarget target, IReadOnlyList<LiveSessionEntry> sessions, CancellationToken ct)
     {
-        // Known edge case: if a fill is in-progress (WebSocket report received but not yet
-        // processed on the event queue), reconciliation may see the protective order as missing
-        // and submit a duplicate. The duplicate will be rejected by the exchange (order already
-        // exists) or cleaned up on the next reconciliation cycle as an orphan.
+        var accountContext = target.OrderContext;
+        var union = await SnapshotExpectedUnion(sessions, ct);
+        if (union.Count == 0)
+            return;
 
-        // Phase 1: Snapshot expected orders on EventQueue (thread-safe read).
-        // WriteAsync (not TryWrite): on a bounded queue a full buffer would make
-        // TryWrite drop the action, leaving `await tcs.Task` hung forever. The
-        // single-reader ProcessingTask drains independently, so WriteAsync always
-        // gets a slot and the round-trip completes.
-        var tcs = new TaskCompletionSource<IReadOnlyList<ExpectedOrder>>();
-        await entry.EventQueue.Writer.WriteAsync(() =>
-            tcs.SetResult(provider.TradeRegistry.GetExpectedOrders()), ct);
-        var expected = await tcs.Task;
-
-        // Phase 2: Detect on timer thread (exchange query, pure comparison)
+        // The diff queries the exchange (reconciler's order client) and compares against the union.
+        var expected = union.SelectMany(s => s.Expected).ToList();
         var pendingIds = accountContext.GetPendingOrders()
             .Select(o => o.Id).Where(id => id > 0).ToHashSet();
         var result = await _reconciler.DetectAsync(
-            entry.ExecutionAsset.Name, expected,
-            accountContext.ResolveExchangeOrderId, pendingIds, ct);
+            target.SeedAsset.Name, expected, accountContext.ResolveExchangeOrderId, pendingIds, ct);
 
-        // Phase 3a: Repair on EventQueue (module mutation serialized)
-        if (result.MissingByGroup.Count > 0)
-        {
-            var repairTcs = new TaskCompletionSource();
-            await entry.EventQueue.Writer.WriteAsync(() =>
+        await RepairMissingPerSession(union, result.MissingByGroup, ct);
+
+        if (result.OrphanIds.Count > 0)
+            await _reconciler.CancelOrphansAsync(target.SeedAsset.Name, result.OrphanIds, ct);
+    }
+
+    // IB reconnect path: the broker pushes the account-wide open orders (their exchange ids). Diff that
+    // pushback against the UNION of every co-tenant session's expected exchange ids — orphans are the broker
+    // ids absent from the union; missing are union orders absent from the pushback (repaired per owning session).
+    // The open-order source IS the snapshot (no exchange query), so this does NOT route through DetectAsync;
+    // it reuses CancelOrphansAsync + the EventQueue-serialized RepairGroup pattern.
+    public async Task ReconcileFromSnapshot(string account, IReadOnlyList<long> brokerOpenOrderIds, CancellationToken ct)
+    {
+        var sessions = _sessions.Values
+            .Where(e => string.Equals(e.AccountName, account, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (sessions.Count == 0)
+            return;
+
+        var target = sessions[0].Target;
+        var accountContext = target.OrderContext;
+        var union = await SnapshotExpectedUnion(sessions, ct);
+
+        // Translate every expected order to its exchange id (only those that reached the exchange).
+        var expectedExchangeIds = union
+            .SelectMany(s => s.Expected)
+            .Select(e => accountContext.ResolveExchangeOrderId(e.OrderId))
+            .Where(id => id > 0)
+            .ToHashSet();
+
+        var brokerSet = new HashSet<long>(brokerOpenOrderIds);
+
+        // Orphans: resting on the broker but expected by NO co-tenant session. Cancel through the TARGET's order
+        // client (the connector-level reconciler client is NullExchangeOrderClient for IB). Symbol is the
+        // single-asset target's seed; IbExchangeOrderClient.CancelOrderAsync ignores it (IB cancels by id).
+        var orphanIds = brokerOpenOrderIds.Where(id => !expectedExchangeIds.Contains(id)).Distinct().ToList();
+        if (orphanIds.Count > 0)
+            await _reconciler.CancelOrphansAsync(target.OrderClient, target.SeedAsset.Name, orphanIds, ct);
+
+        // Missing: expected by a session but absent from the broker pushback (cancelled/filled during the gap).
+        var missingByGroup = new Dictionary<long, HashSet<long>>();
+        foreach (var s in union)
+            foreach (var exp in s.Expected)
             {
-                foreach (var (groupId, missingIds) in result.MissingByGroup)
-                    provider.TradeRegistry.RepairGroup(groupId, missingIds);
+                var exchangeId = accountContext.ResolveExchangeOrderId(exp.OrderId);
+                if (exchangeId > 0 && !brokerSet.Contains(exchangeId))
+                {
+                    if (!missingByGroup.TryGetValue(exp.GroupId, out var set))
+                        missingByGroup[exp.GroupId] = set = [];
+                    set.Add(exp.OrderId);
+                }
+            }
+
+        await RepairMissingPerSession(union, missingByGroup, ct);
+    }
+
+    private readonly record struct SessionExpected(
+        LiveSessionEntry Entry, ITradeRegistryProvider Provider, IReadOnlyList<ExpectedOrder> Expected);
+
+    // Snapshot each session's GetExpectedOrders() on ITS OWN EventQueue (serialized with that session's module
+    // mutations) and return them tagged by owning session, so a later RepairGroup runs on the right queue.
+    private async Task<IReadOnlyList<SessionExpected>> SnapshotExpectedUnion(
+        IReadOnlyList<LiveSessionEntry> sessions, CancellationToken ct)
+    {
+        var union = new List<SessionExpected>(sessions.Count);
+        foreach (var entry in sessions)
+        {
+            if (entry.Strategy is not ITradeRegistryProvider provider)
+                continue;
+
+            // WriteAsync (not TryWrite): on a bounded queue a full buffer would make TryWrite drop the action,
+            // leaving `await tcs.Task` hung forever. The single-reader ProcessingTask drains independently.
+            var tcs = new TaskCompletionSource<IReadOnlyList<ExpectedOrder>>();
+            await entry.EventQueue.Writer.WriteAsync(() =>
+                tcs.SetResult(provider.TradeRegistry.GetExpectedOrders()), ct);
+            union.Add(new SessionExpected(entry, provider, await tcs.Task));
+        }
+        return union;
+    }
+
+    // Repair each owning session's missing orders on ITS OWN EventQueue so module mutation stays serialized.
+    private async Task RepairMissingPerSession(
+        IReadOnlyList<SessionExpected> union, Dictionary<long, HashSet<long>> missingByGroup, CancellationToken ct)
+    {
+        if (missingByGroup.Count == 0)
+            return;
+
+        foreach (var s in union)
+        {
+            // A group id belongs to exactly one session's registry; repair only the groups this session owns.
+            var owned = s.Expected.Select(e => e.GroupId).ToHashSet();
+            var mine = missingByGroup.Where(kv => owned.Contains(kv.Key)).ToList();
+            if (mine.Count == 0)
+                continue;
+
+            var repairTcs = new TaskCompletionSource();
+            await s.Entry.EventQueue.Writer.WriteAsync(() =>
+            {
+                foreach (var (groupId, missingIds) in mine)
+                    s.Provider.TradeRegistry.RepairGroup(groupId, missingIds);
                 repairTcs.SetResult();
             }, ct);
             await repairTcs.Task;
         }
-
-        // Phase 3b: Cancel orphans directly on exchange (no module state)
-        if (result.OrphanIds.Count > 0)
-            await _reconciler.CancelOrphansAsync(entry.ExecutionAsset.Name, result.OrphanIds, ct);
     }
 
-    private void LogReconciliationFailure(Exception ex, Guid sessionId, int consecutiveFailures)
+    private void LogReconciliationFailure(Exception ex, string account, int consecutiveFailures)
     {
         if (consecutiveFailures >= 3)
             _logger.LogError(ex,
-                "Reconciliation has failed {Count} consecutive times for session {SessionId}",
-                consecutiveFailures, sessionId);
+                "Reconciliation has failed {Count} consecutive times for account {Account}",
+                consecutiveFailures, account);
         else
             _logger.LogWarning(ex,
-                "Reconciliation failed for session {SessionId} (attempt {Count})",
-                sessionId, consecutiveFailures);
+                "Reconciliation failed for account {Account} (attempt {Count})",
+                account, consecutiveFailures);
     }
 
     public void OnExecutionReport(ExecutionReport report)

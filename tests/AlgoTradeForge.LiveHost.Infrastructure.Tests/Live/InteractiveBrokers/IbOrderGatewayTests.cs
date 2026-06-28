@@ -122,6 +122,43 @@ public sealed class IbOrderGatewayTests
         Assert.Equal(OrderSide.Sell, reports[0].Side);
     }
 
+    // SnapshotOpenOrders arms the wrapper's accumulator, requests open orders, and returns the broker pushback
+    // grouped by account (the reconnect reconciliation source).
+    [Fact]
+    public async Task SnapshotOpenOrders_RequestsAndGroupsPushbackByAccount()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = new FakeIbOrderClient(seedId: 500);
+        var wrapper = new IbWrapper();
+        await using var gw = GatewayFixture.Build(client, wrapper, _ => { });
+
+        var snapTask = gw.SnapshotOpenOrders(ct);
+
+        // Simulate IB's pushback: two accounts, three open orders. Fire on the (test) thread after arming.
+        await Poll(() => client.OpenOrdersRequested > 0);
+        wrapper.openOrder(1001, IbExecFactory.Contract("AAPL"), OpenOrder("DU1", "SELL", "STP"), OrderStateOf("Submitted"));
+        wrapper.openOrder(2002, IbExecFactory.Contract("MSFT"), OpenOrder("DU2", "SELL", "LMT"), OrderStateOf("Submitted"));
+        wrapper.openOrder(3003, IbExecFactory.Contract("AAPL"), OpenOrder("DU1", "BUY", "LMT"), OrderStateOf("Submitted"));
+        wrapper.openOrderEnd();
+
+        var byAccount = await snapTask;
+
+        Assert.Equal(1, client.OpenOrdersRequested);
+        Assert.Equal([1001L, 3003L], byAccount["DU1"].OrderBy(x => x));
+        Assert.Equal([2002L], byAccount["DU2"]);
+    }
+
+    private static IBApi.Order OpenOrder(string account, string action, string orderType) =>
+        new() { Account = account, Action = action, OrderType = orderType, TotalQuantity = 1m };
+
+    private static IBApi.OrderState OrderStateOf(string status) => new() { Status = status };
+
+    private static async Task Poll(Func<bool> cond)
+    {
+        for (var i = 0; i < 200 && !cond(); i++)
+            await Task.Delay(5);
+    }
+
     // Verifies DisposeAsync drains fills already written to the lane before exiting the worker.
     [Fact]
     public async Task DisposeAsync_DrainsQueuedFills_BeforeExiting()

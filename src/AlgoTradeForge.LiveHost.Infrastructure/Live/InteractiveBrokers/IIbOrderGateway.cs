@@ -14,4 +14,9 @@ internal interface IIbOrderGateway
         OrderSide side, OrderType type, decimal originalQuantity, CancellationToken ct = default);
 
     void Cancel(long orderId);
+
+    // Reconnect reconciliation source: arms the wrapper's open-order accumulator, pulls the socket's open
+    // orders (reqAllOpenOrders), and returns the broker's account-wide pushback grouped by account so the
+    // dispatcher can diff each account against its co-tenant union. Pushback-ONLY (no reqExecutions, #5).
+    Task<IReadOnlyDictionary<string, IReadOnlyList<long>>> SnapshotOpenOrders(CancellationToken ct = default);
 }

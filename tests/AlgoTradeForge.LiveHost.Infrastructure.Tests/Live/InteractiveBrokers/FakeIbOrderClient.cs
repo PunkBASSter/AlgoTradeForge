@@ -24,6 +24,9 @@ internal sealed class FakeIbOrderClient(int seedId) : IIbOrderClient
 
     public void CancelOrder(int orderId) => Cancelled.Add(orderId);
 
+    public int OpenOrdersRequested { get; private set; }
+    public void RequestOpenOrders() => OpenOrdersRequested++;
+
     // Drives the wrapper's orderStatus callback for the last placed id, completing the gateway's ack.
     public void SignalAck(IbWrapper wrapper, string status) =>
         wrapper.orderStatus(LastPlacedOrderId, status, 0, 1, 0, 0, 0, 0, 0, "", 0);

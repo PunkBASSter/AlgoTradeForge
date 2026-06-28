@@ -104,7 +104,11 @@ public sealed class LiveOrderContext
             return order.Id;
         }
 
-        var id = Interlocked.Increment(ref _nextOrderId);
+        // Preserve a caller-assigned local id (mirrors BacktestEngine). The TradeRegistry module assigns
+        // its own negative ids and keys group.SlOrderId/TpLevels by them; if we re-id here, reconciliation —
+        // which resolves those module ids via ResolveExchangeOrderId — could never bridge module → exchange id
+        // (every protective order would look orphaned). Auto-assign only when the order arrives unkeyed (Id==0).
+        var id = order.Id != 0 ? order.Id : Interlocked.Increment(ref _nextOrderId);
         order.Id = id;
         order.SubmittedAt = DateTimeOffset.UtcNow;
         order.Status = OrderStatus.Pending;

@@ -68,6 +68,20 @@ internal sealed class IbOrderGateway : IIbOrderGateway, IAsyncDisposable
 
     public void Cancel(long orderId) => _client.CancelOrder((int)orderId);
 
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<long>>> SnapshotOpenOrders(CancellationToken ct = default)
+    {
+        // Arm the accumulator BEFORE requesting so the pushback (openOrder*/openOrderEnd on the pump) lands in it.
+        var snapshot = _wrapper.BeginOpenOrderSnapshot();
+        _client.RequestOpenOrders();
+        var rows = await snapshot.WaitAsync(_ackTimeout, ct).ConfigureAwait(false);
+
+        var byAccount = new Dictionary<string, List<long>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+            (byAccount.TryGetValue(row.Account, out var list) ? list : byAccount[row.Account] = []).Add(row.OrderId);
+
+        return byAccount.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<long>)kv.Value, StringComparer.OrdinalIgnoreCase);
+    }
+
     private void OnFillFromPump(IbFill fill)
     {
         if (_lane.Writer.TryWrite(fill)) return;

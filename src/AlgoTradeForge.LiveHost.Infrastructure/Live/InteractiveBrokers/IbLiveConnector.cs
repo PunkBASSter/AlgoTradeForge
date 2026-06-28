@@ -41,6 +41,7 @@ internal sealed class IbLiveConnector : ILiveConnector
     private IOrderRouter? _router;
     private OrderGroupReconciler? _reconciler;
     private LiveSessionDispatcher? _dispatcher;
+    private Task? _reconcileOnReconnect;
 
     public string AccountName { get; }
     public LiveSessionStatus Status { get; private set; } = LiveSessionStatus.Idle;
@@ -113,7 +114,8 @@ internal sealed class IbLiveConnector : ILiveConnector
             // protective order as missing and re-submit duplicates every ~30 s. E1 supplies per-target
             // union reconciliation and calls StartReconciliation at that point.
 
-            // Reconnect hook for E1's reconciliation-on-reconnect trigger. Stub today (log only); E1 fills it in.
+            // Reconnect trigger: on a socket reconnect, pull the broker's account-wide open-order pushback and
+            // reconcile each account against its co-tenant UNION (the #8-safe ReconcileFromSnapshot).
             _session.Reconnected += OnSessionReconnected;
 
             Status = LiveSessionStatus.Running;
@@ -171,6 +173,13 @@ internal sealed class IbLiveConnector : ILiveConnector
 
             _cts?.Cancel();
 
+            // Await any in-flight reconnect reconciliation so its pushback round-trip can't outlive the connector.
+            if (_reconcileOnReconnect is not null)
+            {
+                try { await _reconcileOnReconnect; }
+                catch (OperationCanceledException) { }
+            }
+
             if (_gateway is IAsyncDisposable disposableGateway)
                 await disposableGateway.DisposeAsync();
         }
@@ -185,10 +194,32 @@ internal sealed class IbLiveConnector : ILiveConnector
         }
     }
 
-    // E1 stub: on a socket reconnect the dispatcher should re-reconcile each session against the broker. For
-    // now we only log — the per-target union reconcile lands in E1 alongside the real reconciler client.
-    private void OnSessionReconnected() =>
-        _logger.LogInformation("IB session reconnected for '{Account}'; reconciliation-on-reconnect is an E1 follow-up", AccountName);
+    // On a socket reconnect the gateway is the transport-focused source (it owns the wrapper + socket): it pulls
+    // the broker's account-wide open-order pushback. The dispatcher is the session-focused diff: it reconciles
+    // each account against its co-tenant UNION. The Reconnected event is sync, so orchestrate on a tracked task
+    // (the pushback round-trip is async) with the connector's CTS so Stop() can await/cancel it.
+    private void OnSessionReconnected()
+    {
+        var ct = _cts?.Token ?? CancellationToken.None;
+        _reconcileOnReconnect = Task.Run(() => ReconcileOnReconnect(ct), ct);
+    }
+
+    private async Task ReconcileOnReconnect(CancellationToken ct)
+    {
+        if (_gateway is null || _dispatcher is null)
+            return;
+        try
+        {
+            _logger.LogInformation("IB session reconnected for '{Account}'; reconciling open orders against the co-tenant union", AccountName);
+            var byAccount = await _gateway.SnapshotOpenOrders(ct);
+            foreach (var (account, ids) in byAccount)
+                await _dispatcher.ReconcileFromSnapshot(account, ids, ct);
+        }
+        catch (Exception ex) when (!LiveSessionDispatcher.IsTrueShutdown(ex, ct))
+        {
+            _logger.LogError(ex, "Reconnect reconciliation failed for IB connector '{Account}'", AccountName);
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {
