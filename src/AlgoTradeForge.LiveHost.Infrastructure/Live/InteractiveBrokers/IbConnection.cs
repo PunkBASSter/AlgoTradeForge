@@ -13,7 +13,6 @@ internal sealed class IbConnection(IbWrapper wrapper, IbConnectionOptions option
     private EReaderMonitorSignal? _signal;
     private int _nextReqId; // single connection-scoped request-id source (tick subs, contract details, historical)
     private int _nextOrderId;   // order-id space, distinct from _nextReqId; seeded from nextValidId
-    private int _orderIdSeeded; // 0 until first seed
     // Serializes Connect so concurrent callers (relay pump Stream, a bar-source Start, the reconnect worker)
     // cannot race two establish sequences onto one transport.
     private readonly SemaphoreSlim _connectGate = new(1, 1);
@@ -25,13 +24,14 @@ internal sealed class IbConnection(IbWrapper wrapper, IbConnectionOptions option
     // contract-details, and historical-tick ids from separate counters collides; this is the shared allocator.
     public int NextReqId() => Interlocked.Increment(ref _nextReqId);
 
-    // Called by Connect after `await wrapper.NextValidId` (and on reconnect re-arm).
-    // Re-arms to the server's value; never go backwards (a stale reconnect seed must not rewind).
+    // Re-arm the order-id counter to the server's seed on connect/reconnect. Upward-only
+    // (a stale smaller reconnect seed must never rewind the counter); atomic against a
+    // concurrent NextOrderId() via CAS so no allocated id is ever clobbered/reused.
     public void SeedNextOrderId(int seed)
     {
-        var current = Volatile.Read(ref _nextOrderId);
-        if (Interlocked.Exchange(ref _orderIdSeeded, 1) == 0 || seed > current)
-            Volatile.Write(ref _nextOrderId, seed);
+        int current;
+        do { current = Volatile.Read(ref _nextOrderId); }
+        while (seed > current && Interlocked.CompareExchange(ref _nextOrderId, seed, current) != current);
     }
 
     // One id per order (brackets are individual strategy-side orders — no consecutive reservation).
