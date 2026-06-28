@@ -20,6 +20,11 @@ public sealed class LiveOrderContext
     private readonly Portfolio _portfolio;
     private readonly ILogger _logger;
 
+    // Two disjoint keyspaces so a local (ledger/module) id can never collide with an exchange id —
+    // IB exchange ids are small positive ints that overlap the auto-assigned local range, and sharing
+    // one dictionary would mis-route orders on re-key. Pre-placement orders live in _localPending
+    // (keyed by ledger id); on placement they move to _pendingOrders (keyed by exchange id).
+    private readonly ConcurrentDictionary<long, Order> _localPending = new();
     private readonly ConcurrentDictionary<long, Order> _pendingOrders = new();
     private readonly ConcurrentDictionary<long, long> _localToExchangeId = new();
     private readonly ConcurrentDictionary<long, long> _exchangeToLocal = new();
@@ -114,7 +119,7 @@ public sealed class LiveOrderContext
         order.SubmittedAt = DateTimeOffset.UtcNow;
         order.Status = OrderStatus.Pending;
 
-        _pendingOrders.TryAdd(id, order);
+        _localPending.TryAdd(id, order);
         _localToSession.TryAdd(id, sessionId);
 
         // Bounded channel: a full queue must reject (not silently drop). Sync method —
@@ -122,7 +127,7 @@ public sealed class LiveOrderContext
         if (!_orderChannel.Writer.TryWrite(new OrderRequest(order, id)))
         {
             order.Status = OrderStatus.Rejected;
-            _pendingOrders.TryRemove(id, out _);
+            _localPending.TryRemove(id, out _);
             _localToSession.TryRemove(id, out _);
             _logger.LogError(
                 "Order channel full (capacity reached) — rejecting order {LocalId} ({Side} {Qty} {Asset})",
@@ -139,7 +144,7 @@ public sealed class LiveOrderContext
 
         // Try remove by exchange ID first (post-placement), then by local ID (pre-placement)
         if (!_pendingOrders.TryRemove(exchangeOrderId, out var order) &&
-            !_pendingOrders.TryRemove(orderId, out order))
+            !_localPending.TryRemove(orderId, out order))
             return null;
 
         // Pre-placement cancel: drop the local→session entry Submit inserted (no-op if already
@@ -161,7 +166,7 @@ public sealed class LiveOrderContext
     }
 
     public IReadOnlyList<Order> GetPendingOrders() =>
-        _pendingOrders.Values.ToList();
+        [.. _pendingOrders.Values, .. _localPending.Values];
 
     public IReadOnlyList<Fill> GetFills()
     {
@@ -197,15 +202,19 @@ public sealed class LiveOrderContext
             _recentFills.Clear();
     }
 
+    // An id may be an exchange id (post-placement) or a ledger id (pre-placement); check both spaces.
     internal Order? GetPendingOrder(long orderId) =>
-        _pendingOrders.GetValueOrDefault(orderId);
+        _pendingOrders.GetValueOrDefault(orderId) ?? _localPending.GetValueOrDefault(orderId);
 
-    internal void RemovePendingOrder(long orderId) =>
+    internal void RemovePendingOrder(long orderId)
+    {
         _pendingOrders.TryRemove(orderId, out _);
+        _localPending.TryRemove(orderId, out _);
+    }
 
     internal void RekeyToExchangeId(long localId, long exchangeOrderId)
     {
-        if (_pendingOrders.TryRemove(localId, out var order))
+        if (_localPending.TryRemove(localId, out var order))
         {
             order.Id = exchangeOrderId;
             _pendingOrders.TryAdd(exchangeOrderId, order);
@@ -254,8 +263,8 @@ public sealed class LiveOrderContext
 
                     var exchangeOrderId = result.OrderId;
 
-                    // Re-key from local ID to exchange order ID
-                    _pendingOrders.TryRemove(request.LocalId, out var pending);
+                    // Re-key from local ID to exchange order ID (move between the two keyspaces)
+                    _localPending.TryRemove(request.LocalId, out var pending);
 
                     if (pending is not null)
                     {
@@ -303,7 +312,7 @@ public sealed class LiveOrderContext
                 }
                 catch (Exception ex)
                 {
-                    if (_pendingOrders.TryRemove(request.LocalId, out var rejected))
+                    if (_localPending.TryRemove(request.LocalId, out var rejected))
                         rejected.Status = OrderStatus.Rejected;
 
                     _logger.LogError(ex, "Failed to place order (local {LocalId})", request.LocalId);

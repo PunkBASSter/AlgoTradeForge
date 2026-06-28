@@ -205,8 +205,8 @@ internal sealed class IbWrapper : DefaultEWrapper
     public override void execDetails(int reqId, Contract contract, Execution execution)
     {
         if (!MarkExecSeen(execution.ExecId)) return; // reconnect replays the same execId; apply once
-        var fill = new IbFill(execution.OrderId, execution.ExecId, execution.Price, execution.Shares,
-            execution.Side, ParseExecTime(execution.Time));
+        var fill = new IbFill(execution.OrderId, execution.ExecId, contract.Symbol ?? "", execution.Price,
+            execution.Shares, execution.Side, ParseExecTime(execution.Time));
         _onFill?.Invoke(fill);
         Fill?.Invoke(fill);
     }

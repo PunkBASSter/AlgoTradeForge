@@ -56,7 +56,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
     public string AccountName { get; }
     public LiveSessionStatus Status { get; private set; } = LiveSessionStatus.Idle;
-    public int SessionCount => _dispatcher?.SessionIds.Count ?? 0;
+    public int SessionCount => _dispatcher?.Count ?? 0;
 
     public BinanceLiveConnector(
         string accountName,
@@ -232,23 +232,13 @@ public sealed class BinanceLiveConnector : ILiveConnector
         }
     }
 
-    // Venue mapping: WS user-data → neutral ExecutionReport, dispatched by the dispatcher. The
-    // dispatcher buffers unmapped orders by id, so an unresolved asset (seeded from the report's own
-    // symbol) is fine — the asset is re-derived from the session on replay anyway.
-    private void OnExecutionReport(BinanceExecutionReport report)
-    {
-        // Placeholder asset for unmapped orders is never scaled — the dispatcher overwrites it with
-        // the session's execution asset once the order resolves (see OnExecutionReport re-stamp).
-        var asset = _dispatcher!.TryResolveAsset(report.OrderId, out var resolved)
-            ? resolved
-            : ResolveAssetForSymbol(report.Symbol);
+    // Venue mapping: WS user-data → neutral ExecutionReport, dispatched by the dispatcher. The report
+    // carries only the venue symbol; the dispatcher resolves the session-authoritative asset + scale.
+    private void OnExecutionReport(BinanceExecutionReport report) =>
+        _dispatcher!.OnExecutionReport(MapToNeutral(report));
 
-        _dispatcher.OnExecutionReport(MapToNeutral(report, asset));
-    }
-
-    private static ExecutionReport MapToNeutral(BinanceExecutionReport report, Asset asset)
+    private static ExecutionReport MapToNeutral(BinanceExecutionReport report)
     {
-        var scale = new ScaleContext(asset);
         var execType = report.ExecutionType switch
         {
             "TRADE" => ExecType.Trade,
@@ -269,7 +259,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         return new ExecutionReport(
             report.OrderId,
-            asset,
+            report.Symbol,
             report.Side == "BUY" ? OrderSide.Buy : OrderSide.Sell,
             execType,
             decimal.Parse(report.LastFilledPrice, CultureInfo.InvariantCulture),
@@ -289,12 +279,6 @@ public sealed class BinanceLiveConnector : ILiveConnector
         "STOP_LOSS_LIMIT" => OrderType.StopLimit,
         _ => OrderType.Market,
     };
-
-    // Placeholder asset for an unmapped order (no session yet to resolve from). The dispatcher
-    // re-stamps the session's real execution asset once the order maps, so this value is only a
-    // non-null carrier and is never used for scaling.
-    private static Asset ResolveAssetForSymbol(string symbol) =>
-        CryptoAsset.Create(symbol, "Binance", decimalDigits: 8);
 
     internal async Task<LiveSessionSnapshot?> GetSessionSnapshotAsync(Guid sessionId, CancellationToken ct = default)
     {

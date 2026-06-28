@@ -34,6 +34,11 @@ internal sealed class IbExchangeOrderClient(
         return Task.CompletedTask;
     }
 
+    // Shutdown cancel-all (AccountTarget.DisposeAsync): scoped to THIS account, not the whole IB login.
+    // The symbol is ignored — IB cancels by order id, and the gateway resolves this account's open orders.
+    public Task CancelAllOpenOrdersAsync(string symbol, CancellationToken ct = default) =>
+        gateway.CancelAllOpenOrders(account, ct);
+
     private IbOrderRequest BuildRequest(OrderSide side, OrderType type, decimal quantity, decimal? price, decimal? stopPrice)
     {
         var action = side == OrderSide.Buy ? "BUY" : "SELL";

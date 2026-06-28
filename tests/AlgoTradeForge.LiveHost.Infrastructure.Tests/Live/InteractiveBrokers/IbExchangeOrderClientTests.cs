@@ -103,6 +103,18 @@ public sealed class IbExchangeOrderClientTests
     }
 
     [Fact]
+    public async Task CancelAllOpenOrders_DelegatesToGateway_WithOwnAccount()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var gateway = Substitute.For<IIbOrderGateway>();
+        var client = Build(gateway, "DU7");
+
+        await client.CancelAllOpenOrdersAsync("AAPL", ct); // symbol ignored — IB cancels by id, per account
+
+        await gateway.Received(1).CancelAllOpenOrders("DU7", ct);
+    }
+
+    [Fact]
     public async Task PlaceOrder_WrongSymbol_Throws()
     {
         var ct = TestContext.Current.CancellationToken;

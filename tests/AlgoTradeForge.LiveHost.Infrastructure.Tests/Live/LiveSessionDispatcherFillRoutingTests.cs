@@ -40,7 +40,7 @@ public sealed class LiveSessionDispatcherFillRoutingTests
         // Deliver the entry FILL keyed by the EXCHANGE id (the only id the venue reports).
         fixture.Dispatcher.OnExecutionReport(new ExecutionReport(
             OrderId: fixture.ExchangeOrderId,
-            Asset: fixture.Asset,
+            Symbol: fixture.Asset.Name,
             Side: OrderSide.Buy,
             ExecType: ExecType.Trade,
             LastFillPrice: 51_000m,

@@ -49,7 +49,7 @@ internal sealed class IbLiveConnector : ILiveConnector
 
     public string AccountName { get; }
     public LiveSessionStatus Status { get; private set; } = LiveSessionStatus.Idle;
-    public int SessionCount => _dispatcher?.SessionIds.Count ?? 0;
+    public int SessionCount => _dispatcher?.Count ?? 0;
 
     public IbLiveConnector(
         string accountName,

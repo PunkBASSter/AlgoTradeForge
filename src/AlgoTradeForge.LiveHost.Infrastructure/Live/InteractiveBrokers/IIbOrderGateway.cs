@@ -15,6 +15,11 @@ internal interface IIbOrderGateway
 
     void Cancel(long orderId);
 
+    // Shutdown safety-net: cancel every order resting at the broker for one account. IB has no
+    // per-account global-cancel (reqGlobalCancel hits the whole login), so this snapshots the
+    // account's open orders and cancels each by id.
+    Task CancelAllOpenOrders(string account, CancellationToken ct = default);
+
     // Reconnect reconciliation source: arms the wrapper's open-order accumulator, pulls the socket's open
     // orders (reqAllOpenOrders), and returns the broker's account-wide pushback grouped by account so the
     // dispatcher can diff each account against its co-tenant union. Pushback-ONLY (no reqExecutions, #5).

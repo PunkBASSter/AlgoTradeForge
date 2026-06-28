@@ -16,7 +16,7 @@ public sealed class AccountTargetFactory(
     public async Task<IAccountTarget> Create(string account, Asset executionAsset, CancellationToken ct = default)
     {
         var funds = fundsFor(account, executionAsset);
-        var discovered = await funds.DiscoverFunds(executionAsset, ct);
+        var discovered = await funds.DiscoverFunds(account, executionAsset, ct);
         var portfolio = new Portfolio { InitialCash = discovered.FreeScaled };
         portfolio.Initialize();
         var orderClient = clientFor(account, executionAsset);

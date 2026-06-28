@@ -28,6 +28,9 @@ public sealed class LiveSessionDispatcher
 
     private readonly ConcurrentDictionary<Guid, LiveSessionEntry> _sessions = new();
     private readonly ConcurrentDictionary<long, ConcurrentQueue<ExecutionReport>> _bufferedReports = new();
+    // Insertion order of distinct buffered ids, for FIFO eviction when the cap is exceeded. Stale ids
+    // (already drained on OrderMapped) are trimmed lazily from the front, so it stays bounded.
+    private readonly ConcurrentQueue<long> _bufferedOrderIds = new();
 
     // Sessions removed while their account stays alive (co-tenant). An in-flight order a removed
     // session submitted before removal is placed by the shared order context after removal; when it
@@ -53,6 +56,10 @@ public sealed class LiveSessionDispatcher
         _logger = logger;
     }
 
+    // O(1) live-session count. SessionIds (a materialized snapshot) is for the Stop() cancel-all sweep —
+    // don't route counting through it.
+    public int Count => _sessions.Count;
+
     public IReadOnlyCollection<Guid> SessionIds => _sessions.Keys.ToList();
 
     public void Start(CancellationToken ct) =>
@@ -76,20 +83,6 @@ public sealed class LiveSessionDispatcher
         }
 
         data = default;
-        return false;
-    }
-
-    // Session lookup → execution asset, so the venue connector can stamp the neutral report.
-    public bool TryResolveAsset(long orderId, out Asset asset)
-    {
-        if (_router.TryResolveSession(orderId, out var sessionId)
-            && _sessions.TryGetValue(sessionId, out var entry))
-        {
-            asset = entry.ExecutionAsset;
-            return true;
-        }
-
-        asset = null!;
         return false;
     }
 
@@ -362,9 +355,11 @@ public sealed class LiveSessionDispatcher
         catch (OperationCanceledException) { }
     }
 
-    // Periodic per-target reconcile: query the account's exchange open orders (via the reconciler's client)
-    // and diff against the UNION of every co-tenant session's expected orders. Binance degenerate case is one
-    // session per target, so the union equals that single session's registry and behavior is unchanged.
+    // Periodic per-target reconcile. The broker open-order query is PER SYMBOL, but CoTenancyRule fences
+    // only on tick + quote currency (not symbol), so co-tenant sessions may trade different symbols on one
+    // account. Detect/repair per distinct symbol: each symbol's expected set is the UNION of every co-tenant
+    // session trading it (so a co-tenant's live order is never orphan-cancelled), diffed against THAT symbol's
+    // open orders. Binance's one-session-per-symbol case is the degenerate single-group case (unchanged).
     private async Task ReconcileTarget(AccountTarget target, IReadOnlyList<LiveSessionEntry> sessions, CancellationToken ct)
     {
         var accountContext = target.OrderContext;
@@ -372,17 +367,24 @@ public sealed class LiveSessionDispatcher
         if (union.Count == 0)
             return;
 
-        // The diff queries the exchange (reconciler's order client) and compares against the union.
-        var expected = union.SelectMany(s => s.Expected).ToList();
+        // Exchange ids are unique account-wide, so an account-wide known-pending set is a safe filter for
+        // every symbol's orphan check (it never masks a real orphan, only protects in-flight pending orders).
         var pendingIds = accountContext.GetPendingOrders()
             .Select(o => o.Id).Where(id => id > 0).ToHashSet();
-        var result = await _reconciler.DetectAsync(
-            target.SeedAsset.Name, expected, accountContext.ResolveExchangeOrderId, pendingIds, ct);
 
-        await RepairMissingPerSession(union, result.MissingByGroup, ct);
+        foreach (var bySymbol in union.GroupBy(s => s.Entry.ExecutionAsset.Name, StringComparer.Ordinal))
+        {
+            var symbol = bySymbol.Key;
+            var perSymbol = bySymbol.ToList();
+            var expected = perSymbol.SelectMany(s => s.Expected).ToList();
+            var result = await _reconciler.DetectAsync(
+                symbol, expected, accountContext.ResolveExchangeOrderId, pendingIds, ct);
 
-        if (result.OrphanIds.Count > 0)
-            await _reconciler.CancelOrphansAsync(target.SeedAsset.Name, result.OrphanIds, ct);
+            await RepairMissingPerSession(perSymbol, result.MissingByGroup, ct);
+
+            if (result.OrphanIds.Count > 0)
+                await _reconciler.CancelOrphansAsync(symbol, result.OrphanIds, ct);
+        }
     }
 
     // IB reconnect path: the broker pushes the account-wide open orders (their exchange ids). Diff that
@@ -502,10 +504,7 @@ public sealed class LiveSessionDispatcher
         // Look up session via the router's order→session map.
         if (!_router.TryResolveSession(report.OrderId, out var sessionId))
         {
-            var queue = _bufferedReports.GetOrAdd(report.OrderId, _ => new());
-            queue.Enqueue(report);
-            _logger.LogDebug("Buffered execution report for unmapped order {OrderId} (type={ExecType})",
-                report.OrderId, report.ExecType);
+            BufferUnmapped(report);
             return;
         }
 
@@ -516,12 +515,6 @@ public sealed class LiveSessionDispatcher
                 report.OrderId, sessionId);
             return;
         }
-
-        // Stamp the session's execution asset: the original code always scaled/filled off
-        // entry.ExecutionAsset, and a buffered-then-replayed report may carry a placeholder asset the
-        // connector seeded before the order mapped. The session is authoritative for the money scale.
-        // The connector's placeholder asset is always overwritten here before any scaling.
-        report = report with { Asset = entry.ExecutionAsset };
 
         switch (report.ExecType)
         {
@@ -540,6 +533,58 @@ public sealed class LiveSessionDispatcher
         }
     }
 
+    internal int BufferedOrderCount => _bufferedReports.Count;
+    internal bool IsBuffered(long orderId) => _bufferedReports.ContainsKey(orderId);
+
+    // Buffer reports for an order id not yet mapped to a session (replayed on OrderMapped). Bounded:
+    // IB introduces ids that never map (external / reconnect-replayed orders), so evict oldest over the cap.
+    private void BufferUnmapped(ExecutionReport report)
+    {
+        if (_bufferedReports.TryGetValue(report.OrderId, out var existing))
+        {
+            existing.Enqueue(report);
+        }
+        else
+        {
+            var queue = new ConcurrentQueue<ExecutionReport>();
+            queue.Enqueue(report);
+            if (_bufferedReports.TryAdd(report.OrderId, queue))
+            {
+                _bufferedOrderIds.Enqueue(report.OrderId);
+                EvictOverflowBuffered();
+            }
+            else
+            {
+                _bufferedReports[report.OrderId].Enqueue(report); // lost the add race — append to the winner
+            }
+        }
+
+        _logger.LogDebug("Buffered execution report for unmapped order {OrderId} (type={ExecType})",
+            report.OrderId, report.ExecType);
+    }
+
+    private void EvictOverflowBuffered()
+    {
+        TrimStaleFrontIds();
+        while (_bufferedReports.Count > _options.BufferedReportCapacity
+            && _bufferedOrderIds.TryDequeue(out var oldest))
+        {
+            if (_bufferedReports.TryRemove(oldest, out var dropped))
+                _logger.LogWarning(
+                    "Buffered-report cap ({Cap}) exceeded; evicting {Count} report(s) for never-mapped order " +
+                    "{OrderId} (likely an external or reconnect-replayed order).",
+                    _options.BufferedReportCapacity, dropped.Count, oldest);
+        }
+    }
+
+    // Drop leading ids already removed (drained on OrderMapped), so the FIFO tracker stays bounded in the
+    // healthy case where every order eventually maps.
+    private void TrimStaleFrontIds()
+    {
+        while (_bufferedOrderIds.TryPeek(out var front) && !_bufferedReports.ContainsKey(front))
+            _bufferedOrderIds.TryDequeue(out _);
+    }
+
     private void DrainBufferedReports(long orderId)
     {
         if (!_bufferedReports.TryRemove(orderId, out var queue))
@@ -550,6 +595,8 @@ public sealed class LiveSessionDispatcher
 
         while (queue.TryDequeue(out var report))
             OnExecutionReport(report);
+
+        TrimStaleFrontIds();
     }
 
     private void HandleTrade(ExecutionReport report, LiveSessionEntry entry)
@@ -565,7 +612,7 @@ public sealed class LiveSessionDispatcher
             return;
         }
 
-        var asset = report.Asset;
+        var asset = entry.ExecutionAsset;
         var scale = new ScaleContext(asset);
 
         var fillPrice = scale.FromMarketPrice(report.LastFillPrice);

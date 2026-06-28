@@ -192,9 +192,16 @@ public sealed class IbLiveConnectorTests
         public Task<IReadOnlyDictionary<string, IReadOnlyList<long>>> SnapshotOpenOrders(CancellationToken ct = default) =>
             Task.FromResult(OpenOrdersToReturn);
 
+        public Task CancelAllOpenOrders(string account, CancellationToken ct = default)
+        {
+            if (OpenOrdersToReturn.TryGetValue(account, out var ids))
+                foreach (var id in ids) Cancel(id);
+            return Task.CompletedTask;
+        }
+
         public void EmitTrade(long orderId, Asset asset, OrderSide side, decimal price, decimal qty) =>
             _onReport!(new ExecutionReport(
-                OrderId: orderId, Asset: asset, Side: side, ExecType: ExecType.Trade,
+                OrderId: orderId, Symbol: asset.Name, Side: side, ExecType: ExecType.Trade,
                 LastFillPrice: price, LastFillQty: qty, Commission: 0m, Status: OrderStatus.Filled,
                 TransactionTime: DateTimeOffset.UnixEpoch, Type: OrderType.Market, OriginalQuantity: qty));
     }

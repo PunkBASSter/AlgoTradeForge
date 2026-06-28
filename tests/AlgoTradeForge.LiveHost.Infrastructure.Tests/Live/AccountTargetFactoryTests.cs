@@ -28,7 +28,7 @@ public class AccountTargetFactoryTests
         const long expectedSeed = 12_345_00L;
 
         var fundsSource = Substitute.For<IAccountFundsSource>();
-        fundsSource.DiscoverFunds(TestAsset, Arg.Any<CancellationToken>())
+        fundsSource.DiscoverFunds("acctA", TestAsset, Arg.Any<CancellationToken>())
             .Returns(new AccountFunds(expectedSeed, "USDT"));
 
         var factory = BuildFactory(fundsSource);

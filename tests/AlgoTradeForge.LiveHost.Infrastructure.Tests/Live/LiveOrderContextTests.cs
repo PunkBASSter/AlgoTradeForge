@@ -218,6 +218,46 @@ public class LiveOrderContextTests
     }
 
     [Fact]
+    public void Submit_AfterRekeyToOverlappingExchangeId_TracksBothOrdersIndependently()
+    {
+        // IB exchange ids are small ints that overlap the auto-assigned local-id range. Reproduce the
+        // collision: order A re-keys to a small exchange id equal to the NEXT order's local id. The two
+        // keyspaces must stay disjoint so B is not dropped and A is not clobbered.
+        var ctx = CreateContext();
+
+        var a = NewLimit();
+        var localA = ctx.Submit(a, Guid.NewGuid());
+
+        var collidingExchangeId = localA + 1; // the id Submit will hand the next plain order
+        ctx.RekeyToExchangeId(localA, collidingExchangeId);
+
+        var b = NewLimit();
+        var localB = ctx.Submit(b, Guid.NewGuid());
+
+        Assert.Equal(collidingExchangeId, localB);          // B's local id overlaps A's exchange id
+        Assert.Equal(2, ctx.GetPendingOrders().Count);      // both tracked — pre-fix B was silently dropped
+
+        Assert.Same(a, ctx.GetPendingOrder(collidingExchangeId)); // exchange space resolves to A
+
+        const long exchangeB = 9_000_000L;
+        ctx.RekeyToExchangeId(localB, exchangeB);
+
+        Assert.Same(b, ctx.GetPendingOrder(exchangeB));
+        Assert.Same(a, ctx.GetPendingOrder(collidingExchangeId)); // A untouched by B's placement
+        Assert.Equal(2, ctx.GetPendingOrders().Count);
+    }
+
+    private static Order NewLimit() => new()
+    {
+        Id = 0,
+        Asset = BtcUsdt,
+        Side = OrderSide.Buy,
+        Type = OrderType.Limit,
+        Quantity = 0.001m,
+        LimitPrice = 5000000L,
+    };
+
+    [Fact]
     public void OrderMapped_CarriesOriginatingSessionId_AfterRekey()
     {
         var portfolio = new Portfolio { InitialCash = 100_000_00L };

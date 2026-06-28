@@ -24,7 +24,7 @@ public sealed class LiveSessionDispatcherTests
 
         fixture.Dispatcher.OnExecutionReport(new ExecutionReport(
             OrderId: fixture.ExchangeOrderId,
-            Asset: fixture.Asset,
+            Symbol: fixture.Asset.Name,
             Side: OrderSide.Buy,
             ExecType: ExecType.Trade,
             LastFillPrice: 100m,
@@ -55,7 +55,7 @@ public sealed class LiveSessionDispatcherTests
                 Arg.Any<decimal>(), Arg.Any<decimal?>(), Arg.Any<decimal?>(), Arg.Any<CancellationToken>())
             .Returns(new ExchangeOrderResult(unmappedOrderId, []));
 
-        var report = new ExecutionReport(unmappedOrderId, fixture.Asset, OrderSide.Buy, ExecType.Trade,
+        var report = new ExecutionReport(unmappedOrderId, fixture.Asset.Name, OrderSide.Buy, ExecType.Trade,
             100m, 1m, 0m, OrderStatus.Filled, DateTimeOffset.UnixEpoch, OrderType.Market, 1m);
 
         fixture.Dispatcher.OnExecutionReport(report); // unmapped → buffered, no throw
@@ -80,6 +80,29 @@ public sealed class LiveSessionDispatcherTests
         Assert.Equal(1L, fixture.Strategy.ReceivedTrades[0].OrderId);
 
         await fixture.DisposeAsync();
+    }
+
+    // #7: unmapped reports (IB external / reconnect-replayed ids that never map) must not grow unbounded.
+    [Fact]
+    public void OnExecutionReport_UnmappedReports_AreBoundedByCapacity()
+    {
+        var client = Substitute.For<IExchangeOrderClient>();
+        var router = new OrderRouter(
+            new FixedFundsTargetFactory(client, 1_000_000_00L, "USDT"), NullLogger<OrderRouter>.Instance);
+        var dispatcher = new LiveSessionDispatcher(
+            router, new NoopMarketDataSource(), new NoopStrategyDispatch(),
+            new OrderGroupReconciler(client, NullLogger.Instance),
+            new LiveDispatcherOptions(1024, 4096, TimeSpan.FromSeconds(30), BufferedReportCapacity: 3),
+            NullLogger.Instance);
+
+        // No sessions → every report is unmapped → buffered. 10 distinct ids against a cap of 3.
+        for (long id = 1; id <= 10; id++)
+            dispatcher.OnExecutionReport(new ExecutionReport(id, "BTCUSDT", OrderSide.Buy, ExecType.Trade,
+                100m, 1m, 0m, OrderStatus.Filled, DateTimeOffset.UnixEpoch, OrderType.Market, 1m));
+
+        Assert.True(dispatcher.BufferedOrderCount <= 3, $"expected <= 3, was {dispatcher.BufferedOrderCount}");
+        Assert.False(dispatcher.IsBuffered(1));  // oldest evicted
+        Assert.True(dispatcher.IsBuffered(10));  // newest retained
     }
 
     [Fact]
