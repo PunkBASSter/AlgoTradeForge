@@ -1,17 +1,9 @@
-using System.Collections.Concurrent;
 using System.Globalization;
-using System.Runtime.CompilerServices;
-using System.Threading.Channels;
 using AlgoTradeForge.LiveHost.Application.Live;
 using AlgoTradeForge.LiveHost.Application.Live.DataPlane;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
-using AlgoTradeForge.Domain.Events;
-using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Live;
-using AlgoTradeForge.Domain.Strategy;
-using AlgoTradeForge.Domain.Strategy.Modules.TradeRegistry;
-using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Trading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -48,16 +40,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
     private BinanceAccountFundsSource? _fundsSource;
     private BinanceAccountTargetFactory? _factory;
 
-    private readonly ConcurrentDictionary<Guid, LiveSessionEntry> _sessions = new();
-    private readonly ConcurrentDictionary<long, ConcurrentQueue<BinanceExecutionReport>> _bufferedReports = new();
-
-    // Sessions removed while their account stays alive (co-tenant). An in-flight order a removed
-    // session submitted before removal is placed by the shared order context after removal; when it
-    // re-keys (OrderMapped), we cancel it so no order rests under an already-removed session.
-    private readonly ConcurrentDictionary<Guid, byte> _removedSessions = new();
-
     private OrderGroupReconciler? _reconciler;
-    private Task? _reconcileTask;
+    private LiveSessionDispatcher? _dispatcher;
 
     // Cache fields are accessed from multiple threads (snapshot requests + kline callbacks).
     // decimal (128-bit) and DateTimeOffset are not atomically readable on x64, so we
@@ -71,130 +55,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
     public string AccountName { get; }
     public LiveSessionStatus Status { get; private set; } = LiveSessionStatus.Idle;
-    public int SessionCount => _sessions.Count;
-
-    private sealed class LiveSessionEntry
-    {
-        private readonly StrongBox<long> _droppedMarketData = new(0L);
-
-        public Guid SessionId { get; }
-        public IInt64BarStrategy Strategy { get; }
-        // Concrete AccountTarget: a Binance connector only ever handles Binance targets (its own
-        // factory produces them), so narrowing once at construction avoids scattered downcasts.
-        public AccountTarget Target { get; }
-        public string AccountName { get; }
-        public IReadOnlyList<DataFeedSubscription> Subscriptions { get; }
-        public Asset ExecutionAsset { get; }
-        public string QuoteAsset { get; }
-
-        public Channel<Action> EventQueue { get; }
-
-        // Market data is best-effort: drop the newest item under saturation so a flood
-        // never back-pressures or starves the exec queue (fills/orders).
-        public Channel<Action> MarketDataQueue { get; }
-
-        public long DroppedMarketDataCount => Interlocked.Read(ref _droppedMarketData.Value);
-
-        public Task? ProcessingTask { get; set; }
-
-        // Stored so the lambda can be removed from OrderMapped on session teardown.
-        public Action<long, Guid>? OrderMappedHandler { get; set; }
-
-        // The account-scoped order ledger backing this session (shared across sessions on the
-        // same account). Reached via Target for fills/pending-order/reconciliation paths.
-        public LiveOrderContext OrderContext => Target.OrderContext;
-
-        public LiveSessionEntry(
-            Guid sessionId,
-            IInt64BarStrategy strategy,
-            AccountTarget target,
-            string accountName,
-            IReadOnlyList<DataFeedSubscription> subscriptions,
-            Asset executionAsset,
-            string quoteAsset,
-            int eventQueueCapacity,
-            int marketDataQueueCapacity,
-            ILogger logger)
-        {
-            SessionId = sessionId;
-            Strategy = strategy;
-            Target = target;
-            AccountName = accountName;
-            Subscriptions = subscriptions;
-            ExecutionAsset = executionAsset;
-            QuoteAsset = quoteAsset;
-
-            EventQueue = Channel.CreateBounded<Action>(
-                new BoundedChannelOptions(eventQueueCapacity)
-                { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
-
-            var box = _droppedMarketData;
-            MarketDataQueue = Channel.CreateBounded<Action>(
-                new BoundedChannelOptions(marketDataQueueCapacity)
-                { SingleReader = true, FullMode = BoundedChannelFullMode.DropNewest },
-                itemDropped: _ =>
-                {
-                    var n = Interlocked.Increment(ref box.Value);
-                    if ((n & 0x3FF) == 0)
-                        logger.LogDebug("Session {SessionId} dropped {Count} market-data callbacks (queue saturated)",
-                            sessionId, n);
-                });
-        }
-    }
-
-    // Single-reader drain of both per-session channels. Exec (fills/orders, FullMode.Wait) is
-    // drained to empty FIRST every iteration so a market-data flood can never starve or delay a
-    // fill; market data (DropNewest) is best-effort. Callbacks run serialized on this one task.
-    // Termination: both writers completed and both drained => clean exit; CTS cancel => OCE caught.
-    internal static async Task DrainSessionQueues(
-        ChannelReader<Action> exec,
-        ChannelReader<Action> data,
-        ILogger logger,
-        Guid sessionId,
-        CancellationToken ct)
-    {
-        try
-        {
-            while (true)
-            {
-                while (exec.TryRead(out var execAction))
-                    RunCallback(execAction, logger, sessionId);
-
-                if (data.TryRead(out var dataAction))
-                {
-                    RunCallback(dataAction, logger, sessionId);
-                    continue;
-                }
-
-                var execWait = exec.WaitToReadAsync(ct).AsTask();
-                var dataWait = data.WaitToReadAsync(ct).AsTask();
-                await Task.WhenAny(execWait, dataWait).ConfigureAwait(false);
-
-                // WaitToReadAsync returns false only when its writer is completed and drained.
-                // Both false => nothing left and nothing more coming => exit. Either true => loop
-                // re-checks both readers (exec first). Exceptions (e.g. OCE) propagate to the catch.
-                var execMore = execWait.IsCompletedSuccessfully && execWait.Result;
-                var dataMore = dataWait.IsCompletedSuccessfully && dataWait.Result;
-                if (!execMore && !dataMore)
-                {
-                    // Surface a faulted/cancelled wait if one of them did not complete successfully.
-                    if (!execWait.IsCompletedSuccessfully) await execWait.ConfigureAwait(false);
-                    if (!dataWait.IsCompletedSuccessfully) await dataWait.ConfigureAwait(false);
-                    break;
-                }
-            }
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
-    }
-
-    private static void RunCallback(Action action, ILogger logger, Guid sessionId)
-    {
-        try { action(); }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error in session {SessionId} event callback", sessionId);
-        }
-    }
+    public int SessionCount => _dispatcher?.SessionIds.Count ?? 0;
 
     public BinanceLiveConnector(
         string accountName,
@@ -256,7 +117,16 @@ public sealed class BinanceLiveConnector : ILiveConnector
                 _apiClient.Sign, _apiClient.GetTimestamp, OnExecutionReport);
 
             _reconciler = new OrderGroupReconciler(_apiClient, _logger);
-            _reconcileTask = RunReconciliationLoop(_cts.Token);
+
+            _dispatcher = new LiveSessionDispatcher(
+                _router, _source, _dispatch, _reconciler,
+                new LiveDispatcherOptions(
+                    _sharedOptions.LiveChannelCapacity,
+                    _sharedOptions.MarketDataChannelCapacity,
+                    _sharedOptions.ReconciliationInterval),
+                _logger);
+            _dispatcher.Start(_cts.Token);
+            _dispatcher.StartReconciliation(_cts.Token);
 
             Status = LiveSessionStatus.Running;
             _logger.LogInformation(
@@ -285,132 +155,17 @@ public sealed class BinanceLiveConnector : ILiveConnector
 
         var asset = config.ExecutionAsset;
 
-        // Quote asset is still needed by GetSessionSnapshotAsync for exchange-balance display.
+        // Venue-specific quote-asset resolution stays in the connector; the dispatcher owns the
+        // venue-neutral session lifecycle from co-tenancy fence onward.
         var symbolInfo = await _apiClient!.GetExchangeInfoAsync(asset.Name, ct);
 
-        // Resolve (or attach to) the account target. The execution asset is threaded through so
-        // the factory seeds the account with no shared mutable state. Funds are discovered by the
-        // factory. RegisterSymbol accumulates this session's symbol for cancel-on-dispose.
-        var target = (AccountTarget)await _router!.ResolveTarget(config.AccountName, asset, ct);
-
-        // Co-tenant fence: one account shares one Portfolio, so a session may attach only if its
-        // money semantics match the account's seed — same price SCALE and same quote CURRENCY. Both
-        // are checked against the target's IMMUTABLE seed (set under the router gate at creation), so
-        // concurrent starts can't slip a mismatch past the fence. Reject (releasing the refcount we
-        // just took) until a units-bearing Money model lands on Domain.Portfolio.
-        var conflict = CoTenancyRule.Conflict(target, asset, symbolInfo.QuoteAsset);
-        if (conflict is not null)
-        {
-            await _router.ReleaseTarget(config.AccountName, ct);
-            throw new ArgumentException(conflict);
-        }
-
-        target.RegisterSymbol(asset.Name);
-        var accountContext = target.OrderContext;
-
-        // Order→session routing now lives in the router. The account context fires OrderMapped
-        // once an exchange order id is assigned; we record it and replay any buffered reports.
-        Action<long, Guid> orderMappedHandler = (exchangeId, sId) =>
-        {
-            _router.TrackOrder(exchangeId, sId);
-            DrainBufferedReports(exchangeId);
-
-            // An in-flight order for an already-removed session just got placed — cancel it so it
-            // doesn't rest unmanaged. Fires via any still-subscribed co-tenant handler (the event
-            // carries the ORIGINATING session); the last-session case is covered by dispose cancel-all.
-            if (_removedSessions.ContainsKey(sId))
-                accountContext.Cancel(exchangeId);
-        };
-        accountContext.OrderMapped += orderMappedHandler;
-
-        if (config.Strategy is IEventBusReceiver receiver)
-            receiver.SetEventBus(NullEventBus.Instance);
-
-        if (config.Strategy is IOrderContextReceiver orderReceiver)
-            orderReceiver.SetOrderContext(target.OrderContextFor(config.SessionId));
-
-        config.Strategy.OnInit();
-
-        var entry = new LiveSessionEntry(
-            config.SessionId,
-            config.Strategy,
-            target,
-            config.AccountName,
-            config.Subscriptions,
-            asset,
-            symbolInfo.QuoteAsset,
-            _sharedOptions.LiveChannelCapacity,
-            _sharedOptions.MarketDataChannelCapacity,
-            _logger)
-        {
-            OrderMappedHandler = orderMappedHandler
-        };
-
-        _sessions.TryAdd(config.SessionId, entry);
-
-        // Single reader drains exec (fills/orders) with priority over market data.
-        entry.ProcessingTask = Task.Run(() => DrainSessionQueues(
-            entry.EventQueue.Reader, entry.MarketDataQueue.Reader,
-            _logger, entry.SessionId, _cts!.Token));
-
-        // Register-before-first-tick: dispatch must know this session before EnsureSources wires
-        // its bar sources, so the very first emitted bar/tick already fans out to it.
-        var registration = new LiveSessionRegistration(
-            config.SessionId,
-            config.Strategy,
-            entry.Subscriptions.ToList(),
-            entry.MarketDataQueue.Writer);
-        _source!.Register(registration);
-
-        // Per-instrument scaling: each subscription scales off its own resolved Asset.
-        var instrumentScales = InstrumentScaleMap.Build(entry.Subscriptions.ToList());
-        await _source.EnsureSources(registration, instrument => instrumentScales[instrument]);
-
-        _logger.LogInformation(
-            "Session {SessionId} added to account '{Account}' for {Asset} with {SubCount} subscription(s)",
-            config.SessionId, AccountName, asset.Name, config.Subscriptions.Count);
+        await _dispatcher!.AddSession(config, symbolInfo.QuoteAsset, ct);
     }
 
     public async Task RemoveSessionAsync(Guid sessionId, CancellationToken ct = default)
     {
-        if (!_sessions.TryRemove(sessionId, out var entry))
-            return;
-
-        // Mark removed BEFORE unsubscribing this session's OrderMapped handler, so an in-flight order
-        // this session submitted (still draining the shared order context) is cancelled the moment it
-        // re-keys — caught by a co-tenant's still-subscribed handler. (Last-session: dispose cancel-all.)
-        _removedSessions.TryAdd(sessionId, 0);
-
-        // Unregister-before-drain: stop new market-data actions from being enqueued before we
-        // complete the writers and drain, so nothing races into a queue we are tearing down.
-        _dispatch.Unregister(sessionId);
-        await _source!.RemoveSources(sessionId);
-
-        if (entry.OrderMappedHandler is not null)
-            entry.OrderContext.OrderMapped -= entry.OrderMappedHandler;
-
-        // Cancel this session's resting orders before releasing the target — a co-tenant account
-        // stays alive, so the target's dispose-time cancel won't fire for this session. Filter by the
-        // router's order->session map so we don't touch a co-tenant session's orders.
-        var ctx = entry.OrderContext;
-        foreach (var order in ctx.GetPendingOrders())
-            if (_router!.TryResolveSession(order.Id, out var owner) && owner == sessionId)
-                ctx.Cancel(order.Id);
-
-        // Drain both queues before releasing the account target.
-        entry.EventQueue.Writer.TryComplete();
-        entry.MarketDataQueue.Writer.TryComplete();
-        if (entry.ProcessingTask is not null)
-        {
-            try { await entry.ProcessingTask; }
-            catch (OperationCanceledException) { }
-        }
-
-        // Release the account target. On the last release the router disposes it, which flushes
-        // queued orders/cancels and cancels-all open orders on the exchange.
-        await _router!.ReleaseTarget(entry.AccountName, ct);
-
-        _logger.LogInformation("Session {SessionId} removed from account '{Account}'", sessionId, AccountName);
+        if (_dispatcher is not null)
+            await _dispatcher.RemoveSession(sessionId, ct);
     }
 
     public async Task StopAsync(CancellationToken ct = default)
@@ -421,64 +176,44 @@ public sealed class BinanceLiveConnector : ILiveConnector
         Status = LiveSessionStatus.Stopping;
         _logger.LogInformation("Stopping connector for account '{Account}'", AccountName);
 
+        // Snapshot the live session ids BEFORE Stop() clears the dispatcher's table — the safety-net
+        // cancel-all below needs the symbols those sessions traded.
+        var sessionAssets = _dispatcher is not null
+            ? _dispatcher.SessionIds
+                .Select(id => _dispatcher.TryGetSessionData(id, out var data) ? data.ExecutionAsset.Name : null)
+                .Where(name => name is not null)
+                .Distinct(StringComparer.Ordinal)
+                .ToList()
+            : [];
+
         try
         {
-            // 1. Drain sessions: complete queues and await processing tasks BEFORE cancelling
-            //    CTS so queued callbacks (fills, protectives) are not dropped.
-            foreach (var entry in _sessions.Values)
-            {
-                // Unregister-before-drain: stop the data plane from enqueuing new market data.
-                _dispatch.Unregister(entry.SessionId);
-                if (_source is not null)
-                    await _source.RemoveSources(entry.SessionId);
+            // Dispatcher steps 1-4 + 6: drain sessions → dispose router (cancels-all) → cancel CTS →
+            // await reconcile → clear sessions.
+            if (_dispatcher is not null)
+                await _dispatcher.Stop(ct);
 
-                if (entry.OrderMappedHandler is not null)
-                    entry.OrderContext.OrderMapped -= entry.OrderMappedHandler;
-
-                entry.EventQueue.Writer.TryComplete();
-                entry.MarketDataQueue.Writer.TryComplete();
-                if (entry.ProcessingTask is not null)
-                {
-                    try { await entry.ProcessingTask; }
-                    catch (OperationCanceledException) { }
-                }
-            }
-
-            // 2. Dispose the router — disposes every account target: flushes queued
-            //    orders/cancels then cancels-all open orders on the exchange.
-            if (_router is not null)
-                await _router.DisposeAsync();
-
-            // 3. Now cancel CTS — stops WebSocket/kline/reconciliation loops
+            // 3. Now cancel CTS — stops WebSocket/kline loops (dispatcher cancelled its own).
             _cts?.Cancel();
-
-            // 4. Await reconciliation task (already signalled by CTS)
-            if (_reconcileTask is not null)
-            {
-                try { await _reconcileTask; }
-                catch (OperationCanceledException) { }
-            }
 
             // 5. Safety-net: cancel all open orders on exchange per symbol (belt-and-suspenders,
             //    covers multi-symbol accounts even though the target dispose already cancelled).
             if (_apiClient is not null)
             {
-                foreach (var entry in _sessions.Values)
+                foreach (var symbol in sessionAssets)
                 {
                     try
                     {
-                        await _apiClient.CancelAllOpenOrdersAsync(entry.ExecutionAsset.Name);
+                        await _apiClient.CancelAllOpenOrdersAsync(symbol!);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Safety-net cancel-all failed for {Symbol}", entry.ExecutionAsset.Name);
+                        _logger.LogError(ex, "Safety-net cancel-all failed for {Symbol}", symbol);
                     }
                 }
             }
 
-            // 6. Cleanup
-            _sessions.Clear();
-
+            // 6. Transport teardown.
             if (_wsManager is not null)
                 await _wsManager.DisposeAsync();
 
@@ -495,267 +230,70 @@ public sealed class BinanceLiveConnector : ILiveConnector
         }
     }
 
-    internal static bool IsTrueShutdown(Exception ex, CancellationToken stoppingToken) =>
-        ex is OperationCanceledException oce
-        && stoppingToken.IsCancellationRequested
-        && oce.CancellationToken == stoppingToken;
-
-    private async Task RunReconciliationLoop(CancellationToken ct)
-    {
-        using var timer = new PeriodicTimer(_sharedOptions.ReconciliationInterval);
-        // Per-session failure counter so a healthy session can't reset (mask) a persistently-failing one.
-        var consecutiveFailures = new Dictionary<Guid, int>();
-        try
-        {
-            while (await timer.WaitForNextTickAsync(ct))
-            {
-                // Each session reconciles its own TradeRegistry against the shared account ledger
-                // (entry.OrderContext). One account backs all its co-tenant sessions.
-                foreach (var entry in _sessions.Values)
-                {
-                    if (entry.Strategy is not ITradeRegistryProvider provider)
-                        continue;
-                    try
-                    {
-                        await ReconcileSession(entry, provider, entry.OrderContext, ct);
-                        consecutiveFailures.Remove(entry.SessionId);
-                    }
-                    catch (Exception ex) when (!IsTrueShutdown(ex, ct))
-                    {
-                        var count = consecutiveFailures.GetValueOrDefault(entry.SessionId) + 1;
-                        consecutiveFailures[entry.SessionId] = count;
-                        LogReconciliationFailure(ex, entry.SessionId, count);
-                    }
-                }
-
-                // Drop counters for sessions that have since been removed.
-                if (consecutiveFailures.Count > 0)
-                    foreach (var id in consecutiveFailures.Keys.Where(id => !_sessions.ContainsKey(id)).ToList())
-                        consecutiveFailures.Remove(id);
-            }
-        }
-        catch (OperationCanceledException) { }
-    }
-
-    private async Task ReconcileSession(
-        LiveSessionEntry entry, ITradeRegistryProvider provider, LiveOrderContext accountContext, CancellationToken ct)
-    {
-        // Known edge case: if a fill is in-progress (WebSocket report received but not yet
-        // processed on the event queue), reconciliation may see the protective order as missing
-        // and submit a duplicate. The duplicate will be rejected by the exchange (order already
-        // exists) or cleaned up on the next reconciliation cycle as an orphan.
-
-        // Phase 1: Snapshot expected orders on EventQueue (thread-safe read).
-        // WriteAsync (not TryWrite): on a bounded queue a full buffer would make
-        // TryWrite drop the action, leaving `await tcs.Task` hung forever. The
-        // single-reader ProcessingTask drains independently, so WriteAsync always
-        // gets a slot and the round-trip completes.
-        var tcs = new TaskCompletionSource<IReadOnlyList<ExpectedOrder>>();
-        await entry.EventQueue.Writer.WriteAsync(() =>
-            tcs.SetResult(provider.TradeRegistry.GetExpectedOrders()), ct);
-        var expected = await tcs.Task;
-
-        // Phase 2: Detect on timer thread (exchange query, pure comparison)
-        var pendingIds = accountContext.GetPendingOrders()
-            .Select(o => o.Id).Where(id => id > 0).ToHashSet();
-        var result = await _reconciler!.DetectAsync(
-            entry.ExecutionAsset.Name, expected,
-            accountContext.ResolveExchangeOrderId, pendingIds, ct);
-
-        // Phase 3a: Repair on EventQueue (module mutation serialized)
-        if (result.MissingByGroup.Count > 0)
-        {
-            var repairTcs = new TaskCompletionSource();
-            await entry.EventQueue.Writer.WriteAsync(() =>
-            {
-                foreach (var (groupId, missingIds) in result.MissingByGroup)
-                    provider.TradeRegistry.RepairGroup(groupId, missingIds);
-                repairTcs.SetResult();
-            }, ct);
-            await repairTcs.Task;
-        }
-
-        // Phase 3b: Cancel orphans directly on exchange (no module state)
-        if (result.OrphanIds.Count > 0)
-            await _reconciler.CancelOrphansAsync(entry.ExecutionAsset.Name, result.OrphanIds, ct);
-    }
-
-    private void LogReconciliationFailure(Exception ex, Guid sessionId, int consecutiveFailures)
-    {
-        if (consecutiveFailures >= 3)
-            _logger.LogError(ex,
-                "Reconciliation has failed {Count} consecutive times for session {SessionId}",
-                consecutiveFailures, sessionId);
-        else
-            _logger.LogWarning(ex,
-                "Reconciliation failed for session {SessionId} (attempt {Count})",
-                sessionId, consecutiveFailures);
-    }
-
+    // Venue mapping: WS user-data → neutral ExecutionReport, dispatched by the dispatcher. The
+    // dispatcher buffers unmapped orders by id, so an unresolved asset (seeded from the report's own
+    // symbol) is fine — the asset is re-derived from the session on replay anyway.
     private void OnExecutionReport(BinanceExecutionReport report)
     {
-        // Look up session via the router's order→session map.
-        if (!_router!.TryResolveSession(report.OrderId, out var sessionId))
-        {
-            var queue = _bufferedReports.GetOrAdd(report.OrderId, _ => new());
-            queue.Enqueue(report);
-            _logger.LogDebug("Buffered execution report for unmapped order {OrderId} (type={ExecType})",
-                report.OrderId, report.ExecutionType);
-            return;
-        }
+        var asset = _dispatcher!.TryResolveAsset(report.OrderId, out var resolved)
+            ? resolved
+            : ResolveAssetForSymbol(report.Symbol);
 
-        if (!_sessions.TryGetValue(sessionId, out var entry))
-        {
-            _logger.LogWarning(
-                "Received execution report for order {OrderId} but session {SessionId} no longer exists",
-                report.OrderId, sessionId);
-            return;
-        }
-
-        switch (report.ExecutionType)
-        {
-            case "TRADE":
-                HandleTradeExecution(report, entry);
-                break;
-
-            case "CANCELED":
-            case "EXPIRED":
-                HandleOrderTermination(report, entry, OrderStatus.Cancelled);
-                break;
-
-            case "REJECTED":
-                HandleOrderTermination(report, entry, OrderStatus.Rejected);
-                break;
-        }
+        _dispatcher.OnExecutionReport(MapToNeutral(report, asset));
     }
 
-    private void DrainBufferedReports(long binanceOrderId)
+    private static ExecutionReport MapToNeutral(BinanceExecutionReport report, Asset asset)
     {
-        if (!_bufferedReports.TryRemove(binanceOrderId, out var queue))
-            return;
-
-        _logger.LogInformation("Replaying {Count} buffered report(s) for order {OrderId}",
-            queue.Count, binanceOrderId);
-
-        while (queue.TryDequeue(out var report))
-            OnExecutionReport(report);
-    }
-
-    private void HandleTradeExecution(BinanceExecutionReport report, LiveSessionEntry entry)
-    {
-        var accountContext = entry.OrderContext;
-
-        // Skip if fills were already processed from REST response
-        if (accountContext.IsOrderRestFilled(report.OrderId))
-        {
-            _logger.LogDebug(
-                "Skipping WebSocket fill for order {OrderId} — already processed from REST",
-                report.OrderId);
-            return;
-        }
-
-        var asset = entry.ExecutionAsset;
         var scale = new ScaleContext(asset);
-
-        // Parse outside the callback for efficiency
-        var fillPrice = scale.FromMarketPrice(decimal.Parse(report.LastFilledPrice, CultureInfo.InvariantCulture));
-        var fillQty = decimal.Parse(report.LastFilledQty, CultureInfo.InvariantCulture);
-        var commission = scale.FromMarketPrice(decimal.Parse(report.Commission, CultureInfo.InvariantCulture));
-        var side = report.Side == "BUY" ? OrderSide.Buy : OrderSide.Sell;
-
-        var enqueued = entry.EventQueue.Writer.TryWrite(() =>
+        var execType = report.ExecutionType switch
         {
-            var fill = new Fill(
-                report.OrderId,
-                asset,
-                DateTimeOffset.FromUnixTimeMilliseconds(report.TransactionTime),
-                fillPrice,
-                fillQty,
-                side,
-                commission);
+            "TRADE" => ExecType.Trade,
+            "CANCELED" => ExecType.Canceled,
+            "EXPIRED" => ExecType.Expired,
+            "REJECTED" => ExecType.Rejected,
+            _ => ExecType.New,
+        };
+        var status = report.OrderStatus switch
+        {
+            "FILLED" => OrderStatus.Filled,
+            "PARTIALLY_FILLED" => OrderStatus.PartiallyFilled,
+            "CANCELED" => OrderStatus.Cancelled,
+            "REJECTED" => OrderStatus.Rejected,
+            "EXPIRED" => OrderStatus.Cancelled,
+            _ => OrderStatus.Pending,
+        };
 
-            accountContext.AddFill(fill);
-
-            // Update pending order status based on Binance order status
-            var pendingOrder = accountContext.GetPendingOrder(report.OrderId);
-            if (pendingOrder is not null)
-            {
-                if (report.OrderStatus == "FILLED")
-                {
-                    pendingOrder.Status = OrderStatus.Filled;
-                    accountContext.RemovePendingOrder(report.OrderId);
-                    _router!.UntrackOrder(report.OrderId);
-                }
-                else if (report.OrderStatus == "PARTIALLY_FILLED")
-                {
-                    pendingOrder.Status = OrderStatus.PartiallyFilled;
-                }
-            }
-
-            // Fills always deliver — every IStrategy implements OnTrade(Fill, Order).
-            var order = pendingOrder ?? new Order
-            {
-                Id = report.OrderId,
-                Asset = asset,
-                Side = side,
-                Type = ParseBinanceOrderType(report.OrderType),
-                Quantity = decimal.Parse(report.OriginalQuantity, CultureInfo.InvariantCulture),
-            };
-
-            entry.Strategy.OnTrade(fill, order);
-
-            _logger.LogInformation(
-                "Trade execution: {Side} {Qty} {Symbol} @ {Price} (status={Status}, session={SessionId})",
-                report.Side, report.LastFilledQty, report.Symbol, report.LastFilledPrice,
-                report.OrderStatus, entry.SessionId);
-        });
-
-        if (!enqueued)
-            _logger.LogError(
-                "EventQueue full for session {SessionId} — TRADE execution report for order {OrderId} could not be enqueued",
-                entry.SessionId, report.OrderId);
+        return new ExecutionReport(
+            report.OrderId,
+            asset,
+            report.Side == "BUY" ? OrderSide.Buy : OrderSide.Sell,
+            execType,
+            decimal.Parse(report.LastFilledPrice, CultureInfo.InvariantCulture),
+            decimal.Parse(report.LastFilledQty, CultureInfo.InvariantCulture),
+            decimal.Parse(report.Commission, CultureInfo.InvariantCulture),
+            status);
     }
 
-    private void HandleOrderTermination(BinanceExecutionReport report, LiveSessionEntry entry, OrderStatus terminalStatus)
-    {
-        var accountContext = entry.OrderContext;
-
-        var enqueued = entry.EventQueue.Writer.TryWrite(() =>
-        {
-            var pendingOrder = accountContext.GetPendingOrder(report.OrderId);
-            if (pendingOrder is not null)
-            {
-                pendingOrder.Status = terminalStatus;
-                accountContext.RemovePendingOrder(report.OrderId);
-            }
-
-            _router!.UntrackOrder(report.OrderId);
-        });
-
-        if (!enqueued)
-            _logger.LogError(
-                "EventQueue full for session {SessionId} — termination report ({ExecType}) for order {OrderId} could not be enqueued",
-                entry.SessionId, report.ExecutionType, report.OrderId);
-
-        _logger.LogInformation(
-            "Order {OrderId} terminated: {ExecType} → {Status} (session={SessionId})",
-            report.OrderId, report.ExecutionType, terminalStatus, entry.SessionId);
-    }
+    // Placeholder asset for an unmapped order (no session yet to resolve from). The dispatcher
+    // re-stamps the session's real execution asset once the order maps, so this value is only a
+    // non-null carrier and is never used for scaling.
+    private static Asset ResolveAssetForSymbol(string symbol) =>
+        CryptoAsset.Create(symbol, "Binance", decimalDigits: 8);
 
     internal async Task<LiveSessionSnapshot?> GetSessionSnapshotAsync(Guid sessionId, CancellationToken ct = default)
     {
-        if (!_sessions.TryGetValue(sessionId, out var entry))
+        if (_dispatcher is null || !_dispatcher.TryGetSessionData(sessionId, out var data))
             return null;
 
         // Bars + last-bar-per-subscription come from the data-plane bar sources' Recent rings.
         var barFields = SessionSnapshotBars.Build(
-            entry.Subscriptions.ToList(),
+            data.Subscriptions.ToList(),
             _source!.RecentBars);
 
-        var exchangeBalance = await GetCachedQuoteBalanceAsync(entry.QuoteAsset, ct);
-        var exchangeTrades = await GetCachedTradesAsync(entry.ExecutionAsset.Name, ct);
+        var exchangeBalance = await GetCachedQuoteBalanceAsync(data.QuoteAsset, ct);
+        var exchangeTrades = await GetCachedTradesAsync(data.ExecutionAsset.Name, ct);
 
-        var ctx = entry.OrderContext;
+        var ctx = data.OrderContext;
         return new LiveSessionSnapshot(
             barFields.Bars,
             ctx.GetAllFills(),
@@ -764,8 +302,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
             ctx.Cash,
             ctx.Portfolio.InitialCash,
             exchangeBalance,
-            entry.ExecutionAsset,
-            entry.Subscriptions.ToList(),
+            data.ExecutionAsset,
+            data.Subscriptions.ToList(),
             barFields.LastBarsPerSubscription,
             exchangeTrades);
     }
@@ -837,15 +375,6 @@ public sealed class BinanceLiveConnector : ILiveConnector
         lock (_cacheLock)
             return _cachedTrades;
     }
-
-    private static OrderType ParseBinanceOrderType(string type) => type switch
-    {
-        "MARKET" => OrderType.Market,
-        "LIMIT" => OrderType.Limit,
-        "STOP_LOSS" => OrderType.Stop,
-        "STOP_LOSS_LIMIT" => OrderType.StopLimit,
-        _ => OrderType.Market,
-    };
 
     public async ValueTask DisposeAsync()
     {
