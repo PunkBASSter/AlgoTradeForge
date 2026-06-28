@@ -127,13 +127,14 @@ internal sealed class IbWrapper : DefaultEWrapper
             return;
         }
 
-        // Order-correlated errors (id == orderId with a registered ack): fault the placement awaiter ONLY for
-        // genuine reject codes; informational warnings (399, 2100-2199, 10167, …) pass through untouched so the
-        // legitimate orderStatus ack still completes. See RejectCodes for the 202 exclusion rationale.
-        if (_acks.TryGetValue(id, out var ackTcs))
+        // Order-correlated errors (id == orderId with a registered ack): fault ONLY for genuine reject codes.
+        // Non-reject codes (399, 2100-2199, 10167, 10189 pacing/no-permission, …) fall through to the request
+        // fault paths below — the order-id space and req-id space use separate counters and CAN overlap
+        // numerically, so a market-data error on a shared numeric id must still reach _byReq/_histByReq.
+        // See RejectCodes for the 202 exclusion rationale.
+        if (_acks.TryGetValue(id, out var ackTcs) && RejectCodes.Contains(errorCode))
         {
-            if (RejectCodes.Contains(errorCode))
-                ackTcs.TrySetException(new IbRequestException(errorCode, errorMsg));
+            ackTcs.TrySetException(new IbRequestException(errorCode, errorMsg));
             return;
         }
 
@@ -230,7 +231,7 @@ internal sealed class IbWrapper : DefaultEWrapper
         if (long.TryParse(time, NumberStyles.Integer, CultureInfo.InvariantCulture, out var epoch))
             return epoch;
 
-        var normalized = time.Replace("  ", " ").Trim();
+        var normalized = string.Join(" ", time.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         string[] formats =
         [
             "yyyyMMdd HH:mm:ss",

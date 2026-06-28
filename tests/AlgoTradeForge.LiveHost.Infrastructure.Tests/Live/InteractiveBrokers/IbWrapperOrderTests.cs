@@ -47,4 +47,16 @@ public sealed class IbWrapperOrderTests
         w.error(42, 0, 201, "order rejected", ""); // 201 = rejected
         Assert.True(ack.IsFaulted);
     }
+
+    [Fact]
+    public async Task Error_OverlappingId_MarketDataError_FaultsRequestNotAck()
+    {
+        var w = new IbWrapper();
+        var ack = w.RegisterOrderAck(1);
+        var hist = w.RegisterHistoricalTicks(1); // same numeric id as the order ack
+        w.error(1, 0, 10189, "no market data permissions", ""); // market-data error, NOT a reject code
+        await Assert.ThrowsAsync<IbRequestException>(() => hist); // the request faults
+        Assert.False(ack.IsFaulted);                              // the order ack is untouched
+        Assert.False(ack.IsCompleted);
+    }
 }
