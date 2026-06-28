@@ -30,7 +30,10 @@ public sealed class LiveSessionDispatcherTests
             LastFillPrice: 100m,
             LastFillQty: 1m,
             Commission: 0m,
-            Status: OrderStatus.Filled));
+            Status: OrderStatus.Filled,
+            TransactionTime: DateTimeOffset.UnixEpoch,
+            Type: OrderType.Market,
+            OriginalQuantity: 1m));
 
         await fixture.DrainEventQueue(ct);
 
@@ -53,7 +56,7 @@ public sealed class LiveSessionDispatcherTests
             .Returns(new ExchangeOrderResult(unmappedOrderId, []));
 
         var report = new ExecutionReport(unmappedOrderId, fixture.Asset, OrderSide.Buy, ExecType.Trade,
-            100m, 1m, 0m, OrderStatus.Filled);
+            100m, 1m, 0m, OrderStatus.Filled, DateTimeOffset.UnixEpoch, OrderType.Market, 1m);
 
         fixture.Dispatcher.OnExecutionReport(report); // unmapped → buffered, no throw
 
@@ -75,6 +78,20 @@ public sealed class LiveSessionDispatcherTests
         Assert.Equal(unmappedOrderId, fixture.Strategy.ReceivedTrades[0].OrderId);
 
         await fixture.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Stop_WithReconciliationRunning_CompletesWithoutHanging()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await DispatcherFixture.WithOneSession(ct);
+
+        // Regression: Stop() cancels the dispatcher's own linked CTS, which must signal the
+        // reconciliation loop. If the loop ran on the caller's parent token instead, Stop()'s
+        // `await _reconcileTask` would hang until the connector cancels the parent — after Stop returns.
+        await fixture.Dispatcher.Stop(ct).WaitAsync(TimeSpan.FromSeconds(5), ct);
+
+        fixture.Cts.Dispose();
     }
 
     // -----------------------------------------------------------------------
@@ -164,6 +181,7 @@ public sealed class LiveSessionDispatcherTests
                 new LiveDispatcherOptions(1024, 4096, TimeSpan.FromSeconds(30)),
                 NullLogger.Instance);
             dispatcher.Start(cts.Token);
+            dispatcher.StartReconciliation();
 
             var sessionId = Guid.NewGuid();
             var strategy = new RecordingStrategy();

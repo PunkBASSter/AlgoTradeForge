@@ -126,7 +126,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
                     _sharedOptions.ReconciliationInterval),
                 _logger);
             _dispatcher.Start(_cts.Token);
-            _dispatcher.StartReconciliation(_cts.Token);
+            _dispatcher.StartReconciliation();
 
             Status = LiveSessionStatus.Running;
             _logger.LogInformation(
@@ -235,6 +235,8 @@ public sealed class BinanceLiveConnector : ILiveConnector
     // symbol) is fine — the asset is re-derived from the session on replay anyway.
     private void OnExecutionReport(BinanceExecutionReport report)
     {
+        // Placeholder asset for unmapped orders is never scaled — the dispatcher overwrites it with
+        // the session's execution asset once the order resolves (see OnExecutionReport re-stamp).
         var asset = _dispatcher!.TryResolveAsset(report.OrderId, out var resolved)
             ? resolved
             : ResolveAssetForSymbol(report.Symbol);
@@ -271,8 +273,20 @@ public sealed class BinanceLiveConnector : ILiveConnector
             decimal.Parse(report.LastFilledPrice, CultureInfo.InvariantCulture),
             decimal.Parse(report.LastFilledQty, CultureInfo.InvariantCulture),
             decimal.Parse(report.Commission, CultureInfo.InvariantCulture),
-            status);
+            status,
+            DateTimeOffset.FromUnixTimeMilliseconds(report.TransactionTime),
+            ParseBinanceOrderType(report.OrderType),
+            decimal.Parse(report.OriginalQuantity, CultureInfo.InvariantCulture));
     }
+
+    private static OrderType ParseBinanceOrderType(string type) => type switch
+    {
+        "MARKET" => OrderType.Market,
+        "LIMIT" => OrderType.Limit,
+        "STOP_LOSS" => OrderType.Stop,
+        "STOP_LOSS_LIMIT" => OrderType.StopLimit,
+        _ => OrderType.Market,
+    };
 
     // Placeholder asset for an unmapped order (no session yet to resolve from). The dispatcher
     // re-stamps the session's real execution asset once the order maps, so this value is only a

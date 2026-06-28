@@ -58,8 +58,11 @@ public sealed class LiveSessionDispatcher
     public void Start(CancellationToken ct) =>
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-    public void StartReconciliation(CancellationToken ct) =>
-        _reconcileTask = RunReconciliationLoop(ct);
+    // Runs on the dispatcher's OWN linked token (set by Start), so Stop()'s _cts.Cancel() signals
+    // the loop. Using the caller's parent token would leave Stop()'s await hanging until the parent
+    // cancels — which the connector only does AFTER Stop() returns (shutdown deadlock).
+    public void StartReconciliation() =>
+        _reconcileTask = RunReconciliationLoop(_cts!.Token);
 
     // Per-session data the venue connector needs to build a snapshot (it owns the transport-side
     // bars + exchange balance/trades; the dispatcher owns the session table + order ledger).
@@ -434,6 +437,7 @@ public sealed class LiveSessionDispatcher
         // Stamp the session's execution asset: the original code always scaled/filled off
         // entry.ExecutionAsset, and a buffered-then-replayed report may carry a placeholder asset the
         // connector seeded before the order mapped. The session is authoritative for the money scale.
+        // The connector's placeholder asset is always overwritten here before any scaling.
         report = report with { Asset = entry.ExecutionAsset };
 
         switch (report.ExecType)
@@ -491,7 +495,7 @@ public sealed class LiveSessionDispatcher
             var fill = new Fill(
                 report.OrderId,
                 asset,
-                DateTimeOffset.UtcNow,
+                report.TransactionTime,
                 fillPrice,
                 fillQty,
                 side,
@@ -521,8 +525,8 @@ public sealed class LiveSessionDispatcher
                 Id = report.OrderId,
                 Asset = asset,
                 Side = side,
-                Type = OrderType.Market,
-                Quantity = report.LastFillQty,
+                Type = report.Type,
+                Quantity = report.OriginalQuantity,
             };
 
             entry.Strategy.OnTrade(fill, order);

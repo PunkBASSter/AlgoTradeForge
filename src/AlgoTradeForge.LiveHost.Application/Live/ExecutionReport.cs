@@ -13,4 +13,7 @@ public sealed record ExecutionReport(
     decimal LastFillPrice,
     decimal LastFillQty,
     decimal Commission,
-    OrderStatus Status);
+    OrderStatus Status,
+    DateTimeOffset TransactionTime,
+    OrderType Type,
+    decimal OriginalQuantity);
