@@ -3,11 +3,11 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.LiveHost.Application.Live;
 using AlgoTradeForge.LiveHost.Application.Live.DataPlane;
 
-namespace AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
+namespace AlgoTradeForge.LiveHost.Infrastructure.Live;
 
 // Thin transport-scoped data-plane seam: names the already-shared dispatch + tick router so
-// multiple account targets can share one source. Plan 3's IbSession implements this for real.
-public sealed class BinanceMarketDataSource(IStrategyDispatch dispatch, ITickRouter tickRouter) : IMarketDataSource
+// multiple account targets can share one source. Venue-neutral; used by both Binance and IB connectors.
+public sealed class DispatchMarketDataSource(IStrategyDispatch dispatch, ITickRouter tickRouter) : IMarketDataSource
 {
     public void Register(LiveSessionRegistration registration) => dispatch.Register(registration);
 

@@ -99,7 +99,7 @@ public sealed class BinanceLiveConnector : ILiveConnector
             // Build the order + data seams now that _apiClient exists. The factory discovers
             // funds lazily per account at ResolveTarget time; the execution asset is threaded
             // per-session into ResolveTarget.
-            _source = new BinanceMarketDataSource(_dispatch, _tickRouter);
+            _source = new DispatchMarketDataSource(_dispatch, _tickRouter);
             _fundsSource = new BinanceAccountFundsSource(_apiClient);
             _factory = new AccountTargetFactory(
                 (_, _) => _fundsSource, (_, _) => _apiClient,
