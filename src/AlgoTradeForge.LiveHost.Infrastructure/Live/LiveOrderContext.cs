@@ -9,6 +9,10 @@ using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.LiveHost.Infrastructure.Live;
 
+// Account-scoped order ledger, shared by every session on the account. It does NOT implement
+// IOrderContext: the parameterless IOrderContext.Submit(order) can't say which session placed an
+// order, so each session binds to a per-session SessionOrderContext facade (which IS the
+// IOrderContext) that tags the originating session and delegates here via Submit(order, sessionId).
 public sealed class LiveOrderContext
 {
     private readonly IExchangeOrderClient _orderClient;
@@ -55,6 +59,7 @@ public sealed class LiveOrderContext
             { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
     }
 
+    //TODO: use funds/cache/margin with units? Or it's unnecessary
     public long Cash { get { lock (_recentFillsLock) return _portfolio.Cash; } }
     public long UsedMargin { get { lock (_recentFillsLock) return _portfolio.ComputeUsedMargin(); } }
     // Single lock acquisition — avoids deadlock since System.Threading.Lock is not reentrant.

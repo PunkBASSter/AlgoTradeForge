@@ -15,11 +15,11 @@ public sealed class BinanceAccountTargetFactory(
 {
     public async Task<IAccountTarget> Create(string account, Asset executionAsset, CancellationToken ct = default)
     {
-        var seed = await funds.GetFreeFundsScaled(executionAsset, ct);
-        var portfolio = new Portfolio { InitialCash = seed };
+        var discovered = await funds.DiscoverFunds(executionAsset, ct);
+        var portfolio = new Portfolio { InitialCash = discovered.FreeScaled };
         portfolio.Initialize();
         var ctx = new LiveOrderContext(portfolio, orderValidator, logger, orderClient, channelCapacity);
         ctx.Start(ct);
-        return new AccountTarget(account, portfolio, ctx, orderClient, executionAsset, logger);
+        return new AccountTarget(account, portfolio, ctx, orderClient, executionAsset, discovered.QuoteAsset, logger);
     }
 }

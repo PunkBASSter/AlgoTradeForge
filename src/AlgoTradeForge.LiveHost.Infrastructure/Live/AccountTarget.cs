@@ -22,9 +22,11 @@ public sealed class AccountTarget : IAccountTarget
     public string AccountName { get; }
     public Portfolio Portfolio { get; }
 
-    // The asset whose scale seeded the shared Portfolio. Co-tenant sessions must trade an asset
-    // of the same price tick (else fills mix money units in one ledger — fenced at AddSessionAsync).
+    // The asset + quote currency whose scale seeded the shared Portfolio. Co-tenant sessions must
+    // match BOTH (same price tick AND same quote currency) or their fills mix money units in one
+    // unit-less ledger — fenced against these immutable seeds by CoTenancyRule at AddSessionAsync.
     public Asset SeedAsset { get; }
+    public string SeedQuoteAsset { get; }
 
     public AccountTarget(
         string accountName,
@@ -32,6 +34,7 @@ public sealed class AccountTarget : IAccountTarget
         LiveOrderContext orderContext,
         IExchangeOrderClient orderClient,
         Asset seedAsset,
+        string seedQuoteAsset,
         ILogger logger)
     {
         AccountName = accountName;
@@ -39,6 +42,7 @@ public sealed class AccountTarget : IAccountTarget
         _orderContext = orderContext;
         _orderClient = orderClient;
         SeedAsset = seedAsset;
+        SeedQuoteAsset = seedQuoteAsset;
         _logger = logger;
     }
 

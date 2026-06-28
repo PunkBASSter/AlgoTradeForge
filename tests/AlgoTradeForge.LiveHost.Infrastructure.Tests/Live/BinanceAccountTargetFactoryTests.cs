@@ -1,6 +1,7 @@
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.LiveHost.Application.Live;
+using AlgoTradeForge.LiveHost.Infrastructure.Live;
 using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -28,12 +29,14 @@ public class BinanceAccountTargetFactoryTests
         const long expectedSeed = 12_345_00L;
 
         var fundsSource = Substitute.For<IAccountFundsSource>();
-        fundsSource.GetFreeFundsScaled(TestAsset, Arg.Any<CancellationToken>())
-            .Returns(expectedSeed);
+        fundsSource.DiscoverFunds(TestAsset, Arg.Any<CancellationToken>())
+            .Returns(new AccountFunds(expectedSeed, "USDT"));
 
         var factory = BuildFactory(fundsSource);
         await using var target = await factory.Create("acctA", TestAsset, ct);
 
         Assert.Equal(expectedSeed, target.Portfolio.InitialCash);
+        // The quote currency the funds source discovered is stamped on the target (immutable seed).
+        Assert.Equal("USDT", ((AccountTarget)target).SeedQuoteAsset);
     }
 }

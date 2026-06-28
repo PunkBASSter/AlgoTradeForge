@@ -20,7 +20,7 @@ public class AccountTargetTests
         portfolio.Initialize();
         var ctx = new LiveOrderContext(portfolio, new OrderValidator(), NullLogger.Instance, client);
         ctx.Start(CancellationToken.None);
-        return new AccountTarget("acctA", portfolio, ctx, client, BtcUsdt, NullLogger.Instance);
+        return new AccountTarget("acctA", portfolio, ctx, client, BtcUsdt, "USDT", NullLogger.Instance);
     }
 
     [Fact]
@@ -28,6 +28,13 @@ public class AccountTargetTests
     {
         var target = CreateTarget(Substitute.For<IExchangeOrderClient>(), out _);
         Assert.Same(BtcUsdt, target.SeedAsset);
+    }
+
+    [Fact]
+    public void SeedQuoteAsset_ExposesTheSeedQuoteCurrency()
+    {
+        var target = CreateTarget(Substitute.For<IExchangeOrderClient>(), out _);
+        Assert.Equal("USDT", target.SeedQuoteAsset);
     }
 
     [Fact]

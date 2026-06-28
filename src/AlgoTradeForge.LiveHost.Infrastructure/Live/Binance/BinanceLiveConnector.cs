@@ -293,16 +293,16 @@ public sealed class BinanceLiveConnector : ILiveConnector
         // factory. RegisterSymbol accumulates this session's symbol for cancel-on-dispose.
         var target = (AccountTarget)await _router!.ResolveTarget(config.AccountName, asset, ct);
 
-        // Co-tenant fence: one account = one money scale. A session whose asset has a different
-        // price tick than the account's seed asset would apply fills in mismatched units to the
-        // shared ledger (corrupting cash/margin). Reject it (releasing the refcount we just took).
-        if (target.SeedAsset.TickSize != asset.TickSize)
+        // Co-tenant fence: one account shares one Portfolio, so a session may attach only if its
+        // money semantics match the account's seed — same price SCALE and same quote CURRENCY. Both
+        // are checked against the target's IMMUTABLE seed (set under the router gate at creation), so
+        // concurrent starts can't slip a mismatch past the fence. Reject (releasing the refcount we
+        // just took) until a units-bearing Money model lands on Domain.Portfolio.
+        var conflict = CoTenancyRule.Conflict(target, asset, symbolInfo.QuoteAsset);
+        if (conflict is not null)
         {
             await _router.ReleaseTarget(config.AccountName, ct);
-            throw new ArgumentException(
-                $"Session asset '{asset.Name}' (tick {asset.TickSize}) cannot share account " +
-                $"'{config.AccountName}' seeded by '{target.SeedAsset.Name}' (tick {target.SeedAsset.TickSize}) " +
-                $"— one account shares one money scale.");
+            throw new ArgumentException(conflict);
         }
 
         target.RegisterSymbol(asset.Name);

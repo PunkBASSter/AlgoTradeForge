@@ -6,7 +6,7 @@ namespace AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
 
 public sealed class BinanceAccountFundsSource(BinanceApiClient apiClient) : IAccountFundsSource
 {
-    public async Task<long> GetFreeFundsScaled(Asset asset, CancellationToken ct = default)
+    public async Task<AccountFunds> DiscoverFunds(Asset asset, CancellationToken ct = default)
     {
         var symbolInfo = await apiClient.GetExchangeInfoAsync(asset.Name, ct);
         var accountInfo = await apiClient.GetAccountInfoAsync(ct);
@@ -17,6 +17,7 @@ public sealed class BinanceAccountFundsSource(BinanceApiClient apiClient) : IAcc
             ? decimal.Parse(quoteBalance.Free, CultureInfo.InvariantCulture)
             : 0m;
 
-        return new ScaleContext(asset).FromMarketPrice(freeBalance);
+        var scaled = new ScaleContext(asset).FromMarketPrice(freeBalance);
+        return new AccountFunds(scaled, symbolInfo.QuoteAsset);
     }
 }
