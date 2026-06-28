@@ -3,9 +3,11 @@ using AlgoTradeForge.LiveHost.Application.Live;
 
 namespace AlgoTradeForge.LiveHost.Infrastructure.Live.InteractiveBrokers;
 
-// Connector-level no-op exchange client for the IB reconciler seam. IB order clients are per-account
-// (per-target), so a single connector-level open-order query has no meaning yet — per-target union
-// reconciliation is E1. Until then the reconcile loop sees an empty open-order set (nothing to repair/cancel).
+// Connector-level placeholder for the IB reconciler seam. IB order clients are per-account (per-target),
+// so a single connector-level open-order query has no meaning here. GetOpenOrdersAsync returns empty,
+// which is ONLY safe while the reconcile loop is not running — an empty result makes DetectAsync treat
+// every expected protective order as missing and re-submit duplicates. E1 replaces this with the real
+// per-target union client and starts the reconcile loop at that point.
 internal sealed class NullExchangeOrderClient : IExchangeOrderClient
 {
     public static readonly NullExchangeOrderClient Instance = new();

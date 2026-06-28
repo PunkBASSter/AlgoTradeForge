@@ -107,7 +107,11 @@ internal sealed class IbLiveConnector : ILiveConnector
             _dispatcher = new LiveSessionDispatcher(
                 _router, _source, _dispatch, _reconciler, _options, _logger);
             _dispatcher.Start(_cts.Token);
-            _dispatcher.StartReconciliation();
+            // StartReconciliation is intentionally NOT called here. IB order clients are per-account
+            // (per-target), so the NullExchangeOrderClient above always returns empty open-orders.
+            // Starting the loop with that placeholder would make DetectAsync treat every expected
+            // protective order as missing and re-submit duplicates every ~30 s. E1 supplies per-target
+            // union reconciliation and calls StartReconciliation at that point.
 
             // Reconnect hook for E1's reconciliation-on-reconnect trigger. Stub today (log only); E1 fills it in.
             _session.Reconnected += OnSessionReconnected;
