@@ -12,6 +12,7 @@ internal sealed class IbConnection(IbWrapper wrapper, IbConnectionOptions option
     private Thread? _readerThread;
     private EReaderMonitorSignal? _signal;
     private int _nextReqId; // single connection-scoped request-id source (tick subs, contract details, historical)
+    private int _nextOrderId;   // order-id space, distinct from _nextReqId; seeded from nextValidId
     // Serializes Connect so concurrent callers (relay pump Stream, a bar-source Start, the reconnect worker)
     // cannot race two establish sequences onto one transport.
     private readonly SemaphoreSlim _connectGate = new(1, 1);
@@ -22,6 +23,19 @@ internal sealed class IbConnection(IbWrapper wrapper, IbConnectionOptions option
     // but ALSO rejects a second active subscription reusing a live ticker id (error 322). Minting subscription,
     // contract-details, and historical-tick ids from separate counters collides; this is the shared allocator.
     public int NextReqId() => Interlocked.Increment(ref _nextReqId);
+
+    // Re-arm the order-id counter to the server's seed on connect/reconnect. Upward-only
+    // (a stale smaller reconnect seed must never rewind the counter); atomic against a
+    // concurrent NextOrderId() via CAS so no allocated id is ever clobbered/reused.
+    public void SeedNextOrderId(int seed)
+    {
+        int current;
+        do { current = Volatile.Read(ref _nextOrderId); }
+        while (seed > current && Interlocked.CompareExchange(ref _nextOrderId, seed, current) != current);
+    }
+
+    // One id per order (brackets are individual strategy-side orders — no consecutive reservation).
+    public int NextOrderId() => Interlocked.Increment(ref _nextOrderId) - 1; // returns seed, then seed+1, …
 
     // 90 attempts (~3 min): gateway cold start (IBC login + API socket bind) routinely exceeds 60s, and the
     // first socket is often reset once by the 10141 paper-trading disclaimer before the API binds.
@@ -55,6 +69,7 @@ internal sealed class IbConnection(IbWrapper wrapper, IbConnectionOptions option
                     _client = client;
                     StartReaderPump(client, signal);
                     await wrapper.NextValidId.WaitAsync(TimeSpan.FromSeconds(15), ct);
+                    SeedNextOrderId(await wrapper.NextValidId);
                     connected = true;
                     return;
                 }

@@ -11,11 +11,16 @@ internal static class IbPaperGatewayConfig
     public static int ClientId =>
         int.TryParse(Environment.GetEnvironmentVariable("IB_PAPER_CLIENT_ID"), out var c) ? c : 11;
 
+    // IB paper account id (e.g. "DU123456"). Used directly by the connector — no reqAccountSummary
+    // discovery is implemented. Set IB_PAPER_ACCOUNT to the real DUxxxxxx value for the paper account.
+    public static string AccountName =>
+        Environment.GetEnvironmentVariable("IB_PAPER_ACCOUNT") ?? "DU_PAPER";
+
     public static bool IsConfigured => !string.IsNullOrWhiteSpace(Host);
 
     public static IbConnectionOptions Options => new(Host!, Port, ClientId);
 
     public const string SkipReason =
         "IB paper gateway not configured. Start the gnzsnz ib-gateway stack and set IB_PAPER_HOST " +
-        "(and optionally IB_PAPER_PORT=4004, IB_PAPER_CLIENT_ID) to run these integration tests.";
+        "(and optionally IB_PAPER_PORT=4004, IB_PAPER_CLIENT_ID, IB_PAPER_ACCOUNT) to run these integration tests.";
 }

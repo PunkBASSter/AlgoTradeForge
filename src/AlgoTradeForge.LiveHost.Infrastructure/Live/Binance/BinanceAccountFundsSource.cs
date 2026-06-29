@@ -6,7 +6,9 @@ namespace AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
 
 public sealed class BinanceAccountFundsSource(BinanceApiClient apiClient) : IAccountFundsSource
 {
-    public async Task<AccountFunds> DiscoverFunds(Asset asset, CancellationToken ct = default)
+    // `account` is unused: a Binance connector owns one credential == one account, so the API is
+    // already account-scoped (one login per BinanceLiveConnector).
+    public async Task<AccountFunds> DiscoverFunds(string account, Asset asset, CancellationToken ct = default)
     {
         var symbolInfo = await apiClient.GetExchangeInfoAsync(asset.Name, ct);
         var accountInfo = await apiClient.GetAccountInfoAsync(ct);

@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
+using AlgoTradeForge.LiveHost.Infrastructure.Live;
 using Xunit;
 
 namespace AlgoTradeForge.LiveHost.Infrastructure.Tests.Live;
@@ -16,7 +16,7 @@ public class ReconciliationShutdownClassificationTests
         var timeout = new TaskCanceledException("The request timed out.", new TimeoutException());
         using var cts = new CancellationTokenSource(); // live, never cancelled
 
-        Assert.False(BinanceLiveConnector.IsTrueShutdown(timeout, cts.Token));
+        Assert.False(LiveSessionDispatcher.IsTrueShutdown(timeout, cts.Token));
     }
 
     [Fact]
@@ -26,7 +26,7 @@ public class ReconciliationShutdownClassificationTests
         cts.Cancel();
         var oce = new OperationCanceledException(cts.Token);
 
-        Assert.True(BinanceLiveConnector.IsTrueShutdown(oce, cts.Token));
+        Assert.True(LiveSessionDispatcher.IsTrueShutdown(oce, cts.Token));
     }
 
     [Fact]
@@ -35,6 +35,6 @@ public class ReconciliationShutdownClassificationTests
         using var cts = new CancellationTokenSource();
         cts.Cancel(); // even with a cancelled token, a non-OCE is a real failure
 
-        Assert.False(BinanceLiveConnector.IsTrueShutdown(new InvalidOperationException("boom"), cts.Token));
+        Assert.False(LiveSessionDispatcher.IsTrueShutdown(new InvalidOperationException("boom"), cts.Token));
     }
 }

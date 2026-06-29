@@ -1,5 +1,5 @@
 using System.Threading.Channels;
-using AlgoTradeForge.LiveHost.Infrastructure.Live.Binance;
+using AlgoTradeForge.LiveHost.Infrastructure.Live;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -40,7 +40,7 @@ public class SessionMarketDataChannelTests
         exec.Writer.TryComplete();
         data.Writer.TryComplete();
 
-        await BinanceLiveConnector.DrainSessionQueues(
+        await LiveSessionDispatcher.DrainSessionQueues(
             exec.Reader, data.Reader, NullLogger.Instance, Guid.NewGuid(), CancellationToken.None)
             .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
@@ -61,7 +61,7 @@ public class SessionMarketDataChannelTests
             new BoundedChannelOptions(4) { SingleReader = true, FullMode = BoundedChannelFullMode.DropNewest });
 
         using var cts = new CancellationTokenSource();
-        var drain = BinanceLiveConnector.DrainSessionQueues(
+        var drain = LiveSessionDispatcher.DrainSessionQueues(
             exec.Reader, data.Reader, NullLogger.Instance, Guid.NewGuid(), cts.Token);
 
         cts.Cancel();
