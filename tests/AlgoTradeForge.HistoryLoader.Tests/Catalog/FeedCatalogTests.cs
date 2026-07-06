@@ -29,27 +29,33 @@ public sealed class FeedCatalogTests : IDisposable
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private (FeedCatalog catalog, FeedSchemaManager manager, IOptionsMonitor<HistoryLoaderOptions> monitor)
-        Build(params AssetCollectionConfig[] assets)
+        Build()
     {
-        var options = new HistoryLoaderOptions { DataRoot = _tempDir, Assets = assets.ToList() };
+        var options = new HistoryLoaderOptions { DataRoot = _tempDir };
         var monitor = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
         monitor.CurrentValue.Returns(options);
+        var storage = new LocalFileStorage(new LocalStorageOptions { DataRoot = "" });
         var manager = new FeedSchemaManager(new LocalFileStorage());
         var cache = new MemoryCache(new MemoryCacheOptions());
-        var catalog = new FeedCatalog(monitor, manager, cache);
+        var catalog = new FeedCatalog(storage, monitor, manager, cache);
         return (catalog, manager, monitor);
     }
 
-    private static AssetCollectionConfig Asset(string symbol, string type) =>
-        new() { Symbol = symbol, Type = type, Exchange = "binance" };
+    /// <summary>Writes a minimal feeds.json so ScanAssetDirs discovers this asset directory.</summary>
+    private void WriteManifest(string exchange, string dir)
+    {
+        var assetDir = Path.Combine(_tempDir, exchange, dir);
+        Directory.CreateDirectory(assetDir);
+        File.WriteAllText(Path.Combine(assetDir, "feeds.json"), "{}");
+    }
 
     [Fact]
-    public async Task GetExchanges_ReturnsConfiguredExchangesWithCounts()
+    public async Task GetExchanges_ReturnsOnDiskExchangesWithCounts()
     {
-        var (catalog, _, _) = Build(
-            Asset("BTCUSDT", "spot"),
-            Asset("ETHUSDT", "spot"),
-            Asset("BTCUSDT", "perpetual"));
+        var (catalog, _, _) = Build();
+        WriteManifest("binance", "BTCUSDT");
+        WriteManifest("binance", "ETHUSDT");
+        WriteManifest("binance", "BTCUSDT_perp");
 
         var resp = await catalog.GetExchanges(Ct);
 
@@ -59,11 +65,11 @@ public sealed class FeedCatalogTests : IDisposable
     }
 
     [Fact]
-    public async Task GetAssetsByExchange_FiltersAndMapsConfiguredAssets()
+    public async Task GetAssetsByExchange_FiltersAndMapsOnDiskAssets()
     {
-        var (catalog, _, _) = Build(
-            Asset("BTCUSDT", "spot"),
-            Asset("ETHUSDT", "spot"));
+        var (catalog, _, _) = Build();
+        WriteManifest("binance", "BTCUSDT");
+        WriteManifest("binance", "ETHUSDT");
 
         var resp = await catalog.GetAssetsByExchange("binance", Ct);
 
@@ -74,7 +80,7 @@ public sealed class FeedCatalogTests : IDisposable
     [Fact]
     public async Task GetAsset_MergesManifestFeedsIntoEntry()
     {
-        var (catalog, manager, _) = Build(Asset("BTCUSDT", "perpetual"));
+        var (catalog, manager, _) = Build();
         var assetDir = Path.Combine(_tempDir, "binance", "BTCUSDT_perp");
         // ls-ratio-global has interval=15m on disk (the polling cadence), but it's a Side
         // feed — not a candle. Verifies declared-feed Interval is treated as cadence metadata,
@@ -94,7 +100,7 @@ public sealed class FeedCatalogTests : IDisposable
     [Fact]
     public async Task GetAsset_FeedsOrdered_TimeBarsBeforeSideFeeds()
     {
-        var (catalog, manager, _) = Build(Asset("BTCUSDT", "perpetual"));
+        var (catalog, manager, _) = Build();
         var assetDir = Path.Combine(_tempDir, "binance", "BTCUSDT_perp");
         // Real time bars come from EnsureCandleConfig.
         await manager.EnsureCandleConfig(assetDir, decimalDigits: 2, interval: "1m", Ct);
@@ -113,7 +119,7 @@ public sealed class FeedCatalogTests : IDisposable
     [Fact]
     public async Task GetExchanges_CachedAcrossCalls_UntilManifestChanged()
     {
-        var (catalog, manager, _) = Build(Asset("BTCUSDT", "spot"));
+        var (catalog, manager, _) = Build();
 
         var first = await catalog.GetExchanges(Ct);
         var second = await catalog.GetExchanges(Ct);
@@ -130,14 +136,14 @@ public sealed class FeedCatalogTests : IDisposable
     [Fact]
     public async Task GetFeed_ReturnsNullWhenAssetUnknown()
     {
-        var (catalog, _, _) = Build(Asset("BTCUSDT", "spot"));
+        var (catalog, _, _) = Build();
         Assert.Null(await catalog.GetFeed("binance", "DOGEUSDT", "1m", Ct));
     }
 
     [Fact]
     public async Task GetFeed_ReturnsNullWhenFeedAbsent()
     {
-        var (catalog, _, _) = Build(Asset("BTCUSDT", "spot"));
+        var (catalog, _, _) = Build();
         Assert.Null(await catalog.GetFeed("binance", "BTCUSDT", "EqV_1m_1000", Ct));
     }
 
@@ -149,7 +155,7 @@ public sealed class FeedCatalogTests : IDisposable
         // have GetFeed return a non-null definition with Kind=OHLCV_TimeBar so the
         // EligibilityRules check has something to inspect — otherwise the form's Type
         // dropdown stays disabled and the user can't aggregate from a candle.
-        var (catalog, manager, _) = Build(Asset("BTCUSDT", "spot"));
+        var (catalog, manager, _) = Build();
         var assetDir = Path.Combine(_tempDir, "binance", "BTCUSDT");
         await manager.EnsureCandleConfig(assetDir, decimalDigits: 2, interval: "1m", Ct);
 
@@ -166,9 +172,9 @@ public sealed class FeedCatalogTests : IDisposable
         // Without disambiguation, spot and perpetual rows render with identical row labels
         // ("BTCUSDT" / "BTCUSDT") which the user reads as duplicate rows. The directory-name
         // (Symbol) field already distinguishes via `_perp`; DisplayName needs to as well.
-        var (catalog, _, _) = Build(
-            Asset("BTCUSDT", "spot"),
-            Asset("BTCUSDT", "perpetual"));
+        var (catalog, _, _) = Build();
+        WriteManifest("binance", "BTCUSDT");
+        WriteManifest("binance", "BTCUSDT_perp");
 
         var resp = await catalog.GetAssetsByExchange("binance", Ct);
 
@@ -186,7 +192,7 @@ public sealed class FeedCatalogTests : IDisposable
         // populates manifest.Candles.Intervals (separate from manifest.Feeds). The catalog
         // must surface those intervals as OHLCV_TimeBar feed entries so the Data grid shows
         // them as columns and they're available as alt-bar source feeds.
-        var (catalog, manager, _) = Build(Asset("BTCUSDT", "spot"));
+        var (catalog, manager, _) = Build();
         var assetDir = Path.Combine(_tempDir, "binance", "BTCUSDT");
         await manager.EnsureCandleConfig(assetDir, decimalDigits: 2, interval: "1m", Ct);
         await manager.EnsureCandleConfig(assetDir, decimalDigits: 2, interval: "1h", Ct);
@@ -218,7 +224,7 @@ public sealed class FeedCatalogTests : IDisposable
         // string, not null — the writer at FeedSchemaManager.EnsureSchema stores the raw
         // `interval` arg). A naive `def.Interval is not null` check mis-classifies them as
         // time bars, which then breaks column ordering and downstream eligibility logic.
-        var (catalog, manager, _) = Build(Asset("BTCUSDT", "perpetual"));
+        var (catalog, manager, _) = Build();
         var assetDir = Path.Combine(_tempDir, "binance", "BTCUSDT_perp");
         await manager.EnsureSchema(assetDir, "funding-rate", interval: "", columns: ["rate"], ct: Ct);
 
@@ -236,7 +242,7 @@ public sealed class FeedCatalogTests : IDisposable
         // interval is empty (it's a variable-frequency feed). Without this, all empty-
         // interval feeds collapse to Side and the FE bucket order is wrong (Tick is bucket 3,
         // Side is bucket 4 in the column comparator).
-        var (catalog, manager, _) = Build(Asset("BTCUSDT", "perpetual"));
+        var (catalog, manager, _) = Build();
         var assetDir = Path.Combine(_tempDir, "binance", "BTCUSDT_perp");
         await manager.EnsureSchema(assetDir, "ticks", interval: "", columns: ["price", "qty"], ct: Ct);
 
@@ -254,7 +260,7 @@ public sealed class FeedCatalogTests : IDisposable
         // test deterministic; the synthesized candle entry is skipped so the column never
         // duplicates. The declared-feed kind in this case is "Side" (no explicit Kind, no
         // "ticks" id), but the contract being tested here is just "no duplicate".
-        var (catalog, manager, _) = Build(Asset("BTCUSDT", "spot"));
+        var (catalog, manager, _) = Build();
         var assetDir = Path.Combine(_tempDir, "binance", "BTCUSDT");
         await manager.EnsureCandleConfig(assetDir, decimalDigits: 2, interval: "1m", Ct);
         await manager.EnsureSchema(assetDir, "1m", interval: "1m", columns: ["ts", "o", "h", "l", "c", "vol"], ct: Ct);
@@ -272,15 +278,11 @@ public sealed class FeedCatalogTests : IDisposable
         // lets N concurrent miss-readers each invoke the factory in parallel; with S3
         // backing IFileStorage that fans out into N×assetCount remote round-trips per
         // cache-miss burst. Verify the gate single-flights.
-        var assets = Enumerable.Range(0, 4)
-            .Select(i => new AssetCollectionConfig
-            {
-                Symbol = $"ASSET{i}",
-                Type = "spot",
-                Exchange = "binance",
-            })
-            .ToArray();
-        var options = new HistoryLoaderOptions { DataRoot = _tempDir, Assets = assets.ToList() };
+        var assetDirs = Enumerable.Range(0, 4).Select(i => $"ASSET{i}").ToArray();
+        foreach (var dir in assetDirs)
+            WriteManifest("binance", dir);
+
+        var options = new HistoryLoaderOptions { DataRoot = _tempDir };
         var monitor = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
         monitor.CurrentValue.Returns(options);
 
@@ -295,8 +297,9 @@ public sealed class FeedCatalogTests : IDisposable
                 return (FeedMetadata?)new FeedMetadata();
             });
 
+        var storage = new LocalFileStorage(new LocalStorageOptions { DataRoot = "" });
         var cache = new MemoryCache(new MemoryCacheOptions());
-        var catalog = new FeedCatalog(monitor, schema, cache);
+        var catalog = new FeedCatalog(storage, monitor, schema, cache);
 
         const int concurrentCallers = 8;
         var tasks = Enumerable.Range(0, concurrentCallers)
@@ -307,6 +310,6 @@ public sealed class FeedCatalogTests : IDisposable
         // All callers must observe the same cached payload (single load won the race).
         Assert.All(results, r => Assert.Same(results[0], r));
         // One Load per asset, not concurrentCallers × asset count.
-        Assert.Equal(assets.Length, loadCount);
+        Assert.Equal(assetDirs.Length, loadCount);
     }
 }
