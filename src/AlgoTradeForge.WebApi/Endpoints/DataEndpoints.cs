@@ -61,7 +61,7 @@ internal static class DataEndpoints
                         await DataProxyProblem.UpstreamError((int)upstream.StatusCode, detail).ExecuteAsync(ctx);
                         return;
                     }
-                    await cache.InvalidateAllAsync(ctx.RequestAborted);
+                    await cache.InvalidateAll(ctx.RequestAborted);
                     ctx.Response.StatusCode = (int)upstream.StatusCode;
                 }
                 catch (HttpRequestException ex)

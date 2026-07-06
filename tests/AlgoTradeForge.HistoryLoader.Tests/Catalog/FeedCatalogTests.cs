@@ -41,7 +41,6 @@ public sealed class FeedCatalogTests : IDisposable
         return (catalog, manager, monitor);
     }
 
-    /// <summary>Writes a minimal feeds.json so ScanAssetDirs discovers this asset directory.</summary>
     private void WriteManifest(string exchange, string dir)
     {
         var assetDir = Path.Combine(_tempDir, exchange, dir);

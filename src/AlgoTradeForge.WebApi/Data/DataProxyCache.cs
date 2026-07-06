@@ -63,7 +63,7 @@ public sealed class DataProxyCache(IDistributedCache cache)
     }
 
     /// <summary>Drops the picker-facing catalog keys after an explicit refresh.</summary>
-    public async Task InvalidateAllAsync(CancellationToken ct)
+    public async Task InvalidateAll(CancellationToken ct)
     {
         await cache.RemoveAsync(KeyAllExchanges, ct);
         await cache.RemoveAsync(KeyAllAssets, ct);
