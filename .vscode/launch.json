@@ -12,7 +12,7 @@
                 "ASPNETCORE_ENVIRONMENT": "Development",
                 "ASPNETCORE_URLS": "http://localhost:5000",
                 "HistoryLoader__BaseUrl": "http://localhost:5051",
-                "CandleStorage__DataRoot": "C:\\Users\\Andrew\\AppData\\Local\\AlgoTradeForge\\HistoryTest"
+                "CandleStorage__DataRoot": "C:\\Users\\Andrew\\AppData\\Local\\AlgoTradeForge\\History"
             },
             "preLaunchTask": "build-backend",
             "serverReadyAction": {
@@ -33,12 +33,41 @@
                 "ASPNETCORE_URLS": "http://localhost:5000",
                 "DIAG_LOG_FILE": "${workspaceFolder}/optimization-diag.log",
                 "HistoryLoader__BaseUrl": "http://localhost:5051",
-                "CandleStorage__DataRoot": "C:\\Users\\Andrew\\AppData\\Local\\AlgoTradeForge\\HistoryTest"
+                "CandleStorage__DataRoot": "C:\\Users\\Andrew\\AppData\\Local\\AlgoTradeForge\\History"
             },
             "preLaunchTask": "build-backend"
         },
         {
             "name": "HistoryLoader: WebApi",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/AlgoTradeForge.HistoryLoader.WebApi/bin/Debug/net10.0/AlgoTradeForge.HistoryLoader.WebApi.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/AlgoTradeForge.HistoryLoader.WebApi",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:5051",
+                "HistoryLoader__DataRoot": "C:\\Users\\Andrew\\AppData\\Local\\AlgoTradeForge\\History"
+            },
+            "preLaunchTask": "build-history-loader"
+        },
+        {
+            "name": "Backend: WebApi (fixture)",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/AlgoTradeForge.WebApi/bin/Debug/net10.0/AlgoTradeForge.WebApi.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/AlgoTradeForge.WebApi",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:5000",
+                "HistoryLoader__BaseUrl": "http://localhost:5051",
+                "CandleStorage__DataRoot": "C:\\Users\\Andrew\\AppData\\Local\\AlgoTradeForge\\HistoryTest"
+            },
+            "preLaunchTask": "build-backend"
+        },
+        {
+            "name": "HistoryLoader: WebApi (fixture)",
             "type": "coreclr",
             "request": "launch",
             "program": "${workspaceFolder}/src/AlgoTradeForge.HistoryLoader.WebApi/bin/Debug/net10.0/AlgoTradeForge.HistoryLoader.WebApi.dll",
@@ -76,6 +105,11 @@
         {
             "name": "Full Stack: Backend + Frontend (with log)",
             "configurations": ["HistoryLoader: WebApi", "Backend: WebApi (with log)", "Frontend: npm run dev"],
+            "stopAll": true
+        },
+        {
+            "name": "Full Stack: Backend + Frontend (fixture)",
+            "configurations": ["HistoryLoader: WebApi (fixture)", "Backend: WebApi (fixture)", "Frontend: npm run dev"],
             "stopAll": true
         }
     ]
