@@ -10,6 +10,7 @@ public sealed record StrategyDescriptorResponse
     public required Dictionary<string, object> LiveSessionTemplate { get; init; }
     public required Dictionary<string, object> DebugSessionTemplate { get; init; }
     public required Dictionary<string, object> GeneticOptimizationTemplate { get; init; }
+    public required int RequiredSubscriptionCount { get; init; }
 }
 
 public sealed record ParameterAxisResponse

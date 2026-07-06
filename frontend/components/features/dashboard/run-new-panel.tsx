@@ -680,7 +680,7 @@ export function RunNewPanel({
                 onPrimariesChange={handlePrimariesChange}
                 onSidesChange={handleSidesChange}
                 disabled={submitting}
-                maxPrimaries={1}
+                maxPrimaries={descriptor?.requiredSubscriptionCount ?? 1}
                 primaryTitle="Primary feed"
                 primarySubtitle="The strategy's main bar stream. Optional side feeds attach as auxiliary signals."
                 primaryEmptyHint="Pick a Primary feed (TimeBar / AltBar / Tick)."

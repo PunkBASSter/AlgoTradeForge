@@ -29,7 +29,8 @@ public sealed class GetAvailableStrategiesQueryHandler(
                     StrategyTemplateBuilder.BuildOptimizationTemplate(d.StrategyName, d.Axes, availableAssets, reqSubs),
                     StrategyTemplateBuilder.BuildLiveSessionTemplate(d.StrategyName, defaults, d.Axes, availableAssets),
                     StrategyTemplateBuilder.BuildDebugSessionTemplate(d.StrategyName, defaults, d.Axes, availableAssets, reqSubs),
-                    StrategyTemplateBuilder.BuildGeneticOptimizationTemplate(d.StrategyName, d.Axes, availableAssets, reqSubs));
+                    StrategyTemplateBuilder.BuildGeneticOptimizationTemplate(d.StrategyName, d.Axes, availableAssets, reqSubs),
+                    reqSubs);
             })
             .ToList();
     }

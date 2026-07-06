@@ -54,6 +54,7 @@ public static class StrategyEndpoints
         LiveSessionTemplate = new Dictionary<string, object>(dto.LiveSessionTemplate),
         DebugSessionTemplate = new Dictionary<string, object>(dto.DebugSessionTemplate),
         GeneticOptimizationTemplate = new Dictionary<string, object>(dto.GeneticOptimizationTemplate),
+        RequiredSubscriptionCount = dto.RequiredSubscriptionCount,
     };
 
     private static ParameterAxisResponse MapAxis(ParameterAxis axis) => axis switch
