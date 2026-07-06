@@ -1,3 +1,5 @@
+using AlgoTradeForge.Domain;
+
 namespace AlgoTradeForge.HistoryLoader.Domain;
 
 /// <summary>
@@ -9,9 +11,6 @@ namespace AlgoTradeForge.HistoryLoader.Domain;
 public static class AssetDirectoryClassifier
 {
     private const string PerpSuffix = "_perp";
-
-    private static readonly HashSet<string> UsEquityExchanges =
-        new(StringComparer.OrdinalIgnoreCase) { "NASDAQ", "NYSE", "NYSEMKT", "AMEX", "ARCA", "BATS" };
 
     public static bool IsUsEquityExchange(string exchange) => UsEquityExchanges.Contains(exchange);
 

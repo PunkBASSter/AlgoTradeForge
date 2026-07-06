@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 
@@ -14,6 +15,10 @@ public sealed class DataProxyCache(IDistributedCache cache)
     // manifest changes (collector appends, completed jobs) indefinitely. Frontend pacing
     // (use-job-stream.ts) waits Ttl + ~500ms before its cache-bypass refetch.
     private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(2);
+
+    // Keys this instance has cached — IDistributedCache has no prefix-delete, so InvalidateAll
+    // uses this to drop per-exchange lists too. Singleton lifetime keeps it alive across requests.
+    private readonly ConcurrentDictionary<string, byte> _cachedKeys = new();
 
     public const string KeyAllExchanges = "data-proxy:exchanges:all";
     public const string KeyAllAssets = "data-proxy:assets:all";
@@ -46,6 +51,7 @@ public sealed class DataProxyCache(IDistributedCache cache)
             var serialized = JsonSerializer.SerializeToUtf8Bytes(entry);
             await cache.SetAsync(cacheKey, serialized,
                 new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = Ttl }, ct);
+            _cachedKeys.TryAdd(cacheKey, 0);
         }
         return entry;
     }
@@ -62,9 +68,16 @@ public sealed class DataProxyCache(IDistributedCache cache)
         await cache.RemoveAsync(KeyAllAssets, ct);
     }
 
-    /// <summary>Drops the picker-facing catalog keys after an explicit refresh.</summary>
+    /// <summary>
+    /// Drops the whole catalog cache after an explicit refresh — every key this instance cached,
+    /// including per-exchange asset lists (which the two aggregate keys alone would leave stale
+    /// for the TTL). With a shared multi-instance cache this covers only keys this node set.
+    /// </summary>
     public async Task InvalidateAll(CancellationToken ct)
     {
+        foreach (var key in _cachedKeys.Keys)
+            await cache.RemoveAsync(key, ct);
+        _cachedKeys.Clear();
         await cache.RemoveAsync(KeyAllExchanges, ct);
         await cache.RemoveAsync(KeyAllAssets, ct);
     }

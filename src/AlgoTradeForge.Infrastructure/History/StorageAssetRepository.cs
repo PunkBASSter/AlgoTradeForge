@@ -77,7 +77,7 @@ public sealed class StorageAssetRepository(
                 // US cash-equity exchanges (e.g. the imported Stooq archive) settle cash-and-carry,
                 // not as crypto spot. Filesystem discovery can't carry per-symbol tick/lot metadata,
                 // so tick size comes from feeds.json scaleFactor (0.01 default when the manifest is absent).
-                _ when IsUsEquityExchange(info.Exchange) =>
+                _ when UsEquityExchanges.Contains(info.Exchange) =>
                     new EquityAsset
                     {
                         Name = info.Symbol,
@@ -123,9 +123,4 @@ public sealed class StorageAssetRepository(
 
     private static int ScaleFactorToDecimalDigits(decimal scaleFactor)
         => Math.Clamp((int)Math.Round(Math.Log10((double)scaleFactor)), 0, 10);
-
-    private static readonly HashSet<string> UsEquityExchanges =
-        new(StringComparer.OrdinalIgnoreCase) { "NASDAQ", "NYSE", "NYSEMKT", "AMEX", "ARCA", "BATS" };
-
-    private static bool IsUsEquityExchange(string exchange) => UsEquityExchanges.Contains(exchange);
 }

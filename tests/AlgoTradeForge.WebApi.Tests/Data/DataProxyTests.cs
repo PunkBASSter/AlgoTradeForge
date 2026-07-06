@@ -220,6 +220,34 @@ public sealed class DataProxyTests
         Assert.Equal(2, ExactPathCallCount(factory, "/api/v1/exchanges"));
     }
 
+    // Regression (unified-catalog): explicit refresh must drop per-exchange asset lists too —
+    // the two aggregate keys alone left the exchange view stale for the TTL, so a just-added
+    // symbol wouldn't appear there despite an explicit refresh.
+    [Fact]
+    public async Task Refresh_InvalidatesPerExchangeAssetList()
+    {
+        await using var factory = new DataProxyTestFactory();
+        factory.Handler.RespondAsync(req =>
+            req.Method == HttpMethod.Post
+                ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent))
+                : Task.FromResult(JsonResp("""{"exchange":"binance","assets":[]}"""u8.ToArray())));
+
+        using var client = factory.CreateClient();
+        const string assetsPath = "/api/data/exchanges/binance/assets";
+
+        // Pre-warm the per-exchange list (cached under KeyAssetsByExchange), confirm it sticks.
+        await client.GetByteArrayAsync(assetsPath, TestContext.Current.CancellationToken);
+        await client.GetByteArrayAsync(assetsPath, TestContext.Current.CancellationToken);
+        Assert.Equal(1, ExactPathCallCount(factory, "/api/v1/exchanges/binance/assets"));
+
+        var resp = await client.PostAsync("/api/data/refresh", content: null, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+
+        // Refresh dropped the per-exchange key → next read misses and re-hits upstream.
+        await client.GetByteArrayAsync(assetsPath, TestContext.Current.CancellationToken);
+        Assert.Equal(2, ExactPathCallCount(factory, "/api/v1/exchanges/binance/assets"));
+    }
+
     // -------------------------------------------------------------------------
     // P3-7 — SSE pass-through (chunked + DisableBuffering)
     // -------------------------------------------------------------------------
