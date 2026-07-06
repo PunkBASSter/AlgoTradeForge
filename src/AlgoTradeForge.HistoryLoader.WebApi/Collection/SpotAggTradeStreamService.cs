@@ -26,6 +26,7 @@ internal sealed class SpotAggTradeStreamService(
     private static readonly string[] TickColumns = ["price", "qty", "is_buyer_maker", "agg_id"];
     private static readonly TimeSpan InitialReconnectDelay = TimeSpan.FromSeconds(5);
     private const int MaxReconnectAttempts = 10;
+    private static readonly TimeSpan StableConnectionUptime = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan StatusFlushInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
 
@@ -43,7 +44,8 @@ internal sealed class SpotAggTradeStreamService(
 
         await EnsureSchemas(enabledSpotSymbols, stoppingToken);
 
-        int attempts = 0;
+        var reconnect = new StreamReconnectPolicy(
+            MaxReconnectAttempts, InitialReconnectDelay, StableConnectionUptime);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -55,8 +57,8 @@ internal sealed class SpotAggTradeStreamService(
 
             try
             {
-                await ConnectAndStreamAsync(enabledSpotSymbols, stoppingToken);
-                attempts = 0;
+                await ConnectAndStreamAsync(reconnect, enabledSpotSymbols, stoppingToken);
+                reconnect.Reset();
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -64,20 +66,20 @@ internal sealed class SpotAggTradeStreamService(
             }
             catch (Exception ex)
             {
-                attempts++;
+                var decision = reconnect.OnFailure();
 
                 if (NetworkErrorHelper.IsNetworkError(ex)
-                    && attempts >= options.CurrentValue.NetworkFailureThreshold)
+                    && decision.Attempt >= options.CurrentValue.NetworkFailureThreshold)
                 {
                     logger.LogError(
                         "SpotAggTradeStreamService — network unreachable after {Count} attempts, tripping circuit breaker",
-                        attempts);
+                        decision.Attempt);
                     circuitBreaker.Trip("Network unreachable (Spot WS)", TripReason.Network);
-                    attempts = 0;
+                    reconnect.Reset();
                     continue;
                 }
 
-                if (attempts > MaxReconnectAttempts)
+                if (decision.GiveUp)
                 {
                     logger.LogCritical(ex,
                         "SpotAggTradeStreamService exceeded {Max} reconnect attempts, stopping",
@@ -85,11 +87,10 @@ internal sealed class SpotAggTradeStreamService(
                     break;
                 }
 
-                var delay = InitialReconnectDelay.TotalSeconds * Math.Pow(2, attempts - 1);
                 logger.LogWarning(ex,
                     "SpotAggTradeStreamService disconnected (attempt {Attempt}/{Max}), reconnecting in {Delay}s",
-                    attempts, MaxReconnectAttempts, delay);
-                await Task.Delay(TimeSpan.FromSeconds(delay), stoppingToken);
+                    decision.Attempt, MaxReconnectAttempts, decision.Delay.TotalSeconds);
+                await Task.Delay(decision.Delay, stoppingToken);
             }
         }
 
@@ -144,7 +145,8 @@ internal sealed class SpotAggTradeStreamService(
         }
     }
 
-    private async Task ConnectAndStreamAsync(IReadOnlyList<string> symbols, CancellationToken ct)
+    private async Task ConnectAndStreamAsync(
+        StreamReconnectPolicy reconnect, IReadOnlyList<string> symbols, CancellationToken ct)
     {
         var config = options.CurrentValue;
         var streams = string.Join('/', symbols.Select(s => $"{s.ToLowerInvariant()}@aggTrade"));
@@ -152,6 +154,7 @@ internal sealed class SpotAggTradeStreamService(
 
         using var ws = new ClientWebSocket();
         await ws.ConnectAsync(new Uri(url), ct);
+        reconnect.OnConnected();
         logger.LogInformation(
             "Connected to Binance spot aggTrade combined stream ({Count} symbols)", symbols.Count);
 

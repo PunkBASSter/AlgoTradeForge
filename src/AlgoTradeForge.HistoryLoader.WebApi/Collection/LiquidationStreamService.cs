@@ -22,6 +22,7 @@ internal sealed class LiquidationStreamService(
     private static readonly string[] Columns = ["side", "price", "qty", "notional_usd"];
     private static readonly TimeSpan InitialReconnectDelay = TimeSpan.FromSeconds(5);
     private const int MaxReconnectAttempts = 10;
+    private static readonly TimeSpan StableConnectionUptime = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan StatusFlushInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
 
@@ -31,7 +32,8 @@ internal sealed class LiquidationStreamService(
 
         await EnsureSchemas(stoppingToken);
 
-        int attempts = 0;
+        var reconnect = new StreamReconnectPolicy(
+            MaxReconnectAttempts, InitialReconnectDelay, StableConnectionUptime);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -70,9 +72,9 @@ internal sealed class LiquidationStreamService(
 
             try
             {
-                await ConnectAndStreamAsync(stoppingToken);
+                await ConnectAndStreamAsync(reconnect, stoppingToken);
                 // Normal disconnect — reset and reconnect.
-                attempts = 0;
+                reconnect.Reset();
             }
             catch (OperationCanceledException) when (
                 stoppingToken.IsCancellationRequested)
@@ -83,20 +85,20 @@ internal sealed class LiquidationStreamService(
             }
             catch (Exception ex)
             {
-                attempts++;
+                var decision = reconnect.OnFailure();
 
                 if (NetworkErrorHelper.IsNetworkError(ex)
-                    && attempts >= options.CurrentValue.NetworkFailureThreshold)
+                    && decision.Attempt >= options.CurrentValue.NetworkFailureThreshold)
                 {
                     logger.LogError(
                         "LiquidationStreamService — network unreachable after {Count} attempts, tripping circuit breaker",
-                        attempts);
+                        decision.Attempt);
                     circuitBreaker.Trip("Network unreachable (WebSocket)", TripReason.Network);
-                    attempts = 0;
+                    reconnect.Reset();
                     continue;
                 }
 
-                if (attempts > MaxReconnectAttempts)
+                if (decision.GiveUp)
                 {
                     logger.LogCritical(ex,
                         "LiquidationStreamService exceeded {Max} reconnect attempts, stopping",
@@ -104,11 +106,10 @@ internal sealed class LiquidationStreamService(
                     break;
                 }
 
-                var delay = InitialReconnectDelay.TotalSeconds * Math.Pow(2, attempts - 1);
                 logger.LogWarning(ex,
                     "LiquidationStreamService disconnected (attempt {Attempt}/{Max}), reconnecting in {Delay}s",
-                    attempts, MaxReconnectAttempts, delay);
-                await Task.Delay(TimeSpan.FromSeconds(delay), stoppingToken);
+                    decision.Attempt, MaxReconnectAttempts, decision.Delay.TotalSeconds);
+                await Task.Delay(decision.Delay, stoppingToken);
             }
         }
 
@@ -135,13 +136,14 @@ internal sealed class LiquidationStreamService(
         }
     }
 
-    private async Task ConnectAndStreamAsync(CancellationToken ct)
+    private async Task ConnectAndStreamAsync(StreamReconnectPolicy reconnect, CancellationToken ct)
     {
         var config = options.CurrentValue;
         var url = $"{config.Binance.FuturesWsBaseUrl}{StreamPath}";
 
         using var ws = new ClientWebSocket();
         await ws.ConnectAsync(new Uri(url), ct);
+        reconnect.OnConnected();
         logger.LogInformation("Connected to !forceOrder@arr stream at {Url}", url);
 
         var enabledSymbols = BuildEnabledSymbolSet(config);

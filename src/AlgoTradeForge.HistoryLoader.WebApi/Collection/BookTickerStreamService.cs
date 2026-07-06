@@ -29,6 +29,7 @@ internal sealed class BookTickerStreamService(
         ["bid_price", "bid_qty", "ask_price", "ask_qty", "update_id"];
     private static readonly TimeSpan InitialReconnectDelay = TimeSpan.FromSeconds(5);
     private const int MaxReconnectAttempts = 10;
+    private static readonly TimeSpan StableConnectionUptime = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan StatusFlushInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
 
@@ -64,7 +65,8 @@ internal sealed class BookTickerStreamService(
 
     private async Task VenueLoopAsync(Venue venue, IReadOnlyList<string> symbols, CancellationToken ct)
     {
-        int attempts = 0;
+        var reconnect = new StreamReconnectPolicy(
+            MaxReconnectAttempts, InitialReconnectDelay, StableConnectionUptime);
 
         while (!ct.IsCancellationRequested)
         {
@@ -76,8 +78,8 @@ internal sealed class BookTickerStreamService(
 
             try
             {
-                await ConnectAndStreamAsync(venue, symbols, ct);
-                attempts = 0;
+                await ConnectAndStreamAsync(reconnect, venue, symbols, ct);
+                reconnect.Reset();
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -85,20 +87,20 @@ internal sealed class BookTickerStreamService(
             }
             catch (Exception ex)
             {
-                attempts++;
+                var decision = reconnect.OnFailure();
 
                 if (NetworkErrorHelper.IsNetworkError(ex)
-                    && attempts >= options.CurrentValue.NetworkFailureThreshold)
+                    && decision.Attempt >= options.CurrentValue.NetworkFailureThreshold)
                 {
                     logger.LogError(
                         "BookTickerStreamService[{Venue}] — network unreachable after {Count} attempts, tripping circuit breaker",
-                        venue, attempts);
+                        venue, decision.Attempt);
                     circuitBreaker.Trip($"Network unreachable (BookTicker {venue})", TripReason.Network);
-                    attempts = 0;
+                    reconnect.Reset();
                     continue;
                 }
 
-                if (attempts > MaxReconnectAttempts)
+                if (decision.GiveUp)
                 {
                     logger.LogCritical(ex,
                         "BookTickerStreamService[{Venue}] exceeded {Max} reconnect attempts, stopping",
@@ -106,11 +108,10 @@ internal sealed class BookTickerStreamService(
                     break;
                 }
 
-                var delay = InitialReconnectDelay.TotalSeconds * Math.Pow(2, attempts - 1);
                 logger.LogWarning(ex,
                     "BookTickerStreamService[{Venue}] disconnected (attempt {Attempt}/{Max}), reconnecting in {Delay}s",
-                    venue, attempts, MaxReconnectAttempts, delay);
-                await Task.Delay(TimeSpan.FromSeconds(delay), ct);
+                    venue, decision.Attempt, MaxReconnectAttempts, decision.Delay.TotalSeconds);
+                await Task.Delay(decision.Delay, ct);
             }
         }
     }
@@ -158,7 +159,8 @@ internal sealed class BookTickerStreamService(
         }
     }
 
-    private async Task ConnectAndStreamAsync(Venue venue, IReadOnlyList<string> symbols, CancellationToken ct)
+    private async Task ConnectAndStreamAsync(
+        StreamReconnectPolicy reconnect, Venue venue, IReadOnlyList<string> symbols, CancellationToken ct)
     {
         var config = options.CurrentValue;
         var wsBase = venue == Venue.Spot
@@ -169,6 +171,7 @@ internal sealed class BookTickerStreamService(
 
         using var ws = new ClientWebSocket();
         await ws.ConnectAsync(new Uri(url), ct);
+        reconnect.OnConnected();
         logger.LogInformation(
             "BookTickerStreamService[{Venue}] connected ({Count} symbols)", venue, symbols.Count);
 
