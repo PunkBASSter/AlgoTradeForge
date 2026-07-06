@@ -4,7 +4,7 @@ namespace AlgoTradeForge.HistoryLoader.Domain;
 /// Classifies an on-disk <c>{exchange}/{dir}</c> asset directory into a raw symbol + type.
 /// Lossy by design: a bare dir can't distinguish spot-vs-equity except by exchange, nor
 /// <c>_perp</c> as perpetual-vs-future — the catalog only needs a display/filter heuristic;
-/// authoritative Asset resolution happens in the main app's FileSystemAssetRepository.
+/// authoritative Asset resolution happens in the main app's StorageAssetRepository.
 /// </summary>
 public static class AssetDirectoryClassifier
 {

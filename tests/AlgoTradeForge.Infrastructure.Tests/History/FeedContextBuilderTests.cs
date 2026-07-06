@@ -21,7 +21,8 @@ public class FeedContextBuilderTests : IDisposable
         _testDataRoot = Path.Combine(Path.GetTempPath(), $"FeedCtxBuilder_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testDataRoot);
         _feedSeriesLoader = new CsvFeedSeriesLoader(_storage);
-        _builder = new FeedContextBuilder(_storage, _feedSeriesLoader, NullLogger<FeedContextBuilder>.Instance);
+        var reader = new FeedManifestReader(_storage, NullLogger<FeedManifestReader>.Instance);
+        _builder = new FeedContextBuilder(reader, _feedSeriesLoader, NullLogger<FeedContextBuilder>.Instance);
     }
 
     public void Dispose()

@@ -81,6 +81,32 @@ dotnet test ../AlgoTradeForge.Private/tests/AlgoTradeForge.Strategies.Private.Te
 
 C# 14 / .NET 10: Follow standard conventions
 
+### Design: object-orientation & polymorphism first (Skill: `oop-first-design`)
+
+Before writing an `enum` + `switch`, an `if / else if` chain, or any code that branches
+**large blocks of behavior** on a value or a runtime type, invoke the `oop-first-design`
+skill (`.claude/skills/oop-first-design/SKILL.md`) and decide whether the branch is
+really a set of polymorphic variants. If it is, model each variant as a type behind a
+shared interface, chosen at a **single composition site** (factory / registry / DI) —
+giving an extension point and a vertical slice per variant instead of a switch threaded
+through every layer.
+
+- **Strongest triggers:** the same discriminator is switched on in more than one place;
+  a branch arm carries its own state/I/O/algorithm; adding the next variant would edit a
+  switch rather than add a file; the discriminator is *inferred* (an incidental property
+  used as a proxy for "what kind of thing is this"); you are switching on a subclass with
+  logic in the arms.
+- **Keep enum + switch for:** external/serialized contracts (wire, JSON, DB, protocol
+  discriminators — these are data), trivial single-site value maps with no behavior, and
+  the *one* factory switch that maps a discriminator to a polymorphic implementation.
+- **Do not over-abstract:** one real implementation with no concrete second on the
+  horizon, or "variants" that do not share a stable interface, stay as a plain
+  conditional (YAGNI). Leave a terse `// TODO:` naming the axis if a second variant is
+  foreseeable.
+- **Reference impl:** `src/AlgoTradeForge.Infrastructure/History/IHistoryFeedResolver.cs`
+  + `ResampleFromSourceResolver` / `NativeElseDivisorResolver` / `HistoryFeedResolverFactory`.
+  **Domain-object dispatch model:** `asset.GetSettlementCalculator()`.
+
 ### Int64 Money Convention
 
 All monetary/price values in the Domain layer use `long` (Int64). When converting:

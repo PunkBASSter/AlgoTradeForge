@@ -9,12 +9,12 @@ using Xunit;
 
 namespace AlgoTradeForge.Infrastructure.Tests.History;
 
-public class FileSystemAssetRepositoryTests : IDisposable
+public class StorageAssetRepositoryTests : IDisposable
 {
     private readonly string _testDataRoot;
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    public FileSystemAssetRepositoryTests()
+    public StorageAssetRepositoryTests()
     {
         _testDataRoot = Path.Combine(Path.GetTempPath(), $"AssetRepo_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testDataRoot);
@@ -26,12 +26,13 @@ public class FileSystemAssetRepositoryTests : IDisposable
             Directory.Delete(_testDataRoot, recursive: true);
     }
 
-    private FileSystemAssetRepository CreateRepository()
+    private StorageAssetRepository CreateRepository()
     {
         var storage = new LocalFileStorage();
         var opts = Options.Create(new CandleStorageOptions { DataRoot = _testDataRoot });
         var provider = new FileSystemAvailableAssetsProvider(storage, opts);
-        return new FileSystemAssetRepository(storage, provider, opts, NullLogger<FileSystemAssetRepository>.Instance);
+        var reader = new FeedManifestReader(storage, NullLogger<FeedManifestReader>.Instance);
+        return new StorageAssetRepository(reader, provider, opts, NullLogger<StorageAssetRepository>.Instance);
     }
 
     private void WriteEquity(string exchange, string symbol)
@@ -93,5 +94,21 @@ public class FileSystemAssetRepositoryTests : IDisposable
 
         var equity = Assert.IsType<EquityAsset>(asset);
         Assert.Equal(0.001m, equity.TickSize);
+    }
+
+    [Fact]
+    public async Task Equity_whole_unit_scale_factor_yields_unit_tick()
+    {
+        // scaleFactor 1 → 0 decimal digits → $1 tick, not the $0.01 default.
+        var dir = Path.Combine(_testDataRoot, "NYSE", "BRK");
+        Directory.CreateDirectory(Path.Combine(dir, "candles"));
+        File.WriteAllText(Path.Combine(dir, "candles", "2024-01_5m.csv"), "ts,o,h,l,c,vol\n");
+        File.WriteAllText(Path.Combine(dir, "feeds.json"),
+            """{ "feeds": {}, "candles": { "scaleFactor": 1, "intervals": ["5m", "1d"] } }""");
+
+        var asset = await CreateRepository().GetByNameAsync("BRK", "NYSE", Ct);
+
+        var equity = Assert.IsType<EquityAsset>(asset);
+        Assert.Equal(1m, equity.TickSize);
     }
 }

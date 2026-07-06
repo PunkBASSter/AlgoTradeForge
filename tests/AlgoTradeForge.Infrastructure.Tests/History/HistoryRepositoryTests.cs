@@ -28,10 +28,13 @@ public class HistoryRepositoryTests
     {
         _loader = Substitute.For<IInt64BarLoader>();
         _storage = Substitute.For<IFileStorage>();
-        // Default: no feeds.json → the source-resample path (existing crypto behavior).
+        // Default: no feeds.json → crypto assets use the source-resample path; equity assets
+        // (which require declared intervals) throw.
         _storage.Exists(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
         var options = Options.Create(new CandleStorageOptions { DataRoot = "/data" });
-        _repo = new HistoryRepository(_loader, _storage, options, NullLogger<HistoryRepository>.Instance);
+        var reader = new FeedManifestReader(_storage, NullLogger<FeedManifestReader>.Instance);
+        var factory = new HistoryFeedResolverFactory(reader, options);
+        _repo = new HistoryRepository(_loader, factory, options);
     }
 
     // Configures _storage to return a feeds.json declaring the given candle intervals.
@@ -300,6 +303,51 @@ public class HistoryRepositoryTests
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
             _repo.Load(equity, sub, new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31), ct: Ct));
         Assert.Contains("No feed on disk", ex.Message);
+    }
+
+    // Regression: an equity archive with NO manifest must NOT silently fall back to the 1m
+    // source (which it lacks) and load 0 bars — the native path requires declared intervals.
+    [Fact]
+    public async Task LoadTimeBar_Equity_MissingManifest_Throws()
+    {
+        // default _storage.Exists → false (no feeds.json)
+        var sub = new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1d"));
+        var equity = new EquityAsset { Name = "AAPL", Exchange = "NASDAQ" };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            _repo.Load(equity, sub, new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31), ct: Ct));
+        Assert.Contains("No candle intervals", ex.Message);
+    }
+
+    // Manifest present but declares no candle intervals → hard error, not a silent 1m load.
+    [Fact]
+    public async Task LoadTimeBar_Equity_EmptyIntervals_Throws()
+    {
+        WithCandleIntervals(); // candles.intervals = []
+        var sub = new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1d"));
+        var equity = new EquityAsset { Name = "AAPL", Exchange = "NASDAQ" };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            _repo.Load(equity, sub, new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31), ct: Ct));
+        Assert.Contains("No candle intervals", ex.Message);
+    }
+
+    // Native match is by DURATION, not string: a "60m" partition satisfies a "1h" request.
+    [Fact]
+    public async Task LoadTimeBar_Equity_DurationAliasMatchesNatively()
+    {
+        WithCandleIntervals("60m", "1d");
+        var sub = new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+        var equity = new EquityAsset { Name = "AAPL", Exchange = "NASDAQ" };
+        DataFeedDescriptor? captured = null;
+        _loader.Load(Arg.Any<DataFeedDescriptor>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(call => { captured = call.Arg<DataFeedDescriptor>(); return MakeMinuteSeries(3); });
+
+        var result = await _repo.Load(equity, sub, new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31), ct: Ct);
+
+        Assert.NotNull(captured);
+        Assert.Equal("60m", captured!.Value.FeedId);   // matched by duration, not string
+        Assert.Equal(3, result.Count);                  // native, no resample
     }
 
     [Fact]

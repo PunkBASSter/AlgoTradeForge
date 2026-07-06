@@ -74,8 +74,11 @@ public sealed class FeedCatalog : IFeedCatalog
 
     public async Task<AssetCatalogEntry?> GetAsset(string exchange, string assetSymbol, CancellationToken ct = default)
     {
-        var entries = await BuildAssetEntries(exchange, ct);
-        return entries.FirstOrDefault(a => string.Equals(a.Symbol, assetSymbol, StringComparison.Ordinal));
+        // Reuse the cached per-exchange list — a bare BuildAssetEntries here would rescan the
+        // whole DataRoot tree and re-read every manifest on each call (feed-status / aggregation
+        // options hit this per request).
+        var list = await GetAssetsByExchange(exchange, ct);
+        return list.Assets.FirstOrDefault(a => string.Equals(a.Symbol, assetSymbol, StringComparison.Ordinal));
     }
 
     public async Task<FeedDefinition?> GetFeed(string exchange, string assetSymbol, string feedId, CancellationToken ct = default)
