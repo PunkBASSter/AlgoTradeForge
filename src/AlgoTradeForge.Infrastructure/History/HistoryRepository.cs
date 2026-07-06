@@ -51,33 +51,59 @@ public sealed class HistoryRepository(
         var assetDir = AssetDirectoryName.From(asset);
         var sourceInterval = storageOptions.Value.SourceInterval;
         var sourceCode = TimeFrameFormatter.Format(sourceInterval);
-        var requestedCode = timeFrame.Code;
 
-        // Default path (crypto): a fine-grained source interval (e.g. 1m) exists on disk — load
-        // it and resample, preserving reproducibility of existing runs. Only when the source
-        // interval is ABSENT (e.g. the Stooq equity archive carries 5m/1d but no 1m) do we load
-        // the requested timeframe's native partitions directly.
         var intervals = await ReadCandleIntervals(dataRoot, asset.Exchange, assetDir, ct);
-        var loadNative = intervals is not null
-            && !intervals.Contains(sourceCode, StringComparer.Ordinal)
-            && intervals.Contains(requestedCode, StringComparer.Ordinal);
+        var (loadCode, resample) = ChooseSourceFeed(intervals, timeFrame, sourceInterval, sourceCode);
 
-        if (loadNative)
+        var descriptor = new DataFeedDescriptor(dataRoot, asset.Exchange, assetDir, loadCode, DataFeedKind.TimeBar);
+        var raw = await barLoader.Load(descriptor, from, to, ct);
+        return resample ? raw.Resample(timeFrame) : raw;
+    }
+
+    // Decides which on-disk feed to read and whether to resample it to the requested timeframe.
+    //  - No manifest, or the fine-grained source interval (1m) is present → legacy crypto path:
+    //    load the source and resample (preserves reproducibility even when a native 1d also exists).
+    //  - Source interval absent (e.g. the equity archive: 5m/1d only) → load the requested
+    //    timeframe natively when present, else resample from the largest available interval that
+    //    cleanly divides the request (e.g. 1h from 5m). Throws when nothing on disk can produce it.
+    private static (string LoadCode, bool Resample) ChooseSourceFeed(
+        string[]? intervals, TimeFrame requested, TimeSpan sourceInterval, string sourceCode)
+    {
+        var hasSource = intervals is null || intervals.Length == 0
+            || intervals.Contains(sourceCode, StringComparer.Ordinal);
+
+        if (hasSource)
         {
-            var native = new DataFeedDescriptor(dataRoot, asset.Exchange, assetDir, requestedCode, DataFeedKind.TimeBar);
-            return await barLoader.Load(native, from, to, ct);
+            if (requested < sourceInterval)
+                throw new ArgumentException(
+                    $"Requested timeframe ({requested}) is smaller than the source interval ({sourceInterval}).",
+                    nameof(requested));
+            return (sourceCode, requested.Duration != sourceInterval);
         }
 
-        if (timeFrame < sourceInterval)
-            throw new ArgumentException(
-                $"Requested timeframe ({timeFrame}) is smaller than the asset's smallest interval ({sourceInterval}).",
-                nameof(timeFrame));
+        var declared = intervals!;
+        if (declared.Contains(requested.Code, StringComparer.Ordinal))
+            return (requested.Code, false);
 
-        var descriptor = new DataFeedDescriptor(dataRoot, asset.Exchange, assetDir, sourceCode, DataFeedKind.TimeBar);
-        var raw = await barLoader.Load(descriptor, from, to, ct);
+        var divisor = declared
+            .Select(code => (code, dur: TryParseDuration(code)))
+            .Where(x => x.dur is { } d && d < requested.Duration && requested.Duration.Ticks % d.Ticks == 0)
+            .OrderByDescending(x => x.dur!.Value)
+            .Select(x => x.code)
+            .FirstOrDefault();
 
-        return timeFrame == sourceInterval ? raw : raw.Resample(timeFrame);
+        if (divisor is not null)
+            return (divisor, true);
+
+        throw new ArgumentException(
+            $"No feed on disk can produce timeframe '{requested.Code}': available intervals = " +
+            $"[{string.Join(", ", declared)}]. It is neither present natively nor a clean multiple " +
+            "of a finer available interval.",
+            nameof(requested));
     }
+
+    private static TimeSpan? TryParseDuration(string intervalCode) =>
+        TimeFrame.TryParse(intervalCode, out var tf) ? tf.Duration : null;
 
     // Available candle intervals from the asset's feeds.json, or null when absent/unreadable
     // (callers fall back to the source-resample path).

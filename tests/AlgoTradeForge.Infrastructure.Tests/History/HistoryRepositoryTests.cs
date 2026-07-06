@@ -270,6 +270,37 @@ public class HistoryRepositoryTests
         Assert.Equal("1m", captured!.Value.FeedId);       // source, then resampled to 1d
     }
 
+    // Non-native equity timeframe: resample from the largest available interval that cleanly
+    // divides the request (1h from 5m; 1m source is absent).
+    [Fact]
+    public async Task LoadTimeBar_NonNativeTimeframe_ResamplesFromLargestDivisor()
+    {
+        WithCandleIntervals("5m", "1d");
+        var sub = new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1h"));
+        var equity = new EquityAsset { Name = "AAPL", Exchange = "NASDAQ" };
+        DataFeedDescriptor? captured = null;
+        _loader.Load(Arg.Any<DataFeedDescriptor>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(call => { captured = call.Arg<DataFeedDescriptor>(); return MakeMinuteSeries(120); });
+
+        await _repo.Load(equity, sub, new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31), ct: Ct);
+
+        Assert.NotNull(captured);
+        Assert.Equal("5m", captured!.Value.FeedId);   // resampled from 5m (divides 1h), not 1d
+    }
+
+    // No feed on disk can produce the request (5m from a 1d-only archive) → clear error.
+    [Fact]
+    public async Task LoadTimeBar_NoFeedCanProduceTimeframe_Throws()
+    {
+        WithCandleIntervals("1d");
+        var sub = new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("5m"));
+        var equity = new EquityAsset { Name = "AAPL", Exchange = "NASDAQ" };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            _repo.Load(equity, sub, new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31), ct: Ct));
+        Assert.Contains("No feed on disk", ex.Message);
+    }
+
     [Fact]
     public async Task LoadFeedSubscription_PerpetualAsset_AppendsPerpSuffix()
     {
