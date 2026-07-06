@@ -4,10 +4,9 @@
 // DataFeedSubscription. The feed list is filtered by role-eligibility (Primary slots
 // see TimeBar/AltBar/Tick; Side slots see Side feeds incl. alt-bar sidecars).
 
-import { useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { dataApi } from "@/lib/services/data-api";
+import { useEffect, useMemo, useState } from "react";
 import { compareFeed } from "@/lib/data/feed-order";
+import { AssetCombobox } from "./asset-combobox";
 import {
   feedToSubscription,
   formatFeedLabel,
@@ -49,21 +48,7 @@ export function FeedPicker({
   excludeFeedIds,
   disabled,
 }: FeedPickerProps) {
-  const exchangesQuery = useQuery({
-    queryKey: ["data", "exchanges"],
-    queryFn: ({ signal }) => dataApi.getExchanges(signal),
-  });
-
-  const assetsQuery = useQuery({
-    queryKey: ["data", "exchange-assets", value?.exchange ?? ""],
-    queryFn: ({ signal }) => dataApi.getAssetsByExchange(value!.exchange, signal),
-    enabled: !!value?.exchange,
-  });
-
-  const selectedAsset: AssetCatalogEntry | null = useMemo(() => {
-    if (!value?.asset || !assetsQuery.data) return null;
-    return assetsQuery.data.assets.find((a) => a.symbol === value.asset) ?? null;
-  }, [value?.asset, assetsQuery.data]);
+  const [selectedAsset, setSelectedAsset] = useState<AssetCatalogEntry | null>(null);
 
   const eligibleFeeds: FeedCatalogEntry[] = useMemo(() => {
     if (!selectedAsset) return [];
@@ -83,35 +68,6 @@ export function FeedPicker({
       onChange({ ...value, feedId: "", subscription: null });
     }
   }, [eligibleFeeds, value, selectedAsset, onChange]);
-
-  const handleExchange = (next: string) => {
-    if (!next) { onChange(null); return; }
-    onChange({
-      exchange: next,
-      asset: "",
-      feedId: "",
-      subscription: null,
-    });
-  };
-
-  const handleAsset = (next: string) => {
-    if (!value?.exchange) return;
-    if (!next) {
-      onChange({
-        exchange: value.exchange,
-        asset: "",
-        feedId: "",
-        subscription: null,
-      });
-      return;
-    }
-    onChange({
-      exchange: value.exchange,
-      asset: next,
-      feedId: "",
-      subscription: null,
-    });
-  };
 
   const handleFeed = (feedId: string) => {
     if (!value?.exchange || !value?.asset || !selectedAsset || !feedId) {
@@ -139,53 +95,15 @@ export function FeedPicker({
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2" role="group" aria-label="Feed picker">
-      <div>
-        <label className="block text-xs font-medium uppercase tracking-wider text-text-muted mb-1">
-          Exchange
-        </label>
-        <select
-          className={SELECT_CLASSES}
-          value={value?.exchange ?? ""}
-          onChange={(e) => handleExchange(e.target.value)}
-          disabled={disabled || exchangesQuery.isLoading}
-          aria-label="Exchange"
-        >
-          <option value="">{exchangesQuery.isLoading ? "Loading…" : "Select exchange"}</option>
-          {exchangesQuery.data?.exchanges.map((ex) => (
-            <option key={ex.name} value={ex.name}>
-              {ex.name} ({ex.asset_count})
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label className="block text-xs font-medium uppercase tracking-wider text-text-muted mb-1">
-          Asset
-        </label>
-        <select
-          className={SELECT_CLASSES}
-          value={value?.asset ?? ""}
-          onChange={(e) => handleAsset(e.target.value)}
-          disabled={disabled || !value?.exchange || assetsQuery.isLoading}
-          aria-label="Asset"
-        >
-          <option value="">
-            {!value?.exchange
-              ? "Pick an exchange first"
-              : assetsQuery.isLoading
-                ? "Loading…"
-                : "Select asset"}
-          </option>
-          {assetsQuery.data?.assets
-            .slice()
-            .sort((a, b) => a.display_name.localeCompare(b.display_name))
-            .map((a) => (
-              <option key={a.symbol} value={a.symbol}>
-                {a.display_name} {a.type ? `(${a.type})` : ""}
-              </option>
-            ))}
-        </select>
+      <div className="sm:col-span-2">
+        <AssetCombobox
+          value={value?.exchange && value?.asset ? { exchange: value.exchange, symbol: value.asset } : null}
+          disabled={disabled}
+          onSelect={(entry) => {
+            setSelectedAsset(entry);
+            onChange({ exchange: entry.exchange, asset: entry.symbol, feedId: "", subscription: null });
+          }}
+        />
       </div>
 
       <div>

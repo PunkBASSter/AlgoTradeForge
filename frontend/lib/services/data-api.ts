@@ -56,6 +56,11 @@ export const dataApi = {
   getAssets: (signal?: AbortSignal) =>
     fetch(`${BASE_URL}/api/data/assets`, { signal }).then(asJson<AssetListResponse>),
 
+  refreshCatalog: async (signal?: AbortSignal): Promise<void> => {
+    const resp = await fetch(`${BASE_URL}/api/data/refresh`, { method: "POST", signal });
+    if (!resp.ok) await asJson(resp);
+  },
+
   getFeedStatus: (
     exchange: string,
     asset: string,
