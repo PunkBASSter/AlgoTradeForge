@@ -84,36 +84,30 @@ public sealed class WebSocketSinkTests
         using var _s = serverWs;
         using var _c = clientWs;
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         sink.Attach(serverWs, cts.Token);
 
-        // Write more events than the channel can hold (without reading them)
-        // We need to give the send loop time to potentially process some
+        // Overfill the bounded channel (capacity 2, DropOldest). Write never blocks; the
+        // newest event always survives eviction because nothing is written after it.
         for (int i = 0; i < 10; i++)
         {
             var json = Encoding.UTF8.GetBytes($"{{\"sq\":{i}}}");
             sink.Write(json);
         }
 
-        // Read whatever events made it through
+        // Read until the guaranteed-surviving last event arrives. The channel is FIFO with
+        // a single reader, so "sq":9 is always the final delivery. Terminating on it (not on
+        // a "500ms of silence" window) keeps the test deterministic on starved CI runners,
+        // where the send loop can take longer than any fixed silence window to get scheduled.
         var received = new List<string>();
         var buffer = new byte[4096];
-        while (true)
+        do
         {
-            using var readCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            try
-            {
-                var result = await clientWs.ReceiveAsync(buffer.AsMemory(), readCts.Token);
-                received.Add(Encoding.UTF8.GetString(buffer, 0, result.Count));
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-        }
+            var result = await clientWs.ReceiveAsync(buffer.AsMemory(), cts.Token);
+            received.Add(Encoding.UTF8.GetString(buffer, 0, result.Count));
+        } while (!received[^1].Contains("\"sq\":9"));
 
-        // Assert — some events may have been dropped due to backpressure
-        Assert.True(received.Count > 0, "At least some events should have been delivered");
+        // Assert — delivery works end-to-end under overflow, and nothing is duplicated.
         Assert.True(received.Count <= 10, "No more than 10 events should be delivered");
     }
 
