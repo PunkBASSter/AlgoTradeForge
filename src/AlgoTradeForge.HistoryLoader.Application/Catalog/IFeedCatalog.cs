@@ -13,4 +13,7 @@ public interface IFeedCatalog
     Task<AssetListResponse> GetAllAssets(CancellationToken ct = default);
     Task<AssetCatalogEntry?> GetAsset(string exchange, string assetSymbol, CancellationToken ct = default);
     Task<FeedDefinition?> GetFeed(string exchange, string assetSymbol, string feedId, CancellationToken ct = default);
+
+    /// <summary>Force the next catalog read to rescan the filesystem.</summary>
+    void Refresh();
 }

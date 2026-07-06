@@ -72,6 +72,23 @@ public class FeedCatalogScanTests : IDisposable
         Assert.Single(response.Exchanges, e => e.Name == "NASDAQ");
     }
 
+    [Fact]
+    public async Task Refresh_picks_up_a_newly_added_asset_dir()
+    {
+        var catalog = BuildCatalog();
+        var before = await catalog.GetAllAssets(Ct);
+        Assert.Equal(3, before.Assets.Count);
+
+        WriteManifest("NYSE", "SPY");
+        var stillCached = await catalog.GetAllAssets(Ct);
+        Assert.Equal(3, stillCached.Assets.Count); // cached at old version
+
+        catalog.Refresh();
+        var after = await catalog.GetAllAssets(Ct);
+        Assert.Equal(4, after.Assets.Count);
+        Assert.Single(after.Assets, a => a.Symbol == "SPY");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
