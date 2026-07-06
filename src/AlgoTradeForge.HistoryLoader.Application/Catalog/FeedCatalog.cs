@@ -83,7 +83,9 @@ public sealed class FeedCatalog : IFeedCatalog
 
     public async Task<FeedDefinition?> GetFeed(string exchange, string assetSymbol, string feedId, CancellationToken ct = default)
     {
-        var assetDir = Path.Combine(_options.CurrentValue.DataRoot, exchange, assetSymbol);
+        if (!TryResolveAssetDir(_options.CurrentValue.DataRoot, exchange, assetSymbol, out var assetDir))
+            return null;
+
         var manifest = await _schemaManager.Load(assetDir, ct);
         if (manifest is null) return null;
 
@@ -97,6 +99,20 @@ public sealed class FeedCatalog : IFeedCatalog
     }
 
     // -------------------------------------------------------------------------
+
+    // exchange/assetSymbol arrive from user-controlled route params. Confine the resolved dir
+    // to exactly {exchange}/{asset} under DataRoot so "..", embedded separators, or an absolute
+    // path can't read a feeds.json outside the intended asset directory.
+    private static bool TryResolveAssetDir(string dataRoot, string exchange, string assetSymbol, out string assetDir)
+    {
+        assetDir = Path.Combine(dataRoot, exchange, assetSymbol);
+        var rel = Path.GetRelativePath(Path.GetFullPath(dataRoot), Path.GetFullPath(assetDir));
+        if (Path.IsPathRooted(rel)) return false;
+        var segments = rel.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length == 2 && Array.TrueForAll(segments, s => s != "..");
+    }
 
     private long Version => Interlocked.Read(ref _version);
 

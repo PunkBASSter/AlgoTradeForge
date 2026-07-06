@@ -147,6 +147,23 @@ public sealed class FeedCatalogTests : IDisposable
     }
 
     [Fact]
+    public async Task GetFeed_RejectsPathTraversalOutsideAssetDir()
+    {
+        var (catalog, _, _) = Build();
+        // A manifest planted at {DataRoot}/binance/feeds.json (exchange dir, not an asset dir),
+        // declaring a "1m" feed — reachable only by traversing out of the asset directory.
+        var exchangeDir = Path.Combine(_tempDir, "binance");
+        Directory.CreateDirectory(exchangeDir);
+        File.WriteAllText(Path.Combine(exchangeDir, "feeds.json"),
+            """{ "feeds": { "1m": { "kind": "OHLCV_TimeBar", "interval": "1m" } } }""");
+
+        // "../binance" resolves to {DataRoot}/binance and would otherwise read the planted
+        // manifest; the guard must refuse and return null.
+        Assert.Null(await catalog.GetFeed("binance", "../binance", "1m", Ct));
+        Assert.Null(await catalog.GetFeed("binance", "..", "1m", Ct));
+    }
+
+    [Fact]
     public async Task GetFeed_SynthesizesDefinitionForCandleInterval()
     {
         // The /aggregation-options endpoint calls GetFeed to pull a FeedDefinition for the
