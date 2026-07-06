@@ -78,4 +78,20 @@ public class FileSystemAssetRepositoryTests : IDisposable
 
         Assert.IsType<CryptoAsset>(asset);
     }
+
+    [Fact]
+    public async Task Equity_tick_size_comes_from_feeds_json_scale_factor()
+    {
+        // TSLA is not a hardcoded seed; scaleFactor 1000 → 3 decimal digits → tick 0.001
+        var dir = Path.Combine(_testDataRoot, "NASDAQ", "TSLA");
+        Directory.CreateDirectory(Path.Combine(dir, "candles"));
+        File.WriteAllText(Path.Combine(dir, "candles", "2024-01_5m.csv"), "ts,o,h,l,c,vol\n");
+        File.WriteAllText(Path.Combine(dir, "feeds.json"),
+            """{ "feeds": {}, "candles": { "scaleFactor": 1000, "intervals": ["5m", "1d"] } }""");
+
+        var asset = await CreateRepository().GetByNameAsync("TSLA", "NASDAQ", Ct);
+
+        var equity = Assert.IsType<EquityAsset>(asset);
+        Assert.Equal(0.001m, equity.TickSize);
+    }
 }

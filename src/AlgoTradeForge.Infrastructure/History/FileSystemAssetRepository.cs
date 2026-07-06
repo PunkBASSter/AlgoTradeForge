@@ -81,8 +81,14 @@ public sealed class FileSystemAssetRepository(
                 { IsFutures: true } => CryptoPerpetualAsset.Create(info.Symbol, info.Exchange, decimalDigits, margin: 0.05m),
                 // US cash-equity exchanges (e.g. the imported Stooq archive) settle cash-and-carry,
                 // not as crypto spot. Filesystem discovery can't carry per-symbol tick/lot metadata,
-                // so these use the EquityAsset defaults ($0.01 tick, multiplier 1).
-                _ when IsUsEquityExchange(info.Exchange) => new EquityAsset { Name = info.Symbol, Exchange = info.Exchange },
+                // so tick size comes from feeds.json scaleFactor (default 0.01 when absent).
+                _ when IsUsEquityExchange(info.Exchange) =>
+                    new EquityAsset
+                    {
+                        Name = info.Symbol,
+                        Exchange = info.Exchange,
+                        TickSize = decimalDigits > 0 ? 1m / (decimal)Math.Pow(10, decimalDigits) : 0.01m,
+                    },
                 _ => CryptoAsset.Create(info.Symbol, info.Exchange, decimalDigits),
             };
 
