@@ -53,8 +53,7 @@ internal static class DataEndpoints
             {
                 try
                 {
-                    using var upstream = await client.PostJsonAsync("/api/v1/catalog/refresh",
-                        default(JsonElement), ctx.RequestAborted);
+                    using var upstream = await client.PostAsync("/api/v1/catalog/refresh", ctx.RequestAborted);
                     if ((int)upstream.StatusCode >= 500)
                     {
                         var detail = await upstream.Content.ReadAsStringAsync(ctx.RequestAborted);

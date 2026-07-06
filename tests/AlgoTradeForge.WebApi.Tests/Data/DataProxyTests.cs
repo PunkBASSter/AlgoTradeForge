@@ -190,6 +190,36 @@ public sealed class DataProxyTests
         Assert.Equal(2, ExactPathCallCount(factory, "/api/v1/exchanges"));
     }
 
+    // Regression (unified-catalog): POST /api/data/refresh must forward a BODYLESS POST to
+    // /api/v1/catalog/refresh and invalidate the catalog cache. The original impl passed
+    // default(JsonElement) as the body, which throws InvalidOperationException in
+    // HistoryLoaderClient.PostJsonAsync (WriteTo on ValueKind.Undefined) before the request
+    // ever hits the network → the proxy returned 500 instead of forwarding.
+    [Fact]
+    public async Task Refresh_ForwardsBodylessPost_Returns204_AndInvalidatesCache()
+    {
+        await using var factory = new DataProxyTestFactory();
+        factory.Handler.RespondAsync(req =>
+            req.Method == HttpMethod.Post
+                ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent))
+                : Task.FromResult(JsonResp("""{"exchanges":[]}"""u8.ToArray())));
+
+        using var client = factory.CreateClient();
+        await client.GetByteArrayAsync("/api/data/exchanges", TestContext.Current.CancellationToken);
+        Assert.Equal(1, ExactPathCallCount(factory, "/api/v1/exchanges"));
+
+        var resp = await client.PostAsync("/api/data/refresh", content: null, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+
+        var refreshReq = Assert.Single(factory.Handler.Requests, r =>
+            r.Method == HttpMethod.Post && r.RequestUri?.AbsolutePath == "/api/v1/catalog/refresh");
+        Assert.Null(refreshReq.Content);
+
+        // Cache invalidated → next read misses and re-hits upstream.
+        await client.GetByteArrayAsync("/api/data/exchanges", TestContext.Current.CancellationToken);
+        Assert.Equal(2, ExactPathCallCount(factory, "/api/v1/exchanges"));
+    }
+
     // -------------------------------------------------------------------------
     // P3-7 — SSE pass-through (chunked + DisableBuffering)
     // -------------------------------------------------------------------------
