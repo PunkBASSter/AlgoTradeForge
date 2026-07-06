@@ -7,6 +7,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Storage;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.Infrastructure.History;
@@ -14,7 +15,8 @@ namespace AlgoTradeForge.Infrastructure.History;
 public sealed class HistoryRepository(
     IInt64BarLoader barLoader,
     IFileStorage storage,
-    IOptions<CandleStorageOptions> storageOptions) : IHistoryRepository
+    IOptions<CandleStorageOptions> storageOptions,
+    ILogger<HistoryRepository> logger) : IHistoryRepository
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -119,6 +121,9 @@ public sealed class HistoryRepository(
         }
         catch (Exception ex) when (ex is JsonException or IOException)
         {
+            // Surface the corrupt manifest — otherwise the source-interval fallback can silently
+            // produce 0 bars (the exact failure class this native-load path was added to fix).
+            logger.LogWarning(ex, "Unreadable feeds.json at {Path}; falling back to source-interval load", feedsJsonPath);
             return null;
         }
     }

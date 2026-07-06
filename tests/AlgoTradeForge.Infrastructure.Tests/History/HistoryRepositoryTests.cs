@@ -6,6 +6,7 @@ using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Infrastructure.History;
 using AlgoTradeForge.Storage;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
@@ -30,7 +31,7 @@ public class HistoryRepositoryTests
         // Default: no feeds.json → the source-resample path (existing crypto behavior).
         _storage.Exists(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
         var options = Options.Create(new CandleStorageOptions { DataRoot = "/data" });
-        _repo = new HistoryRepository(_loader, _storage, options);
+        _repo = new HistoryRepository(_loader, _storage, options, NullLogger<HistoryRepository>.Instance);
     }
 
     // Configures _storage to return a feeds.json declaring the given candle intervals.
