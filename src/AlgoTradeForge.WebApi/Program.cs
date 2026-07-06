@@ -10,8 +10,10 @@ using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Reporting;
 using AlgoTradeForge.Application.Repositories;
+using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Infrastructure;
 using AlgoTradeForge.WebApi;
+using AlgoTradeForge.Infrastructure.Events;
 using AlgoTradeForge.Infrastructure.History;
 using AlgoTradeForge.Infrastructure.Plugins;
 using System.Text;
@@ -87,6 +89,9 @@ builder.Services.Configure<CandleStorageOptions>(
     builder.Configuration.GetSection("CandleStorage"));
 builder.Services.AddSingleton<IInt64BarLoader, PartitionedCsvBarLoader>();
 builder.Services.AddSingleton<IFeedSeriesLoader, CsvFeedSeriesLoader>();
+builder.Services.AddSingleton<IFeedManifestReader, FeedManifestReader>();
+builder.Services.AddSingleton<HistoryFeedResolverFactory>();
+builder.Services.AddSingleton<IRunTradeLogReader, JsonlRunTradeLogReader>();
 builder.Services.AddSingleton<IFeedContextBuilder, FeedContextBuilder>();
 builder.Services.AddSingleton<IAvailableAssetsProvider, FileSystemAvailableAssetsProvider>();
 builder.Services.AddSingleton<IDataSource, CsvDataSource>();
@@ -114,7 +119,7 @@ builder.Services.AddInfrastructure(strategyAssemblies);
 builder.Services.AddHostedService<SqliteIndexMaintenanceService>();
 builder.Services.AddHostedService<ComputeQueueConsumer>();
 
-builder.Services.AddSingleton<IAssetRepository, FileSystemAssetRepository>();
+builder.Services.AddSingleton<IAssetRepository, StorageAssetRepository>();
 
 // Debug WebSocket handler (instance class for constructor-injected JSON options)
 builder.Services.AddSingleton<DebugWebSocketHandler>();

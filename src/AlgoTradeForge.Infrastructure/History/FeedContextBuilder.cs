@@ -1,6 +1,4 @@
-using System.Text.Json;
 using AlgoTradeForge.Application.Abstractions;
-using AlgoTradeForge.Storage;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Engine;
 using AlgoTradeForge.Domain.History;
@@ -13,15 +11,10 @@ namespace AlgoTradeForge.Infrastructure.History;
 /// and loading each declared feed from monthly-partitioned CSV files.
 /// </summary>
 public sealed class FeedContextBuilder(
-    IFileStorage storage,
+    IFeedManifestReader manifestReader,
     IFeedSeriesLoader feedSeriesLoader,
     ILogger<FeedContextBuilder> logger) : IFeedContextBuilder
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
     public async Task<BacktestFeedContext?> Build(
         string dataRoot,
         Asset asset,
@@ -31,25 +24,8 @@ public sealed class FeedContextBuilder(
         CancellationToken ct = default)
     {
         var assetDir = AssetDirectoryName.From(asset);
-        var feedsJsonPath = Path.Combine(dataRoot, asset.Exchange, assetDir, "feeds.json");
 
-        if (!await storage.Exists(feedsJsonPath, ct))
-        {
-            logger.LogDebug("No feeds.json found at {Path} for {Asset}", feedsJsonPath, asset.Name);
-            return null;
-        }
-
-        FeedMetadata? metadata;
-        try
-        {
-            await using var stream = await storage.OpenRead(feedsJsonPath, ct);
-            metadata = await JsonSerializer.DeserializeAsync<FeedMetadata>(stream, JsonOptions, ct);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-
+        var metadata = await manifestReader.Read(dataRoot, asset.Exchange, assetDir, ct);
         if (metadata is null || metadata.Feeds.Count == 0)
             return null;
 

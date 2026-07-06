@@ -29,6 +29,9 @@ public sealed class HistoryLoaderClient
         return await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct);
     }
 
+    public Task<HttpResponseMessage> Post(string relativePath, CancellationToken ct) =>
+        _http.PostAsync(relativePath, content: null, ct);
+
     public Task<HttpResponseMessage> DeleteAsync(string relativePath, CancellationToken ct) =>
         _http.DeleteAsync(relativePath, ct);
 

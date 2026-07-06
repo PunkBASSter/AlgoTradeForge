@@ -3,8 +3,8 @@ using AlgoTradeForge.Domain.History;
 namespace AlgoTradeForge.HistoryLoader.Application.Catalog;
 
 /// <summary>
-/// Read-side view of configured assets joined with per-asset <c>feeds.json</c>. Cached with a
-/// 30s TTL; <c>ISchemaManager.ManifestChanged</c> invalidates entries event-driven.
+/// Read-side view of configured assets joined with per-asset <c>feeds.json</c> under DataRoot.
+/// Cached until <c>Refresh()</c> is called or <c>ISchemaManager.ManifestChanged</c> fires (10-min TTL).
 /// </summary>
 public interface IFeedCatalog
 {
@@ -13,4 +13,7 @@ public interface IFeedCatalog
     Task<AssetListResponse> GetAllAssets(CancellationToken ct = default);
     Task<AssetCatalogEntry?> GetAsset(string exchange, string assetSymbol, CancellationToken ct = default);
     Task<FeedDefinition?> GetFeed(string exchange, string assetSymbol, string feedId, CancellationToken ct = default);
+
+    /// <summary>Force the next catalog read to rescan the filesystem.</summary>
+    void Refresh();
 }

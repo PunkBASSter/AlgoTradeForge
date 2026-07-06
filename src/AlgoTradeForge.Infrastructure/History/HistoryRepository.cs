@@ -11,6 +11,7 @@ namespace AlgoTradeForge.Infrastructure.History;
 
 public sealed class HistoryRepository(
     IInt64BarLoader barLoader,
+    HistoryFeedResolverFactory resolverFactory,
     IOptions<CandleStorageOptions> storageOptions) : IHistoryRepository
 {
     //TODO: investigate if upcast is required
@@ -42,22 +43,13 @@ public sealed class HistoryRepository(
 
     private async Task<TimeSeries<Int64Bar>> LoadTimeBar(Asset asset, TimeFrame timeFrame, DateOnly from, DateOnly to, CancellationToken ct)
     {
-        var sourceInterval = storageOptions.Value.SourceInterval;
-
-        if (timeFrame < sourceInterval)
-            throw new ArgumentException(
-                $"Requested timeframe ({timeFrame}) is smaller than the asset's smallest interval ({sourceInterval}).",
-                nameof(timeFrame));
+        var resolution = await resolverFactory.For(asset).Resolve(asset, timeFrame, ct);
 
         var descriptor = new DataFeedDescriptor(
-            DataRoot: storageOptions.Value.DataRoot,
-            Exchange: asset.Exchange,
-            Asset: AssetDirectoryName.From(asset),
-            FeedId: TimeFrameFormatter.Format(sourceInterval),
-            Kind: DataFeedKind.TimeBar);
-
+            storageOptions.Value.DataRoot, asset.Exchange, AssetDirectoryName.From(asset),
+            resolution.LoadFeedId, DataFeedKind.TimeBar);
         var raw = await barLoader.Load(descriptor, from, to, ct);
 
-        return timeFrame == sourceInterval ? raw : raw.Resample(timeFrame);
+        return resolution.Resample ? raw.Resample(timeFrame) : raw;
     }
 }

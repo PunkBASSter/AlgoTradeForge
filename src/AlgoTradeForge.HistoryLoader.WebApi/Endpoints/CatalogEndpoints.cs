@@ -19,6 +19,12 @@ internal static class CatalogEndpoints
         v1.MapGet("/assets", async (IFeedCatalog catalog, CancellationToken ct) =>
             Results.Json(await catalog.GetAllAssets(ct)));
 
+        v1.MapPost("/catalog/refresh", (IFeedCatalog catalog) =>
+        {
+            catalog.Refresh();
+            return Results.NoContent();
+        });
+
         v1.MapGet("/exchanges/{exchange}/assets/{asset}/feeds/{feedId}/status",
             async (string exchange, string asset, string feedId, IFeedCatalog catalog, CancellationToken ct) =>
             {

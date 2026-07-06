@@ -1,8 +1,13 @@
 using AlgoTradeForge.Application;
 using AlgoTradeForge.Application.Abstractions;
 using AlgoTradeForge.Application.Backtests;
+using AlgoTradeForge.Application.Events;
 using AlgoTradeForge.Application.Persistence;
 using AlgoTradeForge.Application.Progress;
+using AlgoTradeForge.Application.Repositories;
+using AlgoTradeForge.Domain;
+using AlgoTradeForge.Domain.Strategy;
+using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.WebApi.Contracts;
 
 namespace AlgoTradeForge.WebApi.Endpoints;
@@ -50,6 +55,13 @@ public static class BacktestEndpoints
             .WithSummary("Get per-trade PnL for a backtest run")
             .WithOpenApi()
             .Produces<IReadOnlyList<TradePointResponse>>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{id:guid}/events", GetBacktestEvents)
+            .WithName("GetBacktestEvents")
+            .WithSummary("Get bulk chart data (candles, trades, indicators) for a backtest run")
+            .WithOpenApi()
+            .Produces<EventsDataResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
         group.MapGet("/{id:guid}/status", GetBacktestStatus)
@@ -211,6 +223,77 @@ public static class BacktestEndpoints
             .ToList();
 
         return Results.Ok(points);
+    }
+
+    private static async Task<IResult> GetBacktestEvents(
+        Guid id,
+        IQueryHandler<GetBacktestByIdQuery, BacktestRunRecord?> handler,
+        IRunTradeLogReader tradeLogReader,
+        IAssetRepository assetRepository,
+        IHistoryRepository historyRepository,
+        ILogger<EventsDataResponse> logger,
+        CancellationToken ct)
+    {
+        var record = await handler.HandleAsync(new GetBacktestByIdQuery(id), ct);
+        if (record is null)
+            return Results.NotFound(new { error = $"Backtest with ID '{id}' not found." });
+        if (record.RunFolderPath is null)
+            return Results.NotFound(new { error = $"Backtest '{id}' has no run folder (events were not captured)." });
+
+        // Chart the finest-granularity primary time-bar feed — matches entry resolution.
+        var chartSub = record.DataSubscriptions
+            .OfType<TimeBarSubscription>()
+            .Where(s => s.Role == DataFeedRole.Primary)
+            .OrderBy(s => s.TimeFrame.Duration)
+            .FirstOrDefault();
+
+        var candles = new List<CandlePointResponse>();
+        var scale = new ScaleContext(0.01m);
+        if (chartSub is not null)
+        {
+            var asset = await assetRepository.GetByNameAsync(chartSub.AssetName, chartSub.Exchange, ct);
+            if (asset is not null)
+            {
+                scale = new ScaleContext(asset);
+                var from = DateOnly.FromDateTime(record.BacktestSettings.StartTime.UtcDateTime);
+                var to = DateOnly.FromDateTime(record.BacktestSettings.EndTime.UtcDateTime);
+                try
+                {
+                    var series = await historyRepository.Load(asset, chartSub, from, to, ct);
+                    candles.Capacity = series.Count;
+                    foreach (var bar in series)
+                        candles.Add(new CandlePointResponse(
+                            bar.TimestampMs / 1000,
+                            scale.TicksToAmount(bar.Open),
+                            scale.TicksToAmount(bar.High),
+                            scale.TicksToAmount(bar.Low),
+                            scale.TicksToAmount(bar.Close),
+                            bar.Volume));
+                }
+                catch (ArgumentException ex)
+                {
+                    // History moved/deleted since the run — serve trades without candles
+                    // rather than failing the whole report.
+                    logger.LogWarning(ex, "Cannot reload candles for backtest {Id}", id);
+                }
+            }
+        }
+
+        var trades = (await tradeLogReader.Read(record.RunFolderPath, ct))
+            .Select(t => new TradeMarkerResponse(
+                t.EntryTime.ToUnixTimeSeconds(),
+                scale.TicksToAmount(t.EntryPrice),
+                t.ExitTime?.ToUnixTimeSeconds(),
+                t.ExitPrice is { } xp ? scale.TicksToAmount(xp) : null,
+                t.Side,
+                t.Quantity,
+                t.Pnl is { } pnl ? scale.TicksToAmount(pnl) : null,
+                scale.TicksToAmount(t.Commission),
+                t.TakeProfitPrice is { } tp ? scale.TicksToAmount(tp) : null,
+                t.StopLossPrice is { } sl ? scale.TicksToAmount(sl) : null))
+            .ToList();
+
+        return Results.Ok(new EventsDataResponse(candles, new Dictionary<string, object>(), trades));
     }
 
     private static async Task<IResult> GetTradePnl(

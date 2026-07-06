@@ -57,6 +57,7 @@ const mockStrategyDescriptors: StrategyDescriptor[] = strategiesData.map((name) 
   liveSessionTemplate: {},
   debugSessionTemplate: {},
   geneticOptimizationTemplate: {},
+  requiredSubscriptionCount: 1,
 }));
 import backtestsData from "./mock-data/backtests.json";
 import optimizationsData from "./mock-data/optimizations.json";

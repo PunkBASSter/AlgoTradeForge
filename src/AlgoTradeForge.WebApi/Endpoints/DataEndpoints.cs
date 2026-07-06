@@ -48,6 +48,31 @@ internal static class DataEndpoints
                 ProxyPassthroughGet(ctx, client, $"/api/v1/aggregations/{jobId}"));
 
         // Mutations — write-through cache invalidation.
+        g.MapPost("/refresh",
+            async (HttpContext ctx, HistoryLoaderClient client, DataProxyCache cache) =>
+            {
+                try
+                {
+                    using var upstream = await client.Post("/api/v1/catalog/refresh", ctx.RequestAborted);
+                    if ((int)upstream.StatusCode >= 500)
+                    {
+                        var detail = await upstream.Content.ReadAsStringAsync(ctx.RequestAborted);
+                        await DataProxyProblem.UpstreamError((int)upstream.StatusCode, detail).ExecuteAsync(ctx);
+                        return;
+                    }
+                    await cache.InvalidateAll(ctx.RequestAborted);
+                    ctx.Response.StatusCode = (int)upstream.StatusCode;
+                }
+                catch (HttpRequestException ex)
+                {
+                    await DataProxyProblem.Unavailable(ex.Message).ExecuteAsync(ctx);
+                }
+                catch (TaskCanceledException ex) when (!ctx.RequestAborted.IsCancellationRequested)
+                {
+                    await DataProxyProblem.Timeout(ex.Message).ExecuteAsync(ctx);
+                }
+            });
+
         g.MapPost("/exchanges/{exchange}/assets/{asset}/aggregate",
             (string exchange, string asset,
              HttpContext ctx, HistoryLoaderClient client, DataProxyCache cache) =>

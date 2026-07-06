@@ -10,4 +10,5 @@ public sealed record StrategyDescriptorDto(
     IReadOnlyDictionary<string, object> OptimizationTemplate,
     IReadOnlyDictionary<string, object> LiveSessionTemplate,
     IReadOnlyDictionary<string, object> DebugSessionTemplate,
-    IReadOnlyDictionary<string, object> GeneticOptimizationTemplate);
+    IReadOnlyDictionary<string, object> GeneticOptimizationTemplate,
+    int RequiredSubscriptionCount);

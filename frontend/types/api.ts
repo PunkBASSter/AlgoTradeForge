@@ -19,6 +19,8 @@ export interface StrategyDescriptor {
   liveSessionTemplate: Record<string, unknown>;
   debugSessionTemplate: Record<string, unknown>;
   geneticOptimizationTemplate: Record<string, unknown>;
+  /** Number of data subscriptions the strategy requires (e.g. QuickFlip needs 2: 5m entry + 1d). */
+  requiredSubscriptionCount: number;
 }
 
 export interface ParameterAxisDescriptor {

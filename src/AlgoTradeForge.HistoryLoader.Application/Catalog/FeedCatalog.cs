@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
+using AlgoTradeForge.Storage;
 using AlgoTradeForge.Storage.Threading;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
-using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
@@ -10,50 +10,58 @@ using Microsoft.Extensions.Options;
 namespace AlgoTradeForge.HistoryLoader.Application.Catalog;
 
 /// <summary>
-/// In-memory <see cref="IFeedCatalog"/> with version-suffixed cache keys: every
-/// <c>ManifestChanged</c> event bumps a monotonic version, so new requests miss the cache
-/// and rebuild from disk while old entries age out via TTL. Avoids the bookkeeping of
-/// per-key invalidation while staying lock-free on the hot read path.
+/// Filesystem-sourced <see cref="IFeedCatalog"/>: one entry per <c>feeds.json</c> found under
+/// <c>DataRoot</c>. Version-suffixed cache keys — <c>ManifestChanged</c> or an explicit
+/// <see cref="Refresh"/> bumps the version so new requests rescan. Type is heuristic
+/// (see <see cref="AssetDirectoryClassifier"/>).
 /// </summary>
 public sealed class FeedCatalog : IFeedCatalog
 {
+    private readonly IFileStorage _storage;
     private readonly IOptionsMonitor<HistoryLoaderOptions> _options;
     private readonly ISchemaManager _schemaManager;
     private readonly IMemoryCache _cache;
-    private readonly TimeSpan _ttl = TimeSpan.FromSeconds(30);
+    // Refresh-gated (not per-request): a full feeds.json scan touches every file under
+    // DataRoot, so hold results until a version bump rather than a short TTL.
+    private readonly TimeSpan _ttl = TimeSpan.FromMinutes(10);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _loadGates = new();
 
     private long _version;
 
     public FeedCatalog(
+        IFileStorage storage,
         IOptionsMonitor<HistoryLoaderOptions> options,
         ISchemaManager schemaManager,
         IMemoryCache cache)
     {
+        _storage = storage;
         _options = options;
         _schemaManager = schemaManager;
         _cache = cache;
 
-        // Both this and the schema manager are singletons constructed at DI time, so the
-        // subscription captures every mutation from the moment the catalog exists.
         _schemaManager.ManifestChanged += _ =>
         {
             Interlocked.Increment(ref _version);
-            // Versioned cache keys are never reused after a bump, so the per-key gates from
-            // the previous version are dead weight. Drop them to keep the map bounded.
             _loadGates.Clear();
         };
     }
 
+    public void Refresh()
+    {
+        Interlocked.Increment(ref _version);
+        _loadGates.Clear();
+    }
+
     public Task<ExchangeListResponse> GetExchanges(CancellationToken ct = default) =>
-        CachedAsync($"exchanges:{Version}", () =>
+        CachedAsync($"exchanges:{Version}", async () =>
         {
-            var groups = _options.CurrentValue.Assets
-                .GroupBy(a => a.Exchange, StringComparer.OrdinalIgnoreCase)
+            var dirs = await ScanAssetDirs(ct);
+            var groups = dirs
+                .GroupBy(d => d.Exchange, StringComparer.OrdinalIgnoreCase)
                 .Select(g => new ExchangeSummary(g.Key, g.Count()))
                 .OrderBy(e => e.Name, StringComparer.Ordinal)
                 .ToArray();
-            return Task.FromResult(new ExchangeListResponse(groups));
+            return new ExchangeListResponse(groups);
         });
 
     public Task<AssetListResponse> GetAssetsByExchange(string exchange, CancellationToken ct = default) =>
@@ -66,123 +74,114 @@ public sealed class FeedCatalog : IFeedCatalog
 
     public async Task<AssetCatalogEntry?> GetAsset(string exchange, string assetSymbol, CancellationToken ct = default)
     {
-        // No separate cache — the assets-by-exchange entry already contains this slice.
-        var entries = await BuildAssetEntries(exchange, ct);
-        return entries.FirstOrDefault(a =>
-            string.Equals(a.Symbol, assetSymbol, StringComparison.Ordinal));
+        // Reuse the cached per-exchange list — a bare BuildAssetEntries here would rescan the
+        // whole DataRoot tree and re-read every manifest on each call (feed-status / aggregation
+        // options hit this per request).
+        var list = await GetAssetsByExchange(exchange, ct);
+        return list.Assets.FirstOrDefault(a => string.Equals(a.Symbol, assetSymbol, StringComparison.Ordinal));
     }
 
     public async Task<FeedDefinition?> GetFeed(string exchange, string assetSymbol, string feedId, CancellationToken ct = default)
     {
-        var asset = ResolveConfiguredAsset(exchange, assetSymbol);
-        if (asset is null) return null;
-        var assetDir = BackfillOrchestrator.ResolveAssetDir(_options.CurrentValue.DataRoot, asset);
+        if (!TryResolveAssetDir(_options.CurrentValue.DataRoot, exchange, assetSymbol, out var assetDir))
+            return null;
+
         var manifest = await _schemaManager.Load(assetDir, ct);
         if (manifest is null) return null;
 
-        // Declared feeds (Side / Tick / explicit AltBar) live in `manifest.Feeds`.
         if (manifest.Feeds.TryGetValue(feedId, out var def))
             return def;
 
-        // Synthesize a FeedDefinition for candle intervals so the /aggregation-options endpoint
-        // can resolve eligibility on a 1m/1h/1d source. Without this, the endpoint 404s and the
-        // new-aggregate form's Type dropdown stays disabled.
         if (manifest.Candles?.Intervals.Contains(feedId) == true)
-        {
-            return new FeedDefinition
-            {
-                Kind = "OHLCV_TimeBar",
-                Interval = feedId,
-            };
-        }
+            return new FeedDefinition { Kind = "OHLCV_TimeBar", Interval = feedId };
 
         return null;
     }
 
     // -------------------------------------------------------------------------
 
+    // exchange/assetSymbol arrive from user-controlled route params. Confine the resolved dir
+    // to exactly {exchange}/{asset} under DataRoot so "..", embedded separators, or an absolute
+    // path can't read a feeds.json outside the intended asset directory.
+    private static bool TryResolveAssetDir(string dataRoot, string exchange, string assetSymbol, out string assetDir)
+    {
+        assetDir = Path.Combine(dataRoot, exchange, assetSymbol);
+        var rel = Path.GetRelativePath(Path.GetFullPath(dataRoot), Path.GetFullPath(assetDir));
+        if (Path.IsPathRooted(rel)) return false;
+        var segments = rel.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length == 2 && Array.TrueForAll(segments, s => s != "..");
+    }
+
     private long Version => Interlocked.Read(ref _version);
 
-    private async Task<T> CachedAsync<T>(string key, Func<Task<T>> factory) where T : class
+    /// <summary>
+    /// One (exchange, dir) per <c>feeds.json</c> under DataRoot. feeds.json is the per-asset
+    /// marker (both the importer and FeedSchemaManager write exactly one per dir), so scanning
+    /// it — rather than candle files — yields ~one key per asset instead of one per partition.
+    /// </summary>
+    private async Task<List<(string Exchange, string Dir)>> ScanAssetDirs(CancellationToken ct)
     {
-        // Fast path: avoid the gate on a hot cache hit.
-        if (_cache.TryGetValue(key, out T? hit) && hit is not null) return hit;
-
-        // Single-flight per key. Without this, concurrent miss-readers each invoke factory
-        // (which awaits per-asset manifest I/O), fanning out into N parallel file reads per
-        // HTTP burst — fine on local FS, painful on S3 latency.
-        var gate = _loadGates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
-        using var _ = await gate.LockAsync(CancellationToken.None);
-
-        if (_cache.TryGetValue(key, out hit) && hit is not null) return hit;
-
-        using var entry = _cache.CreateEntry(key);
-        entry.AbsoluteExpirationRelativeToNow = _ttl;
-        var result = await factory();
-        entry.Value = result;
+        var dataRoot = _options.CurrentValue.DataRoot;
+        // Trailing separator forces directory semantics in ListKeys: a missing DataRoot scans
+        // as empty instead of falling back to a recursive parent-directory walk ("dir/name*"
+        // prefix match), which hits unreadable siblings (e.g. /tmp/systemd-private-*).
+        var rootPrefix = string.IsNullOrEmpty(dataRoot) || Path.EndsInDirectorySeparator(dataRoot)
+            ? dataRoot
+            : dataRoot + Path.DirectorySeparatorChar;
+        var seen = new HashSet<(string, string)>();
+        var result = new List<(string, string)>();
+        await foreach (var key in _storage.ListKeys(rootPrefix, suffix: "feeds.json", recursive: true, ct))
+        {
+            var segments = key.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length < 3) continue; // …/{exchange}/{dir}/feeds.json
+            var exchange = segments[^3];
+            var dir = segments[^2];
+            if (seen.Add((exchange, dir))) result.Add((exchange, dir));
+        }
+        result.Sort((a, b) =>
+        {
+            var cmp = string.Compare(a.Item1, b.Item1, StringComparison.OrdinalIgnoreCase);
+            return cmp != 0 ? cmp : string.Compare(a.Item2, b.Item2, StringComparison.OrdinalIgnoreCase);
+        });
         return result;
     }
 
-    private AssetCollectionConfig? ResolveConfiguredAsset(string exchange, string assetSymbol) =>
-        _options.CurrentValue.Assets.FirstOrDefault(a =>
-            string.Equals(a.Exchange, exchange, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(
-                AssetPathConvention.DirectoryName(a.Symbol, a.Type),
-                assetSymbol,
-                StringComparison.Ordinal));
-
     private async Task<AssetCatalogEntry[]> BuildAssetEntries(string? exchange, CancellationToken ct)
     {
-        var config = _options.CurrentValue;
-        var assets = exchange is null
-            ? config.Assets.ToArray()
-            : config.Assets
-                .Where(a => string.Equals(a.Exchange, exchange, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
+        var dataRoot = _options.CurrentValue.DataRoot;
+        var dirs = await ScanAssetDirs(ct);
+        if (exchange is not null)
+            dirs = dirs.Where(d => string.Equals(d.Exchange, exchange, StringComparison.OrdinalIgnoreCase)).ToList();
 
-        // Per-asset loads are independent — fan out so the total cost is one round-trip
-        // (max latency) instead of Σ(latencies). Matters once IFileStorage points at S3.
-        var manifests = await Task.WhenAll(assets.Select(a =>
-            _schemaManager.Load(BackfillOrchestrator.ResolveAssetDir(config.DataRoot, a), ct)));
+        var manifests = await Task.WhenAll(dirs.Select(d =>
+            _schemaManager.Load(Path.Combine(dataRoot, d.Exchange, d.Dir), ct)));
 
-        var result = new AssetCatalogEntry[assets.Length];
-        for (var i = 0; i < assets.Length; i++)
+        var result = new AssetCatalogEntry[dirs.Count];
+        for (var i = 0; i < dirs.Count; i++)
         {
-            var asset = assets[i];
+            var (exchangeName, dir) = dirs[i];
             var manifest = manifests[i];
+            var (symbol, type) = AssetDirectoryClassifier.Classify(exchangeName, dir);
 
             var declaredFeedDict = manifest?.Feeds ?? new Dictionary<string, FeedDefinition>();
             var declaredFeeds = declaredFeedDict.Select(kvp => MapFeed(kvp.Key, kvp.Value));
 
-            // Time-bar candles live in manifest.Candles.Intervals, separate from the feeds
-            // dictionary. Surface them as catalog entries so the Data grid shows them and they
-            // become available as alt-bar source feeds. Skip intervals already claimed by a
-            // declared feed id to avoid duplicates.
             var candleFeeds = (manifest?.Candles?.Intervals ?? [])
                 .Where(interval => !declaredFeedDict.ContainsKey(interval))
                 .Select(interval => new FeedCatalogEntry(
-                    Id: interval,
-                    Kind: "OHLCV_TimeBar",
-                    Interval: interval,
-                    TypeCode: null,
-                    ThresholdValue: null,
-                    ThresholdUnit: null,
-                    FirstBarTs: null,
-                    LastBarTs: null,
-                    Sidecar: null));
+                    Id: interval, Kind: "OHLCV_TimeBar", Interval: interval,
+                    TypeCode: null, ThresholdValue: null, ThresholdUnit: null,
+                    FirstBarTs: null, LastBarTs: null, Sidecar: null));
 
-            var feeds = candleFeeds
-                .Concat(declaredFeeds)
-                .OrderBy(f => f, FeedOrder.Instance)
-                .ToArray();
+            var feeds = candleFeeds.Concat(declaredFeeds).OrderBy(f => f, FeedOrder.Instance).ToArray();
 
             result[i] = new AssetCatalogEntry(
-                Exchange: asset.Exchange,
-                Symbol: AssetPathConvention.DirectoryName(asset.Symbol, asset.Type),
-                // Disambiguate spot vs perpetual labels — asset.Symbol alone collapses
-                // BTCUSDT-spot and BTCUSDT-perp into identical rows.
-                DisplayName: AssetTypes.IsFutures(asset.Type) ? $"{asset.Symbol}-perp" : asset.Symbol,
-                Type: asset.Type,
+                Exchange: exchangeName,
+                Symbol: dir,
+                DisplayName: AssetTypes.IsFutures(type) ? $"{symbol}-perp" : symbol,
+                Type: type,
                 Feeds: feeds);
         }
         return result;
@@ -212,6 +211,26 @@ public sealed class FeedCatalog : IFeedCatalog
             FirstBarTs: def.FirstBarTs,
             LastBarTs: def.LastBarTs,
             Sidecar: def.Sidecar);
+    }
+
+    private async Task<T> CachedAsync<T>(string key, Func<Task<T>> factory) where T : class
+    {
+        // Fast path: avoid the gate on a hot cache hit.
+        if (_cache.TryGetValue(key, out T? hit) && hit is not null) return hit;
+
+        // Single-flight per key. Without this, concurrent miss-readers each invoke factory
+        // (which awaits per-asset manifest I/O), fanning out into N parallel file reads per
+        // HTTP burst — fine on local FS, painful on S3 latency.
+        var gate = _loadGates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        using var _ = await gate.LockAsync(CancellationToken.None);
+
+        if (_cache.TryGetValue(key, out hit) && hit is not null) return hit;
+
+        using var entry = _cache.CreateEntry(key);
+        entry.AbsoluteExpirationRelativeToNow = _ttl;
+        var result = await factory();
+        entry.Value = result;
+        return result;
     }
 
     /// <summary>
