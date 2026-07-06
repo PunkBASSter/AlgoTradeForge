@@ -57,6 +57,7 @@ export function AssetCombobox({ value, onSelect, disabled }: AssetComboboxProps)
       <input
         role="combobox"
         aria-expanded={open}
+        aria-controls="asset-combobox-list"
         aria-label="Asset"
         className={INPUT_CLASSES}
         placeholder={assetsQuery.isLoading ? "Loading catalog…" : "Search symbol or exchange…"}
@@ -72,10 +73,11 @@ export function AssetCombobox({ value, onSelect, disabled }: AssetComboboxProps)
       {open && matches.length > 0 && (
         <ul
           className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border border-border-default bg-bg-panel shadow-lg"
+          id="asset-combobox-list"
           role="listbox"
         >
           {matches.map((a) => (
-            <li key={`${a.exchange}|${a.symbol}`} role="option" aria-selected={false}>
+            <li key={`${a.exchange}|${a.symbol}`} role="option" aria-selected={value?.exchange === a.exchange && value?.symbol === a.symbol}>
               <button
                 type="button"
                 className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-sm text-text-primary hover:bg-bg-base"
