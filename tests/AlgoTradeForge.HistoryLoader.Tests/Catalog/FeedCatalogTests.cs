@@ -29,9 +29,9 @@ public sealed class FeedCatalogTests : IDisposable
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private (FeedCatalog catalog, FeedSchemaManager manager, IOptionsMonitor<HistoryLoaderOptions> monitor)
-        Build()
+        Build(string? dataRoot = null)
     {
-        var options = new HistoryLoaderOptions { DataRoot = _tempDir };
+        var options = new HistoryLoaderOptions { DataRoot = dataRoot ?? _tempDir };
         var monitor = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
         monitor.CurrentValue.Returns(options);
         var storage = new LocalFileStorage(new LocalStorageOptions { DataRoot = "" });
@@ -130,6 +130,26 @@ public sealed class FeedCatalogTests : IDisposable
 
         var third = await catalog.GetExchanges(Ct);
         Assert.NotSame(first, third);
+    }
+
+    [Fact]
+    public async Task GetExchanges_DataRootMissing_ReturnsEmptyWithoutScanningParent()
+    {
+        // A DataRoot that doesn't exist yet (fresh install; this fixture before the first
+        // WriteManifest) must scan as empty. Without a trailing separator on the ListKeys
+        // prefix, LocalFileStorage falls back to "parent dir + name filter" semantics and
+        // recursively walks the PARENT directory — which crashed CI on unreadable
+        // /tmp/systemd-private-* siblings. The decoy below is visible only via that
+        // parent-walk fallback (name matches "data-root*" and the feeds.json suffix).
+        Directory.CreateDirectory(_tempDir);
+        var missingRoot = Path.Combine(_tempDir, "data-root");
+        File.WriteAllText(Path.Combine(_tempDir, "data-root-decoy-feeds.json"), "{}");
+
+        var (catalog, _, _) = Build(missingRoot);
+
+        var resp = await catalog.GetExchanges(Ct);
+
+        Assert.Empty(resp.Exchanges);
     }
 
     [Fact]

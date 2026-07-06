@@ -124,9 +124,15 @@ public sealed class FeedCatalog : IFeedCatalog
     private async Task<List<(string Exchange, string Dir)>> ScanAssetDirs(CancellationToken ct)
     {
         var dataRoot = _options.CurrentValue.DataRoot;
+        // Trailing separator forces directory semantics in ListKeys: a missing DataRoot scans
+        // as empty instead of falling back to a recursive parent-directory walk ("dir/name*"
+        // prefix match), which hits unreadable siblings (e.g. /tmp/systemd-private-*).
+        var rootPrefix = string.IsNullOrEmpty(dataRoot) || Path.EndsInDirectorySeparator(dataRoot)
+            ? dataRoot
+            : dataRoot + Path.DirectorySeparatorChar;
         var seen = new HashSet<(string, string)>();
         var result = new List<(string, string)>();
-        await foreach (var key in _storage.ListKeys(dataRoot, suffix: "feeds.json", recursive: true, ct))
+        await foreach (var key in _storage.ListKeys(rootPrefix, suffix: "feeds.json", recursive: true, ct))
         {
             var segments = key.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
             if (segments.Length < 3) continue; // …/{exchange}/{dir}/feeds.json
