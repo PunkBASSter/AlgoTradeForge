@@ -1,9 +1,11 @@
+using System.Text;
 using AlgoTradeForge.Application.CandleIngestion;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Infrastructure.History;
+using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
@@ -17,14 +19,28 @@ public class HistoryRepositoryTests
     private static readonly CryptoAsset BtcUsdt = CryptoAsset.Create("BTCUSDT", "Binance", 2);
 
     private readonly IInt64BarLoader _loader;
+    private readonly IFileStorage _storage;
     private readonly HistoryRepository _repo;
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public HistoryRepositoryTests()
     {
         _loader = Substitute.For<IInt64BarLoader>();
+        _storage = Substitute.For<IFileStorage>();
+        // Default: no feeds.json → the source-resample path (existing crypto behavior).
+        _storage.Exists(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
         var options = Options.Create(new CandleStorageOptions { DataRoot = "/data" });
-        _repo = new HistoryRepository(_loader, options);
+        _repo = new HistoryRepository(_loader, _storage, options);
+    }
+
+    // Configures _storage to return a feeds.json declaring the given candle intervals.
+    private void WithCandleIntervals(params string[] intervals)
+    {
+        var json = "{\"candles\":{\"scaleFactor\":100,\"intervals\":[" +
+            string.Join(",", intervals.Select(i => $"\"{i}\"")) + "]}}";
+        _storage.Exists(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
+        _storage.OpenRead(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(json))));
     }
 
     private TimeSeries<Int64Bar> MakeMinuteSeries(int count)
@@ -217,6 +233,41 @@ public class HistoryRepositoryTests
         var result = await _repo.Load(BtcUsdt, sub, new DateOnly(2024, 1, 1), new DateOnly(2024, 1, 31), ct: Ct);
 
         Assert.Equal(2, result.Count);
+    }
+
+    // Equity archive carries 5m/1d but no 1m source: the requested timeframe must be loaded
+    // from its own native partitions (FeedId='1d'), not the absent 1m source.
+    [Fact]
+    public async Task LoadTimeBar_WhenSourceIntervalAbsent_LoadsRequestedTimeframeNatively()
+    {
+        WithCandleIntervals("5m", "1d");
+        var sub = new TimeBarSubscription("AAPL", "NASDAQ", DataFeedRole.Primary, TimeFrame.Parse("1d"));
+        var equity = new EquityAsset { Name = "AAPL", Exchange = "NASDAQ" };
+        DataFeedDescriptor? captured = null;
+        _loader.Load(Arg.Any<DataFeedDescriptor>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(call => { captured = call.Arg<DataFeedDescriptor>(); return MakeMinuteSeries(3); });
+
+        var result = await _repo.Load(equity, sub, new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31), ct: Ct);
+
+        Assert.NotNull(captured);
+        Assert.Equal("1d", captured!.Value.FeedId);       // native, not the 1m source
+        Assert.Equal(3, result.Count);                     // returned raw (no resample)
+    }
+
+    // When the 1m source IS present (crypto), keep loading it and resampling — unchanged behavior.
+    [Fact]
+    public async Task LoadTimeBar_WhenSourceIntervalPresent_LoadsSourceAndResamples()
+    {
+        WithCandleIntervals("1m", "1d");
+        var sub = new TimeBarSubscription("BTCUSDT", "Binance", DataFeedRole.Primary, TimeFrame.Parse("1d"));
+        DataFeedDescriptor? captured = null;
+        _loader.Load(Arg.Any<DataFeedDescriptor>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+            .Returns(call => { captured = call.Arg<DataFeedDescriptor>(); return MakeMinuteSeries(10); });
+
+        await _repo.Load(BtcUsdt, sub, new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31), ct: Ct);
+
+        Assert.NotNull(captured);
+        Assert.Equal("1m", captured!.Value.FeedId);       // source, then resampled to 1d
     }
 
     [Fact]
