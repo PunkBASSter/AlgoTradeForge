@@ -680,6 +680,10 @@ export function RunNewPanel({
                 onPrimariesChange={handlePrimariesChange}
                 onSidesChange={handleSidesChange}
                 disabled={submitting}
+                // Caps PRIMARY feeds. requiredSubscriptionCount is the strategy's TOTAL required
+                // subscriptions (primary + side); this is correct only while every multi-sub
+                // strategy is all-primary (PairsTrading, QuickFlip). A strategy that requires a
+                // side feed alongside primaries would need a primary-specific count on the descriptor.
                 maxPrimaries={descriptor?.requiredSubscriptionCount ?? 1}
                 primaryTitle="Primary feed"
                 primarySubtitle="The strategy's main bar stream. Optional side feeds attach as auxiliary signals."

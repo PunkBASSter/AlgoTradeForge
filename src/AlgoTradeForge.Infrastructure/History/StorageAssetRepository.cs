@@ -108,8 +108,9 @@ public sealed class StorageAssetRepository(
             margin: 0.05m,
             minOrderQuantity: 0.001m, maxOrderQuantity: 10000m, quantityStepSize: 0.001m);
 
-        dict["AAPL|NASDAQ"] = new EquityAsset { Name = "AAPL", Exchange = "NASDAQ" };
-        dict["MSFT|NASDAQ"] = new EquityAsset { Name = "MSFT", Exchange = "NASDAQ" };
+        // NASDAQ/NYSE equities (AAPL, MSFT, …) are discovered from the Stooq archive on disk
+        // with tick from their feeds.json scaleFactor — no hardcoded seed. CME futures stay
+        // seeded: no on-disk source, and they carry contract metadata discovery can't provide.
         dict["ES|CME"] = new FutureAsset { Name = "ES", Exchange = "CME", Multiplier = 50m, TickSize = 0.25m, MarginRequirement = 15000m };
         dict["MES|CME"] = new FutureAsset { Name = "MES", Exchange = "CME", Multiplier = 5m, TickSize = 0.25m, MarginRequirement = 1500m };
     }

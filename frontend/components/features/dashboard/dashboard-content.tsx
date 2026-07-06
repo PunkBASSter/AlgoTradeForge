@@ -96,7 +96,7 @@ export function DashboardContent({ strategy, mode }: DashboardContentProps) {
 
   return (
     <>
-      {(mode === "optimization" || mode === "validation") && <TaskQueuePanel />}
+      {mode === "optimization" && <TaskQueuePanel />}
 
       {mode !== "live" && (
         <RunFilters filters={filters} onChange={handleFilterChange} />
