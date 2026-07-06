@@ -56,4 +56,27 @@ describe("AssetCombobox", () => {
       expect.objectContaining({ exchange: "binance", symbol: "BTCUSDT" }),
     );
   });
+
+  it("shows a truncation hint when matches exceed the cap instead of silently dropping them", async () => {
+    mockAssets(Array.from({ length: 60 }, (_, i) => entry("NASDAQ", `SYM${i}`, "equity")));
+    renderCombobox();
+
+    const input = await screen.findByRole("combobox", { name: /asset/i });
+    fireEvent.focus(input);
+
+    expect(await screen.findByText(/showing 50 of 60/i)).toBeInTheDocument();
+  });
+
+  it("surfaces an exact ticker above the cap via relevance ranking", async () => {
+    // 55 substring matches ("SPY0".."SPY54") precede the exact "SPY" in catalog order —
+    // without ranking the exact match sorts past the 50-row slice and vanishes.
+    const substrings = Array.from({ length: 55 }, (_, i) => entry("ARCA", `SPY${i}`, "equity"));
+    mockAssets([...substrings, entry("ARCA", "SPY", "equity")]);
+    renderCombobox();
+
+    const input = await screen.findByRole("combobox", { name: /asset/i });
+    fireEvent.change(input, { target: { value: "spy" } });
+
+    expect(await screen.findByText("SPY")).toBeInTheDocument();
+  });
 });

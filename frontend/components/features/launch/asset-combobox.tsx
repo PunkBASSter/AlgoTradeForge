@@ -32,19 +32,29 @@ export function AssetCombobox({ value, onSelect, disabled }: AssetComboboxProps)
     staleTime: Infinity,
   });
 
-  const matches = useMemo(() => {
+  const { matches, total } = useMemo(() => {
     const all = assetsQuery.data?.assets ?? [];
     const q = query.trim().toLowerCase();
-    if (!q) return all.slice(0, MAX_RESULTS);
-    return all
-      .filter(
-        (a) =>
-          a.display_name.toLowerCase().includes(q) ||
-          a.symbol.toLowerCase().includes(q) ||
-          a.exchange.toLowerCase().includes(q) ||
-          a.type.toLowerCase().includes(q),
-      )
-      .slice(0, MAX_RESULTS);
+    if (!q) return { matches: all.slice(0, MAX_RESULTS), total: all.length };
+
+    const filtered = all.filter(
+      (a) =>
+        a.display_name.toLowerCase().includes(q) ||
+        a.symbol.toLowerCase().includes(q) ||
+        a.exchange.toLowerCase().includes(q) ||
+        a.type.toLowerCase().includes(q),
+    );
+    // Rank so an exact / prefix ticker surfaces above the MAX_RESULTS cap even when many
+    // other names merely contain the substring (stable sort preserves catalog order within a rank).
+    const rank = (a: AssetCatalogEntry) => {
+      const s = a.symbol.toLowerCase();
+      if (s === q) return 0;
+      if (s.startsWith(q)) return 1;
+      if (s.includes(q)) return 2;
+      return 3;
+    };
+    filtered.sort((a, b) => rank(a) - rank(b));
+    return { matches: filtered.slice(0, MAX_RESULTS), total: filtered.length };
   }, [assetsQuery.data, query]);
 
   const selectedLabel = value ? `${value.symbol} · ${value.exchange}` : "";
@@ -95,6 +105,11 @@ export function AssetCombobox({ value, onSelect, disabled }: AssetComboboxProps)
               </button>
             </li>
           ))}
+          {total > matches.length && (
+            <li className="border-t border-border-default px-2 py-1.5 text-xs text-text-muted">
+              Showing {matches.length} of {total} — keep typing to narrow
+            </li>
+          )}
         </ul>
       )}
     </div>

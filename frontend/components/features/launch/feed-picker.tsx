@@ -4,8 +4,10 @@
 // DataFeedSubscription. The feed list is filtered by role-eligibility (Primary slots
 // see TimeBar/AltBar/Tick; Side slots see Side feeds incl. alt-bar sidecars).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { compareFeed } from "@/lib/data/feed-order";
+import { dataApi } from "@/lib/services/data-api";
 import { AssetCombobox } from "./asset-combobox";
 import {
   feedToSubscription,
@@ -48,7 +50,23 @@ export function FeedPicker({
   excludeFeedIds,
   disabled,
 }: FeedPickerProps) {
-  const [selectedAsset, setSelectedAsset] = useState<AssetCatalogEntry | null>(null);
+  const assetsQuery = useQuery({
+    queryKey: ["data", "assets"],
+    queryFn: ({ signal }) => dataApi.getAssets(signal),
+    staleTime: Infinity,
+  });
+
+  // Derive the selected asset from the parent-owned `value` (single source of truth) so a
+  // prefilled / restored value hydrates the feed list — not a local state only the combobox's
+  // onSelect can set, which left the feed <select> empty whenever `value` arrived pre-populated.
+  const selectedAsset = useMemo<AssetCatalogEntry | null>(() => {
+    if (!value?.exchange || !value?.asset) return null;
+    return (
+      assetsQuery.data?.assets.find(
+        (a) => a.exchange === value.exchange && a.symbol === value.asset,
+      ) ?? null
+    );
+  }, [assetsQuery.data, value]);
 
   const eligibleFeeds: FeedCatalogEntry[] = useMemo(() => {
     if (!selectedAsset) return [];
@@ -99,10 +117,9 @@ export function FeedPicker({
         <AssetCombobox
           value={value?.exchange && value?.asset ? { exchange: value.exchange, symbol: value.asset } : null}
           disabled={disabled}
-          onSelect={(entry) => {
-            setSelectedAsset(entry);
-            onChange({ exchange: entry.exchange, asset: entry.symbol, feedId: "", subscription: null });
-          }}
+          onSelect={(entry) =>
+            onChange({ exchange: entry.exchange, asset: entry.symbol, feedId: "", subscription: null })
+          }
         />
       </div>
 
