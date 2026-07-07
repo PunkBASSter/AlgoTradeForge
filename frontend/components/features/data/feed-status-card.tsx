@@ -11,6 +11,7 @@ import { json } from "@codemirror/lang-json";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { dataApi, DataApiError } from "@/lib/services/data-api";
 import { pickProxyBanner } from "@/lib/data/eqi-banner";
+import { mapCatalogFeedToCoverage } from "@/lib/data/coverage-mapping";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -18,8 +19,11 @@ import {
   useDataJobsStore,
 } from "@/lib/stores/data-jobs-store";
 import { useDataSelectionStore } from "@/lib/stores/data-selection-store";
+import { CoverageSummary } from "./coverage-summary";
 import type {
   AggregateRequest,
+  AssetCatalogEntry,
+  FeedCatalogEntry,
   FeedDefinition,
   FidelityInfo,
   BuildInfo,
@@ -27,11 +31,12 @@ import type {
 
 interface Props {
   exchange: string;
-  asset: string;
-  feedId: string;
+  asset: AssetCatalogEntry;
+  feed: FeedCatalogEntry;
 }
 
-export function FeedStatusCard({ exchange, asset, feedId }: Props) {
+export function FeedStatusCard({ exchange, asset, feed }: Props) {
+  const feedId = feed.id;
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const { toast } = useToast();
@@ -41,15 +46,15 @@ export function FeedStatusCard({ exchange, asset, feedId }: Props) {
   const closePanel = useDataSelectionStore((s) => s.close);
 
   const status = useQuery({
-    queryKey: ["data", "feed-status", exchange, asset, feedId],
-    queryFn: ({ signal }) => dataApi.getFeedStatus(exchange, asset, feedId, signal),
+    queryKey: ["data", "feed-status", exchange, asset.symbol, feedId],
+    queryFn: ({ signal }) => dataApi.getFeedStatus(exchange, asset.symbol, feedId, signal),
   });
 
   // Canonical source of `warnings[]` for the EqIV banner. Harmless for alt bars (returns
   // empty arrays); always fetch.
   const eligibility = useQuery({
-    queryKey: ["data", "aggregation-options", exchange, asset, feedId],
-    queryFn: ({ signal }) => dataApi.getAggregationOptions(exchange, asset, feedId, signal),
+    queryKey: ["data", "aggregation-options", exchange, asset.symbol, feedId],
+    queryFn: ({ signal }) => dataApi.getAggregationOptions(exchange, asset.symbol, feedId, signal),
   });
 
   const formattedJson = useMemo(() => {
@@ -72,14 +77,14 @@ export function FeedStatusCard({ exchange, asset, feedId }: Props) {
     mutationFn: () => {
       if (!definition) throw new Error("Feed definition not loaded yet.");
       const body = buildContinueRequestBody(definition);
-      return dataApi.postAggregate(exchange, asset, body);
+      return dataApi.postAggregate(exchange, asset.symbol, body);
     },
     onSuccess: (resp) => {
       if (!("job_id" in resp)) {
         toast(`${resp.feed_id}: already up to date`, "info");
         return;
       }
-      const key = makeFeedJobKey(exchange, asset, feedId);
+      const key = makeFeedJobKey(exchange, asset.symbol, feedId);
       setJob(key, resp.job_id);
       toast(`Continuing ${feedId} (job ${resp.job_id.slice(0, 8)})`, "success");
       queryClient.invalidateQueries({ queryKey: ["data", "exchange-assets", exchange] });
@@ -100,12 +105,12 @@ export function FeedStatusCard({ exchange, asset, feedId }: Props) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: () => dataApi.deleteFeed(exchange, asset, feedId),
+    mutationFn: () => dataApi.deleteFeed(exchange, asset.symbol, feedId),
     onSuccess: () => {
       toast(`Deleted ${feedId}`, "success");
       // Clear any persisted SSE entry tied to the deleted feed so the in-progress strip
       // doesn't keep trying to reconnect to a stale job stream.
-      clearJob(makeFeedJobKey(exchange, asset, feedId));
+      clearJob(makeFeedJobKey(exchange, asset.symbol, feedId));
       // WebApi proxy has a ~2s catalog cache; follow-up invalidate bypasses it.
       const queryKey = ["data", "exchange-assets", exchange];
       queryClient.invalidateQueries({ queryKey });
@@ -168,10 +173,12 @@ export function FeedStatusCard({ exchange, asset, feedId }: Props) {
     deleteMutation.mutate();
   };
 
+  const coverageMapping = mapCatalogFeedToCoverage(feed);
+
   return (
     <div className="space-y-3">
       <div className="text-xs text-text-muted uppercase tracking-wide">Asset</div>
-      <div className="font-mono text-sm text-text-primary">{asset}</div>
+      <div className="font-mono text-sm text-text-primary">{asset.symbol}</div>
       <div className="text-xs text-text-muted uppercase tracking-wide">Feed</div>
       <div className="font-mono text-sm text-text-primary">{feedId}</div>
 
@@ -182,6 +189,10 @@ export function FeedStatusCard({ exchange, asset, feedId }: Props) {
         >
           {banner}
         </div>
+      )}
+
+      {coverageMapping && (
+        <CoverageSummary exchange={exchange} asset={asset} mapping={coverageMapping} />
       )}
 
       {status.isLoading && (

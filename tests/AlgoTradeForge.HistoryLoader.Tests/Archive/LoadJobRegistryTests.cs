@@ -45,7 +45,7 @@ public sealed class LoadJobRegistryTests
         var snap = reg.Get("j1");
         Assert.NotNull(snap);
         Assert.Equal("j1", snap!.JobId);
-        Assert.Equal(LoadJobState.Queued, snap.State);
+        Assert.Equal("queued", snap.State);
         Assert.Equal("BTCUSDT", snap.Symbol);
     }
 
@@ -112,5 +112,27 @@ public sealed class LoadJobRegistryTests
         reg.OnCompleted("j1");
 
         Assert.Null(reg.ActiveJobForSymbol(AssetDir));
+    }
+
+    [Fact]
+    public void Snapshot_State_IsLowercaseWireString()
+    {
+        // Pin all four values — the FE union type depends on these exact strings.
+        Assert.Equal("queued",   StateString(LoadJobState.Queued));
+        Assert.Equal("running",  StateString(LoadJobState.Running));
+        Assert.Equal("complete", StateString(LoadJobState.Complete));
+        Assert.Equal("error",    StateString(LoadJobState.Error));
+    }
+
+    private static string StateString(LoadJobState state)
+    {
+        var record = new LoadJobRecord
+        {
+            FeedKey = "pin",
+            Job = NewJob("j-pin"),
+            QueuedAt = T0,
+            State = state,
+        };
+        return record.Snapshot().State;
     }
 }

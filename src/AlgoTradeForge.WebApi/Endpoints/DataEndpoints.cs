@@ -92,6 +92,51 @@ internal static class DataEndpoints
             (string jobId, HttpContext ctx, HistoryLoaderClient client) =>
                 ProxySse(jobId, ctx, client));
 
+        // Archive coverage + load jobs (phase 2) — uncached pass-throughs; loads poll fast
+        // and coverage must reflect a finishing job immediately.
+        g.MapGet("/coverage",
+            (HttpContext ctx, HistoryLoaderClient client) =>
+                ProxyPassthroughGet(ctx, client, $"/api/v1/coverage{ctx.Request.QueryString.Value}"));
+
+        g.MapPost("/loads",
+            async (HttpContext ctx, HistoryLoaderClient client) =>
+            {
+                try
+                {
+                    var body = await ctx.Request.ReadFromJsonAsync<JsonElement>(ctx.RequestAborted);
+                    using var upstream = await client.PostJsonAsync("/api/v1/loads", body, ctx.RequestAborted);
+                    if ((int)upstream.StatusCode >= 500)
+                    {
+                        var detail = await upstream.Content.ReadAsStringAsync(ctx.RequestAborted);
+                        await DataProxyProblem.UpstreamError((int)upstream.StatusCode, detail).ExecuteAsync(ctx);
+                        return;
+                    }
+                    ctx.Response.StatusCode = (int)upstream.StatusCode;
+                    ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
+                    var bytes = await upstream.Content.ReadAsByteArrayAsync(ctx.RequestAborted);
+                    await ctx.Response.Body.WriteAsync(bytes, ctx.RequestAborted);
+                }
+                catch (JsonException)
+                {
+                    // Malformed request body must not surface as a 500 (existing PostAggregate
+                    // shares this gap — follow-up, out of scope here).
+                    ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    await ctx.Response.WriteAsJsonAsync(new { error = "invalid_json" }, ctx.RequestAborted);
+                }
+                catch (HttpRequestException ex)
+                {
+                    await DataProxyProblem.Unavailable(ex.Message).ExecuteAsync(ctx);
+                }
+                catch (TaskCanceledException ex) when (!ctx.RequestAborted.IsCancellationRequested)
+                {
+                    await DataProxyProblem.Timeout(ex.Message).ExecuteAsync(ctx);
+                }
+            });
+
+        g.MapGet("/loads/{jobId}",
+            (string jobId, HttpContext ctx, HistoryLoaderClient client) =>
+                ProxyPassthroughGet(ctx, client, $"/api/v1/loads/{Uri.EscapeDataString(jobId)}"));
+
         return app;
     }
 

@@ -4,7 +4,7 @@
 import { create } from "zustand";
 import type { AssetCatalogEntry, FeedCatalogEntry } from "@/types/data-tab";
 
-export type SidebarMode = "view" | "create" | null;
+export type SidebarMode = "view" | "create" | "load" | null;
 
 interface SidebarSelection {
   mode: SidebarMode;
@@ -17,6 +17,7 @@ interface SidebarSelection {
 interface DataSelectionStore extends SidebarSelection {
   openView: (exchange: string, asset: AssetCatalogEntry, feed: FeedCatalogEntry) => void;
   openCreate: (exchange: string, asset: AssetCatalogEntry, sourceFeed: FeedCatalogEntry) => void;
+  openLoad: () => void;
   close: () => void;
 }
 
@@ -29,5 +30,6 @@ export const useDataSelectionStore = create<DataSelectionStore>((set) => ({
     set({ mode: "view", exchange, asset, feed }),
   openCreate: (exchange, asset, sourceFeed) =>
     set({ mode: "create", exchange, asset, feed: sourceFeed }),
+  openLoad: () => set({ mode: "load", exchange: null, asset: null, feed: null }),
   close: () => set({ mode: null, exchange: null, asset: null, feed: null }),
 }));

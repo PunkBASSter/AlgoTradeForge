@@ -127,6 +127,9 @@ Phase order guarantees lazy loading is usable before eager collection is switche
 - `DataGap` ends are PRESENT rows (last-before / first-after the hole) — the repo-wide convention; archive materializers derive gaps from parsed-row jump detection, never synthesize them from calendar boundaries.
 - Collection policy governs streams as well as cron: a replenishable stream feed (um book-ticker) runs its stream only under `"Eager": true`; irreplaceable streams always run.
 - Launch coverage hint is scoped to candle feeds (deterministically known to the frontend); auxiliary-feed coverage lives in the Data tab.
+- Coverage wire contract (decided at phase-2 planning): absent `FeedStatus` ⇒ `first_timestamp`/`last_timestamp` are JSON `null` (not 0); load-job `state` is a lowercase wire string (`queued|running|complete|error`), not the enum int.
+- Archive gap recording (phase-2 live-smoke fix): the ARCHIVE path records a `DataGap` for ANY missing slot (`jump > interval`) — archive months have exact fixed slots, so every missing slot is a genuine source hole; the streaming/REST path keeps its jitter-tolerant `GapThresholdMultiplier` (> 2×) convention. Sub-threshold single-slot holes otherwise make a month eternally uncoverable (re-materialized every eager cycle; Launch banner never clears) — observed live on spot BTCUSDT 1h 2020-02.
+- Frontend API identity (phase-2 live-smoke fix): the catalog `display_name` ("BTCUSDT-perp") is a UI label and never an API key; coverage/load `symbol` is derived from the catalog directory symbol via `exchangeSymbolOf` (strip `_perp`), inverting `AssetPathConvention.DirectoryName`.
 
 ## Follow-ups (outside this feature)
 

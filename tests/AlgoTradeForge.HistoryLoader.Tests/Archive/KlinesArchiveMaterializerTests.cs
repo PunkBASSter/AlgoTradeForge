@@ -4,6 +4,7 @@ using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
+using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
@@ -273,5 +274,60 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
                 s.Gaps[0].FromMs == day1Ts &&
                 s.Gaps[0].ToMs == day3Ts),
             Arg.Any<CancellationToken>());
+    }
+
+    // -----------------------------------------------------------------------
+    // I1-RESIDUAL regression pin: single-slot source hole (jump = 2×interval)
+    // must be recorded as a DataGap and make IsMonthCovered return TRUE —
+    // eliminating the eternal re-materialization observed live (BTCUSDT 1h 2020-02).
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task MaterializeMonth_SingleMissingSlot_RecordsGapAndMonthIsCovered()
+    {
+        // Feb 2024 (29 days × 24h = 696 expected 1h rows).
+        // Build a CSV with 695 rows: row index 100 is omitted, producing a 2×interval jump
+        // from ts[99] to ts[101] — a single missing slot.
+        const long HourMs = 3_600_000L;
+        var originMs = new DateTimeOffset(2024, 2, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        const int TotalRows = 696;
+
+        var klineRows = Enumerable.Range(0, TotalRows)
+            .Where(i => i != 100)
+            .Select(i =>
+            {
+                var ts = originMs + (long)i * HourMs;
+                var closeTs = ts + HourMs - 1;
+                return $"{ts},50000.0,50100.0,49900.0,50050.0,12.5,{closeTs},625631.2,1500,6.25,312815.6,0";
+            });
+        var csv = string.Join("\n", klineRows) + "\n";
+
+        _archive.DownloadMonthly("spot", "klines", "BTCUSDT", "1h", 2024, 2, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(CsvStream(csv)));
+
+        FeedStatus? savedStatus = null;
+        _statusStore.Load(_dir, FeedNames.Candles, "1h", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<FeedStatus?>(null));
+        _statusStore.When(s => s.Save(
+                _dir, FeedNames.Candles, "1h", Arg.Any<FeedStatus>(), Arg.Any<CancellationToken>()))
+            .Do(ci => savedStatus = ci.ArgAt<FeedStatus>(3));
+
+        await CandlesMaterializer().MaterializeMonth(
+            SpotConfig(), FeedConfig("1h"), _dir, 2024, 2, TestContext.Current.CancellationToken);
+
+        // Exactly one gap must be recorded: the single missing slot at index 100.
+        Assert.NotNull(savedStatus);
+        var gap = Assert.Single(savedStatus!.Gaps);
+        Assert.Equal(originMs + 99L * HourMs, gap.FromMs); // last present row before hole
+        Assert.Equal(originMs + 101L * HourMs, gap.ToMs);  // first present row after hole
+
+        // Regression pin: with the gap credited, IsMonthCovered must return TRUE.
+        // actualRows=695 + gapCredit=1 = 696 = expected → covered.
+        var clock = new TestClock(new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero));
+        var covered = await new MonthCoverageCalculator(clock)
+            .IsMonthCovered(
+                _dir, FeedNames.Candles, "1h", 2024, 2, savedStatus.Gaps, null,
+                TestContext.Current.CancellationToken);
+        Assert.True(covered);
     }
 }

@@ -9,6 +9,7 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 
 internal abstract class ScheduledCollectorService(
     SymbolCollector symbolCollector,
+    CollectionPolicy collectionPolicy,
     ICollectionCircuitBreaker circuitBreaker,
     IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
@@ -168,7 +169,8 @@ internal abstract class ScheduledCollectorService(
         }
     }
 
-    private async Task CollectCycleAsync(CancellationToken ct)
+    // internal for direct cycle-level testing (InternalsVisibleTo)
+    internal async Task CollectCycleAsync(CancellationToken ct)
     {
         var config = options.CurrentValue;
         var consecutiveNetworkFailures = 0;
@@ -186,7 +188,9 @@ internal abstract class ScheduledCollectorService(
             foreach (var feedName in CollectedFeedNames)
             {
                 var feeds = asset.Feeds
-                    .Where(f => f.Enabled && f.Name == feedName);
+                    .Where(f => f.Enabled
+                        && f.Name == feedName
+                        && collectionPolicy.IsEagerlyCollected(asset, f));
 
                 foreach (var feed in feeds)
                 {

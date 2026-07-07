@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useDataSelectionStore } from "@/lib/stores/data-selection-store";
 import { FeedStatusCard } from "./feed-status-card";
 import { NewAggregateForm } from "./new-aggregate-form";
+import { ArchiveLoadForm } from "./archive-load-form";
 import { parseAltBarFeedId } from "@/lib/data/alt-bar-feed-id";
 import type { FeedCatalogEntry } from "@/types/data-tab";
 
@@ -26,7 +27,14 @@ export function DataSidebar({ onJobAccepted }: Props) {
   const closeRef = useRef(close);
   closeRef.current = close;
 
-  const title = mode === "view" ? "Feed status" : mode === "create" ? "New aggregate bar" : "";
+  const title =
+    mode === "view"
+      ? "Feed status"
+      : mode === "create"
+        ? "New aggregate bar"
+        : mode === "load"
+          ? "Load archive data"
+          : "";
 
   // Alt-bar feeds in this row eligible as re-aggregation sources. Same-type-family
   // narrowing happens server-side; the FE just surfaces candidates.
@@ -119,7 +127,7 @@ export function DataSidebar({ onJobAccepted }: Props) {
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {mode === "view" && exchange && asset && feed && (
-          <FeedStatusCard exchange={exchange} asset={asset.symbol} feedId={feed.id} />
+          <FeedStatusCard exchange={exchange} asset={asset} feed={feed} />
         )}
         {mode === "create" && exchange && asset && feed && createState && (
           <NewAggregateForm
@@ -138,6 +146,7 @@ export function DataSidebar({ onJobAccepted }: Props) {
             <span className="font-mono">{asset.symbol}</span> matches the required input for this column.
           </div>
         )}
+        {mode === "load" && <ArchiveLoadForm />}
       </div>
     </aside>
   );

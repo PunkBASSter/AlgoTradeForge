@@ -77,3 +77,6 @@ next-env.d.ts
 
 # Harness-created agent worktrees (scratch)
 .claude/worktrees/
+
+# Session-local SDD scratch (ledgers, review diffs, handovers) — never committed
+.superpowers/

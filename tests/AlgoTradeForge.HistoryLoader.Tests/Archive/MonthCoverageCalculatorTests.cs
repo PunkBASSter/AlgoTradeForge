@@ -214,4 +214,39 @@ public sealed class MonthCoverageCalculatorTests : IDisposable
 
         Assert.False(covered);
     }
+
+    // -------------------------------------------------------------------------
+    // Streaming row-count cache (Task 5).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task RowCount_IsRecomputed_WhenPartitionFileChanges()
+    {
+        // January 2024: 31 days × 24 hours = 744 rows. Month is fully in the past.
+        var monthStart = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var sut = BuildSut();
+
+        WritePartition("candles", 2024, 1, "1h", HourlyRows(monthStart.ToUnixTimeMilliseconds(), 744));
+        Assert.True(await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 1, [], null, TestContext.Current.CancellationToken));
+
+        // Rewrite with far fewer rows → file length changes → cache entry invalidated.
+        WritePartition("candles", 2024, 1, "1h", HourlyRows(monthStart.ToUnixTimeMilliseconds(), 10));
+        Assert.False(await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 1, [], null, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task RowCount_CacheHit_DoesNotReReadUnchangedFile()
+    {
+        // January 2024: 31 days × 24 hours = 744 rows. Month is fully in the past.
+        var monthStart = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var sut = BuildSut();
+        var partitionPath = Path.Combine(_dir, "candles", "2024-01_1h.csv");
+
+        WritePartition("candles", 2024, 1, "1h", HourlyRows(monthStart.ToUnixTimeMilliseconds(), 744));
+        Assert.True(await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 1, [], null, TestContext.Current.CancellationToken));
+
+        // Exclusive lock held — a re-read would throw IOException; a cache hit must succeed.
+        using var exclusive = new FileStream(partitionPath, FileMode.Open, FileAccess.Read, FileShare.None);
+        Assert.True(await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 1, [], null, TestContext.Current.CancellationToken));
+    }
 }

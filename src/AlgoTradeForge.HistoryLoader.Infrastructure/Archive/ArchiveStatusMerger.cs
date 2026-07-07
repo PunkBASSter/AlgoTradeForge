@@ -15,15 +15,17 @@ internal static class ArchiveStatusMerger
         return Math.Max(0, lines.Length - 1);
     }
 
-    // Mirrors FeedCollectorBase.DetectGap: FromMs and ToMs are both present rows.
-    public static List<DataGap> DetectGaps(List<(long Ts, string[] Row)> parsed, long intervalMs, double multiplier)
+    // Archive data has fixed slots — any delta > 1×interval is a genuine source hole.
+    // Unlike the streaming path (FeedCollectorBase.DetectGap, configurable multiplier),
+    // archive months are complete-or-missing; sub-threshold jitter does not occur.
+    public static List<DataGap> DetectGaps(List<(long Ts, string[] Row)> parsed, long intervalMs)
     {
         var gaps = new List<DataGap>();
         for (var i = 1; i < parsed.Count; i++)
         {
             var prev = parsed[i - 1].Ts;
             var curr = parsed[i].Ts;
-            if (curr - prev > intervalMs * multiplier)
+            if (curr - prev > intervalMs)
                 gaps.Add(new DataGap { FromMs = prev, ToMs = curr });
         }
         return gaps;

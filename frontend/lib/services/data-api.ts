@@ -7,9 +7,13 @@ import type {
   AggregationOptionsResponse,
   AssetCatalogEntry,
   AssetListResponse,
+  CoverageResponse,
   ExchangeListResponse,
   FeedStatusResponse,
   JobSnapshot,
+  LoadAcceptedResponse,
+  LoadJobSnapshotWire,
+  LoadRequestBody,
 } from "@/types/data-tab";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
@@ -129,6 +133,28 @@ export const dataApi = {
     );
     if (!resp.ok) await asJson(resp);
   },
+
+  getCoverage: (exchange: string, symbol: string, assetType: string, signal?: AbortSignal) =>
+    fetch(
+      `${BASE_URL}/api/data/coverage?exchange=${encodeURIComponent(exchange)}&symbol=${encodeURIComponent(symbol)}&asset_type=${encodeURIComponent(assetType)}`,
+      { signal },
+    ).then(asJson<CoverageResponse>),
+
+  // 202 job accepted. 409 symbol/feed busy surfaces as DataApiError with body
+  // { error, active_job_id } — callers attach to the active job instead of failing.
+  postLoad: async (body: LoadRequestBody, signal?: AbortSignal): Promise<LoadAcceptedResponse> => {
+    const resp = await fetch(`${BASE_URL}/api/data/loads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+    return asJson<LoadAcceptedResponse>(resp);
+  },
+
+  getLoadJob: (jobId: string, signal?: AbortSignal) =>
+    fetch(`${BASE_URL}/api/data/loads/${encodeURIComponent(jobId)}`, { signal })
+      .then(asJson<LoadJobSnapshotWire>),
 };
 
 export { DataApiError };
