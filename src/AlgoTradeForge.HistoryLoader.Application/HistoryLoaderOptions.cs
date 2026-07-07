@@ -47,6 +47,8 @@ public sealed class BinanceOptions
     public int MaxWeightPerMinute { get; init; } = 2400;
     public int WeightBudgetPercent { get; init; } = 40;
     public int RequestDelayMs { get; init; } = 50;
+    public string ArchiveBaseUrl { get; init; } = "https://data.binance.vision";
+    public int ArchiveDownloadConcurrency { get; init; } = 4;
 }
 
 public sealed class AssetCollectionConfig
