@@ -34,10 +34,15 @@ public sealed class ArchiveBackfillServiceTests
 
     private readonly IArchiveMaterializer _materializer = Substitute.For<IArchiveMaterializer>();
     private readonly IMonthCoverageCalculator _coverage = Substitute.For<IMonthCoverageCalculator>();
+    private readonly IFeedStatusStore _feedStatusStore = Substitute.For<IFeedStatusStore>();
     private readonly ISettingsWriter _settingsWriter = Substitute.For<ISettingsWriter>();
 
     public ArchiveBackfillServiceTests()
     {
+        _feedStatusStore.Load(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<FeedStatus?>(null));
+
         _materializer.Exchange.Returns("binance");
         _materializer.FeedName.Returns("candles");
         _materializer.Supports(Arg.Any<string>()).Returns(true);
@@ -60,7 +65,7 @@ public sealed class ArchiveBackfillServiceTests
         IEnumerable<IArchiveMaterializer> materializers = withMaterializer ? [_materializer] : [];
         var registry = new ArchiveMaterializerRegistry(materializers);
         return new ArchiveBackfillService(
-            registry, _coverage, _settingsWriter, Clock,
+            registry, _coverage, _feedStatusStore, _settingsWriter, Clock,
             NullLogger<ArchiveBackfillService>.Instance);
     }
 
@@ -232,5 +237,39 @@ public sealed class ArchiveBackfillServiceTests
         await _materializer.Received(1).MaterializeMonth(
             Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
             Arg.Any<string>(), 2026, 6, TestContext.Current.CancellationToken);
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. Recorded source gaps from FeedStatus flow into the coverage predicate.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task RecordedGaps_FlowIntoCoverageCheck()
+    {
+        var gap = new DataGap { FromMs = Ms(2026, 3, 10), ToMs = Ms(2026, 3, 11) };
+        var status = new FeedStatus
+        {
+            FeedName = Feed.Name,
+            Interval = Feed.Interval,
+            Gaps = [gap],
+        };
+        _feedStatusStore.Load("/data", Feed.Name, Feed.Interval, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<FeedStatus?>(status));
+
+        var receivedGapLists = new List<IReadOnlyList<DataGap>>();
+        _coverage.IsMonthCovered(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<int>(), Arg.Any<int>(),
+                Arg.Do<IReadOnlyList<DataGap>>(receivedGapLists.Add),
+                Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var sut = BuildSut();
+        await sut.CoverFromArchive(Asset, Feed, "/data", Ms(2026, 3), Ms(2026, 7, 7),
+            ct: TestContext.Current.CancellationToken);
+
+        // Every coverage call (Mar–Jun = 4) must receive the recorded gap list.
+        Assert.Equal(4, receivedGapLists.Count);
+        Assert.All(receivedGapLists, gaps => Assert.Equal([gap], gaps));
     }
 }

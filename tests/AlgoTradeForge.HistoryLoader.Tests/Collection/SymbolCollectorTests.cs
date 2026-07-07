@@ -51,6 +51,7 @@ public sealed class SymbolCollectorTests
         var archiveBackfill = new ArchiveBackfillService(
             new ArchiveMaterializerRegistry([]),
             Substitute.For<IMonthCoverageCalculator>(),
+            Substitute.For<IFeedStatusStore>(),
             Substitute.For<ISettingsWriter>(),
             new TestClock(new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero)),
             NullLogger<ArchiveBackfillService>.Instance);

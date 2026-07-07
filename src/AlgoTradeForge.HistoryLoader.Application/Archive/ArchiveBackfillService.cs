@@ -9,6 +9,7 @@ public readonly record struct ArchiveProgress(int MonthsDone, int MonthsTotal, s
 public sealed class ArchiveBackfillService(
     ArchiveMaterializerRegistry registry,
     IMonthCoverageCalculator coverage,
+    IFeedStatusStore feedStatusStore,
     ISettingsWriter settingsWriter,
     TimeProvider clock,
     ILogger<ArchiveBackfillService> logger)
@@ -37,6 +38,11 @@ public sealed class ArchiveBackfillService(
         if (candidates.Count == 0)
             return fromMs;
 
+        // Step 3: load recorded source gaps once — coverage credits them so gap-bearing
+        // months don't re-materialize on every invocation.
+        var status = await feedStatusStore.Load(assetDir, feedConfig.Name, feedConfig.Interval, ct);
+        IReadOnlyList<DataGap> gaps = status?.Gaps ?? [];
+
         // Steps 3+4: iterate oldest→newest; skip covered months; materialize the rest.
         // Track leading unavailable streak to discover the earliest available date.
         int done = 0;
@@ -52,7 +58,7 @@ public sealed class ArchiveBackfillService(
         {
             // Covered months are already complete; they end the leading-unavailable streak.
             if (await coverage.IsMonthCovered(
-                assetDir, feedConfig.Name, feedConfig.Interval, year, month, [], ct))
+                assetDir, feedConfig.Name, feedConfig.Interval, year, month, gaps, ct))
             {
                 leadingPhase = false;
                 done++;
