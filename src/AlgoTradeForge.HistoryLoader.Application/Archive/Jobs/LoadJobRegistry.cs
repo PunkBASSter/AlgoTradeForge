@@ -42,11 +42,6 @@ public sealed class LoadJobRegistry : ILoadJobRegistry
                 return new LoadEnqueueOutcome.FeedBusy(existingId);
             }
 
-            // Queue first so a full channel leaves zero registry mutation.
-            if (!_channel.Writer.TryWrite(job))
-                return new LoadEnqueueOutcome.QueueFull();
-
-            var assetDir = AssetDirFromFeedKey(feedKey);
             var record = new LoadJobRecord
             {
                 FeedKey = feedKey,
@@ -54,9 +49,21 @@ public sealed class LoadJobRegistry : ILoadJobRegistry
                 QueuedAt = _clock.GetUtcNow(),
             };
 
+            // Publish the record BEFORE the channel write: the bounded channel wakes the
+            // waiting worker on TryWrite, and its OnStarted(jobId) must find the record
+            // (happens-before via the channel). The feed-key lock then orders OnStarted's
+            // state flip after the index writes below. Rollback keeps a full queue at
+            // zero net registry mutation; the unpublished jobId makes the transient
+            // record unobservable.
             _byJobId[job.JobId] = record;
+            if (!_channel.Writer.TryWrite(job))
+            {
+                _byJobId.TryRemove(job.JobId, out _);
+                return new LoadEnqueueOutcome.QueueFull();
+            }
+
             _activeByFeedKey[feedKey] = job.JobId;
-            _activeByAssetDir[assetDir] = job.JobId;
+            _activeByAssetDir[AssetDirFromFeedKey(feedKey)] = job.JobId;
 
             return new LoadEnqueueOutcome.Accepted(record);
         }
@@ -101,15 +108,24 @@ public sealed class LoadJobRegistry : ILoadJobRegistry
     public void OnStarted(string jobId)
     {
         if (!_byJobId.TryGetValue(jobId, out var record)) return;
-        record.State = LoadJobState.Running;
+        // The worker's dequeue can race the tail of TryEnqueue (channel write precedes the
+        // index writes); taking the feed-key lock orders this transition after TryEnqueue's
+        // bookkeeping completes.
+        var feedLock = _feedKeyLocks.GetOrAdd(record.FeedKey, _ => new object());
+        lock (feedLock)
+        {
+            record.State = LoadJobState.Running;
+        }
     }
 
     public void OnProgress(string jobId, int monthsDone, int monthsTotal, string currentMonth)
     {
         if (!_byJobId.TryGetValue(jobId, out var record)) return;
-        record.MonthsDone = monthsDone;
-        record.MonthsTotal = monthsTotal;
-        record.CurrentMonth = currentMonth;
+        var feedLock = _feedKeyLocks.GetOrAdd(record.FeedKey, _ => new object());
+        lock (feedLock)
+        {
+            record.SetProgress(monthsDone, monthsTotal, currentMonth);
+        }
     }
 
     public void OnCompleted(string jobId)

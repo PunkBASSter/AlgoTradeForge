@@ -15,9 +15,11 @@ internal sealed class LoadJobWorker(
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<LoadJobWorker> logger) : BackgroundService
 {
-    // Matches the pattern used by ScheduledCollectorService / TickCanonicalizerService.
+    // Canonical three-part form (FundingInfoRefreshService / ScheduledCollectorService).
     private static bool IsTrueShutdown(Exception ex, CancellationToken stoppingToken) =>
-        ex is OperationCanceledException oce && oce.CancellationToken == stoppingToken;
+        ex is OperationCanceledException oce
+        && stoppingToken.IsCancellationRequested
+        && oce.CancellationToken == stoppingToken;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

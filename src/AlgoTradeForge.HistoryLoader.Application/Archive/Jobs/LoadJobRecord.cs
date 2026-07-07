@@ -18,6 +18,18 @@ public sealed class LoadJobRecord
     public string? ErrorMessage { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
 
+    // Sets the progress triple atomically so a concurrent Snapshot() never observes
+    // MonthsDone from one report paired with MonthsTotal/CurrentMonth from another.
+    internal void SetProgress(int monthsDone, int monthsTotal, string currentMonth)
+    {
+        lock (_lock)
+        {
+            MonthsDone = monthsDone;
+            MonthsTotal = monthsTotal;
+            CurrentMonth = currentMonth;
+        }
+    }
+
     // Sets CompletedAt + error fields + State atomically so concurrent Snapshot() calls
     // never observe (State==Error && ErrorCode==null) or (State==Complete && CompletedAt==null).
     internal void MarkTerminal(LoadJobState state, DateTimeOffset completedAt, string? code, string? message)
