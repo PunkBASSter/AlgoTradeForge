@@ -20,6 +20,7 @@ internal sealed class BookTickerStreamService(
     IBookTickerWriter bookTickerWriter,
     ISchemaManager schemaManager,
     IFeedStatusStore feedStatusStore,
+    CollectionPolicy collectionPolicy,
     ICollectionCircuitBreaker circuitBreaker,
     IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
@@ -40,8 +41,8 @@ internal sealed class BookTickerStreamService(
         logger.LogInformation("BookTickerStreamService started");
 
         var config = options.CurrentValue;
-        var spotSymbols = BuildEnabledSymbols(config, AssetTypes.IsSpot);
-        var futuresSymbols = BuildEnabledSymbols(config, AssetTypes.IsFutures);
+        var spotSymbols = BuildEnabledSymbols(config, AssetTypes.IsSpot, collectionPolicy);
+        var futuresSymbols = BuildEnabledSymbols(config, AssetTypes.IsFutures, collectionPolicy);
 
         if (spotSymbols.Count == 0 && futuresSymbols.Count == 0)
         {
@@ -358,10 +359,12 @@ internal sealed class BookTickerStreamService(
         tracker.Clear();
     }
 
-    private static List<string> BuildEnabledSymbols(HistoryLoaderOptions config, Func<string, bool> typeFilter) =>
+    internal static List<string> BuildEnabledSymbols(
+        HistoryLoaderOptions config, Func<string, bool> typeFilter, CollectionPolicy policy) =>
         config.Assets
             .Where(a => typeFilter(a.Type))
-            .Where(a => a.Feeds.Any(f => f.Enabled && f.Name == FeedNames.BookTicker))
+            .Where(a => a.Feeds.Any(f =>
+                f.Enabled && f.Name == FeedNames.BookTicker && policy.IsEagerlyCollected(a, f)))
             .Select(a => a.Symbol)
             .ToList();
 

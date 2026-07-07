@@ -18,6 +18,7 @@ internal sealed class SpotAggTradeStreamService(
     ITickFeedWriter tickWriter,
     ISchemaManager schemaManager,
     IFeedStatusStore feedStatusStore,
+    CollectionPolicy collectionPolicy,
     ICollectionCircuitBreaker circuitBreaker,
     IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
@@ -34,7 +35,7 @@ internal sealed class SpotAggTradeStreamService(
     {
         logger.LogInformation("SpotAggTradeStreamService started");
 
-        var enabledSpotSymbols = BuildEnabledSpotSymbols(options.CurrentValue);
+        var enabledSpotSymbols = BuildEnabledSpotSymbols(options.CurrentValue, collectionPolicy);
         if (enabledSpotSymbols.Count == 0)
         {
             logger.LogInformation(
@@ -337,10 +338,11 @@ internal sealed class SpotAggTradeStreamService(
         tracker.Clear();
     }
 
-    private static List<string> BuildEnabledSpotSymbols(HistoryLoaderOptions config) =>
+    internal static List<string> BuildEnabledSpotSymbols(HistoryLoaderOptions config, CollectionPolicy policy) =>
         config.Assets
             .Where(a => AssetTypes.IsSpot(a.Type))
-            .Where(a => a.Feeds.Any(f => f.Enabled && f.Name == FeedNames.Ticks))
+            .Where(a => a.Feeds.Any(f =>
+                f.Enabled && f.Name == FeedNames.Ticks && policy.IsEagerlyCollected(a, f)))
             .Select(a => a.Symbol)
             .ToList();
 
