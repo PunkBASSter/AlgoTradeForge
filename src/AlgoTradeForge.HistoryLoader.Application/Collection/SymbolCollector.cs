@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 
@@ -8,15 +9,18 @@ namespace AlgoTradeForge.HistoryLoader.Application.Collection;
 public sealed class SymbolCollector
 {
     private readonly FrozenDictionary<string, IFeedCollector> _collectors;
+    private readonly ArchiveBackfillService _archiveBackfill;
     private readonly ISettingsWriter _settingsWriter;
     private readonly ILogger<SymbolCollector> _logger;
 
     public SymbolCollector(
         IEnumerable<IFeedCollector> collectors,
+        ArchiveBackfillService archiveBackfill,
         ISettingsWriter settingsWriter,
         ILogger<SymbolCollector> logger)
     {
         _collectors = collectors.ToFrozenDictionary(c => c.FeedName);
+        _archiveBackfill = archiveBackfill;
         _settingsWriter = settingsWriter;
         _logger = logger;
     }
@@ -45,6 +49,10 @@ public sealed class SymbolCollector
                 feedName, assetConfig.Symbol);
             return;
         }
+
+        fromMs = await _archiveBackfill.CoverFromArchive(assetConfig, feedConfig, assetDir, fromMs, toMs, progress: null, ct);
+        if (fromMs >= toMs)
+            return; // fully covered by archive — no REST tail needed
 
         _logger.LogInformation(
             "Collecting {Feed}/{Interval} for {Symbol} from {From} to {To}",

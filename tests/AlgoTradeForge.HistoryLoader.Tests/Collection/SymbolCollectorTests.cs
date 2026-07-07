@@ -1,7 +1,10 @@
 using System.Net;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -44,8 +47,17 @@ public sealed class SymbolCollectorTests
         _collector.FeedName.Returns("open-interest");
         _collector.SupportsSpot.Returns(true);
 
+        // Empty registry → CoverFromArchive is always a no-op (returns fromMs unchanged).
+        var archiveBackfill = new ArchiveBackfillService(
+            new ArchiveMaterializerRegistry([]),
+            Substitute.For<IMonthCoverageCalculator>(),
+            Substitute.For<ISettingsWriter>(),
+            new TestClock(new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero)),
+            NullLogger<ArchiveBackfillService>.Instance);
+
         _sut = new SymbolCollector(
             [_collector],
+            archiveBackfill,
             _settingsWriter,
             NullLogger<SymbolCollector>.Instance);
     }
