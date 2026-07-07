@@ -11,6 +11,7 @@ internal sealed class MonthCoverageCalculator : IMonthCoverageCalculator
     // Row counts memoized per (path, length, mtime). Partitions are replaced atomically
     // (PartitionFileWriter) or appended (BufferedPartitionWriter) — both move length+mtime,
     // so a stale entry cannot survive a content change.
+    // TODO: no eviction — entries for deleted partitions persist; cap or prune if catalog-scale uptime makes this matter.
     private readonly ConcurrentDictionary<string, (long Length, DateTime MtimeUtc, long Rows)> _rowCounts = new();
 
     public MonthCoverageCalculator(TimeProvider clock) => _clock = clock;
