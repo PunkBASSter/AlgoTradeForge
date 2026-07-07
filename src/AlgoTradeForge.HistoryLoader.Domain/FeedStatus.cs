@@ -6,6 +6,7 @@ namespace AlgoTradeForge.HistoryLoader.Domain;
 /// </summary>
 public enum CollectionHealth { Healthy, Degraded, Error }
 
+/// <summary>Both ends are present rows: FromMs = last row before the hole, ToMs = first row after it.</summary>
 public readonly record struct DataGap
 {
     public long FromMs { get; init; }
