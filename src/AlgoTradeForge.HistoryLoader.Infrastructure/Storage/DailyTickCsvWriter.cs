@@ -1,4 +1,5 @@
 using System.Globalization;
+using AlgoTradeForge.Domain;
 using AlgoTradeForge.Storage;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
@@ -34,7 +35,7 @@ internal sealed class DailyTickCsvWriter : BufferedPartitionWriter, ITickFeedWri
     {
     }
 
-    public void Write(string assetDir, FeedRecord record)
+    public void Write(string assetDir, FeedRecord record, int decimalDigits)
     {
         if (record.Values.Length != TickValueCount)
             throw new ArgumentException(
@@ -45,10 +46,16 @@ internal sealed class DailyTickCsvWriter : BufferedPartitionWriter, ITickFeedWri
         long aggId = (long)record.Values[3];
         var partitionKey = GetPartitionKey(assetDir, record.TimestampMs);
 
+        // Scale price/qty to long by 10^decimalDigits so PartitionedSourceReader.ReadTicks parses
+        // them back with long.TryParse (Int64 Money Convention — same scale as candle OHLC).
+        var multiplier = (decimal)Math.Pow(10, decimalDigits);
+        var price = MoneyConvert.ToLong((decimal)record.Values[0] * multiplier);
+        var qty = MoneyConvert.ToLong((decimal)record.Values[1] * multiplier);
+
         var row =
             $"{record.TimestampMs.ToString(CultureInfo.InvariantCulture)}," +
-            $"{record.Values[0].ToString(CultureInfo.InvariantCulture)}," +
-            $"{record.Values[1].ToString(CultureInfo.InvariantCulture)}," +
+            $"{price.ToString(CultureInfo.InvariantCulture)}," +
+            $"{qty.ToString(CultureInfo.InvariantCulture)}," +
             $"{((int)record.Values[2]).ToString(CultureInfo.InvariantCulture)}," +
             $"{aggId.ToString(CultureInfo.InvariantCulture)}";
 

@@ -57,7 +57,7 @@ public sealed class AggTradeFeedCollector(
         {
             await foreach (var record in fetcher.FetchAsync(assetConfig.Symbol, interval: "", fromMs, toMs, ct))
             {
-                tickWriter.Write(assetDir, record);
+                tickWriter.Write(assetDir, record, assetConfig.DecimalDigits);
 
                 firstTs ??= record.TimestampMs;
                 lastTs = record.TimestampMs;

@@ -37,7 +37,7 @@ public sealed class EndToEndRoundTripTests : IDisposable
             Options.Create(new HistoryLoaderStorageOptions { FlushEveryRows = 1, FlushIntervalSeconds = 60 }),
             NullLogger<DailyTickCsvWriter>.Instance, new WriteLockManager());
         var canon = new StreamCanonicalizer<TradeTick>(
-            _storage, new TradeProjection(writer, map), new FileStreamCursorStore(_storage), "live-md", "_canon-cursors");
+            _storage, new TradeProjection(writer, map, NullLogger<TradeProjection>.Instance), new FileStreamCursorStore(_storage), "live-md", "_canon-cursors");
 
         // Relay-side write of two scaled-long trades (price exp 2, qty exp 3).
         using (var ms = new MemoryStream())
@@ -58,7 +58,8 @@ public sealed class EndToEndRoundTripTests : IDisposable
         var lines = await _storage.ReadAllLines(key, Ct);
 
         Assert.Equal("ts,price,qty,is_buyer_maker,agg_id", lines[0]);
-        Assert.Equal($"{Ts},50000.5,0.123,0,1", lines[1]);
-        Assert.Equal($"{Ts + 1000},50001,0.25,1,2", lines[2]);
+        // empty digits map -> fallback digits = PriceScaleExp = 2 : price *100, qty *100
+        Assert.Equal($"{Ts},5000050,12,0,1", lines[1]);
+        Assert.Equal($"{Ts + 1000},5000100,25,1,2", lines[2]);
     }
 }

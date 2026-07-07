@@ -43,7 +43,7 @@ public sealed class CanonicalizerDispatchTests : IDisposable
 
         IStreamCanonicalizer[] canon =
         [
-            new StreamCanonicalizer<TradeTick>(_storage, new TradeProjection(tradeWriter, map), cursors, "live-md", "_canon-cursors"),
+            new StreamCanonicalizer<TradeTick>(_storage, new TradeProjection(tradeWriter, map, NullLogger<TradeProjection>.Instance), cursors, "live-md", "_canon-cursors"),
             new StreamCanonicalizer<QuoteTick>(_storage, new QuoteProjection(quoteWriter, map), cursors, "live-md", "_canon-cursors"),
             new StreamCanonicalizer<SessionEvent>(_storage, new SessionProjection(sessionWriter, map), cursors, "live-md", "_canon-cursors"),
         ];
