@@ -127,7 +127,7 @@ export function DataSidebar({ onJobAccepted }: Props) {
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {mode === "view" && exchange && asset && feed && (
-          <FeedStatusCard exchange={exchange} asset={asset.symbol} feedId={feed.id} />
+          <FeedStatusCard exchange={exchange} asset={asset} feed={feed} />
         )}
         {mode === "create" && exchange && asset && feed && createState && (
           <NewAggregateForm
