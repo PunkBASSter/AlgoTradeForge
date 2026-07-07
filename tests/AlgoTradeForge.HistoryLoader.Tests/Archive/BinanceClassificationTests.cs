@@ -77,4 +77,8 @@ public sealed class BinanceClassificationTests
     [Fact]
     public void UnknownExchange_Ib_NotReplenishable() =>
         Assert.False(BuildRegistry().IsReplenishable("ib", FeedNames.Candles, AssetTypes.Equity));
+
+    [Fact]
+    public void Candles_Equity_NotReplenishable() =>
+        Assert.False(BuildRegistry().IsReplenishable("binance", FeedNames.Candles, AssetTypes.Equity));
 }

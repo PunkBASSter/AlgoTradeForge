@@ -23,7 +23,8 @@ internal sealed class KlinesArchiveMaterializer(
 
     public string Exchange => "binance";
     public string FeedName => feedName;
-    public bool Supports(string assetType) => supportsSpot || AssetTypes.IsFutures(assetType);
+    public bool Supports(string assetType) =>
+        (supportsSpot && AssetTypes.IsSpot(assetType)) || AssetTypes.IsFutures(assetType);
 
     public async Task<ArchiveMonthResult> MaterializeMonth(
         AssetCollectionConfig assetConfig, FeedCollectionConfig feedConfig,
@@ -87,10 +88,13 @@ internal sealed class KlinesArchiveMaterializer(
             ? await WriteCandles(assetConfig, assetDir, interval, year, month, parsed, ct)
             : await WriteMarkPrice(assetDir, interval, year, month, parsed, ct);
 
-        await MergeStatus(assetDir, feedName == FeedNames.Candles ? FeedNames.Candles : FeedNames.MarkPrice,
-            interval, parsed[0].Ts, parsed[^1].Ts, written, ct);
+        var intervalMs = (long)IntervalParser.ToTimeSpan(feedConfig.Interval).TotalMilliseconds;
+        var gaps = DetectGaps(parsed, intervalMs, feedConfig.GapThresholdMultiplier);
+
+        var primaryFeed = feedName == FeedNames.Candles ? FeedNames.Candles : FeedNames.MarkPrice;
+        await MergeStatus(assetDir, primaryFeed, interval, parsed[0].Ts, parsed[^1].Ts, written, gaps, ct);
         if (feedName == FeedNames.Candles && AssetTypes.IsFutures(assetConfig.Type))
-            await MergeStatus(assetDir, FeedNames.CandleExt, interval, parsed[0].Ts, parsed[^1].Ts, written, ct);
+            await MergeStatus(assetDir, FeedNames.CandleExt, interval, parsed[0].Ts, parsed[^1].Ts, written, gaps, ct);
 
         logger.LogInformation("Materialized {Feed}/{Interval} {Year}-{Month:D2} for {Symbol}: {Rows} rows",
             feedName, interval, year, month, assetConfig.Symbol, written);
@@ -165,9 +169,24 @@ internal sealed class KlinesArchiveMaterializer(
         return parsed.Count;
     }
 
+    // Mirrors FeedCollectorBase.DetectGap: FromMs and ToMs are both present rows.
+    private static List<DataGap> DetectGaps(List<(long Ts, string[] Row)> parsed, long intervalMs, double multiplier)
+    {
+        var gaps = new List<DataGap>();
+        for (var i = 1; i < parsed.Count; i++)
+        {
+            var prev = parsed[i - 1].Ts;
+            var curr = parsed[i].Ts;
+            if (curr - prev > intervalMs * multiplier)
+                gaps.Add(new DataGap { FromMs = prev, ToMs = curr });
+        }
+        return gaps;
+    }
+
     private async Task MergeStatus(
         string assetDir, string feedNameKey, string interval,
-        long monthFirst, long monthLast, long written, CancellationToken ct)
+        long monthFirst, long monthLast, long written,
+        List<DataGap> newGaps, CancellationToken ct)
     {
         var existing = await feedStatusStore.Load(assetDir, feedNameKey, interval, ct);
 
@@ -178,8 +197,13 @@ internal sealed class KlinesArchiveMaterializer(
             ? Math.Max(existing.LastTimestamp.Value, monthLast)
             : monthLast;
         var recordCount = (existing?.RecordCount ?? 0) + written;
-        IReadOnlyList<DataGap> gaps = existing?.Gaps ?? [];
-        var health = gaps.Count == 0 ? CollectionHealth.Healthy : CollectionHealth.Degraded;
+
+        IReadOnlyList<DataGap> existingGaps = existing?.Gaps ?? [];
+        var dedupedNew = newGaps
+            .Where(g => !existingGaps.Any(e => e.FromMs == g.FromMs && e.ToMs == g.ToMs))
+            .ToList();
+        IReadOnlyList<DataGap> mergedGaps = [.. existingGaps, .. dedupedNew];
+        var health = mergedGaps.Count == 0 ? CollectionHealth.Healthy : CollectionHealth.Degraded;
 
         await feedStatusStore.Save(assetDir, feedNameKey, interval, new FeedStatus
         {
@@ -189,7 +213,7 @@ internal sealed class KlinesArchiveMaterializer(
             LastTimestamp = lastTs,
             LastRunUtc = DateTimeOffset.UtcNow,
             RecordCount = recordCount,
-            Gaps = gaps,
+            Gaps = mergedGaps,
             Health = health
         }, ct);
     }

@@ -216,4 +216,38 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
             Arg.Is<FeedStatus>(s => s.RecordCount == 2 && s.LastTimestamp == 1709254800000),
             Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task MaterializeMonth_MissingMiddleDay_RecordsGap()
+    {
+        // Day 1 (Mar 01): ts=1709251200000 (00:00 UTC)
+        // Day 3 (Mar 03): ts=1709424000000 (00:00 UTC) — Mar 02 missing
+        const string day1Csv =
+            "1709251200000,50000.1,50100.2,49900.3,50050.4,12.5,1709254799999,625631.2,1500,6.25,312815.6,0\n";
+        const string day3Csv =
+            "1709424000000,50050.4,50200.0,50000.0,50150.0,10.0,1709427599999,501500.0,1200,5.0,250750.0,0\n";
+        const long day1Ts = 1709251200000L;
+        const long day3Ts = 1709424000000L;
+
+        _archive.DownloadMonthly(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(),
+            Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(null));
+        _archive.DownloadDaily("spot", "klines", "BTCUSDT", "1h", new DateOnly(2024, 3, 1), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream(day1Csv)));
+        _archive.DownloadDaily("spot", "klines", "BTCUSDT", "1h", new DateOnly(2024, 3, 3), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream(day3Csv)));
+
+        await CandlesMaterializer().MaterializeMonth(
+            SpotConfig(), FeedConfig("1h"), _dir, 2024, 3, TestContext.Current.CancellationToken);
+
+        // Gap between end of day-1 row and start of day-3 row must be recorded.
+        await _statusStore.Received(1).Save(
+            _dir, FeedNames.Candles, "1h",
+            Arg.Is<FeedStatus>(s =>
+                s.Gaps.Count == 1 &&
+                s.Gaps[0].FromMs == day1Ts &&
+                s.Gaps[0].ToMs == day3Ts),
+            Arg.Any<CancellationToken>());
+    }
 }
