@@ -49,7 +49,7 @@ public sealed class LoadJobRecord
         {
             return new LoadJobSnapshot(
                 JobId: Job.JobId,
-                State: State,
+                State: State.ToString().ToLowerInvariant(),
                 QueuedAt: QueuedAt,
                 CompletedAt: CompletedAt,
                 MonthsDone: MonthsDone,

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
@@ -51,5 +53,49 @@ public sealed class CoverageEndpointTests
         Assert.Equal(StatusCodes.Status422UnprocessableEntity, statusResult.StatusCode);
         // Schema must never be queried (no filesystem touch).
         await schema.DidNotReceiveWithAnyArgs().Load(default!, default!);
+    }
+
+    [Fact]
+    public async Task FeedEntry_NoFeedStatus_TimestampsAreNull()
+    {
+        // Arrange: a manifest with one candle interval, feed dir exists, no FeedStatus on disk.
+        var tempRoot = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        var feedDir = Path.Combine(tempRoot, "binance", "BTCUSDT", "candles");
+        Directory.CreateDirectory(feedDir);
+        try
+        {
+            var (_, schema, status, coverage) = BuildDeps();
+            var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
+            options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = tempRoot });
+
+            schema.Load(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<FeedMetadata?>(new FeedMetadata
+                {
+                    Candles = new CandleConfig { Intervals = ["1h"] },
+                }));
+
+            // feedStatusStore.Load returns null by default (NSubstitute default for Task<T?> = null).
+
+            // Act
+            var result = await CoverageEndpoints.GetCoverage(
+                "binance", "BTCUSDT", AssetTypes.Spot,
+                options, schema, status, coverage,
+                TestContext.Current.CancellationToken);
+
+            // Assert: 200 OK, one feed entry, timestamps are JSON null.
+            Assert.Equal(StatusCodes.Status200OK, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+            var valueResult = Assert.IsAssignableFrom<IValueHttpResult>(result);
+            var json = JsonSerializer.Serialize(valueResult.Value);
+            using var doc = JsonDocument.Parse(json);
+            var feeds = doc.RootElement.GetProperty("feeds");
+            Assert.Equal(1, feeds.GetArrayLength());
+            var feed = feeds[0];
+            Assert.Equal(JsonValueKind.Null, feed.GetProperty("first_timestamp").ValueKind);
+            Assert.Equal(JsonValueKind.Null, feed.GetProperty("last_timestamp").ValueKind);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
     }
 }
