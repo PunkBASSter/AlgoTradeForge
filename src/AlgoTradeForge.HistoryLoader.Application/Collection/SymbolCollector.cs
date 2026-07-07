@@ -31,7 +31,8 @@ public sealed class SymbolCollector
         string assetDir,
         long fromMs,
         long toMs,
-        CancellationToken ct)
+        IProgress<ArchiveProgress>? progress = null,
+        CancellationToken ct = default)
     {
         var feedName = feedConfig.Name;
 
@@ -50,7 +51,7 @@ public sealed class SymbolCollector
             return;
         }
 
-        fromMs = await _archiveBackfill.CoverFromArchive(assetConfig, feedConfig, assetDir, fromMs, toMs, progress: null, ct);
+        fromMs = await _archiveBackfill.CoverFromArchive(assetConfig, feedConfig, assetDir, fromMs, toMs, progress, ct);
         if (fromMs >= toMs)
             return; // fully covered by archive — no REST tail needed
 

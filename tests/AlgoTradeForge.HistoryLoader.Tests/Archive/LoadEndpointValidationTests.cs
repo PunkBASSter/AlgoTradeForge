@@ -93,6 +93,28 @@ public sealed class LoadEndpointValidationTests
         Assert.Null(err);
     }
 
+    [Theory]
+    [InlineData("bogus")]
+    [InlineData("7x")]
+    [InlineData("")]
+    public void GarbageInterval_Returns_InvalidInterval(string interval)
+    {
+        var req = ValidRequest() with { Interval = interval };
+        var err = LoadRequestValidator.Validate(req, RegistryWithCandles(), DefaultOptions);
+        Assert.NotNull(err);
+        Assert.Equal("invalid_interval", err!.Code);
+    }
+
+    [Theory]
+    [InlineData("5m")]
+    [InlineData("1h")]
+    public void ValidIntervals_Pass(string interval)
+    {
+        var req = ValidRequest() with { Interval = interval };
+        var err = LoadRequestValidator.Validate(req, RegistryWithCandles(), DefaultOptions);
+        Assert.Null(err);
+    }
+
     // -------------------------------------------------------------------------
     // Path traversal: PostLoad must return 422 without touching the filesystem.
     // -------------------------------------------------------------------------

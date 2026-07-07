@@ -1,3 +1,4 @@
+using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -39,6 +40,7 @@ public sealed class BackfillOrchestrator(
         IReadOnlyList<string>? feedFilter = null,
         DateOnly? fromDate = null,
         DateOnly? toDate = null,
+        IProgress<ArchiveProgress>? progress = null,
         CancellationToken ct = default)
     {
         bool added = false;
@@ -66,7 +68,7 @@ public sealed class BackfillOrchestrator(
                 var fromMs = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
                     .ToUnixTimeMilliseconds();
 
-                await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct);
+                await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, progress, ct);
             }
 
             return true;

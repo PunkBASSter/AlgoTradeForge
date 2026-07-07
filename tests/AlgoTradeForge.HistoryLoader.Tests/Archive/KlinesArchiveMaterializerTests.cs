@@ -218,6 +218,30 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
     }
 
     [Fact]
+    public async Task MaterializeMonth_Twice_RecordCountNotDoubled()
+    {
+        // Partitions are REPLACED on re-materialization, so RecordCount must reflect the
+        // partition's rows once — not accumulate per materialization.
+        _archive.DownloadMonthly("spot", "klines", "BTCUSDT", "1h", 2024, 3, Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream(KlineCsv)));
+
+        FeedStatus? persisted = null;
+        _statusStore.Load(_dir, FeedNames.Candles, "1h", Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(persisted));
+        _statusStore.When(s => s.Save(
+                _dir, FeedNames.Candles, "1h", Arg.Any<FeedStatus>(), Arg.Any<CancellationToken>()))
+            .Do(ci => persisted = ci.ArgAt<FeedStatus>(3));
+
+        await CandlesMaterializer().MaterializeMonth(
+            SpotConfig(), FeedConfig(), _dir, 2024, 3, TestContext.Current.CancellationToken);
+        await CandlesMaterializer().MaterializeMonth(
+            SpotConfig(), FeedConfig(), _dir, 2024, 3, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(persisted);
+        Assert.Equal(2, persisted!.RecordCount);
+    }
+
+    [Fact]
     public async Task MaterializeMonth_MissingMiddleDay_RecordsGap()
     {
         // Day 1 (Mar 01): ts=1709251200000 (00:00 UTC)

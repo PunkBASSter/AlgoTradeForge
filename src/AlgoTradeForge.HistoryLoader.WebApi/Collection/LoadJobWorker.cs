@@ -56,7 +56,8 @@ internal sealed class LoadJobWorker(
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(options.CurrentValue.DataRoot, asset);
             var ok = await orchestrator.TryRunSingleAsync(
-                asset, assetDir, feedFilter: [job.FeedName], fromDate: job.From, toDate: job.To, ct);
+                asset, assetDir, feedFilter: [job.FeedName], fromDate: job.From, toDate: job.To,
+                progress: new LoadJobProgress(registry, job.JobId), ct: ct);
 
             if (ok)
                 registry.OnCompleted(job.JobId);

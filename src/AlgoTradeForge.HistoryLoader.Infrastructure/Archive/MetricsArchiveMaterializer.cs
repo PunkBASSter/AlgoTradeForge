@@ -60,15 +60,18 @@ internal sealed class MetricsArchiveMaterializer(
         }
 
         // Detect gaps from the actual downsampled row sequence (both ends are present rows)
-        var gaps = DetectGaps(parsed, intervalMs, feedConfig.GapThresholdMultiplier);
+        var gaps = ArchiveStatusMerger.DetectGaps(parsed, intervalMs, feedConfig.GapThresholdMultiplier);
 
         var columns = GetColumns();
         await schemaManager.EnsureSchema(assetDir, feedName, feedConfig.Interval, columns, ct: ct);
         var path = Path.Combine(assetDir, feedName, $"{year:D4}-{month:D2}_{feedConfig.Interval}.csv");
+        var previousRows = await ArchiveStatusMerger.CountDataRows(path, ct);
         var csvRows = parsed.Select(x => BuildRow(x.Ts, x.Row));
         await partitionWriter.ReplacePartition(path, $"ts,{string.Join(",", columns)}", csvRows, ct);
 
-        await MergeStatus(assetDir, feedConfig.Interval, parsed[0].Ts, parsed[^1].Ts, parsed.Count, gaps, ct);
+        await ArchiveStatusMerger.MergeStatus(
+            feedStatusStore, assetDir, feedName, feedConfig.Interval,
+            parsed[0].Ts, parsed[^1].Ts, parsed.Count - previousRows, gaps, ct);
 
         logger.LogInformation("Materialized {Feed}/{Interval} {Year}-{Month:D2} for {Symbol}: {Rows} rows",
             feedName, feedConfig.Interval, year, month, assetConfig.Symbol, parsed.Count);
@@ -112,52 +115,4 @@ internal sealed class MetricsArchiveMaterializer(
         return $"{ts},{longPct.ToString(CultureInfo.InvariantCulture)},{shortPct.ToString(CultureInfo.InvariantCulture)},{r.ToString(CultureInfo.InvariantCulture)}";
     }
 
-    // Mirrors FeedCollectorBase.DetectGap: FromMs and ToMs are both present rows
-    private static List<DataGap> DetectGaps(List<(long Ts, string[] Row)> parsed, long intervalMs, double multiplier)
-    {
-        var gaps = new List<DataGap>();
-        for (var i = 1; i < parsed.Count; i++)
-        {
-            var prev = parsed[i - 1].Ts;
-            var curr = parsed[i].Ts;
-            if (curr - prev > intervalMs * multiplier)
-                gaps.Add(new DataGap { FromMs = prev, ToMs = curr });
-        }
-        return gaps;
-    }
-
-    private async Task MergeStatus(
-        string assetDir, string interval,
-        long monthFirst, long monthLast, long written,
-        List<DataGap> newGaps, CancellationToken ct)
-    {
-        var existing = await feedStatusStore.Load(assetDir, feedName, interval, ct);
-
-        var firstTs = existing?.FirstTimestamp.HasValue == true
-            ? Math.Min(existing.FirstTimestamp.Value, monthFirst)
-            : monthFirst;
-        var lastTs = existing?.LastTimestamp.HasValue == true
-            ? Math.Max(existing.LastTimestamp.Value, monthLast)
-            : monthLast;
-        var recordCount = (existing?.RecordCount ?? 0) + written;
-
-        IReadOnlyList<DataGap> existingGaps = existing?.Gaps ?? [];
-        var dedupedNew = newGaps
-            .Where(g => !existingGaps.Any(e => e.FromMs == g.FromMs && e.ToMs == g.ToMs))
-            .ToList();
-        IReadOnlyList<DataGap> mergedGaps = [.. existingGaps, .. dedupedNew];
-        var health = mergedGaps.Count == 0 ? CollectionHealth.Healthy : CollectionHealth.Degraded;
-
-        await feedStatusStore.Save(assetDir, feedName, interval, new FeedStatus
-        {
-            FeedName = feedName,
-            Interval = interval,
-            FirstTimestamp = firstTs,
-            LastTimestamp = lastTs,
-            LastRunUtc = DateTimeOffset.UtcNow,
-            RecordCount = recordCount,
-            Gaps = mergedGaps,
-            Health = health
-        }, ct);
-    }
 }

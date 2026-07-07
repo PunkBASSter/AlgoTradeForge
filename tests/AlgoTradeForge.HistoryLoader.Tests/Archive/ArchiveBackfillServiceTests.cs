@@ -388,7 +388,32 @@ public sealed class ArchiveBackfillServiceTests
     }
 
     // -------------------------------------------------------------------------
-    // 12. (I1-residual) Listing-month candidate receives status.FirstTimestamp as
+    // 12. (F1) Progress is reported per candidate month with correct done/total.
+    // -------------------------------------------------------------------------
+
+    private sealed class RecordingProgress : IProgress<ArchiveProgress>
+    {
+        public List<ArchiveProgress> Reports { get; } = [];
+        public void Report(ArchiveProgress value) => Reports.Add(value);
+    }
+
+    [Fact]
+    public async Task Progress_ReportedPerCandidateMonth()
+    {
+        // May + June 2026 = 2 candidate months (July is the open current month).
+        var progress = new RecordingProgress();
+
+        var sut = BuildSut();
+        await sut.CoverFromArchive(Asset, Feed, "/data", Ms(2026, 5), Ms(2026, 7, 7),
+            progress, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            [new(1, 2, "2026-05"), new(2, 2, "2026-06")],
+            progress.Reports);
+    }
+
+    // -------------------------------------------------------------------------
+    // 13. (I1-residual) Listing-month candidate receives status.FirstTimestamp as
     //     effectiveStartMs; all other candidates receive null.
     // -------------------------------------------------------------------------
 

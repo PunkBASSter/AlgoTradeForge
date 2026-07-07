@@ -84,17 +84,24 @@ internal sealed class KlinesArchiveMaterializer(
             return new ArchiveMonthResult(0, AvailableAtSource: true);
         }
 
+        var primaryFeed = feedName == FeedNames.Candles ? FeedNames.Candles : FeedNames.MarkPrice;
+        var primaryPath = Path.Combine(assetDir, primaryFeed, $"{year:D4}-{month:D2}_{interval}.csv");
+        var previousRows = await ArchiveStatusMerger.CountDataRows(primaryPath, ct);
+
         long written = feedName == FeedNames.Candles
             ? await WriteCandles(assetConfig, assetDir, interval, year, month, parsed, ct)
             : await WriteMarkPrice(assetDir, interval, year, month, parsed, ct);
+        var delta = written - previousRows;
 
         var intervalMs = (long)IntervalParser.ToTimeSpan(feedConfig.Interval).TotalMilliseconds;
-        var gaps = DetectGaps(parsed, intervalMs, feedConfig.GapThresholdMultiplier);
+        var gaps = ArchiveStatusMerger.DetectGaps(parsed, intervalMs, feedConfig.GapThresholdMultiplier);
 
-        var primaryFeed = feedName == FeedNames.Candles ? FeedNames.Candles : FeedNames.MarkPrice;
-        await MergeStatus(assetDir, primaryFeed, interval, parsed[0].Ts, parsed[^1].Ts, written, gaps, ct);
+        await ArchiveStatusMerger.MergeStatus(
+            feedStatusStore, assetDir, primaryFeed, interval, parsed[0].Ts, parsed[^1].Ts, delta, gaps, ct);
+        // candle-ext is rewritten in tandem with candles, so the same delta applies.
         if (feedName == FeedNames.Candles && AssetTypes.IsFutures(assetConfig.Type))
-            await MergeStatus(assetDir, FeedNames.CandleExt, interval, parsed[0].Ts, parsed[^1].Ts, written, gaps, ct);
+            await ArchiveStatusMerger.MergeStatus(
+                feedStatusStore, assetDir, FeedNames.CandleExt, interval, parsed[0].Ts, parsed[^1].Ts, delta, gaps, ct);
 
         logger.LogInformation("Materialized {Feed}/{Interval} {Year}-{Month:D2} for {Symbol}: {Rows} rows",
             feedName, interval, year, month, assetConfig.Symbol, written);
@@ -169,52 +176,4 @@ internal sealed class KlinesArchiveMaterializer(
         return parsed.Count;
     }
 
-    // Mirrors FeedCollectorBase.DetectGap: FromMs and ToMs are both present rows.
-    private static List<DataGap> DetectGaps(List<(long Ts, string[] Row)> parsed, long intervalMs, double multiplier)
-    {
-        var gaps = new List<DataGap>();
-        for (var i = 1; i < parsed.Count; i++)
-        {
-            var prev = parsed[i - 1].Ts;
-            var curr = parsed[i].Ts;
-            if (curr - prev > intervalMs * multiplier)
-                gaps.Add(new DataGap { FromMs = prev, ToMs = curr });
-        }
-        return gaps;
-    }
-
-    private async Task MergeStatus(
-        string assetDir, string feedNameKey, string interval,
-        long monthFirst, long monthLast, long written,
-        List<DataGap> newGaps, CancellationToken ct)
-    {
-        var existing = await feedStatusStore.Load(assetDir, feedNameKey, interval, ct);
-
-        var firstTs = existing?.FirstTimestamp.HasValue == true
-            ? Math.Min(existing.FirstTimestamp.Value, monthFirst)
-            : monthFirst;
-        var lastTs = existing?.LastTimestamp.HasValue == true
-            ? Math.Max(existing.LastTimestamp.Value, monthLast)
-            : monthLast;
-        var recordCount = (existing?.RecordCount ?? 0) + written;
-
-        IReadOnlyList<DataGap> existingGaps = existing?.Gaps ?? [];
-        var dedupedNew = newGaps
-            .Where(g => !existingGaps.Any(e => e.FromMs == g.FromMs && e.ToMs == g.ToMs))
-            .ToList();
-        IReadOnlyList<DataGap> mergedGaps = [.. existingGaps, .. dedupedNew];
-        var health = mergedGaps.Count == 0 ? CollectionHealth.Healthy : CollectionHealth.Degraded;
-
-        await feedStatusStore.Save(assetDir, feedNameKey, interval, new FeedStatus
-        {
-            FeedName = feedNameKey,
-            Interval = interval,
-            FirstTimestamp = firstTs,
-            LastTimestamp = lastTs,
-            LastRunUtc = DateTimeOffset.UtcNow,
-            RecordCount = recordCount,
-            Gaps = mergedGaps,
-            Health = health
-        }, ct);
-    }
 }

@@ -93,7 +93,7 @@ public sealed class SymbolCollectorTests
     {
         SetupDateThreshold(ValidStartMs);
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
+        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
         // Should persist August 2020 as the discovered start.
         await _settingsWriter.Received(1).UpdateFeedHistoryStart(
@@ -124,7 +124,7 @@ public sealed class SymbolCollectorTests
                 return Task.CompletedTask;
             });
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
+        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
         // Jan–Dec 2020 = 12 months. Binary search ≤ log2(12) + 1 ≈ 5 probes.
         // Plus 1 initial attempt + 1 final full collection = ~7 total.
@@ -145,7 +145,7 @@ public sealed class SymbolCollectorTests
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Throws(new DataSourceApiException(-1121, "Invalid symbol.", HttpStatusCode.BadRequest));
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
+        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
         await _collector.Received(1).CollectAsync(
             Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
@@ -167,7 +167,7 @@ public sealed class SymbolCollectorTests
             .Throws(new DataSourceApiException(
                 -1, "The endpoint has been out of maintenance", HttpStatusCode.BadRequest));
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
+        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
         await _collector.Received(1).CollectAsync(
             Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
@@ -188,7 +188,7 @@ public sealed class SymbolCollectorTests
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Throws(new HttpRequestException("Bad Request", null, HttpStatusCode.BadRequest));
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
+        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
         await _collector.Received(1).CollectAsync(
             Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
@@ -210,7 +210,7 @@ public sealed class SymbolCollectorTests
             .Throws(new DataSourceApiException(
                 -1, "Invalid period.", HttpStatusCode.BadRequest, isDateRangeError: true));
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
+        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
         await _settingsWriter.DidNotReceiveWithAnyArgs()
             .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
@@ -228,7 +228,7 @@ public sealed class SymbolCollectorTests
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
+        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
         await _collector.Received(1).CollectAsync(
             Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
@@ -246,7 +246,7 @@ public sealed class SymbolCollectorTests
     {
         SetupDateThreshold(ValidStartMs);
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, CancellationToken.None);
+        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
         // The last call should be the full collection from discovered start to toMs.
         await _collector.Received().CollectAsync(

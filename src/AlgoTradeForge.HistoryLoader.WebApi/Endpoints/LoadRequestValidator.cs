@@ -34,6 +34,19 @@ internal static class LoadRequestValidator
             return new LoadValidationError("too_many_months",
                 $"Request spans {months} months; limit is {options.MaxMonthsPerRequest}.");
 
+        // Interval lands in file paths and in IntervalParser downstream — reject garbage here
+        // (422) instead of accepting the job and failing it later. IntervalParser has no
+        // Try-form, so the catch is the validation.
+        try
+        {
+            IntervalParser.ToTimeSpan(request.Interval);
+        }
+        catch (ArgumentException)
+        {
+            return new LoadValidationError("invalid_interval",
+                $"Unsupported interval '{request.Interval}'.");
+        }
+
         if (!registry.IsReplenishable(request.Exchange, request.FeedName, request.AssetType))
             return new LoadValidationError("not_replenishable",
                 $"Feed '{request.FeedName}' is not replenishable for exchange '{request.Exchange}' and asset type '{request.AssetType}'.");
