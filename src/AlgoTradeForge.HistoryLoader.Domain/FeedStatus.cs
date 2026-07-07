@@ -23,4 +23,7 @@ public sealed class FeedStatus
     public long RecordCount { get; init; }
     public IReadOnlyList<DataGap> Gaps { get; init; } = [];
     public CollectionHealth Health { get; init; } = CollectionHealth.Healthy;
+
+    /// <summary>Months ("yyyy-MM") materialized from a complete monthly archive zip. Coverage marker for interval-less feeds (ticks, funding-rate); NOT the row-count predicate.</summary>
+    public IReadOnlyList<string> CompleteMonths { get; init; } = [];
 }

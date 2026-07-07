@@ -63,7 +63,38 @@ internal static class ArchiveStatusMerger
             LastRunUtc = DateTimeOffset.UtcNow,
             RecordCount = recordCount,
             Gaps = mergedGaps,
-            Health = health
+            Health = health,
+            // Carry the interval-less coverage marker through the rebuild — only MarkCompleteMonth
+            // adds to it; dropping it here wipes prior months on every per-month merge.
+            CompleteMonths = existing?.CompleteMonths ?? []
+        }, ct);
+    }
+
+    // Records one "yyyy-MM" month as completely materialized from a monthly archive zip
+    // (coverage marker for interval-less feeds). Idempotent; keeps the list ordinal-sorted.
+    public static async Task MarkCompleteMonth(
+        IFeedStatusStore feedStatusStore, string assetDir, string feedName, string interval,
+        string monthKey, CancellationToken ct = default)
+    {
+        var status = await feedStatusStore.Load(assetDir, feedName, interval, ct)
+            ?? new FeedStatus { FeedName = feedName, Interval = interval };
+        if (status.CompleteMonths.Contains(monthKey))
+            return;
+
+        var months = new List<string>(status.CompleteMonths) { monthKey };
+        months.Sort(StringComparer.Ordinal);
+
+        await feedStatusStore.Save(assetDir, feedName, interval, new FeedStatus
+        {
+            FeedName = status.FeedName,
+            Interval = status.Interval,
+            FirstTimestamp = status.FirstTimestamp,
+            LastTimestamp = status.LastTimestamp,
+            LastRunUtc = status.LastRunUtc,
+            RecordCount = status.RecordCount,
+            Gaps = status.Gaps,
+            Health = status.Health,
+            CompleteMonths = months
         }, ct);
     }
 }

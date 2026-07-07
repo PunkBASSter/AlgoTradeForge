@@ -1,14 +1,78 @@
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
+using AlgoTradeForge.HistoryLoader.Infrastructure.State;
+using AlgoTradeForge.Storage;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Archive;
 
-public sealed class ArchiveStatusMergerTests
+public sealed class ArchiveStatusMergerTests : IDisposable
 {
     // 2020-02-01 00:00:00 UTC — same epoch as the smoke-confirmed bug month (BTCUSDT 1h Feb 2020).
     private static readonly long Base = new DateTimeOffset(2020, 2, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
     private const long HourMs = 3_600_000L;
+
+    private readonly string _tempDir;
+    private readonly FeedStatusManager _store;
+
+    public ArchiveStatusMergerTests()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), $"ArchiveStatusMergerTests_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_tempDir);
+        _store = new FeedStatusManager(new LocalFileStorage());
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_tempDir))
+            Directory.Delete(_tempDir, recursive: true);
+    }
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    // -----------------------------------------------------------------------
+    // CompleteMonths marker + preservation across MergeStatus rebuild
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task MarkCompleteMonth_Adds_WhenAbsent_SortedOrdinal()
+    {
+        await _store.Save(_tempDir, FeedNames.Ticks, "", new FeedStatus
+        { FeedName = FeedNames.Ticks, Interval = "", CompleteMonths = ["2024-03"] }, Ct);
+
+        await ArchiveStatusMerger.MarkCompleteMonth(_store, _tempDir, FeedNames.Ticks, "", "2024-01", Ct);
+
+        var loaded = await _store.Load(_tempDir, FeedNames.Ticks, "", Ct);
+        Assert.Equal(new[] { "2024-01", "2024-03" }, loaded!.CompleteMonths);
+    }
+
+    [Fact]
+    public async Task MarkCompleteMonth_Idempotent_WhenPresent()
+    {
+        await _store.Save(_tempDir, FeedNames.Ticks, "", new FeedStatus
+        { FeedName = FeedNames.Ticks, Interval = "", CompleteMonths = ["2024-01"] }, Ct);
+
+        await ArchiveStatusMerger.MarkCompleteMonth(_store, _tempDir, FeedNames.Ticks, "", "2024-01", Ct);
+
+        var loaded = await _store.Load(_tempDir, FeedNames.Ticks, "", Ct);
+        Assert.Equal(new[] { "2024-01" }, loaded!.CompleteMonths);
+    }
+
+    [Fact]
+    public async Task MergeStatus_PreservesCompleteMonths()
+    {
+        // Cross-month data-loss guard: an earlier month's marker must survive a MergeStatus
+        // rebuild for a later month. Without the fix the rebuild wipes it and this fails.
+        await _store.Save(_tempDir, FeedNames.Ticks, "", new FeedStatus
+        { FeedName = FeedNames.Ticks, Interval = "", CompleteMonths = ["2024-01"] }, Ct);
+
+        var feb = new DateTimeOffset(2024, 2, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        await ArchiveStatusMerger.MergeStatus(_store, _tempDir, FeedNames.Ticks, "",
+            feb, feb + HourMs, recordCountDelta: 10, newGaps: [], Ct);
+
+        var loaded = await _store.Load(_tempDir, FeedNames.Ticks, "", Ct);
+        Assert.Contains("2024-01", loaded!.CompleteMonths);
+    }
 
     // -----------------------------------------------------------------------
     // DetectGaps — archive threshold is ANY missing slot (> 1×interval)
