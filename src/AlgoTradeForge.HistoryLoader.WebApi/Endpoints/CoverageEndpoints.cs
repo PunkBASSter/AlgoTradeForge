@@ -76,6 +76,21 @@ internal static class CoverageEndpoints
             if (entry is not null) feedEntries.Add(entry);
         }
 
+        // Interval-less feeds: coverage is CompleteMonths marker, not the partition glob.
+        foreach (var feed in new[] { FeedNames.Ticks, FeedNames.FundingRate })
+        {
+            var status = await feedStatusStore.Load(assetDir, feed, "", ct);
+            if (!Directory.Exists(Path.Combine(assetDir, feed)) || status is null)
+                continue; // omit — pinned wire contract
+            feedEntries.Add(new
+            {
+                feed_name = feed, interval = "",
+                covered_months = status.CompleteMonths.OrderBy(m => m, StringComparer.Ordinal).ToArray(),
+                first_timestamp = status.FirstTimestamp,
+                last_timestamp = status.LastTimestamp,
+            });
+        }
+
         return Results.Ok(new { asset_dir = assetDir, feeds = feedEntries });
     }
 
