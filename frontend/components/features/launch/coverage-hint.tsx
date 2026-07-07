@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { dataApi, DataApiError } from "@/lib/services/data-api";
 import { findMissingMonths, loadRangeForMonths } from "@/lib/data/coverage";
+import { exchangeSymbolOf } from "@/lib/data/coverage-mapping";
 import { useLoadJobsStore } from "@/lib/stores/load-jobs-store";
 import { useLoadJob } from "@/hooks/use-load-job";
 import { useToast } from "@/components/ui/toast";
@@ -43,13 +44,13 @@ function CoverageRow({ sub, startTime, endTime }: RowProps) {
       "data",
       "coverage",
       catalogEntry?.exchange,
-      catalogEntry?.display_name,
+      catalogEntry ? exchangeSymbolOf(catalogEntry) : undefined,
       catalogEntry?.type,
     ],
     queryFn: ({ signal }) =>
       dataApi.getCoverage(
         catalogEntry!.exchange,
-        catalogEntry!.display_name,
+        exchangeSymbolOf(catalogEntry!),
         catalogEntry!.type,
         signal,
       ),
@@ -88,7 +89,7 @@ function CoverageRow({ sub, startTime, endTime }: RowProps) {
       const range = loadRangeForMonths(missing);
       const resp = await dataApi.postLoad({
         exchange: catalogEntry.exchange,
-        symbol: catalogEntry.display_name,
+        symbol: exchangeSymbolOf(catalogEntry),
         asset_type: catalogEntry.type,
         feed_name: "candles",
         interval: sub.timeFrame,

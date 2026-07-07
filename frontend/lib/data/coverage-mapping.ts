@@ -8,6 +8,13 @@
 
 import type { FeedCatalogEntry } from "@/types/data-tab";
 
+// The API's coverage/load `symbol` is the EXCHANGE symbol. The catalog `symbol` is the on-disk
+// dir per AssetPathConvention ({SYMBOL}_perp for perpetual/future); display_name is a UI label
+// ("BTCUSDT-perp") and must never be used as an API key.
+export function exchangeSymbolOf(asset: { symbol: string }): string {
+  return asset.symbol.endsWith("_perp") ? asset.symbol.slice(0, -"_perp".length) : asset.symbol;
+}
+
 export function mapCatalogFeedToCoverage(
   feed: FeedCatalogEntry,
 ): { feedName: string; interval: string } | null {

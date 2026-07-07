@@ -39,7 +39,7 @@ const MAR_2024 = Date.UTC(2024, 2, 31);  // 2024-03-31
 const ASSET: AssetCatalogEntry = {
   exchange: "binance",
   symbol: "BTCUSDT_perp",
-  display_name: "BTCUSDT",
+  display_name: "BTCUSDT-perp",
   type: "perpetual",
   feeds: [],
 };
@@ -129,11 +129,21 @@ describe("CoverageSummary", () => {
       const btn = screen.getByRole("button", { name: /load missing months/i });
       expect(btn).toBeInTheDocument();
 
+      // Regression pin: getCoverage must use the EXCHANGE symbol (BTCUSDT), not display_name (BTCUSDT-perp).
+      await waitFor(() => expect(getCoverageSpy).toHaveBeenCalled());
+      expect(getCoverageSpy).toHaveBeenCalledWith(
+        "binance",
+        "BTCUSDT",
+        "perpetual",
+        expect.anything(),
+      );
+
       fireEvent.click(btn);
 
       await waitFor(() => expect(postLoadSpy).toHaveBeenCalledOnce());
 
       const [body] = postLoadSpy.mock.calls[0] as [LoadRequestBody, ...unknown[]];
+      // Regression pin: postLoad symbol must be the EXCHANGE symbol (BTCUSDT), not display_name (BTCUSDT-perp).
       expect(body).toEqual({
         exchange: "binance",
         symbol: "BTCUSDT",

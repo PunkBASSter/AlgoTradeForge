@@ -47,7 +47,7 @@ vi.mock("@/components/ui/toast", () => ({
 const ASSET = {
   exchange: "binance",
   symbol: "BTCUSDT_perp",
-  display_name: "BTCUSDT",
+  display_name: "BTCUSDT-perp",
   type: "perpetual",
   feeds: [],
 };
@@ -155,10 +155,19 @@ describe("CoverageHint", () => {
     expect(banner).toHaveTextContent("1h");
     expect(banner).toHaveTextContent("1 archived month");
 
+    // Regression pin: getCoverage must use the EXCHANGE symbol (BTCUSDT), not display_name (BTCUSDT-perp).
+    expect(getCoverageSpy).toHaveBeenCalledWith(
+      "binance",
+      "BTCUSDT",
+      "perpetual",
+      expect.anything(),
+    );
+
     fireEvent.click(screen.getByRole("button", { name: /load/i }));
 
     await waitFor(() => expect(postLoadSpy).toHaveBeenCalledOnce());
     const [body] = postLoadSpy.mock.calls[0] as [LoadRequestBody, ...unknown[]];
+    // Regression pin: postLoad symbol must be the EXCHANGE symbol (BTCUSDT), not display_name (BTCUSDT-perp).
     expect(body).toEqual({
       exchange: "binance",
       symbol: "BTCUSDT",

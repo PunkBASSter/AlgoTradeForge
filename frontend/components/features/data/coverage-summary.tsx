@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { dataApi, DataApiError } from "@/lib/services/data-api";
 import { findMissingMonths, loadRangeForMonths } from "@/lib/data/coverage";
+import { exchangeSymbolOf } from "@/lib/data/coverage-mapping";
 import { useLoadJobsStore } from "@/lib/stores/load-jobs-store";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -37,9 +38,9 @@ export function CoverageSummary({ exchange, asset, mapping }: CoverageSummaryPro
   const addJob = useLoadJobsStore((s) => s.addJob);
 
   const coverage = useQuery({
-    queryKey: ["data", "coverage", exchange, asset.display_name, asset.type],
+    queryKey: ["data", "coverage", exchange, exchangeSymbolOf(asset), asset.type],
     queryFn: ({ signal }) =>
-      dataApi.getCoverage(exchange, asset.display_name, asset.type, signal),
+      dataApi.getCoverage(exchange, exchangeSymbolOf(asset), asset.type, signal),
     staleTime: 30_000,
   });
 
@@ -90,7 +91,7 @@ export function CoverageSummary({ exchange, asset, mapping }: CoverageSummaryPro
     const range = loadRangeForMonths(missing);
     loadMutation.mutate({
       exchange,
-      symbol: asset.display_name,
+      symbol: exchangeSymbolOf(asset),
       asset_type: asset.type,
       feed_name: entry.feed_name,
       interval: entry.interval,

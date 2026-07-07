@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapCatalogFeedToCoverage } from "./coverage-mapping";
+import { exchangeSymbolOf, mapCatalogFeedToCoverage } from "./coverage-mapping";
 import type { FeedCatalogEntry } from "@/types/data-tab";
 
 function makeEntry(overrides: Partial<FeedCatalogEntry>): FeedCatalogEntry {
@@ -13,6 +13,18 @@ function makeEntry(overrides: Partial<FeedCatalogEntry>): FeedCatalogEntry {
     ...overrides,
   };
 }
+
+describe("exchangeSymbolOf", () => {
+  it("strips _perp suffix for perpetual/future assets", () => {
+    expect(exchangeSymbolOf({ symbol: "BTCUSDT_perp" })).toBe("BTCUSDT");
+    expect(exchangeSymbolOf({ symbol: "ETHUSDT_perp" })).toBe("ETHUSDT");
+  });
+
+  it("passes spot symbols through unchanged", () => {
+    expect(exchangeSymbolOf({ symbol: "BTCUSDT" })).toBe("BTCUSDT");
+    expect(exchangeSymbolOf({ symbol: "AAPL" })).toBe("AAPL");
+  });
+});
 
 describe("mapCatalogFeedToCoverage", () => {
   describe("OHLCV_TimeBar", () => {
