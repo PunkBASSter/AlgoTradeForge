@@ -85,4 +85,7 @@ public sealed class FeedCollectionConfig
     public bool Enabled { get; init; } = true;
     public DateOnly? HistoryStart { get; init; }
     public double GapThresholdMultiplier { get; init; } = 2.0;
+
+    /// <summary>Opts a replenishable feed back into scheduled/stream collection (spec §1).</summary>
+    public bool Eager { get; init; }
 }
