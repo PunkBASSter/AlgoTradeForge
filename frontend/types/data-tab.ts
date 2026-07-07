@@ -239,3 +239,52 @@ export type SseEventEnvelope =
   | { type: "complete"; data: SseCompletePayload }
   | { type: "error"; data: SseErrorPayload }
   | { type: "cancelled"; data: SseCancelledPayload };
+
+// ---- Archive coverage + load jobs (phase 2). Snake_case verbatim, same proxy rule. ----
+
+export interface CoverageResponse {
+  asset_dir: string;
+  feeds: CoverageFeedEntry[];
+}
+
+export interface CoverageFeedEntry {
+  feed_name: string;
+  interval: string;
+  covered_months: string[]; // "yyyy-MM", sorted ordinal
+  first_timestamp: number | null; // epoch ms; null when no FeedStatus exists
+  last_timestamp: number | null;
+}
+
+export interface LoadRequestBody {
+  exchange: string;
+  /** DISPLAY symbol ("BTCUSDT") — NOT the catalog directory name ("BTCUSDT_perp"). */
+  symbol: string;
+  asset_type: string;
+  feed_name: string;
+  interval: string;
+  from: string; // "yyyy-MM-dd"
+  to: string;
+}
+
+export interface LoadAcceptedResponse {
+  job_id: string;
+}
+
+export type LoadJobStateWire = "queued" | "running" | "complete" | "error";
+
+export interface LoadJobSnapshotWire {
+  job_id: string;
+  state: LoadJobStateWire;
+  queued_at: string;
+  completed_at: string | null;
+  months_done: number;
+  months_total: number;
+  current_month: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  symbol: string;
+  feed_name: string;
+  interval: string;
+  from: string;
+  to: string;
+}
