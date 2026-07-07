@@ -91,10 +91,6 @@ builder.Services.AddSingleton<ISettingsWriter>(sp =>
         sp.GetRequiredService<ILogger<AppSettingsWriter>>()));
 
 builder.Services.AddSingleton<ICollectionCircuitBreaker, CollectionCircuitBreaker>();
-// No IArchiveMaterializer registrations yet → empty registry → archive backfill is a no-op
-// until Task 10 registers real materializers.
-builder.Services.AddSingleton<ArchiveMaterializerRegistry>();
-builder.Services.AddSingleton<ArchiveBackfillService>();
 builder.Services.AddSingleton<SymbolCollector>();
 builder.Services.AddSingleton<BackfillOrchestrator>();
 
@@ -102,8 +98,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IFeedCatalog, FeedCatalog>();
 builder.Services.AddSingleton<IAggregationJobRegistry, AggregationJobRegistry>();
-builder.Services.AddSingleton<ILoadJobRegistry, LoadJobRegistry>();
-// Task 10: AddHostedService<LoadJobWorker> once ILoadAssetResolver is registered
+builder.Services.AddHostedService<LoadJobWorker>();
 builder.Services.AddSingleton<IAggregationJobQueue, AggregationJobQueue>();
 builder.Services.AddSingleton<IAggregationTickJobQueue, AggregationTickJobQueue>();
 builder.Services.AddScoped<PartitionedSourceReader>();
@@ -133,5 +128,7 @@ app.MapStatusEndpoints();
 app.MapBackfillEndpoints();
 app.MapCatalogEndpoints();
 app.MapAggregationEndpoints();
+app.MapLoadEndpoints();
+app.MapCoverageEndpoints();
 
 app.Run();
