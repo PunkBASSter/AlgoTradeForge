@@ -88,6 +88,21 @@ public sealed class FundingRateArchiveMaterializerTests : IDisposable
     }
 
     [Fact]
+    public async Task MaterializeMonth_NoMarkCloseBeforeFirstFunding_WritesLeadingZeroMarkPrice()
+    {
+        StubFunding(FundingCsv);
+        // Mark klines only at 08:00 — no close at/before the 00:00 funding boundary.
+        StubMark("1709280000000,50050,50200,50000,50150,0,1709308799999,0,0,0,0,0\n");
+
+        await Materializer().MaterializeMonth(FuturesConfig(), FeedConfig(), _dir, 2024, 3, Ct);
+
+        var lines = await File.ReadAllLinesAsync(Path.Combine(_dir, "funding-rate", "2024-03.csv"), Ct);
+        // Leading gap (no close yet) writes mark_price 0.0 — spec-accepted; pinned against regression.
+        Assert.Equal("1709251200000,0.0001,0", lines[1]);
+        Assert.Equal("1709280000000,0.00012,50150", lines[2]);
+    }
+
+    [Fact]
     public void MaterializeMonth_RejectsSpot() =>
         Assert.False(Materializer().Supports(AssetTypes.Spot));
 

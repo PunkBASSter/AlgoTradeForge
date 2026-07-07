@@ -31,6 +31,9 @@ internal sealed class AggTradesArchiveMaterializer(
         var multiplier = (decimal)Math.Pow(10, assetConfig.DecimalDigits);
         var previousRowsForMonth = await SumExistingMonthRows(assetDir, year, month, ct);
 
+        var fromMs = new DateTimeOffset(year, month, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var toMs = new DateTimeOffset(new DateOnly(year, month, 1).AddMonths(1), TimeOnly.MinValue, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
         var lastSeenAggId = long.MinValue;
         long rowsWritten = 0;
         long firstTs = 0, lastTs = 0;
@@ -67,12 +70,17 @@ internal sealed class AggTradesArchiveMaterializer(
                 if (aggId <= lastSeenAggId) continue; // monotonic-watermark dedup (agg_ids strictly increase)
                 lastSeenAggId = aggId;
 
+                var ts = ArchiveCsv.NormalizeTimestampMs(long.Parse(r[5], CultureInfo.InvariantCulture));
+                if (ts < fromMs || ts >= toMs) continue; // drop trailing/leading rows spilling from a neighbouring month
+
                 var priceLong = MoneyConvert.ToLong(decimal.Parse(r[1], CultureInfo.InvariantCulture) * multiplier);
                 var qtyLong = MoneyConvert.ToLong(decimal.Parse(r[2], CultureInfo.InvariantCulture) * multiplier);
-                var ts = ArchiveCsv.NormalizeTimestampMs(long.Parse(r[5], CultureInfo.InvariantCulture));
                 var isBuyerMaker = ParseBool(r[6]) ? 1 : 0;
 
                 var day = DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(ts).UtcDateTime);
+                if (currentDay is not null && day < currentDay)
+                    throw ArchiveIntegrityException.NonMonotonicArchive(
+                        $"{symbol} ticks {year:D4}-{month:D2}: day {day:yyyy-MM-dd} follows {currentDay:yyyy-MM-dd}");
                 if (currentDay is not null && day != currentDay)
                     await FlushDay();
                 currentDay = day;
@@ -122,7 +130,9 @@ internal sealed class AggTradesArchiveMaterializer(
                 feedStatusStore, assetDir, FeedNames.Ticks, "",
                 firstTs, lastTs, rowsWritten - previousRowsForMonth, newGaps: [], ct);
 
-        if (fromMonthlyZip)
+        // An available-but-empty monthly zip (zero in-month rows) must NOT be marked complete —
+        // it would be falsely covered on disk with no CSVs and never re-requested.
+        if (fromMonthlyZip && anyRow)
             await ArchiveStatusMerger.MarkCompleteMonth(
                 feedStatusStore, assetDir, FeedNames.Ticks, "", $"{year:D4}-{month:D2}", ct);
 

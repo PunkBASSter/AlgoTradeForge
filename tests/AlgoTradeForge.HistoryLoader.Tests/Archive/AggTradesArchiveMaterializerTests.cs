@@ -4,6 +4,8 @@ using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
+using AlgoTradeForge.HistoryLoader.Infrastructure.State;
+using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
@@ -148,6 +150,101 @@ public sealed class AggTradesArchiveMaterializerTests : IDisposable
         Assert.Equal(3, lines.Length); // header + 2 rows
         Assert.Equal("1709251200000,5000050,10,1,100", lines[1]);
         Assert.Equal("1709251260000,5000100,20,0,101", lines[2]);
+    }
+
+    [Fact]
+    public async Task MaterializeMonth_MonthlyZipPresentButEmpty_DoesNotMarkCompleteMonth()
+    {
+        // Available-but-empty: a monthly zip exists but yields zero data rows (header only).
+        _archive.DownloadMonthly("futures/um", "aggTrades", "BTCUSDT", null, 2024, 3, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(CsvStream(
+                "agg_trade_id,price,quantity,first_trade_id,last_trade_id,transact_time,is_buyer_maker\n")));
+
+        var result = await Materializer().MaterializeMonth(FuturesConfig(2), FeedConfig(), _dir, 2024, 3, Ct);
+
+        Assert.Equal(0, result.RowsWritten);
+        Assert.True(result.AvailableAtSource);
+
+        await _statusStore.DidNotReceive().Save(
+            _dir, FeedNames.Ticks, "",
+            Arg.Is<FeedStatus>(s => s.CompleteMonths.Count > 0),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task MaterializeMonth_DropsOutOfMonthRows()
+    {
+        // A leading prior-month row (2024-02-29 23:59) spills into the March monthly zip.
+        const string spillAgg =
+            "99,49999.0,0.100,1,1,1709251140000,true\n" +   // 2024-02-29 23:59 (prior month)
+            "100,50000.5,0.100,2,2,1709251200000,true\n" +  // 2024-03-01 00:00
+            "101,50001.0,0.200,3,3,1709251260000,false\n";  // 2024-03-01 00:01
+        _archive.DownloadMonthly("futures/um", "aggTrades", "BTCUSDT", null, 2024, 3, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(CsvStream(spillAgg)));
+
+        var result = await Materializer().MaterializeMonth(FuturesConfig(2), FeedConfig(), _dir, 2024, 3, Ct);
+
+        Assert.Equal(2, result.RowsWritten);
+        Assert.False(File.Exists(Path.Combine(_dir, "ticks", "2024-02-29.csv")));
+
+        var lines = await File.ReadAllLinesAsync(Path.Combine(_dir, "ticks", "2024-03-01.csv"), Ct);
+        Assert.Equal(3, lines.Length); // header + 2 in-month rows
+        Assert.Equal("1709251200000,5000050,10,1,100", lines[1]);
+        Assert.Equal("1709251260000,5000100,20,0,101", lines[2]);
+    }
+
+    [Fact]
+    public async Task MaterializeMonth_NonMonotonicDayRegression_Throws()
+    {
+        // agg_id increases but the UTC day jumps backward (2024-03-02 → 2024-03-01).
+        const string backwardAgg =
+            "100,50000.0,0.100,1,1,1709337600000,true\n" +   // 2024-03-02 00:00
+            "101,50001.0,0.100,2,2,1709251200000,false\n";   // 2024-03-01 00:00 (earlier day!)
+        _archive.DownloadMonthly("futures/um", "aggTrades", "BTCUSDT", null, 2024, 3, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(CsvStream(backwardAgg)));
+
+        await Assert.ThrowsAsync<ArchiveIntegrityException>(
+            () => Materializer().MaterializeMonth(FuturesConfig(2), FeedConfig(), _dir, 2024, 3, Ct));
+    }
+
+    [Fact]
+    public async Task AggTrades_TwoMonthMaterialization_BothInCompleteMonths()
+    {
+        var store = new FeedStatusManager(new LocalFileStorage());
+        var mat = new AggTradesArchiveMaterializer(
+            _archive, new PartitionFileWriter(), _schema, store,
+            NullLogger<AggTradesArchiveMaterializer>.Instance);
+
+        _archive.DownloadMonthly("futures/um", "aggTrades", "BTCUSDT", null, 2024, 1, Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream("100,50000.0,0.100,1,1,1704067200000,true\n"))); // 2024-01-01
+        _archive.DownloadMonthly("futures/um", "aggTrades", "BTCUSDT", null, 2024, 2, Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream("200,51000.0,0.100,1,1,1706745600000,true\n"))); // 2024-02-01
+
+        await mat.MaterializeMonth(FuturesConfig(2), FeedConfig(), _dir, 2024, 1, Ct);
+        await mat.MaterializeMonth(FuturesConfig(2), FeedConfig(), _dir, 2024, 2, Ct);
+
+        var status = await store.Load(_dir, FeedNames.Ticks, "", Ct);
+        Assert.NotNull(status);
+        Assert.Equal(new[] { "2024-01", "2024-02" }, status.CompleteMonths);
+    }
+
+    [Fact]
+    public async Task MaterializeMonth_AssembledFromDailies_TwoDays_WritesEachDayFile()
+    {
+        _archive.DownloadMonthly(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(),
+            Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(null));
+        _archive.DownloadDaily("futures/um", "aggTrades", "BTCUSDT", null, new DateOnly(2024, 3, 1), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream("100,50000.0,0.100,1,1,1709251200000,true\n")));
+        _archive.DownloadDaily("futures/um", "aggTrades", "BTCUSDT", null, new DateOnly(2024, 3, 2), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream("101,50002.0,0.050,3,3,1709337600000,true\n")));
+
+        var result = await Materializer().MaterializeMonth(FuturesConfig(2), FeedConfig(), _dir, 2024, 3, Ct);
+
+        Assert.Equal(2, result.RowsWritten);
+        Assert.True(File.Exists(Path.Combine(_dir, "ticks", "2024-03-01.csv")));
+        Assert.True(File.Exists(Path.Combine(_dir, "ticks", "2024-03-02.csv")));
     }
 
     [Fact]
