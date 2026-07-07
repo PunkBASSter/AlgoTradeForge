@@ -12,6 +12,7 @@ export const ARCHIVE_FEEDS: ReadonlyArray<{
   label: string;
   intervals: string[];
   assetTypes: string[];
+  allowEmptyInterval?: boolean;
 }> = [
   {
     feedName: "candles",
@@ -49,6 +50,10 @@ export const ARCHIVE_FEEDS: ReadonlyArray<{
     intervals: ["1h"],
     assetTypes: ["perpetual"],
   },
+  { feedName: "ticks", label: "Ticks (aggTrades)", intervals: [], assetTypes: ["spot", "perpetual"], allowEmptyInterval: true },
+  // backend Supports == IsFutures; FE offers only spot|perpetual, so perpetual mirrors it
+  { feedName: "funding-rate", label: "Funding rate", intervals: [""], assetTypes: ["perpetual"], allowEmptyInterval: true },
+  { feedName: "taker-volume", label: "Taker volume", intervals: ["15m"], assetTypes: ["perpetual"] },
 ];
 
 function lastDayOfMonth(yearMonth: string): string {
@@ -98,14 +103,14 @@ export function ArchiveLoadForm() {
   function handleFeedChange(next: string) {
     setFeedName(next);
     const feed = ARCHIVE_FEEDS.find((f) => f.feedName === next);
-    setInterval(feed?.intervals[0] ?? "");
+    setInterval(feed?.allowEmptyInterval ? "" : (feed?.intervals[0] ?? ""));
   }
 
   const canSubmit =
     !!exchange.trim() &&
     !!symbol.trim() &&
     !!feedName &&
-    !!interval &&
+    (selectedFeed?.allowEmptyInterval || !!interval) &&
     !!fromMonth &&
     !!toMonth &&
     fromMonth <= toMonth &&
@@ -217,22 +222,24 @@ export function ArchiveLoadForm() {
         </select>
       </label>
 
-      <label className="block text-sm">
-        <div className="text-text-muted mb-1">Interval</div>
-        <select
-          value={interval}
-          onChange={(e) => setInterval(e.target.value)}
-          disabled={availableIntervals.length === 0}
-          className={SELECT_CLS}
-        >
-          <option value="">— select —</option>
-          {availableIntervals.map((iv) => (
-            <option key={iv} value={iv}>
-              {iv}
-            </option>
-          ))}
-        </select>
-      </label>
+      {!selectedFeed?.allowEmptyInterval && (
+        <label className="block text-sm">
+          <div className="text-text-muted mb-1">Interval</div>
+          <select
+            value={interval}
+            onChange={(e) => setInterval(e.target.value)}
+            disabled={availableIntervals.length === 0}
+            className={SELECT_CLS}
+          >
+            <option value="">— select —</option>
+            {availableIntervals.map((iv) => (
+              <option key={iv} value={iv}>
+                {iv}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <label className="block text-sm">
         <div className="text-text-muted mb-1">From (month)</div>

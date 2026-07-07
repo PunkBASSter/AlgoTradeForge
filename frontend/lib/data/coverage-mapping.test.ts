@@ -71,10 +71,10 @@ describe("mapCatalogFeedToCoverage", () => {
       ).toBeNull();
     });
 
-    it("Tick returns null", () => {
+    it("Tick returns { feedName: 'ticks', interval: '' }", () => {
       expect(
         mapCatalogFeedToCoverage(makeEntry({ id: "trades", kind: "Tick", interval: null })),
-      ).toBeNull();
+      ).toEqual({ feedName: "ticks", interval: "" });
     });
 
     it("aggregated returns null", () => {

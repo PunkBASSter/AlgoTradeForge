@@ -147,4 +147,62 @@ describe("ArchiveLoadForm", () => {
       ).toHaveTextContent("Feed candles/spot is not replenishable from the Binance archive."),
     );
   });
+
+  it("submits ticks with empty interval", async () => {
+    postLoadSpy.mockResolvedValueOnce({ job_id: "tickjob123456" });
+    renderForm();
+
+    fireEvent.change(screen.getByPlaceholderText("BTCUSDT"), { target: { value: "BTCUSDT" } });
+    // Initially 3 selects: [asset_type, feed, interval]
+    const selects = screen.getAllByRole("combobox");
+    fireEvent.change(selects[1], { target: { value: "ticks" } });
+    // Interval select is hidden for ticks (allowEmptyInterval)
+    fireEvent.change(screen.getByLabelText(/from \(month\)/i), { target: { value: "2024-01" } });
+    fireEvent.change(screen.getByLabelText(/to \(month\)/i), { target: { value: "2024-02" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /load/i }));
+
+    await waitFor(() => expect(postLoadSpy).toHaveBeenCalledOnce());
+
+    const [body] = postLoadSpy.mock.calls[0] as [LoadRequestBody, ...unknown[]];
+    expect(body).toEqual({
+      exchange: "binance",
+      symbol: "BTCUSDT",
+      asset_type: "perpetual",
+      feed_name: "ticks",
+      interval: "",
+      from: "2024-01-01",
+      to: "2024-02-29",
+    });
+  });
+
+  it("ticks feed is submittable without interval select", () => {
+    renderForm();
+
+    fireEvent.change(screen.getByPlaceholderText("BTCUSDT"), { target: { value: "BTCUSDT" } });
+    const selects = screen.getAllByRole("combobox");
+    fireEvent.change(selects[1], { target: { value: "ticks" } });
+    fireEvent.change(screen.getByLabelText(/from \(month\)/i), { target: { value: "2024-01" } });
+    fireEvent.change(screen.getByLabelText(/to \(month\)/i), { target: { value: "2024-02" } });
+
+    // Only 2 comboboxes remain (asset_type + feed); interval select is hidden
+    expect(screen.getAllByRole("combobox")).toHaveLength(2);
+    // Load button is enabled despite no interval
+    expect(screen.getByRole("button", { name: /load/i })).not.toBeDisabled();
+  });
+
+  it("funding rate and taker volume selectable for perpetual, absent for spot", () => {
+    renderForm();
+
+    // Perpetual (default) — both feeds present
+    expect(screen.getByRole("option", { name: "Funding rate" })).toBeDefined();
+    expect(screen.getByRole("option", { name: "Taker volume" })).toBeDefined();
+
+    // Switch to spot
+    const assetTypeSelect = screen.getAllByRole("combobox")[0];
+    fireEvent.change(assetTypeSelect, { target: { value: "spot" } });
+
+    expect(screen.queryByRole("option", { name: "Funding rate" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Taker volume" })).toBeNull();
+  });
 });
