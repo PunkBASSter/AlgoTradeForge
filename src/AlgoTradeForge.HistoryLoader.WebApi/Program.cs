@@ -81,7 +81,6 @@ builder.Services.AddSingleton<IFeedCollector, IndexPriceFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, OpenInterestFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LsRatioGlobalFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LsRatioTopAccountsFeedCollector>();
-builder.Services.AddSingleton<IFeedCollector, TakerVolumeFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LsRatioTopPositionsFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LiquidationFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, AggTradeFeedCollector>();

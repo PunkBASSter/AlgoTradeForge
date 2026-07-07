@@ -18,5 +18,5 @@ internal sealed class RatioCollectorService(
     protected override TimeSpan Interval => TimeSpan.FromMinutes(15);
     protected override string ServiceName => "RatioCollectorService";
     protected override string[] CollectedFeedNames =>
-        [FeedNames.LsRatioGlobal, FeedNames.LsRatioTopAccounts, FeedNames.TakerVolume];
+        [FeedNames.LsRatioGlobal, FeedNames.LsRatioTopAccounts];
 }

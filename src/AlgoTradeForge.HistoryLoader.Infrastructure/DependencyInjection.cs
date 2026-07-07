@@ -108,11 +108,6 @@ public static class DependencyInjection
                 (symbol, interval, fromMs, toMs, ct) =>
                     sp.GetRequiredService<BinanceFuturesClient>().FetchTopPositionRatioAsync(symbol, interval!, fromMs, toMs, ct)));
 
-        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.TakerVolume}",
-            (sp, _) => new DelegatingFeedFetcher(
-                (symbol, interval, fromMs, toMs, ct) =>
-                    sp.GetRequiredService<BinanceFuturesClient>().FetchTakerVolumeAsync(symbol, interval!, fromMs, toMs, ct)));
-
         services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.Liquidations}",
             (sp, _) => new DelegatingFeedFetcher(
                 (symbol, _, fromMs, toMs, ct) =>
