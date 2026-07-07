@@ -28,7 +28,7 @@ internal static class FeedIdValidator
             error = "source_feed_id is required.";
             return false;
         }
-        if (sourceFeedId.Contains("..") || sourceFeedId.Contains('/') || sourceFeedId.Contains('\\'))
+        if (sourceFeedId.Contains("..") || sourceFeedId.Contains('/') || sourceFeedId.Contains('\\') || sourceFeedId.Contains(':'))
         {
             error = $"source_feed_id '{sourceFeedId}' contains illegal path characters.";
             return false;
@@ -48,9 +48,11 @@ internal static class FeedIdValidator
             error = "path component is required.";
             return false;
         }
-        if (value.Contains("..") || value.Contains('/') || value.Contains('\\'))
+        // Whitelist beats blacklisting: also kills drive-relative roots ("C:evil") that the
+        // old ..// \\ checks let through. ".." substring check catches "a..b"-style traversal.
+        if (value is "." || value.Contains("..") || !value.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-'))
         {
-            error = $"'{value}' contains illegal path characters.";
+            error = $"'{value}' contains characters outside [A-Za-z0-9._-].";
             return false;
         }
         return true;
