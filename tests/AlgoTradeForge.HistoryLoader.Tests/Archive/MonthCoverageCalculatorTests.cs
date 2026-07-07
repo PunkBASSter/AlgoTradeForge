@@ -147,6 +147,43 @@ public sealed class MonthCoverageCalculatorTests : IDisposable
     // -------------------------------------------------------------------------
 
     [Fact]
+    public async Task GapCrossingMonthBoundary_CreditsClampedSlot()
+    {
+        // April 2024 (30 days = 720 hourly rows). A recorded gap runs from the last present
+        // hour of March (2024-03-31 23:00) to the first present April row (2024-04-01 05:00).
+        // Missing April slots inside the gap: 00:00..04:00 = 5. Partition holds 715 rows
+        // from 05:00 on → 715 + 5 = 720 → covered. The old formula lost the slot AT the
+        // clamp boundary (credited 4) and kept the month uncovered forever.
+        var gapFrom = new DateTimeOffset(2024, 3, 31, 23, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var gapTo = new DateTimeOffset(2024, 4, 1, 5, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        WritePartition("candles", 2024, 4, "1h", HourlyRows(gapTo, 715));
+        var gaps = new[] { new DataGap { FromMs = gapFrom, ToMs = gapTo } };
+
+        var sut = BuildSut();
+        var covered = await sut.IsMonthCovered(
+            _dir, "candles", "1h", 2024, 4, gaps, null, TestContext.Current.CancellationToken);
+
+        Assert.True(covered);
+    }
+
+    [Fact]
+    public async Task MonthEntirelyInsideGap_NoPartition_Covered()
+    {
+        // April 2024 lies entirely inside one recorded gap (last present row 2024-03-31 23:00,
+        // next present row 2024-05-01 03:00). No partition file exists — correctly so — and the
+        // gap credit alone must cover the month instead of retrying the archive forever.
+        var gapFrom = new DateTimeOffset(2024, 3, 31, 23, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var gapTo = new DateTimeOffset(2024, 5, 1, 3, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var gaps = new[] { new DataGap { FromMs = gapFrom, ToMs = gapTo } };
+
+        var sut = BuildSut();
+        var covered = await sut.IsMonthCovered(
+            _dir, "candles", "1h", 2024, 4, gaps, null, TestContext.Current.CancellationToken);
+
+        Assert.True(covered);
+    }
+
+    [Fact]
     public async Task ListingMonth_CoveredFromFirstDataTimestamp()
     {
         // March 2024: source data starts March 15 (408 hours remain to month end).
