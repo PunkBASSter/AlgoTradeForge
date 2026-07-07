@@ -18,6 +18,7 @@ import { RunProgress } from "@/components/features/dashboard/run-progress";
 import { useAvailableStrategies } from "@/hooks/use-available-strategies";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { MultiPrimaryPicker } from "@/components/features/launch/multi-primary-picker";
+import { CoverageHint } from "@/components/features/launch/coverage-hint";
 import { useThresholdProfiles } from "@/hooks/use-threshold-profiles";
 import type {
   DataFeedSubscription,
@@ -98,6 +99,7 @@ export function RunNewPanel({
   const [sides, setSides] = useState<DataFeedSubscription[]>([]);
   const [runValidation, setRunValidation] = useState(false);
   const [thresholdProfile, setThresholdProfile] = useState("Crypto-Standard");
+  const [jsonRange, setJsonRange] = useState<{ start: string | null; end: string | null }>({ start: null, end: null });
   const [maxThreads, setMaxThreads] = useState(0);
   const suppressEditorSyncRef = useRef(false);
   const useGeneticRef = useRef(useGenetic);
@@ -159,6 +161,8 @@ export function RunNewPanel({
             setSides((prev) => (prev.length === 0 ? prev : []));
           }
         }
+        const bs = obj.backtestSettings as { startTime?: string; endTime?: string } | undefined;
+        setJsonRange({ start: bs?.startTime ?? null, end: bs?.endTime ?? null });
       } catch {
         // Invalid JSON — don't update picker state
       }
@@ -284,6 +288,15 @@ export function RunNewPanel({
       setEvaluation(null);
     }
   }, [isOptimization]);
+
+  // Sync jsonRange from the template/initialContent so the coverage hint populates before
+  // any keystroke (the editor creation does not emit docChanged on initial load).
+  useEffect(() => {
+    const src = (initialContent ?? template) as Record<string, unknown> | null;
+    if (!src) return;
+    const bs = src.backtestSettings as { startTime?: string; endTime?: string } | undefined;
+    setJsonRange({ start: bs?.startTime ?? null, end: bs?.endTime ?? null });
+  }, [template, initialContent]);
 
   // Update editor content when mode, selectedStrategy, or initialContent changes
   const prevKeyRef = useRef(`${mode}:${selectedStrategy}:${useGenetic}:${useDebug}:${initialContent ? "ic" : ""}`);
@@ -691,6 +704,13 @@ export function RunNewPanel({
               />
             )}
           </div>
+          {primaries.length > 0 && (
+            <CoverageHint
+              primaries={primaries}
+              startTime={jsonRange.start}
+              endTime={jsonRange.end}
+            />
+          )}
           <div
             ref={editorContainerRef}
             data-testid="json-editor"
