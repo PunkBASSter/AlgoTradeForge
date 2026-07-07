@@ -66,6 +66,16 @@ internal sealed class MetricsArchiveMaterializer(
         await schemaManager.EnsureSchema(assetDir, feedName, feedConfig.Interval, columns, ct: ct);
         var path = Path.Combine(assetDir, feedName, $"{year:D4}-{month:D2}_{feedConfig.Interval}.csv");
         var previousRows = await ArchiveStatusMerger.CountDataRows(path, ct);
+
+        // Replace-guard: a sparse archive month must not clobber a fuller REST-collected one.
+        if (parsed.Count < previousRows)
+        {
+            logger.LogWarning(
+                "{Feed}/{Interval} {Year}-{Month:D2} {Symbol}: archive month has {New} rows < existing {Prev}; skipping replace",
+                feedName, feedConfig.Interval, year, month, assetConfig.Symbol, parsed.Count, previousRows);
+            return new ArchiveMonthResult(0, AvailableAtSource: true);
+        }
+
         var csvRows = parsed.Select(x => BuildRow(x.Ts, x.Row));
         await partitionWriter.ReplacePartition(path, $"ts,{string.Join(",", columns)}", csvRows, ct);
 

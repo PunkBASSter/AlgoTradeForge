@@ -74,6 +74,34 @@ public sealed class ArchiveStatusMergerTests : IDisposable
         Assert.Contains("2024-01", loaded!.CompleteMonths);
     }
 
+    [Fact]
+    public async Task MergeStatus_PrunesInMonthGap_WhenArchiveRewritesMonth()
+    {
+        // The archive rewrote all of 2024-03 atomically → any stale gap fully inside the month
+        // is superseded by newGaps; a gap outside the touched month survives.
+        var febFrom = new DateTimeOffset(2024, 2, 10, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var febTo = new DateTimeOffset(2024, 2, 12, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var marFrom = new DateTimeOffset(2024, 3, 10, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var marTo = new DateTimeOffset(2024, 3, 12, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+        await _store.Save(_tempDir, FeedNames.Candles, "1h", new FeedStatus
+        {
+            FeedName = FeedNames.Candles,
+            Interval = "1h",
+            Gaps = [new DataGap { FromMs = febFrom, ToMs = febTo }, new DataGap { FromMs = marFrom, ToMs = marTo }]
+        }, Ct);
+
+        var monthFirst = new DateTimeOffset(2024, 3, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var monthLast = new DateTimeOffset(2024, 3, 31, 23, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        await ArchiveStatusMerger.MergeStatus(_store, _tempDir, FeedNames.Candles, "1h",
+            monthFirst, monthLast, recordCountDelta: 744, newGaps: [], Ct);
+
+        var loaded = await _store.Load(_tempDir, FeedNames.Candles, "1h", Ct);
+        var gap = Assert.Single(loaded!.Gaps);
+        Assert.Equal(febFrom, gap.FromMs);
+        Assert.Equal(febTo, gap.ToMs);
+    }
+
     // -----------------------------------------------------------------------
     // CountDataRows streams line-by-line (never File.ReadAllLines) so multi-million-row
     // tick partitions are counted without materializing the whole file as string[].

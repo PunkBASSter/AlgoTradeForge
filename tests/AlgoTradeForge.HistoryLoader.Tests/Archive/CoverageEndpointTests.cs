@@ -149,6 +149,64 @@ public sealed class CoverageEndpointTests
     }
 
     [Fact]
+    public async Task Coverage_CandleExt_MirrorsCandles()
+    {
+        // candle-ext has no materializer (side-output of candles); its coverage mirrors candles
+        // for the same interval even when its own partition is partial.
+        var tempRoot = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        var candlesDir = Path.Combine(tempRoot, "binance", "BTCUSDT", "candles");
+        var extDir = Path.Combine(tempRoot, "binance", "BTCUSDT", FeedNames.CandleExt);
+        Directory.CreateDirectory(candlesDir);
+        Directory.CreateDirectory(extDir);
+        try
+        {
+            var (_, schema, statusStore, coverage) = BuildDeps();
+            var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
+            options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = tempRoot });
+
+            schema.Load(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<FeedMetadata?>(new FeedMetadata
+                {
+                    Candles = new CandleConfig { Intervals = ["1h"] },
+                    Feeds = { [FeedNames.CandleExt] = new FeedDefinition { Interval = "1h" } },
+                }));
+
+            await File.WriteAllLinesAsync(Path.Combine(candlesDir, "2024-03_1h.csv"),
+                ["ts,o,h,l,c,vol", "1,1,1,1,1,1"], TestContext.Current.CancellationToken);
+            await File.WriteAllLinesAsync(Path.Combine(extDir, "2024-03_1h.csv"),
+                ["ts,quote_vol", "1,1"], TestContext.Current.CancellationToken);
+
+            coverage.IsMonthCovered(Arg.Any<string>(), FeedNames.Candles, "1h", 2024, 3,
+                Arg.Any<IReadOnlyList<DataGap>>(), Arg.Any<IReadOnlyList<string>?>(),
+                Arg.Any<long?>(), Arg.Any<CancellationToken>())
+                .Returns(true);
+
+            var result = await CoverageEndpoints.GetCoverage(
+                "binance", "BTCUSDT", AssetTypes.Spot,
+                options, schema, statusStore, coverage,
+                TestContext.Current.CancellationToken);
+
+            var json = JsonSerializer.Serialize(Assert.IsAssignableFrom<IValueHttpResult>(result).Value);
+            using var doc = JsonDocument.Parse(json);
+            var feeds = doc.RootElement.GetProperty("feeds").EnumerateArray().ToList();
+            var ext = feeds.Single(f => f.GetProperty("feed_name").GetString() == FeedNames.CandleExt);
+            var months = ext.GetProperty("covered_months");
+            Assert.Equal(1, months.GetArrayLength());
+            Assert.Equal("2024-03", months[0].GetString());
+
+            // Pure shadow — candle-ext's own coverage predicate must never be consulted.
+            await coverage.DidNotReceive().IsMonthCovered(
+                Arg.Any<string>(), FeedNames.CandleExt, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+                Arg.Any<IReadOnlyList<DataGap>>(), Arg.Any<IReadOnlyList<string>?>(),
+                Arg.Any<long?>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task FeedEntry_NoFeedStatus_TimestampsAreNull()
     {
         // Arrange: a manifest with one candle interval, feed dir exists, no FeedStatus on disk.

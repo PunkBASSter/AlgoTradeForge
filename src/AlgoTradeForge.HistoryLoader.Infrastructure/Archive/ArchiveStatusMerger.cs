@@ -51,11 +51,16 @@ internal static class ArchiveStatusMerger
             : monthLast;
         var recordCount = Math.Max(0, (existing?.RecordCount ?? 0) + recordCountDelta);
 
-        IReadOnlyList<DataGap> existingGaps = existing?.Gaps ?? [];
-        var dedupedNew = newGaps
-            .Where(g => !existingGaps.Any(e => e.FromMs == g.FromMs && e.ToMs == g.ToMs))
+        // The archive rewrote [monthFirst, monthLast] atomically, so its authoritative gaps are
+        // newGaps. Drop stale gaps fully inside the touched month — a since-filled streaming gap
+        // would otherwise be double-counted (its slots credited AND present as actual rows).
+        var retainedGaps = (existing?.Gaps ?? [])
+            .Where(g => !(g.FromMs >= monthFirst && g.ToMs <= monthLast))
             .ToList();
-        IReadOnlyList<DataGap> mergedGaps = [.. existingGaps, .. dedupedNew];
+        var dedupedNew = newGaps
+            .Where(g => !retainedGaps.Any(e => e.FromMs == g.FromMs && e.ToMs == g.ToMs))
+            .ToList();
+        IReadOnlyList<DataGap> mergedGaps = [.. retainedGaps, .. dedupedNew];
         var health = mergedGaps.Count == 0 ? CollectionHealth.Healthy : CollectionHealth.Degraded;
 
         await feedStatusStore.Save(assetDir, feedName, interval, new FeedStatus

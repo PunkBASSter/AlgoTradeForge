@@ -187,6 +187,33 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
     }
 
     [Fact]
+    public async Task Materializer_DoesNotReplace_WhenNewRowsFewer()
+    {
+        // Replace-guard (M6): a sparse 2-row archive month must not clobber a fuller
+        // 744-row REST-collected partition. Skips replace + status merge; reports (0, available).
+        var candlesDir = Path.Combine(_dir, "candles");
+        Directory.CreateDirectory(candlesDir);
+        var path = Path.Combine(candlesDir, "2024-03_1h.csv");
+        var existing = new[] { "ts,o,h,l,c,vol" }
+            .Concat(Enumerable.Range(0, 744)
+                .Select(i => $"{1709251200000L + (long)i * 3_600_000},1,1,1,1,1"));
+        await File.WriteAllLinesAsync(path, existing, TestContext.Current.CancellationToken);
+        var before = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+
+        _archive.DownloadMonthly("spot", "klines", "BTCUSDT", "1h", 2024, 3, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(CsvStream(KlineCsv)));
+
+        var result = await CandlesMaterializer().MaterializeMonth(
+            SpotConfig(), FeedConfig(), _dir, 2024, 3, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, result.RowsWritten);
+        Assert.True(result.AvailableAtSource);
+        var after = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+        Assert.Equal(before, after);
+        await _statusStore.DidNotReceiveWithAnyArgs().Save(default!, default!, default!, default!, default!);
+    }
+
+    [Fact]
     public async Task MaterializeMonth_MarkPrice_WritesOhlcDoubles()
     {
         _archive.DownloadMonthly("futures/um", "markPriceKlines", "BTCUSDT", "1h", 2024, 3, Arg.Any<CancellationToken>())

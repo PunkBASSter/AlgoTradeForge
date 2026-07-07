@@ -88,6 +88,15 @@ internal sealed class KlinesArchiveMaterializer(
         var primaryPath = Path.Combine(assetDir, primaryFeed, $"{year:D4}-{month:D2}_{interval}.csv");
         var previousRows = await ArchiveStatusMerger.CountDataRows(primaryPath, ct);
 
+        // Replace-guard: a sparse archive month must not clobber a fuller REST-collected one.
+        if (parsed.Count < previousRows)
+        {
+            logger.LogWarning(
+                "{Feed}/{Interval} {Year}-{Month:D2} {Symbol}: archive month has {New} rows < existing {Prev}; skipping replace",
+                feedName, interval, year, month, assetConfig.Symbol, parsed.Count, previousRows);
+            return new ArchiveMonthResult(0, AvailableAtSource: true);
+        }
+
         long written = feedName == FeedNames.Candles
             ? await WriteCandles(assetConfig, assetDir, interval, year, month, parsed, ct)
             : await WriteMarkPrice(assetDir, interval, year, month, parsed, ct);
