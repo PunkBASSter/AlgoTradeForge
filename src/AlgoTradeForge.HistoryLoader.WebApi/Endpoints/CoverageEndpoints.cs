@@ -15,7 +15,8 @@ internal static class CoverageEndpoints
         return app;
     }
 
-    private static async Task<IResult> GetCoverage(
+    // internal for direct endpoint-level testing (InternalsVisibleTo)
+    internal static async Task<IResult> GetCoverage(
         string exchange,
         string symbol,
         string assetType,
@@ -25,6 +26,17 @@ internal static class CoverageEndpoints
         IMonthCoverageCalculator coverageCalculator,
         CancellationToken ct)
     {
+        // Guard before AssetPathConvention.DirectoryName — its default switch arm throws
+        // ArgumentException on unknown types, which would surface as an unhandled 500.
+        if (!LoadRequestValidator.IsKnownAssetType(assetType))
+            return Results.Json(
+                new
+                {
+                    error = "unknown_asset_type",
+                    message = $"Unknown asset type '{assetType}'. Valid types: {string.Join(", ", AssetTypes.All)}.",
+                },
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+
         var opts = options.CurrentValue;
         var assetDir = Path.Combine(opts.DataRoot, exchange,
             AssetPathConvention.DirectoryName(symbol, assetType));

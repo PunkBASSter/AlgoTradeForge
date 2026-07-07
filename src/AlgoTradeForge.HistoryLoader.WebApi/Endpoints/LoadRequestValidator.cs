@@ -13,12 +13,15 @@ internal sealed record LoadValidationError(string Code, string Message);
 
 internal static class LoadRequestValidator
 {
+    public static bool IsKnownAssetType(string assetType) =>
+        Array.Exists(AssetTypes.All, t => string.Equals(t, assetType, StringComparison.OrdinalIgnoreCase));
+
     public static LoadValidationError? Validate(
         LoadRequest request,
         ArchiveMaterializerRegistry registry,
         LoadOptions options)
     {
-        if (!Array.Exists(AssetTypes.All, t => string.Equals(t, request.AssetType, StringComparison.OrdinalIgnoreCase)))
+        if (!IsKnownAssetType(request.AssetType))
             return new LoadValidationError("unknown_asset_type",
                 $"Unknown asset type '{request.AssetType}'. Valid types: {string.Join(", ", AssetTypes.All)}.");
 
