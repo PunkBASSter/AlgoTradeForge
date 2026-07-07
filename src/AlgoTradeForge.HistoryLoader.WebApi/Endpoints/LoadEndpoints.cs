@@ -16,12 +16,21 @@ internal static class LoadEndpoints
         return app;
     }
 
-    private static IResult PostLoad(
+    // internal for direct endpoint-level testing (InternalsVisibleTo)
+    internal static IResult PostLoad(
         LoadRequest body,
         IOptionsMonitor<HistoryLoaderOptions> options,
         ArchiveMaterializerRegistry registry,
         ILoadJobRegistry loadRegistry)
     {
+        // Normalize casing before building paths or keys.
+        body = body with { Symbol = body.Symbol.ToUpperInvariant(), Exchange = body.Exchange.ToLowerInvariant() };
+
+        if (!FeedIdValidator.TryValidatePathComponent(body.Exchange, out var exchangeErr))
+            return Unprocessable("invalid_path_component", exchangeErr!);
+        if (!FeedIdValidator.TryValidatePathComponent(body.Symbol, out var symbolErr))
+            return Unprocessable("invalid_path_component", symbolErr!);
+
         var opts = options.CurrentValue;
 
         var error = LoadRequestValidator.Validate(body, registry, opts.Load);

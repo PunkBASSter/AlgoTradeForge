@@ -1,10 +1,13 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
 using AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
 
@@ -88,5 +91,34 @@ public sealed class LoadEndpointValidationTests
     {
         var err = LoadRequestValidator.Validate(ValidRequest(), RegistryWithCandles(), DefaultOptions);
         Assert.Null(err);
+    }
+
+    // -------------------------------------------------------------------------
+    // Path traversal: PostLoad must return 422 without touching the filesystem.
+    // -------------------------------------------------------------------------
+
+    private static IOptionsMonitor<HistoryLoaderOptions> DefaultMonitor()
+    {
+        var m = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
+        m.CurrentValue.Returns(new HistoryLoaderOptions { Load = DefaultOptions });
+        return m;
+    }
+
+    [Theory]
+    [InlineData("../evil", "BTCUSDT")]
+    [InlineData("bin\\..\\..", "BTCUSDT")]
+    [InlineData("binance", "../secrets")]
+    [InlineData("binance", "BTC/USDT")]
+    public void PostLoad_TraversalInExchangeOrSymbol_Returns422_NoJobEnqueued(string exchange, string symbol)
+    {
+        var loadRegistry = Substitute.For<ILoadJobRegistry>();
+        var req = ValidRequest() with { Exchange = exchange, Symbol = symbol };
+
+        var result = LoadEndpoints.PostLoad(
+            req, DefaultMonitor(), RegistryWithCandles(), loadRegistry);
+
+        var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, statusResult.StatusCode);
+        loadRegistry.DidNotReceiveWithAnyArgs().TryEnqueue(default!, default!);
     }
 }

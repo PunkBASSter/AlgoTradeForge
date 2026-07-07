@@ -19,13 +19,22 @@ internal static class CoverageEndpoints
     internal static async Task<IResult> GetCoverage(
         string exchange,
         string symbol,
-        string assetType,
+        [Microsoft.AspNetCore.Mvc.FromQuery(Name = "asset_type")] string assetType,
         IOptionsMonitor<HistoryLoaderOptions> options,
         ISchemaManager schemaManager,
         IFeedStatusStore feedStatusStore,
         IMonthCoverageCalculator coverageCalculator,
         CancellationToken ct)
     {
+        if (!FeedIdValidator.TryValidatePathComponent(exchange, out var exchangeErr))
+            return Results.Json(
+                new { error = "invalid_path_component", message = exchangeErr },
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        if (!FeedIdValidator.TryValidatePathComponent(symbol, out var symbolErr))
+            return Results.Json(
+                new { error = "invalid_path_component", message = symbolErr },
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+
         // Guard before AssetPathConvention.DirectoryName — its default switch arm throws
         // ArgumentException on unknown types, which would surface as an unhandled 500.
         if (!LoadRequestValidator.IsKnownAssetType(assetType))

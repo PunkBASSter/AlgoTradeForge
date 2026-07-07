@@ -29,22 +29,30 @@ internal sealed class LoadJobWorker(
             if (job is null)
                 return;
 
-            await RunJobAsync(job, stoppingToken);
+            await RunJob(job, stoppingToken);
         }
     }
 
-    private async Task RunJobAsync(LoadJob job, CancellationToken ct)
+    private async Task RunJob(LoadJob job, CancellationToken ct)
     {
         registry.OnStarted(job.JobId);
         try
         {
             var asset = await assetResolver.Resolve(job.Exchange, job.Symbol, job.AssetType, ct);
 
-            // Append a transient feed entry if the asset config doesn't already carry one
-            // for this exact name+interval. This is never persisted to appsettings.
+            // Append a transient feed entry if the asset config doesn't already carry one for
+            // this exact name+interval. Clone first — never mutate the shared options-bound config.
             var hasEntry = asset.Feeds.Any(f => f.Name == job.FeedName && f.Interval == job.Interval);
             if (!hasEntry)
-                asset.Feeds.Add(new FeedCollectionConfig { Name = job.FeedName, Interval = job.Interval });
+                asset = new AssetCollectionConfig
+                {
+                    Symbol = asset.Symbol,
+                    Exchange = asset.Exchange,
+                    Type = asset.Type,
+                    DecimalDigits = asset.DecimalDigits,
+                    HistoryStart = asset.HistoryStart,
+                    Feeds = [..asset.Feeds, new FeedCollectionConfig { Name = job.FeedName, Interval = job.Interval }],
+                };
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(options.CurrentValue.DataRoot, asset);
             var ok = await orchestrator.TryRunSingleAsync(

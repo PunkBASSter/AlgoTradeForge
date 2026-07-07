@@ -21,18 +21,21 @@ internal sealed class BinanceLoadAssetResolver(
         if (configured is not null)
             return Task.FromResult(configured);
 
-        return SynthesizeAsync(symbol, assetType, opts.Binance, ct);
+        return Synthesize(symbol, assetType, opts.Binance, ct);
     }
 
-    private async Task<AssetCollectionConfig> SynthesizeAsync(
+    private async Task<AssetCollectionConfig> Synthesize(
         string symbol, string assetType, BinanceOptions binance, CancellationToken ct)
     {
+        // Sanitize before URL interpolation — endpoint validation already rejects traversal,
+        // but uppercase normalization ensures the query parameter is safe regardless.
+        var safeSymbol = symbol.ToUpperInvariant();
         var baseUrl = AssetTypes.IsFutures(assetType)
             ? binance.FuturesBaseUrl
             : binance.SpotBaseUrl;
         var path = AssetTypes.IsFutures(assetType)
-            ? $"/fapi/v1/exchangeInfo?symbol={symbol.ToUpperInvariant()}"
-            : $"/api/v3/exchangeInfo?symbol={symbol.ToUpperInvariant()}";
+            ? $"/fapi/v1/exchangeInfo?symbol={safeSymbol}"
+            : $"/api/v3/exchangeInfo?symbol={safeSymbol}";
 
         var client = httpClientFactory.CreateClient("binance-archive");
         using var response = await client.GetAsync(baseUrl + path, ct);
@@ -44,7 +47,7 @@ internal sealed class BinanceLoadAssetResolver(
 
         return new AssetCollectionConfig
         {
-            Symbol = symbol.ToUpperInvariant(),
+            Symbol = safeSymbol,
             Type = assetType,
             DecimalDigits = decimalDigits,
             HistoryStart = new DateOnly(2017, 1, 1),
