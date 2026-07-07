@@ -53,6 +53,7 @@ public sealed class ArchiveBackfillService(
         // months don't re-materialize on every invocation.
         var status = await feedStatusStore.Load(assetDir, feedConfig.Name, feedConfig.Interval, ct);
         IReadOnlyList<DataGap> gaps = status?.Gaps ?? [];
+        long? firstDataMs = status?.FirstTimestamp;
 
         // Steps 3+4: iterate oldest→newest; skip covered months; materialize the rest.
         // Track leading unavailable streak to discover the earliest available date.
@@ -67,9 +68,16 @@ public sealed class ArchiveBackfillService(
 
         foreach (var (year, month) in candidates)
         {
+            // Listing-month clamp: when the feed's first data row falls inside this month,
+            // pass it so coverage doesn't expect rows before the source's data even starts.
+            long? effectiveStartMs =
+                firstDataMs.HasValue && MonthIndex(firstDataMs.Value) == year * 12 + (month - 1)
+                    ? firstDataMs
+                    : null;
+
             // Covered months are already complete; they end the leading-unavailable streak.
             if (await coverage.IsMonthCovered(
-                assetDir, feedConfig.Name, feedConfig.Interval, year, month, gaps, ct))
+                assetDir, feedConfig.Name, feedConfig.Interval, year, month, gaps, effectiveStartMs, ct))
             {
                 leadingPhase = false;
                 done++;

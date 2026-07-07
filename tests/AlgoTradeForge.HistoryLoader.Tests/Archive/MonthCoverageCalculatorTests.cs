@@ -42,7 +42,7 @@ public sealed class MonthCoverageCalculatorTests : IDisposable
     {
         var sut = BuildSut();
 
-        var covered = await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 3, [], TestContext.Current.CancellationToken);
+        var covered = await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 3, [], null, TestContext.Current.CancellationToken);
 
         Assert.False(covered);
     }
@@ -55,7 +55,7 @@ public sealed class MonthCoverageCalculatorTests : IDisposable
         WritePartition("candles", 2024, 3, "1h", HourlyRows(monthStart.ToUnixTimeMilliseconds(), 744));
 
         var sut = BuildSut();
-        var covered = await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 3, [], TestContext.Current.CancellationToken);
+        var covered = await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 3, [], null, TestContext.Current.CancellationToken);
 
         Assert.True(covered);
     }
@@ -68,7 +68,7 @@ public sealed class MonthCoverageCalculatorTests : IDisposable
         WritePartition("candles", 2024, 3, "1h", HourlyRows(monthStart.ToUnixTimeMilliseconds(), 700));
 
         var sut = BuildSut();
-        var covered = await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 3, [], TestContext.Current.CancellationToken);
+        var covered = await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 3, [], null, TestContext.Current.CancellationToken);
 
         Assert.False(covered);
     }
@@ -81,7 +81,7 @@ public sealed class MonthCoverageCalculatorTests : IDisposable
         WritePartition("candles", 2024, 3, "1h", HourlyRows(monthStart.ToUnixTimeMilliseconds(), 734));
 
         var sut = BuildSut();
-        var covered = await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 3, [], TestContext.Current.CancellationToken);
+        var covered = await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 3, [], null, TestContext.Current.CancellationToken);
 
         Assert.False(covered);
     }
@@ -101,7 +101,7 @@ public sealed class MonthCoverageCalculatorTests : IDisposable
         var gaps = new[] { new DataGap { FromMs = gapFrom, ToMs = gapTo } };
 
         var sut = BuildSut();
-        var covered = await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 3, gaps, TestContext.Current.CancellationToken);
+        var covered = await sut.IsMonthCovered(_dir, "candles", "1h", 2024, 3, gaps, null, TestContext.Current.CancellationToken);
 
         Assert.True(covered);
     }
@@ -116,7 +116,64 @@ public sealed class MonthCoverageCalculatorTests : IDisposable
         WritePartition("candles", 2026, 7, "1h", HourlyRows(monthStart.ToUnixTimeMilliseconds(), 143));
 
         var sut = BuildSut(); // clock = 2026-07-07T00:00:00Z
-        var covered = await sut.IsMonthCovered(_dir, "candles", "1h", 2026, 7, [], TestContext.Current.CancellationToken);
+        var covered = await sut.IsMonthCovered(_dir, "candles", "1h", 2026, 7, [], null, TestContext.Current.CancellationToken);
+
+        Assert.False(covered);
+    }
+
+    [Fact]
+    public async Task EffectiveStart_ClampsListingMonth_ButHoleyMonthStaysUncovered()
+    {
+        var sut = BuildSut();
+        var monthStartMs = new DateTimeOffset(2024, 3, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+        // Direction 1 (listing month): source data starts March 10 mid-month; full from there
+        // to month end = 22 days × 24 = 528 rows. With effectiveStartMs = first data row,
+        // expectation clamps to 528 → covered (no perpetual re-materialization).
+        var firstDataMs = new DateTimeOffset(2024, 3, 10, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        WritePartition("candles", 2024, 3, "1h", HourlyRows(firstDataMs, 528));
+        Assert.True(await sut.IsMonthCovered(
+            _dir, "candles", "1h", 2024, 3, [], firstDataMs, TestContext.Current.CancellationToken));
+
+        // Direction 2 (genuinely holey month): FirstTimestamp at month start, hole later —
+        // 700 of 744 rows with effectiveStartMs = month start → still uncovered.
+        WritePartition("mark-price", 2024, 3, "1h", HourlyRows(monthStartMs, 700));
+        Assert.False(await sut.IsMonthCovered(
+            _dir, "mark-price", "1h", 2024, 3, [], monthStartMs, TestContext.Current.CancellationToken));
+    }
+
+    // -------------------------------------------------------------------------
+    // I1-residual: two canonical TDD cases per the fix brief.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ListingMonth_CoveredFromFirstDataTimestamp()
+    {
+        // March 2024: source data starts March 15 (408 hours remain to month end).
+        // effectiveStartMs = march15Ms → expectedRows = 408; writing 408 rows → covered.
+        var march15Ms = new DateTimeOffset(2024, 3, 15, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        WritePartition("candles", 2024, 3, "1h", HourlyRows(march15Ms, 408));
+
+        var sut = BuildSut();
+        var covered = await sut.IsMonthCovered(
+            _dir, "candles", "1h", 2024, 3, [],
+            effectiveStartMs: march15Ms, ct: TestContext.Current.CancellationToken);
+
+        Assert.True(covered);
+    }
+
+    [Fact]
+    public async Task EffectiveStart_AtMonthStart_HoleLater_StillUncovered()
+    {
+        // effectiveStartMs == monthStart: clamp is a no-op, full 744-row expectation applies.
+        // 734 rows with no gap credit → not covered.
+        var march1Ms = new DateTimeOffset(2024, 3, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        WritePartition("candles", 2024, 3, "1h", HourlyRows(march1Ms, 734));
+
+        var sut = BuildSut();
+        var covered = await sut.IsMonthCovered(
+            _dir, "candles", "1h", 2024, 3, [],
+            effectiveStartMs: march1Ms, ct: TestContext.Current.CancellationToken);
 
         Assert.False(covered);
     }

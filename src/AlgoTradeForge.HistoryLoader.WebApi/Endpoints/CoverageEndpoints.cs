@@ -101,7 +101,19 @@ internal static class CoverageEndpoints
             if (!int.TryParse(monthPart[..4], NumberStyles.None, CultureInfo.InvariantCulture, out var year)) continue;
             if (!int.TryParse(monthPart[5..], NumberStyles.None, CultureInfo.InvariantCulture, out var month)) continue;
 
-            if (await coverageCalculator.IsMonthCovered(assetDir, feedName, interval, year, month, gaps, ct))
+            // Pass first-data timestamp only when it falls inside this month so the listing-month
+            // coverage check agrees with the backfill planner (pre-listing hole is unrecordable).
+            long? listingClamp = null;
+            if (status?.FirstTimestamp is { } firstMs)
+            {
+                var mStartMs = new DateTimeOffset(year, month, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+                var mEndMs = month == 12
+                    ? new DateTimeOffset(year + 1, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds()
+                    : new DateTimeOffset(year, month + 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+                if (firstMs >= mStartMs && firstMs < mEndMs)
+                    listingClamp = firstMs;
+            }
+            if (await coverageCalculator.IsMonthCovered(assetDir, feedName, interval, year, month, gaps, listingClamp, ct))
                 coveredMonths.Add(monthPart);
         }
 

@@ -13,6 +13,7 @@ internal sealed class MonthCoverageCalculator : IMonthCoverageCalculator
         string assetDir, string feedName, string interval,
         int year, int month,
         IReadOnlyList<DataGap> gaps,
+        long? effectiveStartMs = null,
         CancellationToken ct = default)
     {
         var intervalMs = (long)IntervalParser.ToTimeSpan(interval).TotalMilliseconds;
@@ -23,11 +24,15 @@ internal sealed class MonthCoverageCalculator : IMonthCoverageCalculator
             : new DateTimeOffset(year, month + 1, 1, 0, 0, 0, TimeSpan.Zero);
         var monthEndMs = nextMonthDate.ToUnixTimeMilliseconds();
 
+        // Listing-month clamp: the pre-listing hole has no present row before it, so it is
+        // unrecordable as a DataGap — the expectation starts at the feed's first data row.
+        var effectiveStart = Math.Max(monthStartMs, effectiveStartMs ?? monthStartMs);
+
         var effectiveEndMs = Math.Min(monthEndMs, _clock.GetUtcNow().ToUnixTimeMilliseconds());
-        if (effectiveEndMs <= monthStartMs)
+        if (effectiveEndMs <= effectiveStart)
             return false;
 
-        var expectedRows = (effectiveEndMs - monthStartMs) / intervalMs;
+        var expectedRows = (effectiveEndMs - effectiveStart) / intervalMs;
 
         var partitionPath = Path.Combine(assetDir, feedName, $"{year:D4}-{month:D2}_{interval}.csv");
         if (!File.Exists(partitionPath))
@@ -40,7 +45,7 @@ internal sealed class MonthCoverageCalculator : IMonthCoverageCalculator
         foreach (var gap in gaps)
         {
             var to = Math.Min(gap.ToMs, effectiveEndMs);
-            var from = Math.Max(gap.FromMs, monthStartMs);
+            var from = Math.Max(gap.FromMs, effectiveStart);
             // span/interval − 1 = rows strictly inside the gap (both ends are present rows)
             var credit = (to - from) / intervalMs - 1;
             if (credit > 0)

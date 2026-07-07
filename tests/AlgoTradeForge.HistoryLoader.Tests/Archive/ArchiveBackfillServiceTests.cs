@@ -51,7 +51,7 @@ public sealed class ArchiveBackfillServiceTests
         _coverage.IsMonthCovered(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<int>(), Arg.Any<int>(), Arg.Any<IReadOnlyList<DataGap>>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
         _materializer.MaterializeMonth(
@@ -107,7 +107,8 @@ public sealed class ArchiveBackfillServiceTests
         // April 2026 is already covered.
         _coverage.IsMonthCovered(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
-                2026, 4, Arg.Any<IReadOnlyList<DataGap>>(), Arg.Any<CancellationToken>())
+                2026, 4, Arg.Any<IReadOnlyList<DataGap>>(),
+                Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
         var callOrder = new List<(int y, int m)>();
@@ -222,7 +223,8 @@ public sealed class ArchiveBackfillServiceTests
         // Only May 2026 is covered.
         _coverage.IsMonthCovered(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
-                2026, 5, Arg.Any<IReadOnlyList<DataGap>>(), Arg.Any<CancellationToken>())
+                2026, 5, Arg.Any<IReadOnlyList<DataGap>>(),
+                Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
         var sut = BuildSut();
@@ -268,7 +270,7 @@ public sealed class ArchiveBackfillServiceTests
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<int>(), Arg.Any<int>(),
                 Arg.Do<IReadOnlyList<DataGap>>(receivedGapLists.Add),
-                Arg.Any<CancellationToken>())
+                Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
         var sut = BuildSut();
@@ -383,5 +385,48 @@ public sealed class ArchiveBackfillServiceTests
             Asset.Symbol, Asset.Type, Feed.Name, Feed.Interval,
             new DateOnly(2026, 3, 5),
             TestContext.Current.CancellationToken);
+    }
+
+    // -------------------------------------------------------------------------
+    // 12. (I1-residual) Listing-month candidate receives status.FirstTimestamp as
+    //     effectiveStartMs; all other candidates receive null.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ListingMonth_EffectiveStart_PassedToIsMonthCovered()
+    {
+        // FeedStatus with FirstTimestamp inside March 2026 (the first candidate month).
+        long march15Ms = Ms(2026, 3, 15);
+        var status = new FeedStatus
+        {
+            FeedName = Feed.Name,
+            Interval = Feed.Interval,
+            FirstTimestamp = march15Ms,
+        };
+        _feedStatusStore.Load("/data", Feed.Name, Feed.Interval, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<FeedStatus?>(status));
+
+        // Capture the effectiveStartMs argument per (year, month) coverage call.
+        var capturedEffective = new Dictionary<(int y, int m), long?>();
+        _coverage.IsMonthCovered(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<int>(), Arg.Any<int>(), Arg.Any<IReadOnlyList<DataGap>>(),
+                Arg.Any<long?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                capturedEffective[(ci.ArgAt<int>(3), ci.ArgAt<int>(4))] = ci.ArgAt<long?>(6);
+                return false;
+            });
+
+        var sut = BuildSut();
+        await sut.CoverFromArchive(Asset, Feed, "/data", Ms(2026, 3), Ms(2026, 7, 7),
+            ct: TestContext.Current.CancellationToken);
+
+        // March (listing month) must receive the first-data timestamp.
+        Assert.Equal(march15Ms, capturedEffective[(2026, 3)]);
+        // All other candidate months must receive null.
+        Assert.Null(capturedEffective[(2026, 4)]);
+        Assert.Null(capturedEffective[(2026, 5)]);
+        Assert.Null(capturedEffective[(2026, 6)]);
     }
 }
