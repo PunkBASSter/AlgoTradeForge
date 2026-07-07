@@ -47,8 +47,16 @@ internal sealed class BinanceArchiveClient : IBinanceArchiveClient
             if (tempZip is null)
                 return null;
 
-            if (await VerifyChecksum(client, url, tempZip, ct))
-                return ExtractSingleEntry(tempZip);
+            try
+            {
+                if (await VerifyChecksum(client, url, tempZip, ct))
+                    return ExtractSingleEntry(tempZip); // deletes tempZip in its own finally
+            }
+            catch
+            {
+                File.Delete(tempZip);
+                throw;
+            }
 
             File.Delete(tempZip);
             _logger.LogWarning("Checksum mismatch for {Url} (attempt {Attempt}/2)", url, attempt + 1);
