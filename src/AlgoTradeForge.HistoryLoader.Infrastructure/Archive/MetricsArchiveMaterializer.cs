@@ -60,7 +60,7 @@ internal sealed class MetricsArchiveMaterializer(
         }
 
         // Detect gaps from the actual downsampled row sequence (both ends are present rows)
-        var gaps = ArchiveStatusMerger.DetectGaps(parsed, intervalMs, feedConfig.GapThresholdMultiplier);
+        var gaps = ArchiveStatusMerger.DetectGaps(parsed, intervalMs);
 
         var columns = GetColumns();
         await schemaManager.EnsureSchema(assetDir, feedName, feedConfig.Interval, columns, ct: ct);
