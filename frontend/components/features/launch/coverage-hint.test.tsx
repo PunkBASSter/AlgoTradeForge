@@ -8,7 +8,7 @@ import type { DataFeedSubscription } from "@/types/api";
 import type { LoadRequestBody } from "@/types/data-tab";
 
 // Hoisted so FakeDataApiError is available when the vi.mock factory runs.
-const { getAssetsSpy, getCoverageSpy, postLoadSpy, getLoadJobSpy, FakeDataApiError } =
+const { getAssetsSpy, getCoverageSpy, postLoadSpy, getLoadJobSpy, FakeDataApiError, toastSpy } =
   vi.hoisted(() => {
     class FakeDataApiError extends Error {
       constructor(
@@ -25,6 +25,7 @@ const { getAssetsSpy, getCoverageSpy, postLoadSpy, getLoadJobSpy, FakeDataApiErr
       getCoverageSpy: vi.fn(),
       postLoadSpy: vi.fn(),
       getLoadJobSpy: vi.fn(),
+      toastSpy: vi.fn(),
       FakeDataApiError,
     };
   });
@@ -37,6 +38,10 @@ vi.mock("@/lib/services/data-api", () => ({
     getLoadJob: (...args: unknown[]) => getLoadJobSpy(...args),
   },
   DataApiError: FakeDataApiError,
+}));
+
+vi.mock("@/components/ui/toast", () => ({
+  useToast: () => ({ toast: toastSpy }),
 }));
 
 const ASSET = {
@@ -78,6 +83,7 @@ beforeEach(() => {
   getCoverageSpy.mockReset();
   postLoadSpy.mockReset();
   getLoadJobSpy.mockReset();
+  toastSpy.mockReset();
   // Default: terminal state so refetchInterval stops after first poll.
   getLoadJobSpy.mockResolvedValue(TERMINAL_JOB);
   useLoadJobsStore.setState({ jobs: {} });
@@ -178,6 +184,99 @@ describe("CoverageHint", () => {
     await waitFor(() => expect(getAssetsSpy).toHaveBeenCalled());
     expect(screen.queryByRole("alert")).toBeNull();
     expect(getCoverageSpy).not.toHaveBeenCalled();
+  });
+
+  it("clamps range start to first_timestamp — months before the listing date are not flagged", async () => {
+    getAssetsSpy.mockResolvedValue({ assets: [ASSET] });
+    // first_timestamp = 2024-03-01 epoch ms; so 2024-01 and 2024-02 must NOT be flagged.
+    const march1stMs = new Date("2024-03-01T00:00:00Z").getTime();
+    getCoverageSpy.mockResolvedValue({
+      asset_dir: "BTCUSDT_perp",
+      feeds: [
+        {
+          feed_name: "candles",
+          interval: "1h",
+          covered_months: [],
+          first_timestamp: march1stMs,
+          last_timestamp: null,
+        },
+      ],
+    });
+
+    wrap(
+      <CoverageHint
+        primaries={[TIME_BAR_PRIMARY]}
+        startTime="2024-01-01"
+        endTime="2024-05-31"
+      />,
+    );
+
+    const banner = await screen.findByRole("alert");
+    expect(banner).not.toHaveTextContent("2024-01");
+    expect(banner).not.toHaveTextContent("2024-02");
+    expect(banner).toHaveTextContent("2024-03");
+  });
+
+  it("null first_timestamp — all uncovered closed months in range are flagged unchanged", async () => {
+    getAssetsSpy.mockResolvedValue({ assets: [ASSET] });
+    getCoverageSpy.mockResolvedValue({
+      asset_dir: "BTCUSDT_perp",
+      feeds: [
+        {
+          feed_name: "candles",
+          interval: "1h",
+          covered_months: [],
+          first_timestamp: null,
+          last_timestamp: null,
+        },
+      ],
+    });
+
+    wrap(
+      <CoverageHint
+        primaries={[TIME_BAR_PRIMARY]}
+        startTime="2024-01-01"
+        endTime="2024-03-31"
+      />,
+    );
+
+    const banner = await screen.findByRole("alert");
+    expect(banner).toHaveTextContent("3 archived months");
+  });
+
+  it("non-409 error from postLoad — fires error toast and does not start polling", async () => {
+    getAssetsSpy.mockResolvedValue({ assets: [ASSET] });
+    getCoverageSpy.mockResolvedValue({
+      asset_dir: "BTCUSDT_perp",
+      feeds: [
+        {
+          feed_name: "candles",
+          interval: "1h",
+          covered_months: [],
+          first_timestamp: null,
+          last_timestamp: null,
+        },
+      ],
+    });
+    postLoadSpy.mockRejectedValueOnce(
+      new FakeDataApiError(422, "not_replenishable", "Feed not replenishable"),
+    );
+
+    wrap(
+      <CoverageHint
+        primaries={[TIME_BAR_PRIMARY]}
+        startTime="2024-01-01"
+        endTime="2024-03-31"
+      />,
+    );
+
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: /load/i }));
+
+    await waitFor(() => expect(toastSpy).toHaveBeenCalledOnce());
+    expect(toastSpy).toHaveBeenCalledWith("Feed not replenishable", "error");
+    // jobId was never set so getLoadJob is never called (no polling started).
+    expect(getLoadJobSpy).not.toHaveBeenCalled();
   });
 
   it("ignores non-TimeBar primaries and renders nothing", () => {

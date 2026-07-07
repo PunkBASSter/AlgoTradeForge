@@ -67,7 +67,7 @@ export function DataTabRoot() {
 
         {Object.keys(loadJobs).length > 0 && (
           <section className="space-y-1 mb-3" aria-label="In-progress archive loads">
-            <div className="text-xs text-text-muted uppercase tracking-wide">In progress</div>
+            <div className="text-xs text-text-muted uppercase tracking-wide">Archive loads</div>
             {Object.keys(loadJobs).map((id) => (
               <LoadJobCard key={id} jobId={id} onDismiss={() => removeLoadJob(id)} />
             ))}

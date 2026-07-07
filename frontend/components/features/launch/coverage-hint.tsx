@@ -6,6 +6,7 @@ import { dataApi, DataApiError } from "@/lib/services/data-api";
 import { findMissingMonths, loadRangeForMonths } from "@/lib/data/coverage";
 import { useLoadJobsStore } from "@/lib/stores/load-jobs-store";
 import { useLoadJob } from "@/hooks/use-load-job";
+import { useToast } from "@/components/ui/toast";
 import type { DataFeedSubscription, TimeBarSubscription } from "@/types/api";
 
 interface Props {
@@ -24,6 +25,7 @@ function CoverageRow({ sub, startTime, endTime }: RowProps) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const addJob = useLoadJobsStore((s) => s.addJob);
+  const { toast } = useToast();
 
   const assetsQuery = useQuery({
     queryKey: ["data", "assets"],
@@ -65,7 +67,12 @@ function CoverageRow({ sub, startTime, endTime }: RowProps) {
   const entry = coverageQuery.data.feeds.find(
     (e) => e.feed_name === "candles" && e.interval === sub.timeFrame,
   );
-  const missing = findMissingMonths(entry?.covered_months ?? [], startTime, endTime);
+  const effectiveFrom =
+    entry?.first_timestamp != null &&
+    startTime < new Date(entry.first_timestamp).toISOString()
+      ? new Date(entry.first_timestamp).toISOString()
+      : startTime;
+  const missing = findMissingMonths(entry?.covered_months ?? [], effectiveFrom, endTime);
 
   if (missing.length === 0) return null;
 
@@ -94,6 +101,8 @@ function CoverageRow({ sub, startTime, endTime }: RowProps) {
         const activeJobId = (err.body as { active_job_id: string }).active_job_id;
         addJob(activeJobId, `${catalogEntry.display_name} candles`);
         setJobId(activeJobId);
+      } else {
+        toast(err instanceof Error ? err.message : String(err), "error");
       }
     } finally {
       setLoading(false);

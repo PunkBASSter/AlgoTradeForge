@@ -50,33 +50,6 @@ function renderForm() {
   );
 }
 
-async function fillAndSubmit() {
-  // exchange defaults to "binance"; change symbol
-  fireEvent.change(screen.getByPlaceholderText("BTCUSDT"), { target: { value: "ethusdt" } });
-  // symbol is uppercased on change → "ETHUSDT"
-
-  // asset_type → perpetual (already default)
-
-  // feed → open-interest
-  const feedSelect = screen.getAllByRole("combobox")[1]; // asset_type is index 0, feed is 1
-  fireEvent.change(feedSelect, { target: { value: "open-interest" } });
-
-  // interval → 5m (auto-selected as first option; explicitly set for clarity)
-  const intervalSelect = screen.getAllByRole("combobox")[2];
-  fireEvent.change(intervalSelect, { target: { value: "5m" } });
-
-  // from month
-  const [fromInput, toInput] = screen.getAllByDisplayValue("") as HTMLInputElement[];
-  // month inputs: pick the ones by type
-  const monthInputs = screen.getAllByDisplayValue("") as HTMLInputElement[];
-
-  // Actually, use label text to find month inputs
-  fireEvent.change(screen.getByLabelText(/from \(month\)/i), { target: { value: "2024-01" } });
-  fireEvent.change(screen.getByLabelText(/to \(month\)/i), { target: { value: "2024-02" } });
-
-  fireEvent.click(screen.getByRole("button", { name: /load/i }));
-}
-
 describe("ArchiveLoadForm", () => {
   it("posts the exact LoadRequestBody including month-to-date conversion", async () => {
     postLoadSpy.mockResolvedValueOnce({ job_id: "abc123def456" });
