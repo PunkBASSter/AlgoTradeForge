@@ -11,8 +11,12 @@ internal static class ArchiveStatusMerger
     {
         if (!File.Exists(partitionPath))
             return 0;
-        var lines = await File.ReadAllLinesAsync(partitionPath, ct);
-        return Math.Max(0, lines.Length - 1);
+        // Stream line-by-line: tick partitions run to millions of rows; never materialize as string[].
+        long lines = 0;
+        using var reader = new StreamReader(partitionPath);
+        while (await reader.ReadLineAsync(ct) is not null)
+            lines++;
+        return Math.Max(0, lines - 1);
     }
 
     // Archive data has fixed slots — any delta > 1×interval is a genuine source hole.

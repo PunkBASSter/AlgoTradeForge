@@ -75,6 +75,36 @@ public sealed class ArchiveStatusMergerTests : IDisposable
     }
 
     // -----------------------------------------------------------------------
+    // CountDataRows streams line-by-line (never File.ReadAllLines) so multi-million-row
+    // tick partitions are counted without materializing the whole file as string[].
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task CountDataRows_LargeFile_CountsWithoutReadAllLines()
+    {
+        const int dataRows = 200_000;
+        var path = Path.Combine(_tempDir, "large.csv");
+        await using (var writer = new StreamWriter(path))
+        {
+            await writer.WriteLineAsync("ts,price,qty,is_buyer_maker,agg_id");
+            for (var i = 0; i < dataRows; i++)
+                await writer.WriteLineAsync($"{Base + i},1,1,0,{i}");
+        }
+
+        var count = await ArchiveStatusMerger.CountDataRows(path, Ct);
+
+        Assert.Equal(dataRows, count);
+    }
+
+    [Fact]
+    public async Task CountDataRows_MissingFile_ReturnsZero()
+    {
+        var count = await ArchiveStatusMerger.CountDataRows(
+            Path.Combine(_tempDir, "does-not-exist.csv"), Ct);
+        Assert.Equal(0, count);
+    }
+
+    // -----------------------------------------------------------------------
     // DetectGaps — archive threshold is ANY missing slot (> 1×interval)
     // -----------------------------------------------------------------------
 
