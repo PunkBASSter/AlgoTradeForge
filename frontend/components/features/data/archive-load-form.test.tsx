@@ -109,6 +109,21 @@ describe("ArchiveLoadForm", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("inverted months — Load button is disabled and postLoad is never called", () => {
+    renderForm();
+
+    fireEvent.change(screen.getByPlaceholderText("BTCUSDT"), { target: { value: "BTCUSDT" } });
+    const selects = screen.getAllByRole("combobox");
+    fireEvent.change(selects[1], { target: { value: "open-interest" } });
+    fireEvent.change(selects[2], { target: { value: "5m" } });
+    // from > to: inverted range
+    fireEvent.change(screen.getByLabelText(/from \(month\)/i), { target: { value: "2024-06" } });
+    fireEvent.change(screen.getByLabelText(/to \(month\)/i), { target: { value: "2024-01" } });
+
+    expect(screen.getByRole("button", { name: /load/i })).toBeDisabled();
+    expect(postLoadSpy).not.toHaveBeenCalled();
+  });
+
   it("422 — renders the server error message in a banner", async () => {
     postLoadSpy.mockRejectedValueOnce(
       new FakeDataApiError(422, "not_replenishable", "422 Unprocessable Entity", {

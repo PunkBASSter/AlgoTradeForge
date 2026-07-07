@@ -108,6 +108,7 @@ export function ArchiveLoadForm() {
     !!interval &&
     !!fromMonth &&
     !!toMonth &&
+    fromMonth <= toMonth &&
     !pending;
 
   async function handleSubmit(e: React.FormEvent) {

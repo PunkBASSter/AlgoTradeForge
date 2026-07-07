@@ -99,21 +99,27 @@ describe("LoadJobCard", () => {
     expect(getLoadJobSpy.mock.calls.length).toBe(countAfterFirst);
   });
 
-  it("404 response renders 'expired' text and stops polling", async () => {
+  it("404 response auto-removes the card (onDismiss called) and stops polling", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     getLoadJobSpy.mockRejectedValue(
       new FakeDataApiError(404, "job_not_found", "404 Not Found"),
     );
-    renderCard();
+    const onDismiss = vi.fn();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <LoadJobCard jobId="j1" onDismiss={onDismiss} />
+      </QueryClientProvider>,
+    );
 
-    await waitFor(() => screen.getAllByText(/expired/i));
+    // Auto-dismiss fires when 404 is detected (removeJob equivalent).
+    await waitFor(() => expect(onDismiss).toHaveBeenCalledOnce());
+
+    // Polling also stops after the 404.
     const countAfterFirst = getLoadJobSpy.mock.calls.length;
-
-    // Advance past the polling interval — refetchInterval error branch returns false.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
-
     expect(getLoadJobSpy.mock.calls.length).toBe(countAfterFirst);
   });
 

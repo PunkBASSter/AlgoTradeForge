@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useLoadJob } from "@/hooks/use-load-job";
 import { DataApiError } from "@/lib/services/data-api";
 
@@ -20,6 +21,14 @@ export function LoadJobCard({ jobId, onDismiss }: Props) {
 
   const is404 =
     error instanceof DataApiError && error.status === 404;
+
+  // Auto-remove stale persisted entries: when the server registry has expired the snapshot
+  // (404), silently clean up rather than stranding a dead card.
+  useEffect(() => {
+    if (is404) onDismiss();
+    // onDismiss intentionally omitted — called at most once when 404 is first detected.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [is404]);
 
   const headerLine = data
     ? `${data.symbol} ${data.feed_name} ${data.interval}`
@@ -47,11 +56,6 @@ export function LoadJobCard({ jobId, onDismiss }: Props) {
               }`}
             >
               {stateLabel}
-            </span>
-          )}
-          {is404 && (
-            <span className="text-xs px-2 py-0.5 rounded font-medium bg-bg-elevated text-text-muted">
-              Expired
             </span>
           )}
           {isLoading && !data && (
@@ -90,11 +94,6 @@ export function LoadJobCard({ jobId, onDismiss }: Props) {
         </div>
       )}
 
-      {is404 && (
-        <div className="text-text-muted text-xs">
-          Job record has expired from the server registry.
-        </div>
-      )}
     </div>
   );
 }
