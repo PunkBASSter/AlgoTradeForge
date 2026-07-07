@@ -5,8 +5,11 @@ import { dataApi } from "@/lib/services/data-api";
 import { ExchangeCard } from "./exchange-card";
 import { DataSidebar } from "./data-sidebar";
 import { JobProgressCard } from "./job-progress";
+import { LoadJobCard } from "./load-job-card";
 import { makeFeedJobKey, useDataJobsStore } from "@/lib/stores/data-jobs-store";
+import { useLoadJobsStore } from "@/lib/stores/load-jobs-store";
 import { useDataSelectionStore } from "@/lib/stores/data-selection-store";
+import { Button } from "@/components/ui/button";
 
 export function DataTabRoot() {
   const { data, isLoading, error } = useQuery({
@@ -18,6 +21,9 @@ export function DataTabRoot() {
   // connects/reconnects its SSE stream.
   const activeJobs = useDataJobsStore((s) => s.jobs);
   const setJob = useDataJobsStore((s) => s.setJob);
+
+  const loadJobs = useLoadJobsStore((s) => s.jobs);
+  const removeLoadJob = useLoadJobsStore((s) => s.removeJob);
 
   const selection = useDataSelectionStore();
 
@@ -35,7 +41,12 @@ export function DataTabRoot() {
       <main
         className={`flex-1 overflow-auto p-6 space-y-2 ${cellsBusy ? "pointer-events-none" : ""}`}
       >
-        <h1 className="text-2xl font-semibold text-text-primary mb-4">Data</h1>
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-2xl font-semibold text-text-primary">Data</h1>
+          <Button variant="secondary" onClick={() => selection.openLoad()}>
+            Load archive data
+          </Button>
+        </div>
 
         {Object.keys(activeJobs).length > 0 && (
           <section className="space-y-1 mb-3" aria-label="In-flight aggregations">
@@ -51,6 +62,15 @@ export function DataTabRoot() {
                 />
               );
             })}
+          </section>
+        )}
+
+        {Object.keys(loadJobs).length > 0 && (
+          <section className="space-y-1 mb-3" aria-label="In-progress archive loads">
+            <div className="text-xs text-text-muted uppercase tracking-wide">In progress</div>
+            {Object.keys(loadJobs).map((id) => (
+              <LoadJobCard key={id} jobId={id} onDismiss={() => removeLoadJob(id)} />
+            ))}
           </section>
         )}
 
