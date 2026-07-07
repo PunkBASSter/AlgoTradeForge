@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.Storage.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Archive;
@@ -14,10 +16,17 @@ public sealed class ArchiveBackfillService(
     TimeProvider clock,
     ILogger<ArchiveBackfillService> logger)
 {
-    // Covers CLOSED whole months in [fromMs, toMs] from the archive for a replenishable feed.
+    // Per-feed gate: prevents the scheduled collector and load-job worker from materializing
+    // the same feed concurrently.
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new();
+
+    private SemaphoreSlim GetGate(string assetDir, string feedName, string interval) =>
+        _gates.GetOrAdd($"{assetDir}|{feedName}|{interval}", _ => new SemaphoreSlim(1, 1));
+
+    // Covers CLOSED months intersecting [fromMs, toMs] from the archive for a replenishable feed.
     // Returns the REST-tail start: min(toMs, startOfCurrentMonthMs) after processing, or fromMs
     // unchanged when the feed is not replenishable. The current month is NEVER archive-touched
-    // (ownership rule).
+    // (ownership rule). Partial-edge months are materialized as a superset — idempotent.
     public async Task<long> CoverFromArchive(
         AssetCollectionConfig assetConfig,
         FeedCollectionConfig feedConfig,
@@ -26,12 +35,14 @@ public sealed class ArchiveBackfillService(
         IProgress<ArchiveProgress>? progress = null,
         CancellationToken ct = default)
     {
+        using var _ = await GetGate(assetDir, feedConfig.Name, feedConfig.Interval).LockAsync(ct);
+
         // Step 1: resolve materializer; null → feed not replenishable from archive.
         var materializer = registry.Resolve(assetConfig.Exchange, feedConfig.Name, assetConfig.Type);
         if (materializer is null)
             return fromMs;
 
-        // Step 2: candidate months = closed whole months fully inside [fromMs, min(toMs, currentMonthStart)).
+        // Step 2: candidate months = all closed months intersecting [fromMs, min(toMs, currentMonthStart)).
         var currentMonthStartMs = CurrentMonthStartMs();
         var limit = Math.Min(toMs, currentMonthStartMs);
         var candidates = BuildCandidates(fromMs, limit);
@@ -93,10 +104,23 @@ public sealed class ArchiveBackfillService(
         // AppSettingsWriter is a no-op for symbols not in config, so safe to call unconditionally.
         if (discoveredStart.HasValue)
         {
+            // Reload to get the actual first data row timestamp written by the materializer;
+            // fall back to month-start when the status is missing.
+            var refreshed = await feedStatusStore.Load(assetDir, feedConfig.Name, feedConfig.Interval, ct);
+            DateOnly persistStart;
+            if (refreshed?.FirstTimestamp.HasValue == true)
+            {
+                var ts = DateTimeOffset.FromUnixTimeMilliseconds(refreshed.FirstTimestamp.Value).UtcDateTime;
+                persistStart = new DateOnly(ts.Year, ts.Month, ts.Day);
+            }
+            else
+            {
+                persistStart = discoveredStart.Value;
+            }
             await settingsWriter.UpdateFeedHistoryStart(
                 assetConfig.Symbol, assetConfig.Type,
                 feedConfig.Name, feedConfig.Interval,
-                discoveredStart.Value, ct);
+                persistStart, ct);
         }
 
         // Step 5: return REST-tail start = min(toMs, currentMonthStart) clamped >= fromMs.
@@ -110,16 +134,17 @@ public sealed class ArchiveBackfillService(
             .ToUnixTimeMilliseconds();
     }
 
-    // Months whose first day is >= fromMs and whose last day is < limit (i.e. next-month-start <= limit).
+    // All closed months whose range intersects [fromMs, limit). Includes partial-edge months
+    // (mid-month from or mid-month to) since materializing a superset is idempotent.
     private static List<(int year, int month)> BuildCandidates(long fromMs, long limit)
     {
         var candidates = new List<(int year, int month)>();
         int fromIdx = MonthIndex(fromMs);
         int limitIdx = MonthIndex(limit);
 
-        for (int idx = fromIdx; idx < limitIdx; idx++)
+        for (int idx = fromIdx; idx <= limitIdx; idx++)
         {
-            if (MonthStart(idx) >= fromMs)
+            if (MonthStart(idx) < limit)
                 candidates.Add(MonthPair(idx));
         }
 

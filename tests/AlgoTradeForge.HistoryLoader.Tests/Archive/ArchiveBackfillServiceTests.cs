@@ -279,4 +279,109 @@ public sealed class ArchiveBackfillServiceTests
         Assert.Equal(4, receivedGapLists.Count);
         Assert.All(receivedGapLists, gaps => Assert.Equal([gap], gaps));
     }
+
+    // -------------------------------------------------------------------------
+    // 9. (C1) Mid-month from: the month containing fromMs is included in candidates.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task MidMonthFrom_FromMonthIncluded()
+    {
+        // fromMs = March 15 — March starts before March 15, so the old code excluded it.
+        long from = Ms(2026, 3, 15);
+        long to = Ms(2026, 5, 7);
+
+        var called = new List<(int y, int m)>();
+        _materializer.MaterializeMonth(
+                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                called.Add((ci.ArgAt<int>(3), ci.ArgAt<int>(4)));
+                return Task.FromResult(new ArchiveMonthResult(100L, true));
+            });
+
+        var sut = BuildSut();
+        await sut.CoverFromArchive(Asset, Feed, "/data", from, to,
+            ct: TestContext.Current.CancellationToken);
+
+        // March must be materialized even though it only partially overlaps the from-edge.
+        Assert.Contains((2026, 3), called);
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. (C1) Mid-month to < currentMonth: the trailing month is included.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task MidMonthTo_TrailingMonthIncluded()
+    {
+        // toMs = May 15 (mid-month, before currentMonthStart = July 1).
+        long from = Ms(2026, 3, 1);
+        long to = Ms(2026, 5, 15);
+
+        var called = new List<(int y, int m)>();
+        _materializer.MaterializeMonth(
+                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                called.Add((ci.ArgAt<int>(3), ci.ArgAt<int>(4)));
+                return Task.FromResult(new ArchiveMonthResult(100L, true));
+            });
+
+        var sut = BuildSut();
+        await sut.CoverFromArchive(Asset, Feed, "/data", from, to,
+            ct: TestContext.Current.CancellationToken);
+
+        // May must be materialized even though toMs falls mid-month.
+        Assert.Contains((2026, 5), called);
+    }
+
+    // -------------------------------------------------------------------------
+    // 11. (I1a) Actual first-data DateOnly from reloaded FeedStatus is persisted.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task DiscoveredStart_UsesActualFirstTimestamp_WhenStatusAvailable()
+    {
+        // Jan and Feb unavailable; March is first available month.
+        _materializer.MaterializeMonth(
+                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                int year = ci.ArgAt<int>(3);
+                int month = ci.ArgAt<int>(4);
+                bool available = !(year == 2026 && month <= 2);
+                return Task.FromResult(new ArchiveMonthResult(available ? 100L : 0L, available));
+            });
+
+        // First call (for gaps): null; second call (I1a reload): status with FirstTimestamp = March 5.
+        long march5Ms = Ms(2026, 3, 5);
+        var reloadedStatus = new FeedStatus
+        {
+            FeedName = Feed.Name,
+            Interval = Feed.Interval,
+            FirstTimestamp = march5Ms,
+        };
+        int loadCallCount = 0;
+        _feedStatusStore.Load(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                loadCallCount++;
+                return Task.FromResult<FeedStatus?>(loadCallCount == 1 ? null : reloadedStatus);
+            });
+
+        var sut = BuildSut();
+        await sut.CoverFromArchive(Asset, Feed, "/data", Ms(2026, 1), Ms(2026, 7, 7),
+            ct: TestContext.Current.CancellationToken);
+
+        // Must persist March 5, not March 1.
+        await _settingsWriter.Received(1).UpdateFeedHistoryStart(
+            Asset.Symbol, Asset.Type, Feed.Name, Feed.Interval,
+            new DateOnly(2026, 3, 5),
+            TestContext.Current.CancellationToken);
+    }
 }
