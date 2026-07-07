@@ -60,10 +60,9 @@ public sealed class ArchiveBackfillServiceTests
             .Returns(Task.FromResult(new ArchiveMonthResult(100L, true)));
     }
 
-    private ArchiveBackfillService BuildSut(bool withMaterializer = true)
+    private ArchiveBackfillService BuildSut(IArchiveMaterializer? materializer = null)
     {
-        IEnumerable<IArchiveMaterializer> materializers = withMaterializer ? [_materializer] : [];
-        var registry = new ArchiveMaterializerRegistry(materializers);
+        var registry = new ArchiveMaterializerRegistry([materializer ?? _materializer]);
         return new ArchiveBackfillService(
             registry, _coverage, _feedStatusStore, _settingsWriter, Clock,
             NullLogger<ArchiveBackfillService>.Instance);
@@ -73,20 +72,28 @@ public sealed class ArchiveBackfillServiceTests
         new DateTimeOffset(year, month, day, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
 
     // -------------------------------------------------------------------------
-    // 1. No materializer registered → feed not replenishable → return fromMs unchanged.
+    // 1. No materializer registered FOR THIS FEED → not replenishable →
+    //    return fromMs unchanged and the (other-feed) materializer is never called.
     // -------------------------------------------------------------------------
 
     [Fact]
     public async Task NotReplenishable_ReturnsFromMsUnchanged_AndMaterializesNothing()
     {
-        var sut = BuildSut(withMaterializer: false);
+        // Registry contains a materializer for a DIFFERENT feed only, so the
+        // no-call assertion below is meaningful (the stub is reachable in principle).
+        var otherFeedMaterializer = Substitute.For<IArchiveMaterializer>();
+        otherFeedMaterializer.Exchange.Returns("binance");
+        otherFeedMaterializer.FeedName.Returns("funding-rate");
+        otherFeedMaterializer.Supports(Arg.Any<string>()).Returns(true);
+
+        var sut = BuildSut(otherFeedMaterializer);
         long from = Ms(2026, 3, 1);
         long to = Ms(2026, 7, 7);
 
         var result = await sut.CoverFromArchive(Asset, Feed, "/data", from, to, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(from, result);
-        await _materializer.DidNotReceiveWithAnyArgs()
+        await otherFeedMaterializer.DidNotReceiveWithAnyArgs()
             .MaterializeMonth(default!, default!, default!, default, default, TestContext.Current.CancellationToken);
     }
 

@@ -3,6 +3,7 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
+using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Application.Catalog;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
@@ -89,6 +90,10 @@ builder.Services.AddSingleton<ISettingsWriter>(sp =>
         sp.GetRequiredService<ILogger<AppSettingsWriter>>()));
 
 builder.Services.AddSingleton<ICollectionCircuitBreaker, CollectionCircuitBreaker>();
+// No IArchiveMaterializer registrations yet → empty registry → archive backfill is a no-op
+// until Task 10 registers real materializers.
+builder.Services.AddSingleton<ArchiveMaterializerRegistry>();
+builder.Services.AddSingleton<ArchiveBackfillService>();
 builder.Services.AddSingleton<SymbolCollector>();
 builder.Services.AddSingleton<BackfillOrchestrator>();
 

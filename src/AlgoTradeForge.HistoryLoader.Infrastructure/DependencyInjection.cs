@@ -2,7 +2,9 @@ using AlgoTradeForge.Storage;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
+using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
 using AlgoTradeForge.HistoryLoader.Infrastructure.State;
@@ -159,6 +161,7 @@ public static class DependencyInjection
 
         services.AddSingleton<ISchemaManager, FeedSchemaManager>();
         services.AddSingleton<IFeedStatusStore, FeedStatusManager>();
+        services.AddSingleton<IMonthCoverageCalculator, MonthCoverageCalculator>();
 
         services.AddSingleton<AggregatedDirSweeper>();
 
