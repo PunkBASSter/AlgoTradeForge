@@ -1,3 +1,4 @@
+using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -38,6 +39,8 @@ public sealed class BackfillOrchestrator(
         string assetDir,
         IReadOnlyList<string>? feedFilter = null,
         DateOnly? fromDate = null,
+        DateOnly? toDate = null,
+        IProgress<ArchiveProgress>? progress = null,
         CancellationToken ct = default)
     {
         bool added = false;
@@ -50,7 +53,9 @@ public sealed class BackfillOrchestrator(
                 added = true;
             }
 
-            var toMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var toMs = toDate is { } d
+                ? new DateTimeOffset(d.AddDays(1), TimeOnly.MinValue, TimeSpan.Zero).ToUnixTimeMilliseconds()
+                : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             var feeds = asset.Feeds
                 .Where(f => f.Enabled)
@@ -63,7 +68,7 @@ public sealed class BackfillOrchestrator(
                 var fromMs = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
                     .ToUnixTimeMilliseconds();
 
-                await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct);
+                await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, progress, ct);
             }
 
             return true;
@@ -90,7 +95,7 @@ public sealed class BackfillOrchestrator(
         try
         {
             var assetDir = ResolveAssetDir(dataRoot, asset);
-            if (!await TryRunSingleAsync(asset, assetDir, feedFilter, fromDate, ct))
+            if (!await TryRunSingleAsync(asset, assetDir, feedFilter, fromDate, ct: ct))
                 logger.LogWarning("Backfill already running for {Symbol}, skipping", asset.Symbol);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

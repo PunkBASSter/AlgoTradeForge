@@ -17,6 +17,14 @@ public sealed class HistoryLoaderOptions
     public List<AssetCollectionConfig> Assets { get; init; } = [];
     public Dictionary<string, CollectionSchedule> Schedules { get; init; } = [];
     public AggregatorOptions Aggregator { get; init; } = new();
+    public LoadOptions Load { get; init; } = new();
+}
+
+public sealed class LoadOptions
+{
+    public int MaxQueueDepth { get; init; } = 16;
+    public int JobRetentionMinutes { get; init; } = 30;
+    public int MaxMonthsPerRequest { get; init; } = 600;
 }
 
 /// <summary>Alt-bar aggregation knobs.</summary>
@@ -47,6 +55,8 @@ public sealed class BinanceOptions
     public int MaxWeightPerMinute { get; init; } = 2400;
     public int WeightBudgetPercent { get; init; } = 40;
     public int RequestDelayMs { get; init; } = 50;
+    public string ArchiveBaseUrl { get; init; } = "https://data.binance.vision";
+    public int ArchiveDownloadConcurrency { get; init; } = 4;
 }
 
 public sealed class AssetCollectionConfig

@@ -198,7 +198,7 @@ internal abstract class ScheduledCollectorService(
                             from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
                             .ToUnixTimeMilliseconds();
 
-                        await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct);
+                        await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct: ct);
                         consecutiveNetworkFailures = 0;
                     }
                     catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)

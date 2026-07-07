@@ -2,13 +2,17 @@ using AlgoTradeForge.Storage;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
+using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
 using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
 using AlgoTradeForge.HistoryLoader.Infrastructure.State;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage.Buffered;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.Infrastructure;
@@ -159,8 +163,67 @@ public static class DependencyInjection
 
         services.AddSingleton<ISchemaManager, FeedSchemaManager>();
         services.AddSingleton<IFeedStatusStore, FeedStatusManager>();
+        services.AddSingleton<IMonthCoverageCalculator, MonthCoverageCalculator>();
 
         services.AddSingleton<AggregatedDirSweeper>();
+
+        // Archive backfill — named HttpClient for data.binance.vision downloads
+        services.AddHttpClient("binance-archive", (sp, client) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
+            client.BaseAddress = new Uri(opts.Binance.ArchiveBaseUrl);
+            client.Timeout = TimeSpan.FromMinutes(5);
+        });
+        services.AddSingleton<IBinanceArchiveClient, BinanceArchiveClient>();
+        services.AddSingleton<IPartitionFileWriter, PartitionFileWriter>();
+        services.AddSingleton<ILoadAssetResolver, BinanceLoadAssetResolver>();
+        services.AddSingleton<ILoadJobRegistry, LoadJobRegistry>();
+        services.AddSingleton<ArchiveBackfillService>();
+        services.AddSingleton<ArchiveMaterializerRegistry>();
+
+        // Materializer set — spec §1 classification table
+        services.AddSingleton<IArchiveMaterializer>(sp => new KlinesArchiveMaterializer(
+            FeedNames.Candles, "klines", supportsSpot: true,
+            sp.GetRequiredService<IBinanceArchiveClient>(),
+            sp.GetRequiredService<IPartitionFileWriter>(),
+            sp.GetRequiredService<ISchemaManager>(),
+            sp.GetRequiredService<IFeedStatusStore>(),
+            sp.GetRequiredService<ILogger<KlinesArchiveMaterializer>>()));
+        services.AddSingleton<IArchiveMaterializer>(sp => new KlinesArchiveMaterializer(
+            FeedNames.MarkPrice, "markPriceKlines", supportsSpot: false,
+            sp.GetRequiredService<IBinanceArchiveClient>(),
+            sp.GetRequiredService<IPartitionFileWriter>(),
+            sp.GetRequiredService<ISchemaManager>(),
+            sp.GetRequiredService<IFeedStatusStore>(),
+            sp.GetRequiredService<ILogger<KlinesArchiveMaterializer>>()));
+        services.AddSingleton<IArchiveMaterializer>(sp => new MetricsArchiveMaterializer(
+            FeedNames.OpenInterest,
+            sp.GetRequiredService<IBinanceArchiveClient>(),
+            sp.GetRequiredService<IPartitionFileWriter>(),
+            sp.GetRequiredService<ISchemaManager>(),
+            sp.GetRequiredService<IFeedStatusStore>(),
+            sp.GetRequiredService<ILogger<MetricsArchiveMaterializer>>()));
+        services.AddSingleton<IArchiveMaterializer>(sp => new MetricsArchiveMaterializer(
+            FeedNames.LsRatioGlobal,
+            sp.GetRequiredService<IBinanceArchiveClient>(),
+            sp.GetRequiredService<IPartitionFileWriter>(),
+            sp.GetRequiredService<ISchemaManager>(),
+            sp.GetRequiredService<IFeedStatusStore>(),
+            sp.GetRequiredService<ILogger<MetricsArchiveMaterializer>>()));
+        services.AddSingleton<IArchiveMaterializer>(sp => new MetricsArchiveMaterializer(
+            FeedNames.LsRatioTopAccounts,
+            sp.GetRequiredService<IBinanceArchiveClient>(),
+            sp.GetRequiredService<IPartitionFileWriter>(),
+            sp.GetRequiredService<ISchemaManager>(),
+            sp.GetRequiredService<IFeedStatusStore>(),
+            sp.GetRequiredService<ILogger<MetricsArchiveMaterializer>>()));
+        services.AddSingleton<IArchiveMaterializer>(sp => new MetricsArchiveMaterializer(
+            FeedNames.LsRatioTopPositions,
+            sp.GetRequiredService<IBinanceArchiveClient>(),
+            sp.GetRequiredService<IPartitionFileWriter>(),
+            sp.GetRequiredService<ISchemaManager>(),
+            sp.GetRequiredService<IFeedStatusStore>(),
+            sp.GetRequiredService<ILogger<MetricsArchiveMaterializer>>()));
 
         return services;
     }

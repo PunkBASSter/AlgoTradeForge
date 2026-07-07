@@ -50,7 +50,7 @@ internal static class BackfillEndpoints
         {
             try
             {
-                if (!await orchestrator.TryRunSingleAsync(asset, assetDir, feedFilter, fromDate, ct))
+                if (!await orchestrator.TryRunSingleAsync(asset, assetDir, feedFilter, fromDate, ct: ct))
                     logger.LogWarning("Backfill already running for {Symbol}", asset.Symbol);
             }
             catch (Exception ex) when (
