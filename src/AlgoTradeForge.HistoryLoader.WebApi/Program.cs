@@ -4,6 +4,7 @@ using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
 using AlgoTradeForge.HistoryLoader.Application.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Application.Catalog;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
@@ -101,6 +102,8 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IFeedCatalog, FeedCatalog>();
 builder.Services.AddSingleton<IAggregationJobRegistry, AggregationJobRegistry>();
+builder.Services.AddSingleton<ILoadJobRegistry, LoadJobRegistry>();
+// Task 10: AddHostedService<LoadJobWorker> once ILoadAssetResolver is registered
 builder.Services.AddSingleton<IAggregationJobQueue, AggregationJobQueue>();
 builder.Services.AddSingleton<IAggregationTickJobQueue, AggregationTickJobQueue>();
 builder.Services.AddScoped<PartitionedSourceReader>();
