@@ -168,6 +168,24 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
     }
 
     [Fact]
+    public async Task MaterializeMonth_ArchivePresentButNoInRangeRows_ReportsAvailable()
+    {
+        // Rows stamped 2024-02-29 while materializing 2024-03 — file present but nothing in-range
+        const string outOfRangeCsv =
+            "1709164800000,50000.1,50100.2,49900.3,50050.4,12.5,1709168399999,625631.2,1500,6.25,312815.6,0\n";
+
+        _archive.DownloadMonthly("spot", "klines", "BTCUSDT", "1h", 2024, 3, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(CsvStream(outOfRangeCsv)));
+
+        var result = await CandlesMaterializer().MaterializeMonth(
+            SpotConfig(), FeedConfig(), _dir, 2024, 3, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, result.RowsWritten);
+        Assert.True(result.AvailableAtSource);
+        Assert.False(Directory.Exists(Path.Combine(_dir, "candles")));
+    }
+
+    [Fact]
     public async Task MaterializeMonth_MarkPrice_WritesOhlcDoubles()
     {
         _archive.DownloadMonthly("futures/um", "markPriceKlines", "BTCUSDT", "1h", 2024, 3, Arg.Any<CancellationToken>())
