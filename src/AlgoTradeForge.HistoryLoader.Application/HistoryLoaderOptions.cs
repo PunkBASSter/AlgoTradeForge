@@ -25,6 +25,8 @@ public sealed class LoadOptions
     public int MaxQueueDepth { get; init; } = 16;
     public int JobRetentionMinutes { get; init; } = 30;
     public int MaxMonthsPerRequest { get; init; } = 600;
+    // Single-symbol cap: aggTrades zips are GB-scale; multi-symbol batching would multiply this if ever added.
+    public int MaxTickMonthsPerRequest { get; init; } = 24;
 }
 
 /// <summary>Alt-bar aggregation knobs.</summary>
