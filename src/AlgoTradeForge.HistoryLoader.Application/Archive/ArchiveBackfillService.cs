@@ -77,7 +77,8 @@ public sealed class ArchiveBackfillService(
 
             // Covered months are already complete; they end the leading-unavailable streak.
             if (await coverage.IsMonthCovered(
-                assetDir, feedConfig.Name, feedConfig.Interval, year, month, gaps, effectiveStartMs, ct))
+                assetDir, feedConfig.Name, feedConfig.Interval, year, month,
+                gaps, status?.CompleteMonths, effectiveStartMs, ct))
             {
                 leadingPhase = false;
                 done++;

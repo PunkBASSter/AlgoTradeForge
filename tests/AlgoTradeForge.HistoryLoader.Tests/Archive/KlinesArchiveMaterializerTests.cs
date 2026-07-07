@@ -326,8 +326,8 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
         var clock = new TestClock(new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero));
         var covered = await new MonthCoverageCalculator(clock)
             .IsMonthCovered(
-                _dir, FeedNames.Candles, "1h", 2024, 2, savedStatus.Gaps, null,
-                TestContext.Current.CancellationToken);
+                _dir, FeedNames.Candles, "1h", 2024, 2, savedStatus.Gaps,
+                ct: TestContext.Current.CancellationToken);
         Assert.True(covered);
     }
 }

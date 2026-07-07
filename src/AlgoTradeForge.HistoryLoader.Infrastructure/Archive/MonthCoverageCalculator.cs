@@ -20,9 +20,13 @@ internal sealed class MonthCoverageCalculator : IMonthCoverageCalculator
         string assetDir, string feedName, string interval,
         int year, int month,
         IReadOnlyList<DataGap> gaps,
+        IReadOnlyList<string>? completeMonths = null,
         long? effectiveStartMs = null,
         CancellationToken ct = default)
     {
+        if (FeedNames.UsesMonthlyCompleteness(feedName))
+            return completeMonths?.Contains($"{year:D4}-{month:D2}") ?? false;
+
         var intervalMs = (long)IntervalParser.ToTimeSpan(interval).TotalMilliseconds;
 
         var monthStartMs = new DateTimeOffset(year, month, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();

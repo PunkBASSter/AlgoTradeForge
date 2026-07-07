@@ -113,7 +113,7 @@ internal static class CoverageEndpoints
                 if (firstMs >= mStartMs && firstMs < mEndMs)
                     listingClamp = firstMs;
             }
-            if (await coverageCalculator.IsMonthCovered(assetDir, feedName, interval, year, month, gaps, listingClamp, ct))
+            if (await coverageCalculator.IsMonthCovered(assetDir, feedName, interval, year, month, gaps, status?.CompleteMonths, listingClamp, ct))
                 coveredMonths.Add(monthPart);
         }
 
