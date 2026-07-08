@@ -95,6 +95,28 @@ public sealed class TakerVolumeArchiveMaterializerTests : IDisposable
     }
 
     [Fact]
+    public async Task MaterializeMonth_FloatSubtractionNearEqual_ClampsSellToZero()
+    {
+        // "0.30000000000000004" is the next representable double above "0.3"
+        // (exact decimal of 0.1+0.2 in IEEE 754), so quoteVol - buyVol < 0 without a clamp.
+        const string nearEqualCsv =
+            "1709251200000,50000,50100,49900,50050,0.000006,1709254799999,0.3,1,0.000003,0.30000000000000004,0\n";
+
+        _archive.DownloadMonthly("futures/um", "klines", "BTCUSDT", "15m", 2024, 3, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(CsvStream(nearEqualCsv)));
+
+        await CreateSut().MaterializeMonth(
+            FuturesConfig(), FeedConfig("15m"), _dir, 2024, 3, TestContext.Current.CancellationToken);
+
+        var path = Path.Combine(_dir, "taker-volume", "2024-03_15m.csv");
+        var lines = await File.ReadAllLinesAsync(path, TestContext.Current.CancellationToken);
+        // sell_vol_usd must be clamped to 0, not a tiny negative
+        var fields = lines[1].Split(',');
+        Assert.Equal("0", fields[2]);   // sell_vol_usd == "0"
+        Assert.Equal("0", fields[3]);   // ratio == 0 (no sells)
+    }
+
+    [Fact]
     public void MaterializeMonth_RejectsSpot()
     {
         var sut = CreateSut();

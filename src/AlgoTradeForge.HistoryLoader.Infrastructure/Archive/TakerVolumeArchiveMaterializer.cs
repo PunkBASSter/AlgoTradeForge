@@ -84,7 +84,8 @@ internal sealed class TakerVolumeArchiveMaterializer(
             var r = x.Row;
             var buyVol = double.Parse(r[10], CultureInfo.InvariantCulture);
             var quoteVol = double.Parse(r[7], CultureInfo.InvariantCulture);
-            var sellVol = quoteVol - buyVol;
+            // Clamp: near-equal float subtraction can yield a tiny negative.
+            var sellVol = Math.Max(0d, quoteVol - buyVol);
             var ratio = sellVol > 0 ? buyVol / sellVol : 0d;
             return $"{x.Ts},{buyVol.ToString(CultureInfo.InvariantCulture)},{sellVol.ToString(CultureInfo.InvariantCulture)},{ratio.ToString(CultureInfo.InvariantCulture)}";
         });
