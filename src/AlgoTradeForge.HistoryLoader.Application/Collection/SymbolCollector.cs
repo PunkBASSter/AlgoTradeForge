@@ -36,14 +36,14 @@ public sealed class SymbolCollector
     {
         var feedName = feedConfig.Name;
 
-        if (!_collectors.TryGetValue(feedName, out var collector))
-        {
-            _logger.LogWarning("Unknown feed: {Feed} for {Symbol}", feedName, assetConfig.Symbol);
-            return;
-        }
+        // Collector may be absent: materializer-only feeds (e.g. taker-volume, whose live
+        // collector was retired) are archive-sourced and have no REST tail. The archive path
+        // therefore runs BEFORE the collector gate — a null collector must NOT short-circuit it.
+        _collectors.TryGetValue(feedName, out var collector);
 
-        // Spot assets only support feeds that declare SupportsSpot.
-        if (AssetTypes.IsSpot(assetConfig.Type) && !collector.SupportsSpot)
+        // Spot assets only support feeds that declare SupportsSpot. Archive materializers enforce
+        // their own Supports() inside CoverFromArchive, so this gate applies only to live collectors.
+        if (collector is not null && AssetTypes.IsSpot(assetConfig.Type) && !collector.SupportsSpot)
         {
             _logger.LogWarning(
                 "Spot assets do not support {Feed}, skipping for {Symbol}",
@@ -54,6 +54,15 @@ public sealed class SymbolCollector
         fromMs = await _archiveBackfill.CoverFromArchive(assetConfig, feedConfig, assetDir, fromMs, toMs, progress, ct);
         if (fromMs >= toMs)
             return; // fully covered by archive — no REST tail needed
+
+        if (collector is null)
+        {
+            // No live source for the current-month REST tail — archive owns closed months only.
+            _logger.LogInformation(
+                "No live collector for {Feed}/{Symbol}; archive-only, REST tail skipped",
+                feedName, assetConfig.Symbol);
+            return;
+        }
 
         _logger.LogInformation(
             "Collecting {Feed}/{Interval} for {Symbol} from {From} to {To}",
