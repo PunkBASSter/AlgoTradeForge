@@ -254,6 +254,76 @@ public sealed class SymbolCollectorTests
     }
 
     // -------------------------------------------------------------------------
+    // 6b. Materializer-only feed (no live collector) still reaches the archive
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CollectFeed_NoLiveCollector_ButMaterializerRegistered_InvokesArchive()
+    {
+        var materializer = Substitute.For<IArchiveMaterializer>();
+        materializer.Exchange.Returns("binance");
+        materializer.FeedName.Returns("taker-volume");
+        materializer.Supports("perpetual").Returns(true);
+        materializer.MaterializeMonth(
+                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ArchiveMonthResult(10, true));
+
+        var coverage = Substitute.For<IMonthCoverageCalculator>();
+        coverage.IsMonthCovered(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<int>(), Arg.Any<int>(),
+                Arg.Any<IReadOnlyList<DataGap>>(), Arg.Any<IReadOnlyList<string>?>(),
+                Arg.Any<long?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var archiveBackfill = new ArchiveBackfillService(
+            new ArchiveMaterializerRegistry([materializer]),
+            coverage,
+            Substitute.For<IFeedStatusStore>(),
+            Substitute.For<ISettingsWriter>(),
+            new TestClock(new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero)),
+            NullLogger<ArchiveBackfillService>.Instance);
+
+        // Empty collector list → taker-volume has no live collector.
+        var sut = new SymbolCollector(
+            [],
+            archiveBackfill,
+            _settingsWriter,
+            NullLogger<SymbolCollector>.Instance);
+
+        var takerFeed = new FeedCollectionConfig { Name = "taker-volume", Interval = "5m" };
+        var oneClosedMonthEnd = new DateTimeOffset(2020, 2, 1, 0, 0, 0, TimeSpan.Zero)
+            .ToUnixTimeMilliseconds();
+
+        await sut.CollectFeedAsync(
+            Asset, takerFeed, "/data", FromMs, oneClosedMonthEnd,
+            ct: TestContext.Current.CancellationToken);
+
+        // Archive was reached despite no live collector — proves the early-return is gone.
+        await materializer.Received().MaterializeMonth(
+            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+            Arg.Any<string>(), 2020, 1, Arg.Any<CancellationToken>());
+    }
+
+    // -------------------------------------------------------------------------
+    // 6c. Unknown feed with no collector AND no materializer no-ops (no throw)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CollectFeed_NoCollector_NoMaterializer_NoOps()
+    {
+        var unknownFeed = new FeedCollectionConfig { Name = "does-not-exist", Interval = "5m" };
+
+        await _sut.CollectFeedAsync(
+            Asset, unknownFeed, "/data", FromMs, ToMs,
+            ct: TestContext.Current.CancellationToken);
+
+        await _settingsWriter.DidNotReceiveWithAnyArgs()
+            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+    }
+
+    // -------------------------------------------------------------------------
     // 7. Month index helpers
     // -------------------------------------------------------------------------
 

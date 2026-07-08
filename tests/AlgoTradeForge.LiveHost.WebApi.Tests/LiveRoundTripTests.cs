@@ -117,7 +117,7 @@ public sealed class LiveRoundTripTests : IDisposable
             Options.Create(new HistoryLoaderStorageOptions { FlushEveryRows = 1, FlushIntervalSeconds = 60 }),
             NullLogger<DailyTickCsvWriter>.Instance,
             new WriteLockManager());
-        var canon = BuildCanonicalizer<TradeTick>(new TradeProjection(writer, map));
+        var canon = BuildCanonicalizer<TradeTick>(new TradeProjection(writer, map, NullLogger<TradeProjection>.Instance));
 
         var framesProcessed = await canon.Run(Venue, Instrument, Ct);
         Assert.Equal(2, framesProcessed);
@@ -128,10 +128,11 @@ public sealed class LiveRoundTripTests : IDisposable
 
         var lines = await _storage.ReadAllLines(csvKey, Ct);
         Assert.Equal("ts,price,qty,is_buyer_maker,agg_id", lines[0]);
-        // Sell → is_buyer_maker = 1; price = 5000000000 / 10^5 = 50000, qty = 1000 / 10^3 = 1
-        Assert.Equal($"{Ts1},50000,1,1,1", lines[1]);
-        // Buy → is_buyer_maker = 0; price = 5000100000 / 10^5 = 50001, qty = 2000 / 10^3 = 2
-        Assert.Equal($"{Ts2},50001,2,0,2", lines[2]);
+        // Empty digits map -> fallback digits = PriceScaleExp = 5. Stored as scaled long: magnitude*10^5.
+        // Sell -> is_buyer_maker = 1; price 50000*1e5 = 5000000000, qty 1*1e5 = 100000
+        Assert.Equal($"{Ts1},5000000000,100000,1,1", lines[1]);
+        // Buy -> is_buyer_maker = 0; price 50001*1e5 = 5000100000, qty 2*1e5 = 200000
+        Assert.Equal($"{Ts2},5000100000,200000,0,2", lines[2]);
     }
 
     [Fact]

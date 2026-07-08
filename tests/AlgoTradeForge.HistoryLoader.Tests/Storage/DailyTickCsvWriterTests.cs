@@ -60,23 +60,36 @@ public sealed class DailyTickCsvWriterTests : IDisposable
     public async Task Write_NewFile_CreatesWithCorrectHeaderAndRow()
     {
         var writer = NewWriter();
-        writer.Write(_tempDir, Tick(Ts20240315Noon, 50000.5, 0.123, isBuyerMaker: false, aggId: 100));
+        writer.Write(_tempDir, Tick(Ts20240315Noon, 50000.5, 0.123, isBuyerMaker: false, aggId: 100), decimalDigits: 2);
         await writer.FlushAllAsync(Ct);
 
         var key = PartitionKey(_tempDir, Ts20240315Noon);
         Assert.True(await _storage.Exists(key, Ct));
         var lines = await _storage.ReadAllLines(key, Ct);
         Assert.Equal("ts,price,qty,is_buyer_maker,agg_id", lines[0]);
-        Assert.Equal($"{Ts20240315Noon},50000.5,0.123,0,100", lines[1]);
+        // scaled longs: 50000.5*100=5000050 ; 0.123*100=12.3 -> 12 (AwayFromZero)
+        Assert.Equal($"{Ts20240315Noon},5000050,12,0,100", lines[1]);
+    }
+
+    [Fact]
+    public async Task Write_ScalesPriceAndQty_ByDecimalDigits()
+    {
+        var writer = NewWriter();
+        // price 50000.5, qty 0.123, is_buyer_maker 0, agg_id 100; DecimalDigits = 2
+        writer.Write(_tempDir, new FeedRecord(Ts20240315Noon, [50000.5, 0.123, 0, 100]), decimalDigits: 2);
+        await writer.FlushAllAsync(Ct);
+
+        var lines = await _storage.ReadAllLines(PartitionKey(_tempDir, Ts20240315Noon), Ct);
+        Assert.Equal($"{Ts20240315Noon},5000050,12,0,100", lines[1]); // 50000.5*100=5000050 ; 0.123*100=12 (AwayFromZero)
     }
 
     [Fact]
     public async Task Write_DedupsByAggId_DropsRepeatsRegardlessOfTs()
     {
         var writer = NewWriter();
-        writer.Write(_tempDir, Tick(Ts20240315Noon,      50000, 1, false, aggId: 100));
-        writer.Write(_tempDir, Tick(Ts20240315Noon + 5,  50001, 2, true,  aggId: 100));
-        writer.Write(_tempDir, Tick(Ts20240315Noon + 10, 50002, 3, false, aggId: 100));
+        writer.Write(_tempDir, Tick(Ts20240315Noon,      50000, 1, false, aggId: 100), decimalDigits: 2);
+        writer.Write(_tempDir, Tick(Ts20240315Noon + 5,  50001, 2, true,  aggId: 100), decimalDigits: 2);
+        writer.Write(_tempDir, Tick(Ts20240315Noon + 10, 50002, 3, false, aggId: 100), decimalDigits: 2);
         await writer.FlushAllAsync(Ct);
 
         var lines = await _storage.ReadAllLines(PartitionKey(_tempDir, Ts20240315Noon), Ct);
@@ -107,9 +120,9 @@ public sealed class DailyTickCsvWriterTests : IDisposable
     public async Task ResumeFrom_CleanFile_ReturnsLastRow()
     {
         var writer = NewWriter();
-        writer.Write(_tempDir, Tick(Ts20240315Noon,        50000, 1, false, aggId: 100));
-        writer.Write(_tempDir, Tick(Ts20240315Noon + 1000, 50100, 1, true,  aggId: 101));
-        writer.Write(_tempDir, Tick(Ts20240315Noon + 2000, 50200, 1, false, aggId: 102));
+        writer.Write(_tempDir, Tick(Ts20240315Noon,        50000, 1, false, aggId: 100), decimalDigits: 2);
+        writer.Write(_tempDir, Tick(Ts20240315Noon + 1000, 50100, 1, true,  aggId: 101), decimalDigits: 2);
+        writer.Write(_tempDir, Tick(Ts20240315Noon + 2000, 50200, 1, false, aggId: 102), decimalDigits: 2);
         await writer.FlushAllAsync(Ct);
 
         var fresh = NewWriter();
@@ -125,7 +138,7 @@ public sealed class DailyTickCsvWriterTests : IDisposable
     {
         var writer = NewWriter();
         for (int i = 100; i <= 110; i++)
-            writer.Write(_tempDir, Tick(Ts20240315Noon + i, 50000 + i, 1, false, aggId: i));
+            writer.Write(_tempDir, Tick(Ts20240315Noon + i, 50000 + i, 1, false, aggId: i), decimalDigits: 2);
         await writer.FlushAllAsync(Ct);
 
         var fresh = NewWriter();
@@ -134,10 +147,10 @@ public sealed class DailyTickCsvWriterTests : IDisposable
         Assert.Equal(110, resume!.Value.LastAggId);
 
         // Simulate Binance redelivery overlap: 109, 110 must be deduped; 111, 112 appended.
-        fresh.Write(_tempDir, Tick(Ts20240315Noon + 109, 50109, 1, false, aggId: 109));
-        fresh.Write(_tempDir, Tick(Ts20240315Noon + 110, 50110, 1, false, aggId: 110));
-        fresh.Write(_tempDir, Tick(Ts20240315Noon + 111, 50111, 1, false, aggId: 111));
-        fresh.Write(_tempDir, Tick(Ts20240315Noon + 112, 50112, 1, false, aggId: 112));
+        fresh.Write(_tempDir, Tick(Ts20240315Noon + 109, 50109, 1, false, aggId: 109), decimalDigits: 2);
+        fresh.Write(_tempDir, Tick(Ts20240315Noon + 110, 50110, 1, false, aggId: 110), decimalDigits: 2);
+        fresh.Write(_tempDir, Tick(Ts20240315Noon + 111, 50111, 1, false, aggId: 111), decimalDigits: 2);
+        fresh.Write(_tempDir, Tick(Ts20240315Noon + 112, 50112, 1, false, aggId: 112), decimalDigits: 2);
         await fresh.FlushAllAsync(Ct);
 
         var lines = await _storage.ReadAllLines(PartitionKey(_tempDir, Ts20240315Noon), Ct);
@@ -152,9 +165,9 @@ public sealed class DailyTickCsvWriterTests : IDisposable
         var day1 = new DateTimeOffset(2024, 3, 15, 23, 59, 59, TimeSpan.Zero).ToUnixTimeMilliseconds();
         var day2 = new DateTimeOffset(2024, 3, 16, 0, 0, 1, TimeSpan.Zero).ToUnixTimeMilliseconds();
 
-        writer.Write(_tempDir, Tick(day1, 50000, 1, false, aggId: 200));
-        writer.Write(_tempDir, Tick(day1 + 100, 50001, 1, false, aggId: 201));
-        writer.Write(_tempDir, Tick(day2, 50010, 1, false, aggId: 202));
+        writer.Write(_tempDir, Tick(day1, 50000, 1, false, aggId: 200), decimalDigits: 2);
+        writer.Write(_tempDir, Tick(day1 + 100, 50001, 1, false, aggId: 201), decimalDigits: 2);
+        writer.Write(_tempDir, Tick(day2, 50010, 1, false, aggId: 202), decimalDigits: 2);
         await writer.FlushAllAsync(Ct);
 
         var day1Lines = await _storage.ReadAllLines(PartitionKey(_tempDir, day1), Ct);
@@ -192,6 +205,6 @@ public sealed class DailyTickCsvWriterTests : IDisposable
         var writer = NewWriter();
         var bad = new FeedRecord(Ts20240315Noon, [50000, 1.0]);
 
-        Assert.Throws<ArgumentException>(() => writer.Write(_tempDir, bad));
+        Assert.Throws<ArgumentException>(() => writer.Write(_tempDir, bad, decimalDigits: 2));
     }
 }

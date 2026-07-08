@@ -108,11 +108,6 @@ public static class DependencyInjection
                 (symbol, interval, fromMs, toMs, ct) =>
                     sp.GetRequiredService<BinanceFuturesClient>().FetchTopPositionRatioAsync(symbol, interval!, fromMs, toMs, ct)));
 
-        services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.TakerVolume}",
-            (sp, _) => new DelegatingFeedFetcher(
-                (symbol, interval, fromMs, toMs, ct) =>
-                    sp.GetRequiredService<BinanceFuturesClient>().FetchTakerVolumeAsync(symbol, interval!, fromMs, toMs, ct)));
-
         services.AddKeyedSingleton<IFeedFetcher>($"{futuresKey}:{FeedNames.Liquidations}",
             (sp, _) => new DelegatingFeedFetcher(
                 (symbol, _, fromMs, toMs, ct) =>
@@ -224,6 +219,24 @@ public static class DependencyInjection
             sp.GetRequiredService<ISchemaManager>(),
             sp.GetRequiredService<IFeedStatusStore>(),
             sp.GetRequiredService<ILogger<MetricsArchiveMaterializer>>()));
+        services.AddSingleton<IArchiveMaterializer>(sp => new AggTradesArchiveMaterializer(
+            sp.GetRequiredService<IBinanceArchiveClient>(),
+            sp.GetRequiredService<IPartitionFileWriter>(),
+            sp.GetRequiredService<ISchemaManager>(),
+            sp.GetRequiredService<IFeedStatusStore>(),
+            sp.GetRequiredService<ILogger<AggTradesArchiveMaterializer>>()));
+        services.AddSingleton<IArchiveMaterializer>(sp => new FundingRateArchiveMaterializer(
+            sp.GetRequiredService<IBinanceArchiveClient>(),
+            sp.GetRequiredService<IPartitionFileWriter>(),
+            sp.GetRequiredService<ISchemaManager>(),
+            sp.GetRequiredService<IFeedStatusStore>(),
+            sp.GetRequiredService<ILogger<FundingRateArchiveMaterializer>>()));
+        services.AddSingleton<IArchiveMaterializer>(sp => new TakerVolumeArchiveMaterializer(
+            sp.GetRequiredService<IBinanceArchiveClient>(),
+            sp.GetRequiredService<IPartitionFileWriter>(),
+            sp.GetRequiredService<ISchemaManager>(),
+            sp.GetRequiredService<IFeedStatusStore>(),
+            sp.GetRequiredService<ILogger<TakerVolumeArchiveMaterializer>>()));
 
         return services;
     }

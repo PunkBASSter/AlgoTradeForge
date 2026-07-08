@@ -38,7 +38,7 @@ public sealed class StreamCanonicalizerTests : IDisposable
             _storage, _tail,
             Options.Create(new HistoryLoaderStorageOptions { FlushEveryRows = 1, FlushIntervalSeconds = 60 }),
             NullLogger<DailyTickCsvWriter>.Instance, new WriteLockManager());
-        var proj = new TradeProjection(writer, _map);
+        var proj = new TradeProjection(writer, _map, NullLogger<TradeProjection>.Instance);
         var cursors = new FileStreamCursorStore(_storage);
         return new StreamCanonicalizer<TradeTick>(_storage, proj, cursors, "live-md", "_canon-cursors");
     }
@@ -67,7 +67,7 @@ public sealed class StreamCanonicalizerTests : IDisposable
     }
 
     [Fact]
-    public async Task Run_TwoSegments_CanonicalizesAllTradesUnscaled()
+    public async Task Run_TwoSegments_CanonicalizesAllTradesScaledLong()
     {
         await WriteSegment(Ts, 1, new TradeTick(Ts, 5000050, 123, 1, AggressorSide.Buy));
         await WriteSegment(Ts + 1, 2, new TradeTick(Ts + 5, 5000100, 200, 2, AggressorSide.Sell));
@@ -77,8 +77,9 @@ public sealed class StreamCanonicalizerTests : IDisposable
         Assert.Equal(2, n);
         var lines = await CanonLines();
         Assert.Equal("ts,price,qty,is_buyer_maker,agg_id", lines[0]);
-        Assert.Equal($"{Ts},50000.5,0.123,0,1", lines[1]);
-        Assert.Equal($"{Ts + 5},50001,0.2,1,2", lines[2]);
+        // empty digits map -> fallback digits = PriceScaleExp = 2 : price *100, qty *100
+        Assert.Equal($"{Ts},5000050,12,0,1", lines[1]);
+        Assert.Equal($"{Ts + 5},5000100,20,1,2", lines[2]);
     }
 
     [Fact]

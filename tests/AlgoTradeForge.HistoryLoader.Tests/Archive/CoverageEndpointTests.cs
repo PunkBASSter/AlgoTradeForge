@@ -55,6 +55,157 @@ public sealed class CoverageEndpointTests
         await schema.DidNotReceiveWithAnyArgs().Load(default!, default!);
     }
 
+    [Theory]
+    [InlineData(FeedNames.Ticks)]
+    [InlineData(FeedNames.FundingRate)]
+    public async Task Coverage_IntervalLessFeed_ReportsCompleteMonths(string feed)
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        var feedDir = Path.Combine(tempRoot, "binance", "BTCUSDT", feed);
+        Directory.CreateDirectory(feedDir);
+        try
+        {
+            var (_, schema, statusStore, coverage) = BuildDeps();
+            var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
+            options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = tempRoot });
+
+            schema.Load(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<FeedMetadata?>(new FeedMetadata()));
+
+            const long firstTs = 1704067200000L;
+            const long lastTs  = 1706745600000L;
+
+            statusStore.Load(Arg.Any<string>(), feed, "", Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<FeedStatus?>(new FeedStatus
+                {
+                    FeedName = feed,
+                    Interval = "",
+                    CompleteMonths = ["2024-01", "2024-02"],
+                    FirstTimestamp = firstTs,
+                    LastTimestamp = lastTs,
+                }));
+
+            var result = await CoverageEndpoints.GetCoverage(
+                "binance", "BTCUSDT", AssetTypes.Spot,
+                options, schema, statusStore, coverage,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(StatusCodes.Status200OK,
+                Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+            var json = JsonSerializer.Serialize(Assert.IsAssignableFrom<IValueHttpResult>(result).Value);
+            using var doc = JsonDocument.Parse(json);
+            var feeds = doc.RootElement.GetProperty("feeds");
+            Assert.Equal(1, feeds.GetArrayLength());
+            var entry = feeds[0];
+            Assert.Equal(feed, entry.GetProperty("feed_name").GetString());
+            Assert.Equal("", entry.GetProperty("interval").GetString());
+            var months = entry.GetProperty("covered_months");
+            Assert.Equal(2, months.GetArrayLength());
+            Assert.Equal("2024-01", months[0].GetString());
+            Assert.Equal("2024-02", months[1].GetString());
+            Assert.Equal(firstTs, entry.GetProperty("first_timestamp").GetInt64());
+            Assert.Equal(lastTs, entry.GetProperty("last_timestamp").GetInt64());
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Coverage_NoIntervalLessStatus_OmitsEntry()
+    {
+        // ticks dir exists + status null → omit; funding-rate dir absent → also omit.
+        var tempRoot = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        var ticksDir = Path.Combine(tempRoot, "binance", "BTCUSDT", FeedNames.Ticks);
+        Directory.CreateDirectory(ticksDir);
+        try
+        {
+            var (_, schema, statusStore, coverage) = BuildDeps();
+            var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
+            options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = tempRoot });
+
+            schema.Load(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<FeedMetadata?>(new FeedMetadata()));
+
+            // statusStore.Load returns null by default (NSubstitute); omit required.
+
+            var result = await CoverageEndpoints.GetCoverage(
+                "binance", "BTCUSDT", AssetTypes.Spot,
+                options, schema, statusStore, coverage,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(StatusCodes.Status200OK,
+                Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+            var json = JsonSerializer.Serialize(Assert.IsAssignableFrom<IValueHttpResult>(result).Value);
+            using var doc = JsonDocument.Parse(json);
+            var feeds = doc.RootElement.GetProperty("feeds");
+            Assert.Equal(0, feeds.GetArrayLength());
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Coverage_CandleExt_MirrorsCandles()
+    {
+        // candle-ext has no materializer (side-output of candles); its coverage mirrors candles
+        // for the same interval even when its own partition is partial.
+        var tempRoot = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        var candlesDir = Path.Combine(tempRoot, "binance", "BTCUSDT", "candles");
+        var extDir = Path.Combine(tempRoot, "binance", "BTCUSDT", FeedNames.CandleExt);
+        Directory.CreateDirectory(candlesDir);
+        Directory.CreateDirectory(extDir);
+        try
+        {
+            var (_, schema, statusStore, coverage) = BuildDeps();
+            var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
+            options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = tempRoot });
+
+            schema.Load(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<FeedMetadata?>(new FeedMetadata
+                {
+                    Candles = new CandleConfig { Intervals = ["1h"] },
+                    Feeds = { [FeedNames.CandleExt] = new FeedDefinition { Interval = "1h" } },
+                }));
+
+            await File.WriteAllLinesAsync(Path.Combine(candlesDir, "2024-03_1h.csv"),
+                ["ts,o,h,l,c,vol", "1,1,1,1,1,1"], TestContext.Current.CancellationToken);
+            await File.WriteAllLinesAsync(Path.Combine(extDir, "2024-03_1h.csv"),
+                ["ts,quote_vol", "1,1"], TestContext.Current.CancellationToken);
+
+            coverage.IsMonthCovered(Arg.Any<string>(), FeedNames.Candles, "1h", 2024, 3,
+                Arg.Any<IReadOnlyList<DataGap>>(), Arg.Any<IReadOnlyList<string>?>(),
+                Arg.Any<long?>(), Arg.Any<CancellationToken>())
+                .Returns(true);
+
+            var result = await CoverageEndpoints.GetCoverage(
+                "binance", "BTCUSDT", AssetTypes.Spot,
+                options, schema, statusStore, coverage,
+                TestContext.Current.CancellationToken);
+
+            var json = JsonSerializer.Serialize(Assert.IsAssignableFrom<IValueHttpResult>(result).Value);
+            using var doc = JsonDocument.Parse(json);
+            var feeds = doc.RootElement.GetProperty("feeds").EnumerateArray().ToList();
+            var ext = feeds.Single(f => f.GetProperty("feed_name").GetString() == FeedNames.CandleExt);
+            var months = ext.GetProperty("covered_months");
+            Assert.Equal(1, months.GetArrayLength());
+            Assert.Equal("2024-03", months[0].GetString());
+
+            // Pure shadow — candle-ext's own coverage predicate must never be consulted.
+            await coverage.DidNotReceive().IsMonthCovered(
+                Arg.Any<string>(), FeedNames.CandleExt, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+                Arg.Any<IReadOnlyList<DataGap>>(), Arg.Any<IReadOnlyList<string>?>(),
+                Arg.Any<long?>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task FeedEntry_NoFeedStatus_TimestampsAreNull()
     {

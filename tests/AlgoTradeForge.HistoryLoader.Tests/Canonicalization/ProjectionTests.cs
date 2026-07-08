@@ -16,6 +16,7 @@ public sealed class ProjectionTests : IDisposable
     private readonly LocalFileStorage _storage;
     private readonly LocalTailIndex _tail;
     private readonly InstrumentAssetDirMap _map;
+    private readonly InstrumentAssetDirMap _mapWithDigits;
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static readonly long Ts =
@@ -28,6 +29,8 @@ public sealed class ProjectionTests : IDisposable
         _storage = new LocalFileStorage(new LocalStorageOptions { DataRoot = _root });
         _tail = new LocalTailIndex(_storage);
         _map = new InstrumentAssetDirMap(_root, new Dictionary<string, string>());
+        _mapWithDigits = new InstrumentAssetDirMap(
+            _root, new Dictionary<string, string>(), new Dictionary<string, int> { ["BTCUSDT"] = 2 });
     }
 
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
@@ -43,21 +46,41 @@ public sealed class ProjectionTests : IDisposable
         NullLogger<DailyTickCsvWriter>.Instance, new WriteLockManager());
 
     [Fact]
-    public async Task TradeProjection_WritesUnscaledDecimalRow()
+    public async Task TradeProjection_WritesScaledLongRow()
     {
         var writer = TickWriter();
-        var proj = new TradeProjection(writer, _map);
+        var proj = new TradeProjection(writer, _mapWithDigits, NullLogger<TradeProjection>.Instance);
         await proj.Seed(Loc("trades"), Ct);
 
-        // price 5000050 @ exp2 -> 50000.5 ; qty 123 @ exp3 -> 0.123 ; Sell -> is_buyer_maker 1 ; seq 77
+        // mapped digits 2: price 5000050 @ exp2 -> 50000.5 -> *100 -> 5000050 ;
+        //                  qty    123     @ exp3 -> 0.123   -> *100 -> 12 ; Sell -> is_buyer_maker 1 ; seq 77
         proj.Apply(new TradeTick(Ts, 5000050, 123, 77, AggressorSide.Sell), Header(2, 3), Loc("trades"));
+        await proj.Flush(Ct);
+
+        var assetDir = _mapWithDigits.Resolve("binance", "BTCUSDT");
+        var key = Path.Combine(assetDir, "ticks",
+            $"{DateTimeOffset.FromUnixTimeMilliseconds(Ts).UtcDateTime:yyyy-MM-dd}.csv");
+        var lines = await _storage.ReadAllLines(key, Ct);
+        Assert.Equal("ts,price,qty,is_buyer_maker,agg_id", lines[0]);
+        Assert.Equal($"{Ts},5000050,12,1,77", lines[1]);
+    }
+
+    [Fact]
+    public async Task TradeProjection_InstrumentAbsentFromMap_FallsBackToCanonicalPriceExp()
+    {
+        var writer = TickWriter();
+        var proj = new TradeProjection(writer, _map, NullLogger<TradeProjection>.Instance); // empty digits map
+        await proj.Seed(Loc("trades"), Ct);
+
+        // absent -> digits = PriceScaleExp = 4 : price 5000050 @ exp4 -> 500.005 -> *1e4 -> 5000050 (canonical preserved) ;
+        //           qty 123 @ exp3 -> 0.123 -> *1e4 -> 1230
+        proj.Apply(new TradeTick(Ts, 5000050, 123, 77, AggressorSide.Sell), Header(4, 3), Loc("trades"));
         await proj.Flush(Ct);
 
         var assetDir = _map.Resolve("binance", "BTCUSDT");
         var key = Path.Combine(assetDir, "ticks",
             $"{DateTimeOffset.FromUnixTimeMilliseconds(Ts).UtcDateTime:yyyy-MM-dd}.csv");
         var lines = await _storage.ReadAllLines(key, Ct);
-        Assert.Equal("ts,price,qty,is_buyer_maker,agg_id", lines[0]);
-        Assert.Equal($"{Ts},50000.5,0.123,1,77", lines[1]);
+        Assert.Equal($"{Ts},5000050,1230,1,77", lines[1]);
     }
 }

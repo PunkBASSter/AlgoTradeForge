@@ -34,6 +34,9 @@ public sealed class HistoryLoaderOptionsValidator : IValidateOptions<HistoryLoad
         if (options.Aggregator.JobRetentionMinutes <= 0)
             failures.Add("Aggregator.JobRetentionMinutes must be greater than 0.");
 
+        if (options.Load.MaxTickMonthsPerRequest <= 0)
+            failures.Add("Load.MaxTickMonthsPerRequest must be greater than 0.");
+
         foreach (var asset in options.Assets)
         {
             if (!AssetTypes.All.Contains(asset.Type, StringComparer.OrdinalIgnoreCase))

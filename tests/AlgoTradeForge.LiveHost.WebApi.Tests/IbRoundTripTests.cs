@@ -168,7 +168,7 @@ public sealed class IbRoundTripTests : IDisposable
             Options.Create(new HistoryLoaderStorageOptions { FlushEveryRows = 1, FlushIntervalSeconds = 60 }),
             NullLogger<DailyTickCsvWriter>.Instance,
             new WriteLockManager());
-        var canon = BuildCanonicalizer<TradeTick>(new TradeProjection(writer, map));
+        var canon = BuildCanonicalizer<TradeTick>(new TradeProjection(writer, map, NullLogger<TradeProjection>.Instance));
 
         var framesProcessed = await canon.Run("ib", Instrument, Ct);
         Assert.Equal(2, framesProcessed);
@@ -179,9 +179,10 @@ public sealed class IbRoundTripTests : IDisposable
 
         var lines = await _storage.ReadAllLines(csvKey, Ct);
         Assert.Equal("ts,price,qty,is_buyer_maker,agg_id", lines[0]);
-        // AggressorSide.Unknown → ToIsBuyerMaker → 0; price unscaled 29698/10^2 = 296.98; qty 3/10^0 = 3
-        Assert.Equal($"{Ts1Ms},296.98,3,0,1", lines[1]);
-        // price unscaled 29699/10^2 = 296.99; qty 1/10^0 = 1
-        Assert.Equal($"{Ts1Ms},296.99,1,0,2", lines[2]);
+        // Empty digits map -> fallback digits = PriceScaleExp = 2. Stored as scaled long: magnitude*10^2.
+        // AggressorSide.Unknown -> is_buyer_maker 0; price 296.98*100 = 29698, qty 3*100 = 300
+        Assert.Equal($"{Ts1Ms},29698,300,0,1", lines[1]);
+        // price 296.99*100 = 29699, qty 1*100 = 100
+        Assert.Equal($"{Ts1Ms},29699,100,0,2", lines[2]);
     }
 }

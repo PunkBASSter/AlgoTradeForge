@@ -51,7 +51,7 @@ public sealed class ArchiveBackfillServiceTests
         _coverage.IsMonthCovered(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<int>(), Arg.Any<int>(), Arg.Any<IReadOnlyList<DataGap>>(),
-                Arg.Any<long?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyList<string>?>(), Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
         _materializer.MaterializeMonth(
@@ -108,7 +108,7 @@ public sealed class ArchiveBackfillServiceTests
         _coverage.IsMonthCovered(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 2026, 4, Arg.Any<IReadOnlyList<DataGap>>(),
-                Arg.Any<long?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyList<string>?>(), Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
         var callOrder = new List<(int y, int m)>();
@@ -224,7 +224,7 @@ public sealed class ArchiveBackfillServiceTests
         _coverage.IsMonthCovered(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 2026, 5, Arg.Any<IReadOnlyList<DataGap>>(),
-                Arg.Any<long?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyList<string>?>(), Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
         var sut = BuildSut();
@@ -270,7 +270,7 @@ public sealed class ArchiveBackfillServiceTests
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<int>(), Arg.Any<int>(),
                 Arg.Do<IReadOnlyList<DataGap>>(receivedGapLists.Add),
-                Arg.Any<long?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyList<string>?>(), Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
         var sut = BuildSut();
@@ -436,10 +436,10 @@ public sealed class ArchiveBackfillServiceTests
         _coverage.IsMonthCovered(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<int>(), Arg.Any<int>(), Arg.Any<IReadOnlyList<DataGap>>(),
-                Arg.Any<long?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IReadOnlyList<string>?>(), Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
-                capturedEffective[(ci.ArgAt<int>(3), ci.ArgAt<int>(4))] = ci.ArgAt<long?>(6);
+                capturedEffective[(ci.ArgAt<int>(3), ci.ArgAt<int>(4))] = ci.ArgAt<long?>(7);
                 return false;
             });
 

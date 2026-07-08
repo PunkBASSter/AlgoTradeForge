@@ -215,7 +215,7 @@ public sealed class DataPlaneEndToEndTests : IDisposable
             new WriteLockManager());
         var cursors = new FileStreamCursorStore(_storage);
         var canon = new StreamCanonicalizer<TradeTick>(
-            _storage, new TradeProjection(writer, map), cursors, "live-md", "_canon-cursors");
+            _storage, new TradeProjection(writer, map, NullLogger<TradeProjection>.Instance), cursors, "live-md", "_canon-cursors");
 
         var framesProcessed = await canon.Run(Venue, Instrument, Ct);
         Assert.Equal(Ticks.Length, framesProcessed);
@@ -228,8 +228,9 @@ public sealed class DataPlaneEndToEndTests : IDisposable
         Assert.Equal("ts,price,qty,is_buyer_maker,agg_id", lines[0]);
         var archivedRows = lines.Length - 1;
         Assert.Equal(Ticks.Length, archivedRows);
-        // Spot-check first row: Buy -> is_buyer_maker=0; price=50000, qty=1.
-        Assert.Equal($"{Ts0},50000,1,0,1", lines[1]);
+        // Spot-check first row: empty digits map -> fallback digits = PriceScaleExp = 5 (scaled long).
+        // Buy -> is_buyer_maker=0; price 50000*1e5 = 5000000000, qty 1*1e5 = 100000.
+        Assert.Equal($"{Ts0},5000000000,100000,0,1", lines[1]);
 
         // --- Assertion 2: AltBar path delivered the expected completed bars ---
         Assert.Equal(ExpectedCloses.Length, barSession.Strategy.CompletedBars.Count);

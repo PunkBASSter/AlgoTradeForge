@@ -17,4 +17,8 @@ public static class FeedNames
     public const string Ticks = "ticks";
     public const string BookTicker = "book-ticker";
     public const string Session = "_session";
+
+    // Interval-less, monthly-zip-sourced feeds: coverage is the CompleteMonths marker, not the
+    // row-count predicate (they carry no interval string, so IntervalParser cannot run on them).
+    public static bool UsesMonthlyCompleteness(string feedName) => feedName is Ticks or FundingRate;
 }

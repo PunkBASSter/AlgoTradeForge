@@ -55,14 +55,17 @@ internal static class CoverageEndpoints
             return Results.Ok(new { asset_dir = assetDir, feeds = Array.Empty<object>() });
 
         var feedEntries = new List<object>();
+        var candleCoveredByInterval = new Dictionary<string, IReadOnlyList<string>>();
 
         // Candle intervals from Candles.Intervals
         foreach (var interval in manifest.Candles?.Intervals ?? [])
         {
-            var entry = await BuildFeedEntry(
+            var built = await BuildFeedEntry(
                 assetDir, FeedNames.Candles, interval,
                 feedStatusStore, coverageCalculator, ct);
-            if (entry is not null) feedEntries.Add(entry);
+            if (built is not { } b) continue;
+            feedEntries.Add(b.Entry);
+            candleCoveredByInterval[interval] = b.CoveredMonths;
         }
 
         // Declared feeds with an interval (skip alt-bar/tick/side entries without intervals)
@@ -70,16 +73,62 @@ internal static class CoverageEndpoints
         {
             if (string.IsNullOrEmpty(def.Interval)) continue;
 
-            var entry = await BuildFeedEntry(
+            // candle-ext has no materializer (side-output of candles) → mirror candles' coverage
+            // for the same interval rather than glob its own possibly-partial partitions.
+            if (feedName == FeedNames.CandleExt)
+            {
+                var shadow = await BuildCandleExtShadow(
+                    assetDir, def.Interval, candleCoveredByInterval, feedStatusStore, ct);
+                if (shadow is not null) feedEntries.Add(shadow);
+                continue;
+            }
+
+            var built = await BuildFeedEntry(
                 assetDir, feedName, def.Interval,
                 feedStatusStore, coverageCalculator, ct);
-            if (entry is not null) feedEntries.Add(entry);
+            if (built is { } b) feedEntries.Add(b.Entry);
+        }
+
+        // Interval-less feeds: coverage is CompleteMonths marker, not the partition glob.
+        foreach (var feed in new[] { FeedNames.Ticks, FeedNames.FundingRate })
+        {
+            var status = await feedStatusStore.Load(assetDir, feed, "", ct);
+            if (!Directory.Exists(Path.Combine(assetDir, feed)) || status is null)
+                continue; // omit — pinned wire contract
+            feedEntries.Add(new
+            {
+                feed_name = feed, interval = "",
+                covered_months = status.CompleteMonths.OrderBy(m => m, StringComparer.Ordinal).ToArray(),
+                first_timestamp = status.FirstTimestamp,
+                last_timestamp = status.LastTimestamp,
+            });
         }
 
         return Results.Ok(new { asset_dir = assetDir, feeds = feedEntries });
     }
 
-    private static async Task<object?> BuildFeedEntry(
+    private static async Task<object?> BuildCandleExtShadow(
+        string assetDir, string interval,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> candleCoveredByInterval,
+        IFeedStatusStore feedStatusStore, CancellationToken ct)
+    {
+        var feedDir = Path.Combine(assetDir, FeedNames.CandleExt);
+        if (!Directory.Exists(feedDir)) return null;
+
+        var status = await feedStatusStore.Load(assetDir, FeedNames.CandleExt, interval, ct);
+        var covered = candleCoveredByInterval.TryGetValue(interval, out var months) ? months : [];
+
+        return new
+        {
+            feed_name = FeedNames.CandleExt,
+            interval,
+            covered_months = covered.ToArray(),
+            first_timestamp = status?.FirstTimestamp,
+            last_timestamp = status?.LastTimestamp,
+        };
+    }
+
+    private static async Task<(object Entry, IReadOnlyList<string> CoveredMonths)?> BuildFeedEntry(
         string assetDir, string feedName, string interval,
         IFeedStatusStore feedStatusStore, IMonthCoverageCalculator coverageCalculator,
         CancellationToken ct)
@@ -113,13 +162,13 @@ internal static class CoverageEndpoints
                 if (firstMs >= mStartMs && firstMs < mEndMs)
                     listingClamp = firstMs;
             }
-            if (await coverageCalculator.IsMonthCovered(assetDir, feedName, interval, year, month, gaps, listingClamp, ct))
+            if (await coverageCalculator.IsMonthCovered(assetDir, feedName, interval, year, month, gaps, status?.CompleteMonths, listingClamp, ct))
                 coveredMonths.Add(monthPart);
         }
 
         coveredMonths.Sort(StringComparer.Ordinal);
 
-        return new
+        object entry = new
         {
             feed_name = feedName,
             interval,
@@ -127,5 +176,6 @@ internal static class CoverageEndpoints
             first_timestamp = status?.FirstTimestamp,
             last_timestamp = status?.LastTimestamp,
         };
+        return (entry, coveredMonths);
     }
 }

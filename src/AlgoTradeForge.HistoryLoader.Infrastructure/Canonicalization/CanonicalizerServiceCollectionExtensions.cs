@@ -17,7 +17,8 @@ public static class CanonicalizerServiceCollectionExtensions
         services.AddSingleton(sp =>
         {
             var opt = sp.GetRequiredService<IOptions<CanonicalizerOptions>>().Value;
-            return new InstrumentAssetDirMap(opt.AssetDirBase, opt.InstrumentAssetDirs);
+            return new InstrumentAssetDirMap(
+                opt.AssetDirBase, opt.InstrumentAssetDirs, opt.InstrumentDecimalDigits);
         });
 
         services.AddSingleton<IStreamCursorStore, FileStreamCursorStore>();

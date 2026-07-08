@@ -17,10 +17,11 @@ public readonly record struct TickResumeState(long LastAggId, long LastTsMs);
 public interface ITickFeedWriter
 {
     /// <summary>
-    /// Values must be <c>[price, qty, is_buyer_maker, agg_id]</c>. Records whose <c>agg_id</c>
-    /// is at-or-below the partition watermark are silently dropped.
+    /// Values must be <c>[price, qty, is_buyer_maker, agg_id]</c>. Price and qty are scaled to
+    /// <c>long</c> by <c>10^decimalDigits</c> (Int64 Money Convention — same scale the reader parses).
+    /// Records whose <c>agg_id</c> is at-or-below the partition watermark are silently dropped.
     /// </summary>
-    void Write(string assetDir, FeedRecord record);
+    void Write(string assetDir, FeedRecord record, int decimalDigits);
 
     Task<TickResumeState?> ResumeFrom(string assetDir, CancellationToken ct = default);
 }

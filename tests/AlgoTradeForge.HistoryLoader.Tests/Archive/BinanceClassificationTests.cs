@@ -47,6 +47,15 @@ public sealed class BinanceClassificationTests
                 FeedNames.LsRatioTopPositions,
                 archive, partitionWriter, schemaManager, feedStatusStore,
                 NullLogger<MetricsArchiveMaterializer>.Instance),
+            new AggTradesArchiveMaterializer(
+                archive, partitionWriter, schemaManager, feedStatusStore,
+                NullLogger<AggTradesArchiveMaterializer>.Instance),
+            new FundingRateArchiveMaterializer(
+                archive, partitionWriter, schemaManager, feedStatusStore,
+                NullLogger<FundingRateArchiveMaterializer>.Instance),
+            new TakerVolumeArchiveMaterializer(
+                archive, partitionWriter, schemaManager, feedStatusStore,
+                NullLogger<TakerVolumeArchiveMaterializer>.Instance),
         ]);
     }
 
@@ -81,4 +90,28 @@ public sealed class BinanceClassificationTests
     [Fact]
     public void Candles_Equity_NotReplenishable() =>
         Assert.False(BuildRegistry().IsReplenishable("binance", FeedNames.Candles, AssetTypes.Equity));
+
+    [Fact]
+    public void Ticks_Spot_Replenishable() =>
+        Assert.True(BuildRegistry().IsReplenishable("binance", FeedNames.Ticks, AssetTypes.Spot));
+
+    [Fact]
+    public void Ticks_Perpetual_Replenishable() =>
+        Assert.True(BuildRegistry().IsReplenishable("binance", FeedNames.Ticks, AssetTypes.Perpetual));
+
+    [Fact]
+    public void FundingRate_Perpetual_Replenishable() =>
+        Assert.True(BuildRegistry().IsReplenishable("binance", FeedNames.FundingRate, AssetTypes.Perpetual));
+
+    [Fact]
+    public void FundingRate_Spot_NotReplenishable() =>
+        Assert.False(BuildRegistry().IsReplenishable("binance", FeedNames.FundingRate, AssetTypes.Spot));
+
+    [Fact]
+    public void TakerVolume_Perpetual_Replenishable() =>
+        Assert.True(BuildRegistry().IsReplenishable("binance", FeedNames.TakerVolume, AssetTypes.Perpetual));
+
+    [Fact]
+    public void TakerVolume_Spot_NotReplenishable() =>
+        Assert.False(BuildRegistry().IsReplenishable("binance", FeedNames.TakerVolume, AssetTypes.Spot));
 }

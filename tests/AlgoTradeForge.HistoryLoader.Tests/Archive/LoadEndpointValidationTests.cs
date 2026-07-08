@@ -116,6 +116,85 @@ public sealed class LoadEndpointValidationTests
     }
 
     // -------------------------------------------------------------------------
+    // Task 9: Tick disk-budget guard + interval-less validator bypass
+    // -------------------------------------------------------------------------
+
+    private static ArchiveMaterializerRegistry RegistryWithTicks()
+    {
+        var archive = Substitute.For<IBinanceArchiveClient>();
+        var pw = Substitute.For<IPartitionFileWriter>();
+        var sm = Substitute.For<ISchemaManager>();
+        var fs = Substitute.For<IFeedStatusStore>();
+        return new ArchiveMaterializerRegistry(
+        [
+            new AggTradesArchiveMaterializer(
+                archive, pw, sm, fs, NullLogger<AggTradesArchiveMaterializer>.Instance),
+        ]);
+    }
+
+    private static ArchiveMaterializerRegistry RegistryWithFunding()
+    {
+        var archive = Substitute.For<IBinanceArchiveClient>();
+        var pw = Substitute.For<IPartitionFileWriter>();
+        var sm = Substitute.For<ISchemaManager>();
+        var fs = Substitute.For<IFeedStatusStore>();
+        return new ArchiveMaterializerRegistry(
+        [
+            new FundingRateArchiveMaterializer(
+                archive, pw, sm, fs, NullLogger<FundingRateArchiveMaterializer>.Instance),
+        ]);
+    }
+
+    [Fact]
+    public void Ticks_OverCap_Returns_TickLoadTooLarge()
+    {
+        var opts = new LoadOptions { MaxTickMonthsPerRequest = 6, MaxMonthsPerRequest = 600 };
+        var req = ValidRequest() with {
+            AssetType = AssetTypes.Perpetual, FeedName = FeedNames.Ticks, Interval = "",
+            From = new DateOnly(2024, 1, 1), To = new DateOnly(2024, 12, 31) }; // 12 months
+        var err = LoadRequestValidator.Validate(req, RegistryWithTicks(), opts);
+        Assert.Equal("tick_load_too_large", err!.Code);
+    }
+
+    [Fact]
+    public void Ticks_WithinCap_Passes()
+    {
+        var opts = new LoadOptions { MaxTickMonthsPerRequest = 24, MaxMonthsPerRequest = 600 };
+        var req = ValidRequest() with {
+            AssetType = AssetTypes.Perpetual, FeedName = FeedNames.Ticks,
+            Interval = "", From = new DateOnly(2024, 1, 1), To = new DateOnly(2024, 3, 31) };
+        Assert.Null(LoadRequestValidator.Validate(req, RegistryWithTicks(), opts));
+    }
+
+    [Fact]
+    public void Ticks_EmptyInterval_NotRejectedAsInvalidInterval()
+    {
+        // Regression: IntervalParser.ToTimeSpan("") must NOT be reached for ticks.
+        var req = ValidRequest() with { AssetType = AssetTypes.Perpetual, FeedName = FeedNames.Ticks, Interval = "" };
+        var err = LoadRequestValidator.Validate(req, RegistryWithTicks(), new LoadOptions());
+        Assert.True(err is null || err.Code != "invalid_interval");
+    }
+
+    [Fact]
+    public void NonTickFeed_EmptyInterval_StillInvalidInterval()
+    {
+        var req = ValidRequest() with { FeedName = FeedNames.Candles, Interval = "" };
+        Assert.Equal("invalid_interval", LoadRequestValidator.Validate(req, RegistryWithCandles(), new LoadOptions())!.Code);
+    }
+
+    [Fact]
+    public void FundingRate_EmptyInterval_Passes_AndIsNotCappedAsTick()
+    {
+        // funding-rate is interval-less (bypasses IntervalParser) BUT is NOT subject to the tick cap.
+        var req = ValidRequest() with {
+            AssetType = AssetTypes.Perpetual, FeedName = FeedNames.FundingRate,
+            Interval = "", From = new DateOnly(2020, 1, 1), To = new DateOnly(2024, 12, 31) }; // 60 months
+        var err = LoadRequestValidator.Validate(req, RegistryWithFunding(),
+            new LoadOptions { MaxTickMonthsPerRequest = 24 });
+        Assert.Null(err); // neither invalid_interval nor tick_load_too_large
+    }
+
+    // -------------------------------------------------------------------------
     // Path traversal: PostLoad must return 422 without touching the filesystem.
     // -------------------------------------------------------------------------
 

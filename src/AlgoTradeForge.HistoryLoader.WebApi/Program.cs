@@ -63,6 +63,12 @@ builder.Services.PostConfigure<CanonicalizerOptions>(opt =>
 {
     if (string.IsNullOrEmpty(opt.AssetDirBase))
         opt.AssetDirBase = builder.Configuration.GetSection("Storage:Local:DataRoot").Value ?? "";
+
+    // Per-instrument tick scale so TradeProjection stores price/qty as scaled long (matches the
+    // HistoryLoader tick writers); absent instruments fall back to the canonical exponent.
+    var assets = builder.Configuration.GetSection("HistoryLoader").Get<HistoryLoaderOptions>()?.Assets ?? [];
+    foreach (var asset in assets)
+        opt.InstrumentDecimalDigits.TryAdd(asset.Symbol, asset.DecimalDigits);
 });
 builder.Services.AddTickCanonicalizer();
 builder.Services.AddHostedService<TickCanonicalizerService>();
@@ -75,7 +81,6 @@ builder.Services.AddSingleton<IFeedCollector, IndexPriceFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, OpenInterestFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LsRatioGlobalFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LsRatioTopAccountsFeedCollector>();
-builder.Services.AddSingleton<IFeedCollector, TakerVolumeFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LsRatioTopPositionsFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, LiquidationFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, AggTradeFeedCollector>();

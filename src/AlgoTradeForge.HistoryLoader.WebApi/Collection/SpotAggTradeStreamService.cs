@@ -209,7 +209,7 @@ internal sealed class SpotAggTradeStreamService(
 
                 var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
                 await schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null, ct);
-                tickWriter.Write(assetDir, record);
+                tickWriter.Write(assetDir, record, asset.DecimalDigits);
                 totalWritten++;
 
                 if (!statusTracker.TryGetValue(assetDir, out var st))

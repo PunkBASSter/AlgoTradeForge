@@ -23,6 +23,8 @@ export function mapCatalogFeedToCoverage(
       return { feedName: "candles", interval: feed.id };
     case "Side":
       return { feedName: feed.id, interval: "" };
+    case "Tick":
+      return { feedName: "ticks", interval: "" };
     default:
       return null;
   }
