@@ -51,7 +51,7 @@ export const ARCHIVE_FEEDS: ReadonlyArray<{
     assetTypes: ["perpetual"],
   },
   { feedName: "ticks", label: "Ticks (aggTrades)", intervals: [], assetTypes: ["spot", "perpetual"], allowEmptyInterval: true },
-  // backend Supports == IsFutures; FE offers only spot|perpetual, so perpetual mirrors it
+  // funding-rate + taker-volume: backend Supports == IsFutures; FE offers only spot|perpetual, so perpetual mirrors it
   { feedName: "funding-rate", label: "Funding rate", intervals: [""], assetTypes: ["perpetual"], allowEmptyInterval: true },
   { feedName: "taker-volume", label: "Taker volume", intervals: ["15m"], assetTypes: ["perpetual"] },
 ];
