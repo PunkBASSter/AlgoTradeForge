@@ -136,7 +136,9 @@ builder.Services.AddCors(options =>
         policy.WithOrigins("http://localhost:3000")
               .AllowAnyHeader()
               .AllowAnyMethod()
-              .AllowCredentials();
+              .AllowCredentials()
+              // ETag is not CORS-safelisted; without this the browser hides it and group CAS breaks
+              .WithExposedHeaders("ETag");
     });
 });
 
