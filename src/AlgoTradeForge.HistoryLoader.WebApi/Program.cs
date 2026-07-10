@@ -147,5 +147,6 @@ app.MapCatalogEndpoints();
 app.MapAggregationEndpoints();
 app.MapLoadEndpoints();
 app.MapCoverageEndpoints();
+app.MapGroupEndpoints();
 
 app.Run();
