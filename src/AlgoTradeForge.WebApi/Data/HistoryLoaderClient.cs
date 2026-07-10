@@ -32,7 +32,7 @@ public sealed class HistoryLoaderClient
     public Task<HttpResponseMessage> Post(string relativePath, CancellationToken ct) =>
         _http.PostAsync(relativePath, content: null, ct);
 
-    public async Task<HttpResponseMessage> PutJsonAsync(
+    public async Task<HttpResponseMessage> PutJson(
         string relativePath, JsonElement body, string? ifMatch, CancellationToken ct)
     {
         using var ms = new MemoryStream();

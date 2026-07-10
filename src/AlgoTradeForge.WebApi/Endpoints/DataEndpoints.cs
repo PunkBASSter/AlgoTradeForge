@@ -408,7 +408,7 @@ internal static class DataEndpoints
         {
             var body = await ctx.Request.ReadFromJsonAsync<JsonElement>(ctx.RequestAborted);
             var ifMatch = ctx.Request.Headers["If-Match"].FirstOrDefault();
-            using var upstream = await client.PutJsonAsync(
+            using var upstream = await client.PutJson(
                 $"/api/v1/groups/{Uri.EscapeDataString(name)}", body, ifMatch, ctx.RequestAborted);
             if ((int)upstream.StatusCode >= 500)
             {
