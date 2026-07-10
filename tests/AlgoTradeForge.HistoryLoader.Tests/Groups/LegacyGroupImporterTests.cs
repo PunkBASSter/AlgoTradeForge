@@ -167,6 +167,22 @@ public sealed class LegacyGroupImporterTests
         Assert.Empty(groups);
     }
 
+    // --- (h) invalid char in base token → warning, valid siblings still imported ---
+
+    [Fact]
+    public void InvalidCharInBaseToken_SkippedWithWarning_ValidSiblingsImported()
+    {
+        var opts = OptionsFrom(
+            MakeAsset("BTC-USDT"), // '-' invalid in base token; would fail GroupValidator at Put
+            MakeAsset("ETHUSDT"));
+
+        var (groups, warnings) = LegacyGroupImporter.Convert(opts, EmptyRegistry());
+
+        Assert.Contains(warnings, w => w.Contains("BTC-USDT"));
+        Assert.Single(groups);
+        Assert.Equal(["ETH/USDT"], groups[0].Assets.Symbols);
+    }
+
     // --- additional coverage ---
 
     [Fact]

@@ -117,7 +117,10 @@ public static class LegacyGroupImporter
             if (!apiSymbol.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
                 continue;
             var baseToken = apiSymbol[..^suffix.Length].ToUpperInvariant();
-            if (baseToken.Length == 0 || baseToken.Length > 20)
+            // Same [A-Z0-9] token rule as CanonicalSymbolParser — reject here so a malformed
+            // config symbol becomes a per-symbol warning, not a GroupValidationException at Put.
+            if (baseToken.Length == 0 || baseToken.Length > 20
+                || !baseToken.All(c => char.IsAsciiLetterUpper(c) || char.IsAsciiDigit(c)))
                 return false;
             canonical = AssetTypes.IsFutures(assetType)
                 ? $"{baseToken}/{suffix}-PERP"
