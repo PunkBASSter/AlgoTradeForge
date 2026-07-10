@@ -9,6 +9,7 @@ using AlgoTradeForge.HistoryLoader.Application.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Application.Catalog;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
+using AlgoTradeForge.HistoryLoader.Domain.Symbology;
 using AlgoTradeForge.HistoryLoader.WebApi;
 using AlgoTradeForge.HistoryLoader.WebApi.Aggregation;
 using AlgoTradeForge.HistoryLoader.WebApi.Collection;
@@ -128,6 +129,9 @@ builder.Services.AddHostedService<TicksCollectorService>();
 builder.Services.AddHostedService<FundingInfoRefreshService>();
 builder.Services.AddHostedService<SpotAggTradeStreamService>();
 builder.Services.AddHostedService<BookTickerStreamService>();
+
+builder.Services.AddSingleton<IExchangeSymbology, BinanceSymbology>();
+builder.Services.AddSingleton<SymbologyRegistry>();
 
 var app = builder.Build();
 
