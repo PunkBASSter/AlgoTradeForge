@@ -169,12 +169,14 @@ export const dataApi = {
   getGroup: async (
     name: string,
     signal?: AbortSignal,
-  ): Promise<{ group: CollectionGroupDoc; etag: string }> => {
+  ): Promise<{ group: CollectionGroupDoc; etag: string | undefined }> => {
     const resp = await fetch(
       `${BASE_URL}/api/data/groups/${encodeURIComponent(name)}`,
       { signal },
     );
-    const etag = resp.headers.get("ETag") ?? "";
+    // undefined (not "") on missing header — "" round-tripped into putGroup would send a
+    // bogus `If-Match: ""` instead of omitting the header.
+    const etag = resp.headers.get("ETag") ?? undefined;
     const group = await asJson<CollectionGroupDoc>(resp);
     return { group, etag };
   },
@@ -191,7 +193,7 @@ export const dataApi = {
       `${BASE_URL}/api/data/groups/${encodeURIComponent(name)}`,
       { method: "PUT", headers, body: JSON.stringify(body), signal },
     );
-    if (resp.ok) return resp.json() as Promise<{ etag: string }>;
+    if (resp.ok) return asJson<{ etag: string }>(resp);
     let parsedBody: unknown = null;
     try { parsedBody = await resp.json(); } catch { /* non-JSON body */ }
     // Backend uses `error` field (not `code`) for group mutation errors; map it to

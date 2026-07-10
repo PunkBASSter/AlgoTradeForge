@@ -92,6 +92,22 @@ describe("dataApi.getGroup", () => {
     expect(result.group.assets.historyStart).toBe("2023-01");
   });
 
+  it("returns etag undefined when the response has no ETag header", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(minDoc), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await dataApi.getGroup("g1");
+
+    // Must be undefined, NOT "" — an empty string round-tripped into putGroup would
+    // send a bogus `If-Match: ""` instead of omitting the header.
+    expect(result.etag).toBeUndefined();
+    expect(result.group.name).toBe("g1");
+  });
+
   it("URL-encodes the name path component", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ ...minDoc, name: "my group" }), { status: 200 }),
