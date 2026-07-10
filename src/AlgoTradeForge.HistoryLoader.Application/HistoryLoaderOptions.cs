@@ -1,3 +1,5 @@
+using AlgoTradeForge.HistoryLoader.Application.Index;
+
 namespace AlgoTradeForge.HistoryLoader.Application;
 
 public sealed class HistoryLoaderOptions
@@ -18,6 +20,7 @@ public sealed class HistoryLoaderOptions
     public Dictionary<string, CollectionSchedule> Schedules { get; init; } = [];
     public AggregatorOptions Aggregator { get; init; } = new();
     public LoadOptions Load { get; init; } = new();
+    public IndexOptions Index { get; init; } = new();
 }
 
 public sealed class LoadOptions
