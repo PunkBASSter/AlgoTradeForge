@@ -26,6 +26,12 @@ internal sealed class DesiredStateService(
 
         // Subscribe AFTER the first compute so GroupsChanged only triggers recomputes.
         store.GroupsChanged += OnGroupsChanged;
+
+        // Hosted-service StartAsync doesn't await ExecuteAsync ⇒ LegacyImportService's Puts may
+        // fire during the first-compute window before the subscription above. Self-trigger one
+        // debounced recompute to cover any events missed in that gap.
+        OnGroupsChanged();
+
         try
         {
             await Task.Delay(Timeout.Infinite, stoppingToken);
