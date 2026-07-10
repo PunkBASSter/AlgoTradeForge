@@ -143,6 +143,31 @@ internal static class DataEndpoints
             (string jobId, HttpContext ctx, HistoryLoaderClient client) =>
                 ProxyPassthroughGet(ctx, client, $"/api/v1/loads/{Uri.EscapeDataString(jobId)}"));
 
+        // Groups + desired-state — uncached (live config / reconciler state, not catalog).
+        g.MapGet("/groups",
+            (HttpContext ctx, HistoryLoaderClient client) =>
+                ProxyPassthroughGet(ctx, client, "/api/v1/groups"));
+
+        g.MapGet("/groups/{name}",
+            (string name, HttpContext ctx, HistoryLoaderClient client) =>
+                ProxyGroupGet(name, ctx, client));
+
+        g.MapPut("/groups/{name}",
+            (string name, HttpContext ctx, HistoryLoaderClient client) =>
+                ProxyGroupPut(name, ctx, client));
+
+        g.MapDelete("/groups/{name}",
+            (string name, HttpContext ctx, HistoryLoaderClient client) =>
+                ProxyGroupDelete(name, ctx, client));
+
+        g.MapPost("/groups/validate",
+            (HttpContext ctx, HistoryLoaderClient client) =>
+                ProxyGroupValidate(ctx, client));
+
+        g.MapGet("/desired-state",
+            (HttpContext ctx, HistoryLoaderClient client) =>
+                ProxyPassthroughGet(ctx, client, $"/api/v1/desired-state{ctx.Request.QueryString.Value}"));
+
         return app;
     }
 
@@ -338,6 +363,146 @@ internal static class DataEndpoints
         catch (TaskCanceledException ex) when (!ctx.RequestAborted.IsCancellationRequested)
         {
             await DataProxyProblem.Timeout(ex.Message).ExecuteAsync(ctx);
+        }
+    }
+
+    /// <summary>
+    /// GET /groups/{name} — forwards body + ETag response header (for optimistic-concurrency reads).
+    /// </summary>
+    private static async Task ProxyGroupGet(string name, HttpContext ctx, HistoryLoaderClient client)
+    {
+        try
+        {
+            using var upstream = await client.GetAsync(
+                $"/api/v1/groups/{Uri.EscapeDataString(name)}", ctx.RequestAborted);
+            if ((int)upstream.StatusCode >= 500)
+            {
+                var detail = await upstream.Content.ReadAsStringAsync(ctx.RequestAborted);
+                await WriteProblem(ctx, DataProxyProblem.UpstreamError((int)upstream.StatusCode, detail));
+                return;
+            }
+            if (upstream.Headers.TryGetValues("ETag", out var etags))
+                ctx.Response.Headers["ETag"] = etags.ToArray();
+            var body = await upstream.Content.ReadAsByteArrayAsync(ctx.RequestAborted);
+            ctx.Response.StatusCode = (int)upstream.StatusCode;
+            ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
+            await ctx.Response.Body.WriteAsync(body, ctx.RequestAborted);
+        }
+        catch (HttpRequestException ex)
+        {
+            await WriteProblem(ctx, DataProxyProblem.Unavailable(ex.Message));
+        }
+        catch (TaskCanceledException ex) when (!ctx.RequestAborted.IsCancellationRequested)
+        {
+            await WriteProblem(ctx, DataProxyProblem.Timeout(ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// PUT /groups/{name} — forwards If-Match request header and ETag response header for
+    /// conditional-update (optimistic concurrency). JsonException → 400.
+    /// </summary>
+    private static async Task ProxyGroupPut(string name, HttpContext ctx, HistoryLoaderClient client)
+    {
+        try
+        {
+            var body = await ctx.Request.ReadFromJsonAsync<JsonElement>(ctx.RequestAborted);
+            var ifMatch = ctx.Request.Headers["If-Match"].FirstOrDefault();
+            using var upstream = await client.PutJsonAsync(
+                $"/api/v1/groups/{Uri.EscapeDataString(name)}", body, ifMatch, ctx.RequestAborted);
+            if ((int)upstream.StatusCode >= 500)
+            {
+                var detail = await upstream.Content.ReadAsStringAsync(ctx.RequestAborted);
+                await WriteProblem(ctx, DataProxyProblem.UpstreamError((int)upstream.StatusCode, detail));
+                return;
+            }
+            if (upstream.Headers.TryGetValues("ETag", out var etags))
+                ctx.Response.Headers["ETag"] = etags.ToArray();
+            ctx.Response.StatusCode = (int)upstream.StatusCode;
+            ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
+            var bytes = await upstream.Content.ReadAsByteArrayAsync(ctx.RequestAborted);
+            await ctx.Response.Body.WriteAsync(bytes, ctx.RequestAborted);
+        }
+        catch (JsonException)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await ctx.Response.WriteAsJsonAsync(new { error = "invalid_json" }, ctx.RequestAborted);
+        }
+        catch (HttpRequestException ex)
+        {
+            await WriteProblem(ctx, DataProxyProblem.Unavailable(ex.Message));
+        }
+        catch (TaskCanceledException ex) when (!ctx.RequestAborted.IsCancellationRequested)
+        {
+            await WriteProblem(ctx, DataProxyProblem.Timeout(ex.Message));
+        }
+    }
+
+    /// <summary>DELETE /groups/{name} — forwards ETag response header when upstream returns one.</summary>
+    private static async Task ProxyGroupDelete(string name, HttpContext ctx, HistoryLoaderClient client)
+    {
+        try
+        {
+            using var upstream = await client.DeleteAsync(
+                $"/api/v1/groups/{Uri.EscapeDataString(name)}", ctx.RequestAborted);
+            if ((int)upstream.StatusCode >= 500)
+            {
+                var detail = await upstream.Content.ReadAsStringAsync(ctx.RequestAborted);
+                await WriteProblem(ctx, DataProxyProblem.UpstreamError((int)upstream.StatusCode, detail));
+                return;
+            }
+            if (upstream.Headers.TryGetValues("ETag", out var etags))
+                ctx.Response.Headers["ETag"] = etags.ToArray();
+            ctx.Response.StatusCode = (int)upstream.StatusCode;
+            if (upstream.Content.Headers.ContentLength is > 0 ||
+                upstream.StatusCode != HttpStatusCode.NoContent)
+            {
+                ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
+                var bytes = await upstream.Content.ReadAsByteArrayAsync(ctx.RequestAborted);
+                if (bytes.Length > 0)
+                    await ctx.Response.Body.WriteAsync(bytes, ctx.RequestAborted);
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            await WriteProblem(ctx, DataProxyProblem.Unavailable(ex.Message));
+        }
+        catch (TaskCanceledException ex) when (!ctx.RequestAborted.IsCancellationRequested)
+        {
+            await WriteProblem(ctx, DataProxyProblem.Timeout(ex.Message));
+        }
+    }
+
+    /// <summary>POST /groups/validate — forwards request body verbatim. JsonException → 400.</summary>
+    private static async Task ProxyGroupValidate(HttpContext ctx, HistoryLoaderClient client)
+    {
+        try
+        {
+            var body = await ctx.Request.ReadFromJsonAsync<JsonElement>(ctx.RequestAborted);
+            using var upstream = await client.PostJsonAsync("/api/v1/groups/validate", body, ctx.RequestAborted);
+            if ((int)upstream.StatusCode >= 500)
+            {
+                var detail = await upstream.Content.ReadAsStringAsync(ctx.RequestAborted);
+                await WriteProblem(ctx, DataProxyProblem.UpstreamError((int)upstream.StatusCode, detail));
+                return;
+            }
+            ctx.Response.StatusCode = (int)upstream.StatusCode;
+            ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
+            var bytes = await upstream.Content.ReadAsByteArrayAsync(ctx.RequestAborted);
+            await ctx.Response.Body.WriteAsync(bytes, ctx.RequestAborted);
+        }
+        catch (JsonException)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await ctx.Response.WriteAsJsonAsync(new { error = "invalid_json" }, ctx.RequestAborted);
+        }
+        catch (HttpRequestException ex)
+        {
+            await WriteProblem(ctx, DataProxyProblem.Unavailable(ex.Message));
+        }
+        catch (TaskCanceledException ex) when (!ctx.RequestAborted.IsCancellationRequested)
+        {
+            await WriteProblem(ctx, DataProxyProblem.Timeout(ex.Message));
         }
     }
 
