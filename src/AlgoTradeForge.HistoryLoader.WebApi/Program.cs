@@ -135,8 +135,12 @@ builder.Services.AddHostedService<BookTickerStreamService>();
 builder.Services.AddSingleton<IExchangeSymbology, BinanceSymbology>();
 builder.Services.AddSingleton<SymbologyRegistry>();
 builder.Services.AddSingleton<IGroupStore, GroupStore>();
-// Ordering: LegacyImportService BEFORE the reconciler (Task 8) — writes groups once at startup.
+// Ordering: LegacyImportService BEFORE DesiredStateService — writes groups once at startup so
+// the reconciler's first compute sees them without a race.
 builder.Services.AddHostedService<LegacyImportService>();
+builder.Services.AddSingleton<ConvergenceEvaluator>();
+builder.Services.AddSingleton<DesiredStateService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DesiredStateService>());
 
 var app = builder.Build();
 
@@ -148,5 +152,6 @@ app.MapAggregationEndpoints();
 app.MapLoadEndpoints();
 app.MapCoverageEndpoints();
 app.MapGroupEndpoints();
+app.MapDesiredStateEndpoints();
 
 app.Run();
