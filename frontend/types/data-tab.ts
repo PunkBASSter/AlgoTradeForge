@@ -288,3 +288,113 @@ export interface LoadJobSnapshotWire {
   from: string;
   to: string;
 }
+
+// ---- Collection groups (declarative data management). ----
+
+/** Wire shape for each entry in GET /api/data/groups. Snake_case verbatim. */
+export interface CollectionGroupSummary {
+  name: string;
+  enabled: boolean;
+  exchanges: string[];
+  symbol_count: number;
+  feed_count: number;
+  etag: string;
+}
+
+/**
+ * CollectionGroup document as returned by GET /api/data/groups/{name}.
+ * camelCase (GroupJson serializer on the backend) — intentional divergence from
+ * the snake_case list summary above.
+ */
+export interface CollectionGroupDoc {
+  name: string;
+  enabled: boolean;
+  exchanges: string[];
+  assets: {
+    symbols: string[];
+    historyStart: string;
+  };
+  feeds: Record<string, {
+    collect: string;
+    intervals?: string[] | null;
+    format?: string | null;
+  }>;
+  derived?: Record<string, {
+    source: string;
+    type?: string | null;
+    threshold?: string | null;
+    sourceInterval?: string | null;
+    materialize: string;
+  }> | null;
+  symbolOverrides?: Record<string, Record<string, string>> | null;
+}
+
+export interface ValidateExpansionUnsupported {
+  exchange: string;
+  canonical: string;
+  reason: string;
+}
+
+export interface GroupConflict {
+  key: string;
+  kind: string;
+  groups: string[];
+  message: string;
+}
+
+export interface ValidateExpansionPerExchange {
+  exchange: string;
+  symbols: number;
+  feeds: number;
+}
+
+/** Response from POST /api/data/groups/validate (200). 422 throws DataApiError. */
+export interface ValidatePreview {
+  errors: string[];
+  expansion: {
+    tuple_count: number;
+    unsupported: ValidateExpansionUnsupported[];
+    conflicts: GroupConflict[];
+    per_exchange: ValidateExpansionPerExchange[];
+    already_materialized: number;
+  };
+}
+
+export type TupleStatusValue =
+  | "unsupported"
+  | "on-demand"
+  | "missing"
+  | "partial"
+  | "materialized";
+
+/** Single tuple entry in the desired-state report. */
+export interface TupleStatus {
+  exchange: string;
+  canonical: string;
+  dir: string | null;
+  feed_name: string;
+  interval: string;
+  status: TupleStatusValue;
+  months_expected: number;
+  months_covered: number;
+  collect: string;
+  history_start: string | null;
+  is_derived: boolean;
+  groups: string[];
+}
+
+export interface DesiredStateOrphan {
+  exchange: string;
+  dir: string;
+  feed_name: string;
+  interval: string;
+}
+
+/** Response from GET /api/data/desired-state. */
+export interface DesiredStateReport {
+  computed_at: string;
+  tuples: TupleStatus[];
+  orphaned: DesiredStateOrphan[];
+  orphaned_total: number;
+  conflicts: GroupConflict[];
+}

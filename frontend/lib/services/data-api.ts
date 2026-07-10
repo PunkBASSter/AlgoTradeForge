@@ -7,13 +7,17 @@ import type {
   AggregationOptionsResponse,
   AssetCatalogEntry,
   AssetListResponse,
+  CollectionGroupDoc,
+  CollectionGroupSummary,
   CoverageResponse,
+  DesiredStateReport,
   ExchangeListResponse,
   FeedStatusResponse,
   JobSnapshot,
   LoadAcceptedResponse,
   LoadJobSnapshotWire,
   LoadRequestBody,
+  ValidatePreview,
 } from "@/types/data-tab";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
@@ -155,6 +159,75 @@ export const dataApi = {
   getLoadJob: (jobId: string, signal?: AbortSignal) =>
     fetch(`${BASE_URL}/api/data/loads/${encodeURIComponent(jobId)}`, { signal })
       .then(asJson<LoadJobSnapshotWire>),
+
+  // ---- Collection groups (declarative data management). ----
+
+  getGroups: (signal?: AbortSignal) =>
+    fetch(`${BASE_URL}/api/data/groups`, { signal })
+      .then(asJson<{ groups: CollectionGroupSummary[] }>),
+
+  getGroup: async (
+    name: string,
+    signal?: AbortSignal,
+  ): Promise<{ group: CollectionGroupDoc; etag: string }> => {
+    const resp = await fetch(
+      `${BASE_URL}/api/data/groups/${encodeURIComponent(name)}`,
+      { signal },
+    );
+    const etag = resp.headers.get("ETag") ?? "";
+    const group = await asJson<CollectionGroupDoc>(resp);
+    return { group, etag };
+  },
+
+  putGroup: async (
+    name: string,
+    body: CollectionGroupDoc,
+    etag?: string,
+    signal?: AbortSignal,
+  ): Promise<{ etag: string }> => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (etag !== undefined) headers["If-Match"] = etag;
+    const resp = await fetch(
+      `${BASE_URL}/api/data/groups/${encodeURIComponent(name)}`,
+      { method: "PUT", headers, body: JSON.stringify(body), signal },
+    );
+    if (resp.ok) return resp.json() as Promise<{ etag: string }>;
+    let parsedBody: unknown = null;
+    try { parsedBody = await resp.json(); } catch { /* non-JSON body */ }
+    // Backend uses `error` field (not `code`) for group mutation errors; map it to
+    // DataApiError.code so callers can branch on "concurrency_conflict" / "validation_failed".
+    const typedBody = parsedBody as { error?: string; code?: string } | null;
+    const errorCode = typedBody?.error ?? typedBody?.code;
+    throw new DataApiError(
+      resp.status,
+      errorCode,
+      `${resp.status} ${resp.statusText}` + (errorCode ? ` (${errorCode})` : ""),
+      parsedBody,
+    );
+  },
+
+  deleteGroup: async (name: string, signal?: AbortSignal): Promise<void> => {
+    const resp = await fetch(
+      `${BASE_URL}/api/data/groups/${encodeURIComponent(name)}`,
+      { method: "DELETE", signal },
+    );
+    if (!resp.ok) await asJson(resp);
+  },
+
+  validateGroup: (body: CollectionGroupDoc, signal?: AbortSignal) =>
+    fetch(`${BASE_URL}/api/data/groups/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    }).then(asJson<ValidatePreview>),
+
+  getDesiredState: (exchange?: string, signal?: AbortSignal) => {
+    const url = exchange !== undefined
+      ? `${BASE_URL}/api/data/desired-state?exchange=${encodeURIComponent(exchange)}`
+      : `${BASE_URL}/api/data/desired-state`;
+    return fetch(url, { signal }).then(asJson<DesiredStateReport>);
+  },
 };
 
 export { DataApiError };
