@@ -15,6 +15,7 @@ using AlgoTradeForge.HistoryLoader.WebApi;
 using AlgoTradeForge.HistoryLoader.WebApi.Aggregation;
 using AlgoTradeForge.HistoryLoader.WebApi.Collection;
 using AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
+using AlgoTradeForge.HistoryLoader.WebApi.Groups;
 using AlgoTradeForge.HistoryLoader.Infrastructure;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Canonicalization;
 using Microsoft.Extensions.Options;
@@ -134,6 +135,8 @@ builder.Services.AddHostedService<BookTickerStreamService>();
 builder.Services.AddSingleton<IExchangeSymbology, BinanceSymbology>();
 builder.Services.AddSingleton<SymbologyRegistry>();
 builder.Services.AddSingleton<IGroupStore, GroupStore>();
+// Ordering: LegacyImportService BEFORE the reconciler (Task 8) — writes groups once at startup.
+builder.Services.AddHostedService<LegacyImportService>();
 
 var app = builder.Build();
 
