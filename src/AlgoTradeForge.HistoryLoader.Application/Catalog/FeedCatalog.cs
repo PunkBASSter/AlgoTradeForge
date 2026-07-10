@@ -46,12 +46,6 @@ public sealed class FeedCatalog : IFeedCatalog
         };
     }
 
-    public void Refresh()
-    {
-        Interlocked.Increment(ref _version);
-        _loadGates.Clear();
-    }
-
     public Task<ExchangeListResponse> GetExchanges(CancellationToken ct = default) =>
         CachedAsync($"exchanges:{Version}", async () =>
         {

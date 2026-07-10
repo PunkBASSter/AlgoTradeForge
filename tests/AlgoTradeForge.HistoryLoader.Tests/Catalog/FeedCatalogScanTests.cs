@@ -14,6 +14,7 @@ namespace AlgoTradeForge.HistoryLoader.Tests.Catalog;
 public class FeedCatalogScanTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "atf-catalog-" + Guid.NewGuid().ToString("N"));
+    private ISchemaManager _schema = null!;
 
     private void WriteManifest(string exchange, string dir)
     {
@@ -33,11 +34,11 @@ public class FeedCatalogScanTests : IDisposable
         var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
         options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = _root });
 
-        var schema = Substitute.For<ISchemaManager>();
-        schema.Load(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _schema = Substitute.For<ISchemaManager>();
+        _schema.Load(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new FeedMetadata { Candles = new CandleConfig { ScaleFactor = 100m, Intervals = ["5m", "1d"] } });
 
-        return new FeedCatalog(storage, options, schema, new MemoryCache(new MemoryCacheOptions()));
+        return new FeedCatalog(storage, options, _schema, new MemoryCache(new MemoryCacheOptions()));
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -73,8 +74,10 @@ public class FeedCatalogScanTests : IDisposable
     }
 
     [Fact]
-    public async Task Refresh_picks_up_a_newly_added_asset_dir()
+    public async Task ManifestChanged_picks_up_a_newly_added_asset_dir()
     {
+        // Refresh() was removed from IFeedCatalog; cache invalidation now happens only via
+        // ManifestChanged event (or 10-min TTL). Simulate an out-of-band manifest write.
         var catalog = BuildCatalog();
         var before = await catalog.GetAllAssets(Ct);
         Assert.Equal(3, before.Assets.Count);
@@ -83,7 +86,7 @@ public class FeedCatalogScanTests : IDisposable
         var stillCached = await catalog.GetAllAssets(Ct);
         Assert.Equal(3, stillCached.Assets.Count); // cached at old version
 
-        catalog.Refresh();
+        _schema.ManifestChanged += Raise.Event<Action<string>>("/any");
         var after = await catalog.GetAllAssets(Ct);
         Assert.Equal(4, after.Assets.Count);
         Assert.Single(after.Assets, a => a.Symbol == "SPY");

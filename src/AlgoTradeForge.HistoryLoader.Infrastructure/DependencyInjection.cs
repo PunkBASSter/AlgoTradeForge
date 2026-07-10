@@ -175,7 +175,7 @@ public static class DependencyInjection
         services.AddSingleton<IFeedMonthScanner, FeedMonthScanner>();
         services.AddSingleton<IndexMaintenanceQueue>();
         services.AddSingleton<IIndexMaintenance>(sp => sp.GetRequiredService<IndexMaintenanceQueue>());
-        services.AddSingleton<IIndexRebuilder, NullIndexRebuilder>();
+        services.AddSingleton<IIndexRebuilder, IndexRebuilder>();
         services.AddSingleton<IndexWorkProcessor>();
 
         services.AddSingleton<IMonthCoverageCalculator, MonthCoverageCalculator>();
