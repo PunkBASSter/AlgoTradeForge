@@ -75,6 +75,28 @@ public sealed class IndexWorkProcessorTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task ProcessManifest_PrunesOrphanedFeedStatusRows()
+    {
+        var assetDir = Path.Combine(_root, "data", "binance", "BTCUSDT_perp");
+
+        // Seed a candle-ext/1h feed_status row via FeedTouched
+        _statusStore.Load(assetDir, FeedNames.CandleExt, "1h", Arg.Any<CancellationToken>())
+            .Returns(new FeedStatus { FeedName = FeedNames.CandleExt, Interval = "1h", RecordCount = 5 });
+        await _processor.Process(new IndexWork.FeedTouched(assetDir, FeedNames.CandleExt, "1h"), Ct);
+        Assert.Single(await _index.GetFeedStatuses("binance", "BTCUSDT_perp", Ct));
+
+        // Manifest now shows only candles/1h — candle-ext is absent
+        _schema.Load(assetDir, Arg.Any<CancellationToken>())
+            .Returns(new FeedMetadata { Candles = new CandleConfig { Intervals = ["1h"] } });
+
+        await _processor.Process(new IndexWork.ManifestTouched(assetDir), Ct);
+
+        // The orphaned candle-ext row must be gone
+        var statuses = await _index.GetFeedStatuses("binance", "BTCUSDT_perp", Ct);
+        Assert.DoesNotContain(statuses, s => s.FeedName == FeedNames.CandleExt);
+    }
+
+    [Fact]
     public async Task Rebuild_DelegatesToRebuilderWithJobId()
     {
         var rebuilder = Substitute.For<IIndexRebuilder>();

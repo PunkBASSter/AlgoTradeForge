@@ -69,5 +69,6 @@ public sealed class IndexWorkProcessor(
         await index.UpsertAsset(new AssetIndexRow(
             exchange, dir, symbol, type,
             JsonSerializer.Serialize(manifest, ManifestJson.Options)), ct);
+        await index.PruneFeedData(exchange, dir, KeepFeeds.Derive(manifest), ct);
     }
 }

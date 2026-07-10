@@ -39,26 +39,7 @@ public sealed class IndexRebuilder(
                 await index.UpsertAsset(new AssetIndexRow(exchange, dir, symbol, type,
                     JsonSerializer.Serialize(manifest, ManifestJson.Options)), ct);
 
-                var keepFeeds = new List<(string FeedName, string Interval)>();
-                foreach (var interval in manifest.Candles?.Intervals ?? [])
-                {
-                    keepFeeds.Add((FeedNames.Candles, interval));
-                    // candle-ext is co-written per CANDLE interval, but manifest.Feeds holds a
-                    // single entry whose Interval is just the last EnsureSchema write (verified:
-                    // CandleFeedCollector.cs:45 / KlinesArchiveMaterializer.cs:144 call it per
-                    // interval). Mirror candles' intervals — deriving from the manifest entry
-                    // would index one interval while the incremental path indexes all of them,
-                    // breaking the rebuild ≡ incremental invariant.
-                    if (manifest.Feeds.ContainsKey(FeedNames.CandleExt))
-                        keepFeeds.Add((FeedNames.CandleExt, interval));
-                }
-                foreach (var (feedName, def) in manifest.Feeds)
-                {
-                    if (feedName == FeedNames.CandleExt) continue;   // handled above, per candle interval
-                    keepFeeds.Add((feedName, def.Interval ?? ""));
-                }
-                foreach (var feed in new[] { FeedNames.Ticks, FeedNames.FundingRate })
-                    if (!keepFeeds.Any(k => k.FeedName == feed)) keepFeeds.Add((feed, ""));
+                var keepFeeds = KeepFeeds.Derive(manifest);
 
                 foreach (var (feedName, interval) in keepFeeds)
                 {

@@ -27,6 +27,7 @@ public sealed class IndexEquivalenceTests : IAsyncLifetime, IDisposable
     // Incremental side
     private SqliteHistoryIndex _incIndex = null!;
     private IndexWorkProcessor _processor = null!;
+    private ISchemaManager _schema = null!;
 
     // Rebuilt side
     private SqliteHistoryIndex _rebIndex = null!;
@@ -37,11 +38,11 @@ public sealed class IndexEquivalenceTests : IAsyncLifetime, IDisposable
     public async ValueTask InitializeAsync()
     {
         var storage = new LocalFileStorage();
-        var schema = new FeedSchemaManager(storage);
+        _schema = new FeedSchemaManager(storage);
         var statusStore = new FeedStatusManager(storage);
 
         // Seed the fixture DataRoot through production writers.
-        await SeedFixture(schema, statusStore);
+        await SeedFixture(_schema, statusStore);
 
         var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
         options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = DataRoot });
@@ -51,14 +52,14 @@ public sealed class IndexEquivalenceTests : IAsyncLifetime, IDisposable
         await incInit.EnsureCreated(Ct);
         _incIndex = new SqliteHistoryIndex(incInit, incInit.ConnectionString + ";Pooling=False");
         _processor = new IndexWorkProcessor(
-            _incIndex, new FeedMonthScanner(), schema, statusStore,
+            _incIndex, new FeedMonthScanner(), _schema, statusStore,
             Substitute.For<IIndexRebuilder>(), options, NullLogger<IndexWorkProcessor>.Instance);
 
         // Rebuilt index DB
         var rebInit = new HistoryIndexInitializer(Path.Combine(_root, "reb.sqlite"));
         await rebInit.EnsureCreated(Ct);
         _rebIndex = new SqliteHistoryIndex(rebInit, rebInit.ConnectionString + ";Pooling=False");
-        _rebuilder = new IndexRebuilder(storage, options, schema, statusStore,
+        _rebuilder = new IndexRebuilder(storage, options, _schema, statusStore,
             new FeedMonthScanner(), _rebIndex, NullLogger<IndexRebuilder>.Instance);
     }
 
@@ -115,11 +116,42 @@ public sealed class IndexEquivalenceTests : IAsyncLifetime, IDisposable
         Assert.Equal(rebMonths, incMonths);
     }
 
+    [Fact]
+    public async Task FeedRemoval_IncrementalMatchesRebuild()
+    {
+        var btcDir = Path.Combine(DataRoot, "binance", "BTCUSDT_perp");
+        var aaplDir = Path.Combine(DataRoot, "NYSE", "AAPL");
+
+        // Full incremental pass before the removal
+        await _processor.Process(new IndexWork.ManifestTouched(btcDir), Ct);
+        await _processor.Process(new IndexWork.FeedTouched(btcDir, FeedNames.Candles, "1h"), Ct);
+        await _processor.Process(new IndexWork.FeedTouched(btcDir, FeedNames.Candles, "4h"), Ct);
+        await _processor.Process(new IndexWork.FeedTouched(btcDir, FeedNames.CandleExt, "1h"), Ct);
+        await _processor.Process(new IndexWork.FeedTouched(btcDir, FeedNames.CandleExt, "4h"), Ct);
+        await _processor.Process(new IndexWork.FeedTouched(btcDir, FeedNames.Ticks, ""), Ct);
+        await _processor.Process(new IndexWork.FeedTouched(btcDir, FeedNames.FundingRate, ""), Ct);
+        await _processor.Process(new IndexWork.ManifestTouched(aaplDir), Ct);
+        await _processor.Process(new IndexWork.FeedTouched(aaplDir, FeedNames.Candles, "1d"), Ct);
+
+        // Remove candle-ext; production fires ManifestChanged → ManifestTouched — drive it directly
+        await _schema.RemoveFeed(btcDir, FeedNames.CandleExt, Ct);
+        await _processor.Process(new IndexWork.ManifestTouched(btcDir), Ct);
+
+        // Rebuilt side processes the post-removal filesystem
+        var jobId = await _rebIndex.CreateJob("rebuild", Ct);
+        await _rebuilder.Run(jobId, Ct);
+
+        // Both sides must produce identical snapshots
+        Assert.Equal(await SnapshotAssets(_rebIndex), await SnapshotAssets(_incIndex));
+        Assert.Equal(await SnapshotFeedStatus(_rebIndex), await SnapshotFeedStatus(_incIndex));
+        Assert.Equal(await SnapshotMonthPartitions(_rebIndex), await SnapshotMonthPartitions(_incIndex));
+    }
+
     // -------------------------------------------------------------------------
     // Fixture seeding (four divergence shapes, via production writers where possible)
     // -------------------------------------------------------------------------
 
-    private async Task SeedFixture(FeedSchemaManager schema, FeedStatusManager statusStore)
+    private async Task SeedFixture(ISchemaManager schema, FeedStatusManager statusStore)
     {
         // Shape 1+2+4: BTCUSDT_perp with candles on 1h+4h, candle-ext on both, ticks w/ CompleteMonths
         var btcDir = Path.Combine(DataRoot, "binance", "BTCUSDT_perp");
