@@ -11,6 +11,7 @@ public sealed class HistoryLoaderOptions
             "History");
 
     public string DataRoot { get; init; } = DefaultDataRoot;
+    public string? ConfigRoot { get; init; }
     public int MaxBackfillConcurrency { get; init; } = 3;
     public int CircuitBreakerCooldownMinutes { get; init; } = 15;
     public int NetworkFailureThreshold { get; init; } = 3;

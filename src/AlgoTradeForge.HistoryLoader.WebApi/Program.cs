@@ -1,6 +1,7 @@
 using AlgoTradeForge.Storage;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.HistoryLoader.Application.Groups;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
@@ -132,6 +133,7 @@ builder.Services.AddHostedService<BookTickerStreamService>();
 
 builder.Services.AddSingleton<IExchangeSymbology, BinanceSymbology>();
 builder.Services.AddSingleton<SymbologyRegistry>();
+builder.Services.AddSingleton<IGroupStore, GroupStore>();
 
 var app = builder.Build();
 
