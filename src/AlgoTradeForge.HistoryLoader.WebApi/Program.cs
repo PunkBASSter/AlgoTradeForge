@@ -115,6 +115,7 @@ builder.Services.AddHostedService<AggregationWorkerHost>();
 // Sweep MUST run before any collector hosted service so orphan staging/tmp left by a prior
 // crash is gone before workers start.
 builder.Services.AddHostedService<StartupSweepService>();
+builder.Services.AddHostedService<AlgoTradeForge.HistoryLoader.WebApi.Index.IndexMaintenanceService>();
 
 builder.Services.AddHostedService<KlineCollectorService>();
 builder.Services.AddHostedService<FundingRateCollectorService>();

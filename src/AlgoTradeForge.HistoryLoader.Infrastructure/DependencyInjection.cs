@@ -4,9 +4,11 @@ using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
+using AlgoTradeForge.HistoryLoader.Infrastructure.Index;
 using AlgoTradeForge.HistoryLoader.Infrastructure.RateLimiting;
 using AlgoTradeForge.HistoryLoader.Infrastructure.State;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
@@ -157,7 +159,25 @@ public static class DependencyInjection
         services.AddHostedService<BufferedWriterFlushService>();
 
         services.AddSingleton<ISchemaManager, FeedSchemaManager>();
-        services.AddSingleton<IFeedStatusStore, FeedStatusManager>();
+
+        services.AddSingleton<FeedStatusManager>();
+        services.AddSingleton<IFeedStatusStore>(sp => new IndexingFeedStatusStore(
+            sp.GetRequiredService<FeedStatusManager>(),
+            sp.GetRequiredService<IIndexMaintenance>()));
+
+        services.AddSingleton(sp =>
+        {
+            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
+            return new HistoryIndexInitializer(HistoryIndexInitializer.ResolvePath(opts.Index));
+        });
+        services.AddSingleton<IHistoryIndex>(sp =>
+            new SqliteHistoryIndex(sp.GetRequiredService<HistoryIndexInitializer>()));
+        services.AddSingleton<IFeedMonthScanner, FeedMonthScanner>();
+        services.AddSingleton<IndexMaintenanceQueue>();
+        services.AddSingleton<IIndexMaintenance>(sp => sp.GetRequiredService<IndexMaintenanceQueue>());
+        services.AddSingleton<IIndexRebuilder, NullIndexRebuilder>();
+        services.AddSingleton<IndexWorkProcessor>();
+
         services.AddSingleton<IMonthCoverageCalculator, MonthCoverageCalculator>();
 
         services.AddSingleton<AggregatedDirSweeper>();
