@@ -195,13 +195,15 @@ public sealed class DataProxyTests
     // default(JsonElement) as the body, which throws InvalidOperationException in
     // HistoryLoaderClient.PostJsonAsync (WriteTo on ValueKind.Undefined) before the request
     // ever hits the network → the proxy returned 500 instead of forwarding.
+    // Upstream now returns 202 + {"job_id":"..."} (index rebuild queued); proxy must forward both.
     [Fact]
-    public async Task Refresh_ForwardsBodylessPost_Returns204_AndInvalidatesCache()
+    public async Task Refresh_ForwardsBodylessPost_Returns202_AndInvalidatesCache()
     {
+        var upstreamBody = """{"job_id":"abc"}"""u8.ToArray();
         await using var factory = new DataProxyTestFactory();
         factory.Handler.RespondAsync(req =>
             req.Method == HttpMethod.Post
-                ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent))
+                ? Task.FromResult(JsonResp(upstreamBody, HttpStatusCode.Accepted))
                 : Task.FromResult(JsonResp("""{"exchanges":[]}"""u8.ToArray())));
 
         using var client = factory.CreateClient();
@@ -209,7 +211,9 @@ public sealed class DataProxyTests
         Assert.Equal(1, ExactPathCallCount(factory, "/api/v1/exchanges"));
 
         var resp = await client.PostAsync("/api/data/refresh", content: null, TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+        var body = await resp.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(upstreamBody, body);
 
         var refreshReq = Assert.Single(factory.Handler.Requests, r =>
             r.Method == HttpMethod.Post && r.RequestUri?.AbsolutePath == "/api/v1/catalog/refresh");
@@ -229,7 +233,7 @@ public sealed class DataProxyTests
         await using var factory = new DataProxyTestFactory();
         factory.Handler.RespondAsync(req =>
             req.Method == HttpMethod.Post
-                ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent))
+                ? Task.FromResult(JsonResp("""{"job_id":"abc"}"""u8.ToArray(), HttpStatusCode.Accepted))
                 : Task.FromResult(JsonResp("""{"exchange":"binance","assets":[]}"""u8.ToArray())));
 
         using var client = factory.CreateClient();
@@ -241,7 +245,7 @@ public sealed class DataProxyTests
         Assert.Equal(1, ExactPathCallCount(factory, "/api/v1/exchanges/binance/assets"));
 
         var resp = await client.PostAsync("/api/data/refresh", content: null, TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
 
         // Refresh dropped the per-exchange key → next read misses and re-hits upstream.
         await client.GetByteArrayAsync(assetsPath, TestContext.Current.CancellationToken);

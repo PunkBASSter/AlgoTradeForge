@@ -62,6 +62,12 @@ internal static class DataEndpoints
                     }
                     await cache.InvalidateAll(ctx.RequestAborted);
                     ctx.Response.StatusCode = (int)upstream.StatusCode;
+                    var bytes = await upstream.Content.ReadAsByteArrayAsync(ctx.RequestAborted);
+                    if (bytes.Length > 0)
+                    {
+                        ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
+                        await ctx.Response.Body.WriteAsync(bytes, ctx.RequestAborted);
+                    }
                 }
                 catch (HttpRequestException ex)
                 {
