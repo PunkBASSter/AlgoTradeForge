@@ -22,8 +22,11 @@ internal sealed class QuoteProjection(IBookTickerWriter writer, InstrumentAssetD
         ]));
     }
 
-    public Task Seed(SegmentLocation loc, CancellationToken ct) =>
-        writer.ResumeFrom(map.Resolve(loc.Venue, loc.InstrumentOrVenue), ct);
+    public Task Seed(SegmentLocation loc, CancellationToken ct)
+    {
+        map.BeginSession(); // snapshot the plan for the whole session (Seed precedes all Applies)
+        return writer.ResumeFrom(map.Resolve(loc.Venue, loc.InstrumentOrVenue), ct);
+    }
 
     public Task Flush(CancellationToken ct) =>
         ((IBufferedPartitionWriter)writer).FlushAllAsync(ct);

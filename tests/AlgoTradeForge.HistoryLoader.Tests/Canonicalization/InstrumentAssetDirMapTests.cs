@@ -86,4 +86,47 @@ public sealed class InstrumentAssetDirMapTests
 
         Assert.Null(digits);
     }
+
+    // -------------------------------------------------------------------------
+    // Session-snapshot invariant: a Publish mid-session must not change resolution
+    // (would split one stream's frames across two asset dirs). Plan changes take
+    // effect only at the next BeginSession (projection Seed).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Resolve_PublishMidSession_KeepsSnapshotUntilBeginSession()
+    {
+        var holder = new CollectionPlanHolder();
+        holder.Publish(new CollectionPlan([CollectionAssets.Spot("BTCUSDT", 2)], [], []));
+        var map = new InstrumentAssetDirMap("/data", holder);
+        map.BeginSession();
+
+        // Mid-session publish: BTCUSDT spot removed, perp-only plan.
+        holder.Publish(new CollectionPlan([CollectionAssets.Perp("BTCUSDT", 4)], [], []));
+
+        // Still resolves per the seeded snapshot — spot dir, spot digits.
+        Assert.Equal(Path.Combine("/data", "binance", "BTCUSDT"), map.Resolve("binance", "BTCUSDT"));
+        Assert.Equal(2, map.ResolveDigits("binance", "BTCUSDT"));
+
+        // Next session picks up the new plan: spot gone → fallback dir, null digits.
+        map.BeginSession();
+        Assert.Equal(Path.Combine("/data", "binance", "BTCUSDT"), map.Resolve("binance", "BTCUSDT"));
+        Assert.Null(map.ResolveDigits("binance", "BTCUSDT"));
+    }
+
+    [Fact]
+    public void ResolveDigits_PublishMidSession_DigitsStableWithinSession()
+    {
+        var holder = new CollectionPlanHolder();
+        holder.Publish(new CollectionPlan([CollectionAssets.Perp("BTCUSDT", 2)], [], []));
+        var map = new InstrumentAssetDirMap("/data", holder);
+        map.BeginSession();
+
+        holder.Publish(new CollectionPlan([CollectionAssets.Perp("BTCUSDT", 6)], [], []));
+
+        Assert.Equal(2, map.ResolveDigits("binance-futures", "BTCUSDT"));
+
+        map.BeginSession();
+        Assert.Equal(6, map.ResolveDigits("binance-futures", "BTCUSDT"));
+    }
 }
