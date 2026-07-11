@@ -326,6 +326,75 @@ public sealed class SymbolCollectorTests
     }
 
     // -------------------------------------------------------------------------
+    // 6d. Per-feed dedup gate (spec §3.4): a concurrent CollectFeed for the SAME
+    //     (assetDir, feed, interval) skips instead of doubling the work; a
+    //     DIFFERENT feed key proceeds concurrently.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CollectFeed_ConcurrentSameFeed_SecondCallSkips()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _collector.Collect(
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
+                Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                entered.TrySetResult();
+                await release.Task;
+            });
+
+        var ct = TestContext.Current.CancellationToken;
+        var first = _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: ct);
+        await entered.Task; // first call is inside the collector, holding the gate
+
+        // Second call for the same (assetDir, feed, interval) must skip, not wait.
+        await _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: ct);
+
+        release.TrySetResult();
+        await first;
+
+        await _collector.Received(1).Collect(
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
+            Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CollectFeed_ConcurrentDifferentFeedKeys_BothProceed()
+    {
+        var enteredSignal = new SemaphoreSlim(0);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _collector.Collect(
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
+                Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                enteredSignal.Release();
+                await release.Task;
+            });
+
+        var ct = TestContext.Current.CancellationToken;
+        var feed5m = CollectionAssets.Feed("open-interest", "5m");
+        var feed15m = CollectionAssets.Feed("open-interest", "15m"); // different gate key
+
+        var first = _sut.CollectFeed(Asset, feed5m, "/data", FromMs, ToMs, ct: ct);
+        await enteredSignal.WaitAsync(ct);
+
+        var second = _sut.CollectFeed(Asset, feed15m, "/data", FromMs, ToMs, ct: ct);
+        await enteredSignal.WaitAsync(ct); // second entered while first still holds its own gate
+
+        release.TrySetResult();
+        await Task.WhenAll(first, second);
+
+        await _collector.Received(2).Collect(
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
+            Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+    }
+
+    // -------------------------------------------------------------------------
     // 7. Month index helpers
     // -------------------------------------------------------------------------
 

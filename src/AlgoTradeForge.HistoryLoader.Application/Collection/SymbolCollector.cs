@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Index;
@@ -13,6 +14,10 @@ public sealed class SymbolCollector
     private readonly IHistoryIndex _index;
     private readonly CollectionChangeNotifier _notifier;
     private readonly ILogger<SymbolCollector> _logger;
+    // Any two automatic paths (scheduled cycle, reconciler kick, manual backfill) collecting the
+    // same feed serialize-by-skip here; _runningSymbols in BackfillOrchestrator stays as the
+    // asset-level backfill dedup.
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _feedGates = new();
 
     public SymbolCollector(
         IEnumerable<IFeedCollector> collectors,
@@ -36,6 +41,34 @@ public sealed class SymbolCollector
         long toMs,
         IProgress<ArchiveProgress>? progress = null,
         CancellationToken ct = default)
+    {
+        var key = $"{assetDir}|{feed.FeedName}|{feed.Interval}";
+        var gate = _feedGates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        if (!await gate.WaitAsync(0, ct))
+        {
+            _logger.LogDebug(
+                "Collection already in progress for {Feed}/{Symbol}, skipping",
+                feed.FeedName, asset.Venue.ApiSymbol);
+            return;
+        }
+        try
+        {
+            await CollectFeedCore(asset, feed, assetDir, fromMs, toMs, progress, ct);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task CollectFeedCore(
+        CollectionAsset asset,
+        CollectionFeed feed,
+        string assetDir,
+        long fromMs,
+        long toMs,
+        IProgress<ArchiveProgress>? progress,
+        CancellationToken ct)
     {
         var feedName = feed.FeedName;
 

@@ -237,6 +237,16 @@ public sealed class LoadEndpointValidationTests
         return holder;
     }
 
+    // Unprocessable() returns Results.Json(new { error, message }) — an anonymous type,
+    // so the error code is read via reflection off IValueHttpResult.Value.
+    private static void AssertErrorCode(IResult result, string expectedCode)
+    {
+        var valueResult = Assert.IsAssignableFrom<IValueHttpResult>(result);
+        Assert.NotNull(valueResult.Value);
+        var error = valueResult.Value!.GetType().GetProperty("error")?.GetValue(valueResult.Value);
+        Assert.Equal(expectedCode, error);
+    }
+
     [Fact]
     public void PostLoad_UndeclaredSymbol_Returns422_SymbolNotDeclared()
     {
@@ -250,6 +260,7 @@ public sealed class LoadEndpointValidationTests
 
         var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
         Assert.Equal(StatusCodes.Status422UnprocessableEntity, statusResult.StatusCode);
+        AssertErrorCode(result, "symbol_not_declared");
         loadRegistry.DidNotReceiveWithAnyArgs().TryEnqueue(default!, default!);
     }
 
@@ -265,6 +276,7 @@ public sealed class LoadEndpointValidationTests
 
         var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
         Assert.Equal(StatusCodes.Status422UnprocessableEntity, statusResult.StatusCode);
+        AssertErrorCode(result, "symbol_not_declared");
     }
 
     [Fact]
