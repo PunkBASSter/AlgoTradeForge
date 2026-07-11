@@ -1,5 +1,4 @@
 using System.Collections.Frozen;
-using System.Text.RegularExpressions;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Domain.Symbology;
 
@@ -26,9 +25,6 @@ internal static class DeclarableFeeds
 
 public static class GroupValidator
 {
-    private static readonly Regex NameRegex =
-        new(@"^[a-z0-9][a-z0-9_-]{0,63}$", RegexOptions.Compiled);
-
     /// <summary>Structural validation of ONE group: name regex ^[a-z0-9][a-z0-9_-]{0,63}$ (and name
     /// must equal the file name, enforced by the store); non-empty exchanges/symbols; every exchange
     /// entry must be lowercase (error names the offender — canonical exchange ids are lowercase,
@@ -42,7 +38,7 @@ public static class GroupValidator
     {
         var errors = new List<string>();
 
-        if (!NameRegex.IsMatch(group.Name))
+        if (!GroupName.IsValid(group.Name))
             errors.Add($"name '{group.Name}' does not match ^[a-z0-9][a-z0-9_-]{{0,63}}$");
 
         if (group.Exchanges is null or { Count: 0 })
