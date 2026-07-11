@@ -32,6 +32,21 @@ public sealed class HistoryLoaderClient
     public Task<HttpResponseMessage> Post(string relativePath, CancellationToken ct) =>
         _http.PostAsync(relativePath, content: null, ct);
 
+    public async Task<HttpResponseMessage> PutJson(
+        string relativePath, JsonElement body, string? ifMatch, CancellationToken ct)
+    {
+        using var ms = new MemoryStream();
+        await using (var writer = new Utf8JsonWriter(ms))
+            body.WriteTo(writer);
+        var content = new ByteArrayContent(ms.ToArray());
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = "utf-8" };
+
+        var req = new HttpRequestMessage(HttpMethod.Put, relativePath) { Content = content };
+        if (!string.IsNullOrEmpty(ifMatch))
+            req.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+        return await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct);
+    }
+
     public Task<HttpResponseMessage> DeleteAsync(string relativePath, CancellationToken ct) =>
         _http.DeleteAsync(relativePath, ct);
 

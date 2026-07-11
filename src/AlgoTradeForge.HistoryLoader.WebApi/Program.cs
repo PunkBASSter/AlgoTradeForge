@@ -1,6 +1,7 @@
 using AlgoTradeForge.Storage;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.HistoryLoader.Application.Groups;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
@@ -9,10 +10,12 @@ using AlgoTradeForge.HistoryLoader.Application.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Application.Catalog;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
+using AlgoTradeForge.HistoryLoader.Domain.Symbology;
 using AlgoTradeForge.HistoryLoader.WebApi;
 using AlgoTradeForge.HistoryLoader.WebApi.Aggregation;
 using AlgoTradeForge.HistoryLoader.WebApi.Collection;
 using AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
+using AlgoTradeForge.HistoryLoader.WebApi.Groups;
 using AlgoTradeForge.HistoryLoader.Infrastructure;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Canonicalization;
 using Microsoft.Extensions.Options;
@@ -129,6 +132,16 @@ builder.Services.AddHostedService<FundingInfoRefreshService>();
 builder.Services.AddHostedService<SpotAggTradeStreamService>();
 builder.Services.AddHostedService<BookTickerStreamService>();
 
+builder.Services.AddSingleton<IExchangeSymbology, BinanceSymbology>();
+builder.Services.AddSingleton<SymbologyRegistry>();
+builder.Services.AddSingleton<IGroupStore, GroupStore>();
+// Ordering: LegacyImportService BEFORE DesiredStateService — writes groups once at startup so
+// the reconciler's first compute sees them without a race.
+builder.Services.AddHostedService<LegacyImportService>();
+builder.Services.AddSingleton<ConvergenceEvaluator>();
+builder.Services.AddSingleton<DesiredStateService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DesiredStateService>());
+
 var app = builder.Build();
 
 app.MapHealthChecks("/health");
@@ -138,5 +151,7 @@ app.MapCatalogEndpoints();
 app.MapAggregationEndpoints();
 app.MapLoadEndpoints();
 app.MapCoverageEndpoints();
+app.MapGroupEndpoints();
+app.MapDesiredStateEndpoints();
 
 app.Run();
