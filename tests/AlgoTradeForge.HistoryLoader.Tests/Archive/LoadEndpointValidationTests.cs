@@ -2,8 +2,10 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
+using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -213,13 +215,76 @@ public sealed class LoadEndpointValidationTests
     public void PostLoad_TraversalInExchangeOrSymbol_Returns422_NoJobEnqueued(string exchange, string symbol)
     {
         var loadRegistry = Substitute.For<ILoadJobRegistry>();
+        var planSource = new CollectionPlanHolder(); // traversal rejected before plan lookup
         var req = ValidRequest() with { Exchange = exchange, Symbol = symbol };
 
         var result = LoadEndpoints.PostLoad(
-            req, DefaultMonitor(), RegistryWithCandles(), loadRegistry);
+            req, DefaultMonitor(), RegistryWithCandles(), loadRegistry, planSource);
 
         var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
         Assert.Equal(StatusCodes.Status422UnprocessableEntity, statusResult.StatusCode);
         loadRegistry.DidNotReceiveWithAnyArgs().TryEnqueue(default!, default!);
+    }
+
+    // -------------------------------------------------------------------------
+    // P5: undeclared symbol → 422 symbol_not_declared; declared → 202 accepted.
+    // -------------------------------------------------------------------------
+
+    private static ICollectionPlanSource PlanWith(params CollectionAsset[] assets)
+    {
+        var holder = new CollectionPlanHolder();
+        holder.Publish(new CollectionPlan(assets, [], []));
+        return holder;
+    }
+
+    [Fact]
+    public void PostLoad_UndeclaredSymbol_Returns422_SymbolNotDeclared()
+    {
+        // Plan has a perp; request asks for spot — lookup fails.
+        var planSource = PlanWith(CollectionAssets.Perp("BTCUSDT"));
+        var loadRegistry = Substitute.For<ILoadJobRegistry>();
+
+        var result = LoadEndpoints.PostLoad(
+            ValidRequest(), // spot BTCUSDT
+            DefaultMonitor(), RegistryWithCandles(), loadRegistry, planSource);
+
+        var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, statusResult.StatusCode);
+        loadRegistry.DidNotReceiveWithAnyArgs().TryEnqueue(default!, default!);
+    }
+
+    [Fact]
+    public void PostLoad_SymbolNotInPlanAtAll_Returns422_SymbolNotDeclared()
+    {
+        var planSource = new CollectionPlanHolder(); // empty plan
+        var loadRegistry = Substitute.For<ILoadJobRegistry>();
+
+        var result = LoadEndpoints.PostLoad(
+            ValidRequest(),
+            DefaultMonitor(), RegistryWithCandles(), loadRegistry, planSource);
+
+        var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, statusResult.StatusCode);
+    }
+
+    [Fact]
+    public void PostLoad_DeclaredSymbol_Enqueues_And_Returns202()
+    {
+        // Spot BTCUSDT is in the plan; validator passes; registry accepts.
+        var asset = CollectionAssets.Spot("BTCUSDT");
+        var planSource = PlanWith(asset);
+        var loadRegistry = Substitute.For<ILoadJobRegistry>();
+        loadRegistry.ActiveJobForSymbol(Arg.Any<string>()).Returns((string?)null);
+        loadRegistry.TryEnqueue(Arg.Any<LoadJob>(), Arg.Any<string>())
+            .Returns(ci => new LoadEnqueueOutcome.Accepted(
+                new LoadJobRecord { FeedKey = "k", Job = ci.Arg<LoadJob>(), QueuedAt = DateTimeOffset.UtcNow }));
+
+        var result = LoadEndpoints.PostLoad(
+            ValidRequest(),
+            DefaultMonitor(), RegistryWithCandles(), loadRegistry, planSource);
+
+        var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status202Accepted, statusResult.StatusCode);
+        loadRegistry.ReceivedWithAnyArgs(1).TryEnqueue(default!, default!);
     }
 }

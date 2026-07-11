@@ -1,7 +1,7 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
-using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
@@ -21,7 +21,8 @@ internal static class LoadEndpoints
         LoadRequest body,
         IOptionsMonitor<HistoryLoaderOptions> options,
         ArchiveMaterializerRegistry registry,
-        ILoadJobRegistry loadRegistry)
+        ILoadJobRegistry loadRegistry,
+        ICollectionPlanSource planSource)
     {
         // Normalize casing before building paths or keys.
         body = body with { Symbol = body.Symbol.ToUpperInvariant(), Exchange = body.Exchange.ToLowerInvariant() };
@@ -31,13 +32,22 @@ internal static class LoadEndpoints
         if (!FeedIdValidator.TryValidatePathComponent(body.Symbol, out var symbolErr))
             return Unprocessable("invalid_path_component", symbolErr!);
 
-        var opts = options.CurrentValue;
+        // P5: symbol must be declared in an enabled collection group (groups are the only entry point).
+        var asset = planSource.Current.Assets.FirstOrDefault(a =>
+            string.Equals(a.Exchange, body.Exchange, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(a.Venue.ApiSymbol, body.Symbol, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(a.Venue.AssetType, body.AssetType, StringComparison.OrdinalIgnoreCase));
 
+        if (asset is null)
+            return Unprocessable("symbol_not_declared",
+                "symbol is not declared in any enabled collection group");
+
+        var opts = options.CurrentValue;
         var error = LoadRequestValidator.Validate(body, registry, opts.Load);
         if (error is not null)
             return Unprocessable(error.Code, error.Message);
 
-        var assetDir = BuildAssetDir(opts.DataRoot, body.Exchange, body.Symbol, body.AssetType);
+        var assetDir = BackfillOrchestrator.ResolveAssetDir(opts.DataRoot, asset);
 
         var activeForSymbol = loadRegistry.ActiveJobForSymbol(assetDir);
         if (activeForSymbol is not null)
@@ -47,8 +57,7 @@ internal static class LoadEndpoints
 
         var jobId = Guid.NewGuid().ToString("N");
         var feedKey = $"{assetDir}|{body.FeedName}|{body.Interval}";
-        var job = new LoadJob(jobId, body.Exchange, body.Symbol, body.AssetType,
-            body.FeedName, body.Interval, body.From, body.To);
+        var job = new LoadJob(jobId, asset, body.FeedName, body.Interval, body.From, body.To);
 
         return loadRegistry.TryEnqueue(job, feedKey) switch
         {
@@ -73,7 +82,4 @@ internal static class LoadEndpoints
 
     private static IResult Unprocessable(string code, string message) =>
         Results.Json(new { error = code, message }, statusCode: StatusCodes.Status422UnprocessableEntity);
-
-    private static string BuildAssetDir(string dataRoot, string exchange, string symbol, string assetType) =>
-        Path.Combine(dataRoot, exchange, AssetPathConvention.DirectoryName(symbol, assetType));
 }

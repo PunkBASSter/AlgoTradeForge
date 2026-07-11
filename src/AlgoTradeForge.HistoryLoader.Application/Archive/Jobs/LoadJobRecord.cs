@@ -57,7 +57,7 @@ public sealed class LoadJobRecord
                 CurrentMonth: CurrentMonth,
                 ErrorCode: ErrorCode,
                 ErrorMessage: ErrorMessage,
-                Symbol: Job.Symbol,
+                Symbol: Job.Asset.Venue.ApiSymbol,
                 FeedName: Job.FeedName,
                 Interval: Job.Interval,
                 From: Job.From,

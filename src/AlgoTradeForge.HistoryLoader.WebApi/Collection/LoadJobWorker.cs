@@ -10,7 +10,6 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 
 internal sealed class LoadJobWorker(
     ILoadJobRegistry registry,
-    ILoadAssetResolver assetResolver,
     BackfillOrchestrator orchestrator,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<LoadJobWorker> logger) : BackgroundService
@@ -38,26 +37,19 @@ internal sealed class LoadJobWorker(
         registry.OnStarted(job.JobId);
         try
         {
-            var asset = await assetResolver.Resolve(job.Exchange, job.Symbol, job.AssetType, ct);
-
-            // Append a transient feed entry if the asset config doesn't already carry one for
-            // this exact name+interval. Clone first — never mutate the shared options-bound config.
-            var hasEntry = asset.Feeds.Any(f => f.Name == job.FeedName && f.Interval == job.Interval);
+            // Append a transient feed entry if the asset doesn't already carry one for
+            // this exact name+interval. Clone first — never mutate the shared plan asset.
+            var asset = job.Asset;
+            var hasEntry = asset.Feeds.Any(f => f.FeedName == job.FeedName && f.Interval == job.Interval);
             if (!hasEntry)
-                asset = new AssetCollectionConfig
+                asset = asset with
                 {
-                    Symbol = asset.Symbol,
-                    Exchange = asset.Exchange,
-                    Type = asset.Type,
-                    DecimalDigits = asset.DecimalDigits,
-                    HistoryStart = asset.HistoryStart,
-                    Feeds = [..asset.Feeds, new FeedCollectionConfig { Name = job.FeedName, Interval = job.Interval }],
+                    Feeds = [..asset.Feeds, new CollectionFeed(job.FeedName, job.Interval, "on-demand", "csv", job.From)],
                 };
 
-            var collectionAsset = LegacyAssetBridge.ToCollectionAsset(asset);
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(options.CurrentValue.DataRoot, collectionAsset);
+            var assetDir = BackfillOrchestrator.ResolveAssetDir(options.CurrentValue.DataRoot, asset);
             var ok = await orchestrator.TryRunSingle(
-                collectionAsset, assetDir, feedFilter: [job.FeedName], fromDate: job.From, toDate: job.To,
+                asset, assetDir, feedFilter: [job.FeedName], fromDate: job.From, toDate: job.To,
                 progress: new LoadJobProgress(registry, job.JobId), ct: ct);
 
             if (ok)
