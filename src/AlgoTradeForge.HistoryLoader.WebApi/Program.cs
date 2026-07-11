@@ -95,6 +95,7 @@ builder.Services.AddSingleton<SymbolCollector>();
 builder.Services.AddSingleton<CollectionPlanHolder>();
 builder.Services.AddSingleton<ICollectionPlanSource>(sp => sp.GetRequiredService<CollectionPlanHolder>());
 builder.Services.AddSingleton<BackfillOrchestrator>();
+builder.Services.AddSingleton<IEagerBackfillRunner, EagerBackfillRunner>();
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddMemoryCache();
