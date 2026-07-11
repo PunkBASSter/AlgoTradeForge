@@ -109,4 +109,32 @@ public sealed class CollectionPlanBuilderTests
         Assert.Single(plan.Assets);
         Assert.Equal(new DateOnly(2020, 1, 1), plan.Assets[0].Feeds[0].EffectiveStart);
     }
+
+    [Fact]
+    public void Build_StampsCadenceInterval_OnNonCandlesFeeds()
+    {
+        var state = State(
+            T("mark-price", ""),
+            T("open-interest", ""),
+            T("funding-rate", ""));
+
+        var plan = CollectionPlanBuilder.Build(state, [], Meta(2), NoRecorded());
+
+        Assert.Single(plan.Assets);
+        var feeds = plan.Assets[0].Feeds;
+        Assert.Equal("1h",  feeds.Single(f => f.FeedName == "mark-price").Interval);
+        Assert.Equal("5m",  feeds.Single(f => f.FeedName == "open-interest").Interval);
+        Assert.Equal("",    feeds.Single(f => f.FeedName == "funding-rate").Interval);
+    }
+
+    [Fact]
+    public void Build_KeepsExplicitCandleIntervals()
+    {
+        var state = State(T("candles", "1h"));
+
+        var plan = CollectionPlanBuilder.Build(state, [], Meta(2), NoRecorded());
+
+        Assert.Single(plan.Assets);
+        Assert.Equal("1h", plan.Assets[0].Feeds[0].Interval);
+    }
 }

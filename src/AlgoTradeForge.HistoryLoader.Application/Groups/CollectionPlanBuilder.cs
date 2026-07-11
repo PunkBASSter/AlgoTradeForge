@@ -1,5 +1,6 @@
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Domain.Symbology;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Groups;
@@ -99,7 +100,9 @@ public static class CollectionPlanBuilder
             ? earliestDiscovered
             : historyStart;
 
-        return new CollectionFeed(t.FeedName, t.Interval, t.Collect, t.Format, effectiveStart);
+        // groups declare membership; the disk cadence is collector-owned (FeedCadence)
+        var interval = string.IsNullOrEmpty(t.Interval) ? FeedCadence.DiskInterval(t.FeedName) : t.Interval;
+        return new CollectionFeed(t.FeedName, interval, t.Collect, t.Format, effectiveStart);
     }
 
     private static DateOnly ParseMonth(string value, DateOnly fallback)
