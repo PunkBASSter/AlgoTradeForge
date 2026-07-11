@@ -172,7 +172,7 @@ internal sealed class DesiredStateService(
         foreach (var warning in plan.Warnings)
             logger.LogWarning("plan: {Exchange}/{Dir}: {Message}", warning.Exchange, warning.Dir, warning.Message);
 
-        _report = await evaluator.Evaluate(groups, ct);
+        _report = await evaluator.Evaluate(state, plan.Blocked, ct);
 
         KickEagerBackfills(plan, _report);
 
