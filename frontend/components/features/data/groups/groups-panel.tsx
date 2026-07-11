@@ -40,13 +40,9 @@ export function GroupsPanel() {
   }
 
   async function handleDelete(groupName: string) {
-    try {
-      await dataApi.deleteGroup(groupName);
-      await queryClient.invalidateQueries({ queryKey: ["data", "groups"] });
-      await queryClient.invalidateQueries({ queryKey: ["data", "desired-state"] });
-    } catch {
-      // Silently ignore — the list will re-fetch on next focus anyway.
-    }
+    await dataApi.deleteGroup(groupName);
+    await queryClient.invalidateQueries({ queryKey: ["data", "groups"] });
+    await queryClient.invalidateQueries({ queryKey: ["data", "desired-state"] });
   }
 
   return (
@@ -82,7 +78,7 @@ export function GroupsPanel() {
             summary={group}
             desiredState={desiredStateQuery.data}
             onEdit={() => openEdit(group.name)}
-            onDelete={() => void handleDelete(group.name)}
+            onDelete={() => handleDelete(group.name)}
           />
         ))}
       </div>

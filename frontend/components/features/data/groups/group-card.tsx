@@ -2,15 +2,18 @@
 
 import type { CollectionGroupSummary, DesiredStateReport } from "@/types/data-tab";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 
 interface GroupCardProps {
   summary: CollectionGroupSummary;
   desiredState: DesiredStateReport | undefined;
   onEdit: () => void;
-  onDelete: () => void;
+  onDelete: () => Promise<void>;
 }
 
 export function GroupCard({ summary, desiredState, onEdit, onDelete }: GroupCardProps) {
+  const { toast } = useToast();
+
   const groupTuples = desiredState?.tuples.filter((t) =>
     t.groups.includes(summary.name),
   ) ?? [];
@@ -19,6 +22,17 @@ export function GroupCard({ summary, desiredState, onEdit, onDelete }: GroupCard
   const partial = groupTuples.filter((t) => t.status === "partial").length;
   const missing = groupTuples.filter((t) => t.status === "missing").length;
   const onDemand = groupTuples.filter((t) => t.status === "on-demand").length;
+
+  async function handleDeleteClick() {
+    if (!window.confirm(`Delete group "${summary.name}"? The JSON file is removed permanently.`)) {
+      return;
+    }
+    try {
+      await onDelete();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), "error");
+    }
+  }
 
   return (
     <div className="border border-border-default rounded bg-bg-surface px-4 py-3 space-y-2">
@@ -39,7 +53,7 @@ export function GroupCard({ summary, desiredState, onEdit, onDelete }: GroupCard
           <Button variant="ghost" onClick={onEdit} className="text-xs px-2 py-1">
             Edit
           </Button>
-          <Button variant="danger" onClick={onDelete} className="text-xs px-2 py-1">
+          <Button variant="danger" onClick={() => void handleDeleteClick()} className="text-xs px-2 py-1">
             Delete
           </Button>
         </div>
