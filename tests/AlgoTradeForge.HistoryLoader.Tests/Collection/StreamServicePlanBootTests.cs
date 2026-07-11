@@ -121,4 +121,32 @@ public sealed class StreamServicePlanBootTests
 
         await service.StopAsync(TestContext.Current.CancellationToken);
     }
+
+    // BookTicker's two venue loops run concurrently and each must observe every plan change
+    // independently. A single shared flag (the original bug) would let the first loop to wake
+    // consume the signal, stranding the other venue on stale subscriptions.
+    [Fact]
+    public void BookTicker_ConsumingSpotDirtyFlag_LeavesFuturesDirty()
+    {
+        var service = new BookTickerStreamService(
+            Substitute.For<IBookTickerWriter>(),
+            Substitute.For<ISchemaManager>(),
+            Substitute.For<IFeedStatusStore>(),
+            Breaker(),
+            Substitute.For<IHttpClientFactory>(),
+            new CollectionPlanHolder(),
+            Options(),
+            NullLogger<BookTickerStreamService>.Instance);
+
+        service.MarkAllVenuesDirty();
+        Assert.True(service.IsDirty(BookTickerStreamService.Venue.Spot));
+        Assert.True(service.IsDirty(BookTickerStreamService.Venue.Futures));
+
+        Assert.True(service.ConsumeDirty(BookTickerStreamService.Venue.Spot));
+        Assert.False(service.IsDirty(BookTickerStreamService.Venue.Spot));      // spot cleared
+        Assert.True(service.IsDirty(BookTickerStreamService.Venue.Futures));    // futures untouched
+
+        Assert.True(service.ConsumeDirty(BookTickerStreamService.Venue.Futures));
+        Assert.False(service.IsDirty(BookTickerStreamService.Venue.Futures));
+    }
 }

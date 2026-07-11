@@ -35,7 +35,7 @@ internal sealed class BookTickerStreamService(
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PlanPollInterval = TimeSpan.FromSeconds(1);
 
-    private enum Venue { Spot, Futures }
+    internal enum Venue { Spot, Futures }
 
     // Per-venue dirty flags: both venue loops run concurrently and each must observe
     // every plan change independently — a single shared flag would be consumed by
@@ -49,11 +49,7 @@ internal sealed class BookTickerStreamService(
 
         // Subscribe BEFORE the first plan read — at boot Current is CollectionPlan.Empty
         // until DesiredStateService publishes; an empty read must not exit the service.
-        Action onPlanChanged = () =>
-        {
-            Volatile.Write(ref _spotPlanDirty, true);
-            Volatile.Write(ref _futuresPlanDirty, true);
-        };
+        Action onPlanChanged = MarkAllVenuesDirty;
         planSource.PlanChanged += onPlanChanged;
         try
         {
@@ -69,7 +65,14 @@ internal sealed class BookTickerStreamService(
         logger.LogInformation("BookTickerStreamService stopped");
     }
 
-    private bool ConsumeDirty(Venue venue)
+    // internal for the per-venue flag-isolation test (InternalsVisibleTo).
+    internal void MarkAllVenuesDirty()
+    {
+        Volatile.Write(ref _spotPlanDirty, true);
+        Volatile.Write(ref _futuresPlanDirty, true);
+    }
+
+    internal bool ConsumeDirty(Venue venue)
     {
         if (venue == Venue.Spot)
         {
@@ -85,7 +88,7 @@ internal sealed class BookTickerStreamService(
         return true;
     }
 
-    private bool IsDirty(Venue venue) => venue == Venue.Spot
+    internal bool IsDirty(Venue venue) => venue == Venue.Spot
         ? Volatile.Read(ref _spotPlanDirty)
         : Volatile.Read(ref _futuresPlanDirty);
 

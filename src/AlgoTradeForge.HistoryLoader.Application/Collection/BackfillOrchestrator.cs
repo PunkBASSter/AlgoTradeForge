@@ -100,8 +100,11 @@ public sealed class BackfillOrchestrator(
             if (!await TryRunSingle(asset, assetDir, feedFilter, fromDate, ct: ct))
                 logger.LogWarning("Backfill already running for {Symbol}, skipping", asset.Venue.ApiSymbol);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!IsTrueShutdown(ex, ct))
         {
+            // A collector's HttpClient timeout throws TaskCanceledException (an OCE) whose token is
+            // NOT ct — swallow it per-asset. A naive `is not OperationCanceledException` filter lets
+            // it escape Task.WhenAll and abort the remaining assets in the kick batch.
             logger.LogError(ex, "Backfill failed for {Symbol}", asset.Venue.ApiSymbol);
         }
         finally
@@ -109,6 +112,9 @@ public sealed class BackfillOrchestrator(
             _semaphore.Release();
         }
     }
+
+    private static bool IsTrueShutdown(Exception ex, CancellationToken ct) =>
+        ex is OperationCanceledException oce && ct.IsCancellationRequested && oce.CancellationToken == ct;
 
     public static string ResolveAssetDir(string dataRoot, CollectionAsset asset) =>
         Path.Combine(dataRoot, asset.Exchange, asset.Venue.Dir);
