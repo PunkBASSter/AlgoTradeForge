@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -8,9 +7,6 @@ namespace AlgoTradeForge.HistoryLoader.Application.Groups;
 
 public sealed class GroupStore : IGroupStore
 {
-    private static readonly Regex NameRegex =
-        new(@"^[a-z0-9][a-z0-9_-]{0,63}$", RegexOptions.Compiled);
-
     private readonly IFileStorage _fs;
     private readonly HistoryLoaderOptions _options;
     private readonly ILogger<GroupStore> _logger;
@@ -59,8 +55,15 @@ public sealed class GroupStore : IGroupStore
         var stored = await _fs.ReadWithEtag(GroupKey(name), ct);
         if (stored is null) return null;
 
-        var group = JsonSerializer.Deserialize<CollectionGroup>(stored.Content, GroupJson.Options);
-        return group is null ? null : new GroupDocument(group, stored.ETag);
+        try
+        {
+            var group = JsonSerializer.Deserialize<CollectionGroup>(stored.Content, GroupJson.Options);
+            return group is null ? null : new GroupDocument(group, stored.ETag);
+        }
+        catch (JsonException ex)
+        {
+            throw new GroupValidationException([$"group file '{name}.json' is not valid JSON: {ex.Message}"]);
+        }
     }
 
     public async Task<string> Put(string name, CollectionGroup group, string? expectedETag, CancellationToken ct = default)
@@ -104,7 +107,7 @@ public sealed class GroupStore : IGroupStore
     // Path-traversal guard: name regex allows only [a-z0-9_-], ruling out '.', '/', '\', etc.
     private static void ValidateName(string name)
     {
-        if (!NameRegex.IsMatch(name ?? ""))
+        if (!GroupName.IsValid(name))
             throw new ArgumentException(
                 $"name '{name}' does not match ^[a-z0-9][a-z0-9_-]{{0,63}}$", nameof(name));
     }

@@ -230,6 +230,25 @@ public sealed class GroupStoreTests : IDisposable
     }
 
     // -------------------------------------------------------------------------
+    // Get on corrupt JSON throws GroupValidationException
+
+    [Fact]
+    public async Task Get_CorruptJson_ThrowsGroupValidationException()
+    {
+        var store = MakeStore();
+        // Write a corrupt JSON file directly
+        var groupsDir = Path.Combine(_tempDir, "groups");
+        Directory.CreateDirectory(groupsDir);
+        await File.WriteAllTextAsync(Path.Combine(groupsDir, "bad-group.json"), "{not:valid{{", Ct);
+
+        var ex = await Assert.ThrowsAsync<GroupValidationException>(
+            () => store.Get("bad-group", Ct));
+
+        Assert.NotEmpty(ex.Errors);
+        Assert.Contains(ex.Errors, e => e.Contains("bad-group.json"));
+    }
+
+    // -------------------------------------------------------------------------
     // Name guard: bad names throw ArgumentException on every public method
 
     [Theory]
