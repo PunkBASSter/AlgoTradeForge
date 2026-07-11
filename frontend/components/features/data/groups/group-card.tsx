@@ -22,6 +22,8 @@ export function GroupCard({ summary, desiredState, onEdit, onDelete }: GroupCard
   const partial = groupTuples.filter((t) => t.status === "partial").length;
   const missing = groupTuples.filter((t) => t.status === "missing").length;
   const onDemand = groupTuples.filter((t) => t.status === "on-demand").length;
+  const blocked = groupTuples.filter((t) => t.status === "blocked").length;
+  const awaitingData = groupTuples.filter((t) => t.status === "awaiting-data").length;
 
   async function handleDeleteClick() {
     if (!window.confirm(`Delete group "${summary.name}"? The JSON file is removed permanently.`)) {
@@ -97,6 +99,16 @@ export function GroupCard({ summary, desiredState, onEdit, onDelete }: GroupCard
           {onDemand > 0 && (
             <span className="text-xs text-text-muted">
               {onDemand} on-demand
+            </span>
+          )}
+          {blocked > 0 && (
+            <span className="text-xs text-accent-red">
+              {blocked} blocked
+            </span>
+          )}
+          {awaitingData > 0 && (
+            <span className="text-xs text-accent-yellow">
+              {awaitingData} awaiting-data
             </span>
           )}
           {groupTuples.length === 0 && (
