@@ -66,8 +66,10 @@ public sealed class HistoryLoaderOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_GapMultiplierAtOne_Fails()
+    public void Validate_GapMultiplierAtOne_PassesOptionsValidator_GroupValidatorOwnsIt()
     {
+        // Per-asset validation (GapThresholdMultiplier, asset Type, DecimalDigits) moved to
+        // GroupValidator. HistoryLoaderOptionsValidator no longer validates per-asset fields.
         var options = new HistoryLoaderOptions
         {
             Assets =
@@ -81,8 +83,7 @@ public sealed class HistoryLoaderOptionsValidatorTests
             ]
         };
         var result = _validator.Validate(null, options);
-        Assert.True(result.Failed);
-        Assert.Contains("GapThresholdMultiplier", result.FailureMessage);
+        Assert.True(result.Succeeded);
     }
 
     [Fact]
@@ -127,8 +128,9 @@ public sealed class HistoryLoaderOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_FeedHistoryStartInFuture_Fails()
+    public void Validate_FeedHistoryStartInFuture_PassesOptionsValidator_GroupValidatorOwnsIt()
     {
+        // Per-asset feed validation (HistoryStart) moved to GroupValidator.
         var options = new HistoryLoaderOptions
         {
             Assets =
@@ -149,7 +151,6 @@ public sealed class HistoryLoaderOptionsValidatorTests
             ]
         };
         var result = _validator.Validate(null, options);
-        Assert.True(result.Failed);
-        Assert.Contains("HistoryStart", result.FailureMessage);
+        Assert.True(result.Succeeded);
     }
 }

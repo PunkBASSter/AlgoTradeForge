@@ -5,6 +5,7 @@ using AlgoTradeForge.Domain.Strategy;
 using AlgoTradeForge.Domain.Strategy.Subscriptions;
 using AlgoTradeForge.Domain.Trading;
 using AlgoTradeForge.HistoryLoader.Application;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 using AlgoTradeForge.Live.Relay;
@@ -207,7 +208,7 @@ public sealed class DataPlaneEndToEndTests : IDisposable
         await Task.WhenAll(barSession.Drain, tickSession.Drain);
 
         // --- Assertion 1: archival .atft still round-trips losslessly (no tap regression) ---
-        var map = new InstrumentAssetDirMap(_root, new Dictionary<string, string>());
+        var map = new InstrumentAssetDirMap(_root, new CollectionPlanHolder());
         var writer = new DailyTickCsvWriter(
             _storage, _tail,
             Options.Create(new HistoryLoaderStorageOptions { FlushEveryRows = 1, FlushIntervalSeconds = 60 }),

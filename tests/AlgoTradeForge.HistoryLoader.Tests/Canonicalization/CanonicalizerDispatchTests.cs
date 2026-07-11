@@ -3,6 +3,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Live.Relay;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Canonicalization;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -33,7 +34,7 @@ public sealed class CanonicalizerDispatchTests : IDisposable
     [Fact]
     public async Task ThreeStreams_AllCanonicalize()
     {
-        var map = new InstrumentAssetDirMap(_root, new Dictionary<string, string>());
+        var map = new InstrumentAssetDirMap(_root, new CollectionPlanHolder());
         var cursors = new FileStreamCursorStore(_storage);
         var opts = Options.Create(new HistoryLoaderStorageOptions { FlushEveryRows = 1, FlushIntervalSeconds = 60 });
 

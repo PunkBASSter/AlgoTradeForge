@@ -2,6 +2,7 @@ using AlgoTradeForge.Storage;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Live.Relay;
 using AlgoTradeForge.HistoryLoader.Application;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -27,7 +28,7 @@ public sealed class StreamCanonicalizerTests : IDisposable
         Directory.CreateDirectory(_root);
         _storage = new LocalFileStorage(new LocalStorageOptions { DataRoot = _root });
         _tail = new LocalTailIndex(_storage);
-        _map = new InstrumentAssetDirMap(_root, new Dictionary<string, string>());
+        _map = new InstrumentAssetDirMap(_root, new CollectionPlanHolder());
     }
 
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }

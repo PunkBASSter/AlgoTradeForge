@@ -20,6 +20,7 @@ public sealed class HistoryLoaderOptions
     /// <summary>Gap-detection multiplier for streamed/polled feeds (was per-feed; never overridden).</summary>
     public double GapThresholdMultiplier { get; init; } = 2.0;
     public BinanceOptions Binance { get; init; } = new();
+    // Importer input only (LegacyGroupImporter first boot). Runtime consumers read ICollectionPlanSource.
     public List<AssetCollectionConfig> Assets { get; init; } = [];
     public Dictionary<string, CollectionSchedule> Schedules { get; init; } = [];
     public AggregatorOptions Aggregator { get; init; } = new();

@@ -2,6 +2,7 @@ using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Storage;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Canonicalization;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -17,8 +18,8 @@ public static class CanonicalizerServiceCollectionExtensions
         services.AddSingleton(sp =>
         {
             var opt = sp.GetRequiredService<IOptions<CanonicalizerOptions>>().Value;
-            return new InstrumentAssetDirMap(
-                opt.AssetDirBase, opt.InstrumentAssetDirs, opt.InstrumentDecimalDigits);
+            var planSource = sp.GetRequiredService<ICollectionPlanSource>();
+            return new InstrumentAssetDirMap(opt.AssetDirBase, planSource);
         });
 
         services.AddSingleton<IStreamCursorStore, FileStreamCursorStore>();

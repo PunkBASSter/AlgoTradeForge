@@ -1,4 +1,3 @@
-using AlgoTradeForge.HistoryLoader.Domain;
 using Cronos;
 using Microsoft.Extensions.Options;
 
@@ -36,24 +35,6 @@ public sealed class HistoryLoaderOptionsValidator : IValidateOptions<HistoryLoad
 
         if (options.Load.MaxTickMonthsPerRequest <= 0)
             failures.Add("Load.MaxTickMonthsPerRequest must be greater than 0.");
-
-        foreach (var asset in options.Assets)
-        {
-            if (!AssetTypes.All.Contains(asset.Type, StringComparer.OrdinalIgnoreCase))
-                failures.Add($"Asset {asset.Symbol}: Type '{asset.Type}' is not valid. Must be one of: {string.Join(", ", AssetTypes.All)}.");
-
-            if (asset.DecimalDigits is < 0 or > 18)
-                failures.Add($"Asset {asset.Symbol}: DecimalDigits must be between 0 and 18.");
-
-            foreach (var feed in asset.Feeds)
-            {
-                if (feed.GapThresholdMultiplier <= 1.0)
-                    failures.Add($"Asset {asset.Symbol}, feed {feed.Name}: GapThresholdMultiplier must be greater than 1.0.");
-
-                if (feed.HistoryStart is { } feedStart && feedStart > DateOnly.FromDateTime(DateTime.UtcNow))
-                    failures.Add($"Asset {asset.Symbol}, feed {feed.Name}: HistoryStart must not be in the future.");
-            }
-        }
 
         foreach (var (key, schedule) in options.Schedules)
         {

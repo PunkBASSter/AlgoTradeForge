@@ -20,7 +20,7 @@ internal sealed class TradeProjection(
         // The writer scales the decimal magnitude by 10^digits (Task 3), sharing one code path with
         // the HistoryLoader tick callers. Unconfigured instruments fall back to the canonical price
         // exponent, which preserves the segment's already-scaled price long.
-        var digits = map.ResolveDigits(loc.InstrumentOrVenue) ?? FallbackDigits(loc.InstrumentOrVenue, header);
+        var digits = map.ResolveDigits(loc.Venue, loc.InstrumentOrVenue) ?? FallbackDigits(loc.InstrumentOrVenue, header);
         writer.Write(assetDir, new FeedRecord(frame.TimestampMs,
         [
             CanonicalScale.Unscale(frame.Price, header.PriceScaleExp),
