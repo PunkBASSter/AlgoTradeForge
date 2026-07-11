@@ -11,9 +11,9 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 
 /// <summary>
 /// Real-time best-bid/ask collection via Binance WebSocket combined streams. Subscribes
-/// to <c>&lt;symbol&gt;@bookTicker</c> for every configured asset that has the
-/// <c>book-ticker</c> feed enabled. Spot and futures live on different WS hosts, so the
-/// service runs two parallel connections — one against <c>SpotWsBaseUrl</c>, one against
+/// to <c>&lt;symbol&gt;@bookTicker</c> for every plan asset that has the <c>book-ticker</c>
+/// feed collected eagerly. Spot and futures live on different WS hosts, so the service
+/// runs two parallel connections — one against <c>SpotWsBaseUrl</c>, one against
 /// <c>FuturesWsBaseUrl</c> — sharing the same writer.
 /// </summary>
 internal sealed class BookTickerStreamService(
@@ -33,38 +33,33 @@ internal sealed class BookTickerStreamService(
     private static readonly TimeSpan StableConnectionUptime = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan StatusFlushInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan PlanPollInterval = TimeSpan.FromSeconds(1);
 
     private enum Venue { Spot, Futures }
 
-    private bool _planDirty;
+    // Per-venue dirty flags: both venue loops run concurrently and each must observe
+    // every plan change independently — a single shared flag would be consumed by
+    // whichever loop wakes first, leaving the other on stale subscriptions.
+    private bool _spotPlanDirty;
+    private bool _futuresPlanDirty;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("BookTickerStreamService started");
 
-        var spotSymbols = BuildEnabledSymbols(planSource.Current, AssetTypes.IsSpot);
-        var futuresSymbols = BuildEnabledSymbols(planSource.Current, AssetTypes.IsFutures);
-
-        if (spotSymbols.Count == 0 && futuresSymbols.Count == 0)
+        // Subscribe BEFORE the first plan read — at boot Current is CollectionPlan.Empty
+        // until DesiredStateService publishes; an empty read must not exit the service.
+        Action onPlanChanged = () =>
         {
-            logger.LogInformation(
-                "BookTickerStreamService: no assets with 'book-ticker' feed enabled — exiting");
-            return;
-        }
-
-        await EnsureSchemas(stoppingToken);
-
-        Action onPlanChanged = () => Volatile.Write(ref _planDirty, true);
+            Volatile.Write(ref _spotPlanDirty, true);
+            Volatile.Write(ref _futuresPlanDirty, true);
+        };
         planSource.PlanChanged += onPlanChanged;
         try
         {
-            var tasks = new List<Task>();
-            if (spotSymbols.Count > 0)
-                tasks.Add(VenueLoopAsync(Venue.Spot, stoppingToken));
-            if (futuresSymbols.Count > 0)
-                tasks.Add(VenueLoopAsync(Venue.Futures, stoppingToken));
-
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(
+                VenueLoopAsync(Venue.Spot, stoppingToken),
+                VenueLoopAsync(Venue.Futures, stoppingToken));
         }
         finally
         {
@@ -74,10 +69,39 @@ internal sealed class BookTickerStreamService(
         logger.LogInformation("BookTickerStreamService stopped");
     }
 
+    private bool ConsumeDirty(Venue venue)
+    {
+        if (venue == Venue.Spot)
+        {
+            if (!Volatile.Read(ref _spotPlanDirty))
+                return false;
+            Volatile.Write(ref _spotPlanDirty, false);
+            return true;
+        }
+
+        if (!Volatile.Read(ref _futuresPlanDirty))
+            return false;
+        Volatile.Write(ref _futuresPlanDirty, false);
+        return true;
+    }
+
+    private bool IsDirty(Venue venue) => venue == Venue.Spot
+        ? Volatile.Read(ref _spotPlanDirty)
+        : Volatile.Read(ref _futuresPlanDirty);
+
+    private async Task WaitForPlanChangeAsync(Venue venue, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested && !IsDirty(venue))
+            await Task.Delay(PlanPollInterval, ct);
+    }
+
     private async Task VenueLoopAsync(Venue venue, CancellationToken ct)
     {
         var reconnect = new StreamReconnectPolicy(
             MaxReconnectAttempts, InitialReconnectDelay, StableConnectionUptime);
+        var typeFilter = venue == Venue.Spot
+            ? (Func<string, bool>)AssetTypes.IsSpot
+            : AssetTypes.IsFutures;
 
         while (!ct.IsCancellationRequested)
         {
@@ -87,16 +111,19 @@ internal sealed class BookTickerStreamService(
                 continue;
             }
 
-            // Rebuild from plan each reconnect iteration — picks up any plan change.
-            var symbols = BuildEnabledSymbols(planSource.Current,
-                venue == Venue.Spot ? AssetTypes.IsSpot : AssetTypes.IsFutures);
+            // Clear-then-read: a PlanChanged after this clear re-marks dirty and is seen
+            // by the read loop; one before it is captured by the fresh Current read.
+            ConsumeDirty(venue);
+            var symbols = BuildEnabledSymbols(planSource.Current, typeFilter);
 
             if (symbols.Count == 0)
             {
-                logger.LogInformation(
-                    "BookTickerStreamService[{Venue}]: no symbols in plan, stopping venue loop", venue);
-                return;
+                // No eligible symbols (plan may still be Empty at boot) — wait, don't exit.
+                await WaitForPlanChangeAsync(venue, ct);
+                continue;
             }
+
+            await EnsureSchemas(typeFilter, ct);
 
             try
             {
@@ -214,9 +241,8 @@ internal sealed class BookTickerStreamService(
         while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
         {
             // Plan changed — exit so VenueLoopAsync rebuilds subscriptions with updated symbol set.
-            if (Volatile.Read(ref _planDirty))
+            if (ConsumeDirty(venue))
             {
-                Volatile.Write(ref _planDirty, false);
                 logger.LogInformation(
                     "BookTickerStreamService[{Venue}]: plan changed, resubscribing", venue);
                 break;
@@ -352,12 +378,14 @@ internal sealed class BookTickerStreamService(
         }
     }
 
-    private async Task EnsureSchemas(CancellationToken ct)
+    private async Task EnsureSchemas(Func<string, bool> typeFilter, CancellationToken ct)
     {
         var dataRoot = options.CurrentValue.DataRoot;
         foreach (var asset in planSource.Current.Assets)
         {
-            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.BookTicker))
+            if (!typeFilter(asset.Venue.AssetType))
+                continue;
+            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.BookTicker && f.Collect == "eager"))
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(dataRoot, asset);

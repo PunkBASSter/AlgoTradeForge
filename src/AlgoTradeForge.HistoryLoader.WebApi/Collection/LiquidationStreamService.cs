@@ -180,6 +180,9 @@ internal sealed class LiquidationStreamService(
             {
                 Volatile.Write(ref _planDirty, false);
                 enabledSymbols = BuildEnabledSymbolSet(planSource.Current);
+                // Boot-time EnsureSchemas ran against CollectionPlan.Empty; re-run once the
+                // real plan lands so schemas are pre-created for newly planned assets.
+                await EnsureSchemas(ct);
                 logger.LogInformation(
                     "LiquidationStreamService: plan changed, rebuilt enabled set ({Count} symbols)",
                     enabledSymbols.Count);

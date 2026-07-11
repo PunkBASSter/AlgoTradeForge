@@ -30,6 +30,7 @@ internal sealed class SpotAggTradeStreamService(
     private static readonly TimeSpan StableConnectionUptime = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan StatusFlushInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan PlanPollInterval = TimeSpan.FromSeconds(1);
 
     private bool _planDirty;
 
@@ -37,16 +38,8 @@ internal sealed class SpotAggTradeStreamService(
     {
         logger.LogInformation("SpotAggTradeStreamService started");
 
-        var initialSymbols = BuildEnabledSpotSymbols(planSource.Current);
-        if (initialSymbols.Count == 0)
-        {
-            logger.LogInformation(
-                "SpotAggTradeStreamService: no spot assets with 'ticks' feed enabled — exiting");
-            return;
-        }
-
-        await EnsureSchemas(stoppingToken);
-
+        // Subscribe BEFORE the first plan read — at boot Current is CollectionPlan.Empty
+        // until DesiredStateService publishes; an empty read must not exit the service.
         Action onPlanChanged = () => Volatile.Write(ref _planDirty, true);
         planSource.PlanChanged += onPlanChanged;
         try
@@ -62,14 +55,19 @@ internal sealed class SpotAggTradeStreamService(
                     continue;
                 }
 
-                // Rebuild from plan each reconnect iteration — picks up any plan change.
+                // Clear-then-read: a PlanChanged after this clear re-marks dirty and is seen
+                // by the read loop; one before it is captured by the fresh Current read.
+                Volatile.Write(ref _planDirty, false);
                 var symbols = BuildEnabledSpotSymbols(planSource.Current);
 
                 if (symbols.Count == 0)
                 {
-                    logger.LogInformation("SpotAggTradeStreamService: no symbols in plan, stopping");
-                    break;
+                    // No eligible symbols (plan may still be Empty at boot) — wait, don't exit.
+                    await WaitForPlanChangeAsync(stoppingToken);
+                    continue;
                 }
+
+                await EnsureSchemas(stoppingToken);
 
                 try
                 {
@@ -117,6 +115,12 @@ internal sealed class SpotAggTradeStreamService(
         }
 
         logger.LogInformation("SpotAggTradeStreamService stopped");
+    }
+
+    private async Task WaitForPlanChangeAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested && !Volatile.Read(ref _planDirty))
+            await Task.Delay(PlanPollInterval, ct);
     }
 
     private async Task WaitForCircuitResetAsync(CancellationToken ct)
@@ -335,7 +339,7 @@ internal sealed class SpotAggTradeStreamService(
         {
             if (!AssetTypes.IsSpot(asset.Venue.AssetType))
                 continue;
-            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.Ticks))
+            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.Ticks && f.Collect == "eager"))
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(dataRoot, asset);
