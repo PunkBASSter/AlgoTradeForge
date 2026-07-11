@@ -312,14 +312,99 @@ public sealed class ConvergenceEvaluatorTests : IAsyncLifetime, IDisposable
         // asset has two feeds; only one is claimed by a tuple
         await SeedMonths("binance", "BTCUSDT_perp", "candles", "1h",
             "2024-01", "2024-02", "2024-03");
-        // extra feed not in any group
-        await _index.ReplaceMonths("binance", "BTCUSDT_perp", "mark-price", "",
+        // mark-price stored at its real cadence interval "1h" (prod-shaped), not declared
+        await _index.ReplaceMonths("binance", "BTCUSDT_perp", "mark-price", "1h",
             [new MonthPartitionRow("2024-01", 10, 1, "mt")], Ct);
 
         var report = await _evaluator.Evaluate([MakePerpGroup()], NowMonth, Ct);
 
         var orphan = Assert.Single(report.Orphaned);
         Assert.Equal("mark-price", orphan.FeedName);
-        Assert.Equal("", orphan.Interval);
+        Assert.Equal("1h", orphan.Interval);
+    }
+
+    // ---- F1: non-candles coverage across cadence intervals ----
+
+    [Fact]
+    public async Task NonCandles_IndexRowsAtCadenceInterval_IsMaterialized()
+    {
+        // mark-price declared (tuple interval ""), index rows at "1h" — fully covered
+        await SeedMonths("binance", "BTCUSDT_perp", "mark-price", "1h",
+            "2024-01", "2024-02", "2024-03");
+
+        var report = await _evaluator.Evaluate(
+            [MakePerpGroupWithFeed("mark-price", collect: "eager")], NowMonth, Ct);
+
+        var ts = Assert.Single(report.Tuples);
+        Assert.Equal("materialized", ts.Status);
+        Assert.Equal(3, ts.MonthsCovered);
+    }
+
+    [Fact]
+    public async Task NonCandles_PartialCadenceIntervalCoverage_IsPartial()
+    {
+        // mark-price declared, only 2 of 3 expected months present
+        await SeedMonths("binance", "BTCUSDT_perp", "mark-price", "1h",
+            "2024-01", "2024-02");
+
+        var report = await _evaluator.Evaluate(
+            [MakePerpGroupWithFeed("mark-price", collect: "eager")], NowMonth, Ct);
+
+        var ts = Assert.Single(report.Tuples);
+        Assert.Equal("partial", ts.Status);
+        Assert.Equal(2, ts.MonthsCovered);
+    }
+
+    [Fact]
+    public async Task DeclaredOI_WithRowsAt5m_NotMissing()
+    {
+        // open-interest stored at "5m" cadence; declared in group (tuple interval "")
+        await SeedMonths("binance", "BTCUSDT_perp", "open-interest", "5m",
+            "2024-01", "2024-02", "2024-03");
+
+        var report = await _evaluator.Evaluate(
+            [MakePerpGroupWithFeed("open-interest", collect: "eager")], NowMonth, Ct);
+
+        var ts = Assert.Single(report.Tuples);
+        Assert.NotEqual("missing", ts.Status);
+        Assert.Equal(3, ts.MonthsCovered);
+    }
+
+    // ---- F2: candle-ext claimed by candles tuple ----
+
+    [Fact]
+    public async Task DeclaredCandles_SideOutputCandleExt_NotOrphaned()
+    {
+        // Group declares candles [1h]; candle-ext is co-written at the same interval by the collector.
+        // candle-ext rows must NOT appear in orphans because the candles tuple claims them.
+        await SeedMonths("binance", "BTCUSDT_perp", "candles", "1h",
+            "2024-01", "2024-02", "2024-03");
+        await _index.ReplaceMonths("binance", "BTCUSDT_perp", "candle-ext", "1h",
+            [new MonthPartitionRow("2024-01", 100, 1, "mt"),
+             new MonthPartitionRow("2024-02", 100, 1, "mt"),
+             new MonthPartitionRow("2024-03", 100, 1, "mt")], Ct);
+
+        var report = await _evaluator.Evaluate([MakePerpGroup()], NowMonth, Ct);
+
+        Assert.DoesNotContain(report.Orphaned,
+            o => o.FeedName == "candle-ext" && o.Dir == "BTCUSDT_perp");
+    }
+
+    [Fact]
+    public async Task UndeclaredAsset_CandleExtRows_AreOrphaned()
+    {
+        // An asset with candle-ext rows but no declaring group → orphaned
+        await _index.UpsertAsset(
+            new AssetIndexRow("binance", "ETHUSDT_perp", "ETHUSDT", "CryptoPerpetual", "{}"), Ct);
+        await _index.ReplaceMonths("binance", "ETHUSDT_perp", "candle-ext", "1h",
+            [new MonthPartitionRow("2024-01", 100, 1, "mt")], Ct);
+
+        // Groups only declare BTC/USDT-PERP
+        await SeedMonths("binance", "BTCUSDT_perp", "candles", "1h", "2024-01", "2024-02", "2024-03");
+
+        var report = await _evaluator.Evaluate([MakePerpGroup()], NowMonth, Ct);
+
+        Assert.Contains(report.Orphaned,
+            o => o.FeedName == "candle-ext" && o.Dir == "ETHUSDT_perp");
     }
 }

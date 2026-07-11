@@ -1,7 +1,7 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using AlgoTradeForge.HistoryLoader.Application.Groups;
 using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Domain.Symbology;
 using AlgoTradeForge.Storage;
 
@@ -9,8 +9,6 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 
 internal static class GroupEndpoints
 {
-    private static readonly Regex NameRegex =
-        new(@"^[a-z0-9][a-z0-9_-]{0,63}$", RegexOptions.Compiled);
 
     public static WebApplication MapGroupEndpoints(this WebApplication app)
     {
@@ -56,6 +54,10 @@ internal static class GroupEndpoints
         {
             return NotFound404(name);
         }
+        catch (GroupValidationException ex)
+        {
+            return Unprocessable(ex.Errors);
+        }
 
         if (doc is null)
             return NotFound404(name);
@@ -68,7 +70,7 @@ internal static class GroupEndpoints
     internal static async Task<IResult> PutGroup(
         string name, HttpRequest request, IGroupStore store, CancellationToken ct)
     {
-        if (!NameRegex.IsMatch(name))
+        if (!GroupName.IsValid(name))
             return Unprocessable([$"name '{name}' does not match ^[a-z0-9][a-z0-9_-]{{0,63}}$"]);
 
         CollectionGroup? group;
@@ -170,6 +172,8 @@ internal static class GroupEndpoints
         var state = GroupExpansion.Expand(allGroups, registry);
 
         // Count tuples with any existing index rows; cache (exchange, dir) lookups.
+        // Non-candles collected tuples (GroupExpansion emits Interval="") match any cadence interval
+        // for their feedName — the real rows may be at "1h", "5m", etc.
         var feedCache = new Dictionary<(string Exchange, string Dir), IReadOnlyList<(string FeedName, string Interval)>>();
         var alreadyMaterialized = 0;
         foreach (var tuple in state.Tuples)
@@ -181,7 +185,10 @@ internal static class GroupEndpoints
                 feedKeys = await index.ListFeedKeys(tuple.Exchange, tuple.Venue.Dir, ct);
                 feedCache[cacheKey] = feedKeys;
             }
-            if (feedKeys.Any(fk => fk.FeedName == tuple.FeedName && fk.Interval == tuple.Interval))
+            bool hasRows = tuple.FeedName == FeedNames.Candles || tuple.IsDerived
+                ? feedKeys.Any(fk => fk.FeedName == tuple.FeedName && fk.Interval == tuple.Interval)
+                : feedKeys.Any(fk => fk.FeedName == tuple.FeedName);
+            if (hasRows)
                 alreadyMaterialized++;
         }
 

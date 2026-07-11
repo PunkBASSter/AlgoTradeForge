@@ -170,6 +170,22 @@ public sealed class GroupEndpointsTests : IAsyncLifetime, IDisposable
         Assert.Equal("no-such", body.Value.GetProperty("name").GetString());
     }
 
+    [Fact]
+    public async Task GetGroup_CorruptJson_Returns422()
+    {
+        // Write corrupt JSON directly into the store's groups dir
+        var groupsDir = Path.Combine(_dir, "groups");
+        Directory.CreateDirectory(groupsDir);
+        await File.WriteAllTextAsync(Path.Combine(groupsDir, "corrupt.json"), "{not-json{{", Ct);
+
+        var result = await GroupEndpoints.GetGroup("corrupt", _store, new DefaultHttpContext(), Ct);
+        var (status, body) = Inspect(result);
+
+        Assert.Equal(422, status);
+        Assert.Equal("validation_failed", body!.Value.GetProperty("error").GetString());
+        Assert.True(body.Value.GetProperty("errors").GetArrayLength() > 0);
+    }
+
     // =========================================================================
     // PUT /groups/{name}
     // =========================================================================
@@ -399,6 +415,37 @@ public sealed class GroupEndpointsTests : IAsyncLifetime, IDisposable
             Ct);
 
         var group = Valid("mu");
+
+        var result = await GroupEndpoints.ValidateGroup(
+            BodyOf(group), _store, _registry, _index, Ct);
+        var (status, body) = Inspect(result);
+
+        Assert.Equal(200, status);
+        Assert.Equal(1,
+            body!.Value.GetProperty("expansion").GetProperty("already_materialized").GetInt32());
+    }
+
+    [Fact]
+    public async Task ValidateGroup_NonCandles_AtCadenceInterval_CountsAlreadyMaterialized()
+    {
+        // mark-price tuple has Interval "" from GroupExpansion, but index row is at "1h" (cadence interval).
+        // already_materialized must count it (F1 fix).
+        await _index.UpsertAsset(
+            new AssetIndexRow("binance", "BTCUSDT_perp", "BTCUSDT", "CryptoPerpetual", "{}"), Ct);
+        await _index.ReplaceMonths("binance", "BTCUSDT_perp", "mark-price", "1h",
+            [new MonthPartitionRow("2024-01", 10, 1, "mt")], Ct);
+
+        var group = new CollectionGroup(
+            Name:            "nu",
+            Enabled:         true,
+            Exchanges:       ["binance"],
+            Assets:          new GroupAssets(["BTC/USDT-PERP"], "2023-01"),
+            Feeds:           new Dictionary<string, GroupFeed>
+            {
+                ["mark-price"] = new GroupFeed("eager", null, null),
+            },
+            Derived:         null,
+            SymbolOverrides: null);
 
         var result = await GroupEndpoints.ValidateGroup(
             BodyOf(group), _store, _registry, _index, Ct);

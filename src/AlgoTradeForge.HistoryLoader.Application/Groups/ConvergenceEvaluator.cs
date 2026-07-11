@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Domain.Symbology;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Groups;
@@ -31,6 +32,8 @@ public sealed class ConvergenceEvaluator(IHistoryIndex index, SymbologyRegistry 
 
         var feedStatusCache = new Dictionary<(string Exchange, string Dir), IReadOnlyList<FeedStatusIndexRow>>();
         var monthsCache = new Dictionary<(string Exchange, string Dir, string FeedName, string Interval), IReadOnlyList<MonthPartitionRow>>();
+        // feedKeysCache built lazily; reused by orphan detection to avoid double round-trips.
+        var feedKeysCache = new Dictionary<(string Exchange, string Dir), IReadOnlyList<(string FeedName, string Interval)>>();
 
         foreach (var tuple in state.Tuples)
         {
@@ -44,9 +47,67 @@ public sealed class ConvergenceEvaluator(IHistoryIndex index, SymbologyRegistry 
             var expected = CountExpectedMonths(tuple.HistoryStart, nowFirst);
             int covered;
 
-            if (string.IsNullOrEmpty(tuple.Interval))
+            if (tuple.FeedName == FeedNames.Candles)
             {
-                // interval-less feed: covered = CompleteMonths count
+                // candles: exact interval match via month_partitions
+                var monthsKey = (tuple.Exchange, tuple.Venue.Dir, tuple.FeedName, tuple.Interval);
+                if (!monthsCache.TryGetValue(monthsKey, out var months))
+                {
+                    months = await index.GetMonths(tuple.Exchange, tuple.Venue.Dir, tuple.FeedName, tuple.Interval, ct);
+                    monthsCache[monthsKey] = months;
+                }
+                covered = months.Count;
+            }
+            else if (!tuple.IsDerived)
+            {
+                // non-candles collected: union coverage across ALL cadence intervals in the index.
+                // GroupExpansion emits Interval="" for every non-candles feed; the real rows may be
+                // at a cadence interval (e.g. "1h" for mark-price, "5m" for open-interest).
+                var cacheKey = (tuple.Exchange, tuple.Venue.Dir);
+                if (!feedKeysCache.TryGetValue(cacheKey, out var feedKeys))
+                {
+                    feedKeys = await index.ListFeedKeys(tuple.Exchange, tuple.Venue.Dir, ct);
+                    feedKeysCache[cacheKey] = feedKeys;
+                }
+
+                var coveredMonths = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var (fn, interval) in feedKeys)
+                {
+                    if (fn != tuple.FeedName) continue;
+
+                    if (string.IsNullOrEmpty(interval))
+                    {
+                        // interval-less (e.g. funding-rate): use feed_status CompleteMonths
+                        var statusKey = (tuple.Exchange, tuple.Venue.Dir);
+                        if (!feedStatusCache.TryGetValue(statusKey, out var statuses))
+                        {
+                            statuses = await index.GetFeedStatuses(tuple.Exchange, tuple.Venue.Dir, ct);
+                            feedStatusCache[statusKey] = statuses;
+                        }
+                        var fs = statuses.FirstOrDefault(s => s.FeedName == fn && s.Interval == "");
+                        if (fs is not null)
+                        {
+                            var cms = JsonSerializer.Deserialize<string[]>(fs.CompleteMonthsJson, ManifestJson.Options) ?? [];
+                            foreach (var m in cms) coveredMonths.Add(m);
+                        }
+                    }
+                    else
+                    {
+                        // interval-based (e.g. mark-price "1h", open-interest "5m"): use month_partitions
+                        var monthsKey = (tuple.Exchange, tuple.Venue.Dir, fn, interval);
+                        if (!monthsCache.TryGetValue(monthsKey, out var months))
+                        {
+                            months = await index.GetMonths(tuple.Exchange, tuple.Venue.Dir, fn, interval, ct);
+                            monthsCache[monthsKey] = months;
+                        }
+                        foreach (var row in months) coveredMonths.Add(row.Month);
+                    }
+                }
+                covered = coveredMonths.Count;
+            }
+            else
+            {
+                // derived: interval-less, feed_status path (phase 2: always 0 → on-demand)
                 var cacheKey = (tuple.Exchange, tuple.Venue.Dir);
                 if (!feedStatusCache.TryGetValue(cacheKey, out var statuses))
                 {
@@ -58,17 +119,6 @@ public sealed class ConvergenceEvaluator(IHistoryIndex index, SymbologyRegistry 
                 covered = feedStatus is null
                     ? 0
                     : (JsonSerializer.Deserialize<string[]>(feedStatus.CompleteMonthsJson, ManifestJson.Options) ?? []).Length;
-            }
-            else
-            {
-                // interval feed: covered = month_partitions row count
-                var monthsKey = (tuple.Exchange, tuple.Venue.Dir, tuple.FeedName, tuple.Interval);
-                if (!monthsCache.TryGetValue(monthsKey, out var months))
-                {
-                    months = await index.GetMonths(tuple.Exchange, tuple.Venue.Dir, tuple.FeedName, tuple.Interval, ct);
-                    monthsCache[monthsKey] = months;
-                }
-                covered = months.Count;
             }
 
             // Rule 2: on-demand → (Collect == "on-demand" OR IsDerived) AND 0 covered
@@ -96,26 +146,54 @@ public sealed class ConvergenceEvaluator(IHistoryIndex index, SymbologyRegistry 
             tupleStatuses.Add(new TupleStatus(tuple, "partial", expected, covered));
         }
 
-        // Orphan detection: every index (exchange, dir, feedName, interval) not claimed by any tuple
-        var allAssets = await index.ListAssets(ct: ct);
+        // Orphan detection: every index (exchange, dir, feedName, interval) not claimed by any tuple.
+        // candles tuples claim exact key + candle-ext at same interval (side-output of CandleFeedCollector).
+        // non-candles collected tuples claim any interval for their feedName (cadence interval varies by feed).
+        // derived tuples keep exact match (rows arrive in phase 3).
+        var claimedExactKeys = new HashSet<(string Exchange, string Dir, string FeedName, string Interval)>();
+        var claimedFeedNames = new HashSet<(string Exchange, string Dir, string FeedName)>();
 
-        var claimedKeys = new HashSet<(string Exchange, string Dir, string FeedName, string Interval)>();
         foreach (var tuple in state.Tuples)
         {
-            if (tuple.Venue is not null)
-                claimedKeys.Add((tuple.Exchange, tuple.Venue.Dir, tuple.FeedName, tuple.Interval));
-                // tuple.Exchange is already lowercase (GroupExpansion normalizes on entry)
+            if (tuple.Venue is null) continue;
+            var ex = tuple.Exchange; // already lowercase (GroupExpansion normalizes on entry)
+            var dir = tuple.Venue.Dir;
+
+            if (tuple.FeedName == FeedNames.Candles)
+            {
+                claimedExactKeys.Add((ex, dir, tuple.FeedName, tuple.Interval));
+                // candle-ext is a side-output written by CandleFeedCollector alongside candles
+                claimedExactKeys.Add((ex, dir, FeedNames.CandleExt, tuple.Interval));
+            }
+            else if (!tuple.IsDerived)
+            {
+                claimedFeedNames.Add((ex, dir, tuple.FeedName));
+            }
+            else
+            {
+                claimedExactKeys.Add((ex, dir, tuple.FeedName, tuple.Interval));
+            }
         }
 
+        var allAssets = await index.ListAssets(ct: ct);
         var orphans = new List<OrphanEntry>();
+
         foreach (var asset in allAssets)
         {
-            var feedKeys = await index.ListFeedKeys(asset.Exchange, asset.Dir, ct);
+            var cacheKey = (asset.Exchange.ToLowerInvariant(), asset.Dir);
+            if (!feedKeysCache.TryGetValue(cacheKey, out var feedKeys))
+            {
+                feedKeys = await index.ListFeedKeys(asset.Exchange, asset.Dir, ct);
+                feedKeysCache[cacheKey] = feedKeys;
+            }
+
             foreach (var (feedName, interval) in feedKeys)
             {
                 // OrdinalIgnoreCase on exchange: index rows may not be lowercase
-                var claimKey = (asset.Exchange.ToLowerInvariant(), asset.Dir, feedName, interval);
-                if (!claimedKeys.Contains(claimKey))
+                var exLower = asset.Exchange.ToLowerInvariant();
+                var exactKey = (exLower, asset.Dir, feedName, interval);
+                var feedNameKey = (exLower, asset.Dir, feedName);
+                if (!claimedExactKeys.Contains(exactKey) && !claimedFeedNames.Contains(feedNameKey))
                     orphans.Add(new OrphanEntry(asset.Exchange, asset.Dir, feedName, interval));
             }
         }
