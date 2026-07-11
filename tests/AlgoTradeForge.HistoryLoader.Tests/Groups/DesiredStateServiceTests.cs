@@ -57,7 +57,8 @@ public sealed class DesiredStateServiceTests
     private static Harness Build(
         CollectionGroup? group = null,
         IReadOnlyList<MonthPartitionRow>? candleMonths = null,
-        IEagerBackfillRunner? runner = null)
+        IEagerBackfillRunner? runner = null,
+        Exception? ensureFreshThrows = null)
     {
         var registry = new SymbologyRegistry([new BinanceSymbology()]);
         var store = new FakeGroupStore([new GroupDocument(group ?? PerpGroup(), "etag")]);
@@ -74,7 +75,8 @@ public sealed class DesiredStateServiceTests
             .Returns(Task.FromResult(candleMonths ?? (IReadOnlyList<MonthPartitionRow>)[]));
 
         var metaProvider = Substitute.For<IInstrumentMetaProvider>();
-        metaProvider.EnsureFresh(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        metaProvider.EnsureFresh(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ensureFreshThrows is null ? Task.CompletedTask : Task.FromException(ensureFreshThrows));
 
         var effectiveRunner = runner ?? Substitute.For<IEagerBackfillRunner>();
         if (runner is null)
@@ -227,6 +229,20 @@ public sealed class DesiredStateServiceTests
 
         await WaitUntil(() => h.PlanChanged > quiescent);
         Assert.True(h.PlanChanged > quiescent);
+    }
+
+    [Fact]
+    public async Task EnsureFresh_HttpTimeout_DoesNotAbortPipeline()
+    {
+        // HttpClient timeout = TaskCanceledException (an OCE) WITHOUT caller cancellation.
+        // A naive `ex is not OperationCanceledException` filter lets it escape and kill the pipeline.
+        await using var h = Build(ensureFreshThrows: new TaskCanceledException("HttpClient timeout"));
+
+        await h.Service.StartAsync(Ct);
+
+        // Stale meta beats no plan: pipeline completes, plan published, kick fired.
+        await WaitUntil(() => h.Holder.Current.Assets.Any(a => a.Venue.Dir == Dir));
+        await WaitUntil(() => h.Runner.ReceivedCalls().Any());
     }
 
     // ---- fakes ----

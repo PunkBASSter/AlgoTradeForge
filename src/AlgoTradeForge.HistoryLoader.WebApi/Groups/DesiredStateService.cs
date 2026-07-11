@@ -25,11 +25,23 @@ internal sealed class DesiredStateService(
     private CancellationToken _stopping;
 
     // key: "{exchange}|{dir}", value: ordered "{feedName}|{interval}|{covered}/{expected}" join of the
-    // asset's missing/partial eager non-derived tuples. Mutated ONLY on the debounced pipeline path
-    // (single-flight via the debounce CTS); the kick task never touches it. A group edit requests a
-    // clear via _clearFingerprints, consumed on that same path — no cross-thread dictionary access.
+    // asset's missing/partial eager non-derived tuples. Mutated ONLY on the debounced pipeline path.
+    // Single-flight holds because every Retrigger cancels the prior debounce CTS under _lock, and a
+    // pipeline reaches its synchronous kick/publish tail only if it completed all its awaits
+    // uncancelled — so two pipelines never mutate this concurrently. An await-free trigger path
+    // (running the pipeline without the debounce CTS) would break this invariant. The kick task
+    // never touches the dictionary; a group edit requests a clear via _clearFingerprints, consumed
+    // on that same pipeline path — no cross-thread dictionary access.
     private readonly Dictionary<string, string> _kickFingerprints = new();
     private int _clearFingerprints;
+
+    // Distinguishes a real shutdown from an HttpClient timeout — the latter throws
+    // TaskCanceledException (an OCE) WITHOUT caller cancellation; a naive
+    // `ex is not OperationCanceledException` filter lets timeouts silently kill the pipeline.
+    private static bool IsTrueShutdown(Exception ex, CancellationToken ct) =>
+        ex is OperationCanceledException oce
+        && ct.IsCancellationRequested
+        && oce.CancellationToken == ct;
 
     public ConvergenceReport? LatestReport => _report;
 
@@ -117,12 +129,13 @@ internal sealed class DesiredStateService(
         {
             await RunPipeline(ct);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (IsTrueShutdown(ex, ct))
         {
-            throw;
+            throw;   // debounced away / shutting down — RunDebounced swallows it
         }
         catch (Exception ex)
         {
+            // Includes stray timeouts (OCE without caller cancellation) — log, never silent-abort.
             logger.LogError(ex, "desired-state: pipeline failed");
         }
     }
@@ -141,7 +154,7 @@ internal sealed class DesiredStateService(
             {
                 await metaProvider.EnsureFresh(exchange, ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!IsTrueShutdown(ex, ct))
             {
                 // stale meta beats no plan — the builder falls back to recorded scale / blocks per asset.
                 logger.LogWarning(ex, "desired-state: EnsureFresh failed for {Exchange}", exchange);
