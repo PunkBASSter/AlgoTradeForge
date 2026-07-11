@@ -33,6 +33,9 @@ public sealed class ConvergenceEvaluator(IHistoryIndex index, SymbologyRegistry 
         var feedStatusCache = new Dictionary<(string Exchange, string Dir), IReadOnlyList<FeedStatusIndexRow>>();
         var monthsCache = new Dictionary<(string Exchange, string Dir, string FeedName, string Interval), IReadOnlyList<MonthPartitionRow>>();
         // feedKeysCache built lazily; reused by orphan detection to avoid double round-trips.
+        // Keys are lowercase (tuple.Exchange is normalized; the orphan loop lowercases), but the
+        // underlying index reads are case-sensitive on exchange — safe only because collectors
+        // write lowercase exchange dirs; mixed-case rows would need COLLATE NOCASE (phase 3).
         var feedKeysCache = new Dictionary<(string Exchange, string Dir), IReadOnlyList<(string FeedName, string Interval)>>();
 
         foreach (var tuple in state.Tuples)
