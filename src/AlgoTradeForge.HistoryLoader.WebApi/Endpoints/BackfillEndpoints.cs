@@ -36,7 +36,8 @@ internal static class BackfillEndpoints
         if (asset is null)
             return Results.BadRequest(new { error = "Symbol not configured", symbol });
 
-        var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+        var collectionAsset = Collection.LegacyAssetBridge.ToCollectionAsset(asset);
+        var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, collectionAsset);
 
         if (orchestrator.IsRunning(assetDir))
             return Results.Conflict(new { error = "Backfill already running", symbol = asset.Symbol });
@@ -50,7 +51,7 @@ internal static class BackfillEndpoints
         {
             try
             {
-                if (!await orchestrator.TryRunSingleAsync(asset, assetDir, feedFilter, fromDate, ct: ct))
+                if (!await orchestrator.TryRunSingle(collectionAsset, assetDir, feedFilter, fromDate, ct: ct))
                     logger.LogWarning("Backfill already running for {Symbol}", asset.Symbol);
             }
             catch (Exception ex) when (

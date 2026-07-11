@@ -20,7 +20,6 @@ internal sealed class BookTickerStreamService(
     IBookTickerWriter bookTickerWriter,
     ISchemaManager schemaManager,
     IFeedStatusStore feedStatusStore,
-    CollectionPolicy collectionPolicy,
     ICollectionCircuitBreaker circuitBreaker,
     IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
@@ -41,8 +40,8 @@ internal sealed class BookTickerStreamService(
         logger.LogInformation("BookTickerStreamService started");
 
         var config = options.CurrentValue;
-        var spotSymbols = BuildEnabledSymbols(config, AssetTypes.IsSpot, collectionPolicy);
-        var futuresSymbols = BuildEnabledSymbols(config, AssetTypes.IsFutures, collectionPolicy);
+        var spotSymbols = BuildEnabledSymbols(config, AssetTypes.IsSpot);
+        var futuresSymbols = BuildEnabledSymbols(config, AssetTypes.IsFutures);
 
         if (spotSymbols.Count == 0 && futuresSymbols.Count == 0)
         {
@@ -223,7 +222,8 @@ internal sealed class BookTickerStreamService(
                 if (asset is null)
                     continue;
 
-                var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+                var assetDir = BackfillOrchestrator.ResolveAssetDir(
+                    config.DataRoot, LegacyAssetBridge.ToCollectionAsset(asset));
                 await schemaManager.EnsureSchema(assetDir, FeedNames.BookTicker, "", BookTickerColumns, ct: ct);
                 bookTickerWriter.Write(assetDir, record);
                 totalWritten++;
@@ -332,7 +332,8 @@ internal sealed class BookTickerStreamService(
             if (!included)
                 continue;
 
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+            var assetDir = BackfillOrchestrator.ResolveAssetDir(
+                config.DataRoot, LegacyAssetBridge.ToCollectionAsset(asset));
             await schemaManager.EnsureSchema(assetDir, FeedNames.BookTicker, "", BookTickerColumns, ct: ct);
         }
     }
@@ -360,12 +361,12 @@ internal sealed class BookTickerStreamService(
     }
 
     internal static List<string> BuildEnabledSymbols(
-        HistoryLoaderOptions config, Func<string, bool> typeFilter, CollectionPolicy policy) =>
+        HistoryLoaderOptions config, Func<string, bool> typeFilter) =>
         config.Assets
-            .Where(a => typeFilter(a.Type))
-            .Where(a => a.Feeds.Any(f =>
-                f.Enabled && f.Name == FeedNames.BookTicker && policy.IsEagerlyCollected(a, f)))
-            .Select(a => a.Symbol)
+            .Select(LegacyAssetBridge.ToCollectionAsset)
+            .Where(a => typeFilter(a.Venue.AssetType))
+            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.BookTicker && f.Collect == "eager"))
+            .Select(a => a.Venue.ApiSymbol)
             .ToList();
 
     private static AssetCollectionConfig? FindAssetConfig(HistoryLoaderOptions config, Venue venue, string symbol) =>

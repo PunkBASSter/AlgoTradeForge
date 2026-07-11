@@ -12,12 +12,12 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 /// </summary>
 internal sealed class TicksCollectorService(
     SymbolCollector symbolCollector,
-    CollectionPolicy collectionPolicy,
+    ICollectionPlanSource planSource,
     ICollectionCircuitBreaker circuitBreaker,
     IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<TicksCollectorService> logger)
-    : ScheduledCollectorService(symbolCollector, collectionPolicy, circuitBreaker, httpClientFactory, options, logger)
+    : ScheduledCollectorService(symbolCollector, planSource, circuitBreaker, httpClientFactory, options, logger)
 {
     protected override TimeSpan Interval => TimeSpan.FromMinutes(5);
     protected override string ServiceName => nameof(TicksCollectorService);

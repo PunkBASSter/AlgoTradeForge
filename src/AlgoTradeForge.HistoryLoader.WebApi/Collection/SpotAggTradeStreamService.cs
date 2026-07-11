@@ -18,7 +18,6 @@ internal sealed class SpotAggTradeStreamService(
     ITickFeedWriter tickWriter,
     ISchemaManager schemaManager,
     IFeedStatusStore feedStatusStore,
-    CollectionPolicy collectionPolicy,
     ICollectionCircuitBreaker circuitBreaker,
     IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
@@ -35,7 +34,7 @@ internal sealed class SpotAggTradeStreamService(
     {
         logger.LogInformation("SpotAggTradeStreamService started");
 
-        var enabledSpotSymbols = BuildEnabledSpotSymbols(options.CurrentValue, collectionPolicy);
+        var enabledSpotSymbols = BuildEnabledSpotSymbols(options.CurrentValue);
         if (enabledSpotSymbols.Count == 0)
         {
             logger.LogInformation(
@@ -207,7 +206,8 @@ internal sealed class SpotAggTradeStreamService(
                 if (asset is null)
                     continue;
 
-                var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+                var assetDir = BackfillOrchestrator.ResolveAssetDir(
+                    config.DataRoot, LegacyAssetBridge.ToCollectionAsset(asset));
                 await schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null, ct);
                 tickWriter.Write(assetDir, record, asset.DecimalDigits);
                 totalWritten++;
@@ -309,7 +309,8 @@ internal sealed class SpotAggTradeStreamService(
             if (!symbolSet.Contains(asset.Symbol))
                 continue;
 
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+            var assetDir = BackfillOrchestrator.ResolveAssetDir(
+                config.DataRoot, LegacyAssetBridge.ToCollectionAsset(asset));
             await schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null, ct);
         }
     }
@@ -338,12 +339,12 @@ internal sealed class SpotAggTradeStreamService(
         tracker.Clear();
     }
 
-    internal static List<string> BuildEnabledSpotSymbols(HistoryLoaderOptions config, CollectionPolicy policy) =>
+    internal static List<string> BuildEnabledSpotSymbols(HistoryLoaderOptions config) =>
         config.Assets
-            .Where(a => AssetTypes.IsSpot(a.Type))
-            .Where(a => a.Feeds.Any(f =>
-                f.Enabled && f.Name == FeedNames.Ticks && policy.IsEagerlyCollected(a, f)))
-            .Select(a => a.Symbol)
+            .Select(LegacyAssetBridge.ToCollectionAsset)
+            .Where(a => AssetTypes.IsSpot(a.Venue.AssetType))
+            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.Ticks && f.Collect == "eager"))
+            .Select(a => a.Venue.ApiSymbol)
             .ToList();
 
     private static AssetCollectionConfig? FindSpotAssetConfig(HistoryLoaderOptions config, string symbol) =>

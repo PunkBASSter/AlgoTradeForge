@@ -54,9 +54,10 @@ internal sealed class LoadJobWorker(
                     Feeds = [..asset.Feeds, new FeedCollectionConfig { Name = job.FeedName, Interval = job.Interval }],
                 };
 
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(options.CurrentValue.DataRoot, asset);
-            var ok = await orchestrator.TryRunSingleAsync(
-                asset, assetDir, feedFilter: [job.FeedName], fromDate: job.From, toDate: job.To,
+            var collectionAsset = LegacyAssetBridge.ToCollectionAsset(asset);
+            var assetDir = BackfillOrchestrator.ResolveAssetDir(options.CurrentValue.DataRoot, collectionAsset);
+            var ok = await orchestrator.TryRunSingle(
+                collectionAsset, assetDir, feedFilter: [job.FeedName], fromDate: job.From, toDate: job.To,
                 progress: new LoadJobProgress(registry, job.JobId), ct: ct);
 
             if (ok)

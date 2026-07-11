@@ -2,8 +2,10 @@ using System.Text;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
+using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
@@ -32,14 +34,9 @@ public sealed class FundingRateArchiveMaterializerTests : IDisposable
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private static AssetCollectionConfig FuturesConfig() => new()
-    {
-        Symbol = "BTCUSDT",
-        Type = AssetTypes.Perpetual,
-        DecimalDigits = 2
-    };
+    private static CollectionAsset FuturesConfig() => CollectionAssets.Perp("BTCUSDT", 2);
 
-    private static FeedCollectionConfig FeedConfig() => new() { Name = FeedNames.FundingRate, Interval = "" };
+    private static CollectionFeed FeedConfig() => CollectionAssets.Feed(FeedNames.FundingRate, "");
 
     private static Stream CsvStream(string csv) => new MemoryStream(Encoding.UTF8.GetBytes(csv));
 

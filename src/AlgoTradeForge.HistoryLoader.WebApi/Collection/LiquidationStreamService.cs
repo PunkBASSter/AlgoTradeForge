@@ -201,7 +201,8 @@ internal sealed class LiquidationStreamService(
                 if (asset is null)
                     continue;
 
-                var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+                var assetDir = BackfillOrchestrator.ResolveAssetDir(
+                    config.DataRoot, LegacyAssetBridge.ToCollectionAsset(asset));
                 await schemaManager.EnsureSchema(assetDir, FeedNames.Liquidations, "", Columns, ct: ct);
                 feedWriter.Write(assetDir, FeedNames.Liquidations, "", Columns, record);
                 totalWritten++;
@@ -319,7 +320,8 @@ internal sealed class LiquidationStreamService(
             if (!hasLiquidation)
                 continue;
 
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+            var assetDir = BackfillOrchestrator.ResolveAssetDir(
+                config.DataRoot, LegacyAssetBridge.ToCollectionAsset(asset));
             await schemaManager.EnsureSchema(assetDir, FeedNames.Liquidations, "", Columns, ct: ct);
         }
     }

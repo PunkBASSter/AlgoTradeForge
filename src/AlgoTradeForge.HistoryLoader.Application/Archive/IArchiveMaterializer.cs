@@ -1,4 +1,4 @@
-using AlgoTradeForge.HistoryLoader.Application;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Archive;
 
@@ -14,8 +14,8 @@ public interface IArchiveMaterializer
     string FeedName { get; }
     bool Supports(string assetType);
     Task<ArchiveMonthResult> MaterializeMonth(
-        AssetCollectionConfig assetConfig,
-        FeedCollectionConfig feedConfig,
+        CollectionAsset asset,
+        CollectionFeed feed,
         string assetDir,
         int year, int month,
         CancellationToken ct = default);

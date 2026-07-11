@@ -28,7 +28,8 @@ internal static class StatusEndpoints
 
         foreach (var asset in config.Assets)
         {
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+            var assetDir = BackfillOrchestrator.ResolveAssetDir(
+                config.DataRoot, Collection.LegacyAssetBridge.ToCollectionAsset(asset));
             var feedSummaries = new List<FeedStatusSummary>();
 
             foreach (var feed in asset.Feeds)
@@ -74,7 +75,8 @@ internal static class StatusEndpoints
         if (asset is null)
             return Results.NotFound(new { error = "Symbol not found", symbol });
 
-        var resolvedAssetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+        var resolvedAssetDir = BackfillOrchestrator.ResolveAssetDir(
+            config.DataRoot, Collection.LegacyAssetBridge.ToCollectionAsset(asset));
         var feedDetails = new List<FeedStatusDetail>();
 
         foreach (var feed in asset.Feeds)

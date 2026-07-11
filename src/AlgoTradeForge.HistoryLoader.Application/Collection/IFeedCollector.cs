@@ -5,11 +5,11 @@ public interface IFeedCollector
     string FeedName { get; }
     bool SupportsSpot { get; }
 
-    Task CollectAsync(
-        AssetCollectionConfig assetConfig,
-        FeedCollectionConfig feedConfig,
+    Task Collect(
+        CollectionAsset asset,
+        CollectionFeed feed,
         string assetDir,
         long fromMs,
         long toMs,
-        CancellationToken ct);
+        CancellationToken ct = default);
 }

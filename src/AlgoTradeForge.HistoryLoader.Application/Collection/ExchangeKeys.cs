@@ -8,8 +8,8 @@ namespace AlgoTradeForge.HistoryLoader.Application.Collection;
 /// </summary>
 public static class ExchangeKeys
 {
-    public static string Resolve(AssetCollectionConfig asset) =>
-        AssetTypes.IsSpot(asset.Type)
+    public static string Resolve(CollectionAsset asset) =>
+        AssetTypes.IsSpot(asset.Venue.AssetType)
             ? Spot(asset.Exchange)
             : Futures(asset.Exchange);
 

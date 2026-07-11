@@ -8,12 +8,12 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 
 internal sealed class OiCollectorService(
     SymbolCollector symbolCollector,
-    CollectionPolicy collectionPolicy,
+    ICollectionPlanSource planSource,
     ICollectionCircuitBreaker circuitBreaker,
     IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<OiCollectorService> logger)
-    : ScheduledCollectorService(symbolCollector, collectionPolicy, circuitBreaker, httpClientFactory, options, logger)
+    : ScheduledCollectorService(symbolCollector, planSource, circuitBreaker, httpClientFactory, options, logger)
 {
     protected override TimeSpan Interval => TimeSpan.FromMinutes(5);
     protected override string ServiceName => "OiCollectorService";

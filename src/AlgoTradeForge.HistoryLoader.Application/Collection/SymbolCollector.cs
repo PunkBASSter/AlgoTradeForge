@@ -25,16 +25,16 @@ public sealed class SymbolCollector
         _logger = logger;
     }
 
-    public async Task CollectFeedAsync(
-        AssetCollectionConfig assetConfig,
-        FeedCollectionConfig feedConfig,
+    public async Task CollectFeed(
+        CollectionAsset asset,
+        CollectionFeed feed,
         string assetDir,
         long fromMs,
         long toMs,
         IProgress<ArchiveProgress>? progress = null,
         CancellationToken ct = default)
     {
-        var feedName = feedConfig.Name;
+        var feedName = feed.FeedName;
 
         // Collector may be absent: materializer-only feeds (e.g. taker-volume, whose live
         // collector was retired) are archive-sourced and have no REST tail. The archive path
@@ -43,15 +43,15 @@ public sealed class SymbolCollector
 
         // Spot assets only support feeds that declare SupportsSpot. Archive materializers enforce
         // their own Supports() inside CoverFromArchive, so this gate applies only to live collectors.
-        if (collector is not null && AssetTypes.IsSpot(assetConfig.Type) && !collector.SupportsSpot)
+        if (collector is not null && AssetTypes.IsSpot(asset.Venue.AssetType) && !collector.SupportsSpot)
         {
             _logger.LogWarning(
                 "Spot assets do not support {Feed}, skipping for {Symbol}",
-                feedName, assetConfig.Symbol);
+                feedName, asset.Venue.ApiSymbol);
             return;
         }
 
-        fromMs = await _archiveBackfill.CoverFromArchive(assetConfig, feedConfig, assetDir, fromMs, toMs, progress, ct);
+        fromMs = await _archiveBackfill.CoverFromArchive(asset, feed, assetDir, fromMs, toMs, progress, ct);
         if (fromMs >= toMs)
             return; // fully covered by archive — no REST tail needed
 
@@ -60,25 +60,25 @@ public sealed class SymbolCollector
             // No live source for the current-month REST tail — archive owns closed months only.
             _logger.LogInformation(
                 "No live collector for {Feed}/{Symbol}; archive-only, REST tail skipped",
-                feedName, assetConfig.Symbol);
+                feedName, asset.Venue.ApiSymbol);
             return;
         }
 
         _logger.LogInformation(
             "Collecting {Feed}/{Interval} for {Symbol} from {From} to {To}",
-            feedName, feedConfig.Interval, assetConfig.Symbol, fromMs, toMs);
+            feedName, feed.Interval, asset.Venue.ApiSymbol, fromMs, toMs);
 
         try
         {
-            await CollectWithDateDiscoveryAsync(
-                collector, assetConfig, feedConfig, assetDir, fromMs, toMs, ct);
+            await CollectWithDateDiscovery(
+                collector, asset, feed, assetDir, fromMs, toMs, ct);
         }
         catch (DataSourceApiException ex) when (
             ex.StatusCode is System.Net.HttpStatusCode.BadRequest && !ex.IsDateRangeError)
         {
             _logger.LogWarning(
                 "API error for {Symbol}/{Feed}: {Code} {Msg}, skipping",
-                assetConfig.Symbol, feedName, ex.ApiErrorCode, ex.ApiErrorMessage);
+                asset.Venue.ApiSymbol, feedName, ex.ApiErrorCode, ex.ApiErrorMessage);
         }
         catch (HttpRequestException ex) when (
             ex.StatusCode is System.Net.HttpStatusCode.BadRequest
@@ -88,7 +88,7 @@ public sealed class SymbolCollector
         {
             _logger.LogWarning(
                 "HTTP {StatusCode} for {Symbol}/{Feed}, skipping (may be delisted or endpoint removed)",
-                (int?)ex.StatusCode, assetConfig.Symbol, feedConfig.Name);
+                (int?)ex.StatusCode, asset.Venue.ApiSymbol, feed.FeedName);
         }
         catch (HttpRequestException ex) when (
             ex.StatusCode is System.Net.HttpStatusCode.InternalServerError
@@ -98,14 +98,14 @@ public sealed class SymbolCollector
         {
             _logger.LogWarning(
                 "HTTP {StatusCode} for {Symbol}/{Feed}, transient server error — skipping",
-                (int?)ex.StatusCode, assetConfig.Symbol, feedName);
+                (int?)ex.StatusCode, asset.Venue.ApiSymbol, feedName);
         }
     }
 
-    private async Task CollectWithDateDiscoveryAsync(
+    private async Task CollectWithDateDiscovery(
         IFeedCollector collector,
-        AssetCollectionConfig assetConfig,
-        FeedCollectionConfig feedConfig,
+        CollectionAsset asset,
+        CollectionFeed feed,
         string assetDir,
         long fromMs,
         long toMs,
@@ -114,7 +114,7 @@ public sealed class SymbolCollector
         // Fast path: try full collection with configured start date.
         try
         {
-            await collector.CollectAsync(assetConfig, feedConfig, assetDir, fromMs, toMs, ct);
+            await collector.Collect(asset, feed, assetDir, fromMs, toMs, ct);
             return;
         }
         catch (DataSourceApiException ex) when (
@@ -122,18 +122,18 @@ public sealed class SymbolCollector
         {
             _logger.LogInformation(
                 "Date too early for {Symbol}/{Feed}/{Interval}, searching for valid start",
-                assetConfig.Symbol, feedConfig.Name, feedConfig.Interval);
+                asset.Venue.ApiSymbol, feed.FeedName, feed.Interval);
         }
 
         // Binary search for the earliest valid month.
-        long discovered = await BinarySearchStartAsync(
-            collector, assetConfig, feedConfig, assetDir, fromMs, toMs, ct);
+        long discovered = await BinarySearchStart(
+            collector, asset, feed, assetDir, fromMs, toMs, ct);
 
         if (discovered < 0)
         {
             _logger.LogWarning(
                 "No valid start date found for {Symbol}/{Feed}/{Interval}",
-                assetConfig.Symbol, feedConfig.Name, feedConfig.Interval);
+                asset.Venue.ApiSymbol, feed.FeedName, feed.Interval);
             return;
         }
 
@@ -141,14 +141,14 @@ public sealed class SymbolCollector
             DateTimeOffset.FromUnixTimeMilliseconds(discovered).UtcDateTime);
         _logger.LogInformation(
             "Discovered earliest date {Date} for {Symbol}/{Feed}/{Interval}",
-            discoveredDate, assetConfig.Symbol, feedConfig.Name, feedConfig.Interval);
+            discoveredDate, asset.Venue.ApiSymbol, feed.FeedName, feed.Interval);
 
         // Full collection from the discovered start.
-        await collector.CollectAsync(assetConfig, feedConfig, assetDir, discovered, toMs, ct);
+        await collector.Collect(asset, feed, assetDir, discovered, toMs, ct);
 
         await _settingsWriter.UpdateFeedHistoryStart(
-            assetConfig.Symbol, assetConfig.Type,
-            feedConfig.Name, feedConfig.Interval, discoveredDate, ct);
+            asset.Venue.ApiSymbol, asset.Venue.AssetType,
+            feed.FeedName, feed.Interval, discoveredDate, ct);
     }
 
     /// <summary>
@@ -157,10 +157,10 @@ public sealed class SymbolCollector
     /// of the earliest valid first-of-month, or -1 if no valid month was found.
     /// Worst case: ~log2(months) API calls instead of linear probing.
     /// </summary>
-    private async Task<long> BinarySearchStartAsync(
+    private async Task<long> BinarySearchStart(
         IFeedCollector collector,
-        AssetCollectionConfig assetConfig,
-        FeedCollectionConfig feedConfig,
+        CollectionAsset asset,
+        CollectionFeed feed,
         string assetDir,
         long fromMs,
         long toMs,
@@ -178,8 +178,8 @@ public sealed class SymbolCollector
 
             try
             {
-                await collector.CollectAsync(
-                    assetConfig, feedConfig, assetDir, midMs, probeEndMs, ct);
+                await collector.Collect(
+                    asset, feed, assetDir, midMs, probeEndMs, ct);
 
                 // mid works — record it and search earlier.
                 result = mid;
@@ -188,7 +188,7 @@ public sealed class SymbolCollector
                 _logger.LogDebug(
                     "Probe succeeded at {Date} for {Symbol}/{Feed}",
                     DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(midMs).UtcDateTime),
-                    assetConfig.Symbol, feedConfig.Name);
+                    asset.Venue.ApiSymbol, feed.FeedName);
             }
             catch (DataSourceApiException ex) when (
                 ex.StatusCode is System.Net.HttpStatusCode.BadRequest && ex.IsDateRangeError)
@@ -199,7 +199,7 @@ public sealed class SymbolCollector
                 _logger.LogDebug(
                     "Probe at {Date} too early for {Symbol}/{Feed}: {Msg}",
                     DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(midMs).UtcDateTime),
-                    assetConfig.Symbol, feedConfig.Name, ex.ApiErrorMessage);
+                    asset.Venue.ApiSymbol, feed.FeedName, ex.ApiErrorMessage);
             }
             // Non-date-range errors propagate to the outer catch blocks.
         }

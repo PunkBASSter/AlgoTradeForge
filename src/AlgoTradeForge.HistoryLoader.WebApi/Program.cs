@@ -100,7 +100,8 @@ builder.Services.AddSingleton<ISettingsWriter>(sp =>
 
 builder.Services.AddSingleton<ICollectionCircuitBreaker, CollectionCircuitBreaker>();
 builder.Services.AddSingleton<SymbolCollector>();
-builder.Services.AddSingleton<CollectionPolicy>();
+builder.Services.AddSingleton<CollectionPlanHolder>();
+builder.Services.AddSingleton<ICollectionPlanSource>(sp => sp.GetRequiredService<CollectionPlanHolder>());
 builder.Services.AddSingleton<BackfillOrchestrator>();
 
 builder.Services.AddSingleton(TimeProvider.System);

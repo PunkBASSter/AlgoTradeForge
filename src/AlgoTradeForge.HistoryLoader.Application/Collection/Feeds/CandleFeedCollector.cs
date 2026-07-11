@@ -1,6 +1,7 @@
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 
@@ -10,24 +11,25 @@ public sealed class CandleFeedCollector(
     IFeedWriter feedWriter,
     ISchemaManager schemaManager,
     IFeedStatusStore feedStatusStore,
+    IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<CandleFeedCollector> logger)
     : FeedCollectorBase(feedWriter, schemaManager, feedStatusStore, logger)
 {
     public override string FeedName => FeedNames.Candles;
     public override bool SupportsSpot => true;
 
-    public override async Task CollectAsync(
-        AssetCollectionConfig assetConfig,
-        FeedCollectionConfig feedConfig,
+    public override async Task Collect(
+        CollectionAsset asset,
+        CollectionFeed feed,
         string assetDir,
         long fromMs,
         long toMs,
-        CancellationToken ct)
+        CancellationToken ct = default)
     {
-        var interval = feedConfig.Interval;
+        var interval = feed.Interval;
 
         // Ensure feeds.json has candle config
-        await SchemaManager.EnsureCandleConfig(assetDir, assetConfig.DecimalDigits, interval, ct);
+        await SchemaManager.EnsureCandleConfig(assetDir, asset.DecimalDigits, interval, ct);
 
         // Resume from last written timestamp
         var resumeTs = await candleWriter.ResumeFrom(assetDir, interval, ct);
@@ -35,7 +37,7 @@ public sealed class CandleFeedCollector(
             fromMs = resumeTs.Value + 1;
 
         // Resolve the kline fetcher via factory (handles spot/futures routing).
-        var klineFetcher = candleFetcherFactory.Create(ExchangeKeys.Resolve(assetConfig));
+        var klineFetcher = candleFetcherFactory.Create(ExchangeKeys.Resolve(asset));
 
         // Determine ext columns from the fetcher — null means no ext feed.
         var extColumns = klineFetcher.CandleExtColumns;
@@ -53,11 +55,11 @@ public sealed class CandleFeedCollector(
         long expectedMs = ComputeExpectedMs(interval);
 
         await foreach (var candle in klineFetcher.FetchCandlesAsync(
-            assetConfig.Symbol, interval, fromMs, toMs, ct))
+            asset.Venue.ApiSymbol, interval, fromMs, toMs, ct))
         {
             try
             {
-                candleWriter.Write(assetDir, interval, candle, assetConfig.DecimalDigits);
+                candleWriter.Write(assetDir, interval, candle, asset.DecimalDigits);
             }
             catch (IOException ex)
             {
@@ -84,7 +86,7 @@ public sealed class CandleFeedCollector(
                 }
             }
 
-            DetectGap(candle.TimestampMs, previousTs, expectedMs, feedConfig.GapThresholdMultiplier, gaps);
+            DetectGap(candle.TimestampMs, previousTs, expectedMs, options.CurrentValue.GapThresholdMultiplier, gaps);
             previousTs = candle.TimestampMs;
 
             firstTs ??= candle.TimestampMs;
@@ -104,10 +106,10 @@ public sealed class CandleFeedCollector(
         if (recordCount > 0)
             Logger.LogInformation(
                 "Collected {Count} candle records for {Symbol}/{Interval}",
-                recordCount, assetConfig.Symbol, interval);
+                recordCount, asset.Venue.ApiSymbol, interval);
         else
             Logger.LogDebug(
                 "Collected 0 candle records for {Symbol}/{Interval}",
-                assetConfig.Symbol, interval);
+                asset.Venue.ApiSymbol, interval);
     }
 }

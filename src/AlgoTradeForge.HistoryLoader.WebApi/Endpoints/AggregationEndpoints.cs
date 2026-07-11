@@ -178,7 +178,8 @@ internal static class AggregationEndpoints
 
         // Existing feed → Continue (202), no_new_data (200), or resume_unsupported (422).
         // Full rebuild = explicit Delete then Aggregate; no in-place overwrite.
-        var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, assetConfig);
+        var assetDir = BackfillOrchestrator.ResolveAssetDir(
+            config.DataRoot, Collection.LegacyAssetBridge.ToCollectionAsset(assetConfig));
         ResumeContext? resume = null;
 
         DataFeedKind sourceKind;
@@ -357,7 +358,8 @@ internal static class AggregationEndpoints
         if (assetConfig is null)
             return Results.NotFound(new { error = "asset_not_configured", exchange, asset });
 
-        var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, assetConfig);
+        var assetDir = BackfillOrchestrator.ResolveAssetDir(
+            config.DataRoot, Collection.LegacyAssetBridge.ToCollectionAsset(assetConfig));
         var manifest = await schema.Load(assetDir, ct);
         if (manifest is null || !manifest.Feeds.TryGetValue(feedId, out var def))
             return Results.NotFound(new { error = "feed_not_found", feed_id = feedId });

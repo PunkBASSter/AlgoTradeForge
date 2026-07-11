@@ -2,6 +2,7 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using AlgoTradeForge.HistoryLoader.WebApi.Collection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -11,6 +12,9 @@ using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Collection;
 
+// Post-3a the scheduled cycle iterates ICollectionPlanSource.Current.Assets and collects a feed
+// only when its plan collect value is "eager" (the lazy/on-demand feeds are archive-materialized
+// on demand, not eagerly polled).
 public sealed class ScheduledCollectorEagerGateTests
 {
     private static (SymbolCollector Collector, IFeedCollector CandleCollector) BuildSymbolCollector()
@@ -37,70 +41,67 @@ public sealed class ScheduledCollectorEagerGateTests
         return (symbolCollector, candleCollector);
     }
 
-    private static ArchiveMaterializerRegistry RegistryWithCandlesMaterializer()
-    {
-        var m = Substitute.For<IArchiveMaterializer>();
-        m.Exchange.Returns("binance");
-        m.FeedName.Returns("candles");
-        m.Supports(Arg.Any<string>()).Returns(true);
-        return new ArchiveMaterializerRegistry([m]);
-    }
-
     private static string TestDir() => Path.GetTempPath();
 
-    private static (KlineCollectorService Service, IFeedCollector CandleCollector) Build(
-        bool eager, ArchiveMaterializerRegistry policyRegistry, string dataRoot)
+    private static (KlineCollectorService Service, IFeedCollector CandleCollector) Build(string collect)
     {
         var (symbolCollector, candleCollector) = BuildSymbolCollector();
+
+        var holder = new CollectionPlanHolder();
+        holder.Publish(new CollectionPlan(
+            [CollectionAssets.Perp("BTCUSDT", 2, CollectionAssets.Feed("candles", "1h", collect))],
+            [], []));
+
         var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
-        options.CurrentValue.Returns(new HistoryLoaderOptions
-        {
-            DataRoot = dataRoot,
-            Assets =
-            [
-                new AssetCollectionConfig
-                {
-                    Symbol = "BTCUSDT", Type = "perpetual",
-                    Feeds = [new FeedCollectionConfig { Name = "candles", Interval = "1h", Eager = eager }],
-                },
-            ],
-        });
+        options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = TestDir() });
+
         var breaker = Substitute.For<ICollectionCircuitBreaker>();
         breaker.IsTripped.Returns(false);
+
         var service = new KlineCollectorService(
-            symbolCollector, new CollectionPolicy(policyRegistry), breaker,
+            symbolCollector, holder, breaker,
             Substitute.For<IHttpClientFactory>(), options,
             NullLogger<KlineCollectorService>.Instance);
         return (service, candleCollector);
     }
 
     [Fact]
-    public async Task ReplenishableFeed_Lazy_IsSkippedByScheduledCycle()
+    public async Task LazyFeed_OnDemand_IsSkippedByScheduledCycle()
     {
-        var registry = RegistryWithCandlesMaterializer();
-        var (service, candleCollector) = Build(eager: false, registry, dataRoot: TestDir());
+        var (service, candleCollector) = Build(collect: "on-demand");
         await service.CollectCycleAsync(TestContext.Current.CancellationToken);
-        await candleCollector.DidNotReceiveWithAnyArgs().CollectAsync(
+        await candleCollector.DidNotReceiveWithAnyArgs().Collect(
             default!, default!, default!, default, default, TestContext.Current.CancellationToken);
     }
 
     [Fact]
-    public async Task ReplenishableFeed_EagerOverride_IsCollected()
+    public async Task EagerFeed_IsCollected()
     {
-        var registry = RegistryWithCandlesMaterializer();
-        var (service, candleCollector) = Build(eager: true, registry, dataRoot: TestDir());
+        var (service, candleCollector) = Build(collect: "eager");
         await service.CollectCycleAsync(TestContext.Current.CancellationToken);
-        await candleCollector.ReceivedWithAnyArgs(1).CollectAsync(
+        await candleCollector.ReceivedWithAnyArgs(1).Collect(
             default!, default!, default!, default, default, TestContext.Current.CancellationToken);
     }
 
     [Fact]
-    public async Task IrreplaceableFeed_NoMaterializer_IsCollectedWithoutOverride()
+    public async Task EmptyPlan_CollectsNothing()
     {
-        var (service, candleCollector) = Build(
-            eager: false, new ArchiveMaterializerRegistry([]), dataRoot: TestDir());
+        var (symbolCollector, candleCollector) = BuildSymbolCollector();
+        var holder = new CollectionPlanHolder(); // starts Empty
+
+        var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
+        options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = TestDir() });
+        var breaker = Substitute.For<ICollectionCircuitBreaker>();
+        breaker.IsTripped.Returns(false);
+
+        var service = new KlineCollectorService(
+            symbolCollector, holder, breaker,
+            Substitute.For<IHttpClientFactory>(), options,
+            NullLogger<KlineCollectorService>.Instance);
+
         await service.CollectCycleAsync(TestContext.Current.CancellationToken);
-        await candleCollector.ReceivedWithAnyArgs(1).CollectAsync(
+
+        await candleCollector.DidNotReceiveWithAnyArgs().Collect(
             default!, default!, default!, default, default, TestContext.Current.CancellationToken);
     }
 }

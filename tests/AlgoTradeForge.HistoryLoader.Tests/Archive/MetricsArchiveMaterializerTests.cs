@@ -3,8 +3,10 @@ using System.Text;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
+using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
@@ -27,18 +29,10 @@ public sealed class MetricsArchiveMaterializerTests : IDisposable
     public MetricsArchiveMaterializerTests() => Directory.CreateDirectory(_dir);
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 
-    private static AssetCollectionConfig FuturesConfig() => new()
-    {
-        Symbol = "BTCUSDT",
-        Type = AssetTypes.Perpetual,
-        DecimalDigits = 2
-    };
+    private static CollectionAsset FuturesConfig() => CollectionAssets.Perp("BTCUSDT", 2);
 
-    private static FeedCollectionConfig FeedCfg(string name, string interval) => new()
-    {
-        Name = name,
-        Interval = interval
-    };
+    private static CollectionFeed FeedCfg(string name, string interval) =>
+        CollectionAssets.Feed(name, interval);
 
     private static Stream CsvStream(string csv) => new MemoryStream(Encoding.UTF8.GetBytes(csv));
 

@@ -96,7 +96,8 @@ internal sealed class FundingInfoRefreshService(
             if (!bySymbol.TryGetValue(asset.Symbol, out var entry))
                 continue;
 
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+            var assetDir = BackfillOrchestrator.ResolveAssetDir(
+                config.DataRoot, LegacyAssetBridge.ToCollectionAsset(asset));
             var updated = await schemaManager.SetAutoApplyParams(
                 assetDir,
                 FeedNames.FundingRate,

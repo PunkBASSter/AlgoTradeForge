@@ -1,5 +1,4 @@
 using AlgoTradeForge.HistoryLoader.Application.Archive;
-using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -13,29 +12,34 @@ public sealed class BackfillOrchestrator(
     private readonly HashSet<string> _runningSymbols = [];
     private readonly Lock _lock = new();
 
+    // Shared concurrency gate across every Run entry point (boot sweep + scheduled cycles).
+    // MaxBackfillConcurrency is read once at construction — not hot-reloaded. A lazy ??= would
+    // let a boot-sweep kick and a scheduled cycle each create their own semaphore on first access,
+    // reintroducing the N×concurrency the shared gate fixes.
+    private readonly SemaphoreSlim _semaphore = new(options.CurrentValue.MaxBackfillConcurrency);
+
     public bool IsRunning(string symbolDir)
     {
         lock (_lock)
             return _runningSymbols.Contains(symbolDir);
     }
 
-    public async Task RunAsync(
-        IReadOnlyList<AssetCollectionConfig> assets,
+    public async Task Run(
+        IReadOnlyList<CollectionAsset> assets,
         IReadOnlyList<string>? feedFilter = null,
         DateOnly? fromDate = null,
         CancellationToken ct = default)
     {
-        var config = options.CurrentValue;
-        var semaphore = new SemaphoreSlim(config.MaxBackfillConcurrency);
+        var dataRoot = options.CurrentValue.DataRoot;
 
         var tasks = assets.Select(asset => BackfillSymbolAsync(
-            asset, semaphore, config.DataRoot, feedFilter, fromDate, ct));
+            asset, dataRoot, feedFilter, fromDate, ct));
 
         await Task.WhenAll(tasks);
     }
 
-    public async Task<bool> TryRunSingleAsync(
-        AssetCollectionConfig asset,
+    public async Task<bool> TryRunSingle(
+        CollectionAsset asset,
         string assetDir,
         IReadOnlyList<string>? feedFilter = null,
         DateOnly? fromDate = null,
@@ -58,17 +62,16 @@ public sealed class BackfillOrchestrator(
                 : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             var feeds = asset.Feeds
-                .Where(f => f.Enabled)
-                .Where(f => feedFilter is null || feedFilter.Contains(f.Name))
+                .Where(f => feedFilter is null || feedFilter.Contains(f.FeedName))
                 .ToList();
 
             foreach (var feed in feeds)
             {
-                var from = fromDate ?? feed.HistoryStart ?? asset.HistoryStart;
+                var from = fromDate ?? feed.EffectiveStart;
                 var fromMs = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
                     .ToUnixTimeMilliseconds();
 
-                await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, progress, ct);
+                await symbolCollector.CollectFeed(asset, feed, assetDir, fromMs, toMs, progress, ct);
             }
 
             return true;
@@ -84,30 +87,29 @@ public sealed class BackfillOrchestrator(
     }
 
     private async Task BackfillSymbolAsync(
-        AssetCollectionConfig asset,
-        SemaphoreSlim semaphore,
+        CollectionAsset asset,
         string dataRoot,
         IReadOnlyList<string>? feedFilter,
         DateOnly? fromDate,
         CancellationToken ct)
     {
-        await semaphore.WaitAsync(ct);
+        await _semaphore.WaitAsync(ct);
         try
         {
             var assetDir = ResolveAssetDir(dataRoot, asset);
-            if (!await TryRunSingleAsync(asset, assetDir, feedFilter, fromDate, ct: ct))
-                logger.LogWarning("Backfill already running for {Symbol}, skipping", asset.Symbol);
+            if (!await TryRunSingle(asset, assetDir, feedFilter, fromDate, ct: ct))
+                logger.LogWarning("Backfill already running for {Symbol}, skipping", asset.Venue.ApiSymbol);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError(ex, "Backfill failed for {Symbol}", asset.Symbol);
+            logger.LogError(ex, "Backfill failed for {Symbol}", asset.Venue.ApiSymbol);
         }
         finally
         {
-            semaphore.Release();
+            _semaphore.Release();
         }
     }
 
-    public static string ResolveAssetDir(string dataRoot, AssetCollectionConfig asset) =>
-        Path.Combine(dataRoot, asset.Exchange, AssetPathConvention.DirectoryName(asset.Symbol, asset.Type));
+    public static string ResolveAssetDir(string dataRoot, CollectionAsset asset) =>
+        Path.Combine(dataRoot, asset.Exchange, asset.Venue.Dir);
 }

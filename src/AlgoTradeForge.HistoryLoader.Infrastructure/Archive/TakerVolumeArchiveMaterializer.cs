@@ -2,6 +2,7 @@ using System.Globalization;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 
@@ -22,15 +23,15 @@ internal sealed class TakerVolumeArchiveMaterializer(
     public bool Supports(string assetType) => AssetTypes.IsFutures(assetType);
 
     public async Task<ArchiveMonthResult> MaterializeMonth(
-        AssetCollectionConfig assetConfig, FeedCollectionConfig feedConfig,
+        CollectionAsset asset, CollectionFeed feed,
         string assetDir, int year, int month, CancellationToken ct = default)
     {
-        var interval = feedConfig.Interval;
+        var interval = feed.Interval;
         var rows = new List<string[]>();
         var available = false;
 
         await using (var monthly = await archive.DownloadMonthly(
-            "futures/um", "klines", assetConfig.Symbol, interval, year, month, ct))
+            "futures/um", "klines", asset.Venue.ApiSymbol, interval, year, month, ct))
         {
             if (monthly is not null)
             {
@@ -47,7 +48,7 @@ internal sealed class TakerVolumeArchiveMaterializer(
             for (var day = monthStart; day <= monthEnd; day = day.AddDays(1))
             {
                 await using var daily = await archive.DownloadDaily(
-                    "futures/um", "klines", assetConfig.Symbol, interval, day, ct);
+                    "futures/um", "klines", asset.Venue.ApiSymbol, interval, day, ct);
                 if (daily is null) continue;
                 using var reader = new StreamReader(daily);
                 rows.AddRange(ArchiveCsv.ReadRows(reader));
@@ -70,7 +71,7 @@ internal sealed class TakerVolumeArchiveMaterializer(
         if (parsed.Count == 0)
         {
             logger.LogWarning("taker-volume klines {Symbol} {Year}-{Month:D2}: archive present but 0 in-range rows",
-                assetConfig.Symbol, year, month);
+                asset.Venue.ApiSymbol, year, month);
             return new ArchiveMonthResult(0, AvailableAtSource: true);
         }
 
@@ -101,7 +102,7 @@ internal sealed class TakerVolumeArchiveMaterializer(
             parsed[0].Ts, parsed[^1].Ts, delta, gaps, ct);
 
         logger.LogInformation("Materialized taker-volume/{Interval} {Year}-{Month:D2} for {Symbol}: {Rows} rows",
-            interval, year, month, assetConfig.Symbol, parsed.Count);
+            interval, year, month, asset.Venue.ApiSymbol, parsed.Count);
         return new ArchiveMonthResult(parsed.Count, AvailableAtSource: true);
     }
 }
