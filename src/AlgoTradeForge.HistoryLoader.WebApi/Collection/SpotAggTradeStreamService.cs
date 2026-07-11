@@ -20,6 +20,7 @@ internal sealed class SpotAggTradeStreamService(
     IFeedStatusStore feedStatusStore,
     ICollectionCircuitBreaker circuitBreaker,
     IHttpClientFactory httpClientFactory,
+    ICollectionPlanSource planSource,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<SpotAggTradeStreamService> logger) : BackgroundService
 {
@@ -30,68 +31,89 @@ internal sealed class SpotAggTradeStreamService(
     private static readonly TimeSpan StatusFlushInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
 
+    private bool _planDirty;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("SpotAggTradeStreamService started");
 
-        var enabledSpotSymbols = BuildEnabledSpotSymbols(options.CurrentValue);
-        if (enabledSpotSymbols.Count == 0)
+        var initialSymbols = BuildEnabledSpotSymbols(planSource.Current);
+        if (initialSymbols.Count == 0)
         {
             logger.LogInformation(
                 "SpotAggTradeStreamService: no spot assets with 'ticks' feed enabled — exiting");
             return;
         }
 
-        await EnsureSchemas(enabledSpotSymbols, stoppingToken);
+        await EnsureSchemas(stoppingToken);
 
-        var reconnect = new StreamReconnectPolicy(
-            MaxReconnectAttempts, InitialReconnectDelay, StableConnectionUptime);
-
-        while (!stoppingToken.IsCancellationRequested)
+        Action onPlanChanged = () => Volatile.Write(ref _planDirty, true);
+        planSource.PlanChanged += onPlanChanged;
+        try
         {
-            if (circuitBreaker.IsTripped)
-            {
-                await WaitForCircuitResetAsync(stoppingToken);
-                continue;
-            }
+            var reconnect = new StreamReconnectPolicy(
+                MaxReconnectAttempts, InitialReconnectDelay, StableConnectionUptime);
 
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                await ConnectAndStreamAsync(reconnect, enabledSpotSymbols, stoppingToken);
-                reconnect.Reset();
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                var decision = reconnect.OnFailure();
-
-                if (NetworkErrorHelper.IsNetworkError(ex)
-                    && decision.Attempt >= options.CurrentValue.NetworkFailureThreshold)
+                if (circuitBreaker.IsTripped)
                 {
-                    logger.LogError(
-                        "SpotAggTradeStreamService — network unreachable after {Count} attempts, tripping circuit breaker",
-                        decision.Attempt);
-                    circuitBreaker.Trip("Network unreachable (Spot WS)", TripReason.Network);
-                    reconnect.Reset();
+                    await WaitForCircuitResetAsync(stoppingToken);
                     continue;
                 }
 
-                if (decision.GiveUp)
+                // Rebuild from plan each reconnect iteration — picks up any plan change.
+                var symbols = BuildEnabledSpotSymbols(planSource.Current);
+
+                if (symbols.Count == 0)
                 {
-                    logger.LogCritical(ex,
-                        "SpotAggTradeStreamService exceeded {Max} reconnect attempts, stopping",
-                        MaxReconnectAttempts);
+                    logger.LogInformation("SpotAggTradeStreamService: no symbols in plan, stopping");
                     break;
                 }
 
-                logger.LogWarning(ex,
-                    "SpotAggTradeStreamService disconnected (attempt {Attempt}/{Max}), reconnecting in {Delay}s",
-                    decision.Attempt, MaxReconnectAttempts, decision.Delay.TotalSeconds);
-                await Task.Delay(decision.Delay, stoppingToken);
+                try
+                {
+                    await ConnectAndStreamAsync(reconnect, symbols, stoppingToken);
+                    // Normal disconnect or deliberate plan-dirty exit — reset before reconnecting.
+                    reconnect.Reset();
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    var decision = reconnect.OnFailure();
+
+                    if (NetworkErrorHelper.IsNetworkError(ex)
+                        && decision.Attempt >= options.CurrentValue.NetworkFailureThreshold)
+                    {
+                        logger.LogError(
+                            "SpotAggTradeStreamService — network unreachable after {Count} attempts, tripping circuit breaker",
+                            decision.Attempt);
+                        circuitBreaker.Trip("Network unreachable (Spot WS)", TripReason.Network);
+                        reconnect.Reset();
+                        continue;
+                    }
+
+                    if (decision.GiveUp)
+                    {
+                        logger.LogCritical(ex,
+                            "SpotAggTradeStreamService exceeded {Max} reconnect attempts, stopping",
+                            MaxReconnectAttempts);
+                        break;
+                    }
+
+                    logger.LogWarning(ex,
+                        "SpotAggTradeStreamService disconnected (attempt {Attempt}/{Max}), reconnecting in {Delay}s",
+                        decision.Attempt, MaxReconnectAttempts, decision.Delay.TotalSeconds);
+                    await Task.Delay(decision.Delay, stoppingToken);
+                }
             }
+        }
+        finally
+        {
+            planSource.PlanChanged -= onPlanChanged;
         }
 
         logger.LogInformation("SpotAggTradeStreamService stopped");
@@ -158,10 +180,10 @@ internal sealed class SpotAggTradeStreamService(
         logger.LogInformation(
             "Connected to Binance spot aggTrade combined stream ({Count} symbols)", symbols.Count);
 
-        await ReadLoopAsync(ws, config, ct);
+        await ReadLoopAsync(ws, ct);
     }
 
-    private async Task ReadLoopAsync(ClientWebSocket ws, HistoryLoaderOptions config, CancellationToken ct)
+    private async Task ReadLoopAsync(ClientWebSocket ws, CancellationToken ct)
     {
         var buffer = new byte[8192];
         using var messageStream = new MemoryStream();
@@ -173,6 +195,14 @@ internal sealed class SpotAggTradeStreamService(
 
         while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
         {
+            // Plan changed — exit so the reconnect loop rebuilds subscriptions with updated symbol set.
+            if (Volatile.Read(ref _planDirty))
+            {
+                Volatile.Write(ref _planDirty, false);
+                logger.LogInformation("SpotAggTradeStreamService: plan changed, resubscribing");
+                break;
+            }
+
             messageStream.SetLength(0);
 
             WebSocketReceiveResult result;
@@ -184,6 +214,7 @@ internal sealed class SpotAggTradeStreamService(
                 {
                     logger.LogWarning("Spot WS server initiated close: {Status} {Description}",
                         result.CloseStatus, result.CloseStatusDescription);
+                    await FlushStatus(statusTracker, ct);
                     return;
                 }
 
@@ -202,12 +233,12 @@ internal sealed class SpotAggTradeStreamService(
 
                 var (symbol, record) = parsed.Value;
 
-                var asset = FindSpotAssetConfig(config, symbol);
+                var asset = FindSpotAsset(planSource.Current, symbol);
                 if (asset is null)
                     continue;
 
                 var assetDir = BackfillOrchestrator.ResolveAssetDir(
-                    config.DataRoot, LegacyAssetBridge.ToCollectionAsset(asset));
+                    options.CurrentValue.DataRoot, asset);
                 await schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null, ct);
                 tickWriter.Write(assetDir, record, asset.DecimalDigits);
                 totalWritten++;
@@ -297,20 +328,17 @@ internal sealed class SpotAggTradeStreamService(
         }
     }
 
-    private async Task EnsureSchemas(IReadOnlyList<string> symbols, CancellationToken ct)
+    private async Task EnsureSchemas(CancellationToken ct)
     {
-        var config = options.CurrentValue;
-        var symbolSet = symbols.ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var asset in config.Assets)
+        var dataRoot = options.CurrentValue.DataRoot;
+        foreach (var asset in planSource.Current.Assets)
         {
-            if (!AssetTypes.IsSpot(asset.Type))
+            if (!AssetTypes.IsSpot(asset.Venue.AssetType))
                 continue;
-            if (!symbolSet.Contains(asset.Symbol))
+            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.Ticks))
                 continue;
 
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(
-                config.DataRoot, LegacyAssetBridge.ToCollectionAsset(asset));
+            var assetDir = BackfillOrchestrator.ResolveAssetDir(dataRoot, asset);
             await schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null, ct);
         }
     }
@@ -339,16 +367,15 @@ internal sealed class SpotAggTradeStreamService(
         tracker.Clear();
     }
 
-    internal static List<string> BuildEnabledSpotSymbols(HistoryLoaderOptions config) =>
-        config.Assets
-            .Select(LegacyAssetBridge.ToCollectionAsset)
+    internal static List<string> BuildEnabledSpotSymbols(CollectionPlan plan) =>
+        plan.Assets
             .Where(a => AssetTypes.IsSpot(a.Venue.AssetType))
             .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.Ticks && f.Collect == "eager"))
             .Select(a => a.Venue.ApiSymbol)
             .ToList();
 
-    private static AssetCollectionConfig? FindSpotAssetConfig(HistoryLoaderOptions config, string symbol) =>
-        config.Assets.FirstOrDefault(a =>
-            AssetTypes.IsSpot(a.Type)
-            && string.Equals(a.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
+    private static CollectionAsset? FindSpotAsset(CollectionPlan plan, string symbol) =>
+        plan.Assets.FirstOrDefault(a =>
+            AssetTypes.IsSpot(a.Venue.AssetType)
+            && string.Equals(a.Venue.ApiSymbol, symbol, StringComparison.OrdinalIgnoreCase));
 }

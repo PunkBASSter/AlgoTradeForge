@@ -22,6 +22,7 @@ internal sealed class BookTickerStreamService(
     IFeedStatusStore feedStatusStore,
     ICollectionCircuitBreaker circuitBreaker,
     IHttpClientFactory httpClientFactory,
+    ICollectionPlanSource planSource,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<BookTickerStreamService> logger) : BackgroundService
 {
@@ -35,13 +36,14 @@ internal sealed class BookTickerStreamService(
 
     private enum Venue { Spot, Futures }
 
+    private bool _planDirty;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("BookTickerStreamService started");
 
-        var config = options.CurrentValue;
-        var spotSymbols = BuildEnabledSymbols(config, AssetTypes.IsSpot);
-        var futuresSymbols = BuildEnabledSymbols(config, AssetTypes.IsFutures);
+        var spotSymbols = BuildEnabledSymbols(planSource.Current, AssetTypes.IsSpot);
+        var futuresSymbols = BuildEnabledSymbols(planSource.Current, AssetTypes.IsFutures);
 
         if (spotSymbols.Count == 0 && futuresSymbols.Count == 0)
         {
@@ -50,20 +52,29 @@ internal sealed class BookTickerStreamService(
             return;
         }
 
-        await EnsureSchemas(spotSymbols, futuresSymbols, stoppingToken);
+        await EnsureSchemas(stoppingToken);
 
-        var tasks = new List<Task>();
-        if (spotSymbols.Count > 0)
-            tasks.Add(VenueLoopAsync(Venue.Spot, spotSymbols, stoppingToken));
-        if (futuresSymbols.Count > 0)
-            tasks.Add(VenueLoopAsync(Venue.Futures, futuresSymbols, stoppingToken));
+        Action onPlanChanged = () => Volatile.Write(ref _planDirty, true);
+        planSource.PlanChanged += onPlanChanged;
+        try
+        {
+            var tasks = new List<Task>();
+            if (spotSymbols.Count > 0)
+                tasks.Add(VenueLoopAsync(Venue.Spot, stoppingToken));
+            if (futuresSymbols.Count > 0)
+                tasks.Add(VenueLoopAsync(Venue.Futures, stoppingToken));
 
-        await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks);
+        }
+        finally
+        {
+            planSource.PlanChanged -= onPlanChanged;
+        }
 
         logger.LogInformation("BookTickerStreamService stopped");
     }
 
-    private async Task VenueLoopAsync(Venue venue, IReadOnlyList<string> symbols, CancellationToken ct)
+    private async Task VenueLoopAsync(Venue venue, CancellationToken ct)
     {
         var reconnect = new StreamReconnectPolicy(
             MaxReconnectAttempts, InitialReconnectDelay, StableConnectionUptime);
@@ -76,9 +87,21 @@ internal sealed class BookTickerStreamService(
                 continue;
             }
 
+            // Rebuild from plan each reconnect iteration — picks up any plan change.
+            var symbols = BuildEnabledSymbols(planSource.Current,
+                venue == Venue.Spot ? AssetTypes.IsSpot : AssetTypes.IsFutures);
+
+            if (symbols.Count == 0)
+            {
+                logger.LogInformation(
+                    "BookTickerStreamService[{Venue}]: no symbols in plan, stopping venue loop", venue);
+                return;
+            }
+
             try
             {
                 await ConnectAndStreamAsync(reconnect, venue, symbols, ct);
+                // Normal disconnect or deliberate plan-dirty exit — reset before reconnecting.
                 reconnect.Reset();
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -175,10 +198,10 @@ internal sealed class BookTickerStreamService(
         logger.LogInformation(
             "BookTickerStreamService[{Venue}] connected ({Count} symbols)", venue, symbols.Count);
 
-        await ReadLoopAsync(venue, ws, config, ct);
+        await ReadLoopAsync(venue, ws, ct);
     }
 
-    private async Task ReadLoopAsync(Venue venue, ClientWebSocket ws, HistoryLoaderOptions config, CancellationToken ct)
+    private async Task ReadLoopAsync(Venue venue, ClientWebSocket ws, CancellationToken ct)
     {
         var buffer = new byte[8192];
         using var messageStream = new MemoryStream();
@@ -190,6 +213,15 @@ internal sealed class BookTickerStreamService(
 
         while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
         {
+            // Plan changed — exit so VenueLoopAsync rebuilds subscriptions with updated symbol set.
+            if (Volatile.Read(ref _planDirty))
+            {
+                Volatile.Write(ref _planDirty, false);
+                logger.LogInformation(
+                    "BookTickerStreamService[{Venue}]: plan changed, resubscribing", venue);
+                break;
+            }
+
             messageStream.SetLength(0);
 
             WebSocketReceiveResult result;
@@ -201,6 +233,7 @@ internal sealed class BookTickerStreamService(
                     logger.LogWarning(
                         "BookTicker[{Venue}] WS server-initiated close: {Status} {Description}",
                         venue, result.CloseStatus, result.CloseStatusDescription);
+                    await FlushStatus(statusTracker, ct);
                     return;
                 }
                 messageStream.Write(buffer, 0, result.Count);
@@ -218,12 +251,12 @@ internal sealed class BookTickerStreamService(
 
                 var (symbol, record) = parsed.Value;
 
-                var asset = FindAssetConfig(config, venue, symbol);
+                var asset = FindAsset(planSource.Current, venue, symbol);
                 if (asset is null)
                     continue;
 
                 var assetDir = BackfillOrchestrator.ResolveAssetDir(
-                    config.DataRoot, LegacyAssetBridge.ToCollectionAsset(asset));
+                    options.CurrentValue.DataRoot, asset);
                 await schemaManager.EnsureSchema(assetDir, FeedNames.BookTicker, "", BookTickerColumns, ct: ct);
                 bookTickerWriter.Write(assetDir, record);
                 totalWritten++;
@@ -319,21 +352,15 @@ internal sealed class BookTickerStreamService(
         }
     }
 
-    private async Task EnsureSchemas(IReadOnlyList<string> spotSymbols, IReadOnlyList<string> futuresSymbols, CancellationToken ct)
+    private async Task EnsureSchemas(CancellationToken ct)
     {
-        var config = options.CurrentValue;
-        var spotSet = spotSymbols.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var futuresSet = futuresSymbols.ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var asset in config.Assets)
+        var dataRoot = options.CurrentValue.DataRoot;
+        foreach (var asset in planSource.Current.Assets)
         {
-            bool included = (AssetTypes.IsSpot(asset.Type) && spotSet.Contains(asset.Symbol))
-                          || (AssetTypes.IsFutures(asset.Type) && futuresSet.Contains(asset.Symbol));
-            if (!included)
+            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.BookTicker))
                 continue;
 
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(
-                config.DataRoot, LegacyAssetBridge.ToCollectionAsset(asset));
+            var assetDir = BackfillOrchestrator.ResolveAssetDir(dataRoot, asset);
             await schemaManager.EnsureSchema(assetDir, FeedNames.BookTicker, "", BookTickerColumns, ct: ct);
         }
     }
@@ -361,16 +388,15 @@ internal sealed class BookTickerStreamService(
     }
 
     internal static List<string> BuildEnabledSymbols(
-        HistoryLoaderOptions config, Func<string, bool> typeFilter) =>
-        config.Assets
-            .Select(LegacyAssetBridge.ToCollectionAsset)
+        CollectionPlan plan, Func<string, bool> typeFilter) =>
+        plan.Assets
             .Where(a => typeFilter(a.Venue.AssetType))
             .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.BookTicker && f.Collect == "eager"))
             .Select(a => a.Venue.ApiSymbol)
             .ToList();
 
-    private static AssetCollectionConfig? FindAssetConfig(HistoryLoaderOptions config, Venue venue, string symbol) =>
-        config.Assets.FirstOrDefault(a =>
-            (venue == Venue.Spot ? AssetTypes.IsSpot(a.Type) : AssetTypes.IsFutures(a.Type))
-            && string.Equals(a.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
+    private static CollectionAsset? FindAsset(CollectionPlan plan, Venue venue, string symbol) =>
+        plan.Assets.FirstOrDefault(a =>
+            (venue == Venue.Spot ? AssetTypes.IsSpot(a.Venue.AssetType) : AssetTypes.IsFutures(a.Venue.AssetType))
+            && string.Equals(a.Venue.ApiSymbol, symbol, StringComparison.OrdinalIgnoreCase));
 }
