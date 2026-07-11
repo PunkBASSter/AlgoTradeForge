@@ -8,6 +8,8 @@ public sealed record MonthPartitionRow(string Month, long Rows, long FileLen, st
 
 public sealed record IndexJobRow(string Id, string Kind, string State, string ProgressJson, string? Error);
 
+public sealed record DiscoveredFirstMonthRow(string Exchange, string Dir, string FeedName, string Interval, string Month);
+
 public interface IHistoryIndex
 {
     Task UpsertAsset(AssetIndexRow row, CancellationToken ct = default);
@@ -25,6 +27,10 @@ public interface IHistoryIndex
     /// <summary>Distinct (feed_name, interval) across feed_status AND month_partitions — feeds
     /// with month rows but no status row (static equity data) must not be invisible to sweeps.</summary>
     Task<IReadOnlyList<(string FeedName, string Interval)>> ListFeedKeys(string exchange, string dir, CancellationToken ct = default);
+
+    Task SetDiscoveredFirstMonth(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default);
+    Task<IReadOnlyList<DiscoveredFirstMonthRow>> ListDiscoveredFirstMonths(CancellationToken ct = default);
+    Task<IReadOnlyList<(string Exchange, string Dir, string FeedName, string Interval)>> ListAllFeedKeys(CancellationToken ct = default);
 
     Task PruneFeedData(string exchange, string dir,
         IReadOnlyCollection<(string FeedName, string Interval)> keep, CancellationToken ct = default);
