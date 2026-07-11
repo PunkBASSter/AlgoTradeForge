@@ -3,6 +3,7 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
@@ -16,7 +17,8 @@ namespace AlgoTradeForge.HistoryLoader.Tests.Collection;
 public sealed class SymbolCollectorTests
 {
     private readonly IFeedCollector _collector = Substitute.For<IFeedCollector>();
-    private readonly ISettingsWriter _settingsWriter = Substitute.For<ISettingsWriter>();
+    private readonly IHistoryIndex _index = Substitute.For<IHistoryIndex>();
+    private readonly CollectionChangeNotifier _notifier = new();
     private readonly SymbolCollector _sut;
 
     private static readonly CollectionAsset Asset = CollectionAssets.Perp("BTCUSDT");
@@ -44,14 +46,16 @@ public sealed class SymbolCollectorTests
             new ArchiveMaterializerRegistry([]),
             Substitute.For<IMonthCoverageCalculator>(),
             Substitute.For<IFeedStatusStore>(),
-            Substitute.For<ISettingsWriter>(),
+            Substitute.For<IHistoryIndex>(),
+            new CollectionChangeNotifier(),
             new TestClock(new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero)),
             NullLogger<ArchiveBackfillService>.Instance);
 
         _sut = new SymbolCollector(
             [_collector],
             archiveBackfill,
-            _settingsWriter,
+            _index,
+            _notifier,
             NullLogger<SymbolCollector>.Instance);
     }
 
@@ -77,7 +81,7 @@ public sealed class SymbolCollectorTests
     }
 
     // -------------------------------------------------------------------------
-    // 1. Date-range 400 → binary search finds valid start, persists
+    // 1. Date-range 400 → binary search finds valid start, persists to index + fires notifier
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -85,13 +89,17 @@ public sealed class SymbolCollectorTests
     {
         SetupDateThreshold(ValidStartMs);
 
+        bool notified = false;
+        _notifier.DiscoveryRecorded += () => notified = true;
+
         await _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
-        // Should persist August 2020 as the discovered start.
-        await _settingsWriter.Received(1).UpdateFeedHistoryStart(
-            "BTCUSDT", "perpetual", "open-interest", "5m",
-            new DateOnly(2020, 8, 1),
+        // Should persist August 2020 (month precision) as the discovered start.
+        await _index.Received(1).SetDiscoveredFirstMonth(
+            "binance", "BTCUSDT_perp", "open-interest", "5m", "2020-08",
             Arg.Any<CancellationToken>());
+
+        Assert.True(notified);
     }
 
     // -------------------------------------------------------------------------
@@ -142,8 +150,8 @@ public sealed class SymbolCollectorTests
         await _collector.Received(1).Collect(
             Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
-        await _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+        await _index.DidNotReceiveWithAnyArgs()
+            .SetDiscoveredFirstMonth(default!, default!, default!, default!, default!, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -164,8 +172,8 @@ public sealed class SymbolCollectorTests
         await _collector.Received(1).Collect(
             Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
-        await _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+        await _index.DidNotReceiveWithAnyArgs()
+            .SetDiscoveredFirstMonth(default!, default!, default!, default!, default!, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -185,8 +193,8 @@ public sealed class SymbolCollectorTests
         await _collector.Received(1).Collect(
             Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
-        await _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+        await _index.DidNotReceiveWithAnyArgs()
+            .SetDiscoveredFirstMonth(default!, default!, default!, default!, default!, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -204,8 +212,8 @@ public sealed class SymbolCollectorTests
 
         await _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
-        await _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+        await _index.DidNotReceiveWithAnyArgs()
+            .SetDiscoveredFirstMonth(default!, default!, default!, default!, default!, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -225,8 +233,8 @@ public sealed class SymbolCollectorTests
         await _collector.Received(1).Collect(
             Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
-        await _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+        await _index.DidNotReceiveWithAnyArgs()
+            .SetDiscoveredFirstMonth(default!, default!, default!, default!, default!, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -273,7 +281,8 @@ public sealed class SymbolCollectorTests
             new ArchiveMaterializerRegistry([materializer]),
             coverage,
             Substitute.For<IFeedStatusStore>(),
-            Substitute.For<ISettingsWriter>(),
+            Substitute.For<IHistoryIndex>(),
+            new CollectionChangeNotifier(),
             new TestClock(new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero)),
             NullLogger<ArchiveBackfillService>.Instance);
 
@@ -281,7 +290,8 @@ public sealed class SymbolCollectorTests
         var sut = new SymbolCollector(
             [],
             archiveBackfill,
-            _settingsWriter,
+            _index,
+            _notifier,
             NullLogger<SymbolCollector>.Instance);
 
         var takerFeed = CollectionAssets.Feed("taker-volume", "5m");
@@ -311,8 +321,8 @@ public sealed class SymbolCollectorTests
             Asset, unknownFeed, "/data", FromMs, ToMs,
             ct: TestContext.Current.CancellationToken);
 
-        await _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+        await _index.DidNotReceiveWithAnyArgs()
+            .SetDiscoveredFirstMonth(default!, default!, default!, default!, default!, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------

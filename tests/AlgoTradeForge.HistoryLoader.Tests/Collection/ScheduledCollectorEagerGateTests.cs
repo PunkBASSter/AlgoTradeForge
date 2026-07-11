@@ -2,6 +2,7 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using AlgoTradeForge.HistoryLoader.WebApi.Collection;
@@ -28,14 +29,16 @@ public sealed class ScheduledCollectorEagerGateTests
             new ArchiveMaterializerRegistry([]),
             Substitute.For<IMonthCoverageCalculator>(),
             Substitute.For<IFeedStatusStore>(),
-            Substitute.For<ISettingsWriter>(),
+            Substitute.For<IHistoryIndex>(),
+            new CollectionChangeNotifier(),
             new TestClock(new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero)),
             NullLogger<ArchiveBackfillService>.Instance);
 
         var symbolCollector = new SymbolCollector(
             [candleCollector],
             archiveBackfill,
-            Substitute.For<ISettingsWriter>(),
+            Substitute.For<IHistoryIndex>(),
+            new CollectionChangeNotifier(),
             NullLogger<SymbolCollector>.Instance);
 
         return (symbolCollector, candleCollector);

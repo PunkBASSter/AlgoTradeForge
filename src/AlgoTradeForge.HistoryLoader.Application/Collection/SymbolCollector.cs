@@ -1,6 +1,6 @@
 using System.Collections.Frozen;
-using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 
@@ -10,18 +10,21 @@ public sealed class SymbolCollector
 {
     private readonly FrozenDictionary<string, IFeedCollector> _collectors;
     private readonly ArchiveBackfillService _archiveBackfill;
-    private readonly ISettingsWriter _settingsWriter;
+    private readonly IHistoryIndex _index;
+    private readonly CollectionChangeNotifier _notifier;
     private readonly ILogger<SymbolCollector> _logger;
 
     public SymbolCollector(
         IEnumerable<IFeedCollector> collectors,
         ArchiveBackfillService archiveBackfill,
-        ISettingsWriter settingsWriter,
+        IHistoryIndex index,
+        CollectionChangeNotifier notifier,
         ILogger<SymbolCollector> logger)
     {
         _collectors = collectors.ToFrozenDictionary(c => c.FeedName);
         _archiveBackfill = archiveBackfill;
-        _settingsWriter = settingsWriter;
+        _index = index;
+        _notifier = notifier;
         _logger = logger;
     }
 
@@ -146,9 +149,11 @@ public sealed class SymbolCollector
         // Full collection from the discovered start.
         await collector.Collect(asset, feed, assetDir, discovered, toMs, ct);
 
-        await _settingsWriter.UpdateFeedHistoryStart(
-            asset.Venue.ApiSymbol, asset.Venue.AssetType,
-            feed.FeedName, feed.Interval, discoveredDate, ct);
+        await _index.SetDiscoveredFirstMonth(
+            asset.Exchange, asset.Venue.Dir,
+            feed.FeedName, feed.Interval,
+            $"{discoveredDate.Year:D4}-{discoveredDate.Month:D2}", ct);
+        _notifier.NotifyDiscoveryRecorded();
     }
 
     /// <summary>

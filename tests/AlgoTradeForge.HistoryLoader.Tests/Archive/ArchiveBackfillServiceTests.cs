@@ -2,6 +2,7 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
@@ -27,7 +28,8 @@ public sealed class ArchiveBackfillServiceTests
     private readonly IArchiveMaterializer _materializer = Substitute.For<IArchiveMaterializer>();
     private readonly IMonthCoverageCalculator _coverage = Substitute.For<IMonthCoverageCalculator>();
     private readonly IFeedStatusStore _feedStatusStore = Substitute.For<IFeedStatusStore>();
-    private readonly ISettingsWriter _settingsWriter = Substitute.For<ISettingsWriter>();
+    private readonly IHistoryIndex _index = Substitute.For<IHistoryIndex>();
+    private readonly CollectionChangeNotifier _notifier = new();
 
     public ArchiveBackfillServiceTests()
     {
@@ -56,7 +58,7 @@ public sealed class ArchiveBackfillServiceTests
     {
         var registry = new ArchiveMaterializerRegistry([materializer ?? _materializer]);
         return new ArchiveBackfillService(
-            registry, _coverage, _feedStatusStore, _settingsWriter, Clock,
+            registry, _coverage, _feedStatusStore, _index, _notifier, Clock,
             NullLogger<ArchiveBackfillService>.Instance);
     }
 
@@ -176,7 +178,7 @@ public sealed class ArchiveBackfillServiceTests
     }
 
     // -------------------------------------------------------------------------
-    // 6. Leading unavailable months → discover and persist first available month.
+    // 6. Leading unavailable months → discover and persist first available month to index + fires notifier.
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -194,15 +196,19 @@ public sealed class ArchiveBackfillServiceTests
                 return Task.FromResult(new ArchiveMonthResult(available ? 100L : 0L, available));
             });
 
+        bool notified = false;
+        _notifier.DiscoveryRecorded += () => notified = true;
+
         var sut = BuildSut();
         await sut.CoverFromArchive(Asset, Feed, "/data", Ms(2026, 1), Ms(2026, 7, 7),
             ct: TestContext.Current.CancellationToken);
 
-        // Earliest available = March 2026.
-        await _settingsWriter.Received(1).UpdateFeedHistoryStart(
-            Asset.Venue.ApiSymbol, Asset.Venue.AssetType, Feed.FeedName, Feed.Interval,
-            new DateOnly(2026, 3, 1),
+        // Earliest available = March 2026 → persists "2026-03".
+        await _index.Received(1).SetDiscoveredFirstMonth(
+            "binance", "BTCUSDT_perp", "candles", "1h", "2026-03",
             TestContext.Current.CancellationToken);
+
+        Assert.True(notified);
     }
 
     // -------------------------------------------------------------------------
@@ -333,7 +339,7 @@ public sealed class ArchiveBackfillServiceTests
     }
 
     // -------------------------------------------------------------------------
-    // 11. (I1a) Actual first-data DateOnly from reloaded FeedStatus is persisted.
+    // 11. (I1a) Actual first-data DateOnly from reloaded FeedStatus is persisted (month precision).
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -372,10 +378,9 @@ public sealed class ArchiveBackfillServiceTests
         await sut.CoverFromArchive(Asset, Feed, "/data", Ms(2026, 1), Ms(2026, 7, 7),
             ct: TestContext.Current.CancellationToken);
 
-        // Must persist March 5, not March 1.
-        await _settingsWriter.Received(1).UpdateFeedHistoryStart(
-            Asset.Venue.ApiSymbol, Asset.Venue.AssetType, Feed.FeedName, Feed.Interval,
-            new DateOnly(2026, 3, 5),
+        // Must persist "2026-03" (month precision; day is dropped as intended).
+        await _index.Received(1).SetDiscoveredFirstMonth(
+            "binance", "BTCUSDT_perp", "candles", "1h", "2026-03",
             TestContext.Current.CancellationToken);
     }
 

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.Storage.Threading;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,8 @@ public sealed class ArchiveBackfillService(
     ArchiveMaterializerRegistry registry,
     IMonthCoverageCalculator coverage,
     IFeedStatusStore feedStatusStore,
-    ISettingsWriter settingsWriter,
+    IHistoryIndex index,
+    CollectionChangeNotifier notifier,
     TimeProvider clock,
     ILogger<ArchiveBackfillService> logger)
 {
@@ -110,8 +112,7 @@ public sealed class ArchiveBackfillService(
             }
         }
 
-        // Step 4: persist discovered history start for configured assets.
-        // AppSettingsWriter is a no-op for symbols not in config, so safe to call unconditionally.
+        // Step 4: persist discovered history start to the index.
         if (discoveredStart.HasValue)
         {
             // Reload to get the actual first data row timestamp written by the materializer;
@@ -127,10 +128,11 @@ public sealed class ArchiveBackfillService(
             {
                 persistStart = discoveredStart.Value;
             }
-            await settingsWriter.UpdateFeedHistoryStart(
-                asset.Venue.ApiSymbol, asset.Venue.AssetType,
+            await index.SetDiscoveredFirstMonth(
+                asset.Exchange, asset.Venue.Dir,
                 feed.FeedName, feed.Interval,
-                persistStart, ct);
+                $"{persistStart.Year:D4}-{persistStart.Month:D2}", ct);
+            notifier.NotifyDiscoveryRecorded();
         }
 
         // Step 5: return REST-tail start = min(toMs, currentMonthStart) clamped >= fromMs.
