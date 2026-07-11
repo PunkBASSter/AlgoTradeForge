@@ -16,6 +16,8 @@
 - Convergence month-counting is COARSE: a month counts as covered if a `month_partitions` row exists (interval feeds) or is in `CompleteMonths` (interval-less). Exact `MonthCoverageMath` gap-credit refinement is a phase-3 nicety — do not wire gaps into the evaluator now.
 - `discovered_first_month` is still unpopulated; expected-month ranges start at the group's `historyStart` clamped to now. Pre-listing altcoins will show inflated "missing" counts until phase 3 wires discovery into the index — acceptable, documented.
 - Dated futures (`-FUT-`) parse successfully but resolve to `unsupported` on Binance (no collector); options suffix `-OPT-` is a reserved parse error.
+- (post-review) Coverage matching for non-candles collected feeds is interval-AGNOSTIC: poll feeds are indexed under their cadence interval ("1h"/"5m"/"15m"), while tuples carry `""` — the evaluator/validate match by feedName across any interval, and candles tuples additionally claim their `candle-ext` side-output rows in orphan detection.
+- (post-review, known phase-2 noise) `liquidations`/`book-ticker` declared `eager` show as eternally `missing`: stream feeds have no month rows and are not in `UsesMonthlyCompleteness`, so coarse counting sees zero coverage even while the stream writes. Phase 3 fixes coverage for stream feeds — do not "fix" here.
 
 ## Global Constraints
 
