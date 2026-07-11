@@ -150,6 +150,21 @@ public sealed class SqliteHistoryIndexTests : IAsyncLifetime, IDisposable
         Assert.Single(await _index.ListFeedKeys("binance", "btcusdt_perp", Ct));
     }
 
+    [Fact]
+    public async Task InstrumentMeta_BatchUpsert_AndFilteredList()
+    {
+        await _index.UpsertInstrumentMeta([
+            new InstrumentMetaRow("binance", "BTCUSDT_perp", 1, 3, "0.10", "2026-07-11T00:00:00Z"),
+            new InstrumentMetaRow("binance", "ETHUSDT", 2, 4, "0.01", "2026-07-11T00:00:00Z")], Ct);
+        Assert.Equal(2, (await _index.ListInstrumentMeta("binance", Ct)).Count);
+
+        // re-upsert overwrites in place (PK exchange+dir)
+        await _index.UpsertInstrumentMeta([
+            new InstrumentMetaRow("binance", "BTCUSDT_perp", 2, 3, "0.01", "2026-07-12T00:00:00Z")], Ct);
+        var row = (await _index.ListInstrumentMeta("binance", Ct)).Single(r => r.Dir == "BTCUSDT_perp");
+        Assert.Equal(2, row.PriceDecimals);
+    }
+
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();

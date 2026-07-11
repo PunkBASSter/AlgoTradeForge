@@ -74,6 +74,16 @@ public sealed class HistoryIndexInitializer(string dbPath)
             created_at    TEXT NOT NULL,
             updated_at    TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS instrument_meta (
+            exchange       TEXT NOT NULL,
+            dir            TEXT NOT NULL,
+            price_decimals INTEGER NOT NULL,
+            qty_decimals   INTEGER NOT NULL,
+            tick_size      TEXT NOT NULL,
+            fetched_at     TEXT NOT NULL,
+            PRIMARY KEY (exchange, dir)
+        );
         """;
 
     public async Task EnsureCreated(CancellationToken ct = default)

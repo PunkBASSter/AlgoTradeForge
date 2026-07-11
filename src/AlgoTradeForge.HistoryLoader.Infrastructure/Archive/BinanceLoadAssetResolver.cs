@@ -2,6 +2,7 @@ using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
 using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
@@ -66,21 +67,10 @@ internal sealed class BinanceLoadAssetResolver(
                 if (filter.GetProperty("filterType").GetString() == "PRICE_FILTER")
                 {
                     var tickSize = filter.GetProperty("tickSize").GetString() ?? "1";
-                    return CountFractionalDigits(tickSize);
+                    return TickSizeParser.FractionalDigits(tickSize);
                 }
             }
         }
         return 2;
-    }
-
-    private static int CountFractionalDigits(string tickSize)
-    {
-        var dotIdx = tickSize.IndexOf('.');
-        if (dotIdx < 0) return 0;
-        var fraction = tickSize.AsSpan(dotIdx + 1);
-        var lastNonZero = -1;
-        for (var i = 0; i < fraction.Length; i++)
-            if (fraction[i] != '0') lastNonZero = i;
-        return lastNonZero + 1;
     }
 }

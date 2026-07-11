@@ -227,6 +227,61 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
         return results;
     }
 
+    public async Task UpsertInstrumentMeta(IReadOnlyList<InstrumentMetaRow> rows, CancellationToken ct = default)
+    {
+        if (rows.Count == 0) return;
+        await using var conn = await Open(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = (SqliteTransaction)tx;
+        cmd.CommandText = """
+            INSERT INTO instrument_meta (exchange, dir, price_decimals, qty_decimals, tick_size, fetched_at)
+            VALUES ($ex, $dir, $pd, $qd, $ts, $fa)
+            ON CONFLICT(exchange, dir) DO UPDATE SET
+                price_decimals = excluded.price_decimals,
+                qty_decimals   = excluded.qty_decimals,
+                tick_size      = excluded.tick_size,
+                fetched_at     = excluded.fetched_at
+            """;
+        cmd.Parameters.Add("$ex", SqliteType.Text);
+        cmd.Parameters.Add("$dir", SqliteType.Text);
+        cmd.Parameters.Add("$pd", SqliteType.Integer);
+        cmd.Parameters.Add("$qd", SqliteType.Integer);
+        cmd.Parameters.Add("$ts", SqliteType.Text);
+        cmd.Parameters.Add("$fa", SqliteType.Text);
+        foreach (var row in rows)
+        {
+            cmd.Parameters["$ex"].Value = row.Exchange;
+            cmd.Parameters["$dir"].Value = row.Dir;
+            cmd.Parameters["$pd"].Value = row.PriceDecimals;
+            cmd.Parameters["$qd"].Value = row.QtyDecimals;
+            cmd.Parameters["$ts"].Value = row.TickSize;
+            cmd.Parameters["$fa"].Value = row.FetchedAtUtc;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<InstrumentMetaRow>> ListInstrumentMeta(string? exchange = null, CancellationToken ct = default)
+    {
+        await using var conn = await Open(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = exchange is null
+            ? "SELECT exchange, dir, price_decimals, qty_decimals, tick_size, fetched_at FROM instrument_meta ORDER BY exchange, dir"
+            : "SELECT exchange, dir, price_decimals, qty_decimals, tick_size, fetched_at FROM instrument_meta WHERE exchange = $ex COLLATE NOCASE ORDER BY dir";
+        if (exchange is not null)
+            cmd.Parameters.AddWithValue("$ex", exchange);
+
+        var results = new List<InstrumentMetaRow>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            results.Add(new InstrumentMetaRow(
+                reader.GetString(0), reader.GetString(1),
+                reader.GetInt32(2), reader.GetInt32(3),
+                reader.GetString(4), reader.GetString(5)));
+        return results;
+    }
+
     public async Task SetDiscoveredFirstMonth(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default)
     {
         await using var conn = await Open(ct);
