@@ -39,7 +39,7 @@ export interface ConnectProgressOptions {
 const TERMINAL_EVENTS: ReadonlySet<SseEventType> = new Set(["complete", "error", "cancelled"]);
 
 /**
- * Subscribes to /api/data/aggregations/{jobId}/progress. Resolves when the stream
+ * Subscribes to /api/data/jobs/{jobId}/progress. Resolves when the stream
  * closes; rejects on unrecoverable errors. When `lastEventId` is provided, the upstream
  * replays events past that id. 410 Gone surfaces as a tagged GoneError so the caller
  * can clearJob and stop reconnecting.
@@ -51,7 +51,7 @@ export async function connectProgress(opts: ConnectProgressOptions): Promise<voi
   if (lastEventId !== undefined) headers["Last-Event-ID"] = String(lastEventId);
 
   await fetchEventSource(
-    `${BASE_URL}/api/data/aggregations/${encodeURIComponent(jobId)}/progress`,
+    `${BASE_URL}/api/data/jobs/${encodeURIComponent(jobId)}/progress`,
     {
       method: "GET",
       headers,

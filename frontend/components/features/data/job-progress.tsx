@@ -11,7 +11,7 @@ import { useJobStream, type JobStreamObservation } from "./use-job-stream";
 import { useDataJobsStore, type FeedJobKey } from "@/lib/stores/data-jobs-store";
 import { dataApi, DataApiError } from "@/lib/services/data-api";
 import { useToast } from "@/components/ui/toast";
-import type { JobState } from "@/types/data-tab";
+import type { AggregationJobState } from "@/types/data-tab";
 
 interface Props {
   jobKey: FeedJobKey;
@@ -21,7 +21,7 @@ interface Props {
 }
 
 const CANCELLABLE_TYPES = new Set(["queued", "started", "progress"]);
-const TERMINAL_JOB_STATES: ReadonlySet<JobState> =
+const TERMINAL_JOB_STATES: ReadonlySet<AggregationJobState> =
   new Set(["completed", "failed", "cancelled"]);
 
 // How long after a successful cancel REST we wait for the SSE `cancelled` terminal event

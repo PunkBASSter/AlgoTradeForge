@@ -156,12 +156,12 @@ export interface AggregateLockedResponse {
   existing_job_state: "queued" | "running";
 }
 
-export type JobState = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type AggregationJobState = "queued" | "running" | "completed" | "failed" | "cancelled";
 
 export interface JobSnapshot {
   job_id: string;
   feed_id: string;
-  state: JobState;
+  state: AggregationJobState;
   queued_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -399,4 +399,42 @@ export interface DesiredStateReport {
   orphaned: DesiredStateOrphan[];
   orphaned_total: number;
   conflicts: GroupConflict[];
+}
+
+// ---- Unified job envelope (phase 3b+). Snake_case verbatim from the proxy. ----
+
+export type JobKind = "load" | "aggregation" | "materialize" | "index";
+export type JobState = "queued" | "running" | "complete" | "error" | "cancelled" | "interrupted";
+
+export interface JobError {
+  code: string;
+  message: string;
+}
+
+export interface JobProgress {
+  phase: string | null;
+  done: number;
+  total: number;
+  detail?: Record<string, unknown> | null;
+}
+
+/** Wire shape for GET /api/data/jobs and GET /api/data/jobs/{id}. */
+export interface JobEnvelope {
+  job_id: string;
+  kind: JobKind;
+  state: JobState;
+  feed_key: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  error: JobError | null;
+  progress: JobProgress | null;
+}
+
+/** POST /api/data/materialize request body. snake_case verbatim. */
+export interface MaterializeRequest {
+  exchange: string;
+  symbol: string;
+  feed: string;
+  from?: string | null;
+  to?: string | null;
 }
