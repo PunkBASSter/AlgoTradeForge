@@ -7,7 +7,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Collection;
 public sealed class BackfillOrchestrator(
     SymbolCollector symbolCollector,
     IOptionsMonitor<HistoryLoaderOptions> options,
-    ILogger<BackfillOrchestrator> logger)
+    ILogger<BackfillOrchestrator> logger) : IBackfillOrchestrator
 {
     private readonly HashSet<string> _runningSymbols = [];
     private readonly Lock _lock = new();
