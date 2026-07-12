@@ -111,6 +111,9 @@ builder.Services.AddScoped<IAggregationPipeline, AggregationPipeline>();
 builder.Services.AddSingleton<IAggregationService, AggregationService>();
 builder.Services.AddSingleton<AggregationRequestRehydrator>();
 builder.Services.AddHostedService<AggregationWorkerHost>();
+builder.Services.AddSingleton<AlgoTradeForge.HistoryLoader.WebApi.Jobs.IMaterializeStageRequestFactory,
+    AlgoTradeForge.HistoryLoader.WebApi.Jobs.MaterializeStageRequestFactory>();
+builder.Services.AddHostedService<AlgoTradeForge.HistoryLoader.WebApi.Jobs.MaterializeWorkerHost>();
 
 // Sweep MUST run before any collector hosted service so orphan staging/tmp left by a prior
 // crash is gone before workers start.
