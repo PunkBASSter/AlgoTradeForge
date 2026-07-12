@@ -8,6 +8,7 @@ using AlgoTradeForge.HistoryLoader.Application.Jobs;
 using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
@@ -58,11 +59,9 @@ public sealed class AggregationEndpointAssetResolutionTests
             tickWakeup: Substitute.For<IJobWakeupQueue>(),
             ct: Ct);
 
-        var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
-        Assert.Equal(StatusCodes.Status404NotFound, statusResult.StatusCode);
-        var json = Assert.IsAssignableFrom<IValueHttpResult>(result);
-        var err = json.Value!.GetType().GetProperty("error")!.GetValue(json.Value)!.ToString();
-        Assert.Equal("asset_not_configured", err);
+        var body = Assert.IsType<JsonHttpResult<ErrorBody>>(result);
+        Assert.Equal(StatusCodes.Status404NotFound, body.StatusCode);
+        Assert.Equal("asset_not_configured", body.Value!.Code);
     }
 
     [Fact]
@@ -111,10 +110,8 @@ public sealed class AggregationEndpointAssetResolutionTests
             index: Substitute.For<IHistoryIndex>(),
             ct: Ct);
 
-        var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
-        Assert.Equal(StatusCodes.Status404NotFound, statusResult.StatusCode);
-        var json = Assert.IsAssignableFrom<IValueHttpResult>(result);
-        var err = json.Value!.GetType().GetProperty("error")!.GetValue(json.Value)!.ToString();
-        Assert.Equal("asset_not_configured", err);
+        var body = Assert.IsType<JsonHttpResult<ErrorBody>>(result);
+        Assert.Equal(StatusCodes.Status404NotFound, body.StatusCode);
+        Assert.Equal("asset_not_configured", body.Value!.Code);
     }
 }

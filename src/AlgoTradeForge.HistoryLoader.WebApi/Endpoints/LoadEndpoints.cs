@@ -3,6 +3,7 @@ using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Application.Jobs;
+using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.WebApi.Collection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -37,6 +38,22 @@ internal static class LoadEndpoints
         if (!FeedIdValidator.TryValidatePathComponent(body.Symbol, out var symbolErr))
             return Unprocessable("invalid_path_component", symbolErr!);
 
+        // F2: distinguish declared-but-blocked (precision unknown, collection deferred) from not-declared.
+        string? requestedDir = body.AssetType.ToLowerInvariant() switch
+        {
+            AssetTypes.Perpetual or AssetTypes.Future => body.Symbol + "_perp",
+            AssetTypes.Spot or AssetTypes.Equity      => body.Symbol,
+            _                                         => null,
+        };
+        if (requestedDir is not null)
+        {
+            var blocked = planSource.Current.Blocked.FirstOrDefault(b =>
+                string.Equals(b.Exchange, body.Exchange, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(b.Dir, requestedDir, StringComparison.OrdinalIgnoreCase));
+            if (blocked is not null)
+                return Unprocessable("symbol_blocked", blocked.Reason);
+        }
+
         // P5: symbol must be declared in an enabled collection group (groups are the only entry point).
         var asset = planSource.Current.Assets.FirstOrDefault(a =>
             string.Equals(a.Exchange, body.Exchange, StringComparison.OrdinalIgnoreCase) &&
@@ -65,11 +82,11 @@ internal static class LoadEndpoints
                     return Results.Accepted(value: new { job_id = acquired.JobId });
                 // Dispatch channel full: drop the just-claimed row so a 503 leaves no phantom job.
                 await index.DeleteJob(acquired.JobId, ct);
-                return Results.Json(new { error = "queue_full" },
+                return TypedResults.Json(new ErrorBody("queue_full", "dispatch queue is full"),
                     statusCode: StatusCodes.Status503ServiceUnavailable);
 
             case FeedGateOutcome.Busy busy:
-                return Results.Json(new { error = "feed_busy", active_job_id = busy.ExistingJobId },
+                return Results.Json(new { code = "feed_busy", active_job_id = busy.ExistingJobId },
                     statusCode: StatusCodes.Status409Conflict);
 
             default:
@@ -83,5 +100,5 @@ internal static class LoadEndpoints
         JobEndpoints.GetJob(jobId, index, ct);
 
     private static IResult Unprocessable(string code, string message) =>
-        Results.Json(new { error = code, message }, statusCode: StatusCodes.Status422UnprocessableEntity);
+        TypedResults.Json(new ErrorBody(code, message), statusCode: StatusCodes.Status422UnprocessableEntity);
 }

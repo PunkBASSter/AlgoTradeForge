@@ -69,7 +69,9 @@ internal static class AggregationEndpoints
             string.Equals(a.Venue.Dir, asset, StringComparison.Ordinal));
         if (planAsset is null)
             // wire-compatible error code; "configured" now means "declared in an enabled group"
-            return Results.NotFound(new { error = "asset_not_configured", exchange, asset });
+            return TypedResults.Json(new ErrorBody("asset_not_configured",
+                    $"asset '{asset}' on exchange '{exchange}' is not declared in any enabled collection group"),
+                statusCode: StatusCodes.Status404NotFound);
 
         // Source feed eligibility (422)
         var sourceFeed = await catalog.GetFeed(exchange, asset, body.SourceFeedId, ct);
@@ -283,7 +285,7 @@ internal static class AggregationEndpoints
 
             case FeedGateOutcome.Busy busy:
                 return Results.Json(
-                    new { error = "feed_busy", feed_id = outcomeFeedId, active_job_id = busy.ExistingJobId },
+                    new { code = "feed_busy", feed_id = outcomeFeedId, active_job_id = busy.ExistingJobId },
                     statusCode: StatusCodes.Status409Conflict);
 
             default:
@@ -362,12 +364,15 @@ internal static class AggregationEndpoints
             string.Equals(a.Venue.Dir, asset, StringComparison.Ordinal));
         if (planAsset is null)
             // wire-compatible error code; "configured" now means "declared in an enabled group"
-            return Results.NotFound(new { error = "asset_not_configured", exchange, asset });
+            return TypedResults.Json(new ErrorBody("asset_not_configured",
+                    $"asset '{asset}' on exchange '{exchange}' is not declared in any enabled collection group"),
+                statusCode: StatusCodes.Status404NotFound);
 
         var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, planAsset);
         var manifest = await schema.Load(assetDir, ct);
         if (manifest is null || !manifest.Feeds.TryGetValue(feedId, out var def))
-            return Results.NotFound(new { error = "feed_not_found", feed_id = feedId });
+            return TypedResults.Json(new ErrorBody("feed_not_found", $"feed '{feedId}' not found in feeds.json"),
+                statusCode: StatusCodes.Status404NotFound);
 
         // Only OHLCV_AltBar feeds are user-deletable. Time bars / ticks / side feeds are
         // collector-managed and cannot be removed via this endpoint.
@@ -394,7 +399,7 @@ internal static class AggregationEndpoints
         {
             return Results.Json(new
             {
-                error = "feed_busy",
+                code = "feed_busy",
                 feed_id = feedId,
                 active_job_id = active.Id,
                 active_job_state = active.State,
@@ -448,5 +453,5 @@ internal static class AggregationEndpoints
         JobEndpoints.GetJobProgressSse(jobId, context, index, signal);
 
     private static IResult Unprocessable(string code, string message) =>
-        Results.Json(new { code, message }, statusCode: StatusCodes.Status422UnprocessableEntity);
+        TypedResults.Json(new ErrorBody(code, message), statusCode: StatusCodes.Status422UnprocessableEntity);
 }

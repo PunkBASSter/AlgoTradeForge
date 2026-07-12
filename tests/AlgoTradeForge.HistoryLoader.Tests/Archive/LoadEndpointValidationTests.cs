@@ -246,14 +246,15 @@ public sealed class LoadEndpointValidationTests
         return holder;
     }
 
-    // Unprocessable()/error responses are Results.Json(new { error, ... }) — an anonymous type,
-    // so the error code is read via reflection off IValueHttpResult.Value.
+    // Normalized error responses use ErrorBody {Code} or anonymous {code}; read whichever is present.
     private static void AssertErrorCode(IResult result, string expectedCode)
     {
         var valueResult = Assert.IsAssignableFrom<IValueHttpResult>(result);
         Assert.NotNull(valueResult.Value);
-        var error = valueResult.Value!.GetType().GetProperty("error")?.GetValue(valueResult.Value);
-        Assert.Equal(expectedCode, error);
+        var val = valueResult.Value!;
+        var code = val.GetType().GetProperty("Code")?.GetValue(val)?.ToString()    // ErrorBody (TypedResults.Json)
+            ?? val.GetType().GetProperty("code")?.GetValue(val)?.ToString();       // anonymous { code = ... }
+        Assert.Equal(expectedCode, code);
     }
 
     [Fact]

@@ -68,7 +68,8 @@ internal static class StatusEndpoints
             string.Equals(a.Venue.Dir, symbol, StringComparison.OrdinalIgnoreCase));
 
         if (asset is null)
-            return Results.NotFound(new { error = "Symbol not found", symbol });
+            return TypedResults.Json(new ErrorBody("symbol_not_found", $"symbol '{symbol}' not found"),
+                statusCode: StatusCodes.Status404NotFound);
 
         var resolvedAssetDir = BackfillOrchestrator.ResolveAssetDir(options.CurrentValue.DataRoot, asset);
         var feedDetails = new List<FeedStatusDetail>();
