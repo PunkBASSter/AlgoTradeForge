@@ -10,7 +10,7 @@ internal static class JobSseWriter
     // appends the durable event, THEN Signals — so any event added between capture and drain has
     // already made the row visible and fired the captured signal, and the next drain picks it up.
     // Capturing after the drain would TOCTOU and lose a terminal event appended in that window.
-    internal static async Task TailForTest(
+    internal static async Task Tail(
         string jobId,
         int lastEventId,
         IHistoryIndex index,

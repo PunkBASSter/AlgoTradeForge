@@ -36,7 +36,7 @@ public sealed class JobSseTests : IAsyncLifetime, IDisposable
         var sink = new JobProgressSink(jobId, _index, signal);
         var frames = new List<(int Seq, string Kind, string Payload)>();
 
-        var loop = JobSseWriter.TailForTest(jobId, lastEventId: 0, _index, signal,
+        var loop = JobSseWriter.Tail(jobId, lastEventId: 0, _index, signal,
             emit: (seq, kind, payload) => { frames.Add((seq, kind, payload)); return Task.CompletedTask; },
             ct: Ct);
 
@@ -60,7 +60,7 @@ public sealed class JobSseTests : IAsyncLifetime, IDisposable
         await sink.Complete("{}", Ct);             // seq 3 terminal
 
         var frames = new List<(int Seq, string Kind)>();
-        var loop = JobSseWriter.TailForTest(jobId, lastEventId: 1, _index, signal,
+        var loop = JobSseWriter.Tail(jobId, lastEventId: 1, _index, signal,
             emit: (seq, kind, _) => { frames.Add((seq, kind)); return Task.CompletedTask; },
             ct: Ct);
 
@@ -79,7 +79,7 @@ public sealed class JobSseTests : IAsyncLifetime, IDisposable
         var frames = new List<(int Seq, string Kind)>();
 
         // Loop starts BEFORE any events exist: its first `next` is captured over an empty tail.
-        var loop = JobSseWriter.TailForTest(jobId, lastEventId: 0, _index, signal,
+        var loop = JobSseWriter.Tail(jobId, lastEventId: 0, _index, signal,
             emit: (seq, kind, _) => { frames.Add((seq, kind)); return Task.CompletedTask; },
             ct: Ct);
 
@@ -94,5 +94,33 @@ public sealed class JobSseTests : IAsyncLifetime, IDisposable
         Assert.Equal(
             new[] { (1, "progress"), (2, "progress"), (3, "progress"), (4, "progress"), (5, "progress"), (6, "complete") },
             frames);
+    }
+
+    [Fact]
+    public async Task JobSse_TailLoop_ResumePastTrimmedTail_ReplaysFromZero()
+    {
+        // Arrange: build a complete job with 3 durable events, all appended before the loop starts.
+        var jobId = await _index.CreateJob("load", Ct);
+        var signal = new JobEventSignal();
+        var sink = new JobProgressSink(jobId, _index, signal);
+
+        await sink.Report("""{"done":1}""", Ct);   // seq 1 — progress
+        await sink.Report("""{"done":2}""", Ct);   // seq 2 — progress
+        await sink.Complete("{}", Ct);             // seq 3 — complete (terminal)
+
+        // Act: resume with lastEventId=99, which is above the actual max seq (3).
+        // GetJobEventsAfter(jobId, 99) is empty, but GetLastEventSeq > 0, so the replay
+        // branch must fire and return events from seq 0 onward.
+        var frames = new List<(int Seq, string Kind)>();
+        var loop = JobSseWriter.Tail(jobId, lastEventId: 99, _index, signal,
+            emit: (seq, kind, _) => { frames.Add((seq, kind)); return Task.CompletedTask; },
+            ct: Ct);
+
+        // Without the replay branch the loop parks on next.WaitAsync (no future Signal will fire)
+        // and this throws TimeoutException, proving non-vacuousness.
+        await loop.WaitAsync(TimeSpan.FromSeconds(2), Ct);
+
+        // Assert: full tail replayed from the beginning, ending with the terminal.
+        Assert.Equal(new[] { (1, "progress"), (2, "progress"), (3, "complete") }, frames);
     }
 }

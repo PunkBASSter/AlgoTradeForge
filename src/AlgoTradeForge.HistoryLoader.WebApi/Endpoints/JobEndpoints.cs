@@ -63,7 +63,7 @@ internal static class JobEndpoints
             await context.Response.Body.FlushAsync(ct);
 
             var lastEventId = ParseLastEventId(context);
-            await JobSseWriter.TailForTest(jobId, lastEventId, index, signal, WriteFrame, ct);
+            await JobSseWriter.Tail(jobId, lastEventId, index, signal, WriteFrame, ct);
 
             async Task WriteFrame(int seq, string kind, string payloadJson)
             {
