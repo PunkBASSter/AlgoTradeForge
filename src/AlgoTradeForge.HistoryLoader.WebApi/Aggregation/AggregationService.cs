@@ -88,22 +88,11 @@ internal sealed class AggregationService(
                 durationSeconds = result.DurationSeconds,
             }), ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            // User cancel — distinct terminal state from host_shutdown.
-            await Flush();
-            logger.LogInformation("Aggregation job {JobId} cancelled on user request.", job.JobId);
-            await sink.Cancel("user_cancelled", CancellationToken.None);
-        }
-        catch (OperationCanceledException)
-        {
-            // Host shutdown — ct not cancelled; drain, route, then rethrow so the caller
-            // (AggregationWorkerHost) can propagate the stop signal correctly.
-            await Flush();
-            logger.LogInformation("Aggregation job {JobId} interrupted by host shutdown.", job.JobId);
-            await sink.Fail("host_shutdown", "Job interrupted by host shutdown.", CancellationToken.None);
-            throw;
-        }
+        // D2 (cancellation ownership): the HOST classifies. Any cancellation OCE carrying `ct`
+        // (user-cancel OR host-shutdown — both trip the linked token the host passes) is left to
+        // propagate so AggregationWorkerHost's catch arms, keyed on its stoppingToken, decide
+        // between terminal `cancelled` and a non-terminal row for restart. The service only owns
+        // its own domain failures. Mirrors ArchiveLoadService.
         catch (Exception ex) when (!IsTrueShutdown(ex, ct))
         {
             await Flush();

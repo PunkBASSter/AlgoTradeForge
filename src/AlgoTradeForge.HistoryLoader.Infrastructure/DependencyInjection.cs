@@ -205,6 +205,18 @@ public static class DependencyInjection
             var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
             return new JobWakeupQueue(opts.Jobs.WakeupChannelDepth);
         });
+        // Aggregation dispatch is jobId-driven on the durable store too, split into two pools so
+        // I/O-heavy tick jobs don't head-of-line CPU-heavy time-bar jobs (AggregationWorkerHost).
+        services.AddKeyedSingleton<IJobWakeupQueue>("aggregation-timebar", (sp, _) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
+            return new JobWakeupQueue(opts.Jobs.WakeupChannelDepth);
+        });
+        services.AddKeyedSingleton<IJobWakeupQueue>("aggregation-tick", (sp, _) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
+            return new JobWakeupQueue(opts.Jobs.WakeupChannelDepth);
+        });
         services.AddSingleton<ArchiveBackfillService>();
         services.AddSingleton<ArchiveMaterializerRegistry>();
 

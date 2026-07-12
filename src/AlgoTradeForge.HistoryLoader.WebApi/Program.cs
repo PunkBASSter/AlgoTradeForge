@@ -97,7 +97,6 @@ builder.Services.AddSingleton<IJobProgressSinkFactory, JobProgressSinkFactory>()
 builder.Services.AddSingleton<IJobCancellationMap, JobCancellationMap>();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IFeedCatalog, FeedCatalog>();
-builder.Services.AddSingleton<IAggregationJobRegistry, AggregationJobRegistry>();
 builder.Services.AddSingleton<IBackfillOrchestrator>(sp => sp.GetRequiredService<BackfillOrchestrator>());
 builder.Services.AddSingleton<IArchiveLoadService, ArchiveLoadService>();
 builder.Services.AddSingleton<LoadRequestRehydrator>();
@@ -106,7 +105,10 @@ builder.Services.AddSingleton<IAggregationJobQueue, AggregationJobQueue>();
 builder.Services.AddSingleton<IAggregationTickJobQueue, AggregationTickJobQueue>();
 builder.Services.AddScoped<PartitionedSourceReader>();
 builder.Services.AddScoped<OverwritePathWriter>();
-builder.Services.AddScoped<AggregationPipeline>();
+// D1: AggregationService (M3.2) resolves IAggregationPipeline per-scope; register the seam.
+builder.Services.AddScoped<IAggregationPipeline, AggregationPipeline>();
+builder.Services.AddSingleton<IAggregationService, AggregationService>();
+builder.Services.AddSingleton<AggregationRequestRehydrator>();
 builder.Services.AddHostedService<AggregationWorkerHost>();
 
 // Sweep MUST run before any collector hosted service so orphan staging/tmp left by a prior

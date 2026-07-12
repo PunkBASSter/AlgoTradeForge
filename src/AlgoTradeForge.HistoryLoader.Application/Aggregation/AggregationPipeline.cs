@@ -14,7 +14,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Aggregation;
 /// emitted bars to a partitioned sink, promotes the staging dir atomically, and finalizes the
 /// manifest entry. A single instance handles one job.
 /// </summary>
-public sealed class AggregationPipeline
+public sealed class AggregationPipeline : IAggregationPipeline
 {
     private const string OutputHeader = "ts,o,h,l,c,vol";
 
@@ -274,8 +274,8 @@ public sealed class AggregationPipeline
             if (sidecarStagingDir is not null)
                 await DeleteStagingDirSafely(sidecarStagingDir, job.JobId, ct);
 
-            // Rethrow so the worker host's catch handler routes to the correct terminal state
-            // (OnCancelled vs OnErrored("host_shutdown") based on which token fired).
+            // Rethrow so the caller (AggregationService → AggregationWorkerHost) classifies the
+            // cancellation into the correct terminal state based on which token fired.
             throw;
         }
 

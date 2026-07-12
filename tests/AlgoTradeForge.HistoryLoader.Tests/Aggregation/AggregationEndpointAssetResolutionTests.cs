@@ -1,10 +1,10 @@
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
-using AlgoTradeForge.HistoryLoader.Application.Aggregation;
-using AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
 using AlgoTradeForge.HistoryLoader.Application.Catalog;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.HistoryLoader.Application.Jobs;
 using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 using Microsoft.AspNetCore.Http;
@@ -16,7 +16,8 @@ namespace AlgoTradeForge.HistoryLoader.Tests.Aggregation;
 
 /// <summary>
 /// Verifies that the aggregation endpoints resolve the asset via <see cref="ICollectionPlanSource"/>
-/// rather than <c>HistoryLoaderOptions.Assets</c>.
+/// rather than <c>HistoryLoaderOptions.Assets</c>, and dispatch through the durable
+/// <see cref="IHistoryIndex.TryAcquireFeedGate"/> seam (not the retired in-memory registry).
 /// </summary>
 public sealed class AggregationEndpointAssetResolutionTests
 {
@@ -38,13 +39,6 @@ public sealed class AggregationEndpointAssetResolutionTests
     [Fact]
     public async Task PostAggregate_AssetNotInPlan_Returns404_WithWireCompatibleErrorCode()
     {
-        var plan = EmptyPlan();
-        var catalog = Substitute.For<IFeedCatalog>();
-        var schema = Substitute.For<ISchemaManager>();
-        var registry = Substitute.For<IAggregationJobRegistry>();
-        var queue = Substitute.For<IAggregationJobQueue>();
-        var tickQueue = Substitute.For<IAggregationTickJobQueue>();
-
         var result = await AggregationEndpoints.PostAggregate(
             exchange: "binance",
             asset: "BTCUSDT",
@@ -56,12 +50,12 @@ public sealed class AggregationEndpointAssetResolutionTests
                 InputMode: "absolute",
                 ConvenienceInput: null),
             options: Options(),
-            planSource: plan,
-            catalog: catalog,
-            schema: schema,
-            registry: registry,
-            queue: queue,
-            tickQueue: tickQueue,
+            planSource: EmptyPlan(),
+            catalog: Substitute.For<IFeedCatalog>(),
+            schema: Substitute.For<ISchemaManager>(),
+            index: Substitute.For<IHistoryIndex>(),
+            timeBarWakeup: Substitute.For<IJobWakeupQueue>(),
+            tickWakeup: Substitute.For<IJobWakeupQueue>(),
             ct: Ct);
 
         var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
@@ -76,14 +70,9 @@ public sealed class AggregationEndpointAssetResolutionTests
     {
         var holder = new CollectionPlanHolder();
         holder.Publish(new CollectionPlan([CollectionAssets.Spot("BTCUSDT", 2)], [], []));
-        var plan = (ICollectionPlanSource)holder;
         var catalog = Substitute.For<IFeedCatalog>();
         catalog.GetFeed(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<FeedDefinition?>(null));
-        var schema = Substitute.For<ISchemaManager>();
-        var registry = Substitute.For<IAggregationJobRegistry>();
-        var queue = Substitute.For<IAggregationJobQueue>();
-        var tickQueue = Substitute.For<IAggregationTickJobQueue>();
 
         var result = await AggregationEndpoints.PostAggregate(
             exchange: "binance",
@@ -96,12 +85,12 @@ public sealed class AggregationEndpointAssetResolutionTests
                 InputMode: "absolute",
                 ConvenienceInput: null),
             options: Options(),
-            planSource: plan,
+            planSource: (ICollectionPlanSource)holder,
             catalog: catalog,
-            schema: schema,
-            registry: registry,
-            queue: queue,
-            tickQueue: tickQueue,
+            schema: Substitute.For<ISchemaManager>(),
+            index: Substitute.For<IHistoryIndex>(),
+            timeBarWakeup: Substitute.For<IJobWakeupQueue>(),
+            tickWakeup: Substitute.For<IJobWakeupQueue>(),
             ct: Ct);
 
         // Asset found in plan → proceeds to source feed lookup → 422 source_feed_not_found
@@ -112,18 +101,14 @@ public sealed class AggregationEndpointAssetResolutionTests
     [Fact]
     public async Task DeleteFeed_AssetNotInPlan_Returns404_WithWireCompatibleErrorCode()
     {
-        var plan = EmptyPlan();
-        var schema = Substitute.For<ISchemaManager>();
-        var registry = Substitute.For<IAggregationJobRegistry>();
-
         var result = await AggregationEndpoints.DeleteFeed(
             exchange: "binance",
             asset: "BTCUSDT",
             feedId: "EqV_1h_1000",
             options: Options(),
-            planSource: plan,
-            schema: schema,
-            registry: registry,
+            planSource: EmptyPlan(),
+            schema: Substitute.For<ISchemaManager>(),
+            index: Substitute.For<IHistoryIndex>(),
             ct: Ct);
 
         var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);

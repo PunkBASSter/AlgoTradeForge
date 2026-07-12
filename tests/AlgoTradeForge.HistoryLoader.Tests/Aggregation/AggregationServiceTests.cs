@@ -78,12 +78,14 @@ public sealed class AggregationServiceTests
     }
 
     // -------------------------------------------------------------------------
-    // 2. Cancellation — pipeline throws OCE on the passed ct; service must route
-    //    to sink.Cancel("user_cancelled") and not call Complete.
+    // 2. Cancellation ownership (D2) — the pipeline throws OCE on the passed ct; the service
+    //    LETS IT PROPAGATE (does NOT self-classify into Cancel/Fail) so the HOST
+    //    (AggregationWorkerHost), which holds the stopping token, decides user-cancel vs
+    //    host-shutdown. The service must not call any terminal sink method on cancel.
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task Run_Cancel_RoutesCancelToSink_NotComplete()
+    public async Task Run_Cancel_PropagatesOce_HostClassifies_NoTerminalSinkCall()
     {
         using var cts = new CancellationTokenSource();
         var pipeline = Substitute.For<IAggregationPipeline>();
@@ -97,9 +99,12 @@ public sealed class AggregationServiceTests
 
         var svc = new AggregationService(ScopeFactoryFor(pipeline), NullLogger<AggregationService>.Instance);
         var sink = new RecordingSink();
-        await svc.Run(new AggregationRunRequest(SmallJob), sink, cts.Token);
 
-        Assert.Equal("user_cancelled", sink.CancelReason);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => svc.Run(new AggregationRunRequest(SmallJob), sink, cts.Token));
+
+        Assert.Null(sink.CancelReason);   // host owns Cancel, not the service
+        Assert.Null(sink.FailCode);       // and not Fail
         Assert.False(sink.WasCompleted);
     }
 
