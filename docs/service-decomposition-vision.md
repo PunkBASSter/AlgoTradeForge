@@ -1,5 +1,22 @@
 # AlgoTradeForge — Service Decomposition Vision & Milestone Roadmap
 
+## Status snapshot (audited against code 2026-07-12)
+
+| Milestone | Status | Summary |
+|---|---|---|
+| M0 — auth foundation + monorepo prep | ❌ **not started** | No `ServiceClients`/`ServiceAuth` projects, no API-key middleware, `HistoryLoaderClient` still inside WebApi, no `deploy/` skeleton or Dockerfiles; CI (build+test on PR) is the only piece in place |
+| M1 — 24/7 collection in the cloud | 🟡 **code-ready, ops pending** | Code prerequisites done: appsettings-writeback dead (groups + CAS `collection.json` on `IFileStorage`), write path S3-capable (`BufferedPartitionWriter` → `IFileStorage`, `S3FileStorage` + `Storage:Backend` switch). Remaining = IaC repo, VPS, pipelines, alerting |
+| M2 — HistoryLoader@local + pull-sync | ❌ **not started** | No sync code at all: no `sync-state.json`, ETag differ, manifest merge, or DataSync CLI |
+| M3a — LiveHost extraction | ✅ **merged** | `LiveHost.{Application,Infrastructure,WebApi}` on main; IB re-plan Plans 1–4 merged (data + order planes); LiveHost `collection.json` (plan 6a) merged |
+| M3b — LiveHost durability | ❌ **key gap** | Sessions still `InMemoryLiveSessionStore`; no boot-time recovery, no heartbeat/watchdog/alerting, no plugin bootstrap-from-S3; IB deployment (Plan 5: gnzsnz sidecar, `ATF_PROFILE=ib`, paper E2E) pending |
+| M4 — ComputeWorker + YARP | ❌ **not started** | No ComputeWorker project; YARP unused; `Gateway/` folder is a stale bin/obj shell (M0 was to delete it) |
+| M5 — Gateway slimming + cloud instance | ❌ **not started** | Depends on M0/M4 |
+| M6 — live alt-bars | ✅ **landed early** | Accumulators promoted to `Domain/Aggregation`, golden batch≡live test, warm-up seeding from historical feed (`TickAggregationBarSource` + `WarmupLoader` + `CatchupCoordinator`), catch-up replay merged |
+
+Unmerged data-side branches to land before any cloud deploy: `feat/group-driven-collection-phase3a` (ready to merge), `feat/archive-backfill-phase3`, `feat/unified-catalog`.
+
+**Critical path to the base cloud minimum (LiveHost@ib + @crypto in cloud, HL@cloud on S3 for warm-up + delta, pull-sync to HL@local), excluding IaC:** merge outstanding branches → M0 (small, gates internet exposure) → M3b + IB Plan 5 (the big one) → M2 pull-sync. M4/M5 are NOT on this path (interim Caddy→services-direct + per-service auth is sanctioned below); additional crypto connectors are post-minimum. Standing pre-prod blocker: units-bearing Money model (ledger is unit-less `long`).
+
 ## Context
 
 The goal (per `data-flows.png`) is to split AlgoTradeForge so that 24/7 concerns — incremental market-data collection and live strategy hosting — can run on remote servers (Hetzner), while heavy on-demand compute (backtest/optimization/validation) runs locally against deep history. The cloud/local labels are **nominal**: every service must be hostable anywhere via configuration. The work happens in the existing monorepo as multiple services. The system is pre-production; milestone ordering is driven by engineering convenience, not user impact.
@@ -181,31 +198,46 @@ Rules:
 Each independently shippable; the frontend never breaks.
 
 **M0 — Monorepo prep + auth foundation** (small)
+> **Status 2026-07-12: ❌ not started** (except CI: `.github/workflows/ci.yml` exists). No `ServiceClients`/`ServiceAuth` projects; `HistoryLoaderClient` still at `src/AlgoTradeForge.WebApi/Data/`; no API-key middleware anywhere; no `deploy/`, no Dockerfiles; stale `Gateway/`/`CandleIngestor/` bin-obj shells still present. Gates any internet exposure of cloud services — do first.
+
 Delete stale empty `Gateway/`/`CandleIngestor/` folders; create `ServiceClients` (move `HistoryLoaderClient` + promote shared DTOs) and `ServiceAuth` (API-key middleware + delegating handler); `deploy/` skeleton per §0 (compose files, `profiles/`, `.env.example`) + per-host Dockerfiles + CI workflow (build + sequential tests on PR).
 *Exit:* solution builds with new projects; HistoryLoader proxying goes through `ServiceClients`; API-key middleware demonstrably guards HistoryLoader endpoints when enabled by config; CI green on PR.
 
 **M1 — 24/7 collection in the cloud** (mostly ops)
+> **Status 2026-07-12: 🟡 code prerequisites DONE, ops not started.** `ISettingsWriter`/`AppSettingsWriter` are gone — collection config lives in CAS-protected group/collection stores on `IFileStorage` (declarative-data-mgmt phases 1–3a; 3a on unmerged `feat/group-driven-collection-phase3a`). Write path is S3-capable end-to-end: collectors → `BufferedPartitionWriter` → `IFileStorage`; `S3FileStorage` + `FileStorageFactory` switch on `StorageOptions.Backend`. `history-index.sqlite` is a rebuildable per-instance cache — needs only a volume in the cloud, never synced. Remaining: IaC repo, VPS/Caddy, GHCR publish + SSH deploy pipelines, `ATF_PROFILE` profiles, liveness alerting.
+
 Create the private IaC repo (§0) and provision the VPS + firewall + DNS + Object Storage via Terraform; stand up the publish (GHCR) + deploy (SSH, auto-gate) pipelines. HistoryLoader on the Hetzner VPS behind Caddy (TLS + API key), `Storage:Backend=S3`, profile `ATF_PROFILE=cloud`. Caddy→HistoryLoader direct routing with per-service `ServiceAuth` validation is interim — Gateway@cloud takes over validation at M5; an edge-level static-key check in Caddy is acceptable defense-in-depth meanwhile. Replace `ISettingsWriter` appsettings-writeback with CAS-protected `config/collection.json` on `IFileStorage` + `GET/PUT /api/v1/config` (containers must be config-immutable; discovered `historyStart` lands there or in `feeds.json`). Liveness alerting (uptime-kuma / healthchecks.io).
 *Exit:* 7 days unattended collection; `status.json` green; redeploy loses no closed partition; collection config editable without touching the image; the VPS is reproducible from `terraform apply` + cloud-init on a clean slate, and deploys go through the pipeline, not by hand.
 
 **M2 — HistoryLoader@local + pull-sync**
+> **Status 2026-07-12: ❌ not started.** No sync code exists (no `sync-state.json`, no ETag differ, no manifest merge, no `AlgoTradeForge.DataSync`). Adjacent pieces that DO exist and de-risk it: deep-backfill importer (archive-backfill phases 1–2 merged, phase 3 on unmerged branch), catch-up collectors (the standard collector fleet), and the CAS manifest machinery the merge step builds on. This is the whole "delta to local backtests" leg of the base cloud minimum.
+
 Stand up the local HistoryLoader instance (same binary, local collector config): deep-backfill importer wiring, daily catch-up collectors for re-fetchable feeds, and the ETag-manifest pull-sync (§2) as a scheduled collector — include rules limited to un-backfillable feeds + config, manifest entries merged (not blind-copied) into the local `feeds.json`. DataSync ships as a thin CLI trigger over the local API (`--dry-run`, on-demand runs); recurring schedule via the instance's own Cronos config.
 *Exit:* steady-state sync transfers only changed keys (verified by manifest diff count); a backtest spanning deep-local + freshly-synced data is gap-free; after a mixed run (local kline catch-up + sync of cloud-collected feeds) the local `feeds.json` correctly describes both, with no clobbered entries.
 
 **M3 — LiveHost extraction + durability** (the big one; two shippable sub-phases)
+> **Status 2026-07-12: M3a ✅ merged and exceeded; M3b ❌ the key remaining gap.**
+> *M3a done:* `LiveHost.{Application,Infrastructure,WebApi}` extracted (PR #36); binary tick relay + HistoryLoader canonicalizer (Plans 1–2); instrument-keyed data plane (`ITickRouter`/`IStrategyDispatch`/`IBarSourceResolver`); account-keyed execution plane (`IOrderRouter`, multi-account); **IB venue complete beyond plan** — contract identity, data plane, order session all merged (IB re-plan Plans 1–4, PRs #39/#40/#43); LiveHost `collection.json` on `IFileStorage` (plan 6a) merged; catch-up replay + warm-up seeding merged (pulls M6 parity work forward).
+> *M3b outstanding:* sessions still `InMemoryLiveSessionStore` (no durable store — storage decision Q6 still open); no boot-time session recovery; no heartbeat endpoint / staleness watchdog / Telegram-webhook alerting; plugins load from local path only (no bootstrap-from-object-storage, no version pinning); IB deployment = IB re-plan Plan 5 (gnzsnz sidecar in compose, `ATF_PROFILE=ib`, manually-gated pipeline, live paper E2E). Pre-prod blocker carried from Plan 2: units-bearing Money model.
 *M3a:* new LiveHost host; move live DI wiring + `LiveEndpoints` out of WebApi; gateway proxies `/live/*` via `LiveHostClient`; plugin loading; in-host WS multiplexing (one connection per exchange shared across sessions, one user-data stream per account — Q7); run locally first.
 *M3b:* session persistence (storage decision made here — see §6 Q6) replacing `InMemoryLiveSessionStore`; boot-time session recovery replaying the existing 3-phase reconciliation against exchange state; heartbeat endpoint + staleness watchdog; Telegram/webhook alerting; plugin bootstrap-from-S3 with version pinning; deploy to VPS through the manually-gated livehost pipeline (§0).
 *Exit:* kill -9 mid-session with an open position → restart resumes the session, position/orders reconciled, alert sent; one small strategy live on the VPS 14 days unattended.
 
 **M4 — ComputeWorker extraction + YARP adoption**
+> **Status 2026-07-12: ❌ not started.** No `AlgoTradeForge.ComputeWorker` project; no YARP usage in source (main WebApi still hand-rolls HTTP+SSE proxying in `DataEndpoints.cs`). Not on the base-cloud-minimum critical path — compute stays in the local WebApi until this fires.
+
 Move `ComputeQueueConsumer`, executors, engine wiring, plugin loading, SQLite run/validation repos, simulation cache, debug WS handler into the new host; gateway dispatches `POST /tasks` + proxies status/progress/reports/debug-WS; `ComputeWorker:BaseUrl` config (localhost default). This is the YARP adoption point at the latest: the trigger is the hand-rolled forwarding pattern (`DataEndpoints.cs` HTTP+SSE proxying) being duplicated for a second upstream — which may already fire at M3a's `/live/*` proxying; adopt there if it chafes. Replace duplicated forwarding with declarative YARP routes + clusters (WS/SSE/HTTP2 pass through natively) — adopt infrastructure to delete code. Endpoints needing aggregation/business logic stay hand-written; pure pass-throughs become route config.
 *Exit:* all FE flows unchanged via gateway with worker as separate process; queue behavior (single consumer, cancellation, progress) identical; per-upstream forwarding code deleted in favor of route config.
 
 **M5 — Gateway slimming + second instance on the VPS**
+> **Status 2026-07-12: ❌ not started** (blocked on M0/M4; the existing `Gateway/` folder is a stale bin/obj-only shell slated for deletion at M0). Not on the base-cloud-minimum critical path — the sanctioned interim (Caddy → services directly, per-service `ServiceAuth` validation) covers cloud exposure until this lands.
+
 Rename WebApi → `AlgoTradeForge.Gateway`; delete in-process engine/queue/live remnants. Deploy a second instance of the same binary to the VPS behind Caddy with the cloud route config; cloud-side API-key validation moves from per-service middleware into Gateway@cloud, and HistoryLoader/LiveHost leave the public network (internal docker network only, no published ports). The FE-facing instance stays local. The pattern contains its own retirement plan: as services migrate, cluster destinations move from the local config to the cloud config; when the local config is pure "forward everything to cloud", delete the local instance and point the FE at Gateway@cloud.
 *Exit:* gateway has no project reference to engine internals beyond contracts; both instances run the same build artifact and differ only in `appsettings.{site}.json` (route IDs identical); HistoryLoader/LiveHost unreachable from the internet except via Caddy→Gateway@cloud; all hosts start from compose/CLI with placement chosen purely by env.
 
 **M6 — Live alt-bars + reporting polish**
+> **Status 2026-07-12: ✅ substantially landed early** (pulled forward by the LiveHost data-plane work). Accumulator engine promoted to `Domain/Aggregation` (one engine, two drivers); golden batch≡live test green; live in-process bar building via `TickAggregationBarSource` with frozen thresholds (M6 parity rule); warm-up seeding from the historical alt-bar feed (`WarmupLoader` + `CatchupPlan`/`CatchupCoordinator`); partial-bar state solved by replay-from-archive instead of persisted state (Plan 0 built-then-reverted decision). Remaining: live dashboards / reporting polish.
+
 Promote `IBarAccumulator` + accumulators out of `internal` in `HistoryLoader.Application/Aggregation/Accumulators/` into a shared project; incremental aggregation BackgroundService in HistoryLoader (persisted cursor + partial-bar state, CAS JSON next to the feed); in-process live bar building in LiveHost from its own stream using the same accumulators, seeded from the historical alt-bar feed; golden test incremental ≡ batch. Live dashboards.
 *Exit:* a live strategy consumes equal-volume bars whose historical record matches the live-computed sequence exactly over an overlap window; golden test green.
 

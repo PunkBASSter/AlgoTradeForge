@@ -11,6 +11,7 @@ Split strategy API (local, actively developed) from platform API (remote - stabl
 
 ## HistoryLoader & Live mode cloud-native redesign (why? collect ticks 24/7)
 Confirm cloud/local concerns and responsible services separation.
+- Multi-exchange adapters (Gate.io, KuCoin): extension-point findings + direction @docs\history-loader-multi-exchange-adapters.md
 Cloud:
 - Make history loader an incremental (delta) batch-loader backfill tool
   - Replace local file system calls with abstraction
