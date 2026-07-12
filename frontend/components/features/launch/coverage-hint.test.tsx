@@ -7,7 +7,7 @@ import type { DataFeedSubscription } from "@/types/api";
 import type { LoadRequestBody } from "@/types/data-tab";
 
 // Hoisted so FakeDataApiError is available when the vi.mock factory runs.
-const { getAssetsSpy, getCoverageSpy, postLoadSpy, getLoadJobSpy, FakeDataApiError, toastSpy } =
+const { getAssetsSpy, getCoverageSpy, postLoadSpy, FakeDataApiError, toastSpy } =
   vi.hoisted(() => {
     class FakeDataApiError extends Error {
       constructor(
@@ -23,7 +23,6 @@ const { getAssetsSpy, getCoverageSpy, postLoadSpy, getLoadJobSpy, FakeDataApiErr
       getAssetsSpy: vi.fn(),
       getCoverageSpy: vi.fn(),
       postLoadSpy: vi.fn(),
-      getLoadJobSpy: vi.fn(),
       toastSpy: vi.fn(),
       FakeDataApiError,
     };
@@ -34,7 +33,6 @@ vi.mock("@/lib/services/data-api", () => ({
     getAssets: (...args: unknown[]) => getAssetsSpy(...args),
     getCoverage: (...args: unknown[]) => getCoverageSpy(...args),
     postLoad: (...args: unknown[]) => postLoadSpy(...args),
-    getLoadJob: (...args: unknown[]) => getLoadJobSpy(...args),
   },
   DataApiError: FakeDataApiError,
 }));
@@ -59,32 +57,11 @@ const TIME_BAR_PRIMARY: DataFeedSubscription = {
   timeFrame: "1h",
 };
 
-// A terminal job snapshot returned by getLoadJob so polling stops immediately.
-const TERMINAL_JOB = {
-  job_id: "job-abc-123",
-  state: "complete" as const,
-  months_done: 1,
-  months_total: 1,
-  current_month: null,
-  error_code: null,
-  error_message: null,
-  symbol: "BTCUSDT",
-  feed_name: "candles",
-  interval: "1h",
-  from: "2024-02-01",
-  to: "2024-02-29",
-  queued_at: "",
-  completed_at: null,
-};
-
 beforeEach(() => {
   getAssetsSpy.mockReset();
   getCoverageSpy.mockReset();
   postLoadSpy.mockReset();
-  getLoadJobSpy.mockReset();
   toastSpy.mockReset();
-  // Default: terminal state so refetchInterval stops after first poll.
-  getLoadJobSpy.mockResolvedValue(TERMINAL_JOB);
 });
 
 function wrap(ui: React.ReactElement) {
@@ -278,8 +255,6 @@ describe("CoverageHint", () => {
 
     await waitFor(() => expect(toastSpy).toHaveBeenCalledOnce());
     expect(toastSpy).toHaveBeenCalledWith("Feed not replenishable", "error");
-    // jobId was never set so getLoadJob is never called (no polling started).
-    expect(getLoadJobSpy).not.toHaveBeenCalled();
   });
 
   it("ignores non-TimeBar primaries and renders nothing", () => {
