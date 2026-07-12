@@ -18,7 +18,6 @@ import type {
   JobSnapshot,
   JobState,
   LoadAcceptedResponse,
-  LoadJobSnapshotWire,
   LoadRequestBody,
   MaterializeRequest,
   ValidatePreview,
@@ -159,10 +158,6 @@ export const dataApi = {
     });
     return asJson<LoadAcceptedResponse>(resp);
   },
-
-  getLoadJob: (jobId: string, signal?: AbortSignal) =>
-    fetch(`${BASE_URL}/api/data/loads/${encodeURIComponent(jobId)}`, { signal })
-      .then(asJson<LoadJobSnapshotWire>),
 
   // ---- Unified jobs (phase 3b+). ----
 

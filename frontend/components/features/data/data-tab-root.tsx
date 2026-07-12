@@ -7,9 +7,7 @@ import { ExchangeCard } from "./exchange-card";
 import { DataSidebar } from "./data-sidebar";
 import { JobCard } from "./job-card";
 import { GroupsPanel } from "./groups/groups-panel";
-import { useDataSelectionStore } from "@/lib/stores/data-selection-store";
 import { useJobs } from "@/hooks/use-jobs";
-import { Button } from "@/components/ui/button";
 
 type DataZone = "explorer" | "groups";
 
@@ -37,8 +35,6 @@ export function DataTabRoot() {
     queryFn: ({ signal }) => dataApi.getExchanges(signal),
     enabled: zone === "explorer",
   });
-
-  const selection = useDataSelectionStore();
 
   // Block grid clicks while a cell's response is in flight to prevent rapid-click
   // request supersession (each new click aborts the prior request mid-read).
@@ -86,12 +82,7 @@ export function DataTabRoot() {
       {zone === "explorer" && (
         <div className={`flex flex-1 overflow-hidden ${cellsBusy ? "pointer-events-none" : ""}`}>
           <main className="flex-1 overflow-auto p-6 space-y-2">
-            <div className="flex items-center justify-between mb-4">
-              <h1 className="text-2xl font-semibold text-text-primary">Data</h1>
-              <Button variant="secondary" onClick={() => selection.openLoad()}>
-                Load archive data
-              </Button>
-            </div>
+            <h1 className="text-2xl font-semibold text-text-primary mb-4">Data</h1>
 
             <JobsPanel />
 

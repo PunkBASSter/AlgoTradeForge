@@ -17,7 +17,6 @@ interface Props {
 export function ExchangeCard({ exchange }: Props) {
   const [expanded, setExpanded] = useState(false);
   const openView = useDataSelectionStore((s) => s.openView);
-  const openCreate = useDataSelectionStore((s) => s.openCreate);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["data", "exchange-assets", exchange.name],
@@ -59,7 +58,6 @@ export function ExchangeCard({ exchange }: Props) {
             <AssetFeedGrid
               assets={data.assets}
               onView={(asset, feed) => openView(exchange.name, asset, feed)}
-              onAdd={(asset, sourceFeed) => openCreate(exchange.name, asset, sourceFeed)}
             />
           )}
         </div>
