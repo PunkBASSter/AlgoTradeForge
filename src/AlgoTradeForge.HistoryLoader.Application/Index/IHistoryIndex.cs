@@ -70,4 +70,10 @@ public interface IHistoryIndex
     Task<int> AppendJobEvent(string jobId, string eventKind, string payloadJson, CancellationToken ct = default);
     Task<IReadOnlyList<JobEventRow>> GetJobEventsAfter(string jobId, int afterSeq, CancellationToken ct = default);
     Task<int> GetLastEventSeq(string jobId, CancellationToken ct = default);
+
+    Task RequestCancel(string jobId, CancellationToken ct = default);
+    Task SetTouched(string jobId, string feedKey, string month, CancellationToken ct = default);
+    Task<IReadOnlyList<InterruptedJobRow>> ListInterruptedJobs(CancellationToken ct = default);
+    Task DeleteJob(string jobId, CancellationToken ct = default);
+    Task<int> DeleteTerminalJobsBefore(DateTimeOffset cutoffUtc, CancellationToken ct = default);
 }

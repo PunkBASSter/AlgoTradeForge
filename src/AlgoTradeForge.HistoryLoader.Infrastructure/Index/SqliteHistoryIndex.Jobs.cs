@@ -129,4 +129,84 @@ public sealed partial class SqliteHistoryIndex
         }
         return results;
     }
+
+    public async Task RequestCancel(string jobId, CancellationToken ct = default)
+    {
+        using var _ = await _writeGate.LockAsync(ct);
+        await using var conn = await Open(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE index_jobs SET cancel_requested=1, updated_at=$now WHERE id=$id";
+        cmd.Parameters.AddWithValue("$id", jobId);
+        cmd.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task SetTouched(string jobId, string feedKey, string month, CancellationToken ct = default)
+    {
+        var json = $"[{{\"feedKey\":\"{feedKey}\",\"month\":\"{month}\"}}]";
+        using var _ = await _writeGate.LockAsync(ct);
+        await using var conn = await Open(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE index_jobs SET touched_json=$j, updated_at=$now WHERE id=$id";
+        cmd.Parameters.AddWithValue("$id", jobId);
+        cmd.Parameters.AddWithValue("$j", json);
+        cmd.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<InterruptedJobRow>> ListInterruptedJobs(CancellationToken ct = default)
+    {
+        await using var conn = await Open(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id, kind, feed_key, touched_json FROM index_jobs WHERE state='interrupted'";
+        var results = new List<InterruptedJobRow>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            results.Add(new InterruptedJobRow(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.GetString(3)));
+        return results;
+    }
+
+    public async Task DeleteJob(string jobId, CancellationToken ct = default)
+    {
+        using var _ = await _writeGate.LockAsync(ct);
+        await using var conn = await Open(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = (SqliteTransaction)tx;
+        cmd.Parameters.AddWithValue("$id", jobId);
+        cmd.CommandText = "DELETE FROM job_events WHERE job_id=$id";
+        await cmd.ExecuteNonQueryAsync(ct);
+        cmd.CommandText = "DELETE FROM index_jobs WHERE id=$id";
+        await cmd.ExecuteNonQueryAsync(ct);
+        await tx.CommitAsync(ct);
+    }
+
+    public async Task<int> DeleteTerminalJobsBefore(DateTimeOffset cutoffUtc, CancellationToken ct = default)
+    {
+        // Bind as UtcDateTime.ToString("O") → "…Z" to string-compare correctly against stored "…Z" timestamps.
+        var cutoff = cutoffUtc.UtcDateTime.ToString("O");
+        using var _ = await _writeGate.LockAsync(ct);
+        await using var conn = await Open(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.Transaction = (SqliteTransaction)tx;
+        cmd.Parameters.AddWithValue("$cutoff", cutoff);
+        cmd.CommandText = """
+            DELETE FROM job_events WHERE job_id IN (
+                SELECT id FROM index_jobs
+                WHERE state IN ('complete','error','cancelled') AND updated_at < $cutoff)
+            """;
+        await cmd.ExecuteNonQueryAsync(ct);
+        cmd.CommandText = """
+            DELETE FROM index_jobs
+            WHERE state IN ('complete','error','cancelled') AND updated_at < $cutoff
+            """;
+        var deleted = await cmd.ExecuteNonQueryAsync(ct);
+        await tx.CommitAsync(ct);
+        return deleted;
+    }
 }

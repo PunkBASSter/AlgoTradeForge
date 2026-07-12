@@ -216,6 +216,42 @@ public sealed class SqliteHistoryIndexTests : IAsyncLifetime, IDisposable
         Assert.Equal(2, row.PriceDecimals);
     }
 
+    [Fact]
+    public async Task Cancel_Touched_List_Retention_RoundTrip()
+    {
+        var g = await _index.TryAcquireFeedGate("load", "binance|BTCUSDT|candles|1m", "{}", "{}", Ct);
+        var id = Assert.IsType<FeedGateOutcome.Acquired>(g).JobId;
+        var g2 = await _index.TryAcquireFeedGate("load", "binance|ETHUSDT|candles|1m", "{}", "{}", Ct);
+        var otherId = Assert.IsType<FeedGateOutcome.Acquired>(g2).JobId;
+
+        await _index.SetTouched(id, "binance|BTCUSDT|candles|1m", "2024-03", Ct);
+        await _index.RequestCancel(id, Ct);
+        var row = await _index.GetJob(id, Ct);
+        Assert.True(row!.CancelRequested);
+        Assert.Contains("2024-03", row.TouchedJson);
+
+        await _index.UpdateJob(id, "running", ct: Ct);
+        Assert.Single(await _index.ListJobs("load", "running", Ct));
+
+        // Mark interrupted → appears in ListInterruptedJobs with touched.
+        await _index.UpdateJob(id, "interrupted", ct: Ct);
+        var interrupted = await _index.ListInterruptedJobs(Ct);
+        Assert.Equal(id, interrupted.Single().Id);
+        Assert.Contains("2024-03", interrupted.Single().TouchedJson);
+
+        // Retention: a terminal job with an old updated_at is deleted with its events.
+        await _index.AppendJobEvent(id, "progress", "{}", Ct);
+        await _index.UpdateJob(id, "complete", ct: Ct);
+        var deleted = await _index.DeleteTerminalJobsBefore(DateTimeOffset.UtcNow.AddMinutes(1), Ct);
+        Assert.Equal(1, deleted);
+        Assert.Null(await _index.GetJob(id, Ct));
+        Assert.Empty(await _index.GetJobEventsAfter(id, 0, Ct));
+
+        // DeleteJob removes row and its events.
+        await _index.DeleteJob(otherId, Ct);
+        Assert.Null(await _index.GetJob(otherId, Ct));
+    }
+
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();
