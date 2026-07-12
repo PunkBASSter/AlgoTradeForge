@@ -6,6 +6,7 @@ using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using AlgoTradeForge.HistoryLoader.WebApi.Collection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
@@ -18,6 +19,7 @@ public sealed class ArchiveLoadServiceTests
 
     private readonly IBackfillOrchestrator _orchestrator = Substitute.For<IBackfillOrchestrator>();
     private readonly IOptionsMonitor<HistoryLoaderOptions> _options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
+    private readonly NullLogger<ArchiveLoadService> _logger = NullLogger<ArchiveLoadService>.Instance;
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -34,7 +36,7 @@ public sealed class ArchiveLoadServiceTests
     [Fact]
     public async Task Run_IntervalBasedFeed_WithEmptyInterval_DoesNotThrow_ReportsInvalidInterval()
     {
-        var svc = new ArchiveLoadService(_orchestrator, _options);
+        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
         var sink = new RecordingSink();
         var req = new ArchiveLoadRequest(Asset, FeedName: "candles", Interval: "", From: new(2024, 1, 1), To: new(2024, 1, 1));
         var ok = await svc.Run(req, sink, Ct);
@@ -47,7 +49,7 @@ public sealed class ArchiveLoadServiceTests
     [InlineData("7x")]
     public async Task Run_IntervalBasedFeed_WithGarbageInterval_ReportsInvalidInterval(string interval)
     {
-        var svc = new ArchiveLoadService(_orchestrator, _options);
+        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
         var sink = new RecordingSink();
         var req = new ArchiveLoadRequest(Asset, FeedName: FeedNames.Candles, Interval: interval, From: new(2024, 1, 1), To: new(2024, 1, 31));
         var ok = await svc.Run(req, sink, Ct);
@@ -71,7 +73,7 @@ public sealed class ArchiveLoadServiceTests
                 Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
-        var svc = new ArchiveLoadService(_orchestrator, _options);
+        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
         var sink = new RecordingSink();
         var req = new ArchiveLoadRequest(Asset, FeedName: feedName, Interval: "", From: new(2024, 1, 1), To: new(2024, 1, 31));
         var ok = await svc.Run(req, sink, Ct);
@@ -97,7 +99,7 @@ public sealed class ArchiveLoadServiceTests
                 return Task.FromResult(true);
             });
 
-        var svc = new ArchiveLoadService(_orchestrator, _options);
+        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
         var sink = new RecordingSink();
         var req = new ArchiveLoadRequest(Asset, FeedName: FeedNames.Candles, Interval: "1h", From: new(2024, 1, 1), To: new(2024, 1, 31));
         var ok = await svc.Run(req, sink, Ct);
@@ -122,12 +124,81 @@ public sealed class ArchiveLoadServiceTests
                 Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(false));
 
-        var svc = new ArchiveLoadService(_orchestrator, _options);
+        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
         var sink = new RecordingSink();
         var req = new ArchiveLoadRequest(Asset, FeedName: FeedNames.Candles, Interval: "1h", From: new(2024, 1, 1), To: new(2024, 1, 31));
         var ok = await svc.Run(req, sink, Ct);
 
         Assert.False(ok);
         Assert.Equal("symbol_busy", sink.FailCode);
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. Ordering — every progress Report must be durably written BEFORE the
+    //    terminal Complete. Uses an async sink with a real yield point so a
+    //    fire-and-forget bridge would let Complete overtake the pending Reports
+    //    (tail mis-order → SSE never delivers; state regression complete→running).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Run_ProgressReports_AllDrainBeforeComplete_InOrder()
+    {
+        _orchestrator.TryRunSingle(
+                Arg.Any<CollectionAsset>(), Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<string>?>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(),
+                Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var p = ci.Arg<IProgress<ArchiveProgress>?>();
+                p?.Report(new ArchiveProgress(1, 3, "2024-01"));
+                p?.Report(new ArchiveProgress(2, 3, "2024-02"));
+                p?.Report(new ArchiveProgress(3, 3, "2024-03"));
+                return Task.FromResult(true);
+            });
+
+        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
+        var sink = new OrderRecordingSink();
+        var req = new ArchiveLoadRequest(Asset, FeedName: FeedNames.Candles, Interval: "1h", From: new(2024, 1, 1), To: new(2024, 3, 31));
+        var ok = await svc.Run(req, sink, Ct);
+
+        Assert.True(ok);
+        var order = sink.Order;
+        Assert.Equal(4, order.Count);
+        Assert.Equal("complete", order[3]);
+        for (var i = 0; i < 3; i++)
+            Assert.Equal("progress", order[i]);
+    }
+
+    // Async sink with a real yield point in Report. Records the callback ORDER of
+    // Report vs Complete so the ordering test can observe a race a synchronous
+    // RecordingSink cannot. Lock-guarded so the fire-and-forget failure mode
+    // surfaces as a clean assertion, not a concurrent-List crash.
+    private sealed class OrderRecordingSink : IJobProgressSink
+    {
+        private readonly object _gate = new();
+        private readonly List<string> _order = [];
+
+        public IReadOnlyList<string> Order
+        {
+            get { lock (_gate) return [.._order]; }
+        }
+
+        public async Task Report(string progressJson, CancellationToken ct = default)
+        {
+            await Task.Delay(5, ct);
+            lock (_gate) _order.Add("progress");
+        }
+
+        public Task Started(string startedPayloadJson, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task Complete(string resultPayloadJson, CancellationToken ct = default)
+        {
+            lock (_gate) _order.Add("complete");
+            return Task.CompletedTask;
+        }
+
+        public Task Fail(string code, string message, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task Cancel(string reason, CancellationToken ct = default) => Task.CompletedTask;
     }
 }
