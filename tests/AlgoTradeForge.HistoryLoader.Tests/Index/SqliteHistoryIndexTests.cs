@@ -121,6 +121,27 @@ public sealed class SqliteHistoryIndexTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task TryAcquireFeedGate_ConcurrentSameFeed_ExactlyOneAcquires()
+    {
+        const string fk = "binance|BTCUSDT_perp|candles|1m";
+        var outcomes = await Task.WhenAll(Enumerable.Range(0, 20)
+            .Select(_ => _index.TryAcquireFeedGate("load", fk, "{}", "{}", Ct)));
+
+        Assert.Single(outcomes, o => o is FeedGateOutcome.Acquired);
+        Assert.Equal(19, outcomes.Count(o => o is FeedGateOutcome.Busy));
+        var owner = outcomes.OfType<FeedGateOutcome.Acquired>().Single().JobId;
+        Assert.All(outcomes.OfType<FeedGateOutcome.Busy>(), b => Assert.Equal(owner, b.ExistingJobId));
+
+        // A different feed_key is not blocked.
+        Assert.IsType<FeedGateOutcome.Acquired>(
+            await _index.TryAcquireFeedGate("load", "binance|ETHUSDT|candles|1m", "{}", "{}", Ct));
+
+        // Terminal state releases the gate — a new claim on fk now succeeds.
+        await _index.UpdateJob(owner, "complete", ct: Ct);
+        Assert.IsType<FeedGateOutcome.Acquired>(await _index.TryAcquireFeedGate("load", fk, "{}", "{}", Ct));
+    }
+
+    [Fact]
     public async Task ListFeedKeys_UnionsStatusAndMonthRows()
     {
         await _index.UpsertFeedStatus(new("binance", "BTCUSDT", "candles", "1h", 1, 2, 10, "Healthy", "[]", "[]"), Ct);

@@ -6,6 +6,36 @@ namespace AlgoTradeForge.HistoryLoader.Infrastructure.Index;
 
 public sealed partial class SqliteHistoryIndex
 {
+    public async Task<FeedGateOutcome> TryAcquireFeedGate(string kind, string feedKey, string progressJson, string requestJson, CancellationToken ct = default)
+    {
+        using var _ = await _writeGate.LockAsync(ct);
+        await using var conn = await Open(ct);
+        var id = Guid.NewGuid().ToString("N");
+        var now = DateTime.UtcNow.ToString("O");
+
+        await using var insert = conn.CreateCommand();
+        // Check-and-insert is atomic in-process under _writeGate; ux_jobs_active_feedkey is the DB backstop if the guard races.
+        insert.CommandText = """
+            INSERT INTO index_jobs (id, kind, state, progress_json, feed_key, cancel_requested, touched_json, request_json, created_at, updated_at)
+            SELECT $id, $kind, 'queued', $p, $fk, 0, '[]', $req, $now, $now
+            WHERE NOT EXISTS (SELECT 1 FROM index_jobs WHERE feed_key=$fk AND state IN ('queued','running'))
+            """;
+        insert.Parameters.AddWithValue("$id", id);
+        insert.Parameters.AddWithValue("$kind", kind);
+        insert.Parameters.AddWithValue("$p", progressJson);
+        insert.Parameters.AddWithValue("$fk", feedKey);
+        insert.Parameters.AddWithValue("$req", requestJson);
+        insert.Parameters.AddWithValue("$now", now);
+        var rows = await insert.ExecuteNonQueryAsync(ct);
+        if (rows == 1) return new FeedGateOutcome.Acquired(id);
+
+        await using var owner = conn.CreateCommand();
+        owner.CommandText = "SELECT id FROM index_jobs WHERE feed_key=$fk AND state IN ('queued','running') LIMIT 1";
+        owner.Parameters.AddWithValue("$fk", feedKey);
+        var existing = (string?)await owner.ExecuteScalarAsync(ct);
+        return new FeedGateOutcome.Busy(existing ?? "unknown");
+    }
+
     public async Task<int> AppendJobEvent(string jobId, string eventKind, string payloadJson, CancellationToken ct = default)
     {
         using var _ = await _writeGate.LockAsync(ct);

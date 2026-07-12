@@ -55,6 +55,9 @@ public interface IHistoryIndex
 
     Task<bool> IsEmpty(CancellationToken ct = default);
 
+    // Atomic create-and-claim for gated kinds (load/aggregation/materialize); requestJson persisted for rehydration.
+    Task<FeedGateOutcome> TryAcquireFeedGate(string kind, string feedKey, string progressJson, string requestJson, CancellationToken ct = default);
+
     // Gateless create for index/catalog jobs (feed_key NULL, request_json NULL, state 'queued').
     Task<string> CreateJob(string kind, CancellationToken ct = default);
     Task UpdateJob(string id, string state, string? progressJson = null, string? error = null, CancellationToken ct = default);
