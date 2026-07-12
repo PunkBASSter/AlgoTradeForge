@@ -1,9 +1,12 @@
 using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Application;
+using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Groups;
+using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Groups;
@@ -21,10 +24,31 @@ public sealed class GroupStoreTests : IDisposable
             Directory.Delete(_tempDir, recursive: true);
     }
 
-    private GroupStore MakeStore() =>
+    private GroupStore MakeStore(ArchiveMaterializerRegistry? materializers = null) =>
         new(new LocalFileStorage(),
             Options.Create(new HistoryLoaderOptions { ConfigRoot = _tempDir }),
+            materializers ?? new ArchiveMaterializerRegistry([]),
             NullLogger<GroupStore>.Instance);
+
+    private static ArchiveMaterializerRegistry RegistryFor(string exchange, string feed)
+    {
+        var m = Substitute.For<IArchiveMaterializer>();
+        m.Exchange.Returns(exchange);
+        m.FeedName.Returns(feed);
+        m.Supports(Arg.Any<string>()).Returns(true);
+        return new ArchiveMaterializerRegistry([m]);
+    }
+
+    private static CollectionGroup PerpGroup(string name, params (string Feed, string Collect)[] feeds) => new(
+        Name:            name,
+        Enabled:         true,
+        Exchanges:       ["binance"],
+        Assets:          new GroupAssets(["BTC/USDT-PERP"], "2023-01"),
+        Feeds:           feeds.ToDictionary(
+            f => f.Feed,
+            f => new GroupFeed(f.Collect, f.Feed == FeedNames.Candles ? ["1h"] : null, null)),
+        Derived:         null,
+        SymbolOverrides: null);
 
     private static CollectionGroup ValidGroup(string name) => new(
         Name:            name,
@@ -122,6 +146,40 @@ public sealed class GroupStoreTests : IDisposable
 
         var groupsDir = Path.Combine(_tempDir, "groups");
         Assert.False(File.Exists(Path.Combine(groupsDir, "gamma.json")));
+    }
+
+    // -------------------------------------------------------------------------
+    // Collectability: on-demand feed with no archive materializer is rejected (would never collect)
+
+    [Fact]
+    public async Task Put_OnDemandNonReplenishableFeed_ThrowsGroupValidationException_NoFileWritten()
+    {
+        var store = MakeStore();   // empty registry → liquidations is not replenishable
+        var group = PerpGroup("liq-group",
+            (FeedNames.Candles, "eager"),
+            (FeedNames.Liquidations, "on-demand"));
+
+        var ex = await Assert.ThrowsAsync<GroupValidationException>(() =>
+            store.Put("liq-group", group, expectedETag: null, Ct));
+
+        Assert.Contains(ex.Errors, e => e.Contains(FeedNames.Liquidations) && e.Contains("on-demand"));
+
+        var groupsDir = Path.Combine(_tempDir, "groups");
+        Assert.False(File.Exists(Path.Combine(groupsDir, "liq-group.json")));
+    }
+
+    [Fact]
+    public async Task Put_OnDemandReplenishableFeed_Succeeds()
+    {
+        var store = MakeStore(RegistryFor("binance", FeedNames.Ticks));
+        var group = PerpGroup("ticks-group",
+            (FeedNames.Candles, "eager"),
+            (FeedNames.Ticks, "on-demand"));
+
+        var etag = await store.Put("ticks-group", group, expectedETag: null, Ct);
+
+        Assert.NotNull(etag);
+        Assert.NotNull(await store.Get("ticks-group", Ct));
     }
 
     // -------------------------------------------------------------------------

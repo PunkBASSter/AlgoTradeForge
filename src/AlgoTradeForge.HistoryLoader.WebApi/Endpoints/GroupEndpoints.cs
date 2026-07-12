@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Groups;
 using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
@@ -133,6 +134,7 @@ internal static class GroupEndpoints
         IGroupStore store,
         SymbologyRegistry registry,
         IHistoryIndex index,
+        ArchiveMaterializerRegistry materializers,
         CancellationToken ct)
     {
         CollectionGroup? group;
@@ -153,7 +155,8 @@ internal static class GroupEndpoints
                 new { errors = (IEnumerable<string>)["body is null or empty"], expansion = (object?)null },
                 statusCode: StatusCodes.Status422UnprocessableEntity);
 
-        var errors = GroupValidator.Validate(group);
+        var errors = new List<string>(GroupValidator.Validate(group));
+        errors.AddRange(GroupCollectabilityValidator.Validate(group, materializers));
 
         // Force Enabled = true: a disabled draft would expand to 0 tuples and preview nothing.
         group = group with { Enabled = true };

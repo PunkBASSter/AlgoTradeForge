@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Application;
+using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Groups;
 using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain.Symbology;
@@ -21,6 +22,7 @@ public sealed class GroupEndpointsTests : IAsyncLifetime, IDisposable
     private GroupStore _store = null!;
     private SqliteHistoryIndex _index = null!;
     private readonly SymbologyRegistry _registry = new([new BinanceSymbology()]);
+    private readonly ArchiveMaterializerRegistry _materializers = new([]);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -29,6 +31,7 @@ public sealed class GroupEndpointsTests : IAsyncLifetime, IDisposable
         _store = new GroupStore(
             new LocalFileStorage(),
             Options.Create(new HistoryLoaderOptions { ConfigRoot = _dir }),
+            _materializers,
             NullLogger<GroupStore>.Instance);
 
         var init = new HistoryIndexInitializer(Path.Combine(_dir, "idx.sqlite"));
@@ -307,7 +310,7 @@ public sealed class GroupEndpointsTests : IAsyncLifetime, IDisposable
         var group = Valid("iota");
 
         var result = await GroupEndpoints.ValidateGroup(
-            BodyOf(group), _store, _registry, _index, Ct);
+            BodyOf(group), _store, _registry, _index, _materializers, Ct);
         var (status, body) = Inspect(result);
 
         Assert.Equal(200, status);
@@ -342,7 +345,7 @@ public sealed class GroupEndpointsTests : IAsyncLifetime, IDisposable
             SymbolOverrides: null);
 
         var result = await GroupEndpoints.ValidateGroup(
-            BodyOf(group), _store, _registry, _index, Ct);
+            BodyOf(group), _store, _registry, _index, _materializers, Ct);
         var (status, body) = Inspect(result);
 
         Assert.Equal(200, status);
@@ -361,7 +364,7 @@ public sealed class GroupEndpointsTests : IAsyncLifetime, IDisposable
         var g2 = WithFormat("g2", "parquet");
 
         var result = await GroupEndpoints.ValidateGroup(
-            BodyOf(g2), _store, _registry, _index, Ct);
+            BodyOf(g2), _store, _registry, _index, _materializers, Ct);
         var (status, body) = Inspect(result);
 
         Assert.Equal(200, status);
@@ -379,7 +382,7 @@ public sealed class GroupEndpointsTests : IAsyncLifetime, IDisposable
         var edited = WithFormat("g1", "parquet");
 
         var result = await GroupEndpoints.ValidateGroup(
-            BodyOf(edited), _store, _registry, _index, Ct);
+            BodyOf(edited), _store, _registry, _index, _materializers, Ct);
         var (status, body) = Inspect(result);
 
         Assert.Equal(200, status);
@@ -394,7 +397,7 @@ public sealed class GroupEndpointsTests : IAsyncLifetime, IDisposable
         var draft = Valid("lambda") with { Enabled = false };
 
         var result = await GroupEndpoints.ValidateGroup(
-            BodyOf(draft), _store, _registry, _index, Ct);
+            BodyOf(draft), _store, _registry, _index, _materializers, Ct);
         var (status, body) = Inspect(result);
 
         Assert.Equal(200, status);
@@ -417,7 +420,7 @@ public sealed class GroupEndpointsTests : IAsyncLifetime, IDisposable
         var group = Valid("mu");
 
         var result = await GroupEndpoints.ValidateGroup(
-            BodyOf(group), _store, _registry, _index, Ct);
+            BodyOf(group), _store, _registry, _index, _materializers, Ct);
         var (status, body) = Inspect(result);
 
         Assert.Equal(200, status);
@@ -448,7 +451,7 @@ public sealed class GroupEndpointsTests : IAsyncLifetime, IDisposable
             SymbolOverrides: null);
 
         var result = await GroupEndpoints.ValidateGroup(
-            BodyOf(group), _store, _registry, _index, Ct);
+            BodyOf(group), _store, _registry, _index, _materializers, Ct);
         var (status, body) = Inspect(result);
 
         Assert.Equal(200, status);

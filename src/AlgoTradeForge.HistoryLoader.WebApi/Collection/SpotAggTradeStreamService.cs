@@ -67,10 +67,11 @@ internal sealed class SpotAggTradeStreamService(
                     continue;
                 }
 
-                await EnsureSchemas(stoppingToken);
-
                 try
                 {
+                    // Inside the reconnect try: a transient feeds.json ETag/lock failure must be
+                    // retried, not propagated out of ExecuteAsync (which would stop the host).
+                    await EnsureSchemas(stoppingToken);
                     await ConnectAndStreamAsync(reconnect, symbols, stoppingToken);
                     // Normal disconnect or deliberate plan-dirty exit — reset before reconnecting.
                     reconnect.Reset();
