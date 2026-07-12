@@ -11,10 +11,18 @@ public sealed record BlockedAsset(string Exchange, string Canonical, string Dir,
 
 public sealed record PlanWarning(string Exchange, string Dir, string Message);
 
+// A feed that is produced by materializing a source feed rather than collected directly.
+public sealed record DerivedFeedEntry(
+    string Exchange, string Canonical, VenueInstrument Venue,
+    string FeedName, string DerivedSource);
+
 public sealed record CollectionPlan(
     IReadOnlyList<CollectionAsset> Assets,
     IReadOnlyList<BlockedAsset> Blocked,
     IReadOnlyList<PlanWarning> Warnings)
 {
+    // Derived feeds excluded from the collected Assets list; populated by CollectionPlanBuilder.
+    public IReadOnlyList<DerivedFeedEntry> Derived { get; init; } = [];
+
     public static readonly CollectionPlan Empty = new([], [], []);
 }

@@ -217,6 +217,11 @@ public static class DependencyInjection
             var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
             return new JobWakeupQueue(opts.Jobs.WakeupChannelDepth);
         });
+        services.AddKeyedSingleton<IJobWakeupQueue>("materialize", (sp, _) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
+            return new JobWakeupQueue(opts.Jobs.WakeupChannelDepth);
+        });
         services.AddSingleton<ArchiveBackfillService>();
         services.AddSingleton<ArchiveMaterializerRegistry>();
 

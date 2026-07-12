@@ -152,6 +152,7 @@ app.MapBackfillEndpoints();
 app.MapCatalogEndpoints();
 app.MapAggregationEndpoints();
 app.MapLoadEndpoints();
+app.MapMaterializeEndpoints();
 app.MapCoverageEndpoints();
 app.MapGroupEndpoints();
 app.MapDesiredStateEndpoints();

@@ -12,4 +12,5 @@ public sealed record DesiredTuple(
     string Format,           // csv | parquet
     string HistoryStart,     // yyyy-MM (min across groups)
     bool IsDerived,          // interval-less collected feeds also have Interval == "" — this flag is the ONLY derived marker
-    IReadOnlyList<string> Groups);  // contributing group names, for diagnostics
+    IReadOnlyList<string> Groups,  // contributing group names, for diagnostics
+    string? DerivedSource = null); // source feed name for derived feeds (propagated from GroupDerived.Source)
