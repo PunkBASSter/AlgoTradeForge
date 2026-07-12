@@ -2,8 +2,10 @@ using System.Text;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
+using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -25,25 +27,14 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
     public KlinesArchiveMaterializerTests() => Directory.CreateDirectory(_dir);
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 
-    private static AssetCollectionConfig SpotConfig(int decimalDigits = 2) => new()
-    {
-        Symbol = "BTCUSDT",
-        Type = AssetTypes.Spot,
-        DecimalDigits = decimalDigits
-    };
+    private static CollectionAsset SpotConfig(int decimalDigits = 2) =>
+        CollectionAssets.Spot("BTCUSDT", decimalDigits);
 
-    private static AssetCollectionConfig FuturesConfig(int decimalDigits = 2) => new()
-    {
-        Symbol = "BTCUSDT",
-        Type = AssetTypes.Perpetual,
-        DecimalDigits = decimalDigits
-    };
+    private static CollectionAsset FuturesConfig(int decimalDigits = 2) =>
+        CollectionAssets.Perp("BTCUSDT", decimalDigits);
 
-    private static FeedCollectionConfig FeedConfig(string interval = "1h") => new()
-    {
-        Name = FeedNames.Candles,
-        Interval = interval
-    };
+    private static CollectionFeed FeedConfig(string interval = "1h") =>
+        CollectionAssets.Feed(FeedNames.Candles, interval);
 
     private static Stream CsvStream(string csv) => new MemoryStream(Encoding.UTF8.GetBytes(csv));
 

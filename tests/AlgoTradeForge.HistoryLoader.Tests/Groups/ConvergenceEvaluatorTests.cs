@@ -1,8 +1,10 @@
 using Microsoft.Data.Sqlite;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Application.Groups;
 using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain.Symbology;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Index;
+using NSubstitute;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Groups;
@@ -406,5 +408,119 @@ public sealed class ConvergenceEvaluatorTests : IAsyncLifetime, IDisposable
 
         Assert.Contains(report.Orphaned,
             o => o.FeedName == "candle-ext" && o.Dir == "ETHUSDT_perp");
+    }
+
+    // ---- Task 7: discovery clamp, blocked, awaiting-data, one-SQL orphans ----
+
+    private static string[] MonthsRange(string startYm, DateOnly endMonth)
+    {
+        var cur = DateOnly.ParseExact(startYm + "-01", "yyyy-MM-dd");
+        var end = new DateOnly(endMonth.Year, endMonth.Month, 1);
+        var list = new List<string>();
+        while (cur <= end) { list.Add(cur.ToString("yyyy-MM")); cur = cur.AddMonths(1); }
+        return list.ToArray();
+    }
+
+    [Fact]
+    public async Task Expected_ClampsToDiscoveredFirstMonth()
+    {
+        // historyStart 2020-01, discovery 2023-05, covered = every month 2023-05..now (2024-03).
+        // Without the clamp expected = Jan2020..Mar2024 (51) → falsely "partial". With the clamp
+        // expected = May2023..Mar2024 (11) == covered → materialized (the idempotency case).
+        var covered = MonthsRange("2023-05", NowMonth);
+        await SeedMonths("binance", "BTCUSDT_perp", "candles", "1h", covered);
+        await _index.SetDiscoveredFirstMonth("binance", "BTCUSDT_perp", "candles", "1h", "2023-05", Ct);
+
+        var report = await _evaluator.Evaluate([MakePerpGroup(historyStart: "2020-01")], NowMonth, Ct);
+
+        var ts = Assert.Single(report.Tuples);
+        Assert.Equal("materialized", ts.Status);
+        Assert.Equal(11, ts.MonthsExpected);
+        Assert.Equal(ts.MonthsExpected, ts.MonthsCovered);
+    }
+
+    [Fact]
+    public async Task Blocked_WinsOverMissing()
+    {
+        // eager candles, 0 covered → normally "missing"; the asset is in the blocked set → "blocked".
+        var state = GroupExpansion.Expand(
+            [MakePerpGroup()], new SymbologyRegistry([new BinanceSymbology()]));
+        var blocked = new List<BlockedAsset>
+        {
+            new("binance", "BTC/USDT-PERP", "BTCUSDT_perp", "no instrument scale"),
+        };
+
+        var report = await _evaluator.Evaluate(state, blocked, NowMonth, Ct);
+
+        var ts = Assert.Single(report.Tuples);
+        Assert.Equal("blocked", ts.Status);
+    }
+
+    [Fact]
+    public async Task StreamFeed_ZeroObserved_IsAwaitingData_NotMaterialized()
+    {
+        // liquidations, no rows: awaiting-data for both a past and a future historyStart
+        // (future ⇒ expected 0, but awaiting-data fires before the missing/materialized rules).
+        var past = await _evaluator.Evaluate(
+            [MakePerpGroupWithFeed("liquidations", collect: "eager", historyStart: "2024-01")], NowMonth, Ct);
+        Assert.Equal("awaiting-data", Assert.Single(past.Tuples).Status);
+
+        var future = await _evaluator.Evaluate(
+            [MakePerpGroupWithFeed("liquidations", collect: "eager", historyStart: "2024-06")], NowMonth, Ct);
+        Assert.Equal("awaiting-data", Assert.Single(future.Tuples).Status);
+    }
+
+    [Fact]
+    public async Task StreamFeed_WithRows_ExpectedFromFirstObserved()
+    {
+        // now = 2026-07, liquidations observed 2026-05..2026-07, historyStart 2024-01.
+        // expected counts from first observed (2026-05), not historyStart → 3 == covered → materialized.
+        var now = new DateOnly(2026, 7, 1);
+        await SeedCompleteMonths("binance", "BTCUSDT_perp", "liquidations",
+            "2026-05", "2026-06", "2026-07");
+
+        var report = await _evaluator.Evaluate(
+            [MakePerpGroupWithFeed("liquidations", collect: "eager", historyStart: "2024-01")], now, Ct);
+
+        var ts = Assert.Single(report.Tuples);
+        Assert.Equal("materialized", ts.Status);
+        Assert.Equal(3, ts.MonthsCovered);
+        Assert.Equal(3, ts.MonthsExpected);
+    }
+
+    [Fact]
+    public async Task OrphanScan_SingleQuery_MatchesOldSemantics()
+    {
+        // Same shape as OrphanedFeedOnClaimedAsset (candles 1h claimed, mark-price 1h orphan) but
+        // over a substitute index: assert exactly one ListAllFeedKeys and zero per-asset ListFeedKeys.
+        var index = Substitute.For<IHistoryIndex>();
+        index.ListDiscoveredFirstMonths(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<DiscoveredFirstMonthRow>>([]));
+        index.GetFeedStatuses(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<FeedStatusIndexRow>>([]));
+        index.GetMonths("binance", "BTCUSDT_perp", "candles", "1h", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<MonthPartitionRow>>(
+            [
+                new("2024-01", 100, 1, "mt"),
+                new("2024-02", 100, 1, "mt"),
+                new("2024-03", 100, 1, "mt"),
+            ]));
+        index.ListAllFeedKeys(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<(string, string, string, string)>>(
+            [
+                ("binance", "BTCUSDT_perp", "candles", "1h"),
+                ("binance", "BTCUSDT_perp", "mark-price", "1h"),
+            ]));
+
+        var evaluator = new ConvergenceEvaluator(index, new SymbologyRegistry([new BinanceSymbology()]));
+
+        var report = await evaluator.Evaluate([MakePerpGroup()], NowMonth, Ct);
+
+        var orphan = Assert.Single(report.Orphaned);
+        Assert.Equal("mark-price", orphan.FeedName);
+        Assert.Equal("1h", orphan.Interval);
+        await index.Received(1).ListAllFeedKeys(Arg.Any<CancellationToken>());
+        await index.DidNotReceive().ListFeedKeys(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 }

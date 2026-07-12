@@ -39,11 +39,13 @@ internal static class AggregationEndpoints
         string InputMode,
         string? ConvenienceInput);
 
-    private static async Task<IResult> PostAggregate(
+    // internal for direct endpoint-level testing (InternalsVisibleTo)
+    internal static async Task<IResult> PostAggregate(
         string exchange,
         string asset,
         AggregateRequest body,
         IOptionsMonitor<HistoryLoaderOptions> options,
+        ICollectionPlanSource planSource,
         IFeedCatalog catalog,
         ISchemaManager schema,
         IAggregationJobRegistry registry,
@@ -63,10 +65,11 @@ internal static class AggregationEndpoints
 
         // Resolve configured asset
         var config = options.CurrentValue;
-        var assetConfig = config.Assets.FirstOrDefault(a =>
+        var planAsset = planSource.Current.Assets.FirstOrDefault(a =>
             string.Equals(a.Exchange, exchange, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(AssetPathConvention.DirectoryName(a.Symbol, a.Type), asset, StringComparison.Ordinal));
-        if (assetConfig is null)
+            string.Equals(a.Venue.Dir, asset, StringComparison.Ordinal));
+        if (planAsset is null)
+            // wire-compatible error code; "configured" now means "declared in an enabled group"
             return Results.NotFound(new { error = "asset_not_configured", exchange, asset });
 
         // Source feed eligibility (422)
@@ -78,7 +81,7 @@ internal static class AggregationEndpoints
         var hasCandleExt = assetEntry.Feeds.Any(f =>
             string.Equals(f.Id, "candle-ext", StringComparison.Ordinal));
 
-        var eligibility = EligibilityRules.ForSource(sourceFeed, assetConfig.Type, hasCandleExt);
+        var eligibility = EligibilityRules.ForSource(sourceFeed, planAsset.Venue.AssetType, hasCandleExt);
         if (!eligibility.EligibleTypes.Contains(body.TypeCode))
         {
             var reason = eligibility.IneligibleTypes
@@ -98,7 +101,7 @@ internal static class AggregationEndpoints
         }
 
         // Threshold resolution (422 on conversion error)
-        var scale = AssetScaleContextFactory.FromDecimalDigits(assetConfig.DecimalDigits);
+        var scale = AssetScaleContextFactory.FromDecimalDigits(planAsset.DecimalDigits);
         ThresholdResolver.Resolved threshold;
         try
         {
@@ -178,7 +181,7 @@ internal static class AggregationEndpoints
 
         // Existing feed → Continue (202), no_new_data (200), or resume_unsupported (422).
         // Full rebuild = explicit Delete then Aggregate; no in-place overwrite.
-        var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, assetConfig);
+        var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, planAsset);
         ResumeContext? resume = null;
 
         DataFeedKind sourceKind;
@@ -334,11 +337,13 @@ internal static class AggregationEndpoints
         }
     }
 
-    private static async Task<IResult> DeleteFeed(
+    // internal for direct endpoint-level testing (InternalsVisibleTo)
+    internal static async Task<IResult> DeleteFeed(
         string exchange,
         string asset,
         string feedId,
         IOptionsMonitor<HistoryLoaderOptions> options,
+        ICollectionPlanSource planSource,
         ISchemaManager schema,
         IAggregationJobRegistry registry,
         CancellationToken ct)
@@ -351,13 +356,14 @@ internal static class AggregationEndpoints
             return Unprocessable("invalid_feed_id", feedErr!);
 
         var config = options.CurrentValue;
-        var assetConfig = config.Assets.FirstOrDefault(a =>
+        var planAsset = planSource.Current.Assets.FirstOrDefault(a =>
             string.Equals(a.Exchange, exchange, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(AssetPathConvention.DirectoryName(a.Symbol, a.Type), asset, StringComparison.Ordinal));
-        if (assetConfig is null)
+            string.Equals(a.Venue.Dir, asset, StringComparison.Ordinal));
+        if (planAsset is null)
+            // wire-compatible error code; "configured" now means "declared in an enabled group"
             return Results.NotFound(new { error = "asset_not_configured", exchange, asset });
 
-        var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, assetConfig);
+        var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, planAsset);
         var manifest = await schema.Load(assetDir, ct);
         if (manifest is null || !manifest.Feeds.TryGetValue(feedId, out var def))
             return Results.NotFound(new { error = "feed_not_found", feed_id = feedId });

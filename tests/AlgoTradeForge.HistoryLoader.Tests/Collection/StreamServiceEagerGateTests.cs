@@ -1,71 +1,60 @@
-using AlgoTradeForge.HistoryLoader.Application;
-using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.WebApi.Collection;
-using NSubstitute;
 using Xunit;
 
 namespace AlgoTradeForge.HistoryLoader.Tests.Collection;
 
+// Post-3a the eager/lazy decision is the group's collect value (materialized into the plan by
+// LegacyGroupImporter / CollectionPlanBuilder). At the legacy config boundary the bridge maps
+// Eager → "eager" and everything else → "on-demand"; streams gate on collect == "eager".
 public sealed class StreamServiceEagerGateTests
 {
-    private static HistoryLoaderOptions Config(string type, string feedName, bool eager) => new()
-    {
-        Assets =
-        [
-            new AssetCollectionConfig
-            {
-                Symbol = "BTCUSDT", Type = type,
-                Feeds = [new FeedCollectionConfig { Name = feedName, Eager = eager }],
-            },
-        ],
-    };
-
-    private static ArchiveMaterializerRegistry FuturesBookTickerRegistry()
-    {
-        var m = Substitute.For<IArchiveMaterializer>();
-        m.Exchange.Returns("binance");
-        m.FeedName.Returns(FeedNames.BookTicker);
-        m.Supports(Arg.Any<string>()).Returns(ci => AssetTypes.IsFutures(ci.Arg<string>()));
-        return new ArchiveMaterializerRegistry([m]);
-    }
+    private static CollectionPlan Plan(string type, string feedName, string collect) =>
+        new(
+            type == AssetTypes.Spot
+                ? [CollectionAssets.Spot("BTCUSDT", 2, CollectionAssets.Feed(feedName, "", collect))]
+                : [CollectionAssets.Perp("BTCUSDT", 2, CollectionAssets.Feed(feedName, "", collect))],
+            [], []);
 
     [Fact]
-    public void BookTicker_NoMaterializerToday_AlwaysStreams()
+    public void BookTicker_Eager_Streams()
     {
-        var policy = new CollectionPolicy(new ArchiveMaterializerRegistry([]));
         var symbols = BookTickerStreamService.BuildEnabledSymbols(
-            Config("perpetual", FeedNames.BookTicker, eager: false), AssetTypes.IsFutures, policy);
+            Plan(AssetTypes.Perpetual, FeedNames.BookTicker, "eager"), AssetTypes.IsFutures);
         Assert.Single(symbols);
     }
 
     [Fact]
-    public void BookTicker_FuturesReplenishable_StreamsOnlyWhenEager()
+    public void BookTicker_NonEager_DoesNotStream()
     {
-        var policy = new CollectionPolicy(FuturesBookTickerRegistry());
-        Assert.Empty(BookTickerStreamService.BuildEnabledSymbols(
-            Config("perpetual", FeedNames.BookTicker, eager: false), AssetTypes.IsFutures, policy));
-        Assert.Single(BookTickerStreamService.BuildEnabledSymbols(
-            Config("perpetual", FeedNames.BookTicker, eager: true), AssetTypes.IsFutures, policy));
+        var symbols = BookTickerStreamService.BuildEnabledSymbols(
+            Plan(AssetTypes.Perpetual, FeedNames.BookTicker, "on-demand"), AssetTypes.IsFutures);
+        Assert.Empty(symbols);
     }
 
     [Fact]
-    public void BookTicker_SpotIrreplaceable_AlwaysStreams()
+    public void BookTicker_SpotEager_Streams()
     {
-        // The futures-only materializer must not silence the spot stream (spec §1).
-        var policy = new CollectionPolicy(FuturesBookTickerRegistry());
         var symbols = BookTickerStreamService.BuildEnabledSymbols(
-            Config("spot", FeedNames.BookTicker, eager: false), AssetTypes.IsSpot, policy);
+            Plan(AssetTypes.Spot, FeedNames.BookTicker, "eager"), AssetTypes.IsSpot);
         Assert.Single(symbols);
     }
 
     [Fact]
-    public void SpotAggTrades_NoMaterializerToday_AlwaysStreams()
+    public void SpotAggTrades_Eager_Streams()
     {
-        var policy = new CollectionPolicy(new ArchiveMaterializerRegistry([]));
         var symbols = SpotAggTradeStreamService.BuildEnabledSpotSymbols(
-            Config("spot", FeedNames.Ticks, eager: false), policy);
+            Plan(AssetTypes.Spot, FeedNames.Ticks, "eager"));
         Assert.Single(symbols);
+    }
+
+    [Fact]
+    public void SpotAggTrades_NonEager_DoesNotStream()
+    {
+        var symbols = SpotAggTradeStreamService.BuildEnabledSpotSymbols(
+            Plan(AssetTypes.Spot, FeedNames.Ticks, "on-demand"));
+        Assert.Empty(symbols);
     }
 }

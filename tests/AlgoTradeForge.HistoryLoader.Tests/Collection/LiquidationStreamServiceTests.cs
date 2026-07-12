@@ -1,4 +1,7 @@
 using System.Text;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.WebApi.Collection;
 using Xunit;
 
@@ -155,5 +158,29 @@ public sealed class LiquidationStreamServiceTests
         var result = LiquidationStreamService.ParseForceOrder(data);
 
         Assert.Null(result);
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. EnabledSymbolSet_ComesFromPlan_EagerLiquidationsFuturesOnly
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void EnabledSymbolSet_ComesFromPlan_EagerLiquidationsFuturesOnly()
+    {
+        // Plan contains:
+        //   BTCUSDT perp — eager liquidations  → should be included
+        //   ETHUSDT perp — on-demand liquidations → excluded (not eager)
+        //   BTCUSDT spot — eager liquidations  → excluded (not futures)
+        var plan = new CollectionPlan(
+        [
+            CollectionAssets.Perp("BTCUSDT", 2, CollectionAssets.Feed(FeedNames.Liquidations, "", "eager")),
+            CollectionAssets.Perp("ETHUSDT", 2, CollectionAssets.Feed(FeedNames.Liquidations, "", "on-demand")),
+            CollectionAssets.Spot("BTCUSDT", 2, CollectionAssets.Feed(FeedNames.Liquidations, "", "eager")),
+        ], [], []);
+
+        var set = LiquidationStreamService.BuildEnabledSymbolSet(plan);
+
+        Assert.Single(set);
+        Assert.Contains("BTCUSDT", set);
     }
 }

@@ -119,6 +119,27 @@ public sealed class FeedSchemaManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task EnsureCandleConfig_DoesNotOverwriteExistingScaleFactor()
+    {
+        var manager  = new FeedSchemaManager(new LocalFileStorage());
+        var assetDir = AssetDir("ETHUSDT_PreserveScale");
+
+        // First write records the recorded scale for this asset (digits=2 → 100).
+        await manager.EnsureCandleConfig(assetDir, decimalDigits: 2, interval: "1h", ct: Ct);
+
+        // A later call carrying a divergent exchangeInfo digit count (8 → 1e8) must NOT
+        // clobber the recorded scale — only intervals may grow.
+        await manager.EnsureCandleConfig(assetDir, decimalDigits: 8, interval: "5m", ct: Ct);
+
+        var metadata = ReadFeedsJson(assetDir);
+        Assert.NotNull(metadata.Candles);
+        Assert.Equal(100m, metadata.Candles!.ScaleFactor);
+        Assert.Equal(2, metadata.Candles.Intervals.Length);
+        Assert.Contains("1h", metadata.Candles.Intervals);
+        Assert.Contains("5m", metadata.Candles.Intervals);
+    }
+
+    [Fact]
     public async Task AtomicWrite_NoPartialFiles()
     {
         var manager  = new FeedSchemaManager(new LocalFileStorage());

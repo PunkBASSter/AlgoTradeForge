@@ -363,6 +363,8 @@ export interface ValidatePreview {
 export type TupleStatusValue =
   | "unsupported"
   | "on-demand"
+  | "blocked"
+  | "awaiting-data"
   | "missing"
   | "partial"
   | "materialized";

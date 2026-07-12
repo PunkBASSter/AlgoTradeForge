@@ -3,6 +3,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 
@@ -24,11 +25,11 @@ internal sealed class FundingRateArchiveMaterializer(
     public bool Supports(string assetType) => AssetTypes.IsFutures(assetType);
 
     public async Task<ArchiveMonthResult> MaterializeMonth(
-        AssetCollectionConfig assetConfig, FeedCollectionConfig feedConfig,
+        CollectionAsset asset, CollectionFeed feed,
         string assetDir, int year, int month, CancellationToken ct = default)
     {
         const string market = "futures/um";
-        var symbol = assetConfig.Symbol;
+        var symbol = asset.Venue.ApiSymbol;
 
         var (fundingRaw, fromMonthlyZip) = await Download(market, "fundingRate", interval: null, symbol, year, month, ct);
         if (fundingRaw.Count == 0)

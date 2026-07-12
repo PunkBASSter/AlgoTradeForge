@@ -2,6 +2,7 @@ using AlgoTradeForge.Storage;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Live.Relay;
 using AlgoTradeForge.HistoryLoader.Application;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -32,7 +33,7 @@ public sealed class EndToEndRoundTripTests : IDisposable
     [Fact]
     public async Task RelayWrite_Canonicalize_ProducesBacktestReadableTickCsv()
     {
-        var map = new InstrumentAssetDirMap(_root, new Dictionary<string, string>());
+        var map = new InstrumentAssetDirMap(_root, new CollectionPlanHolder());
         var writer = new DailyTickCsvWriter(_storage, _tail,
             Options.Create(new HistoryLoaderStorageOptions { FlushEveryRows = 1, FlushIntervalSeconds = 60 }),
             NullLogger<DailyTickCsvWriter>.Instance, new WriteLockManager());

@@ -308,7 +308,7 @@ AlgoTradeForge.HistoryLoader.WebApi        # ASP.NET Core host + endpoints + bac
 - **Gap detection**: Monitors timestamp monotonicity. Non-monotonic jumps > `GapThresholdMultiplier × interval` are recorded in feed status.
 - **Feed status**: Per-feed state files track first/last timestamps, record counts, gaps, and health. Persisted alongside CSV data.
 - **Hot reload**: `IOptionsMonitor<HistoryLoaderOptions>` enables adding/removing assets without restarting the service.
-- **Date discovery**: When a feed's `HistoryStart` is too early (API returns HTTP 400 date-range error), `SymbolCollector` performs a binary search across months to find the earliest valid start date, then persists it back to `appsettings.json` via `ISettingsWriter`.
+- **Date discovery**: When a feed's `HistoryStart` is too early (API returns HTTP 400 date-range error), `SymbolCollector` performs a binary search across months to find the earliest valid start date, then persists it to the history index via `IHistoryIndex.SetDiscoveredFirstMonth` and fires `CollectionChangeNotifier` to trigger a pipeline re-run.
 - **Cron schedules**: Services can opt into cron-based scheduling (via `Cronos`) by overriding `ScheduleName`. Currently used by `FundingRateCollectorService` to align collection with Binance's 8-hour funding rate publication times.
 - **Retry**: `BinanceRetryHelper` retries on network errors, HTTP 429, and 5xx with exponential backoff (2s, 4s, 8s; max 3 retries). HTTP 418 trips the circuit breaker. HTTP 400 date-range errors trigger date discovery. Other 4xx errors skip the symbol.
 

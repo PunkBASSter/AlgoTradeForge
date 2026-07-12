@@ -103,6 +103,68 @@ public sealed class SqliteHistoryIndexTests : IAsyncLifetime, IDisposable
         Assert.Contains(("candles", "1d"), keys);
     }
 
+    [Fact]
+    public async Task SetDiscoveredFirstMonth_UpsertsBeforeAnyDataWrite()
+    {
+        await _index.SetDiscoveredFirstMonth("binance", "BTCUSDT_perp", "mark-price", "1h", "2023-05", Ct);
+        var rows = await _index.ListDiscoveredFirstMonths(Ct);
+        var row = Assert.Single(rows);
+        Assert.Equal(("binance", "BTCUSDT_perp", "mark-price", "1h", "2023-05"),
+            (row.Exchange, row.Dir, row.FeedName, row.Interval, row.Month));
+
+        // second write overwrites (rediscovery)
+        await _index.SetDiscoveredFirstMonth("binance", "BTCUSDT_perp", "mark-price", "1h", "2023-04", Ct);
+        Assert.Equal("2023-04", (await _index.ListDiscoveredFirstMonths(Ct))[0].Month);
+    }
+
+    [Fact]
+    public async Task SetDiscoveredFirstMonth_PreservesExistingStatusColumns()
+    {
+        await _index.UpsertFeedStatus(new FeedStatusIndexRow(
+            "binance", "BTCUSDT_perp", "funding-rate", "", 1L, 2L, 42, "Healthy", "[]", "[\"2024-01\"]"), Ct);
+        await _index.SetDiscoveredFirstMonth("binance", "BTCUSDT_perp", "funding-rate", "", "2023-11", Ct);
+        var status = Assert.Single(await _index.GetFeedStatuses("binance", "BTCUSDT_perp", Ct));
+        Assert.Equal(42, status.RecordCount);          // upsert must not blank existing columns
+        Assert.Equal("[\"2024-01\"]", status.CompleteMonthsJson);
+    }
+
+    [Fact]
+    public async Task ListAllFeedKeys_UnionsStatusAndMonthRowsAcrossAssets()
+    {
+        await _index.UpsertFeedStatus(new FeedStatusIndexRow("binance", "A", "funding-rate", "", null, null, 0, "Healthy", "[]", "[]"), Ct);
+        await _index.ReplaceMonths("binance", "B", "candles", "1h",
+            [new MonthPartitionRow("2024-01", 10, 100, "2024-01-31T00:00:00Z")], Ct);
+        var keys = await _index.ListAllFeedKeys(Ct);
+        Assert.Contains(("binance", "A", "funding-rate", ""), keys);
+        Assert.Contains(("binance", "B", "candles", "1h"), keys);
+    }
+
+    [Fact]
+    public async Task Reads_AreCaseInsensitive_OnExchangeAndDir()
+    {
+        await _index.UpsertFeedStatus(new FeedStatusIndexRow("Binance", "BTCUSDT_Perp", "mark-price", "1h", null, null, 0, "Healthy", "[]", "[]"), Ct);
+        await _index.ReplaceMonths("Binance", "BTCUSDT_Perp", "mark-price", "1h",
+            [new MonthPartitionRow("2024-01", 10, 100, "2024-01-31T00:00:00Z")], Ct);
+        Assert.Single(await _index.GetFeedStatuses("binance", "btcusdt_perp", Ct));
+        Assert.Single(await _index.GetMonths("binance", "btcusdt_perp", "mark-price", "1h", Ct));
+        Assert.Single(await _index.ListFeedKeys("binance", "btcusdt_perp", Ct));
+    }
+
+    [Fact]
+    public async Task InstrumentMeta_BatchUpsert_AndFilteredList()
+    {
+        await _index.UpsertInstrumentMeta([
+            new InstrumentMetaRow("binance", "BTCUSDT_perp", 1, 3, "0.10", "2026-07-11T00:00:00Z"),
+            new InstrumentMetaRow("binance", "ETHUSDT", 2, 4, "0.01", "2026-07-11T00:00:00Z")], Ct);
+        Assert.Equal(2, (await _index.ListInstrumentMeta("binance", Ct)).Count);
+
+        // re-upsert overwrites in place (PK exchange+dir)
+        await _index.UpsertInstrumentMeta([
+            new InstrumentMetaRow("binance", "BTCUSDT_perp", 2, 3, "0.01", "2026-07-12T00:00:00Z")], Ct);
+        var row = (await _index.ListInstrumentMeta("binance", Ct)).Single(r => r.Dir == "BTCUSDT_perp");
+        Assert.Equal(2, row.PriceDecimals);
+    }
+
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();

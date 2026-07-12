@@ -16,7 +16,11 @@ public sealed class HistoryLoaderOptions
     public int CircuitBreakerCooldownMinutes { get; init; } = 15;
     public int NetworkFailureThreshold { get; init; } = 3;
     public int NetworkProbeIntervalSeconds { get; init; } = 60;
+
+    /// <summary>Gap-detection multiplier for streamed/polled feeds (was per-feed; never overridden).</summary>
+    public double GapThresholdMultiplier { get; init; } = 2.0;
     public BinanceOptions Binance { get; init; } = new();
+    // Importer input only (LegacyGroupImporter first boot). Runtime consumers read ICollectionPlanSource.
     public List<AssetCollectionConfig> Assets { get; init; } = [];
     public Dictionary<string, CollectionSchedule> Schedules { get; init; } = [];
     public AggregatorOptions Aggregator { get; init; } = new();

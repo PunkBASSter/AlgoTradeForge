@@ -9,7 +9,7 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 
 internal abstract class ScheduledCollectorService(
     SymbolCollector symbolCollector,
-    CollectionPolicy collectionPolicy,
+    ICollectionPlanSource planSource,
     ICollectionCircuitBreaker circuitBreaker,
     IHttpClientFactory httpClientFactory,
     IOptionsMonitor<HistoryLoaderOptions> options,
@@ -175,34 +175,28 @@ internal abstract class ScheduledCollectorService(
         var config = options.CurrentValue;
         var consecutiveNetworkFailures = 0;
 
-        foreach (var asset in config.Assets)
+        foreach (var asset in planSource.Current.Assets)
         {
             if (circuitBreaker.IsTripped)
                 return;
 
-            if (FuturesOnly && !AssetTypes.IsFutures(asset.Type))
+            if (FuturesOnly && !AssetTypes.IsFutures(asset.Venue.AssetType))
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
 
             foreach (var feedName in CollectedFeedNames)
             {
-                var feeds = asset.Feeds
-                    .Where(f => f.Enabled
-                        && f.Name == feedName
-                        && collectionPolicy.IsEagerlyCollected(asset, f));
-
-                foreach (var feed in feeds)
+                foreach (var feed in asset.Feeds.Where(f => f.FeedName == feedName && f.Collect == "eager"))
                 {
                     try
                     {
                         var toMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                        var from = feed.HistoryStart ?? asset.HistoryStart;
                         var fromMs = new DateTimeOffset(
-                            from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
+                            feed.EffectiveStart.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
                             .ToUnixTimeMilliseconds();
 
-                        await symbolCollector.CollectFeedAsync(asset, feed, assetDir, fromMs, toMs, ct: ct);
+                        await symbolCollector.CollectFeed(asset, feed, assetDir, fromMs, toMs, ct: ct);
                         consecutiveNetworkFailures = 0;
                     }
                     catch (HttpRequestException ex) when (ex.StatusCode == (System.Net.HttpStatusCode)418)
@@ -226,12 +220,12 @@ internal abstract class ScheduledCollectorService(
 
                         logger.LogWarning(ex,
                             "Network error for {Feed}/{Symbol} ({Count}/{Threshold})",
-                            feedName, asset.Symbol, consecutiveNetworkFailures, config.NetworkFailureThreshold);
+                            feedName, asset.Venue.ApiSymbol, consecutiveNetworkFailures, config.NetworkFailureThreshold);
                     }
                     catch (Exception ex) when (!IsTrueShutdown(ex, ct))
                     {
                         consecutiveNetworkFailures = 0;
-                        logger.LogError(ex, "{Feed} collection failed for {Symbol}", feedName, asset.Symbol);
+                        logger.LogError(ex, "{Feed} collection failed for {Symbol}", feedName, asset.Venue.ApiSymbol);
                     }
                 }
             }

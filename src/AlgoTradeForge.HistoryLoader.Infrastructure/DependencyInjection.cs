@@ -182,6 +182,10 @@ public static class DependencyInjection
 
         services.AddSingleton<AggregatedDirSweeper>();
 
+        // Instrument-meta — named HttpClient for Binance exchangeInfo (spot + futures)
+        services.AddHttpClient("binance-meta");
+        services.AddSingleton<IInstrumentMetaProvider, BinanceInstrumentMetaProvider>();
+
         // Archive backfill — named HttpClient for data.binance.vision downloads
         services.AddHttpClient("binance-archive", (sp, client) =>
         {
@@ -191,7 +195,6 @@ public static class DependencyInjection
         });
         services.AddSingleton<IBinanceArchiveClient, BinanceArchiveClient>();
         services.AddSingleton<IPartitionFileWriter, PartitionFileWriter>();
-        services.AddSingleton<ILoadAssetResolver, BinanceLoadAssetResolver>();
         services.AddSingleton<ILoadJobRegistry, LoadJobRegistry>();
         services.AddSingleton<ArchiveBackfillService>();
         services.AddSingleton<ArchiveMaterializerRegistry>();

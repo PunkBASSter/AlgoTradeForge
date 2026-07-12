@@ -3,6 +3,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 
@@ -27,15 +28,15 @@ internal sealed class KlinesArchiveMaterializer(
         (supportsSpot && AssetTypes.IsSpot(assetType)) || AssetTypes.IsFutures(assetType);
 
     public async Task<ArchiveMonthResult> MaterializeMonth(
-        AssetCollectionConfig assetConfig, FeedCollectionConfig feedConfig,
+        CollectionAsset asset, CollectionFeed feed,
         string assetDir, int year, int month, CancellationToken ct = default)
     {
-        var market = AssetTypes.IsSpot(assetConfig.Type) ? "spot" : "futures/um";
-        var interval = feedConfig.Interval;
+        var market = AssetTypes.IsSpot(asset.Venue.AssetType) ? "spot" : "futures/um";
+        var interval = feed.Interval;
         var rows = new List<string[]>();
         var available = false;
 
-        await using (var monthly = await archive.DownloadMonthly(market, dataset, assetConfig.Symbol, interval, year, month, ct))
+        await using (var monthly = await archive.DownloadMonthly(market, dataset, asset.Venue.ApiSymbol, interval, year, month, ct))
         {
             if (monthly is not null)
             {
@@ -55,7 +56,7 @@ internal sealed class KlinesArchiveMaterializer(
 
             for (var day = monthStart; day <= monthEnd; day = day.AddDays(1))
             {
-                await using var daily = await archive.DownloadDaily(market, dataset, assetConfig.Symbol, interval, day, ct);
+                await using var daily = await archive.DownloadDaily(market, dataset, asset.Venue.ApiSymbol, interval, day, ct);
                 if (daily is null) continue;
                 using var reader = new StreamReader(daily);
                 rows.AddRange(ArchiveCsv.ReadRows(reader));
@@ -80,7 +81,7 @@ internal sealed class KlinesArchiveMaterializer(
             // Archive HAD the file(s) but nothing landed in-range — distinct from a 404;
             // report available so job diagnostics don't misread "present but empty" as "absent".
             logger.LogWarning("{Dataset} {Symbol} {Year}-{Month:D2}: archive present but 0 in-range rows",
-                dataset, assetConfig.Symbol, year, month);
+                dataset, asset.Venue.ApiSymbol, year, month);
             return new ArchiveMonthResult(0, AvailableAtSource: true);
         }
 
@@ -93,37 +94,37 @@ internal sealed class KlinesArchiveMaterializer(
         {
             logger.LogWarning(
                 "{Feed}/{Interval} {Year}-{Month:D2} {Symbol}: archive month has {New} rows < existing {Prev}; skipping replace",
-                feedName, interval, year, month, assetConfig.Symbol, parsed.Count, previousRows);
+                feedName, interval, year, month, asset.Venue.ApiSymbol, parsed.Count, previousRows);
             return new ArchiveMonthResult(0, AvailableAtSource: true);
         }
 
         long written = feedName == FeedNames.Candles
-            ? await WriteCandles(assetConfig, assetDir, interval, year, month, parsed, ct)
+            ? await WriteCandles(asset, assetDir, interval, year, month, parsed, ct)
             : await WriteMarkPrice(assetDir, interval, year, month, parsed, ct);
         var delta = written - previousRows;
 
-        var intervalMs = (long)IntervalParser.ToTimeSpan(feedConfig.Interval).TotalMilliseconds;
+        var intervalMs = (long)IntervalParser.ToTimeSpan(feed.Interval).TotalMilliseconds;
         var gaps = ArchiveStatusMerger.DetectGaps(parsed, intervalMs);
 
         await ArchiveStatusMerger.MergeStatus(
             feedStatusStore, assetDir, primaryFeed, interval, parsed[0].Ts, parsed[^1].Ts, delta, gaps, ct);
         // candle-ext is rewritten in tandem with candles, so the same delta applies.
-        if (feedName == FeedNames.Candles && AssetTypes.IsFutures(assetConfig.Type))
+        if (feedName == FeedNames.Candles && AssetTypes.IsFutures(asset.Venue.AssetType))
             await ArchiveStatusMerger.MergeStatus(
                 feedStatusStore, assetDir, FeedNames.CandleExt, interval, parsed[0].Ts, parsed[^1].Ts, delta, gaps, ct);
 
         logger.LogInformation("Materialized {Feed}/{Interval} {Year}-{Month:D2} for {Symbol}: {Rows} rows",
-            feedName, interval, year, month, assetConfig.Symbol, written);
+            feedName, interval, year, month, asset.Venue.ApiSymbol, written);
         return new ArchiveMonthResult(written, AvailableAtSource: true);
     }
 
     private async Task<long> WriteCandles(
-        AssetCollectionConfig assetConfig, string assetDir, string interval,
+        CollectionAsset asset, string assetDir, string interval,
         int year, int month, List<(long Ts, string[] Row)> parsed, CancellationToken ct)
     {
-        await schemaManager.EnsureCandleConfig(assetDir, assetConfig.DecimalDigits, interval, ct);
+        await schemaManager.EnsureCandleConfig(assetDir, asset.DecimalDigits, interval, ct);
 
-        var multiplier = (decimal)Math.Pow(10, assetConfig.DecimalDigits);
+        var multiplier = (decimal)Math.Pow(10, asset.DecimalDigits);
         var candlePath = Path.Combine(assetDir, "candles", $"{year:D4}-{month:D2}_{interval}.csv");
 
         var candleRows = parsed.Select(x =>
@@ -139,7 +140,7 @@ internal sealed class KlinesArchiveMaterializer(
 
         await partitionWriter.ReplacePartition(candlePath, "ts,o,h,l,c,vol", candleRows, ct);
 
-        if (AssetTypes.IsFutures(assetConfig.Type))
+        if (AssetTypes.IsFutures(asset.Venue.AssetType))
         {
             await schemaManager.EnsureSchema(assetDir, FeedNames.CandleExt, interval, ExtColumns, ct: ct);
             var extPath = Path.Combine(assetDir, FeedNames.CandleExt, $"{year:D4}-{month:D2}_{interval}.csv");

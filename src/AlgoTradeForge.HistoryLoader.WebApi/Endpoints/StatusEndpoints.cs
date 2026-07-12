@@ -1,7 +1,6 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
-using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
@@ -20,25 +19,26 @@ internal static class StatusEndpoints
 
     private static async Task<IResult> GetAllStatus(
         IOptionsMonitor<HistoryLoaderOptions> options,
+        ICollectionPlanSource planSource,
         IFeedStatusStore feedStatusStore,
         CancellationToken ct)
     {
-        var config = options.CurrentValue;
+        var dataRoot = options.CurrentValue.DataRoot;
         var symbols = new List<SymbolStatus>();
 
-        foreach (var asset in config.Assets)
+        foreach (var asset in planSource.Current.Assets)
         {
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+            var assetDir = BackfillOrchestrator.ResolveAssetDir(dataRoot, asset);
             var feedSummaries = new List<FeedStatusSummary>();
 
             foreach (var feed in asset.Feeds)
             {
-                var status = await feedStatusStore.Load(assetDir, feed.Name, feed.Interval, ct);
+                var status = await feedStatusStore.Load(assetDir, feed.FeedName, feed.Interval, ct);
                 var health = status?.Health.ToString() ?? "Unknown";
                 var gapCount = status?.Gaps.Count ?? 0;
 
                 feedSummaries.Add(new FeedStatusSummary(
-                    Name: feed.Name,
+                    Name: feed.FeedName,
                     Interval: feed.Interval,
                     LastTimestamp: status?.LastTimestamp,
                     GapCount: gapCount,
@@ -46,8 +46,8 @@ internal static class StatusEndpoints
             }
 
             symbols.Add(new SymbolStatus(
-                Symbol: asset.Symbol,
-                Type: asset.Type,
+                Symbol: asset.Venue.ApiSymbol,
+                Type: asset.Venue.AssetType,
                 Exchange: asset.Exchange,
                 FeedCount: asset.Feeds.Count,
                 Feeds: feedSummaries));
@@ -59,27 +59,23 @@ internal static class StatusEndpoints
     private static async Task<IResult> GetSymbolStatus(
         string symbol,
         IOptionsMonitor<HistoryLoaderOptions> options,
+        ICollectionPlanSource planSource,
         IFeedStatusStore feedStatusStore,
         BackfillOrchestrator orchestrator,
         CancellationToken ct)
     {
-        var config = options.CurrentValue;
-
-        var asset = config.Assets.FirstOrDefault(a =>
-        {
-            var dirName = AssetPathConvention.DirectoryName(a.Symbol, a.Type);
-            return string.Equals(dirName, symbol, StringComparison.OrdinalIgnoreCase);
-        });
+        var asset = planSource.Current.Assets.FirstOrDefault(a =>
+            string.Equals(a.Venue.Dir, symbol, StringComparison.OrdinalIgnoreCase));
 
         if (asset is null)
             return Results.NotFound(new { error = "Symbol not found", symbol });
 
-        var resolvedAssetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+        var resolvedAssetDir = BackfillOrchestrator.ResolveAssetDir(options.CurrentValue.DataRoot, asset);
         var feedDetails = new List<FeedStatusDetail>();
 
         foreach (var feed in asset.Feeds)
         {
-            var status = await feedStatusStore.Load(resolvedAssetDir, feed.Name, feed.Interval, ct);
+            var status = await feedStatusStore.Load(resolvedAssetDir, feed.FeedName, feed.Interval, ct);
             if (status is not null)
             {
                 feedDetails.Add(new FeedStatusDetail(
@@ -95,8 +91,8 @@ internal static class StatusEndpoints
         }
 
         return Results.Json(new SymbolDetailResponse(
-            Symbol: asset.Symbol,
-            Type: asset.Type,
+            Symbol: asset.Venue.ApiSymbol,
+            Type: asset.Venue.AssetType,
             Exchange: asset.Exchange,
             BackfillRunning: orchestrator.IsRunning(resolvedAssetDir),
             Feeds: feedDetails));

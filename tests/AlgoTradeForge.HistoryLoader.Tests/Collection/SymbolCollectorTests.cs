@@ -3,7 +3,9 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -15,21 +17,13 @@ namespace AlgoTradeForge.HistoryLoader.Tests.Collection;
 public sealed class SymbolCollectorTests
 {
     private readonly IFeedCollector _collector = Substitute.For<IFeedCollector>();
-    private readonly ISettingsWriter _settingsWriter = Substitute.For<ISettingsWriter>();
+    private readonly IHistoryIndex _index = Substitute.For<IHistoryIndex>();
+    private readonly CollectionChangeNotifier _notifier = new();
     private readonly SymbolCollector _sut;
 
-    private static readonly AssetCollectionConfig Asset = new()
-    {
-        Symbol = "BTCUSDT",
-        Type = "perpetual",
-        HistoryStart = new DateOnly(2020, 1, 1),
-    };
+    private static readonly CollectionAsset Asset = CollectionAssets.Perp("BTCUSDT");
 
-    private static readonly FeedCollectionConfig Feed = new()
-    {
-        Name = "open-interest",
-        Interval = "5m",
-    };
+    private static readonly CollectionFeed Feed = CollectionAssets.Feed("open-interest", "5m");
 
     // 2020-01-01 00:00:00 UTC
     private static readonly long FromMs = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero)
@@ -52,14 +46,16 @@ public sealed class SymbolCollectorTests
             new ArchiveMaterializerRegistry([]),
             Substitute.For<IMonthCoverageCalculator>(),
             Substitute.For<IFeedStatusStore>(),
-            Substitute.For<ISettingsWriter>(),
+            Substitute.For<IHistoryIndex>(),
+            new CollectionChangeNotifier(),
             new TestClock(new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero)),
             NullLogger<ArchiveBackfillService>.Instance);
 
         _sut = new SymbolCollector(
             [_collector],
             archiveBackfill,
-            _settingsWriter,
+            _index,
+            _notifier,
             NullLogger<SymbolCollector>.Instance);
     }
 
@@ -70,8 +66,8 @@ public sealed class SymbolCollectorTests
     /// </summary>
     private void SetupDateThreshold(long validStart)
     {
-        _collector.CollectAsync(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+        _collector.Collect(
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
@@ -85,21 +81,25 @@ public sealed class SymbolCollectorTests
     }
 
     // -------------------------------------------------------------------------
-    // 1. Date-range 400 → binary search finds valid start, persists
+    // 1. Date-range 400 → binary search finds valid start, persists to index + fires notifier
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task CollectFeedAsync_DateRange400_BinarySearchFindsAndPersists()
+    public async Task CollectFeed_DateRange400_BinarySearchFindsAndPersists()
     {
         SetupDateThreshold(ValidStartMs);
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
+        bool notified = false;
+        _notifier.DiscoveryRecorded += () => notified = true;
 
-        // Should persist August 2020 as the discovered start.
-        await _settingsWriter.Received(1).UpdateFeedHistoryStart(
-            "BTCUSDT", "perpetual", "open-interest", "5m",
-            new DateOnly(2020, 8, 1),
+        await _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
+
+        // Should persist August 2020 (month precision) as the discovered start.
+        await _index.Received(1).SetDiscoveredFirstMonth(
+            "binance", "BTCUSDT_perp", "open-interest", "5m", "2020-08",
             Arg.Any<CancellationToken>());
+
+        Assert.True(notified);
     }
 
     // -------------------------------------------------------------------------
@@ -107,11 +107,11 @@ public sealed class SymbolCollectorTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task CollectFeedAsync_BinarySearch_UsesLogarithmicProbes()
+    public async Task CollectFeed_BinarySearch_UsesLogarithmicProbes()
     {
         int callCount = 0;
-        _collector.CollectAsync(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+        _collector.Collect(
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
@@ -124,7 +124,7 @@ public sealed class SymbolCollectorTests
                 return Task.CompletedTask;
             });
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
+        await _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
         // Jan–Dec 2020 = 12 months. Binary search ≤ log2(12) + 1 ≈ 5 probes.
         // Plus 1 initial attempt + 1 final full collection = ~7 total.
@@ -138,20 +138,20 @@ public sealed class SymbolCollectorTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task CollectFeedAsync_InvalidSymbol_DoesNotRetry()
+    public async Task CollectFeed_InvalidSymbol_DoesNotRetry()
     {
-        _collector.CollectAsync(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+        _collector.Collect(
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Throws(new DataSourceApiException(-1121, "Invalid symbol.", HttpStatusCode.BadRequest));
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
+        await _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
-        await _collector.Received(1).CollectAsync(
-            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+        await _collector.Received(1).Collect(
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
-        await _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+        await _index.DidNotReceiveWithAnyArgs()
+            .SetDiscoveredFirstMonth(default!, default!, default!, default!, default!, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -159,21 +159,21 @@ public sealed class SymbolCollectorTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task CollectFeedAsync_EndpointMaintenance_DoesNotRetry()
+    public async Task CollectFeed_EndpointMaintenance_DoesNotRetry()
     {
-        _collector.CollectAsync(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+        _collector.Collect(
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Throws(new DataSourceApiException(
                 -1, "The endpoint has been out of maintenance", HttpStatusCode.BadRequest));
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
+        await _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
-        await _collector.Received(1).CollectAsync(
-            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+        await _collector.Received(1).Collect(
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
-        await _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+        await _index.DidNotReceiveWithAnyArgs()
+            .SetDiscoveredFirstMonth(default!, default!, default!, default!, default!, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -181,20 +181,20 @@ public sealed class SymbolCollectorTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task CollectFeedAsync_PlainHttp400_DoesNotRetry()
+    public async Task CollectFeed_PlainHttp400_DoesNotRetry()
     {
-        _collector.CollectAsync(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+        _collector.Collect(
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Throws(new HttpRequestException("Bad Request", null, HttpStatusCode.BadRequest));
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
+        await _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
-        await _collector.Received(1).CollectAsync(
-            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+        await _collector.Received(1).Collect(
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
-        await _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+        await _index.DidNotReceiveWithAnyArgs()
+            .SetDiscoveredFirstMonth(default!, default!, default!, default!, default!, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -202,18 +202,18 @@ public sealed class SymbolCollectorTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task CollectFeedAsync_AllMonthsFail_GivesUp()
+    public async Task CollectFeed_AllMonthsFail_GivesUp()
     {
-        _collector.CollectAsync(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+        _collector.Collect(
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Throws(new DataSourceApiException(
                 -1, "Invalid period.", HttpStatusCode.BadRequest, isDateRangeError: true));
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
+        await _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
-        await _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+        await _index.DidNotReceiveWithAnyArgs()
+            .SetDiscoveredFirstMonth(default!, default!, default!, default!, default!, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -221,20 +221,20 @@ public sealed class SymbolCollectorTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task CollectFeedAsync_SuccessOnFirstTry_DoesNotPersist()
+    public async Task CollectFeed_SuccessOnFirstTry_DoesNotPersist()
     {
-        _collector.CollectAsync(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+        _collector.Collect(
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
+        await _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
-        await _collector.Received(1).CollectAsync(
-            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+        await _collector.Received(1).Collect(
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
-        await _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+        await _index.DidNotReceiveWithAnyArgs()
+            .SetDiscoveredFirstMonth(default!, default!, default!, default!, default!, TestContext.Current.CancellationToken);
     }
 
     // -------------------------------------------------------------------------
@@ -242,14 +242,14 @@ public sealed class SymbolCollectorTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task CollectFeedAsync_FinalCollection_UsesDiscoveredStart()
+    public async Task CollectFeed_FinalCollection_UsesDiscoveredStart()
     {
         SetupDateThreshold(ValidStartMs);
 
-        await _sut.CollectFeedAsync(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
+        await _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: CancellationToken.None);
 
         // The last call should be the full collection from discovered start to toMs.
-        await _collector.Received().CollectAsync(
+        await _collector.Received().Collect(
             Asset, Feed, "/data", ValidStartMs, ToMs, Arg.Any<CancellationToken>());
     }
 
@@ -265,7 +265,7 @@ public sealed class SymbolCollectorTests
         materializer.FeedName.Returns("taker-volume");
         materializer.Supports("perpetual").Returns(true);
         materializer.MaterializeMonth(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ArchiveMonthResult(10, true));
 
@@ -281,7 +281,8 @@ public sealed class SymbolCollectorTests
             new ArchiveMaterializerRegistry([materializer]),
             coverage,
             Substitute.For<IFeedStatusStore>(),
-            Substitute.For<ISettingsWriter>(),
+            Substitute.For<IHistoryIndex>(),
+            new CollectionChangeNotifier(),
             new TestClock(new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero)),
             NullLogger<ArchiveBackfillService>.Instance);
 
@@ -289,20 +290,21 @@ public sealed class SymbolCollectorTests
         var sut = new SymbolCollector(
             [],
             archiveBackfill,
-            _settingsWriter,
+            _index,
+            _notifier,
             NullLogger<SymbolCollector>.Instance);
 
-        var takerFeed = new FeedCollectionConfig { Name = "taker-volume", Interval = "5m" };
+        var takerFeed = CollectionAssets.Feed("taker-volume", "5m");
         var oneClosedMonthEnd = new DateTimeOffset(2020, 2, 1, 0, 0, 0, TimeSpan.Zero)
             .ToUnixTimeMilliseconds();
 
-        await sut.CollectFeedAsync(
+        await sut.CollectFeed(
             Asset, takerFeed, "/data", FromMs, oneClosedMonthEnd,
             ct: TestContext.Current.CancellationToken);
 
         // Archive was reached despite no live collector — proves the early-return is gone.
         await materializer.Received().MaterializeMonth(
-            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), 2020, 1, Arg.Any<CancellationToken>());
     }
 
@@ -313,14 +315,83 @@ public sealed class SymbolCollectorTests
     [Fact]
     public async Task CollectFeed_NoCollector_NoMaterializer_NoOps()
     {
-        var unknownFeed = new FeedCollectionConfig { Name = "does-not-exist", Interval = "5m" };
+        var unknownFeed = CollectionAssets.Feed("does-not-exist", "5m");
 
-        await _sut.CollectFeedAsync(
+        await _sut.CollectFeed(
             Asset, unknownFeed, "/data", FromMs, ToMs,
             ct: TestContext.Current.CancellationToken);
 
-        await _settingsWriter.DidNotReceiveWithAnyArgs()
-            .UpdateFeedHistoryStart(default!, default!, default!, default!, default, TestContext.Current.CancellationToken);
+        await _index.DidNotReceiveWithAnyArgs()
+            .SetDiscoveredFirstMonth(default!, default!, default!, default!, default!, TestContext.Current.CancellationToken);
+    }
+
+    // -------------------------------------------------------------------------
+    // 6d. Per-feed dedup gate (spec §3.4): a concurrent CollectFeed for the SAME
+    //     (assetDir, feed, interval) skips instead of doubling the work; a
+    //     DIFFERENT feed key proceeds concurrently.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CollectFeed_ConcurrentSameFeed_SecondCallSkips()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _collector.Collect(
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
+                Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                entered.TrySetResult();
+                await release.Task;
+            });
+
+        var ct = TestContext.Current.CancellationToken;
+        var first = _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: ct);
+        await entered.Task; // first call is inside the collector, holding the gate
+
+        // Second call for the same (assetDir, feed, interval) must skip, not wait.
+        await _sut.CollectFeed(Asset, Feed, "/data", FromMs, ToMs, ct: ct);
+
+        release.TrySetResult();
+        await first;
+
+        await _collector.Received(1).Collect(
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
+            Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CollectFeed_ConcurrentDifferentFeedKeys_BothProceed()
+    {
+        var enteredSignal = new SemaphoreSlim(0);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _collector.Collect(
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
+                Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                enteredSignal.Release();
+                await release.Task;
+            });
+
+        var ct = TestContext.Current.CancellationToken;
+        var feed5m = CollectionAssets.Feed("open-interest", "5m");
+        var feed15m = CollectionAssets.Feed("open-interest", "15m"); // different gate key
+
+        var first = _sut.CollectFeed(Asset, feed5m, "/data", FromMs, ToMs, ct: ct);
+        await enteredSignal.WaitAsync(ct);
+
+        var second = _sut.CollectFeed(Asset, feed15m, "/data", FromMs, ToMs, ct: ct);
+        await enteredSignal.WaitAsync(ct); // second entered while first still holds its own gate
+
+        release.TrySetResult();
+        await Task.WhenAll(first, second);
+
+        await _collector.Received(2).Collect(
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
+            Arg.Any<string>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------

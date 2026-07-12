@@ -15,6 +15,7 @@ internal sealed class LiquidationStreamService(
     IFeedStatusStore feedStatusStore,
     ICollectionCircuitBreaker circuitBreaker,
     IHttpClientFactory httpClientFactory,
+    ICollectionPlanSource planSource,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<LiquidationStreamService> logger) : BackgroundService
 {
@@ -26,91 +27,102 @@ internal sealed class LiquidationStreamService(
     private static readonly TimeSpan StatusFlushInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
 
+    private bool _planDirty;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("LiquidationStreamService started");
 
         await EnsureSchemas(stoppingToken);
 
-        var reconnect = new StreamReconnectPolicy(
-            MaxReconnectAttempts, InitialReconnectDelay, StableConnectionUptime);
-
-        while (!stoppingToken.IsCancellationRequested)
+        Action onPlanChanged = () => Volatile.Write(ref _planDirty, true);
+        planSource.PlanChanged += onPlanChanged;
+        try
         {
-            if (circuitBreaker.IsTripped)
-            {
-                if (circuitBreaker.IsAutoResettable)
-                {
-                    var probeInterval = options.CurrentValue.NetworkProbeIntervalSeconds;
-                    logger.LogWarning(
-                        "LiquidationStreamService paused — network unreachable, probing every {Interval}s",
-                        probeInterval);
+            var reconnect = new StreamReconnectPolicy(
+                MaxReconnectAttempts, InitialReconnectDelay, StableConnectionUptime);
 
-                    while (circuitBreaker.IsTripped && circuitBreaker.IsAutoResettable
-                           && !stoppingToken.IsCancellationRequested)
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                if (circuitBreaker.IsTripped)
+                {
+                    if (circuitBreaker.IsAutoResettable)
                     {
-                        await Task.Delay(TimeSpan.FromSeconds(probeInterval), stoppingToken);
-                        if (await ProbeConnectivityAsync(stoppingToken))
+                        var probeInterval = options.CurrentValue.NetworkProbeIntervalSeconds;
+                        logger.LogWarning(
+                            "LiquidationStreamService paused — network unreachable, probing every {Interval}s",
+                            probeInterval);
+
+                        while (circuitBreaker.IsTripped && circuitBreaker.IsAutoResettable
+                               && !stoppingToken.IsCancellationRequested)
                         {
-                            circuitBreaker.Reset();
-                            logger.LogInformation("LiquidationStreamService — connectivity restored");
-                            break;
+                            await Task.Delay(TimeSpan.FromSeconds(probeInterval), stoppingToken);
+                            if (await ProbeConnectivityAsync(stoppingToken))
+                            {
+                                circuitBreaker.Reset();
+                                logger.LogInformation("LiquidationStreamService — connectivity restored");
+                                break;
+                            }
                         }
                     }
-                }
-                else
-                {
-                    var cooldown = options.CurrentValue.CircuitBreakerCooldownMinutes;
-                    logger.LogWarning(
-                        "LiquidationStreamService paused — circuit breaker tripped, retrying in {Cooldown} min",
-                        cooldown);
-                    await Task.Delay(TimeSpan.FromMinutes(cooldown), stoppingToken);
-                }
+                    else
+                    {
+                        var cooldown = options.CurrentValue.CircuitBreakerCooldownMinutes;
+                        logger.LogWarning(
+                            "LiquidationStreamService paused — circuit breaker tripped, retrying in {Cooldown} min",
+                            cooldown);
+                        await Task.Delay(TimeSpan.FromMinutes(cooldown), stoppingToken);
+                    }
 
-                continue;
-            }
-
-            try
-            {
-                await ConnectAndStreamAsync(reconnect, stoppingToken);
-                // Normal disconnect — reset and reconnect.
-                reconnect.Reset();
-            }
-            catch (OperationCanceledException) when (
-                stoppingToken.IsCancellationRequested)
-            {
-                // Real shutdown. HttpClient/WebSocket timeouts also throw OCE without caller
-                // cancellation; the qualifier ensures those fall through to the reconnect path.
-                break;
-            }
-            catch (Exception ex)
-            {
-                var decision = reconnect.OnFailure();
-
-                if (NetworkErrorHelper.IsNetworkError(ex)
-                    && decision.Attempt >= options.CurrentValue.NetworkFailureThreshold)
-                {
-                    logger.LogError(
-                        "LiquidationStreamService — network unreachable after {Count} attempts, tripping circuit breaker",
-                        decision.Attempt);
-                    circuitBreaker.Trip("Network unreachable (WebSocket)", TripReason.Network);
-                    reconnect.Reset();
                     continue;
                 }
 
-                if (decision.GiveUp)
+                try
                 {
-                    logger.LogCritical(ex,
-                        "LiquidationStreamService exceeded {Max} reconnect attempts, stopping",
-                        MaxReconnectAttempts);
+                    await ConnectAndStreamAsync(reconnect, stoppingToken);
+                    // Normal disconnect — reset and reconnect.
+                    reconnect.Reset();
+                }
+                catch (OperationCanceledException) when (
+                    stoppingToken.IsCancellationRequested)
+                {
+                    // Real shutdown. HttpClient/WebSocket timeouts also throw OCE without caller
+                    // cancellation; the qualifier ensures those fall through to the reconnect path.
                     break;
                 }
+                catch (Exception ex)
+                {
+                    var decision = reconnect.OnFailure();
 
-                logger.LogWarning(ex,
-                    "LiquidationStreamService disconnected (attempt {Attempt}/{Max}), reconnecting in {Delay}s",
-                    decision.Attempt, MaxReconnectAttempts, decision.Delay.TotalSeconds);
-                await Task.Delay(decision.Delay, stoppingToken);
+                    if (NetworkErrorHelper.IsNetworkError(ex)
+                        && decision.Attempt >= options.CurrentValue.NetworkFailureThreshold)
+                    {
+                        logger.LogError(
+                            "LiquidationStreamService — network unreachable after {Count} attempts, tripping circuit breaker",
+                            decision.Attempt);
+                        circuitBreaker.Trip("Network unreachable (WebSocket)", TripReason.Network);
+                        reconnect.Reset();
+                        continue;
+                    }
+
+                    if (decision.GiveUp)
+                    {
+                        logger.LogCritical(ex,
+                            "LiquidationStreamService exceeded {Max} reconnect attempts, stopping",
+                            MaxReconnectAttempts);
+                        break;
+                    }
+
+                    logger.LogWarning(ex,
+                        "LiquidationStreamService disconnected (attempt {Attempt}/{Max}), reconnecting in {Delay}s",
+                        decision.Attempt, MaxReconnectAttempts, decision.Delay.TotalSeconds);
+                    await Task.Delay(decision.Delay, stoppingToken);
+                }
             }
+        }
+        finally
+        {
+            planSource.PlanChanged -= onPlanChanged;
         }
 
         logger.LogInformation("LiquidationStreamService stopped");
@@ -146,15 +158,10 @@ internal sealed class LiquidationStreamService(
         reconnect.OnConnected();
         logger.LogInformation("Connected to !forceOrder@arr stream at {Url}", url);
 
-        var enabledSymbols = BuildEnabledSymbolSet(config);
-        await ReadLoopAsync(ws, enabledSymbols, config, ct);
+        await ReadLoopAsync(ws, ct);
     }
 
-    private async Task ReadLoopAsync(
-        ClientWebSocket ws,
-        HashSet<string> enabledSymbols,
-        HistoryLoaderOptions config,
-        CancellationToken ct)
+    private async Task ReadLoopAsync(ClientWebSocket ws, CancellationToken ct)
     {
         var buffer = new byte[8192];
         using var messageStream = new MemoryStream();
@@ -164,8 +171,23 @@ internal sealed class LiquidationStreamService(
         long totalReceived = 0;
         long totalWritten = 0;
 
+        var enabledSymbols = BuildEnabledSymbolSet(planSource.Current);
+
         while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
         {
+            // Plan changed — rebuild enabled-symbol set in place (no reconnect; stream is venue-wide).
+            if (Volatile.Read(ref _planDirty))
+            {
+                Volatile.Write(ref _planDirty, false);
+                enabledSymbols = BuildEnabledSymbolSet(planSource.Current);
+                // Boot-time EnsureSchemas ran against CollectionPlan.Empty; re-run once the
+                // real plan lands so schemas are pre-created for newly planned assets.
+                await EnsureSchemas(ct);
+                logger.LogInformation(
+                    "LiquidationStreamService: plan changed, rebuilt enabled set ({Count} symbols)",
+                    enabledSymbols.Count);
+            }
+
             messageStream.SetLength(0);
 
             WebSocketReceiveResult result;
@@ -197,11 +219,12 @@ internal sealed class LiquidationStreamService(
                 if (!enabledSymbols.Contains(symbol))
                     continue;
 
-                var asset = FindAssetConfig(config, symbol);
+                var asset = FindAsset(planSource.Current, symbol);
                 if (asset is null)
                     continue;
 
-                var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+                var assetDir = BackfillOrchestrator.ResolveAssetDir(
+                    options.CurrentValue.DataRoot, asset);
                 await schemaManager.EnsureSchema(assetDir, FeedNames.Liquidations, "", Columns, ct: ct);
                 feedWriter.Write(assetDir, FeedNames.Liquidations, "", Columns, record);
                 totalWritten++;
@@ -308,18 +331,15 @@ internal sealed class LiquidationStreamService(
 
     private async Task EnsureSchemas(CancellationToken ct)
     {
-        var config = options.CurrentValue;
-
-        foreach (var asset in config.Assets)
+        var dataRoot = options.CurrentValue.DataRoot;
+        foreach (var asset in planSource.Current.Assets)
         {
-            if (!AssetTypes.IsFutures(asset.Type))
+            if (!AssetTypes.IsFutures(asset.Venue.AssetType))
+                continue;
+            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.Liquidations))
                 continue;
 
-            var hasLiquidation = asset.Feeds.Any(f => f.Enabled && f.Name == FeedNames.Liquidations);
-            if (!hasLiquidation)
-                continue;
-
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+            var assetDir = BackfillOrchestrator.ResolveAssetDir(dataRoot, asset);
             await schemaManager.EnsureSchema(assetDir, FeedNames.Liquidations, "", Columns, ct: ct);
         }
     }
@@ -348,15 +368,15 @@ internal sealed class LiquidationStreamService(
         tracker.Clear();
     }
 
-    private static HashSet<string> BuildEnabledSymbolSet(HistoryLoaderOptions config) =>
-        config.Assets
-            .Where(a => AssetTypes.IsFutures(a.Type))
-            .Where(a => a.Feeds.Any(f => f.Enabled && f.Name == FeedNames.Liquidations))
-            .Select(a => a.Symbol)
+    internal static HashSet<string> BuildEnabledSymbolSet(CollectionPlan plan) =>
+        plan.Assets
+            .Where(a => AssetTypes.IsFutures(a.Venue.AssetType))
+            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.Liquidations && f.Collect == "eager"))
+            .Select(a => a.Venue.ApiSymbol)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    private static AssetCollectionConfig? FindAssetConfig(HistoryLoaderOptions config, string symbol) =>
-        config.Assets.FirstOrDefault(a =>
-            AssetTypes.IsFutures(a.Type)
-            && string.Equals(a.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
+    private static CollectionAsset? FindAsset(CollectionPlan plan, string symbol) =>
+        plan.Assets.FirstOrDefault(a =>
+            AssetTypes.IsFutures(a.Venue.AssetType)
+            && string.Equals(a.Venue.ApiSymbol, symbol, StringComparison.OrdinalIgnoreCase));
 }

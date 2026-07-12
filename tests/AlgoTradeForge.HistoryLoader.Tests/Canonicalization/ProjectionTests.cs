@@ -2,8 +2,10 @@ using AlgoTradeForge.Storage;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.Live.Relay;
 using AlgoTradeForge.HistoryLoader.Application;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Storage;
+using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -28,9 +30,14 @@ public sealed class ProjectionTests : IDisposable
         Directory.CreateDirectory(_root);
         _storage = new LocalFileStorage(new LocalStorageOptions { DataRoot = _root });
         _tail = new LocalTailIndex(_storage);
-        _map = new InstrumentAssetDirMap(_root, new Dictionary<string, string>());
-        _mapWithDigits = new InstrumentAssetDirMap(
-            _root, new Dictionary<string, string>(), new Dictionary<string, int> { ["BTCUSDT"] = 2 });
+        // Empty plan → fallback to {venue}/{instrument}
+        _map = new InstrumentAssetDirMap(_root, new CollectionPlanHolder());
+        // Plan with spot BTCUSDT at digits=2 → Resolve("binance", "BTCUSDT") returns binance/BTCUSDT
+        var holderWithDigits = new CollectionPlanHolder();
+        holderWithDigits.Publish(new CollectionPlan(
+            [CollectionAssets.Spot("BTCUSDT", digits: 2)],
+            [], []));
+        _mapWithDigits = new InstrumentAssetDirMap(_root, holderWithDigits);
     }
 
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, true); }
@@ -69,7 +76,7 @@ public sealed class ProjectionTests : IDisposable
     public async Task TradeProjection_InstrumentAbsentFromMap_FallsBackToCanonicalPriceExp()
     {
         var writer = TickWriter();
-        var proj = new TradeProjection(writer, _map, NullLogger<TradeProjection>.Instance); // empty digits map
+        var proj = new TradeProjection(writer, _map, NullLogger<TradeProjection>.Instance); // empty plan
         await proj.Seed(Loc("trades"), Ct);
 
         // absent -> digits = PriceScaleExp = 4 : price 5000050 @ exp4 -> 500.005 -> *1e4 -> 5000050 (canonical preserved) ;

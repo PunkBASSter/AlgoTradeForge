@@ -133,6 +133,10 @@ public static class GroupValidator
 
         foreach (var (derivedKey, derivedDef) in derived)
         {
+            if (DeclarableFeeds.All.Contains(derivedKey))
+                errors.Add(
+                    $"derived '{derivedKey}' collides with a collectable feed name; derived ids must be distinct (post-F1 coverage matching claims feed names across intervals)");
+
             if (!validSources.Contains(derivedDef.Source))
                 errors.Add(
                     $"derived '{derivedKey}': source '{derivedDef.Source}' is not a declared feed");

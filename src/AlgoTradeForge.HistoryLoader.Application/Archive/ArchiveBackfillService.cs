@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.Storage.Threading;
 using Microsoft.Extensions.Logging;
@@ -12,7 +14,8 @@ public sealed class ArchiveBackfillService(
     ArchiveMaterializerRegistry registry,
     IMonthCoverageCalculator coverage,
     IFeedStatusStore feedStatusStore,
-    ISettingsWriter settingsWriter,
+    IHistoryIndex index,
+    CollectionChangeNotifier notifier,
     TimeProvider clock,
     ILogger<ArchiveBackfillService> logger)
 {
@@ -28,17 +31,17 @@ public sealed class ArchiveBackfillService(
     // unchanged when the feed is not replenishable. The current month is NEVER archive-touched
     // (ownership rule). Partial-edge months are materialized as a superset — idempotent.
     public async Task<long> CoverFromArchive(
-        AssetCollectionConfig assetConfig,
-        FeedCollectionConfig feedConfig,
+        CollectionAsset asset,
+        CollectionFeed feed,
         string assetDir,
         long fromMs, long toMs,
         IProgress<ArchiveProgress>? progress = null,
         CancellationToken ct = default)
     {
-        using var _ = await GetGate(assetDir, feedConfig.Name, feedConfig.Interval).LockAsync(ct);
+        using var _ = await GetGate(assetDir, feed.FeedName, feed.Interval).LockAsync(ct);
 
         // Step 1: resolve materializer; null → feed not replenishable from archive.
-        var materializer = registry.Resolve(assetConfig.Exchange, feedConfig.Name, assetConfig.Type);
+        var materializer = registry.Resolve(asset.Exchange, feed.FeedName, asset.Venue.AssetType);
         if (materializer is null)
             return fromMs;
 
@@ -51,7 +54,7 @@ public sealed class ArchiveBackfillService(
 
         // Step 3: load recorded source gaps once — coverage credits them so gap-bearing
         // months don't re-materialize on every invocation.
-        var status = await feedStatusStore.Load(assetDir, feedConfig.Name, feedConfig.Interval, ct);
+        var status = await feedStatusStore.Load(assetDir, feed.FeedName, feed.Interval, ct);
         IReadOnlyList<DataGap> gaps = status?.Gaps ?? [];
         long? firstDataMs = status?.FirstTimestamp;
 
@@ -64,7 +67,7 @@ public sealed class ArchiveBackfillService(
 
         logger.LogInformation(
             "Archive backfill for {Symbol}/{Feed}/{Interval}: {Count} candidate month(s)",
-            assetConfig.Symbol, feedConfig.Name, feedConfig.Interval, candidates.Count);
+            asset.Venue.ApiSymbol, feed.FeedName, feed.Interval, candidates.Count);
 
         foreach (var (year, month) in candidates)
         {
@@ -77,7 +80,7 @@ public sealed class ArchiveBackfillService(
 
             // Covered months are already complete; they end the leading-unavailable streak.
             if (await coverage.IsMonthCovered(
-                assetDir, feedConfig.Name, feedConfig.Interval, year, month,
+                assetDir, feed.FeedName, feed.Interval, year, month,
                 gaps, status?.CompleteMonths, effectiveStartMs, ct))
             {
                 leadingPhase = false;
@@ -86,7 +89,7 @@ public sealed class ArchiveBackfillService(
                 continue;
             }
 
-            var result = await materializer.MaterializeMonth(assetConfig, feedConfig, assetDir, year, month, ct);
+            var result = await materializer.MaterializeMonth(asset, feed, assetDir, year, month, ct);
             done++;
             progress?.Report(new(done, candidates.Count, $"{year:D4}-{month:D2}"));
 
@@ -95,7 +98,7 @@ public sealed class ArchiveBackfillService(
                 cursorAdvanced = true;
                 logger.LogDebug(
                     "Archive source has no data for {Symbol}/{Feed} {Year}-{Month:D2} (leading unavailable)",
-                    assetConfig.Symbol, feedConfig.Name, year, month);
+                    asset.Venue.ApiSymbol, feed.FeedName, year, month);
             }
             else if (result.AvailableAtSource && leadingPhase && cursorAdvanced)
             {
@@ -109,13 +112,12 @@ public sealed class ArchiveBackfillService(
             }
         }
 
-        // Step 4: persist discovered history start for configured assets.
-        // AppSettingsWriter is a no-op for symbols not in config, so safe to call unconditionally.
+        // Step 4: persist discovered history start to the index.
         if (discoveredStart.HasValue)
         {
             // Reload to get the actual first data row timestamp written by the materializer;
             // fall back to month-start when the status is missing.
-            var refreshed = await feedStatusStore.Load(assetDir, feedConfig.Name, feedConfig.Interval, ct);
+            var refreshed = await feedStatusStore.Load(assetDir, feed.FeedName, feed.Interval, ct);
             DateOnly persistStart;
             if (refreshed?.FirstTimestamp.HasValue == true)
             {
@@ -126,10 +128,11 @@ public sealed class ArchiveBackfillService(
             {
                 persistStart = discoveredStart.Value;
             }
-            await settingsWriter.UpdateFeedHistoryStart(
-                assetConfig.Symbol, assetConfig.Type,
-                feedConfig.Name, feedConfig.Interval,
-                persistStart, ct);
+            await index.SetDiscoveredFirstMonth(
+                asset.Exchange, asset.Venue.Dir,
+                feed.FeedName, feed.Interval,
+                $"{persistStart.Year:D4}-{persistStart.Month:D2}", ct);
+            notifier.NotifyDiscoveryRecorded();
         }
 
         // Step 5: return REST-tail start = min(toMs, currentMonthStart) clamped >= fromMs.

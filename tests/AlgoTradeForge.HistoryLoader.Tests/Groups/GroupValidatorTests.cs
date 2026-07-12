@@ -215,6 +215,17 @@ public sealed class GroupValidatorTests
         Assert.Contains(errors, e => e.Contains("materialize") && e.Contains("weekly"));
     }
 
+    // --- Derived name collision with declarable feeds ---
+
+    [Fact]
+    public void Derived_NameCollidingWithDeclarableFeed_IsError()
+    {
+        var group = ValidGroup() with { Derived = new Dictionary<string, GroupDerived>
+            { ["mark-price"] = new GroupDerived("candles", "EqV", null, null, "on-demand") } };
+        Assert.Contains(GroupValidator.Validate(group),
+            e => e.Contains("derived 'mark-price'") && e.Contains("collides"));
+    }
+
     // --- Derived source ---
 
     [Fact]

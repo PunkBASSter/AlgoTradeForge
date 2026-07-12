@@ -6,7 +6,7 @@ namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 
 /// <summary>
 /// Collects Binance Spot and USDT-M Futures aggregate trades into daily-partitioned CSVs.
-/// Routes to the spot or futures HTTP client based on <see cref="AssetCollectionConfig.Type"/>
+/// Routes to the spot or futures HTTP client based on the asset's venue type
 /// via <see cref="ExchangeKeys.Resolve"/>.
 /// </summary>
 /// <remarks>
@@ -28,13 +28,13 @@ public sealed class AggTradeFeedCollector(
 
     public bool SupportsSpot => true;
 
-    public async Task CollectAsync(
-        AssetCollectionConfig assetConfig,
-        FeedCollectionConfig feedConfig,
+    public async Task Collect(
+        CollectionAsset asset,
+        CollectionFeed feed,
         string assetDir,
         long fromMs,
         long toMs,
-        CancellationToken ct)
+        CancellationToken ct = default)
     {
         // Schema first so concurrent readers see the feed entry even before the first row lands.
         await schemaManager.EnsureSchema(assetDir, FeedNames.Ticks, "", TickColumns, autoApply: null, ct);
@@ -46,7 +46,7 @@ public sealed class AggTradeFeedCollector(
         if (resume is { } r && r.LastTsMs >= fromMs)
             fromMs = r.LastTsMs;
 
-        var exchangeKey = ExchangeKeys.Resolve(assetConfig);
+        var exchangeKey = ExchangeKeys.Resolve(asset);
         var fetcher = feedFetcherFactory.Create(exchangeKey, FeedNames.Ticks);
 
         long recordCount = 0;
@@ -55,9 +55,9 @@ public sealed class AggTradeFeedCollector(
 
         try
         {
-            await foreach (var record in fetcher.FetchAsync(assetConfig.Symbol, interval: "", fromMs, toMs, ct))
+            await foreach (var record in fetcher.FetchAsync(asset.Venue.ApiSymbol, interval: "", fromMs, toMs, ct))
             {
-                tickWriter.Write(assetDir, record, assetConfig.DecimalDigits);
+                tickWriter.Write(assetDir, record, asset.DecimalDigits);
 
                 firstTs ??= record.TimestampMs;
                 lastTs = record.TimestampMs;

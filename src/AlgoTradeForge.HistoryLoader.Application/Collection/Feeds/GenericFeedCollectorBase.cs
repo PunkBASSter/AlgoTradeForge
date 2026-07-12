@@ -2,6 +2,7 @@ using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
 
@@ -10,6 +11,7 @@ public abstract class GenericFeedCollectorBase(
     IFeedWriter feedWriter,
     ISchemaManager schemaManager,
     IFeedStatusStore feedStatusStore,
+    IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger logger)
     : FeedCollectorBase(feedWriter, schemaManager, feedStatusStore, logger)
 {
@@ -29,26 +31,26 @@ public abstract class GenericFeedCollectorBase(
     /// <summary>
     /// Override to force a specific exchange key (e.g. always-futures for funding rates).
     /// </summary>
-    protected virtual string ResolveExchangeKey(AssetCollectionConfig assetConfig) =>
-        ExchangeKeys.Resolve(assetConfig);
+    protected virtual string ResolveExchangeKey(CollectionAsset asset) =>
+        ExchangeKeys.Resolve(asset);
 
     protected IAsyncEnumerable<FeedRecord> FetchAsync(
-        AssetCollectionConfig assetConfig,
+        CollectionAsset asset,
         string symbol, string? interval, long fromMs, long toMs, CancellationToken ct)
     {
-        var fetcher = feedFetcherFactory.Create(ResolveExchangeKey(assetConfig), FeedName);
+        var fetcher = feedFetcherFactory.Create(ResolveExchangeKey(asset), FeedName);
         return fetcher.FetchAsync(symbol, interval, fromMs, toMs, ct);
     }
 
-    public override async Task CollectAsync(
-        AssetCollectionConfig assetConfig,
-        FeedCollectionConfig feedConfig,
+    public override async Task Collect(
+        CollectionAsset asset,
+        CollectionFeed feed,
         string assetDir,
         long fromMs,
         long toMs,
-        CancellationToken ct)
+        CancellationToken ct = default)
     {
-        var interval = feedConfig.Interval;
+        var interval = feed.Interval;
 
         var (resumeTs, adjustedFromMs) = await ResolveFromMs(assetDir, FeedName, interval, fromMs, ct);
         fromMs = adjustedFromMs;
@@ -61,7 +63,7 @@ public abstract class GenericFeedCollectorBase(
         var gaps = new List<DataGap>();
         long expectedMs = GetExpectedIntervalMs(interval);
 
-        await foreach (var record in FetchAsync(assetConfig, assetConfig.Symbol, interval, fromMs, toMs, ct))
+        await foreach (var record in FetchAsync(asset, asset.Venue.ApiSymbol, interval, fromMs, toMs, ct))
         {
             if (resumeTs.HasValue && record.TimestampMs <= resumeTs.Value)
                 continue;
@@ -78,7 +80,7 @@ public abstract class GenericFeedCollectorBase(
                 throw;
             }
 
-            DetectGap(record.TimestampMs, previousTs, expectedMs, feedConfig.GapThresholdMultiplier, gaps);
+            DetectGap(record.TimestampMs, previousTs, expectedMs, options.CurrentValue.GapThresholdMultiplier, gaps);
             previousTs = record.TimestampMs;
 
             firstTs ??= record.TimestampMs;

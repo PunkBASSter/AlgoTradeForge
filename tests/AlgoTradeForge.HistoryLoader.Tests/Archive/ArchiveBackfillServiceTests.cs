@@ -1,7 +1,10 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -18,24 +21,15 @@ public sealed class ArchiveBackfillServiceTests
     private static readonly long Jul1Ms =
         new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
 
-    private static readonly AssetCollectionConfig Asset = new()
-    {
-        Symbol = "BTCUSDT",
-        Type = "perpetual",
-        Exchange = "binance",
-        HistoryStart = new DateOnly(2026, 1, 1),
-    };
+    private static readonly CollectionAsset Asset = CollectionAssets.Perp("BTCUSDT");
 
-    private static readonly FeedCollectionConfig Feed = new()
-    {
-        Name = "candles",
-        Interval = "1h",
-    };
+    private static readonly CollectionFeed Feed = CollectionAssets.Feed("candles", "1h");
 
     private readonly IArchiveMaterializer _materializer = Substitute.For<IArchiveMaterializer>();
     private readonly IMonthCoverageCalculator _coverage = Substitute.For<IMonthCoverageCalculator>();
     private readonly IFeedStatusStore _feedStatusStore = Substitute.For<IFeedStatusStore>();
-    private readonly ISettingsWriter _settingsWriter = Substitute.For<ISettingsWriter>();
+    private readonly IHistoryIndex _index = Substitute.For<IHistoryIndex>();
+    private readonly CollectionChangeNotifier _notifier = new();
 
     public ArchiveBackfillServiceTests()
     {
@@ -55,7 +49,7 @@ public sealed class ArchiveBackfillServiceTests
             .Returns(false);
 
         _materializer.MaterializeMonth(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new ArchiveMonthResult(100L, true)));
     }
@@ -64,7 +58,7 @@ public sealed class ArchiveBackfillServiceTests
     {
         var registry = new ArchiveMaterializerRegistry([materializer ?? _materializer]);
         return new ArchiveBackfillService(
-            registry, _coverage, _feedStatusStore, _settingsWriter, Clock,
+            registry, _coverage, _feedStatusStore, _index, _notifier, Clock,
             NullLogger<ArchiveBackfillService>.Instance);
     }
 
@@ -113,7 +107,7 @@ public sealed class ArchiveBackfillServiceTests
 
         var callOrder = new List<(int y, int m)>();
         _materializer.MaterializeMonth(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
@@ -144,7 +138,7 @@ public sealed class ArchiveBackfillServiceTests
 
         // July must never have been passed to the materializer.
         await _materializer.DidNotReceive().MaterializeMonth(
-            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), 2026, 7, TestContext.Current.CancellationToken);
     }
 
@@ -184,7 +178,7 @@ public sealed class ArchiveBackfillServiceTests
     }
 
     // -------------------------------------------------------------------------
-    // 6. Leading unavailable months → discover and persist first available month.
+    // 6. Leading unavailable months → discover and persist first available month to index + fires notifier.
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -192,7 +186,7 @@ public sealed class ArchiveBackfillServiceTests
     {
         // Jan and Feb return AvailableAtSource=false; everything else is true.
         _materializer.MaterializeMonth(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
@@ -202,15 +196,19 @@ public sealed class ArchiveBackfillServiceTests
                 return Task.FromResult(new ArchiveMonthResult(available ? 100L : 0L, available));
             });
 
+        bool notified = false;
+        _notifier.DiscoveryRecorded += () => notified = true;
+
         var sut = BuildSut();
         await sut.CoverFromArchive(Asset, Feed, "/data", Ms(2026, 1), Ms(2026, 7, 7),
             ct: TestContext.Current.CancellationToken);
 
-        // Earliest available = March 2026.
-        await _settingsWriter.Received(1).UpdateFeedHistoryStart(
-            Asset.Symbol, Asset.Type, Feed.Name, Feed.Interval,
-            new DateOnly(2026, 3, 1),
+        // Earliest available = March 2026 → persists "2026-03".
+        await _index.Received(1).SetDiscoveredFirstMonth(
+            "binance", "BTCUSDT_perp", "candles", "1h", "2026-03",
             TestContext.Current.CancellationToken);
+
+        Assert.True(notified);
     }
 
     // -------------------------------------------------------------------------
@@ -233,18 +231,18 @@ public sealed class ArchiveBackfillServiceTests
 
         // May must never be materialized.
         await _materializer.DidNotReceive().MaterializeMonth(
-            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), 2026, 5, TestContext.Current.CancellationToken);
 
         // March, April, June should be materialized.
         await _materializer.Received(1).MaterializeMonth(
-            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), 2026, 3, TestContext.Current.CancellationToken);
         await _materializer.Received(1).MaterializeMonth(
-            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), 2026, 4, TestContext.Current.CancellationToken);
         await _materializer.Received(1).MaterializeMonth(
-            Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+            Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
             Arg.Any<string>(), 2026, 6, TestContext.Current.CancellationToken);
     }
 
@@ -258,11 +256,11 @@ public sealed class ArchiveBackfillServiceTests
         var gap = new DataGap { FromMs = Ms(2026, 3, 10), ToMs = Ms(2026, 3, 11) };
         var status = new FeedStatus
         {
-            FeedName = Feed.Name,
+            FeedName = Feed.FeedName,
             Interval = Feed.Interval,
             Gaps = [gap],
         };
-        _feedStatusStore.Load("/data", Feed.Name, Feed.Interval, Arg.Any<CancellationToken>())
+        _feedStatusStore.Load("/data", Feed.FeedName, Feed.Interval, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<FeedStatus?>(status));
 
         var receivedGapLists = new List<IReadOnlyList<DataGap>>();
@@ -295,7 +293,7 @@ public sealed class ArchiveBackfillServiceTests
 
         var called = new List<(int y, int m)>();
         _materializer.MaterializeMonth(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
@@ -324,7 +322,7 @@ public sealed class ArchiveBackfillServiceTests
 
         var called = new List<(int y, int m)>();
         _materializer.MaterializeMonth(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
@@ -341,7 +339,7 @@ public sealed class ArchiveBackfillServiceTests
     }
 
     // -------------------------------------------------------------------------
-    // 11. (I1a) Actual first-data DateOnly from reloaded FeedStatus is persisted.
+    // 11. (I1a) Actual first-data DateOnly from reloaded FeedStatus is persisted (month precision).
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -349,7 +347,7 @@ public sealed class ArchiveBackfillServiceTests
     {
         // Jan and Feb unavailable; March is first available month.
         _materializer.MaterializeMonth(
-                Arg.Any<AssetCollectionConfig>(), Arg.Any<FeedCollectionConfig>(),
+                Arg.Any<CollectionAsset>(), Arg.Any<CollectionFeed>(),
                 Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
@@ -363,7 +361,7 @@ public sealed class ArchiveBackfillServiceTests
         long march5Ms = Ms(2026, 3, 5);
         var reloadedStatus = new FeedStatus
         {
-            FeedName = Feed.Name,
+            FeedName = Feed.FeedName,
             Interval = Feed.Interval,
             FirstTimestamp = march5Ms,
         };
@@ -380,10 +378,9 @@ public sealed class ArchiveBackfillServiceTests
         await sut.CoverFromArchive(Asset, Feed, "/data", Ms(2026, 1), Ms(2026, 7, 7),
             ct: TestContext.Current.CancellationToken);
 
-        // Must persist March 5, not March 1.
-        await _settingsWriter.Received(1).UpdateFeedHistoryStart(
-            Asset.Symbol, Asset.Type, Feed.Name, Feed.Interval,
-            new DateOnly(2026, 3, 5),
+        // Must persist "2026-03" (month precision; day is dropped as intended).
+        await _index.Received(1).SetDiscoveredFirstMonth(
+            "binance", "BTCUSDT_perp", "candles", "1h", "2026-03",
             TestContext.Current.CancellationToken);
     }
 
@@ -424,11 +421,11 @@ public sealed class ArchiveBackfillServiceTests
         long march15Ms = Ms(2026, 3, 15);
         var status = new FeedStatus
         {
-            FeedName = Feed.Name,
+            FeedName = Feed.FeedName,
             Interval = Feed.Interval,
             FirstTimestamp = march15Ms,
         };
-        _feedStatusStore.Load("/data", Feed.Name, Feed.Interval, Arg.Any<CancellationToken>())
+        _feedStatusStore.Load("/data", Feed.FeedName, Feed.Interval, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<FeedStatus?>(status));
 
         // Capture the effectiveStartMs argument per (year, month) coverage call.

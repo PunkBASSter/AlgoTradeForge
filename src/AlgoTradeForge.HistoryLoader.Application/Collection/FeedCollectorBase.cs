@@ -18,13 +18,13 @@ public abstract class FeedCollectorBase(
     public abstract string FeedName { get; }
     public virtual bool SupportsSpot => false;
 
-    public abstract Task CollectAsync(
-        AssetCollectionConfig assetConfig,
-        FeedCollectionConfig feedConfig,
+    public abstract Task Collect(
+        CollectionAsset asset,
+        CollectionFeed feed,
         string assetDir,
         long fromMs,
         long toMs,
-        CancellationToken ct);
+        CancellationToken ct = default);
 
     protected async Task<(long? ResumeTs, long AdjustedFromMs)> ResolveFromMs(string assetDir, string feedName, string interval, long fromMs, CancellationToken ct)
     {

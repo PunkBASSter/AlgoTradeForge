@@ -66,12 +66,6 @@ builder.Services.PostConfigure<CanonicalizerOptions>(opt =>
 {
     if (string.IsNullOrEmpty(opt.AssetDirBase))
         opt.AssetDirBase = builder.Configuration.GetSection("Storage:Local:DataRoot").Value ?? "";
-
-    // Per-instrument tick scale so TradeProjection stores price/qty as scaled long (matches the
-    // HistoryLoader tick writers); absent instruments fall back to the canonical exponent.
-    var assets = builder.Configuration.GetSection("HistoryLoader").Get<HistoryLoaderOptions>()?.Assets ?? [];
-    foreach (var asset in assets)
-        opt.InstrumentDecimalDigits.TryAdd(asset.Symbol, asset.DecimalDigits);
 });
 builder.Services.AddTickCanonicalizer();
 builder.Services.AddHostedService<TickCanonicalizerService>();
@@ -88,20 +82,14 @@ builder.Services.AddSingleton<IFeedCollector, LsRatioTopPositionsFeedCollector>(
 builder.Services.AddSingleton<IFeedCollector, LiquidationFeedCollector>();
 builder.Services.AddSingleton<IFeedCollector, AggTradeFeedCollector>();
 
-// Persists discovered feed dates back to appsettings.json. Binds LocalFileStorage directly
-// (not IFileStorage) because the binary's content-root appsettings.json is host config and
-// must never be routed to S3.
-var appSettingsPath = Path.Combine(builder.Environment.ContentRootPath, "appsettings.json");
-builder.Services.AddSingleton<ISettingsWriter>(sp =>
-    new AppSettingsWriter(
-        appSettingsPath,
-        new AlgoTradeForge.Storage.LocalFileStorage(),
-        sp.GetRequiredService<ILogger<AppSettingsWriter>>()));
+builder.Services.AddSingleton<CollectionChangeNotifier>();
 
 builder.Services.AddSingleton<ICollectionCircuitBreaker, CollectionCircuitBreaker>();
 builder.Services.AddSingleton<SymbolCollector>();
-builder.Services.AddSingleton<CollectionPolicy>();
+builder.Services.AddSingleton<CollectionPlanHolder>();
+builder.Services.AddSingleton<ICollectionPlanSource>(sp => sp.GetRequiredService<CollectionPlanHolder>());
 builder.Services.AddSingleton<BackfillOrchestrator>();
+builder.Services.AddSingleton<IEagerBackfillRunner, EagerBackfillRunner>();
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddMemoryCache();

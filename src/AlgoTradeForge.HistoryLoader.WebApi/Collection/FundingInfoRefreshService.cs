@@ -17,6 +17,7 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 internal sealed class FundingInfoRefreshService(
     IFundingInfoFetcher fetcher,
     ISchemaManager schemaManager,
+    ICollectionPlanSource planSource,
     IOptionsMonitor<HistoryLoaderOptions> options,
     ILogger<FundingInfoRefreshService> logger) : BackgroundService
 {
@@ -85,18 +86,19 @@ internal sealed class FundingInfoRefreshService(
         }
 
         var bySymbol = entries.ToDictionary(e => e.Symbol, StringComparer.OrdinalIgnoreCase);
-        var config = options.CurrentValue;
+        var dataRoot = options.CurrentValue.DataRoot;
         int written = 0;
         int skipped = 0;
 
-        foreach (var asset in config.Assets)
+        // Read current plan — periodic service reads Current at each tick (no dirty flag needed).
+        foreach (var asset in planSource.Current.Assets)
         {
-            if (!AssetTypes.IsFutures(asset.Type))
+            if (!AssetTypes.IsFutures(asset.Venue.AssetType))
                 continue;
-            if (!bySymbol.TryGetValue(asset.Symbol, out var entry))
+            if (!bySymbol.TryGetValue(asset.Venue.ApiSymbol, out var entry))
                 continue;
 
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, asset);
+            var assetDir = BackfillOrchestrator.ResolveAssetDir(dataRoot, asset);
             var updated = await schemaManager.SetAutoApplyParams(
                 assetDir,
                 FeedNames.FundingRate,

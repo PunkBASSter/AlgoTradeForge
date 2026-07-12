@@ -253,7 +253,10 @@ internal sealed class FeedSchemaManager : ISchemaManager
         var path = FeedsJsonPath(assetDir);
         await UpdateWithRetry(path, existing =>
         {
-            var scaleFactor = (decimal)Math.Pow(10, decimalDigits);
+            // Create-if-absent: preserve an existing recorded ScaleFactor. A post-3a rebuild
+            // window can route a divergent exchangeInfo digit count here; overwriting would
+            // silently corrupt the scale of already-written CSVs. Only intervals may grow.
+            var scaleFactor = existing.Candles?.ScaleFactor ?? (decimal)Math.Pow(10, decimalDigits);
             var existingIntervals = existing.Candles?.Intervals ?? [];
             var updatedIntervals = existingIntervals.Contains(interval)
                 ? existingIntervals

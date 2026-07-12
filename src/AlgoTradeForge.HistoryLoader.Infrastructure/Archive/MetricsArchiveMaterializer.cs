@@ -2,6 +2,7 @@ using System.Globalization;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 
@@ -20,7 +21,7 @@ internal sealed class MetricsArchiveMaterializer(
     public bool Supports(string assetType) => AssetTypes.IsFutures(assetType);
 
     public async Task<ArchiveMonthResult> MaterializeMonth(
-        AssetCollectionConfig assetConfig, FeedCollectionConfig feedConfig,
+        CollectionAsset asset, CollectionFeed feed,
         string assetDir, int year, int month, CancellationToken ct = default)
     {
         var monthStart = new DateOnly(year, month, 1);
@@ -31,7 +32,7 @@ internal sealed class MetricsArchiveMaterializer(
         // metrics is daily-only — no monthly zip exists for this dataset
         for (var day = monthStart; day <= monthEnd; day = day.AddDays(1))
         {
-            await using var daily = await archive.DownloadDaily("futures/um", "metrics", assetConfig.Symbol, null, day, ct);
+            await using var daily = await archive.DownloadDaily("futures/um", "metrics", asset.Venue.ApiSymbol, null, day, ct);
             if (daily is null) continue;
             using var reader = new StreamReader(daily);
             rows.AddRange(ArchiveCsv.ReadRows(reader));
@@ -43,7 +44,7 @@ internal sealed class MetricsArchiveMaterializer(
 
         var fromMs = new DateTimeOffset(year, month, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
         var toMs = new DateTimeOffset(new DateOnly(year, month, 1).AddMonths(1), TimeOnly.MinValue, TimeSpan.Zero).ToUnixTimeMilliseconds();
-        var intervalMs = (long)IntervalParser.ToTimeSpan(feedConfig.Interval).TotalMilliseconds;
+        var intervalMs = (long)IntervalParser.ToTimeSpan(feed.Interval).TotalMilliseconds;
 
         // create_time is a datetime string (UTC), not an epoch — parse accordingly
         var parsed = rows
@@ -55,7 +56,7 @@ internal sealed class MetricsArchiveMaterializer(
         if (parsed.Count == 0)
         {
             logger.LogWarning("metrics {Symbol} {Year}-{Month:D2}: archive present but 0 in-range rows",
-                assetConfig.Symbol, year, month);
+                asset.Venue.ApiSymbol, year, month);
             return new ArchiveMonthResult(0, AvailableAtSource: true);
         }
 
@@ -63,8 +64,8 @@ internal sealed class MetricsArchiveMaterializer(
         var gaps = ArchiveStatusMerger.DetectGaps(parsed, intervalMs);
 
         var columns = GetColumns();
-        await schemaManager.EnsureSchema(assetDir, feedName, feedConfig.Interval, columns, ct: ct);
-        var path = Path.Combine(assetDir, feedName, $"{year:D4}-{month:D2}_{feedConfig.Interval}.csv");
+        await schemaManager.EnsureSchema(assetDir, feedName, feed.Interval, columns, ct: ct);
+        var path = Path.Combine(assetDir, feedName, $"{year:D4}-{month:D2}_{feed.Interval}.csv");
         var previousRows = await ArchiveStatusMerger.CountDataRows(path, ct);
 
         // Replace-guard: a sparse archive month must not clobber a fuller REST-collected one.
@@ -72,7 +73,7 @@ internal sealed class MetricsArchiveMaterializer(
         {
             logger.LogWarning(
                 "{Feed}/{Interval} {Year}-{Month:D2} {Symbol}: archive month has {New} rows < existing {Prev}; skipping replace",
-                feedName, feedConfig.Interval, year, month, assetConfig.Symbol, parsed.Count, previousRows);
+                feedName, feed.Interval, year, month, asset.Venue.ApiSymbol, parsed.Count, previousRows);
             return new ArchiveMonthResult(0, AvailableAtSource: true);
         }
 
@@ -80,11 +81,11 @@ internal sealed class MetricsArchiveMaterializer(
         await partitionWriter.ReplacePartition(path, $"ts,{string.Join(",", columns)}", csvRows, ct);
 
         await ArchiveStatusMerger.MergeStatus(
-            feedStatusStore, assetDir, feedName, feedConfig.Interval,
+            feedStatusStore, assetDir, feedName, feed.Interval,
             parsed[0].Ts, parsed[^1].Ts, parsed.Count - previousRows, gaps, ct);
 
         logger.LogInformation("Materialized {Feed}/{Interval} {Year}-{Month:D2} for {Symbol}: {Rows} rows",
-            feedName, feedConfig.Interval, year, month, assetConfig.Symbol, parsed.Count);
+            feedName, feed.Interval, year, month, asset.Venue.ApiSymbol, parsed.Count);
         return new ArchiveMonthResult(parsed.Count, AvailableAtSource: true);
     }
 

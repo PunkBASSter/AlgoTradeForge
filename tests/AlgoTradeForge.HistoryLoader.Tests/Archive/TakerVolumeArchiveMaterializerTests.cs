@@ -3,8 +3,10 @@ using System.Text;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
+using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
@@ -25,25 +27,12 @@ public sealed class TakerVolumeArchiveMaterializerTests : IDisposable
     public TakerVolumeArchiveMaterializerTests() => Directory.CreateDirectory(_dir);
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 
-    private static AssetCollectionConfig FuturesConfig() => new()
-    {
-        Symbol = "BTCUSDT",
-        Type = AssetTypes.Perpetual,
-        DecimalDigits = 2
-    };
+    private static CollectionAsset FuturesConfig() => CollectionAssets.Perp("BTCUSDT", 2);
 
-    private static AssetCollectionConfig SpotConfig() => new()
-    {
-        Symbol = "BTCUSDT",
-        Type = AssetTypes.Spot,
-        DecimalDigits = 2
-    };
+    private static CollectionAsset SpotConfig() => CollectionAssets.Spot("BTCUSDT", 2);
 
-    private static FeedCollectionConfig FeedConfig(string interval = "15m") => new()
-    {
-        Name = FeedNames.TakerVolume,
-        Interval = interval
-    };
+    private static CollectionFeed FeedConfig(string interval = "15m") =>
+        CollectionAssets.Feed(FeedNames.TakerVolume, interval);
 
     private static Stream CsvStream(string csv) => new MemoryStream(Encoding.UTF8.GetBytes(csv));
 

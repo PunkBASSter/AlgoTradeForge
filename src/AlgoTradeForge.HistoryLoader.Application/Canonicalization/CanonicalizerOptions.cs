@@ -14,11 +14,4 @@ public sealed class CanonicalizerOptions
     /// ResumeFrom does Directory.GetFiles, so this must be a real FS path). Defaults to the
     /// storage DataRoot, set during host wiring.</summary>
     public string AssetDirBase { get; set; } = "";
-
-    /// <summary>instrument -> asset dir relative to AssetDirBase (e.g. "BTCUSDT" -> "binance/BTCUSDT_perp").</summary>
-    public Dictionary<string, string> InstrumentAssetDirs { get; set; } = new();
-
-    /// <summary>instrument -> price/qty DecimalDigits (from HistoryLoaderOptions.Assets). Absent
-    /// instruments fall back to the canonical segment's PriceScaleExp/QtyScaleExp.</summary>
-    public Dictionary<string, int> InstrumentDecimalDigits { get; set; } = new();
 }

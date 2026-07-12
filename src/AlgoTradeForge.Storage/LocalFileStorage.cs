@@ -50,10 +50,7 @@ public sealed class LocalFileStorage : IFileStorage
     private string Resolve(string key)
     {
         if (string.IsNullOrEmpty(key)) throw new ArgumentException("key must not be empty", nameof(key));
-        // TODO PR 4b/4c: remove absolute-path bypass once aggregation/event call sites use
-        // StorageKeys. AppSettingsWriter intentionally relies on this bypass — its target is
-        // the host content-root appsettings.json (not data-root content) and must keep an
-        // absolute path even after the bypass goes away.
+        // TODO PR 4b/4c: remove absolute-path bypass once aggregation/event call sites use StorageKeys.
         if (Path.IsPathRooted(key)) return key;
         if (string.IsNullOrEmpty(_dataRoot)) return key;
         var native = key.Replace('/', Path.DirectorySeparatorChar);

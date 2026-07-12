@@ -3,6 +3,7 @@ using AlgoTradeForge.Domain;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
 
@@ -23,12 +24,12 @@ internal sealed class AggTradesArchiveMaterializer(
     public bool Supports(string assetType) => true;
 
     public async Task<ArchiveMonthResult> MaterializeMonth(
-        AssetCollectionConfig assetConfig, FeedCollectionConfig feedConfig,
+        CollectionAsset asset, CollectionFeed feed,
         string assetDir, int year, int month, CancellationToken ct = default)
     {
-        var market = AssetTypes.IsSpot(assetConfig.Type) ? "spot" : "futures/um";
-        var symbol = assetConfig.Symbol;
-        var multiplier = (decimal)Math.Pow(10, assetConfig.DecimalDigits);
+        var market = AssetTypes.IsSpot(asset.Venue.AssetType) ? "spot" : "futures/um";
+        var symbol = asset.Venue.ApiSymbol;
+        var multiplier = (decimal)Math.Pow(10, asset.DecimalDigits);
         var previousRowsForMonth = await SumExistingMonthRows(assetDir, year, month, ct);
 
         var fromMs = new DateTimeOffset(year, month, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();

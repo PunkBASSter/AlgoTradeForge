@@ -1,5 +1,6 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
+using AlgoTradeForge.HistoryLoader.Tests.TestData;
 using AlgoTradeForge.HistoryLoader.Tests.TestHelpers;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -14,7 +15,7 @@ public sealed class LoadJobRegistryTests
     private const string FeedKey = "/data/binance/BTCUSDT|candles|1h";
 
     private static LoadJob NewJob(string jobId, string feedName = "candles", string interval = "1h") =>
-        new(JobId: jobId, Exchange: "binance", Symbol: "BTCUSDT", AssetType: "spot",
+        new(JobId: jobId, Asset: CollectionAssets.Spot("BTCUSDT"),
             FeedName: feedName, Interval: interval,
             From: new DateOnly(2024, 1, 1), To: new DateOnly(2024, 12, 31));
 
