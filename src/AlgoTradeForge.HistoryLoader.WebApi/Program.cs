@@ -10,6 +10,7 @@ using AlgoTradeForge.HistoryLoader.Application.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Application.Catalog;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
+using AlgoTradeForge.HistoryLoader.Application.Jobs;
 using AlgoTradeForge.HistoryLoader.Domain.Symbology;
 using AlgoTradeForge.HistoryLoader.WebApi;
 using AlgoTradeForge.HistoryLoader.WebApi.Aggregation;
@@ -92,6 +93,8 @@ builder.Services.AddSingleton<BackfillOrchestrator>();
 builder.Services.AddSingleton<IEagerBackfillRunner, EagerBackfillRunner>();
 
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IJobEventSignal, JobEventSignal>();
+builder.Services.AddSingleton<IJobProgressSinkFactory, JobProgressSinkFactory>();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IFeedCatalog, FeedCatalog>();
 builder.Services.AddSingleton<IAggregationJobRegistry, AggregationJobRegistry>();
