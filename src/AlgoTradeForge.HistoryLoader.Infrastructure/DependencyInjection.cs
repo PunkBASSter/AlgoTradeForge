@@ -3,8 +3,8 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
-using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
 using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.HistoryLoader.Application.Jobs;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
@@ -199,7 +199,12 @@ public static class DependencyInjection
         });
         services.AddSingleton<IBinanceArchiveClient, BinanceArchiveClient>();
         services.AddSingleton<IPartitionFileWriter, PartitionFileWriter>();
-        services.AddSingleton<ILoadJobRegistry, LoadJobRegistry>();
+        // Per-kind dispatch doorbell. Load path is on the durable store (LoadJobWorker drains this).
+        services.AddKeyedSingleton<IJobWakeupQueue>("load", (sp, _) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
+            return new JobWakeupQueue(opts.Jobs.WakeupChannelDepth);
+        });
         services.AddSingleton<ArchiveBackfillService>();
         services.AddSingleton<ArchiveMaterializerRegistry>();
 

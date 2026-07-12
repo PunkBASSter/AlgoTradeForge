@@ -1,17 +1,18 @@
-using AlgoTradeForge.HistoryLoader.Application;
-using AlgoTradeForge.HistoryLoader.Application.Archive;
-using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
-using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.HistoryLoader.Application.Jobs;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 
 internal sealed class LoadJobWorker(
-    ILoadJobRegistry registry,
-    BackfillOrchestrator orchestrator,
-    IOptionsMonitor<HistoryLoaderOptions> options,
+    [FromKeyedServices("load")] IJobWakeupQueue wakeup,
+    IHistoryIndex index,
+    IArchiveLoadService archiveLoad,
+    IJobProgressSinkFactory sinkFactory,
+    IJobCancellationMap cancellations,
+    LoadRequestRehydrator rehydrator,
     ILogger<LoadJobWorker> logger) : BackgroundService
 {
     // Canonical three-part form (FundingInfoRefreshService / ScheduledCollectorService).
@@ -22,49 +23,55 @@ internal sealed class LoadJobWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (true)
-        {
-            var job = await registry.Dequeue(stoppingToken);
-            if (job is null)
-                return;
+        // Re-arm from the durable store: rows still 'queued' after a restart never got a wakeup.
+        var queued = await index.ListJobs("load", "queued", stoppingToken);
+        wakeup.SeedFromQueued(queued.Select(j => j.Id));
 
-            await RunJob(job, stoppingToken);
+        await foreach (var jobId in wakeup.Reader(stoppingToken))
+            await RunJob(jobId, stoppingToken);
+    }
+
+    // Processes exactly one wakeup item then returns — unit-test seam.
+    internal async Task DrainOnceForTest(CancellationToken ct)
+    {
+        await foreach (var jobId in wakeup.Reader(ct))
+        {
+            await RunJob(jobId, ct);
+            return;
         }
     }
 
-    private async Task RunJob(LoadJob job, CancellationToken ct)
+    private async Task RunJob(string jobId, CancellationToken stoppingToken)
     {
-        registry.OnStarted(job.JobId);
+        var row = await index.GetJob(jobId, stoppingToken);
+        if (row is null)
+        {
+            logger.LogWarning("Load job {JobId} woke the worker but is no longer in the store", jobId);
+            return;
+        }
+
+        var linked = cancellations.Register(jobId, stoppingToken);
         try
         {
-            // Append a transient feed entry if the asset doesn't already carry one for
-            // this exact name+interval. Clone first — never mutate the shared plan asset.
-            var asset = job.Asset;
-            var hasEntry = asset.Feeds.Any(f => f.FeedName == job.FeedName && f.Interval == job.Interval);
-            if (!hasEntry)
-                asset = asset with
-                {
-                    Feeds = [..asset.Feeds, new CollectionFeed(job.FeedName, job.Interval, "on-demand", "csv", job.From)],
-                };
-
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(options.CurrentValue.DataRoot, asset);
-            var ok = await orchestrator.TryRunSingle(
-                asset, assetDir, feedFilter: [job.FeedName], fromDate: job.From, toDate: job.To,
-                progress: new LoadJobProgress(registry, job.JobId), ct: ct);
-
-            if (ok)
-                registry.OnCompleted(job.JobId);
-            else
-                registry.OnErrored(job.JobId, "symbol_busy", "Another backfill holds the symbol lock; retry later.");
+            await index.UpdateJob(jobId, "running", ct: stoppingToken);
+            var sink = sinkFactory.For(jobId);
+            // Run owns the terminal sink transitions (Started/Complete/Fail).
+            var req = rehydrator.Rehydrate(row);
+            await archiveLoad.Run(req, sink, linked);
         }
-        catch (ArchiveIntegrityException ex)
+        catch (Exception ex) when (!IsTrueShutdown(ex, stoppingToken))
         {
-            registry.OnErrored(job.JobId, "checksum_mismatch", ex.Message);
+            // Reaches here only for pre-Run failures (e.g. rehydration): Run swallows its own.
+            logger.LogError(ex, "Load job {JobId} failed before dispatch", jobId);
+            try { await sinkFactory.For(jobId).Fail("load_failed", ex.Message, stoppingToken); }
+            catch (Exception inner) when (!IsTrueShutdown(inner, stoppingToken))
+            {
+                logger.LogError(inner, "Failed to record load job {JobId} failure", jobId);
+            }
         }
-        catch (Exception ex) when (!IsTrueShutdown(ex, ct))
+        finally
         {
-            logger.LogError(ex, "Load job {JobId} failed", job.JobId);
-            registry.OnErrored(job.JobId, "load_failed", ex.Message);
+            cancellations.Remove(jobId);
         }
     }
 }

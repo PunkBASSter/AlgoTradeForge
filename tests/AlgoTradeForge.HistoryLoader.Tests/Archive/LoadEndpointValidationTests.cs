@@ -1,8 +1,9 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
-using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.HistoryLoader.Application.Jobs;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
 using AlgoTradeForge.HistoryLoader.Tests.TestData;
@@ -197,7 +198,9 @@ public sealed class LoadEndpointValidationTests
     }
 
     // -------------------------------------------------------------------------
-    // Path traversal: PostLoad must return 422 without touching the filesystem.
+    // PostLoad now creates-and-claims via the durable feed-gate (TryAcquireFeedGate)
+    // and enqueues onto the per-kind wakeup channel. No more symbol-level ActiveJobForSymbol
+    // gate (§S5): feed-level gating only.
     // -------------------------------------------------------------------------
 
     private static IOptionsMonitor<HistoryLoaderOptions> DefaultMonitor()
@@ -207,23 +210,29 @@ public sealed class LoadEndpointValidationTests
         return m;
     }
 
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private static Task<IResult> Post(
+        LoadRequest body, IHistoryIndex index, IJobWakeupQueue wakeup, ICollectionPlanSource planSource) =>
+        LoadEndpoints.PostLoad(body, DefaultMonitor(), RegistryWithCandles(), index, wakeup, planSource, Ct);
+
     [Theory]
     [InlineData("../evil", "BTCUSDT")]
     [InlineData("bin\\..\\..", "BTCUSDT")]
     [InlineData("binance", "../secrets")]
     [InlineData("binance", "BTC/USDT")]
-    public void PostLoad_TraversalInExchangeOrSymbol_Returns422_NoJobEnqueued(string exchange, string symbol)
+    public async Task PostLoad_TraversalInExchangeOrSymbol_Returns422_NoGateAcquired(string exchange, string symbol)
     {
-        var loadRegistry = Substitute.For<ILoadJobRegistry>();
+        var index = Substitute.For<IHistoryIndex>();
+        var wakeup = Substitute.For<IJobWakeupQueue>();
         var planSource = new CollectionPlanHolder(); // traversal rejected before plan lookup
         var req = ValidRequest() with { Exchange = exchange, Symbol = symbol };
 
-        var result = LoadEndpoints.PostLoad(
-            req, DefaultMonitor(), RegistryWithCandles(), loadRegistry, planSource);
+        var result = await Post(req, index, wakeup, planSource);
 
         var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
         Assert.Equal(StatusCodes.Status422UnprocessableEntity, statusResult.StatusCode);
-        loadRegistry.DidNotReceiveWithAnyArgs().TryEnqueue(default!, default!);
+        await index.DidNotReceiveWithAnyArgs().TryAcquireFeedGate(default!, default!, default!, default!, Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------
@@ -237,7 +246,7 @@ public sealed class LoadEndpointValidationTests
         return holder;
     }
 
-    // Unprocessable() returns Results.Json(new { error, message }) — an anonymous type,
+    // Unprocessable()/error responses are Results.Json(new { error, ... }) — an anonymous type,
     // so the error code is read via reflection off IValueHttpResult.Value.
     private static void AssertErrorCode(IResult result, string expectedCode)
     {
@@ -248,31 +257,29 @@ public sealed class LoadEndpointValidationTests
     }
 
     [Fact]
-    public void PostLoad_UndeclaredSymbol_Returns422_SymbolNotDeclared()
+    public async Task PostLoad_UndeclaredSymbol_Returns422_SymbolNotDeclared()
     {
         // Plan has a perp; request asks for spot — lookup fails.
         var planSource = PlanWith(CollectionAssets.Perp("BTCUSDT"));
-        var loadRegistry = Substitute.For<ILoadJobRegistry>();
+        var index = Substitute.For<IHistoryIndex>();
+        var wakeup = Substitute.For<IJobWakeupQueue>();
 
-        var result = LoadEndpoints.PostLoad(
-            ValidRequest(), // spot BTCUSDT
-            DefaultMonitor(), RegistryWithCandles(), loadRegistry, planSource);
+        var result = await Post(ValidRequest(), index, wakeup, planSource); // spot BTCUSDT
 
         var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
         Assert.Equal(StatusCodes.Status422UnprocessableEntity, statusResult.StatusCode);
         AssertErrorCode(result, "symbol_not_declared");
-        loadRegistry.DidNotReceiveWithAnyArgs().TryEnqueue(default!, default!);
+        await index.DidNotReceiveWithAnyArgs().TryAcquireFeedGate(default!, default!, default!, default!, Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public void PostLoad_SymbolNotInPlanAtAll_Returns422_SymbolNotDeclared()
+    public async Task PostLoad_SymbolNotInPlanAtAll_Returns422_SymbolNotDeclared()
     {
         var planSource = new CollectionPlanHolder(); // empty plan
-        var loadRegistry = Substitute.For<ILoadJobRegistry>();
+        var index = Substitute.For<IHistoryIndex>();
+        var wakeup = Substitute.For<IJobWakeupQueue>();
 
-        var result = LoadEndpoints.PostLoad(
-            ValidRequest(),
-            DefaultMonitor(), RegistryWithCandles(), loadRegistry, planSource);
+        var result = await Post(ValidRequest(), index, wakeup, planSource);
 
         var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
         Assert.Equal(StatusCodes.Status422UnprocessableEntity, statusResult.StatusCode);
@@ -280,23 +287,57 @@ public sealed class LoadEndpointValidationTests
     }
 
     [Fact]
-    public void PostLoad_DeclaredSymbol_Enqueues_And_Returns202()
+    public async Task PostLoad_DeclaredSymbol_AcquiresGateAndEnqueues_Returns202()
     {
-        // Spot BTCUSDT is in the plan; validator passes; registry accepts.
-        var asset = CollectionAssets.Spot("BTCUSDT");
-        var planSource = PlanWith(asset);
-        var loadRegistry = Substitute.For<ILoadJobRegistry>();
-        loadRegistry.ActiveJobForSymbol(Arg.Any<string>()).Returns((string?)null);
-        loadRegistry.TryEnqueue(Arg.Any<LoadJob>(), Arg.Any<string>())
-            .Returns(ci => new LoadEnqueueOutcome.Accepted(
-                new LoadJobRecord { FeedKey = "k", Job = ci.Arg<LoadJob>(), QueuedAt = DateTimeOffset.UtcNow }));
+        var planSource = PlanWith(CollectionAssets.Spot("BTCUSDT"));
+        var index = Substitute.For<IHistoryIndex>();
+        index.TryAcquireFeedGate("load", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new FeedGateOutcome.Acquired("job-1"));
+        var wakeup = Substitute.For<IJobWakeupQueue>();
+        wakeup.TryEnqueue("job-1").Returns(true);
 
-        var result = LoadEndpoints.PostLoad(
-            ValidRequest(),
-            DefaultMonitor(), RegistryWithCandles(), loadRegistry, planSource);
+        var result = await Post(ValidRequest(), index, wakeup, planSource);
 
         var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
         Assert.Equal(StatusCodes.Status202Accepted, statusResult.StatusCode);
-        loadRegistry.ReceivedWithAnyArgs(1).TryEnqueue(default!, default!);
+        wakeup.Received(1).TryEnqueue("job-1");
+        // Feed key is 4-part: {exchange}|{dir}|{feed}|{interval}. Spot dir == symbol.
+        await index.Received(1).TryAcquireFeedGate(
+            "load", "binance|BTCUSDT|candles|1h", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PostLoad_SameFeedBusy_Returns409_FeedBusy()
+    {
+        var planSource = PlanWith(CollectionAssets.Spot("BTCUSDT"));
+        var index = Substitute.For<IHistoryIndex>();
+        index.TryAcquireFeedGate("load", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new FeedGateOutcome.Busy("active-99"));
+        var wakeup = Substitute.For<IJobWakeupQueue>();
+
+        var result = await Post(ValidRequest(), index, wakeup, planSource);
+
+        var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status409Conflict, statusResult.StatusCode);
+        AssertErrorCode(result, "feed_busy");
+        wakeup.DidNotReceiveWithAnyArgs().TryEnqueue(default!);
+    }
+
+    [Fact]
+    public async Task PostLoad_WakeupChannelFull_Returns503_QueueFull_AndDeletesPhantomJob()
+    {
+        var planSource = PlanWith(CollectionAssets.Spot("BTCUSDT"));
+        var index = Substitute.For<IHistoryIndex>();
+        index.TryAcquireFeedGate("load", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new FeedGateOutcome.Acquired("job-2"));
+        var wakeup = Substitute.For<IJobWakeupQueue>();
+        wakeup.TryEnqueue("job-2").Returns(false); // channel full
+
+        var result = await Post(ValidRequest(), index, wakeup, planSource);
+
+        var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, statusResult.StatusCode);
+        AssertErrorCode(result, "queue_full");
+        await index.Received(1).DeleteJob("job-2", Arg.Any<CancellationToken>());
     }
 }
