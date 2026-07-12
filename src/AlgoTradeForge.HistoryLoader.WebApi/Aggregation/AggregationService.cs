@@ -1,0 +1,115 @@
+using System.Text.Json;
+using System.Threading.Channels;
+using AlgoTradeForge.HistoryLoader.Application.Aggregation;
+using AlgoTradeForge.HistoryLoader.Application.Jobs;
+using Microsoft.Extensions.Logging;
+
+namespace AlgoTradeForge.HistoryLoader.WebApi.Aggregation;
+
+internal sealed class AggregationService(
+    IServiceScopeFactory scopeFactory,
+    ILogger<AggregationService> logger) : IAggregationService
+{
+    // Mirrors ArchiveLoadService: true-shutdown = OCE caused by the token passed to Run,
+    // not by an internal source (e.g. a downstream call with its own ct).
+    private static bool IsTrueShutdown(Exception ex, CancellationToken ct) =>
+        ex is OperationCanceledException oce && ct.IsCancellationRequested && oce.CancellationToken == ct;
+
+    public async Task Run(AggregationRunRequest req, IJobProgressSink sink, CancellationToken ct = default)
+    {
+        var job = req.Job;
+
+        // Ordered single-consumer progress drain. The pipeline's onProgress callback is
+        // synchronous; sink.Report is async. TryWrite enqueues in order; one consumer awaits
+        // sink.Report sequentially. Flush() MUST complete before every terminal sink call so
+        // all progress seq < terminal seq (no SSE tail mis-order, no state regression
+        // complete→running in the durable store).
+        var channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+        var consumer = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var json in channel.Reader.ReadAllAsync(ct))
+                {
+                    try { await sink.Report(json, ct); }
+                    catch (Exception ex) when (!IsTrueShutdown(ex, ct))
+                    {
+                        logger.LogWarning(ex, "Progress report dropped for job {JobId}", job.JobId);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        }, ct);
+
+        async Task Flush()
+        {
+            channel.Writer.TryComplete();
+            await consumer;
+        }
+
+        try
+        {
+            await sink.Started(
+                JsonSerializer.Serialize(new
+                {
+                    jobId = job.JobId,
+                    feedId = job.OutcomeFeedId,
+                    sourceFeedId = job.Source.FeedId,
+                }),
+                ct);
+
+            using var scope = scopeFactory.CreateScope();
+            var pipeline = scope.ServiceProvider.GetRequiredService<IAggregationPipeline>();
+
+            var result = await pipeline.Run(
+                job,
+                onProgress: ev =>
+                {
+                    if (ev is ProgressEvent.Progress p)
+                    {
+                        channel.Writer.TryWrite(JsonSerializer.Serialize(new
+                        {
+                            partition = p.CurrentPartition,
+                            barsEmitted = p.BarsEmitted,
+                            elapsedMs = p.ElapsedMs,
+                        }));
+                    }
+                },
+                ct);
+
+            await Flush();
+            await sink.Complete(JsonSerializer.Serialize(new
+            {
+                jobId = result.JobId,
+                outcomeFeedId = result.OutcomeFeedId,
+                barCount = result.BarCount,
+                firstBarTs = result.FirstBarTs,
+                lastBarTs = result.LastBarTs,
+                durationSeconds = result.DurationSeconds,
+            }), ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // User cancel — distinct terminal state from host_shutdown.
+            await Flush();
+            logger.LogInformation("Aggregation job {JobId} cancelled on user request.", job.JobId);
+            await sink.Cancel("user_cancelled", CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            // Host shutdown — ct not cancelled; drain, route, then rethrow so the caller
+            // (AggregationWorkerHost) can propagate the stop signal correctly.
+            await Flush();
+            logger.LogInformation("Aggregation job {JobId} interrupted by host shutdown.", job.JobId);
+            await sink.Fail("host_shutdown", "Job interrupted by host shutdown.", CancellationToken.None);
+            throw;
+        }
+        catch (Exception ex) when (!IsTrueShutdown(ex, ct))
+        {
+            await Flush();
+            logger.LogError(ex, "Aggregation job {JobId} (feedId={FeedId}) failed.", job.JobId, job.OutcomeFeedId);
+            var redacted = $"Aggregation job failed ({ex.GetType().Name}); see server logs (job_id={job.JobId}).";
+            await sink.Fail("internal_error", redacted, CancellationToken.None);
+        }
+    }
+}
