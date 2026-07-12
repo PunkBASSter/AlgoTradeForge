@@ -60,6 +60,43 @@ public sealed class HistoryIndexInitializerTests : IDisposable
         Assert.Equal("interrupted", (string)(await checkCmd.ExecuteScalarAsync(Ct))!);
     }
 
+    [Fact]
+    public async Task EnsureCreated_OnV1Db_MigratesToV2_AndIsIdempotent()
+    {
+        var path = Path.Combine(_dir, "idx.sqlite");
+        // Seed a v1 database: schema_version=1, index_jobs WITHOUT the new columns.
+        await using (var conn = new SqliteConnection($"Data Source={path}"))
+        {
+            await conn.OpenAsync(Ct);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version (version) VALUES (1);
+                CREATE TABLE index_jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, state TEXT NOT NULL,
+                    progress_json TEXT NOT NULL DEFAULT '{}', error TEXT NULL,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                INSERT INTO index_jobs (id, kind, state, created_at, updated_at)
+                    VALUES ('old1', 'index', 'complete', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                """;
+            await cmd.ExecuteNonQueryAsync(Ct);
+        }
+
+        var init = new HistoryIndexInitializer(path);
+        await init.EnsureCreated(Ct);
+        // Force a fresh initializer so the volatile _done flag can't mask a re-run throw.
+        var init2 = new HistoryIndexInitializer(path);
+        await init2.EnsureCreated(Ct);   // must NOT throw "duplicate column name"
+
+        await using var verify = new SqliteConnection($"Data Source={path};Pooling=False");
+        await verify.OpenAsync(Ct);
+        await using var check = verify.CreateCommand();
+        check.CommandText = "SELECT version FROM schema_version";
+        Assert.Equal(2L, (long)(await check.ExecuteScalarAsync(Ct))!);
+        check.CommandText = "SELECT COUNT(*) FROM index_jobs WHERE id='old1'";   // legacy row survives
+        Assert.Equal(1L, (long)(await check.ExecuteScalarAsync(Ct))!);
+        SqliteConnection.ClearAllPools();
+    }
+
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();
