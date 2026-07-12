@@ -101,6 +101,7 @@ builder.Services.AddSingleton<IBackfillOrchestrator>(sp => sp.GetRequiredService
 builder.Services.AddSingleton<IArchiveLoadService, ArchiveLoadService>();
 builder.Services.AddSingleton<LoadRequestRehydrator>();
 builder.Services.AddHostedService<LoadJobWorker>();
+builder.Services.AddHostedService<AlgoTradeForge.HistoryLoader.WebApi.Jobs.JobRetentionSweeper>();
 builder.Services.AddSingleton<IAggregationJobQueue, AggregationJobQueue>();
 builder.Services.AddSingleton<IAggregationTickJobQueue, AggregationTickJobQueue>();
 builder.Services.AddScoped<PartitionedSourceReader>();
