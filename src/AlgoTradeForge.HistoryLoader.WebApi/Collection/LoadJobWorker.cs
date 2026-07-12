@@ -27,47 +27,81 @@ internal sealed class LoadJobWorker(
         var queued = await index.ListJobs("load", "queued", stoppingToken);
         wakeup.SeedFromQueued(queued.Select(j => j.Id));
 
-        await foreach (var jobId in wakeup.Reader(stoppingToken))
-            await RunJob(jobId, stoppingToken);
+        await Drain(maxItems: null, stoppingToken);
     }
 
     // Processes exactly one wakeup item then returns — unit-test seam.
-    internal async Task DrainOnceForTest(CancellationToken ct)
+    internal Task DrainOnceForTest(CancellationToken ct) => Drain(maxItems: 1, ct);
+
+    // Processes up to `count` wakeup items then returns — multi-item unit-test seam.
+    internal Task DrainForTest(int count, CancellationToken ct) => Drain(count, ct);
+
+    // Shared drain loop. Per-item faults are isolated inside RunJob so one bad row never kills the
+    // loop; the outer catch swallows host-shutdown (including the rethrow from RunJob's shutdown arm)
+    // so the BackgroundService exits cleanly instead of faulting → StopHost → all collectors down.
+    private async Task Drain(int? maxItems, CancellationToken stoppingToken)
     {
-        await foreach (var jobId in wakeup.Reader(ct))
+        var processed = 0;
+        try
         {
-            await RunJob(jobId, ct);
-            return;
+            await foreach (var jobId in wakeup.Reader(stoppingToken))
+            {
+                await RunJob(jobId, stoppingToken);
+                if (maxItems is { } max && ++processed >= max)
+                    return;
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Normal host shutdown.
         }
     }
 
     private async Task RunJob(string jobId, CancellationToken stoppingToken)
     {
-        var row = await index.GetJob(jobId, stoppingToken);
+        IndexJobRow? row;
+        try
+        {
+            row = await index.GetJob(jobId, stoppingToken);
+        }
+        catch (Exception ex) when (!IsTrueShutdown(ex, stoppingToken))
+        {
+            // Transient store read (e.g. SQLITE_BUSY): we have no row to Fail — skip and keep draining.
+            logger.LogError(ex, "Failed to read load job {JobId}; skipping wakeup", jobId);
+            return;
+        }
+
         if (row is null)
         {
             logger.LogWarning("Load job {JobId} woke the worker but is no longer in the store", jobId);
             return;
         }
 
-        var linked = cancellations.Register(jobId, stoppingToken);
+        var sink = sinkFactory.For(jobId);
         try
         {
+            var linked = cancellations.Register(jobId, stoppingToken);
             await index.UpdateJob(jobId, "running", ct: stoppingToken);
-            var sink = sinkFactory.For(jobId);
-            // Run owns the terminal sink transitions (Started/Complete/Fail).
+            // Run owns the terminal sink transitions on the happy path (Started/Complete) and reports
+            // its own load errors via Fail; it rethrows OCE carrying the linked token on any cancel.
             var req = rehydrator.Rehydrate(row);
             await archiveLoad.Run(req, sink, linked);
         }
-        catch (Exception ex) when (!IsTrueShutdown(ex, stoppingToken))
+        catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
         {
-            // Reaches here only for pre-Run failures (e.g. rehydration): Run swallows its own.
-            logger.LogError(ex, "Load job {JobId} failed before dispatch", jobId);
-            try { await sinkFactory.For(jobId).Fail("load_failed", ex.Message, stoppingToken); }
-            catch (Exception inner) when (!IsTrueShutdown(inner, stoppingToken))
-            {
-                logger.LogError(inner, "Failed to record load job {JobId} failure", jobId);
-            }
+            // User DELETE tripped the linked (per-job) token; the host is still running.
+            await sink.Cancel("user_cancelled", CancellationToken.None);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Host shutdown mid-run — leave the row non-terminal for restart rehydration (M3.6 reconciles).
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Pre-Run failures (rehydration of a removed symbol) and any genuine escape.
+            logger.LogError(ex, "Load job {JobId} failed", jobId);
+            await sink.Fail("load_failed", ex.Message, CancellationToken.None);
         }
         finally
         {
