@@ -21,5 +21,8 @@ public sealed class JobEventSignal : IJobEventSignal
         prev.TrySetResult();
     }
 
-    public void Evict(string jobId) => _cells.TryRemove(jobId, out _);
+    public void Evict(string jobId)
+    {
+        if (_cells.TryRemove(jobId, out var cell)) cell.TrySetResult();
+    }
 }

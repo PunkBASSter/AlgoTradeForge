@@ -26,6 +26,17 @@ public sealed class JobEventSignalTests
     }
 
     [Fact]
+    public async Task Evict_CompletesParkedReader()
+    {
+        var sig = new JobEventSignal();
+        var waiter = sig.Next("job1");             // park a reader, no prior Signal
+        Assert.False(waiter.IsCompleted);
+        sig.Evict("job1");
+        await waiter.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);   // must not hang
+        Assert.True(waiter.IsCompleted);
+    }
+
+    [Fact]
     public void Signal_WithoutCell_IsNoOp_LaterNextIsIncomplete()
     {
         var sig = new JobEventSignal();

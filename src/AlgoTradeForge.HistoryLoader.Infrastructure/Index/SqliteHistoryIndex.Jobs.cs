@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.Storage.Threading;
 using Microsoft.Data.Sqlite;
@@ -143,7 +144,7 @@ public sealed partial class SqliteHistoryIndex
 
     public async Task SetTouched(string jobId, string feedKey, string month, CancellationToken ct = default)
     {
-        var json = $"[{{\"feedKey\":\"{feedKey}\",\"month\":\"{month}\"}}]";
+        var json = JsonSerializer.Serialize(new[] { new { feedKey, month } });
         using var _ = await _writeGate.LockAsync(ct);
         await using var conn = await Open(ct);
         await using var cmd = conn.CreateCommand();

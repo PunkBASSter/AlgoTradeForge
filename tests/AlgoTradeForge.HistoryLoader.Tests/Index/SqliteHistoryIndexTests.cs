@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Index;
@@ -250,6 +251,22 @@ public sealed class SqliteHistoryIndexTests : IAsyncLifetime, IDisposable
         // DeleteJob removes row and its events.
         await _index.DeleteJob(otherId, Ct);
         Assert.Null(await _index.GetJob(otherId, Ct));
+    }
+
+    [Fact]
+    public async Task SetTouched_EscapesSpecialCharacters_RoundTripsAsValidJson()
+    {
+        const string feedKey = "binance|BT\"C|candles|1m";
+        var g = await _index.TryAcquireFeedGate("load", feedKey, "{}", "{}", Ct);
+        var id = Assert.IsType<FeedGateOutcome.Acquired>(g).JobId;
+
+        await _index.SetTouched(id, feedKey, "2024-03", Ct);
+
+        var row = await _index.GetJob(id, Ct);
+        using var doc = JsonDocument.Parse(row!.TouchedJson);   // malformed against string-interp
+        var element = doc.RootElement[0];
+        Assert.Equal(feedKey, element.GetProperty("feedKey").GetString());
+        Assert.Equal("2024-03", element.GetProperty("month").GetString());
     }
 
     public void Dispose()
