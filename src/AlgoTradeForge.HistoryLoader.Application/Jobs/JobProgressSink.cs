@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Application.Index;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Jobs;
@@ -31,7 +32,7 @@ public sealed class JobProgressSink(string jobId, IHistoryIndex index, IJobEvent
 
     public async Task Fail(string code, string message, CancellationToken ct = default)
     {
-        var errorJson = $"{{\"code\":\"{code}\",\"message\":\"{message}\"}}";
+        var errorJson = JsonSerializer.Serialize(new { code, message });
         await index.UpdateJob(jobId, "error", error: errorJson, ct: ct);
         await index.AppendJobEvent(jobId, "error", errorJson, ct);
         signal.Signal(jobId);
@@ -40,7 +41,7 @@ public sealed class JobProgressSink(string jobId, IHistoryIndex index, IJobEvent
 
     public async Task Cancel(string reason, CancellationToken ct = default)
     {
-        var payload = $"{{\"reason\":\"{reason}\"}}";
+        var payload = JsonSerializer.Serialize(new { reason });
         await index.UpdateJob(jobId, "cancelled", ct: ct);
         await index.AppendJobEvent(jobId, "cancelled", payload, ct);
         signal.Signal(jobId);

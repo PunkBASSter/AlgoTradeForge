@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Application.Jobs;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Index;
@@ -113,6 +114,22 @@ public sealed class JobProgressSinkTests : IAsyncLifetime, IDisposable
         Assert.True(woke.IsCompleted);
         var row = await _index.GetJob(jobId, Ct);
         Assert.Equal("cancelled", row!.State);
+    }
+
+    [Fact]
+    public async Task Sink_Fail_WithQuotesInMessage_StoresValidJson()
+    {
+        var jobId = await _index.CreateJob("load", Ct);
+        var signal = new JobEventSignal();
+        var sink = new JobProgressSink(jobId, _index, signal);
+
+        await sink.Fail("load_failed", "bad \"symbol\" value", Ct);
+
+        var row = await _index.GetJob(jobId, Ct);
+        Assert.NotNull(row!.Error);
+        var parsed = JsonSerializer.Deserialize<JsonElement>(row.Error);
+        Assert.Equal("load_failed", parsed.GetProperty("code").GetString());
+        Assert.Equal("bad \"symbol\" value", parsed.GetProperty("message").GetString());
     }
 
     [Fact]
