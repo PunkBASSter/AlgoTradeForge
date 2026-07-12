@@ -95,6 +95,7 @@ builder.Services.AddSingleton<IEagerBackfillRunner, EagerBackfillRunner>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IJobEventSignal, JobEventSignal>();
 builder.Services.AddSingleton<IJobProgressSinkFactory, JobProgressSinkFactory>();
+builder.Services.AddSingleton<IJobCancellationMap, JobCancellationMap>();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IFeedCatalog, FeedCatalog>();
 builder.Services.AddSingleton<IAggregationJobRegistry, AggregationJobRegistry>();

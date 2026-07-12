@@ -13,6 +13,7 @@ internal static class JobEndpoints
         v1.MapGet("/jobs", ListJobs);
         v1.MapGet("/jobs/{jobId}", GetJob);
         v1.MapGet("/jobs/{jobId}/progress", GetJobProgressSse);
+        v1.MapDelete("/jobs/{jobId}", CancelJob);
         return app;
     }
 
@@ -72,6 +73,15 @@ internal static class JobEndpoints
             }
         }
         catch (OperationCanceledException) { }
+    }
+
+    // internal for direct endpoint-level testing (InternalsVisibleTo)
+    internal static async Task<IResult> CancelJob(
+        string jobId, IHistoryIndex index, IJobCancellationMap cancels, CancellationToken ct)
+    {
+        await index.RequestCancel(jobId, ct);
+        cancels.Trip(jobId);
+        return TypedResults.Accepted((string?)null);
     }
 
     private static int ParseLastEventId(HttpContext context)
