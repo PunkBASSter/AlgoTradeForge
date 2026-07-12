@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using AlgoTradeForge.Domain.Aggregation;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Domain.Symbology;
 
@@ -136,6 +137,13 @@ public static class GroupValidator
             if (DeclarableFeeds.All.Contains(derivedKey))
                 errors.Add(
                     $"derived '{derivedKey}' collides with a collectable feed name; derived ids must be distinct (post-F1 coverage matching claims feed names across intervals)");
+
+            // The derived key IS the materialize outcome feed-id; the worker parses it as a
+            // canonical AltBarFeedId (Type_Source_Threshold). Reject non-canonical ids here so a
+            // typo fails at config time instead of a runtime FormatException → materialize_failed.
+            else if (!AltBarFeedId.TryParse(derivedKey, out _, out var canonErr))
+                errors.Add(
+                    $"derived_feed_not_canonical: derived feed id '{derivedKey}' must be Type_Source_Threshold (e.g. EqV_ticks_1k); {canonErr}");
 
             if (!validSources.Contains(derivedDef.Source))
                 errors.Add(

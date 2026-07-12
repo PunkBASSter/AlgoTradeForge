@@ -65,8 +65,7 @@ internal sealed class MaterializeStageRequestFactory(
             return (FeedNames.Ticks, DataFeedKind.Tick);
 
         var (_, _, feedName, _) = ParseFeedKey(load.FeedKey);
-        var isTick = string.Equals(feedName, FeedNames.Ticks, StringComparison.Ordinal)
-            || string.Equals(feedName, "agg-trades", StringComparison.Ordinal);
+        var isTick = string.Equals(feedName, FeedNames.Ticks, StringComparison.Ordinal);
         return isTick ? (FeedNames.Ticks, DataFeedKind.Tick) : (feedName, DataFeedKind.TimeBar);
     }
 
