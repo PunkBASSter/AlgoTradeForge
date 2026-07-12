@@ -126,10 +126,11 @@ internal sealed class BookTickerStreamService(
                 continue;
             }
 
-            await EnsureSchemas(typeFilter, ct);
-
             try
             {
+                // Inside the reconnect try: a transient feeds.json ETag/lock failure must be
+                // retried, not propagated out of the venue loop (which would silently kill it).
+                await EnsureSchemas(typeFilter, ct);
                 await ConnectAndStreamAsync(reconnect, venue, symbols, ct);
                 // Normal disconnect or deliberate plan-dirty exit — reset before reconnecting.
                 reconnect.Reset();

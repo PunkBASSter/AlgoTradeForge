@@ -10,7 +10,8 @@ public static class FeedCadence
     {
         FeedNames.MarkPrice or FeedNames.PremiumIndex or FeedNames.IndexPrice => "1h",
         FeedNames.OpenInterest => "5m",
-        FeedNames.LsRatioGlobal or FeedNames.LsRatioTopAccounts or FeedNames.LsRatioTopPositions => "15m",
+        FeedNames.LsRatioGlobal or FeedNames.LsRatioTopAccounts => "15m",
+        FeedNames.LsRatioTopPositions => "1h",   // collected by HourlyCollectorService, not RatioCollectorService
         FeedNames.TakerVolume => "15m",
         _ => "",   // candles carry explicit intervals; funding-rate/ticks/liquidations/book-ticker are interval-less
     };

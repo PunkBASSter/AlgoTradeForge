@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -9,15 +10,21 @@ public sealed class GroupStore : IGroupStore
 {
     private readonly IFileStorage _fs;
     private readonly HistoryLoaderOptions _options;
+    private readonly ArchiveMaterializerRegistry _materializers;
     private readonly ILogger<GroupStore> _logger;
 
     public event Action? GroupsChanged;
 
-    public GroupStore(IFileStorage fs, IOptions<HistoryLoaderOptions> options, ILogger<GroupStore> logger)
+    public GroupStore(
+        IFileStorage fs,
+        IOptions<HistoryLoaderOptions> options,
+        ArchiveMaterializerRegistry materializers,
+        ILogger<GroupStore> logger)
     {
-        _fs      = fs;
-        _options = options.Value;
-        _logger  = logger;
+        _fs            = fs;
+        _options       = options.Value;
+        _materializers = materializers;
+        _logger        = logger;
     }
 
     public async Task<IReadOnlyList<GroupDocument>> List(CancellationToken ct = default)
@@ -74,6 +81,7 @@ public sealed class GroupStore : IGroupStore
         if (group.Name != name)
             errors.Add($"group.Name '{group.Name}' must equal file name '{name}'");
         errors.AddRange(GroupValidator.Validate(group));
+        errors.AddRange(GroupCollectabilityValidator.Validate(group, _materializers));
 
         if (errors.Count > 0) throw new GroupValidationException(errors);
 
