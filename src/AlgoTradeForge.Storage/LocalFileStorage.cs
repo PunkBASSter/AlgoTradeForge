@@ -10,7 +10,7 @@ namespace AlgoTradeForge.Storage;
 /// <summary>
 /// Local-FS <see cref="IFileStorage"/>. Absolute keys pass through; relative keys resolve
 /// against <see cref="LocalStorageOptions.DataRoot"/>. Writes atomic via <c>.tmp</c> +
-/// <see cref="AtomicReplace"/> (delete-then-rename, Windows-safe with open readers). Streams
+/// <see cref="AtomicReplace"/> (File.Move overwrite:true — atomic on post-Win-1903). Streams
 /// open with <c>useAsync: true</c>. Concurrent writers on the same key race on the temp file
 /// and final move — callers must serialize via domain-level locks (e.g. <c>WriteLockManager</c>)
 /// when that matters. <see cref="WriteIfMatch"/> is the exception: it serializes its CAS-commit
@@ -227,15 +227,27 @@ public sealed class LocalFileStorage : IFileStorage
         return Convert.ToHexString(hash);
     }
 
-    // Windows MoveFileEx(REPLACE_EXISTING) denies access if dst has any open handle, even with
-    // FileShare.Delete. Delete-then-rename works because the unlink leaves open handles pointing
-    // at the now-detached inode; readers complete on their data while the new file takes the name.
-    // Brief window between Delete and Move where dst is absent — concurrent readers see null /
-    // FileNotFoundException; FeedSchemaManager.UpdateWithRetry's CAS-retry loop covers it.
+    // Primary path: File.Move(overwrite:true) is atomic on post-Win-1903 when MoveFileEx succeeds.
+    // IOException retry covers the common case where a concurrent reader briefly holds dst (matches
+    // PartitionFileWriter). UnauthorizedAccessException fallback handles Windows 11+ builds where
+    // MoveFileEx(REPLACE_EXISTING) returns ACCESS_DENIED for open files; POSIX-semantics File.Delete
+    // removes the directory entry immediately so the subsequent move finds a free name.
     private static void AtomicReplace(string src, string dst)
     {
-        File.Delete(dst); // no-op when dst is absent (BCL contract)
-        File.Move(src, dst, overwrite: false);
+        try { File.Move(src, dst, overwrite: true); }
+        catch (IOException)
+        {
+            // Windows: a concurrent reader can briefly fail the replace; one short retry (matches PartitionFileWriter).
+            Thread.Sleep(500);
+            File.Move(src, dst, overwrite: true);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Windows 11: MoveFileEx(REPLACE_EXISTING) can return ERROR_ACCESS_DENIED for open files
+            // even when they were opened with FileShare.Delete; fall back to POSIX-semantics delete+move.
+            File.Delete(dst);
+            File.Move(src, dst, overwrite: false);
+        }
     }
 
     public async Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default)
