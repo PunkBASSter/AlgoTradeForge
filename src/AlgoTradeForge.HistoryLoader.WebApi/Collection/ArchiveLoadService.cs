@@ -33,7 +33,13 @@ internal sealed class ArchiveLoadService(
             try
             {
                 await foreach (var json in channel.Reader.ReadAllAsync(ct))
-                    await sink.Report(json, ct);
+                {
+                    try { await sink.Report(json, ct); }
+                    catch (Exception ex) when (!IsTrueShutdown(ex, ct))
+                    {
+                        logger.LogWarning(ex, "Progress report dropped for feed {FeedName}", req.FeedName);
+                    }
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         }, ct);

@@ -169,6 +169,62 @@ public sealed class ArchiveLoadServiceTests
             Assert.Equal("progress", order[i]);
     }
 
+    // -------------------------------------------------------------------------
+    // 6. Progress-sink fault tolerance — if sink.Report throws a non-OCE
+    //    exception the consumer must absorb it (best-effort progress) so the
+    //    terminal Complete/Fail call ALWAYS runs and Run does NOT throw.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Run_ProgressReportThrows_StillReachesTerminal_DoesNotThrow()
+    {
+        _orchestrator.TryRunSingle(
+                Arg.Any<CollectionAsset>(), Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<string>?>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(),
+                Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                ci.Arg<IProgress<ArchiveProgress>?>()?.Report(new ArchiveProgress(1, 1, "2024-01"));
+                return Task.FromResult(true);
+            });
+
+        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
+        var sink = new ThrowingProgressSink();
+        var req = new ArchiveLoadRequest(Asset, FeedName: FeedNames.Candles, Interval: "1h", From: new(2024, 1, 1), To: new(2024, 1, 31));
+
+        var ok = await svc.Run(req, sink, Ct);  // must not throw
+
+        Assert.True(ok);
+        Assert.True(sink.WasCompleted);
+    }
+
+    // Sink whose Report always throws to exercise the consumer's fault-absorption path.
+    // Complete/Fail record normally so the terminal call can be observed.
+    private sealed class ThrowingProgressSink : IJobProgressSink
+    {
+        public bool WasCompleted { get; private set; }
+        public string? FailCode { get; private set; }
+
+        public Task Report(string progressJson, CancellationToken ct = default) =>
+            throw new InvalidOperationException("sqlite busy");
+
+        public Task Started(string startedPayloadJson, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task Complete(string resultPayloadJson, CancellationToken ct = default)
+        {
+            WasCompleted = true;
+            return Task.CompletedTask;
+        }
+
+        public Task Fail(string code, string message, CancellationToken ct = default)
+        {
+            FailCode = code;
+            return Task.CompletedTask;
+        }
+
+        public Task Cancel(string reason, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
     // Async sink with a real yield point in Report. Records the callback ORDER of
     // Report vs Complete so the ordering test can observe a race a synchronous
     // RecordingSink cannot. Lock-guarded so the fire-and-forget failure mode
