@@ -1,3 +1,4 @@
+using System.Threading;
 using AlgoTradeForge.Storage;
 using Xunit;
 
@@ -40,5 +41,32 @@ public sealed class LocalFileStorageContractTests : FileStorageContractTests
             FileShare.ReadWrite | FileShare.Delete);
         await storage.WriteAllLines("f.csv", new[] { "b", "c" }, Ct);   // must not throw; dst always present
         Assert.Equal(new[] { "b", "c" }, await storage.ReadAllLines("f.csv", Ct));
+    }
+
+    [Fact]
+    public async Task AtomicReplace_UnderConcurrentReader_NeverExposesAbsentDestination()
+    {
+        var storage = new LocalFileStorage(_opts);
+        await storage.WriteAllLines("f.csv", new[] { "seed" }, Ct);
+        var path = Resolve("f.csv");
+
+        using var cts = new CancellationTokenSource();
+        long absentObserved = 0;
+        var observer = Task.Run(() =>
+        {
+            while (!cts.IsCancellationRequested)
+                if (!File.Exists(path)) Interlocked.Increment(ref absentObserved);
+        }, cts.Token);
+
+        for (int i = 0; i < 2000; i++)
+        {
+            using var reader = new FileStream(path, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            await storage.WriteAllLines("f.csv", new[] { "v" + i }, Ct);
+        }
+        cts.Cancel();
+        await observer;
+
+        Assert.Equal(0, Interlocked.Read(ref absentObserved));
     }
 }
