@@ -1,89 +1,52 @@
 "use client";
 
-// Wires an active jobId to an SSE connection. Resumes from `lastEventId` in the
-// persistent store; on terminal event toasts and clears the entry. On 410 Gone (server
-// retention expired) clears to stop reconnect attempts.
+// Wires an active jobId to its /jobs/{id}/progress SSE stream. Resumes from the persisted
+// `lastEventId` cursor (useJobsStore) and, on any terminal event, invalidates the polled
+// jobs list so the panel reflects the final state without waiting for the 5s poll.
 //
-// Each non-cleared entry in `useDataJobsStore.jobs` is owned by exactly one
-// `useJobStream(key)` instance.
+// The card renders progress from the polled JobEnvelope; this hook's only jobs are (a)
+// keeping the resume cursor fresh and (b) prompting a refetch on terminal transitions.
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useDataJobsStore, type FeedJobKey } from "@/lib/stores/data-jobs-store";
-import { connectProgress, GoneError } from "@/lib/services/data-sse-client";
-import { useToast } from "@/components/ui/toast";
-import type { SseEventEnvelope } from "@/types/data-tab";
+import { useJobsStore } from "@/lib/stores/jobs-store";
+import { connectProgress } from "@/lib/services/data-sse-client";
 
-export interface JobStreamObservation {
-  /** Most recent envelope — drives the progress UI. Narrow via `latest.type`. */
-  latest: SseEventEnvelope | null;
-  /** Most recent event type. Same as `latest?.type ?? null`; kept for ergonomic null handling. */
-  type: "queued" | "started" | "progress" | "complete" | "error" | "cancelled" | null;
-}
+const TERMINAL_TYPES: ReadonlySet<string> = new Set(["complete", "error", "cancelled"]);
 
-export function useJobStream(
-  key: FeedJobKey,
-  exchange: string,
-  /** Setter for the parent component's snapshot (if it wants to render progress). */
-  onObservation?: (obs: JobStreamObservation) => void,
-): void {
-  const job = useDataJobsStore((s) => s.jobs[key]);
-  const recordEvent = useDataJobsStore((s) => s.recordEvent);
-  const clearJob = useDataJobsStore((s) => s.clearJob);
-  const { toast } = useToast();
+export function useJobStream(jobId: string, enabled: boolean = true): void {
+  const recordEvent = useJobsStore((s) => s.recordEvent);
   const queryClient = useQueryClient();
 
-  const onObservationRef = useRef(onObservation);
-  onObservationRef.current = onObservation;
-
   useEffect(() => {
-    if (!job) return;
+    if (!enabled || !jobId) return;
 
     const ctrl = new AbortController();
+    // Read the cursor at connect time (not via a subscription) so recording new events
+    // doesn't retrigger this effect and reconnect the stream.
+    const resume = useJobsStore.getState().cursors[jobId]?.lastEventId;
+    const resumeId = resume && Number(resume) > 0 ? Number(resume) : undefined;
+
     void connectProgress({
-      jobId: job.jobId,
-      lastEventId: job.lastEventId > 0 ? job.lastEventId : undefined,
+      jobId,
+      lastEventId: resumeId,
       signal: ctrl.signal,
       handlers: {
         onEvent: (id, env) => {
-          recordEvent(key, id);
-          onObservationRef.current?.({ latest: env, type: env.type });
-
-          if (env.type === "complete") {
-            const overshoot = env.data.fidelity.actual_overshoot_pct.toFixed(2);
-            toast(`Built ${env.data.feed_id} (overshoot ${overshoot}%)`, "success");
-            clearJob(key);
-            const queryKey = ["data", "exchange-assets", exchange];
-            queryClient.invalidateQueries({ queryKey });
-            // The WebApi proxy holds a ~2s absolute-TTL cache of the catalog payload —
-            // the first invalidate hits it and returns stale data. Schedule a follow-up
-            // past the TTL so the next refetch bypasses the proxy cache.
-            setTimeout(() => {
-              queryClient.invalidateQueries({ queryKey });
-            }, 2500);
-          } else if (env.type === "error") {
-            toast(`Aggregation failed: ${env.data.message}`, "error");
-            clearJob(key);
-          } else if (env.type === "cancelled") {
-            toast(`Cancelled (${env.data.reason})`, "info");
-            clearJob(key);
+          recordEvent(jobId, String(id));
+          if (TERMINAL_TYPES.has(env.type)) {
+            queryClient.invalidateQueries({ queryKey: ["data", "jobs"] });
           }
         },
-        onError: (err) => {
-          if (err instanceof GoneError) {
-            // Server retention expired; stop reconnecting.
-            clearJob(key);
-            return;
-          }
-          // Other errors: surface but don't clear so the user can retry.
-          toast(err.message, "error");
-        },
+        // Errors (incl. 410 retention-expired) are non-fatal: the 5s useJobs poll remains
+        // the source of truth for the panel, so we just stop this stream.
+        onError: () => {},
         onClose: () => {},
       },
     });
 
     return () => ctrl.abort();
-    // recordEvent / clearJob / toast / qc are stable refs.
+    // recordEvent / queryClient are stable refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [job?.jobId]);
+  }, [jobId, enabled]);
 }

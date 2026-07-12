@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { CoverageSummary } from "./coverage-summary";
-import { useLoadJobsStore } from "@/lib/stores/load-jobs-store";
 import type { AssetCatalogEntry, LoadRequestBody } from "@/types/data-tab";
 
 // Hoisted so FakeDataApiError is available when the mock factory runs.
@@ -80,11 +79,6 @@ function makeCoverageResponse(partial: {
 beforeEach(() => {
   getCoverageSpy.mockReset();
   postLoadSpy.mockReset();
-  useLoadJobsStore.setState({ jobs: {} });
-});
-
-afterEach(() => {
-  useLoadJobsStore.setState({ jobs: {} });
 });
 
 describe("CoverageSummary", () => {
@@ -153,11 +147,6 @@ describe("CoverageSummary", () => {
         from: "2024-02-01",
         to: "2024-02-29", // 2024 is a leap year
       });
-
-      // Job must be added to the store.
-      await waitFor(() =>
-        expect(useLoadJobsStore.getState().jobs["test-job-abc123"]).toBeDefined(),
-      );
     });
   });
 

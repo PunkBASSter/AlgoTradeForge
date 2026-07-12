@@ -5,8 +5,6 @@ import { useQuery } from "@tanstack/react-query";
 import { dataApi, DataApiError } from "@/lib/services/data-api";
 import { findMissingMonths, loadRangeForMonths } from "@/lib/data/coverage";
 import { exchangeSymbolOf } from "@/lib/data/coverage-mapping";
-import { useLoadJobsStore } from "@/lib/stores/load-jobs-store";
-import { useLoadJob } from "@/hooks/use-load-job";
 import { useToast } from "@/components/ui/toast";
 import type { DataFeedSubscription, TimeBarSubscription } from "@/types/api";
 
@@ -23,9 +21,7 @@ interface RowProps {
 }
 
 function CoverageRow({ sub, startTime, endTime }: RowProps) {
-  const [jobId, setJobId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const addJob = useLoadJobsStore((s) => s.addJob);
   const { toast } = useToast();
 
   const assetsQuery = useQuery({
@@ -58,10 +54,6 @@ function CoverageRow({ sub, startTime, endTime }: RowProps) {
     staleTime: 30_000,
   });
 
-  const jobQuery = useLoadJob(jobId);
-  const isRunning =
-    jobQuery.data?.state === "queued" || jobQuery.data?.state === "running";
-
   if (!catalogEntry) return null;
   if (!coverageQuery.data) return null;
 
@@ -83,11 +75,11 @@ function CoverageRow({ sub, startTime, endTime }: RowProps) {
       : `${missing[0]} … ${missing[missing.length - 1]}`;
 
   async function handleLoad() {
-    if (!catalogEntry || missing.length === 0 || loading || isRunning) return;
+    if (!catalogEntry || missing.length === 0 || loading) return;
     setLoading(true);
     try {
       const range = loadRangeForMonths(missing);
-      const resp = await dataApi.postLoad({
+      await dataApi.postLoad({
         exchange: catalogEntry.exchange,
         symbol: exchangeSymbolOf(catalogEntry),
         asset_type: catalogEntry.type,
@@ -95,13 +87,10 @@ function CoverageRow({ sub, startTime, endTime }: RowProps) {
         interval: sub.timeFrame,
         ...range,
       });
-      addJob(resp.job_id, `${catalogEntry.display_name} candles`);
-      setJobId(resp.job_id);
+      toast(`Load started for ${catalogEntry.display_name} candles — see Jobs panel`, "success");
     } catch (err) {
       if (err instanceof DataApiError && err.status === 409) {
-        const activeJobId = (err.body as { active_job_id: string }).active_job_id;
-        addJob(activeJobId, `${catalogEntry.display_name} candles`);
-        setJobId(activeJobId);
+        toast("Already loading — see Jobs panel", "info");
       } else {
         toast(err instanceof Error ? err.message : String(err), "error");
       }
@@ -117,18 +106,13 @@ function CoverageRow({ sub, startTime, endTime }: RowProps) {
     >
       <span className="flex-1">
         {`Candles ${sub.timeFrame} for ${catalogEntry.display_name}: ${missing.length} archived month${missing.length !== 1 ? "s" : ""} missing in the selected range (${rangeLabel})`}
-        {isRunning && jobQuery.data && (
-          <span className="ml-2 text-xs opacity-80">
-            {jobQuery.data.months_done}/{jobQuery.data.months_total}
-          </span>
-        )}
       </span>
       <button
         type="button"
         onClick={() => {
           void handleLoad();
         }}
-        disabled={loading || isRunning}
+        disabled={loading}
         className="shrink-0 rounded bg-accent-yellow/20 px-3 py-1 text-xs font-medium hover:bg-accent-yellow/30 disabled:cursor-not-allowed disabled:opacity-50"
       >
         Load

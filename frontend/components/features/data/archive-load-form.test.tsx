@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ArchiveLoadForm } from "./archive-load-form";
-import { useLoadJobsStore } from "@/lib/stores/load-jobs-store";
 import type { LoadRequestBody } from "@/types/data-tab";
 
 // vi.mock factories are hoisted above top-level declarations; FakeDataApiError must be
@@ -34,11 +33,6 @@ vi.mock("@/components/ui/toast", () => ({
 
 beforeEach(() => {
   postLoadSpy.mockReset();
-  useLoadJobsStore.setState({ jobs: {} });
-});
-
-afterEach(() => {
-  useLoadJobsStore.setState({ jobs: {} });
 });
 
 function renderForm() {
@@ -84,7 +78,7 @@ describe("ArchiveLoadForm", () => {
     });
   });
 
-  it("409 — attaches the active_job_id to the store and does not set error banner", async () => {
+  it("409 — already-running is not surfaced as an error banner (Jobs panel shows it)", async () => {
     postLoadSpy.mockRejectedValueOnce(
       new FakeDataApiError(409, "job_already_active", "409 Conflict", {
         active_job_id: "existing-job-id",
@@ -101,11 +95,8 @@ describe("ArchiveLoadForm", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /load/i }));
 
-    await waitFor(() =>
-      expect(useLoadJobsStore.getState().jobs["existing-job-id"]).toBeDefined(),
-    );
-    expect(useLoadJobsStore.getState().jobs["existing-job-id"]?.jobId).toBe("existing-job-id");
-    // No error banner for 409
+    await waitFor(() => expect(postLoadSpy).toHaveBeenCalledOnce());
+    // No error banner for 409 — the running job is reflected in the Jobs panel.
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

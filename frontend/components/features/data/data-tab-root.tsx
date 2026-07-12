@@ -5,15 +5,29 @@ import { useIsFetching, useQuery } from "@tanstack/react-query";
 import { dataApi } from "@/lib/services/data-api";
 import { ExchangeCard } from "./exchange-card";
 import { DataSidebar } from "./data-sidebar";
-import { JobProgressCard } from "./job-progress";
-import { LoadJobCard } from "./load-job-card";
+import { JobCard } from "./job-card";
 import { GroupsPanel } from "./groups/groups-panel";
-import { makeFeedJobKey, useDataJobsStore } from "@/lib/stores/data-jobs-store";
-import { useLoadJobsStore } from "@/lib/stores/load-jobs-store";
 import { useDataSelectionStore } from "@/lib/stores/data-selection-store";
+import { useJobs } from "@/hooks/use-jobs";
 import { Button } from "@/components/ui/button";
 
 type DataZone = "explorer" | "groups";
+
+// Server-hydrated list of all in-flight/terminal jobs of every kind. Identity + progress
+// come from the polled useJobs() list; only the SSE resume cursor lives client-side.
+function JobsPanel() {
+  const { data } = useJobs();
+  const jobs = data ?? [];
+  if (jobs.length === 0) return null;
+  return (
+    <section className="space-y-1 mb-3" aria-label="Jobs">
+      <div className="text-xs text-text-muted uppercase tracking-wide">Jobs</div>
+      {jobs.map((job) => (
+        <JobCard key={job.job_id} job={job} />
+      ))}
+    </section>
+  );
+}
 
 export function DataTabRoot() {
   const [zone, setZone] = useState<DataZone>("explorer");
@@ -23,14 +37,6 @@ export function DataTabRoot() {
     queryFn: ({ signal }) => dataApi.getExchanges(signal),
     enabled: zone === "explorer",
   });
-
-  // Resumed from localStorage on mount; each entry mounts a JobProgressCard that
-  // connects/reconnects its SSE stream.
-  const activeJobs = useDataJobsStore((s) => s.jobs);
-  const setJob = useDataJobsStore((s) => s.setJob);
-
-  const loadJobs = useLoadJobsStore((s) => s.jobs);
-  const removeLoadJob = useLoadJobsStore((s) => s.removeJob);
 
   const selection = useDataSelectionStore();
 
@@ -87,31 +93,7 @@ export function DataTabRoot() {
               </Button>
             </div>
 
-            {Object.keys(activeJobs).length > 0 && (
-              <section className="space-y-1 mb-3" aria-label="In-flight aggregations">
-                <div className="text-xs text-text-muted uppercase tracking-wide">In progress</div>
-                {Object.entries(activeJobs).map(([key, _entry]) => {
-                  const [exchange, , outcomeHint] = key.split("|");
-                  return (
-                    <JobProgressCard
-                      key={key}
-                      jobKey={key as ReturnType<typeof makeFeedJobKey>}
-                      exchange={exchange}
-                      outcomeHint={outcomeHint}
-                    />
-                  );
-                })}
-              </section>
-            )}
-
-            {Object.keys(loadJobs).length > 0 && (
-              <section className="space-y-1 mb-3" aria-label="In-progress archive loads">
-                <div className="text-xs text-text-muted uppercase tracking-wide">Archive loads</div>
-                {Object.keys(loadJobs).map((id) => (
-                  <LoadJobCard key={id} jobId={id} onDismiss={() => removeLoadJob(id)} />
-                ))}
-              </section>
-            )}
+            <JobsPanel />
 
             {isLoading && (
               <div className="text-text-secondary text-sm">Loading exchanges…</div>
@@ -134,20 +116,7 @@ export function DataTabRoot() {
               </div>
             )}
           </main>
-          <DataSidebar
-            onJobAccepted={(jobId, outcomeHint) => {
-              // Key by `(exchange|asset|outcomeHint)` so a page refresh resumes the SSE
-              // stream via `Last-Event-ID`.
-              if (selection.exchange && selection.asset) {
-                const key = makeFeedJobKey(
-                  selection.exchange,
-                  selection.asset.symbol,
-                  outcomeHint,
-                );
-                setJob(key, jobId);
-              }
-            }}
-          />
+          <DataSidebar />
         </div>
       )}
     </div>

@@ -1,9 +1,8 @@
 import React from "react";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { CoverageHint } from "./coverage-hint";
-import { useLoadJobsStore } from "@/lib/stores/load-jobs-store";
 import type { DataFeedSubscription } from "@/types/api";
 import type { LoadRequestBody } from "@/types/data-tab";
 
@@ -86,11 +85,6 @@ beforeEach(() => {
   toastSpy.mockReset();
   // Default: terminal state so refetchInterval stops after first poll.
   getLoadJobSpy.mockResolvedValue(TERMINAL_JOB);
-  useLoadJobsStore.setState({ jobs: {} });
-});
-
-afterEach(() => {
-  useLoadJobsStore.setState({ jobs: {} });
 });
 
 function wrap(ui: React.ReactElement) {

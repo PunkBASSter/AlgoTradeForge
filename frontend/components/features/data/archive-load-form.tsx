@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { dataApi, DataApiError } from "@/lib/services/data-api";
-import { useLoadJobsStore } from "@/lib/stores/load-jobs-store";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import type { LoadRequestBody } from "@/types/data-tab";
@@ -69,7 +68,6 @@ const INPUT_CLS =
 
 export function ArchiveLoadForm() {
   const { toast } = useToast();
-  const addJob = useLoadJobsStore((s) => s.addJob);
 
   const [exchange, setExchange] = useState("binance");
   const [symbol, setSymbol] = useState("");
@@ -136,14 +134,11 @@ export function ArchiveLoadForm() {
 
     try {
       const resp = await dataApi.postLoad(body);
-      addJob(resp.job_id, `${symbol.trim()} ${feedName}`);
-      toast(`Load started (${resp.job_id.slice(0, 8)})`, "success");
+      toast(`Load started (${resp.job_id.slice(0, 8)}) — see Jobs panel`, "success");
     } catch (err) {
       if (err instanceof DataApiError) {
         if (err.status === 409) {
-          const activeJobId = (err.body as { active_job_id: string }).active_job_id;
-          addJob(activeJobId, `${symbol.trim()} ${feedName}`);
-          toast("Already running — attached", "info");
+          toast("Already running — see Jobs panel", "info");
         } else if (err.status === 422) {
           const msg = (err.body as { message?: string }).message ?? err.message;
           setErrorBanner(msg);

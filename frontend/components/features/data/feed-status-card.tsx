@@ -14,10 +14,6 @@ import { pickProxyBanner } from "@/lib/data/eqi-banner";
 import { mapCatalogFeedToCoverage } from "@/lib/data/coverage-mapping";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import {
-  makeFeedJobKey,
-  useDataJobsStore,
-} from "@/lib/stores/data-jobs-store";
 import { useDataSelectionStore } from "@/lib/stores/data-selection-store";
 import { CoverageSummary } from "./coverage-summary";
 import type {
@@ -41,8 +37,6 @@ export function FeedStatusCard({ exchange, asset, feed }: Props) {
   const editorViewRef = useRef<EditorView | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const setJob = useDataJobsStore((s) => s.setJob);
-  const clearJob = useDataJobsStore((s) => s.clearJob);
   const closePanel = useDataSelectionStore((s) => s.close);
 
   const status = useQuery({
@@ -84,8 +78,6 @@ export function FeedStatusCard({ exchange, asset, feed }: Props) {
         toast(`${resp.feed_id}: already up to date`, "info");
         return;
       }
-      const key = makeFeedJobKey(exchange, asset.symbol, feedId);
-      setJob(key, resp.job_id);
       toast(`Continuing ${feedId} (job ${resp.job_id.slice(0, 8)})`, "success");
       queryClient.invalidateQueries({ queryKey: ["data", "exchange-assets", exchange] });
     },
@@ -108,9 +100,6 @@ export function FeedStatusCard({ exchange, asset, feed }: Props) {
     mutationFn: () => dataApi.deleteFeed(exchange, asset.symbol, feedId),
     onSuccess: () => {
       toast(`Deleted ${feedId}`, "success");
-      // Clear any persisted SSE entry tied to the deleted feed so the in-progress strip
-      // doesn't keep trying to reconnect to a stale job stream.
-      clearJob(makeFeedJobKey(exchange, asset.symbol, feedId));
       // WebApi proxy has a ~2s catalog cache; follow-up invalidate bypasses it.
       const queryKey = ["data", "exchange-assets", exchange];
       queryClient.invalidateQueries({ queryKey });
