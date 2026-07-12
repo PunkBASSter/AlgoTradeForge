@@ -36,6 +36,7 @@ public sealed class ArchiveBackfillService(
         string assetDir,
         long fromMs, long toMs,
         IProgress<ArchiveProgress>? progress = null,
+        Func<string, CancellationToken, Task>? onMonthStart = null,
         CancellationToken ct = default)
     {
         using var _ = await GetGate(assetDir, feed.FeedName, feed.Interval).LockAsync(ct);
@@ -88,6 +89,11 @@ public sealed class ArchiveBackfillService(
                 progress?.Report(new(done, candidates.Count, $"{year:D4}-{month:D2}"));
                 continue;
             }
+
+            // SetTouched-before-fetch breadcrumb: stamp the in-flight month BEFORE writing its CSV,
+            // so a crash mid-materialize leaves a touched marker the InterruptedJobSweeper reconciles.
+            if (onMonthStart is not null)
+                await onMonthStart($"{year:D4}-{month:D2}", ct);
 
             var result = await materializer.MaterializeMonth(asset, feed, assetDir, year, month, ct);
             done++;

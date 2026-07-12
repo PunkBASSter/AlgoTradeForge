@@ -402,7 +402,7 @@ public sealed class ArchiveBackfillServiceTests
 
         var sut = BuildSut();
         await sut.CoverFromArchive(Asset, Feed, "/data", Ms(2026, 5), Ms(2026, 7, 7),
-            progress, TestContext.Current.CancellationToken);
+            progress, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(
             [new(1, 2, "2026-05"), new(2, 2, "2026-06")],

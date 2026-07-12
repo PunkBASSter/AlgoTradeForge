@@ -108,6 +108,25 @@ public sealed class LoadJobWorkerTests : IAsyncLifetime, IDisposable
         Assert.Contains("user_cancelled", cancelEvent.PayloadJson);
     }
 
+    // M3.4-M4 cancel-while-queued race: a DELETE that arrives while the job sits queued sets the
+    // durable cancel_requested flag but cannot Trip a per-job token (not yet Registered). The worker
+    // must re-check after dequeue and short-circuit to 'cancelled' WITHOUT running the service or
+    // entering 'running'. Non-vacuous: pre-fix the worker would call Run → state complete, Run called.
+    [Fact]
+    public async Task Worker_CancelRequestedWhileQueued_SkipsRun_RecordsCancelled()
+    {
+        var jobId = await EnqueueLoad("BTCUSDT", "BTCUSDT_perp");
+        await _index.RequestCancel(jobId, Ct); // durable flag only — job never Registered, so no Trip
+
+        _wakeup.TryEnqueue(jobId);
+        await _worker.DrainOnceForTest(Ct);
+
+        Assert.Equal("cancelled", (await _index.GetJob(jobId, Ct))!.State);
+        Assert.Null(_fakeArchiveLoad.LastRequest); // the load service was never run
+        var cancelEvent = Assert.Single(await _index.GetJobEventsAfter(jobId, 0, Ct), e => e.Kind == "cancelled");
+        Assert.Contains("user_cancelled", cancelEvent.PayloadJson);
+    }
+
     // Important #2: a transient GetJob read must not fault the BackgroundService (→ StopHost → all
     // collectors down). Pre-fix GetJob ran OUTSIDE the per-item try, so a throw propagated out of the
     // drain loop and item 2 never ran. (Fails pre-fix: item 2 never reaches 'complete'.)
@@ -177,6 +196,8 @@ public sealed class LoadJobWorkerTests : IAsyncLifetime, IDisposable
         public Task<IReadOnlyList<FeedStatusIndexRow>> GetFeedStatuses(string exchange, string dir, CancellationToken ct = default) => inner.GetFeedStatuses(exchange, dir, ct);
         public Task ReplaceMonths(string exchange, string dir, string feedName, string interval, IReadOnlyList<MonthPartitionRow> months, CancellationToken ct = default) => inner.ReplaceMonths(exchange, dir, feedName, interval, months, ct);
         public Task<IReadOnlyList<MonthPartitionRow>> GetMonths(string exchange, string dir, string feedName, string interval, CancellationToken ct = default) => inner.GetMonths(exchange, dir, feedName, interval, ct);
+        public Task DeleteMonthPartition(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default) => inner.DeleteMonthPartition(exchange, dir, feedName, interval, month, ct);
+        public Task RemoveCompleteMonth(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default) => inner.RemoveCompleteMonth(exchange, dir, feedName, interval, month, ct);
         public Task<IReadOnlyList<(string FeedName, string Interval)>> ListFeedKeys(string exchange, string dir, CancellationToken ct = default) => inner.ListFeedKeys(exchange, dir, ct);
         public Task UpsertInstrumentMeta(IReadOnlyList<InstrumentMetaRow> rows, CancellationToken ct = default) => inner.UpsertInstrumentMeta(rows, ct);
         public Task<IReadOnlyList<InstrumentMetaRow>> ListInstrumentMeta(string? exchange = null, CancellationToken ct = default) => inner.ListInstrumentMeta(exchange, ct);

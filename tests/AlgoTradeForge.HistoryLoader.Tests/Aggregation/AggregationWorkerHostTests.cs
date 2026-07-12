@@ -115,6 +115,24 @@ public sealed class AggregationWorkerHostTests : IAsyncLifetime, IDisposable
         Assert.Contains("user_cancelled", cancelEvent.PayloadJson);
     }
 
+    // M3.4-M4 cancel-while-queued race (mirror of the load path): a DELETE arriving while the job
+    // sits queued sets cancel_requested but cannot Trip a per-job token. The host must re-check after
+    // dequeue and short-circuit to 'cancelled' WITHOUT running the service or entering 'running'.
+    [Fact]
+    public async Task AggHost_CancelRequestedWhileQueued_SkipsRun_RecordsCancelled()
+    {
+        var jobId = await EnqueueAggregation("EqV_1m_1000");
+        await _index.RequestCancel(jobId, Ct); // durable flag only — job never Registered, so no Trip
+
+        _timeBarWakeup.TryEnqueue(jobId);
+        await _host.DrainOnceForTest(Ct);
+
+        Assert.Equal("cancelled", (await _index.GetJob(jobId, Ct))!.State);
+        Assert.Null(_fakeService.LastJob); // the aggregation service was never run
+        var cancelEvent = Assert.Single(await _index.GetJobEventsAfter(jobId, 0, Ct), e => e.Kind == "cancelled");
+        Assert.Contains("user_cancelled", cancelEvent.PayloadJson);
+    }
+
     // Per-item isolation: a transient GetJob read fault must not fault the pool loop. GetJob runs
     // INSIDE the per-item try, so a throw is swallowed and the next queued job still completes.
     [Fact]
@@ -170,6 +188,8 @@ public sealed class AggregationWorkerHostTests : IAsyncLifetime, IDisposable
         public Task<IReadOnlyList<FeedStatusIndexRow>> GetFeedStatuses(string exchange, string dir, CancellationToken ct = default) => inner.GetFeedStatuses(exchange, dir, ct);
         public Task ReplaceMonths(string exchange, string dir, string feedName, string interval, IReadOnlyList<MonthPartitionRow> months, CancellationToken ct = default) => inner.ReplaceMonths(exchange, dir, feedName, interval, months, ct);
         public Task<IReadOnlyList<MonthPartitionRow>> GetMonths(string exchange, string dir, string feedName, string interval, CancellationToken ct = default) => inner.GetMonths(exchange, dir, feedName, interval, ct);
+        public Task DeleteMonthPartition(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default) => inner.DeleteMonthPartition(exchange, dir, feedName, interval, month, ct);
+        public Task RemoveCompleteMonth(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default) => inner.RemoveCompleteMonth(exchange, dir, feedName, interval, month, ct);
         public Task<IReadOnlyList<(string FeedName, string Interval)>> ListFeedKeys(string exchange, string dir, CancellationToken ct = default) => inner.ListFeedKeys(exchange, dir, ct);
         public Task UpsertInstrumentMeta(IReadOnlyList<InstrumentMetaRow> rows, CancellationToken ct = default) => inner.UpsertInstrumentMeta(rows, ct);
         public Task<IReadOnlyList<InstrumentMetaRow>> ListInstrumentMeta(string? exchange = null, CancellationToken ct = default) => inner.ListInstrumentMeta(exchange, ct);

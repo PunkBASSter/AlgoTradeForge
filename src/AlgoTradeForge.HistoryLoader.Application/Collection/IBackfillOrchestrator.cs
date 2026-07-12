@@ -13,5 +13,6 @@ public interface IBackfillOrchestrator
         DateOnly? fromDate = null,
         DateOnly? toDate = null,
         IProgress<ArchiveProgress>? progress = null,
+        Func<string, CancellationToken, Task>? onMonthStart = null,
         CancellationToken ct = default);
 }

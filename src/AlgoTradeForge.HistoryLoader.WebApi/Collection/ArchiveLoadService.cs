@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Application.Jobs;
 using AlgoTradeForge.HistoryLoader.Domain;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,7 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 internal sealed class ArchiveLoadService(
     IBackfillOrchestrator orchestrator,
     IOptionsMonitor<HistoryLoaderOptions> options,
+    IHistoryIndex index,
     ILogger<ArchiveLoadService> logger) : IArchiveLoadService
 {
     private static bool IsTrueShutdown(Exception ex, CancellationToken ct) =>
@@ -85,9 +87,17 @@ internal sealed class ArchiveLoadService(
                 };
 
             var assetDir = Path.Combine(options.CurrentValue.DataRoot, asset.Exchange, asset.Venue.Dir);
+
+            // SetTouched-before-fetch: bind the durable job id + feed key so the archive month loop
+            // stamps a breadcrumb before each month's write. Null when the caller has no job row.
+            var feedKey = $"{asset.Exchange}|{asset.Venue.Dir}|{req.FeedName}|{req.Interval}";
+            Func<string, CancellationToken, Task>? onMonthStart = req.JobId is { } jobId
+                ? (month, c) => index.SetTouched(jobId, feedKey, month, c)
+                : null;
+
             var ok = await orchestrator.TryRunSingle(
                 asset, assetDir, feedFilter: [req.FeedName], fromDate: req.From, toDate: req.To,
-                progress: new SinkProgress(channel.Writer), ct: ct);
+                progress: new SinkProgress(channel.Writer), onMonthStart: onMonthStart, ct: ct);
 
             await Flush();
 

@@ -38,6 +38,15 @@ public interface IHistoryIndex
         IReadOnlyList<MonthPartitionRow> months, CancellationToken ct = default);
     Task<IReadOnlyList<MonthPartitionRow>> GetMonths(string exchange, string dir, string feedName, string interval, CancellationToken ct = default);
 
+    /// <summary>Deletes the single month_partitions row for (exchange, dir, feed, interval, month).
+    /// Boot-time crash reconciliation (InterruptedJobSweeper): a stale row for a month whose CSV
+    /// never landed must not read as covered.</summary>
+    Task DeleteMonthPartition(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default);
+
+    /// <summary>Removes one month from a feed_status row's complete_months_json (no-op if absent).
+    /// Invalidates the coarse monthly-completeness signal for a month left mid-flight by a crash.</summary>
+    Task RemoveCompleteMonth(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default);
+
     /// <summary>Distinct (feed_name, interval) across feed_status AND month_partitions — feeds
     /// with month rows but no status row (static equity data) must not be invisible to sweeps.</summary>
     Task<IReadOnlyList<(string FeedName, string Interval)>> ListFeedKeys(string exchange, string dir, CancellationToken ct = default);

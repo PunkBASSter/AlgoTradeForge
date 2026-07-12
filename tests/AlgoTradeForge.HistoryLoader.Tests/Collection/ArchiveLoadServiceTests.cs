@@ -1,6 +1,7 @@
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Application.Jobs;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Tests.TestData;
@@ -19,6 +20,7 @@ public sealed class ArchiveLoadServiceTests
 
     private readonly IBackfillOrchestrator _orchestrator = Substitute.For<IBackfillOrchestrator>();
     private readonly IOptionsMonitor<HistoryLoaderOptions> _options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
+    private readonly IHistoryIndex _index = Substitute.For<IHistoryIndex>();
     private readonly NullLogger<ArchiveLoadService> _logger = NullLogger<ArchiveLoadService>.Instance;
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -36,7 +38,7 @@ public sealed class ArchiveLoadServiceTests
     [Fact]
     public async Task Run_IntervalBasedFeed_WithEmptyInterval_DoesNotThrow_ReportsInvalidInterval()
     {
-        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
+        var svc = new ArchiveLoadService(_orchestrator, _options, _index, _logger);
         var sink = new RecordingSink();
         var req = new ArchiveLoadRequest(Asset, FeedName: "candles", Interval: "", From: new(2024, 1, 1), To: new(2024, 1, 1));
         var ok = await svc.Run(req, sink, Ct);
@@ -49,7 +51,7 @@ public sealed class ArchiveLoadServiceTests
     [InlineData("7x")]
     public async Task Run_IntervalBasedFeed_WithGarbageInterval_ReportsInvalidInterval(string interval)
     {
-        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
+        var svc = new ArchiveLoadService(_orchestrator, _options, _index, _logger);
         var sink = new RecordingSink();
         var req = new ArchiveLoadRequest(Asset, FeedName: FeedNames.Candles, Interval: interval, From: new(2024, 1, 1), To: new(2024, 1, 31));
         var ok = await svc.Run(req, sink, Ct);
@@ -70,10 +72,11 @@ public sealed class ArchiveLoadServiceTests
         _orchestrator.TryRunSingle(
                 Arg.Any<CollectionAsset>(), Arg.Any<string>(),
                 Arg.Any<IReadOnlyList<string>?>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(),
-                Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<Func<string, CancellationToken, Task>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(true));
 
-        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
+        var svc = new ArchiveLoadService(_orchestrator, _options, _index, _logger);
         var sink = new RecordingSink();
         var req = new ArchiveLoadRequest(Asset, FeedName: feedName, Interval: "", From: new(2024, 1, 1), To: new(2024, 1, 31));
         var ok = await svc.Run(req, sink, Ct);
@@ -92,14 +95,15 @@ public sealed class ArchiveLoadServiceTests
         _orchestrator.TryRunSingle(
                 Arg.Any<CollectionAsset>(), Arg.Any<string>(),
                 Arg.Any<IReadOnlyList<string>?>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(),
-                Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<Func<string, CancellationToken, Task>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 ci.Arg<IProgress<ArchiveProgress>?>()?.Report(new ArchiveProgress(1, 1, "2024-01"));
                 return Task.FromResult(true);
             });
 
-        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
+        var svc = new ArchiveLoadService(_orchestrator, _options, _index, _logger);
         var sink = new RecordingSink();
         var req = new ArchiveLoadRequest(Asset, FeedName: FeedNames.Candles, Interval: "1h", From: new(2024, 1, 1), To: new(2024, 1, 31));
         var ok = await svc.Run(req, sink, Ct);
@@ -121,10 +125,11 @@ public sealed class ArchiveLoadServiceTests
         _orchestrator.TryRunSingle(
                 Arg.Any<CollectionAsset>(), Arg.Any<string>(),
                 Arg.Any<IReadOnlyList<string>?>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(),
-                Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<Func<string, CancellationToken, Task>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(false));
 
-        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
+        var svc = new ArchiveLoadService(_orchestrator, _options, _index, _logger);
         var sink = new RecordingSink();
         var req = new ArchiveLoadRequest(Asset, FeedName: FeedNames.Candles, Interval: "1h", From: new(2024, 1, 1), To: new(2024, 1, 31));
         var ok = await svc.Run(req, sink, Ct);
@@ -146,7 +151,8 @@ public sealed class ArchiveLoadServiceTests
         _orchestrator.TryRunSingle(
                 Arg.Any<CollectionAsset>(), Arg.Any<string>(),
                 Arg.Any<IReadOnlyList<string>?>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(),
-                Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<Func<string, CancellationToken, Task>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 var p = ci.Arg<IProgress<ArchiveProgress>?>();
@@ -156,7 +162,7 @@ public sealed class ArchiveLoadServiceTests
                 return Task.FromResult(true);
             });
 
-        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
+        var svc = new ArchiveLoadService(_orchestrator, _options, _index, _logger);
         var sink = new OrderRecordingSink();
         var req = new ArchiveLoadRequest(Asset, FeedName: FeedNames.Candles, Interval: "1h", From: new(2024, 1, 1), To: new(2024, 3, 31));
         var ok = await svc.Run(req, sink, Ct);
@@ -181,14 +187,15 @@ public sealed class ArchiveLoadServiceTests
         _orchestrator.TryRunSingle(
                 Arg.Any<CollectionAsset>(), Arg.Any<string>(),
                 Arg.Any<IReadOnlyList<string>?>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(),
-                Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<CancellationToken>())
+                Arg.Any<IProgress<ArchiveProgress>?>(), Arg.Any<Func<string, CancellationToken, Task>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 ci.Arg<IProgress<ArchiveProgress>?>()?.Report(new ArchiveProgress(1, 1, "2024-01"));
                 return Task.FromResult(true);
             });
 
-        var svc = new ArchiveLoadService(_orchestrator, _options, _logger);
+        var svc = new ArchiveLoadService(_orchestrator, _options, _index, _logger);
         var sink = new ThrowingProgressSink();
         var req = new ArchiveLoadRequest(Asset, FeedName: FeedNames.Candles, Interval: "1h", From: new(2024, 1, 1), To: new(2024, 1, 31));
 

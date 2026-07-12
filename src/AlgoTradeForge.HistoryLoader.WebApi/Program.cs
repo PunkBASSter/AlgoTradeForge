@@ -115,6 +115,11 @@ builder.Services.AddHostedService<AggregationWorkerHost>();
 // Sweep MUST run before any collector hosted service so orphan staging/tmp left by a prior
 // crash is gone before workers start.
 builder.Services.AddHostedService<StartupSweepService>();
+// §S8: InterruptedJobSweeper is an IHostedService whose StartAsync is AWAITED by the host in
+// registration order — it completes BEFORE DesiredStateService's first convergence (registered
+// below), so a mid-flight month left by a crash is reconciled out of the index before the
+// reconciler can read it as complete and suppress re-collection.
+builder.Services.AddHostedService<AlgoTradeForge.HistoryLoader.WebApi.Jobs.InterruptedJobSweeper>();
 builder.Services.AddHostedService<AlgoTradeForge.HistoryLoader.WebApi.Index.IndexMaintenanceService>();
 builder.Services.AddHostedService<AlgoTradeForge.HistoryLoader.WebApi.Index.DriftSweepService>();
 

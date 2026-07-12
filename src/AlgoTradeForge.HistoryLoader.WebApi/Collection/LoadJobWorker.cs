@@ -77,6 +77,15 @@ internal sealed class LoadJobWorker(
             return;
         }
 
+        // M3.4-M4: a DELETE that arrived while the job sat queued set cancel_requested but could not
+        // Trip a per-job token (not yet Registered). Short-circuit to 'cancelled' — no run, no
+        // running-state — closing the race where a cancel-while-queued was lost until reconcile.
+        if (row.CancelRequested)
+        {
+            await sinkFactory.For(jobId).Cancel("user_cancelled", CancellationToken.None);
+            return;
+        }
+
         var sink = sinkFactory.For(jobId);
         try
         {
@@ -84,7 +93,7 @@ internal sealed class LoadJobWorker(
             await index.UpdateJob(jobId, "running", ct: stoppingToken);
             // Run owns the terminal sink transitions on the happy path (Started/Complete) and reports
             // its own load errors via Fail; it rethrows OCE carrying the linked token on any cancel.
-            var req = rehydrator.Rehydrate(row);
+            var req = rehydrator.Rehydrate(row) with { JobId = jobId };
             await archiveLoad.Run(req, sink, linked);
         }
         catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)

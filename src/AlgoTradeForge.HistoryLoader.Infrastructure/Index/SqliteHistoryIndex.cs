@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.Storage.Threading;
 using Microsoft.Data.Sqlite;
@@ -225,6 +226,58 @@ public sealed partial class SqliteHistoryIndex(
         while (await reader.ReadAsync(ct))
             results.Add(new MonthPartitionRow(reader.GetString(0), reader.GetInt64(1), reader.GetInt64(2), reader.GetString(3)));
         return results;
+    }
+
+    public async Task DeleteMonthPartition(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default)
+    {
+        using var _ = await _writeGate.LockAsync(ct);
+        await using var conn = await Open(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            DELETE FROM month_partitions
+            WHERE exchange = $ex COLLATE NOCASE AND dir = $dir COLLATE NOCASE
+              AND feed_name = $feed AND interval = $iv AND month = $m
+            """;
+        cmd.Parameters.AddWithValue("$ex", exchange);
+        cmd.Parameters.AddWithValue("$dir", dir);
+        cmd.Parameters.AddWithValue("$feed", feedName);
+        cmd.Parameters.AddWithValue("$iv", interval);
+        cmd.Parameters.AddWithValue("$m", month);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task RemoveCompleteMonth(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default)
+    {
+        using var _ = await _writeGate.LockAsync(ct);
+        await using var conn = await Open(ct);
+
+        await using var read = conn.CreateCommand();
+        read.CommandText = """
+            SELECT complete_months_json FROM feed_status
+            WHERE exchange = $ex COLLATE NOCASE AND dir = $dir COLLATE NOCASE
+              AND feed_name = $feed AND interval = $iv
+            """;
+        read.Parameters.AddWithValue("$ex", exchange);
+        read.Parameters.AddWithValue("$dir", dir);
+        read.Parameters.AddWithValue("$feed", feedName);
+        read.Parameters.AddWithValue("$iv", interval);
+        if (await read.ExecuteScalarAsync(ct) is not string json) return;
+
+        var months = JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        if (!months.Remove(month)) return;
+
+        await using var upd = conn.CreateCommand();
+        upd.CommandText = """
+            UPDATE feed_status SET complete_months_json = $cm
+            WHERE exchange = $ex COLLATE NOCASE AND dir = $dir COLLATE NOCASE
+              AND feed_name = $feed AND interval = $iv
+            """;
+        upd.Parameters.AddWithValue("$cm", JsonSerializer.Serialize(months));
+        upd.Parameters.AddWithValue("$ex", exchange);
+        upd.Parameters.AddWithValue("$dir", dir);
+        upd.Parameters.AddWithValue("$feed", feedName);
+        upd.Parameters.AddWithValue("$iv", interval);
+        await upd.ExecuteNonQueryAsync(ct);
     }
 
     public async Task<IReadOnlyList<(string FeedName, string Interval)>> ListFeedKeys(string exchange, string dir, CancellationToken ct = default)

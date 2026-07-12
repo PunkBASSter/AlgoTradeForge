@@ -45,6 +45,7 @@ public sealed class BackfillOrchestrator(
         DateOnly? fromDate = null,
         DateOnly? toDate = null,
         IProgress<ArchiveProgress>? progress = null,
+        Func<string, CancellationToken, Task>? onMonthStart = null,
         CancellationToken ct = default)
     {
         bool added = false;
@@ -71,7 +72,7 @@ public sealed class BackfillOrchestrator(
                 var fromMs = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
                     .ToUnixTimeMilliseconds();
 
-                await symbolCollector.CollectFeed(asset, feed, assetDir, fromMs, toMs, progress, ct);
+                await symbolCollector.CollectFeed(asset, feed, assetDir, fromMs, toMs, progress, onMonthStart, ct);
             }
 
             return true;
