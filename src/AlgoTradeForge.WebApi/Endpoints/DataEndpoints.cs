@@ -236,7 +236,7 @@ internal static class DataEndpoints
     private static Task ProxySseJobs(string jobId, HttpContext ctx, HistoryLoaderClient client)
     {
         var lastEventId = GetLastEventId(ctx);
-        return ForwardSseAsync(ctx, ct => client.OpenJobProgressStreamAsync(jobId, lastEventId, ct));
+        return ForwardSseAsync(ctx, ct => client.OpenJobProgressStream(jobId, lastEventId, ct));
     }
 
     private static string? GetLastEventId(HttpContext ctx)

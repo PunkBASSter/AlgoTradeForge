@@ -85,7 +85,7 @@ public sealed class HistoryLoaderClient
     /// body streams through the proxy; <c>text/event-stream</c> accept; <c>Last-Event-ID</c>
     /// forwarded when provided.
     /// </summary>
-    public async Task<HttpResponseMessage> OpenJobProgressStreamAsync(
+    public async Task<HttpResponseMessage> OpenJobProgressStream(
         string jobId, string? lastEventId, CancellationToken ct)
     {
         var req = new HttpRequestMessage(HttpMethod.Get,

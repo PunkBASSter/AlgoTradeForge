@@ -152,7 +152,7 @@ public sealed class HistoryLoaderClientTests
     }
 
     [Fact]
-    public async Task OpenJobProgressStreamAsync_ForwardsLastEventIdHeader()
+    public async Task OpenJobProgressStream_ForwardsLastEventIdHeader()
     {
         var (client, handler) = BuildClient();
         handler.Respond(req =>
@@ -162,7 +162,7 @@ public sealed class HistoryLoaderClientTests
             return resp;
         });
 
-        await client.OpenJobProgressStreamAsync(jobId: "j99", lastEventId: "7",
+        await client.OpenJobProgressStream(jobId: "j99", lastEventId: "7",
             TestContext.Current.CancellationToken);
 
         Assert.True(handler.LastRequest!.Headers.TryGetValues("Last-Event-ID", out var values));
@@ -170,36 +170,36 @@ public sealed class HistoryLoaderClientTests
     }
 
     [Fact]
-    public async Task OpenJobProgressStreamAsync_NullLastEventId_OmitsHeader()
+    public async Task OpenJobProgressStream_NullLastEventId_OmitsHeader()
     {
         var (client, handler) = BuildClient();
         handler.Respond(req => new HttpResponseMessage(HttpStatusCode.OK));
 
-        await client.OpenJobProgressStreamAsync(jobId: "j99", lastEventId: null,
+        await client.OpenJobProgressStream(jobId: "j99", lastEventId: null,
             TestContext.Current.CancellationToken);
 
         Assert.False(handler.LastRequest!.Headers.TryGetValues("Last-Event-ID", out _));
     }
 
     [Fact]
-    public async Task OpenJobProgressStreamAsync_AcceptsTextEventStream()
+    public async Task OpenJobProgressStream_AcceptsTextEventStream()
     {
         var (client, handler) = BuildClient();
         handler.Respond(req => new HttpResponseMessage(HttpStatusCode.OK));
 
-        await client.OpenJobProgressStreamAsync("j99", null, TestContext.Current.CancellationToken);
+        await client.OpenJobProgressStream("j99", null, TestContext.Current.CancellationToken);
 
         Assert.Contains(handler.LastRequest!.Headers.Accept,
             h => h.MediaType == "text/event-stream");
     }
 
     [Fact]
-    public async Task OpenJobProgressStreamAsync_PathEncodesJobId()
+    public async Task OpenJobProgressStream_PathEncodesJobId()
     {
         var (client, handler) = BuildClient();
         handler.Respond(req => new HttpResponseMessage(HttpStatusCode.OK));
 
-        await client.OpenJobProgressStreamAsync("job-mat-123", null, TestContext.Current.CancellationToken);
+        await client.OpenJobProgressStream("job-mat-123", null, TestContext.Current.CancellationToken);
 
         Assert.EndsWith("/api/v1/jobs/job-mat-123/progress",
             handler.LastRequest!.RequestUri!.AbsolutePath);
