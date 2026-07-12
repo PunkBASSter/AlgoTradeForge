@@ -26,6 +26,15 @@ public sealed class HistoryLoaderOptions
     public AggregatorOptions Aggregator { get; init; } = new();
     public LoadOptions Load { get; init; } = new();
     public IndexOptions Index { get; init; } = new();
+    public JobsOptions Jobs { get; init; } = new();
+}
+
+public sealed class JobsOptions
+{
+    public int RetentionMinutes { get; init; } = 30;
+    public int RetentionSweepMinutes { get; init; } = 5;
+    public int MaxEventsPerJob { get; init; } = 500;
+    public int WakeupChannelDepth { get; init; } = 64;
 }
 
 public sealed class LoadOptions

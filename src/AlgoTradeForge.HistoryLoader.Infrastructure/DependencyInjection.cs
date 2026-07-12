@@ -171,7 +171,11 @@ public static class DependencyInjection
             return new HistoryIndexInitializer(HistoryIndexInitializer.ResolvePath(opts.Index));
         });
         services.AddSingleton<IHistoryIndex>(sp =>
-            new SqliteHistoryIndex(sp.GetRequiredService<HistoryIndexInitializer>()));
+        {
+            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
+            return new SqliteHistoryIndex(sp.GetRequiredService<HistoryIndexInitializer>(),
+                maxEventsPerJob: opts.Jobs.MaxEventsPerJob);
+        });
         services.AddSingleton<IFeedMonthScanner, FeedMonthScanner>();
         services.AddSingleton<IndexMaintenanceQueue>();
         services.AddSingleton<IIndexMaintenance>(sp => sp.GetRequiredService<IndexMaintenanceQueue>());

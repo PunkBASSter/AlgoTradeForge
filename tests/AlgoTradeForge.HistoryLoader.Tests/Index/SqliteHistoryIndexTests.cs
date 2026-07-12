@@ -79,6 +79,11 @@ public sealed class SqliteHistoryIndexTests : IAsyncLifetime, IDisposable
     public async Task Jobs_CreateUpdateGet_AndActiveLookup()
     {
         var id = await _index.CreateJob("rebuild", Ct);
+        var queued = await _index.GetJob(id, Ct);
+        Assert.Equal("queued", queued!.State);
+        Assert.Null(await _index.GetActiveJob("rebuild", Ct));  // not running yet
+
+        await _index.UpdateJob(id, "running", ct: Ct);
         var active = await _index.GetActiveJob("rebuild", Ct);
         Assert.Equal(id, active!.Id);
         Assert.Equal("running", active.State);
@@ -88,6 +93,31 @@ public sealed class SqliteHistoryIndexTests : IAsyncLifetime, IDisposable
         Assert.Equal("completed", job!.State);
         Assert.Null(await _index.GetActiveJob("rebuild", Ct));
         Assert.Equal(id, (await _index.GetLastJob("rebuild", Ct))!.Id);   // latest regardless of state
+    }
+
+    [Fact]
+    public async Task JobEvents_Append_ReturnsMonotonicSeq_AndReadsAfter()
+    {
+        var jobId = await _index.CreateJob("aggregation", Ct);
+        Assert.Equal(1, await _index.AppendJobEvent(jobId, "started", "{}", Ct));
+        Assert.Equal(2, await _index.AppendJobEvent(jobId, "progress", """{"done":1}""", Ct));
+        Assert.Equal(3, await _index.AppendJobEvent(jobId, "progress", """{"done":2}""", Ct));
+
+        var after1 = await _index.GetJobEventsAfter(jobId, 1, Ct);
+        Assert.Equal(new[] { 2, 3 }, after1.Select(e => e.Seq));
+        Assert.Equal("progress", after1[0].Kind);
+        Assert.Equal(3, await _index.GetLastEventSeq(jobId, Ct));
+        Assert.Empty(await _index.GetJobEventsAfter(jobId, 3, Ct));
+    }
+
+    [Fact]
+    public async Task AppendJobEvent_ConcurrentAppends_MonotonicSeq_NoBusy()
+    {
+        var jobId = await _index.CreateJob("load", Ct);
+        var tasks = Enumerable.Range(0, 50)
+            .Select(i => _index.AppendJobEvent(jobId, "progress", $$"""{"i":{{i}}}""", Ct));
+        var seqs = await Task.WhenAll(tasks);   // must not throw SqliteException(SQLITE_BUSY)
+        Assert.Equal(Enumerable.Range(1, 50), seqs.OrderBy(s => s));   // 1..50, all distinct
     }
 
     [Fact]
