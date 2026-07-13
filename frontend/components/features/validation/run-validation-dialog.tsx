@@ -41,6 +41,7 @@ export function RunValidationDialog({
   // Reset selection when dialog opens
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional form reset to defaults each time the dialog transitions to open
       setSelectedProfile("Crypto-Standard");
       setScope("single");
     }

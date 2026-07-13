@@ -14,7 +14,9 @@ export function DataSidebar() {
   const panelRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef(close);
-  closeRef.current = close;
+  useEffect(() => {
+    closeRef.current = close;
+  });
 
   const title = mode === "view" ? "Feed status" : "";
 

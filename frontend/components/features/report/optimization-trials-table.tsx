@@ -150,11 +150,13 @@ export function OptimizationTrialsTable({
 
   // Keep mutable refs so the observer callback always reads fresh state
   const fetchRef = useRef(fetchNextPage);
-  fetchRef.current = fetchNextPage;
   const hasNextRef = useRef(hasNextPage);
-  hasNextRef.current = hasNextPage;
   const fetchingRef = useRef(isFetchingNextPage);
-  fetchingRef.current = isFetchingNextPage;
+  useEffect(() => {
+    fetchRef.current = fetchNextPage;
+    hasNextRef.current = hasNextPage;
+    fetchingRef.current = isFetchingNextPage;
+  });
 
   const sentinelNodeRef = useRef<HTMLDivElement | null>(null);
 

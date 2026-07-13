@@ -4,7 +4,6 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   useOptimizationGroupDetail,
   useDeleteOptimizationGroup,
@@ -118,7 +117,6 @@ interface OptimizationGroupPageProps {
 
 export function OptimizationGroupPage({ groupId }: OptimizationGroupPageProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TabId>("per-dss");
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
 

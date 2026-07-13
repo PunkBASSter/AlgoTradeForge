@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronIcon } from "@/components/ui/chevron-icon";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DssCell } from "./dss-cell";
-import { groupOptimizationRuns, type GroupedRow } from "@/lib/utils/group-optimization-runs";
+import { groupOptimizationRuns } from "@/lib/utils/group-optimization-runs";
 import { formatDuration } from "@/lib/utils/format";
 import type { OptimizationRun } from "@/types/api";
 
