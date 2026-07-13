@@ -17,8 +17,6 @@ export function CandidateVerdictsTable({ verdicts }: CandidateVerdictsTableProps
   const [sortKey, setSortKey] = React.useState<string | null>(null);
   const [sortAsc, setSortAsc] = React.useState(true);
 
-  if (verdicts.length === 0) return null;
-
   // Gather all unique metric keys from all verdicts
   const metricKeys = React.useMemo(() => {
     const keys = new Set<string>();
@@ -45,6 +43,8 @@ export function CandidateVerdictsTable({ verdicts }: CandidateVerdictsTableProps
       return sortAsc ? va - vb : vb - va;
     });
   }, [verdicts, sortKey, sortAsc]);
+
+  if (verdicts.length === 0) return null;
 
   return (
     <div className="overflow-x-auto">

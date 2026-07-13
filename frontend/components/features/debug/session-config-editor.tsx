@@ -3,7 +3,7 @@
 // T025 - SessionConfigEditor with CodeMirror 6 JSON editor
 
 import { useRef, useEffect, useState, useMemo } from "react";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { oneDark } from "@codemirror/theme-one-dark";

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Index;
@@ -79,6 +80,11 @@ public sealed class SqliteHistoryIndexTests : IAsyncLifetime, IDisposable
     public async Task Jobs_CreateUpdateGet_AndActiveLookup()
     {
         var id = await _index.CreateJob("rebuild", Ct);
+        var queued = await _index.GetJob(id, Ct);
+        Assert.Equal("queued", queued!.State);
+        Assert.Null(await _index.GetActiveJob("rebuild", Ct));  // not running yet
+
+        await _index.UpdateJob(id, "running", ct: Ct);
         var active = await _index.GetActiveJob("rebuild", Ct);
         Assert.Equal(id, active!.Id);
         Assert.Equal("running", active.State);
@@ -88,6 +94,52 @@ public sealed class SqliteHistoryIndexTests : IAsyncLifetime, IDisposable
         Assert.Equal("completed", job!.State);
         Assert.Null(await _index.GetActiveJob("rebuild", Ct));
         Assert.Equal(id, (await _index.GetLastJob("rebuild", Ct))!.Id);   // latest regardless of state
+    }
+
+    [Fact]
+    public async Task JobEvents_Append_ReturnsMonotonicSeq_AndReadsAfter()
+    {
+        var jobId = await _index.CreateJob("aggregation", Ct);
+        Assert.Equal(1, await _index.AppendJobEvent(jobId, "started", "{}", Ct));
+        Assert.Equal(2, await _index.AppendJobEvent(jobId, "progress", """{"done":1}""", Ct));
+        Assert.Equal(3, await _index.AppendJobEvent(jobId, "progress", """{"done":2}""", Ct));
+
+        var after1 = await _index.GetJobEventsAfter(jobId, 1, Ct);
+        Assert.Equal(new[] { 2, 3 }, after1.Select(e => e.Seq));
+        Assert.Equal("progress", after1[0].Kind);
+        Assert.Equal(3, await _index.GetLastEventSeq(jobId, Ct));
+        Assert.Empty(await _index.GetJobEventsAfter(jobId, 3, Ct));
+    }
+
+    [Fact]
+    public async Task AppendJobEvent_ConcurrentAppends_MonotonicSeq_NoBusy()
+    {
+        var jobId = await _index.CreateJob("load", Ct);
+        var tasks = Enumerable.Range(0, 50)
+            .Select(i => _index.AppendJobEvent(jobId, "progress", $$"""{"i":{{i}}}""", Ct));
+        var seqs = await Task.WhenAll(tasks);   // must not throw SqliteException(SQLITE_BUSY)
+        Assert.Equal(Enumerable.Range(1, 50), seqs.OrderBy(s => s));   // 1..50, all distinct
+    }
+
+    [Fact]
+    public async Task TryAcquireFeedGate_ConcurrentSameFeed_ExactlyOneAcquires()
+    {
+        const string fk = "binance|BTCUSDT_perp|candles|1m";
+        var outcomes = await Task.WhenAll(Enumerable.Range(0, 20)
+            .Select(_ => _index.TryAcquireFeedGate("load", fk, "{}", "{}", Ct)));
+
+        Assert.Single(outcomes, o => o is FeedGateOutcome.Acquired);
+        Assert.Equal(19, outcomes.Count(o => o is FeedGateOutcome.Busy));
+        var owner = outcomes.OfType<FeedGateOutcome.Acquired>().Single().JobId;
+        Assert.All(outcomes.OfType<FeedGateOutcome.Busy>(), b => Assert.Equal(owner, b.ExistingJobId));
+
+        // A different feed_key is not blocked.
+        Assert.IsType<FeedGateOutcome.Acquired>(
+            await _index.TryAcquireFeedGate("load", "binance|ETHUSDT|candles|1m", "{}", "{}", Ct));
+
+        // Terminal state releases the gate — a new claim on fk now succeeds.
+        await _index.UpdateJob(owner, "complete", ct: Ct);
+        Assert.IsType<FeedGateOutcome.Acquired>(await _index.TryAcquireFeedGate("load", fk, "{}", "{}", Ct));
     }
 
     [Fact]
@@ -163,6 +215,58 @@ public sealed class SqliteHistoryIndexTests : IAsyncLifetime, IDisposable
             new InstrumentMetaRow("binance", "BTCUSDT_perp", 2, 3, "0.01", "2026-07-12T00:00:00Z")], Ct);
         var row = (await _index.ListInstrumentMeta("binance", Ct)).Single(r => r.Dir == "BTCUSDT_perp");
         Assert.Equal(2, row.PriceDecimals);
+    }
+
+    [Fact]
+    public async Task Cancel_Touched_List_Retention_RoundTrip()
+    {
+        var g = await _index.TryAcquireFeedGate("load", "binance|BTCUSDT|candles|1m", "{}", "{}", Ct);
+        var id = Assert.IsType<FeedGateOutcome.Acquired>(g).JobId;
+        var g2 = await _index.TryAcquireFeedGate("load", "binance|ETHUSDT|candles|1m", "{}", "{}", Ct);
+        var otherId = Assert.IsType<FeedGateOutcome.Acquired>(g2).JobId;
+
+        await _index.SetTouched(id, "binance|BTCUSDT|candles|1m", "2024-03", Ct);
+        await _index.RequestCancel(id, Ct);
+        var row = await _index.GetJob(id, Ct);
+        Assert.True(row!.CancelRequested);
+        Assert.Contains("2024-03", row.TouchedJson);
+
+        await _index.UpdateJob(id, "running", ct: Ct);
+        Assert.Single(await _index.ListJobs("load", "running", Ct));
+
+        // Mark interrupted → appears in ListInterruptedJobs with touched.
+        await _index.UpdateJob(id, "interrupted", ct: Ct);
+        var interrupted = await _index.ListInterruptedJobs(Ct);
+        Assert.Equal(id, interrupted.Single().Id);
+        Assert.Contains("2024-03", interrupted.Single().TouchedJson);
+
+        // Retention: a terminal job with an old updated_at is deleted with its events.
+        await _index.AppendJobEvent(id, "progress", "{}", Ct);
+        await _index.UpdateJob(id, "complete", ct: Ct);
+        var deleted = await _index.DeleteTerminalJobsBefore(DateTimeOffset.UtcNow.AddMinutes(1), Ct);
+        Assert.Equal(1, deleted);
+        Assert.Null(await _index.GetJob(id, Ct));
+        Assert.Empty(await _index.GetJobEventsAfter(id, 0, Ct));
+
+        // DeleteJob removes row and its events.
+        await _index.DeleteJob(otherId, Ct);
+        Assert.Null(await _index.GetJob(otherId, Ct));
+    }
+
+    [Fact]
+    public async Task SetTouched_EscapesSpecialCharacters_RoundTripsAsValidJson()
+    {
+        const string feedKey = "binance|BT\"C|candles|1m";
+        var g = await _index.TryAcquireFeedGate("load", feedKey, "{}", "{}", Ct);
+        var id = Assert.IsType<FeedGateOutcome.Acquired>(g).JobId;
+
+        await _index.SetTouched(id, feedKey, "2024-03", Ct);
+
+        var row = await _index.GetJob(id, Ct);
+        using var doc = JsonDocument.Parse(row!.TouchedJson);   // malformed against string-interp
+        var element = doc.RootElement[0];
+        Assert.Equal(feedKey, element.GetProperty("feedKey").GetString());
+        Assert.Equal("2024-03", element.GetProperty("month").GetString());
     }
 
     public void Dispose()

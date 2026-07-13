@@ -168,22 +168,94 @@ internal static class DataEndpoints
             (HttpContext ctx, HistoryLoaderClient client) =>
                 ProxyPassthroughGet(ctx, client, $"/api/v1/desired-state{ctx.Request.QueryString.Value}"));
 
+        // Unified jobs + materialize — uncached (live job state, not catalog data).
+        g.MapGet("/jobs",
+            (HttpContext ctx, HistoryLoaderClient client) =>
+                ProxyPassthroughGet(ctx, client, $"/api/v1/jobs{ctx.Request.QueryString.Value}"));
+
+        g.MapGet("/jobs/{jobId}",
+            (string jobId, HttpContext ctx, HistoryLoaderClient client) =>
+                ProxyPassthroughGet(ctx, client, $"/api/v1/jobs/{Uri.EscapeDataString(jobId)}"));
+
+        g.MapGet("/jobs/{jobId}/progress",
+            (string jobId, HttpContext ctx, HistoryLoaderClient client) =>
+                ProxySseJobs(jobId, ctx, client));
+
+        g.MapPost("/materialize",
+            async (HttpContext ctx, HistoryLoaderClient client) =>
+            {
+                try
+                {
+                    var body = await ctx.Request.ReadFromJsonAsync<JsonElement>(ctx.RequestAborted);
+                    using var upstream = await client.PostMaterialize(body, ctx.RequestAborted);
+                    if ((int)upstream.StatusCode >= 500)
+                    {
+                        var detail = await upstream.Content.ReadAsStringAsync(ctx.RequestAborted);
+                        await DataProxyProblem.UpstreamError((int)upstream.StatusCode, detail).ExecuteAsync(ctx);
+                        return;
+                    }
+                    ctx.Response.StatusCode = (int)upstream.StatusCode;
+                    ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
+                    var bytes = await upstream.Content.ReadAsByteArrayAsync(ctx.RequestAborted);
+                    await ctx.Response.Body.WriteAsync(bytes, ctx.RequestAborted);
+                }
+                catch (JsonException)
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    await ctx.Response.WriteAsJsonAsync(new { error = "invalid_json" }, ctx.RequestAborted);
+                }
+                catch (HttpRequestException ex)
+                {
+                    await DataProxyProblem.Unavailable(ex.Message).ExecuteAsync(ctx);
+                }
+                catch (TaskCanceledException ex) when (!ctx.RequestAborted.IsCancellationRequested)
+                {
+                    await DataProxyProblem.Timeout(ex.Message).ExecuteAsync(ctx);
+                }
+            });
+
+        g.MapDelete("/jobs/{jobId}",
+            (string jobId, HttpContext ctx, HistoryLoaderClient client) =>
+                CancelJob(jobId, ctx, client));
+
         return app;
     }
 
     /// <summary>
-    /// Forwards the upstream SSE stream byte-for-byte. <c>DisableBuffering</c> is required —
-    /// Kestrel otherwise buffers small writes and individual events sit until connection close.
+    /// Forwards the upstream SSE stream for an aggregation job byte-for-byte.
+    /// <c>DisableBuffering</c> is required — Kestrel otherwise buffers small writes and
+    /// individual events sit until connection close.
     /// </summary>
-    private static async Task ProxySse(string jobId, HttpContext ctx, HistoryLoaderClient client)
+    private static Task ProxySse(string jobId, HttpContext ctx, HistoryLoaderClient client)
     {
-        var lastEventIdRaw = ctx.Request.Headers["Last-Event-ID"].ToString();
-        var lastEventId = string.IsNullOrEmpty(lastEventIdRaw) ? null : lastEventIdRaw;
+        var lastEventId = GetLastEventId(ctx);
+        return ForwardSseAsync(ctx, ct => client.OpenProgressStreamAsync(jobId, lastEventId, ct));
+    }
 
+    /// <summary>Forwards the upstream SSE stream for a unified job (<c>/api/v1/jobs/{id}/progress</c>).</summary>
+    private static Task ProxySseJobs(string jobId, HttpContext ctx, HistoryLoaderClient client)
+    {
+        var lastEventId = GetLastEventId(ctx);
+        return ForwardSseAsync(ctx, ct => client.OpenJobProgressStream(jobId, lastEventId, ct));
+    }
+
+    private static string? GetLastEventId(HttpContext ctx)
+    {
+        var raw = ctx.Request.Headers["Last-Event-ID"].ToString();
+        return string.IsNullOrEmpty(raw) ? null : raw;
+    }
+
+    /// <summary>
+    /// Shared SSE forwarder. Opens the stream via <paramref name="openStream"/>, handles error
+    /// status codes, then pipes the response body byte-for-byte with buffering disabled.
+    /// </summary>
+    private static async Task ForwardSseAsync(
+        HttpContext ctx, Func<CancellationToken, Task<HttpResponseMessage>> openStream)
+    {
         HttpResponseMessage upstream;
         try
         {
-            upstream = await client.OpenProgressStreamAsync(jobId, lastEventId, ctx.RequestAborted);
+            upstream = await openStream(ctx.RequestAborted);
         }
         catch (HttpRequestException ex)
         {
@@ -347,6 +419,37 @@ internal static class DataEndpoints
                 return;
             }
 
+            ctx.Response.StatusCode = (int)upstream.StatusCode;
+            if (upstream.Content.Headers.ContentLength is > 0 || upstream.StatusCode != HttpStatusCode.NoContent)
+            {
+                ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
+                var bytes = await upstream.Content.ReadAsByteArrayAsync(ctx.RequestAborted);
+                if (bytes.Length > 0)
+                    await ctx.Response.Body.WriteAsync(bytes, ctx.RequestAborted);
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            await DataProxyProblem.Unavailable(ex.Message).ExecuteAsync(ctx);
+        }
+        catch (TaskCanceledException ex) when (!ctx.RequestAborted.IsCancellationRequested)
+        {
+            await DataProxyProblem.Timeout(ex.Message).ExecuteAsync(ctx);
+        }
+    }
+
+    /// <summary>Proxies <c>DELETE /jobs/{jobId}</c>; no cache invalidation.</summary>
+    private static async Task CancelJob(string jobId, HttpContext ctx, HistoryLoaderClient client)
+    {
+        try
+        {
+            using var upstream = await client.DeleteJob(jobId, ctx.RequestAborted);
+            if ((int)upstream.StatusCode >= 500)
+            {
+                var detail = await upstream.Content.ReadAsStringAsync(ctx.RequestAborted);
+                await DataProxyProblem.UpstreamError((int)upstream.StatusCode, detail).ExecuteAsync(ctx);
+                return;
+            }
             ctx.Response.StatusCode = (int)upstream.StatusCode;
             if (upstream.Content.Headers.ContentLength is > 0 || upstream.StatusCode != HttpStatusCode.NoContent)
             {

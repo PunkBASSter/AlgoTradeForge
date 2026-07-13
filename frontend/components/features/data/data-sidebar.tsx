@@ -4,67 +4,21 @@
 // fixed-position overlay) so the grid auto-resizes to fill remaining width when the
 // panel opens and shrinks back when it closes.
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useDataSelectionStore } from "@/lib/stores/data-selection-store";
 import { FeedStatusCard } from "./feed-status-card";
-import { NewAggregateForm } from "./new-aggregate-form";
-import { ArchiveLoadForm } from "./archive-load-form";
-import { parseAltBarFeedId } from "@/lib/data/alt-bar-feed-id";
-import type { FeedCatalogEntry } from "@/types/data-tab";
 
-const SAFE_REAGG_TYPES = new Set(["EqV", "EqT", "EqD"]);
-
-interface Props {
-  /** Forwarded to NewAggregateForm so the parent can persist the jobId for SSE resume. */
-  onJobAccepted?: (jobId: string, outcomeFeedIdHint: string) => void;
-}
-
-export function DataSidebar({ onJobAccepted }: Props) {
+export function DataSidebar() {
   const { mode, exchange, asset, feed, close } = useDataSelectionStore();
   const open = mode !== null;
   const panelRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef(close);
-  closeRef.current = close;
+  useEffect(() => {
+    closeRef.current = close;
+  });
 
-  const title =
-    mode === "view"
-      ? "Feed status"
-      : mode === "create"
-        ? "New aggregate bar"
-        : mode === "load"
-          ? "Load archive data"
-          : "";
-
-  // Alt-bar feeds in this row eligible as re-aggregation sources. Same-type-family
-  // narrowing happens server-side; the FE just surfaces candidates.
-  const eligibleSources = useMemo<FeedCatalogEntry[]>(() => {
-    if (!asset || !feed) return [];
-    return asset.feeds.filter((f) =>
-      f.id !== feed.id
-      && f.kind === "OHLCV_AltBar"
-      && f.type_code !== null
-      && SAFE_REAGG_TYPES.has(f.type_code)
-    );
-  }, [asset, feed]);
-
-  // Clicking "+" on an existing source: use the feed as-is. Clicking "-" on a missing
-  // alt-bar column: parse the column id to derive the real source + pre-filled type/
-  // threshold from the column name (e.g. "EqV_1m_1M" → source "1m", type "EqV", threshold "1M").
-  const createState = useMemo(() => {
-    if (mode !== "create" || !asset || !feed) return null;
-    const existing = asset.feeds.find((f) => f.id === feed.id);
-    if (existing) return { source: existing, initialTypeCode: "", initialThreshold: "" };
-    const parsed = parseAltBarFeedId(feed.id);
-    if (!parsed) return { source: feed, initialTypeCode: "", initialThreshold: "" };
-    const realSource = asset.feeds.find((f) => f.id === parsed.sourceCode);
-    if (!realSource) return null;
-    return {
-      source: realSource,
-      initialTypeCode: parsed.typeCode,
-      initialThreshold: parsed.threshold,
-    };
-  }, [mode, asset, feed]);
+  const title = mode === "view" ? "Feed status" : "";
 
   // Escape-to-close + initial focus on open. Tab is intentionally NOT trapped — the
   // panel is part of page flow so Tab moves naturally between grid and panel.
@@ -129,24 +83,6 @@ export function DataSidebar({ onJobAccepted }: Props) {
         {mode === "view" && exchange && asset && feed && (
           <FeedStatusCard exchange={exchange} asset={asset} feed={feed} />
         )}
-        {mode === "create" && exchange && asset && feed && createState && (
-          <NewAggregateForm
-            exchange={exchange}
-            asset={asset.symbol}
-            sourceFeed={createState.source}
-            initialTypeCode={createState.initialTypeCode || undefined}
-            initialThreshold={createState.initialThreshold || undefined}
-            eligibleSources={eligibleSources}
-            onJobAccepted={onJobAccepted}
-          />
-        )}
-        {mode === "create" && asset && feed && !createState && (
-          <div className="text-accent-red text-sm">
-            Cannot create <span className="font-mono">{feed.id}</span>: no source feed in{" "}
-            <span className="font-mono">{asset.symbol}</span> matches the required input for this column.
-          </div>
-        )}
-        {mode === "load" && <ArchiveLoadForm />}
       </div>
     </aside>
   );

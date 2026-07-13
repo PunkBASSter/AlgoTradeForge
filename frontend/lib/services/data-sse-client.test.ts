@@ -55,13 +55,13 @@ describe("connectProgress", () => {
     expect(captured[0].init.headers).toEqual({});
   });
 
-  it("hits /api/data/aggregations/{jobId}/progress on the proxy URL", () => {
+  it("hits /api/data/jobs/{jobId}/progress on the proxy URL", () => {
     void connectProgress({
       jobId: "job-12-abc",
       signal: new AbortController().signal,
       handlers: { onEvent: () => {}, onError: () => {}, onClose: () => {} },
     });
-    expect(captured[0].url).toMatch(/\/api\/data\/aggregations\/job-12-abc\/progress$/);
+    expect(captured[0].url).toMatch(/\/api\/data\/jobs\/job-12-abc\/progress$/);
   });
 
   it("dispatches parsed event envelopes to onEvent with id + discriminated payload", () => {

@@ -74,7 +74,17 @@ public static class CollectionPlanBuilder
             .ThenBy(a => a.Venue.Dir, StringComparer.Ordinal)
             .ToList();
 
-        return new CollectionPlan(sortedAssets, blocked, warnings);
+        // Derived feeds were excluded from Assets (Rule 1); surface them separately so
+        // MaterializePlan.Resolve can build the 2-stage Load+Aggregate plan for each one.
+        var derived = state.Tuples
+            .Where(t => t.IsDerived && t.Venue is not null && t.DerivedSource is not null)
+            .Select(t => new DerivedFeedEntry(t.Exchange, t.Canonical, t.Venue!, t.FeedName, t.DerivedSource!))
+            .OrderBy(d => d.Exchange, StringComparer.Ordinal)
+            .ThenBy(d => d.Venue.Dir, StringComparer.Ordinal)
+            .ThenBy(d => d.FeedName, StringComparer.Ordinal)
+            .ToList();
+
+        return new CollectionPlan(sortedAssets, blocked, warnings) { Derived = derived };
     }
 
     private static CollectionFeed BuildFeed(

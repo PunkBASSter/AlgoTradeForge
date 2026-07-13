@@ -1,17 +1,18 @@
-using AlgoTradeForge.HistoryLoader.Application;
-using AlgoTradeForge.HistoryLoader.Application.Archive;
-using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
-using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.HistoryLoader.Application.Jobs;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace AlgoTradeForge.HistoryLoader.WebApi.Collection;
 
 internal sealed class LoadJobWorker(
-    ILoadJobRegistry registry,
-    BackfillOrchestrator orchestrator,
-    IOptionsMonitor<HistoryLoaderOptions> options,
+    [FromKeyedServices("load")] IJobWakeupQueue wakeup,
+    IHistoryIndex index,
+    IArchiveLoadService archiveLoad,
+    IJobProgressSinkFactory sinkFactory,
+    IJobCancellationMap cancellations,
+    LoadRequestRehydrator rehydrator,
     ILogger<LoadJobWorker> logger) : BackgroundService
 {
     // Canonical three-part form (FundingInfoRefreshService / ScheduledCollectorService).
@@ -22,49 +23,98 @@ internal sealed class LoadJobWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (true)
-        {
-            var job = await registry.Dequeue(stoppingToken);
-            if (job is null)
-                return;
+        // Re-arm from the durable store: rows still 'queued' after a restart never got a wakeup.
+        var queued = await index.ListJobs("load", "queued", stoppingToken);
+        wakeup.SeedFromQueued(queued.Select(j => j.Id));
 
-            await RunJob(job, stoppingToken);
+        await Drain(maxItems: null, stoppingToken);
+    }
+
+    // Processes exactly one wakeup item then returns — unit-test seam.
+    internal Task DrainOnceForTest(CancellationToken ct) => Drain(maxItems: 1, ct);
+
+    // Processes up to `count` wakeup items then returns — multi-item unit-test seam.
+    internal Task DrainForTest(int count, CancellationToken ct) => Drain(count, ct);
+
+    // Shared drain loop. Per-item faults are isolated inside RunJob so one bad row never kills the
+    // loop; the outer catch swallows host-shutdown (including the rethrow from RunJob's shutdown arm)
+    // so the BackgroundService exits cleanly instead of faulting → StopHost → all collectors down.
+    private async Task Drain(int? maxItems, CancellationToken stoppingToken)
+    {
+        var processed = 0;
+        try
+        {
+            await foreach (var jobId in wakeup.Reader(stoppingToken))
+            {
+                await RunJob(jobId, stoppingToken);
+                if (maxItems is { } max && ++processed >= max)
+                    return;
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Normal host shutdown.
         }
     }
 
-    private async Task RunJob(LoadJob job, CancellationToken ct)
+    private async Task RunJob(string jobId, CancellationToken stoppingToken)
     {
-        registry.OnStarted(job.JobId);
+        IndexJobRow? row;
         try
         {
-            // Append a transient feed entry if the asset doesn't already carry one for
-            // this exact name+interval. Clone first — never mutate the shared plan asset.
-            var asset = job.Asset;
-            var hasEntry = asset.Feeds.Any(f => f.FeedName == job.FeedName && f.Interval == job.Interval);
-            if (!hasEntry)
-                asset = asset with
-                {
-                    Feeds = [..asset.Feeds, new CollectionFeed(job.FeedName, job.Interval, "on-demand", "csv", job.From)],
-                };
-
-            var assetDir = BackfillOrchestrator.ResolveAssetDir(options.CurrentValue.DataRoot, asset);
-            var ok = await orchestrator.TryRunSingle(
-                asset, assetDir, feedFilter: [job.FeedName], fromDate: job.From, toDate: job.To,
-                progress: new LoadJobProgress(registry, job.JobId), ct: ct);
-
-            if (ok)
-                registry.OnCompleted(job.JobId);
-            else
-                registry.OnErrored(job.JobId, "symbol_busy", "Another backfill holds the symbol lock; retry later.");
+            row = await index.GetJob(jobId, stoppingToken);
         }
-        catch (ArchiveIntegrityException ex)
+        catch (Exception ex) when (!IsTrueShutdown(ex, stoppingToken))
         {
-            registry.OnErrored(job.JobId, "checksum_mismatch", ex.Message);
+            // Transient store read (e.g. SQLITE_BUSY): we have no row to Fail — skip and keep draining.
+            logger.LogError(ex, "Failed to read load job {JobId}; skipping wakeup", jobId);
+            return;
         }
-        catch (Exception ex) when (!IsTrueShutdown(ex, ct))
+
+        if (row is null)
         {
-            logger.LogError(ex, "Load job {JobId} failed", job.JobId);
-            registry.OnErrored(job.JobId, "load_failed", ex.Message);
+            logger.LogWarning("Load job {JobId} woke the worker but is no longer in the store", jobId);
+            return;
+        }
+
+        // M3.4-M4: a DELETE that arrived while the job sat queued set cancel_requested but could not
+        // Trip a per-job token (not yet Registered). Short-circuit to 'cancelled' — no run, no
+        // running-state — closing the race where a cancel-while-queued was lost until reconcile.
+        if (row.CancelRequested)
+        {
+            await sinkFactory.For(jobId).Cancel("user_cancelled", CancellationToken.None);
+            return;
+        }
+
+        var sink = sinkFactory.For(jobId);
+        try
+        {
+            var linked = cancellations.Register(jobId, stoppingToken);
+            await index.UpdateJob(jobId, "running", ct: stoppingToken);
+            // Run owns the terminal sink transitions on the happy path (Started/Complete) and reports
+            // its own load errors via Fail; it rethrows OCE carrying the linked token on any cancel.
+            var req = rehydrator.Rehydrate(row) with { JobId = jobId };
+            await archiveLoad.Run(req, sink, linked);
+        }
+        catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
+        {
+            // User DELETE tripped the linked (per-job) token; the host is still running.
+            await sink.Cancel("user_cancelled", CancellationToken.None);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Host shutdown mid-run — leave the row non-terminal for restart rehydration (M3.6 reconciles).
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Pre-Run failures (rehydration of a removed symbol) and any genuine escape.
+            logger.LogError(ex, "Load job {JobId} failed", jobId);
+            await sink.Fail("load_failed", ex.Message, CancellationToken.None);
+        }
+        finally
+        {
+            cancellations.Remove(jobId);
         }
     }
 }

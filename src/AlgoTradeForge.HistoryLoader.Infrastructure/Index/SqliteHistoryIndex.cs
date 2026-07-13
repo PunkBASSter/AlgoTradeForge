@@ -1,4 +1,6 @@
+using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.Storage.Threading;
 using Microsoft.Data.Sqlite;
 
 namespace AlgoTradeForge.HistoryLoader.Infrastructure.Index;
@@ -7,21 +9,33 @@ namespace AlgoTradeForge.HistoryLoader.Infrastructure.Index;
 /// connectionString override exists for tests (Pooling=False); production resolves it from the
 /// initializer. Every op awaits EnsureCreated first (volatile-flag fast path) — endpoints can
 /// hit the index before IndexMaintenanceService's ExecuteAsync has run on a cold start.
+/// All writes serialize behind a single non-reentrant _writeGate (SemaphoreSlim(1,1)).
+/// Read methods are ungated — WAL permits concurrent readers.
 /// </summary>
-public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, string? connectionString = null) : IHistoryIndex
+public sealed partial class SqliteHistoryIndex(
+    HistoryIndexInitializer initializer,
+    string? connectionString = null,
+    int maxEventsPerJob = 500) : IHistoryIndex
 {
     private readonly string _connectionString = connectionString ?? initializer.ConnectionString;
+    // Process-wide, NON-reentrant; HistoryLoader is single-host.
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    internal readonly int _maxEventsPerJob = maxEventsPerJob;
 
     private async Task<SqliteConnection> Open(CancellationToken ct)
     {
         await initializer.EnsureCreated(ct);
         var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync(ct);
+        await using var pragma = conn.CreateCommand();
+        pragma.CommandText = "PRAGMA busy_timeout=5000;";
+        await pragma.ExecuteNonQueryAsync(ct);
         return conn;
     }
 
     public async Task UpsertAsset(AssetIndexRow row, CancellationToken ct = default)
     {
+        using var _ = await _writeGate.LockAsync(ct);
         await using var conn = await Open(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
@@ -39,9 +53,8 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    public async Task RemoveAsset(string exchange, string dir, CancellationToken ct = default)
+    private static async Task RemoveAssetCore(SqliteConnection conn, string exchange, string dir, CancellationToken ct)
     {
-        await using var conn = await Open(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.Transaction = (SqliteTransaction)tx;
@@ -58,6 +71,13 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
         await cmd.ExecuteNonQueryAsync(ct);
 
         await tx.CommitAsync(ct);
+    }
+
+    public async Task RemoveAsset(string exchange, string dir, CancellationToken ct = default)
+    {
+        using var _ = await _writeGate.LockAsync(ct);
+        await using var conn = await Open(ct);
+        await RemoveAssetCore(conn, exchange, dir, ct);
     }
 
     public async Task<IReadOnlyList<AssetIndexRow>> ListAssets(string? exchange = null, CancellationToken ct = default)
@@ -92,6 +112,7 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
 
     public async Task UpsertFeedStatus(FeedStatusIndexRow row, CancellationToken ct = default)
     {
+        using var _ = await _writeGate.LockAsync(ct);
         await using var conn = await Open(ct);
         await using var cmd = conn.CreateCommand();
         // discovered_first_month is a phase-2 column — never touched here.
@@ -151,6 +172,7 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
     public async Task ReplaceMonths(string exchange, string dir, string feedName, string interval,
         IReadOnlyList<MonthPartitionRow> months, CancellationToken ct = default)
     {
+        using var _ = await _writeGate.LockAsync(ct);
         await using var conn = await Open(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
         await using var cmd = conn.CreateCommand();
@@ -206,6 +228,58 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
         return results;
     }
 
+    public async Task DeleteMonthPartition(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default)
+    {
+        using var _ = await _writeGate.LockAsync(ct);
+        await using var conn = await Open(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            DELETE FROM month_partitions
+            WHERE exchange = $ex COLLATE NOCASE AND dir = $dir COLLATE NOCASE
+              AND feed_name = $feed AND interval = $iv AND month = $m
+            """;
+        cmd.Parameters.AddWithValue("$ex", exchange);
+        cmd.Parameters.AddWithValue("$dir", dir);
+        cmd.Parameters.AddWithValue("$feed", feedName);
+        cmd.Parameters.AddWithValue("$iv", interval);
+        cmd.Parameters.AddWithValue("$m", month);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task RemoveCompleteMonth(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default)
+    {
+        using var _ = await _writeGate.LockAsync(ct);
+        await using var conn = await Open(ct);
+
+        await using var read = conn.CreateCommand();
+        read.CommandText = """
+            SELECT complete_months_json FROM feed_status
+            WHERE exchange = $ex COLLATE NOCASE AND dir = $dir COLLATE NOCASE
+              AND feed_name = $feed AND interval = $iv
+            """;
+        read.Parameters.AddWithValue("$ex", exchange);
+        read.Parameters.AddWithValue("$dir", dir);
+        read.Parameters.AddWithValue("$feed", feedName);
+        read.Parameters.AddWithValue("$iv", interval);
+        if (await read.ExecuteScalarAsync(ct) is not string json) return;
+
+        var months = JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        if (!months.Remove(month)) return;
+
+        await using var upd = conn.CreateCommand();
+        upd.CommandText = """
+            UPDATE feed_status SET complete_months_json = $cm
+            WHERE exchange = $ex COLLATE NOCASE AND dir = $dir COLLATE NOCASE
+              AND feed_name = $feed AND interval = $iv
+            """;
+        upd.Parameters.AddWithValue("$cm", JsonSerializer.Serialize(months));
+        upd.Parameters.AddWithValue("$ex", exchange);
+        upd.Parameters.AddWithValue("$dir", dir);
+        upd.Parameters.AddWithValue("$feed", feedName);
+        upd.Parameters.AddWithValue("$iv", interval);
+        await upd.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task<IReadOnlyList<(string FeedName, string Interval)>> ListFeedKeys(string exchange, string dir, CancellationToken ct = default)
     {
         await using var conn = await Open(ct);
@@ -230,6 +304,7 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
     public async Task UpsertInstrumentMeta(IReadOnlyList<InstrumentMetaRow> rows, CancellationToken ct = default)
     {
         if (rows.Count == 0) return;
+        using var _ = await _writeGate.LockAsync(ct);
         await using var conn = await Open(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
         await using var cmd = conn.CreateCommand();
@@ -284,6 +359,7 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
 
     public async Task SetDiscoveredFirstMonth(string exchange, string dir, string feedName, string interval, string month, CancellationToken ct = default)
     {
+        using var _ = await _writeGate.LockAsync(ct);
         await using var conn = await Open(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
@@ -337,10 +413,12 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
     public async Task PruneFeedData(string exchange, string dir,
         IReadOnlyCollection<(string FeedName, string Interval)> keep, CancellationToken ct = default)
     {
+        // Read outside the gate — WAL allows concurrent readers; TOCTOU is benign (idempotent deletes).
         var existing = await ListFeedKeys(exchange, dir, ct);
         var toDelete = existing.Where(k => !keep.Contains(k)).ToList();
         if (toDelete.Count == 0) return;
 
+        using var _ = await _writeGate.LockAsync(ct);
         await using var conn = await Open(ct);
         await using var cmd = conn.CreateCommand();
         cmd.Parameters.AddWithValue("$ex", exchange);
@@ -363,12 +441,15 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
 
     public async Task PruneAssetsNotIn(IReadOnlyCollection<(string Exchange, string Dir)> keep, CancellationToken ct = default)
     {
+        // Read outside the gate; gate is acquired once for all removals to avoid nested acquisition.
         var all = await ListAssets(ct: ct);
-        foreach (var asset in all)
-        {
-            if (!keep.Contains((asset.Exchange, asset.Dir)))
-                await RemoveAsset(asset.Exchange, asset.Dir, ct);
-        }
+        var toRemove = all.Where(a => !keep.Contains((a.Exchange, a.Dir))).ToList();
+        if (toRemove.Count == 0) return;
+
+        using var _ = await _writeGate.LockAsync(ct);
+        await using var conn = await Open(ct);
+        foreach (var asset in toRemove)
+            await RemoveAssetCore(conn, asset.Exchange, asset.Dir, ct);
     }
 
     public async Task<bool> IsEmpty(CancellationToken ct = default)
@@ -386,11 +467,12 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
         var id = Guid.NewGuid().ToString("N");
         var now = DateTime.UtcNow.ToString("O");
 
+        using var _ = await _writeGate.LockAsync(ct);
         await using var conn = await Open(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO index_jobs (id, kind, state, progress_json, created_at, updated_at)
-            VALUES ($id, $kind, 'running', '{}', $now, $now)
+            VALUES ($id, $kind, 'queued', '{}', $now, $now)
             """;
         cmd.Parameters.AddWithValue("$id", id);
         cmd.Parameters.AddWithValue("$kind", kind);
@@ -401,6 +483,7 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
 
     public async Task UpdateJob(string id, string state, string? progressJson = null, string? error = null, CancellationToken ct = default)
     {
+        using var _ = await _writeGate.LockAsync(ct);
         await using var conn = await Open(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
@@ -423,7 +506,10 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
     {
         await using var conn = await Open(ct);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT id, kind, state, progress_json, error FROM index_jobs WHERE id = $id";
+        cmd.CommandText = """
+            SELECT id, kind, state, progress_json, error, feed_key, cancel_requested, touched_json, request_json
+            FROM index_jobs WHERE id = $id
+            """;
         cmd.Parameters.AddWithValue("$id", id);
         return await ReadJobRow(cmd, ct);
     }
@@ -433,7 +519,8 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
         await using var conn = await Open(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT id, kind, state, progress_json, error FROM index_jobs
+            SELECT id, kind, state, progress_json, error, feed_key, cancel_requested, touched_json, request_json
+            FROM index_jobs
             WHERE kind = $kind AND state = 'running'
             ORDER BY created_at DESC LIMIT 1
             """;
@@ -446,7 +533,8 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
         await using var conn = await Open(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT id, kind, state, progress_json, error FROM index_jobs
+            SELECT id, kind, state, progress_json, error, feed_key, cancel_requested, touched_json, request_json
+            FROM index_jobs
             WHERE kind = $kind
             ORDER BY created_at DESC LIMIT 1
             """;
@@ -454,7 +542,7 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
         return await ReadJobRow(cmd, ct);
     }
 
-    private static async Task<IndexJobRow?> ReadJobRow(SqliteCommand cmd, CancellationToken ct)
+    internal static async Task<IndexJobRow?> ReadJobRow(SqliteCommand cmd, CancellationToken ct)
     {
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) return null;
@@ -463,6 +551,10 @@ public sealed class SqliteHistoryIndex(HistoryIndexInitializer initializer, stri
             reader.GetString(1),
             reader.GetString(2),
             reader.GetString(3),
-            reader.IsDBNull(4) ? null : reader.GetString(4));
+            reader.IsDBNull(4) ? null : reader.GetString(4),
+            reader.IsDBNull(5) ? null : reader.GetString(5),
+            reader.GetBoolean(6),
+            reader.GetString(7),
+            reader.IsDBNull(8) ? null : reader.GetString(8));
     }
 }

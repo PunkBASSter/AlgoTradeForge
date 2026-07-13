@@ -151,7 +151,8 @@ public static class GroupExpansion
                 Format: first.Format,
                 HistoryStart: historyStart,
                 IsDerived: first.IsDerived,
-                Groups: groupNames));
+                Groups: groupNames,
+                DerivedSource: first.IsDerived ? first.DerivedSource : null));
         }
 
         return new DesiredState(resultTuples, unsupportedList, conflicts);

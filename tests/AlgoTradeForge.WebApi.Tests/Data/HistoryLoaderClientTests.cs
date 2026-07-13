@@ -151,6 +151,124 @@ public sealed class HistoryLoaderClientTests
             handler.LastRequest!.RequestUri!.AbsolutePath);
     }
 
+    [Fact]
+    public async Task OpenJobProgressStream_ForwardsLastEventIdHeader()
+    {
+        var (client, handler) = BuildClient();
+        handler.Respond(req =>
+        {
+            var resp = new HttpResponseMessage(HttpStatusCode.OK);
+            resp.Content = new StringContent("", Encoding.UTF8, "text/event-stream");
+            return resp;
+        });
+
+        await client.OpenJobProgressStream(jobId: "j99", lastEventId: "7",
+            TestContext.Current.CancellationToken);
+
+        Assert.True(handler.LastRequest!.Headers.TryGetValues("Last-Event-ID", out var values));
+        Assert.Equal("7", values!.Single());
+    }
+
+    [Fact]
+    public async Task OpenJobProgressStream_NullLastEventId_OmitsHeader()
+    {
+        var (client, handler) = BuildClient();
+        handler.Respond(req => new HttpResponseMessage(HttpStatusCode.OK));
+
+        await client.OpenJobProgressStream(jobId: "j99", lastEventId: null,
+            TestContext.Current.CancellationToken);
+
+        Assert.False(handler.LastRequest!.Headers.TryGetValues("Last-Event-ID", out _));
+    }
+
+    [Fact]
+    public async Task OpenJobProgressStream_AcceptsTextEventStream()
+    {
+        var (client, handler) = BuildClient();
+        handler.Respond(req => new HttpResponseMessage(HttpStatusCode.OK));
+
+        await client.OpenJobProgressStream("j99", null, TestContext.Current.CancellationToken);
+
+        Assert.Contains(handler.LastRequest!.Headers.Accept,
+            h => h.MediaType == "text/event-stream");
+    }
+
+    [Fact]
+    public async Task OpenJobProgressStream_PathEncodesJobId()
+    {
+        var (client, handler) = BuildClient();
+        handler.Respond(req => new HttpResponseMessage(HttpStatusCode.OK));
+
+        await client.OpenJobProgressStream("job-mat-123", null, TestContext.Current.CancellationToken);
+
+        Assert.EndsWith("/api/v1/jobs/job-mat-123/progress",
+            handler.LastRequest!.RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task GetJobs_WithQueryString_AppendsToPath()
+    {
+        var (client, handler) = BuildClient();
+        handler.Respond(req => Json("[]"));
+
+        await client.GetJobs("?kind=materialize&state=running", TestContext.Current.CancellationToken);
+
+        Assert.Contains("/api/v1/jobs", handler.LastRequest!.RequestUri!.AbsolutePath);
+        Assert.Contains("kind=materialize", handler.LastRequest.RequestUri!.Query);
+    }
+
+    [Fact]
+    public async Task GetJobs_NullQueryString_UsesBasePath()
+    {
+        var (client, handler) = BuildClient();
+        handler.Respond(req => Json("[]"));
+
+        await client.GetJobs(null, TestContext.Current.CancellationToken);
+
+        Assert.Equal("/api/v1/jobs", handler.LastRequest!.RequestUri!.AbsolutePath);
+        Assert.Equal("", handler.LastRequest.RequestUri!.Query);
+    }
+
+    [Fact]
+    public async Task GetJob_PathEncodesJobId()
+    {
+        var (client, handler) = BuildClient();
+        handler.Respond(req => Json("{}"));
+
+        await client.GetJob("mat-job-456", TestContext.Current.CancellationToken);
+
+        Assert.EndsWith("/api/v1/jobs/mat-job-456", handler.LastRequest!.RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task DeleteJob_SendsDelete_ToJobsPath()
+    {
+        var (client, handler) = BuildClient();
+        handler.Respond(req => new HttpResponseMessage(HttpStatusCode.NoContent));
+
+        await client.DeleteJob("mat-job-789", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpMethod.Delete, handler.LastRequest!.Method);
+        Assert.EndsWith("/api/v1/jobs/mat-job-789", handler.LastRequest.RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task PostMaterialize_SerializesBodyAsJson_ToMaterializePath()
+    {
+        var (client, handler) = BuildClient();
+        handler.Respond(req => new HttpResponseMessage(HttpStatusCode.Accepted));
+
+        var body = JsonSerializer.SerializeToElement(new { group_name = "my-group", feeds = new[] { "candles" } });
+        await client.PostMaterialize(body, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(handler.LastRequest);
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.EndsWith("/api/v1/materialize", handler.LastRequest.RequestUri!.AbsolutePath);
+        Assert.Equal("application/json", handler.LastRequest.Content!.Headers.ContentType!.MediaType);
+        var bodyText = await handler.LastRequest.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.Contains("group_name", bodyText);
+    }
+
     private static HttpResponseMessage Json(string payload) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(payload, Encoding.UTF8, "application/json"),

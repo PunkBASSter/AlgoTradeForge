@@ -13,10 +13,13 @@ import type {
   DesiredStateReport,
   ExchangeListResponse,
   FeedStatusResponse,
+  JobEnvelope,
+  JobKind,
   JobSnapshot,
+  JobState,
   LoadAcceptedResponse,
-  LoadJobSnapshotWire,
   LoadRequestBody,
+  MaterializeRequest,
   ValidatePreview,
 } from "@/types/data-tab";
 
@@ -156,9 +159,40 @@ export const dataApi = {
     return asJson<LoadAcceptedResponse>(resp);
   },
 
-  getLoadJob: (jobId: string, signal?: AbortSignal) =>
-    fetch(`${BASE_URL}/api/data/loads/${encodeURIComponent(jobId)}`, { signal })
-      .then(asJson<LoadJobSnapshotWire>),
+  // ---- Unified jobs (phase 3b+). ----
+
+  // GET /api/data/jobs — optional kind/state filters; returns all jobs when params omitted.
+  getJobs: (params?: { kind?: JobKind; state?: JobState }, signal?: AbortSignal): Promise<JobEnvelope[]> => {
+    const qs = new URLSearchParams();
+    if (params?.kind !== undefined) qs.set("kind", params.kind);
+    if (params?.state !== undefined) qs.set("state", params.state);
+    const q = qs.toString();
+    return fetch(`${BASE_URL}/api/data/jobs${q ? `?${q}` : ""}`, { signal })
+      .then(asJson<JobEnvelope[]>);
+  },
+
+  getJob: (id: string, signal?: AbortSignal) =>
+    fetch(`${BASE_URL}/api/data/jobs/${encodeURIComponent(id)}`, { signal })
+      .then(asJson<JobEnvelope>),
+
+  // 202 job accepted; 409 feed_busy surfaces as DataApiError with body { code, active_job_id }.
+  postMaterialize: async (body: MaterializeRequest, signal?: AbortSignal): Promise<{ job_id: string; location: string }> => {
+    const resp = await fetch(`${BASE_URL}/api/data/materialize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+    return asJson<{ job_id: string; location: string }>(resp);
+  },
+
+  deleteJob: async (id: string, signal?: AbortSignal): Promise<void> => {
+    const resp = await fetch(
+      `${BASE_URL}/api/data/jobs/${encodeURIComponent(id)}`,
+      { method: "DELETE", signal },
+    );
+    if (!resp.ok) await asJson(resp);
+  },
 
   // ---- Collection groups (declarative data management). ----
 

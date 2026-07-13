@@ -26,12 +26,19 @@ public sealed class HistoryLoaderOptions
     public AggregatorOptions Aggregator { get; init; } = new();
     public LoadOptions Load { get; init; } = new();
     public IndexOptions Index { get; init; } = new();
+    public JobsOptions Jobs { get; init; } = new();
+}
+
+public sealed class JobsOptions
+{
+    public int RetentionMinutes { get; init; } = 30;
+    public int RetentionSweepMinutes { get; init; } = 5;
+    public int MaxEventsPerJob { get; init; } = 500;
+    public int WakeupChannelDepth { get; init; } = 64;
 }
 
 public sealed class LoadOptions
 {
-    public int MaxQueueDepth { get; init; } = 16;
-    public int JobRetentionMinutes { get; init; } = 30;
     public int MaxMonthsPerRequest { get; init; } = 600;
     // Single-symbol cap: aggTrades zips are GB-scale; multi-symbol batching would multiply this if ever added.
     public int MaxTickMonthsPerRequest { get; init; } = 24;

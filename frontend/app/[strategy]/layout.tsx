@@ -13,6 +13,7 @@ function useSidebarCollapsed() {
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional mount-time read of persisted state from localStorage (unavailable during SSR; avoids hydration mismatch)
     setCollapsed(localStorage.getItem(SIDEBAR_KEY) === "true");
   }, []);
 

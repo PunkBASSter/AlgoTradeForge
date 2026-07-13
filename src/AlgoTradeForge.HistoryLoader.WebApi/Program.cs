@@ -5,11 +5,11 @@ using AlgoTradeForge.HistoryLoader.Application.Groups;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
-using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
 using AlgoTradeForge.HistoryLoader.Application.Canonicalization;
 using AlgoTradeForge.HistoryLoader.Application.Catalog;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
 using AlgoTradeForge.HistoryLoader.Application.Collection.Feeds;
+using AlgoTradeForge.HistoryLoader.Application.Jobs;
 using AlgoTradeForge.HistoryLoader.Domain.Symbology;
 using AlgoTradeForge.HistoryLoader.WebApi;
 using AlgoTradeForge.HistoryLoader.WebApi.Aggregation;
@@ -31,6 +31,26 @@ builder.Services.AddSerilog(cfg => cfg
     .ReadFrom.Configuration(builder.Configuration)
     .WriteTo.File(Path.Combine(logDir, "history-loader-.log"),
         rollingInterval: Serilog.RollingInterval.Day, shared: true));
+
+// Dev isolation by construction: under Development, the data/config/index roots default to a
+// dedicated HistoryDev tree so a dev run can NEVER read or write the production History/index.
+// Only fills roots left unset — an explicit config value or HistoryLoader__* env var still wins
+// (set them to point a dev run at production data on purpose). Production is untouched.
+if (builder.Environment.IsDevelopment())
+{
+    var devRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "AlgoTradeForge", "HistoryDev");
+    var devDefaults = new Dictionary<string, string?>();
+    if (string.IsNullOrEmpty(builder.Configuration["HistoryLoader:DataRoot"]))
+        devDefaults["HistoryLoader:DataRoot"] = devRoot;
+    if (string.IsNullOrEmpty(builder.Configuration["HistoryLoader:ConfigRoot"]))
+        devDefaults["HistoryLoader:ConfigRoot"] = Path.Combine(devRoot, "config");
+    if (string.IsNullOrEmpty(builder.Configuration["HistoryLoader:Index:Path"]))
+        devDefaults["HistoryLoader:Index:Path"] = Path.Combine(devRoot, "history-index-dev.sqlite");
+    if (devDefaults.Count > 0)
+        builder.Configuration.AddInMemoryCollection(devDefaults);
+}
 
 builder.Services.Configure<HistoryLoaderOptions>(
     builder.Configuration.GetSection("HistoryLoader"));
@@ -92,20 +112,37 @@ builder.Services.AddSingleton<BackfillOrchestrator>();
 builder.Services.AddSingleton<IEagerBackfillRunner, EagerBackfillRunner>();
 
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IJobEventSignal, JobEventSignal>();
+builder.Services.AddSingleton<IJobProgressSinkFactory, JobProgressSinkFactory>();
+builder.Services.AddSingleton<IJobCancellationMap, JobCancellationMap>();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IFeedCatalog, FeedCatalog>();
-builder.Services.AddSingleton<IAggregationJobRegistry, AggregationJobRegistry>();
+builder.Services.AddSingleton<IBackfillOrchestrator>(sp => sp.GetRequiredService<BackfillOrchestrator>());
+builder.Services.AddSingleton<IArchiveLoadService, ArchiveLoadService>();
+builder.Services.AddSingleton<LoadRequestRehydrator>();
 builder.Services.AddHostedService<LoadJobWorker>();
+builder.Services.AddHostedService<AlgoTradeForge.HistoryLoader.WebApi.Jobs.JobRetentionSweeper>();
 builder.Services.AddSingleton<IAggregationJobQueue, AggregationJobQueue>();
 builder.Services.AddSingleton<IAggregationTickJobQueue, AggregationTickJobQueue>();
 builder.Services.AddScoped<PartitionedSourceReader>();
 builder.Services.AddScoped<OverwritePathWriter>();
-builder.Services.AddScoped<AggregationPipeline>();
+// D1: AggregationService (M3.2) resolves IAggregationPipeline per-scope; register the seam.
+builder.Services.AddScoped<IAggregationPipeline, AggregationPipeline>();
+builder.Services.AddSingleton<IAggregationService, AggregationService>();
+builder.Services.AddSingleton<AggregationRequestRehydrator>();
 builder.Services.AddHostedService<AggregationWorkerHost>();
+builder.Services.AddSingleton<AlgoTradeForge.HistoryLoader.WebApi.Jobs.IMaterializeStageRequestFactory,
+    AlgoTradeForge.HistoryLoader.WebApi.Jobs.MaterializeStageRequestFactory>();
+builder.Services.AddHostedService<AlgoTradeForge.HistoryLoader.WebApi.Jobs.MaterializeWorkerHost>();
 
 // Sweep MUST run before any collector hosted service so orphan staging/tmp left by a prior
 // crash is gone before workers start.
 builder.Services.AddHostedService<StartupSweepService>();
+// §S8: InterruptedJobSweeper is an IHostedService whose StartAsync is AWAITED by the host in
+// registration order — it completes BEFORE DesiredStateService's first convergence (registered
+// below), so a mid-flight month left by a crash is reconciled out of the index before the
+// reconciler can read it as complete and suppress re-collection.
+builder.Services.AddHostedService<AlgoTradeForge.HistoryLoader.WebApi.Jobs.InterruptedJobSweeper>();
 builder.Services.AddHostedService<AlgoTradeForge.HistoryLoader.WebApi.Index.IndexMaintenanceService>();
 builder.Services.AddHostedService<AlgoTradeForge.HistoryLoader.WebApi.Index.DriftSweepService>();
 
@@ -138,8 +175,10 @@ app.MapBackfillEndpoints();
 app.MapCatalogEndpoints();
 app.MapAggregationEndpoints();
 app.MapLoadEndpoints();
+app.MapMaterializeEndpoints();
 app.MapCoverageEndpoints();
 app.MapGroupEndpoints();
 app.MapDesiredStateEndpoints();
+app.MapJobEndpoints();
 
 app.Run();

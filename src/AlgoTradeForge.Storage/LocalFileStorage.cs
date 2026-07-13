@@ -1,17 +1,21 @@
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
 using AlgoTradeForge.Storage.Threading;
 using Microsoft.Extensions.Options;
+using Microsoft.Win32.SafeHandles;
 
 namespace AlgoTradeForge.Storage;
 
 /// <summary>
 /// Local-FS <see cref="IFileStorage"/>. Absolute keys pass through; relative keys resolve
 /// against <see cref="LocalStorageOptions.DataRoot"/>. Writes atomic via <c>.tmp</c> +
-/// <see cref="AtomicReplace"/> (delete-then-rename, Windows-safe with open readers). Streams
-/// open with <c>useAsync: true</c>. Concurrent writers on the same key race on the temp file
+/// <see cref="AtomicReplace"/> (POSIX-semantics rename on Windows / rename(2) on Unix — no absent
+/// window even under concurrent readers). Streams open with <c>useAsync: true</c>. Concurrent writers on the same key race on the temp file
 /// and final move — callers must serialize via domain-level locks (e.g. <c>WriteLockManager</c>)
 /// when that matters. <see cref="WriteIfMatch"/> is the exception: it serializes its CAS-commit
 /// critical section through a private per-key semaphore (<c>_writeLocks</c>), so multiple
@@ -227,16 +231,70 @@ public sealed class LocalFileStorage : IFileStorage
         return Convert.ToHexString(hash);
     }
 
-    // Windows MoveFileEx(REPLACE_EXISTING) denies access if dst has any open handle, even with
-    // FileShare.Delete. Delete-then-rename works because the unlink leaves open handles pointing
-    // at the now-detached inode; readers complete on their data while the new file takes the name.
-    // Brief window between Delete and Move where dst is absent — concurrent readers see null /
-    // FileNotFoundException; FeedSchemaManager.UpdateWithRetry's CAS-retry loop covers it.
+    // Replace dst with src with NO absent window, even while a concurrent reader holds dst open
+    // (production readers open FileShare.ReadWrite|Delete). On Windows, File.Move(overwrite:true)
+    // == MoveFileEx(REPLACE_EXISTING) throws UnauthorizedAccessException against an open dst (classic
+    // rename semantics), so we issue a POSIX-semantics rename (FILE_RENAME_INFORMATION_EX) which
+    // replaces atomically. On non-Windows, File.Move(overwrite:true) is rename(2) — already atomic.
     private static void AtomicReplace(string src, string dst)
     {
-        File.Delete(dst); // no-op when dst is absent (BCL contract)
-        File.Move(src, dst, overwrite: false);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.Move(src, dst, overwrite: true);
+            return;
+        }
+        try
+        {
+            WindowsPosixRename(src, dst);
+        }
+        catch (Win32Exception)
+        {
+            // POSIX rename unsupported (non-NTFS / pre-1809): classic move. Never fall back to
+            // delete-then-move — that is the absent window this method exists to remove.
+            File.Move(src, dst, overwrite: true);
+        }
     }
+
+    [SupportedOSPlatform("windows")]
+    private static void WindowsPosixRename(string src, string dst)
+    {
+        const uint DELETE = 0x00010000, GENERIC_WRITE = 0x40000000;
+        const uint SHARE_ALL = 0x1 | 0x2 | 0x4;      // read | write | delete
+        const uint OPEN_EXISTING = 3;
+        const int  FileRenameInfoEx = 22;
+        const uint REPLACE_IF_EXISTS = 0x1, POSIX_SEMANTICS = 0x2;
+
+        using var handle = CreateFileW(src, DELETE | GENERIC_WRITE, SHARE_ALL,
+            IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+        if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+
+        // FILE_RENAME_INFORMATION_EX { ULONG Flags; HANDLE RootDirectory; ULONG FileNameLength; WCHAR FileName[]; }
+        // RootDirectory is pointer-aligned: on x64 Flags occupies [0,4) with [4,8) padding.
+        var name = Encoding.Unicode.GetBytes(dst);
+        int nameOffset = IntPtr.Size * 2 + sizeof(uint);   // 20 on x64, 12 on x86
+        int size = nameOffset + name.Length + sizeof(char);
+        IntPtr buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.WriteInt32(buffer, 0, (int)(REPLACE_IF_EXISTS | POSIX_SEMANTICS));
+            Marshal.WriteIntPtr(buffer, IntPtr.Size, IntPtr.Zero);          // RootDirectory
+            Marshal.WriteInt32(buffer, IntPtr.Size * 2, name.Length);      // FileNameLength (bytes)
+            Marshal.Copy(name, 0, IntPtr.Add(buffer, nameOffset), name.Length);
+            Marshal.WriteInt16(buffer, nameOffset + name.Length, 0);
+            if (!SetFileInformationByHandle(handle, FileRenameInfoEx, buffer, (uint)size))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern SafeFileHandle CreateFileW(string lpFileName, uint dwDesiredAccess,
+        uint dwShareMode, IntPtr lpSecurityAttributes, uint dwCreationDisposition,
+        uint dwFlagsAndAttributes, IntPtr hTemplateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetFileInformationByHandle(SafeFileHandle hFile,
+        int fileInformationClass, IntPtr lpFileInformation, uint dwBufferSize);
 
     public async Task<string> WriteIfMatch(string key, string content, string? expectedETag, CancellationToken ct = default)
     {

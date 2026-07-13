@@ -66,4 +66,33 @@ public sealed class HistoryLoaderClient
 
         return await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
     }
+
+    public Task<HttpResponseMessage> GetJobs(string? queryString, CancellationToken ct) =>
+        _http.GetAsync(string.IsNullOrEmpty(queryString) ? "/api/v1/jobs" : $"/api/v1/jobs{queryString}", ct);
+
+    public Task<HttpResponseMessage> GetJob(string jobId, CancellationToken ct) =>
+        _http.GetAsync($"/api/v1/jobs/{Uri.EscapeDataString(jobId)}", ct);
+
+    public Task<HttpResponseMessage> PostMaterialize(JsonElement body, CancellationToken ct) =>
+        PostJsonAsync("/api/v1/materialize", body, ct);
+
+    public Task<HttpResponseMessage> DeleteJob(string jobId, CancellationToken ct) =>
+        _http.DeleteAsync($"/api/v1/jobs/{Uri.EscapeDataString(jobId)}", ct);
+
+    /// <summary>
+    /// Opens an SSE progress stream for a unified job (<c>/api/v1/jobs/{id}/progress</c>).
+    /// Mirror of <see cref="OpenProgressStreamAsync"/> — <c>ResponseHeadersRead</c> so the
+    /// body streams through the proxy; <c>text/event-stream</c> accept; <c>Last-Event-ID</c>
+    /// forwarded when provided.
+    /// </summary>
+    public async Task<HttpResponseMessage> OpenJobProgressStream(
+        string jobId, string? lastEventId, CancellationToken ct)
+    {
+        var req = new HttpRequestMessage(HttpMethod.Get,
+            $"/api/v1/jobs/{Uri.EscapeDataString(jobId)}/progress");
+        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        if (!string.IsNullOrEmpty(lastEventId))
+            req.Headers.TryAddWithoutValidation("Last-Event-ID", lastEventId);
+        return await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+    }
 }

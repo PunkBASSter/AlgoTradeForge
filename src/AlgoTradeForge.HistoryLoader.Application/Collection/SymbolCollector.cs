@@ -40,6 +40,7 @@ public sealed class SymbolCollector
         long fromMs,
         long toMs,
         IProgress<ArchiveProgress>? progress = null,
+        Func<string, CancellationToken, Task>? onMonthStart = null,
         CancellationToken ct = default)
     {
         var key = $"{assetDir}|{feed.FeedName}|{feed.Interval}";
@@ -53,7 +54,7 @@ public sealed class SymbolCollector
         }
         try
         {
-            await CollectFeedCore(asset, feed, assetDir, fromMs, toMs, progress, ct);
+            await CollectFeedCore(asset, feed, assetDir, fromMs, toMs, progress, onMonthStart, ct);
         }
         finally
         {
@@ -68,6 +69,7 @@ public sealed class SymbolCollector
         long fromMs,
         long toMs,
         IProgress<ArchiveProgress>? progress,
+        Func<string, CancellationToken, Task>? onMonthStart,
         CancellationToken ct)
     {
         var feedName = feed.FeedName;
@@ -87,7 +89,7 @@ public sealed class SymbolCollector
             return;
         }
 
-        fromMs = await _archiveBackfill.CoverFromArchive(asset, feed, assetDir, fromMs, toMs, progress, ct);
+        fromMs = await _archiveBackfill.CoverFromArchive(asset, feed, assetDir, fromMs, toMs, progress, onMonthStart, ct);
         if (fromMs >= toMs)
             return; // fully covered by archive — no REST tail needed
 

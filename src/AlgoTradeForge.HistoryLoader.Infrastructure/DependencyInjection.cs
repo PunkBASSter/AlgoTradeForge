@@ -3,8 +3,8 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
-using AlgoTradeForge.HistoryLoader.Application.Archive.Jobs;
 using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.HistoryLoader.Application.Jobs;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Binance;
@@ -171,7 +171,11 @@ public static class DependencyInjection
             return new HistoryIndexInitializer(HistoryIndexInitializer.ResolvePath(opts.Index));
         });
         services.AddSingleton<IHistoryIndex>(sp =>
-            new SqliteHistoryIndex(sp.GetRequiredService<HistoryIndexInitializer>()));
+        {
+            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
+            return new SqliteHistoryIndex(sp.GetRequiredService<HistoryIndexInitializer>(),
+                maxEventsPerJob: opts.Jobs.MaxEventsPerJob);
+        });
         services.AddSingleton<IFeedMonthScanner, FeedMonthScanner>();
         services.AddSingleton<IndexMaintenanceQueue>();
         services.AddSingleton<IIndexMaintenance>(sp => sp.GetRequiredService<IndexMaintenanceQueue>());
@@ -195,7 +199,29 @@ public static class DependencyInjection
         });
         services.AddSingleton<IBinanceArchiveClient, BinanceArchiveClient>();
         services.AddSingleton<IPartitionFileWriter, PartitionFileWriter>();
-        services.AddSingleton<ILoadJobRegistry, LoadJobRegistry>();
+        // Per-kind dispatch doorbell. Load path is on the durable store (LoadJobWorker drains this).
+        services.AddKeyedSingleton<IJobWakeupQueue>("load", (sp, _) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
+            return new JobWakeupQueue(opts.Jobs.WakeupChannelDepth);
+        });
+        // Aggregation dispatch is jobId-driven on the durable store too, split into two pools so
+        // I/O-heavy tick jobs don't head-of-line CPU-heavy time-bar jobs (AggregationWorkerHost).
+        services.AddKeyedSingleton<IJobWakeupQueue>("aggregation-timebar", (sp, _) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
+            return new JobWakeupQueue(opts.Jobs.WakeupChannelDepth);
+        });
+        services.AddKeyedSingleton<IJobWakeupQueue>("aggregation-tick", (sp, _) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
+            return new JobWakeupQueue(opts.Jobs.WakeupChannelDepth);
+        });
+        services.AddKeyedSingleton<IJobWakeupQueue>("materialize", (sp, _) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<HistoryLoaderOptions>>().Value;
+            return new JobWakeupQueue(opts.Jobs.WakeupChannelDepth);
+        });
         services.AddSingleton<ArchiveBackfillService>();
         services.AddSingleton<ArchiveMaterializerRegistry>();
 

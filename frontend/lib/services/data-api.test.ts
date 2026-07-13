@@ -158,6 +158,253 @@ describe("dataApi.postAggregate response narrowing", () => {
   });
 });
 
+describe("dataApi.getJobs", () => {
+  let originalFetch: typeof fetch;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("GETs /api/data/jobs with no query string when params are omitted", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(dataApi.getJobs()).resolves.toEqual([]);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/api\/data\/jobs$/);
+    expect((init as RequestInit | undefined)?.method).toBeUndefined(); // default GET
+  });
+
+  it("appends kind query param when provided", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+
+    await dataApi.getJobs({ kind: "materialize" });
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/api\/data\/jobs\?kind=materialize$/);
+  });
+
+  it("appends both kind and state query params when provided", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+
+    await dataApi.getJobs({ kind: "load", state: "running" });
+
+    const [url] = fetchMock.mock.calls[0];
+    const urlStr = String(url);
+    expect(urlStr).toContain("kind=load");
+    expect(urlStr).toContain("state=running");
+  });
+
+  it("throws DataApiError on 500", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: "internal" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(dataApi.getJobs()).rejects.toThrowError(DataApiError);
+  });
+});
+
+describe("dataApi.getJob", () => {
+  let originalFetch: typeof fetch;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("GETs /api/data/jobs/{id} and returns the envelope", async () => {
+    const envelope = {
+      job_id: "j42",
+      kind: "materialize",
+      state: "running",
+      feed_key: "binance/BTCUSDT_perp/klines",
+      created_at: null,
+      updated_at: null,
+      error: null,
+      progress: { phase: "load", done: 3, total: 10, detail: null },
+    };
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(envelope), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await dataApi.getJob("j42");
+
+    expect(result.job_id).toBe("j42");
+    expect(result.kind).toBe("materialize");
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/api\/data\/jobs\/j42$/);
+  });
+
+  it("URL-encodes the id path component", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+
+    await dataApi.getJob("with/slash");
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("with%2Fslash");
+  });
+
+  it("throws DataApiError on 404", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: "not_found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(dataApi.getJob("missing")).rejects.toThrowError(DataApiError);
+  });
+});
+
+describe("dataApi.postMaterialize", () => {
+  let originalFetch: typeof fetch;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("POSTs /api/data/materialize with JSON body and returns job_id + location on 202", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ job_id: "mat-99", location: "/api/v1/jobs/mat-99/progress" }),
+        { status: 202, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const result = await dataApi.postMaterialize({
+      exchange: "binance",
+      symbol: "BTCUSDT",
+      feed: "klines_1m",
+    });
+
+    expect(result.job_id).toBe("mat-99");
+    expect(result.location).toBe("/api/v1/jobs/mat-99/progress");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/api\/data\/materialize$/);
+    expect((init as RequestInit).method).toBe("POST");
+    expect((init as RequestInit).headers).toMatchObject({ "Content-Type": "application/json" });
+    expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({
+      exchange: "binance",
+      symbol: "BTCUSDT",
+      feed: "klines_1m",
+    });
+  });
+
+  it("throws DataApiError with feed_not_materializable code on 422", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ code: "feed_not_materializable", message: "no derived feed" }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    try {
+      await dataApi.postMaterialize({ exchange: "binance", symbol: "ETHUSDT", feed: "klines_1m" });
+      expect.fail("expected DataApiError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(DataApiError);
+      expect((err as DataApiError).code).toBe("feed_not_materializable");
+      expect((err as DataApiError).status).toBe(422);
+    }
+  });
+
+  it("throws DataApiError with feed_busy code on 409", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ code: "feed_busy", active_job_id: "other-job" }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await expect(
+      dataApi.postMaterialize({ exchange: "binance", symbol: "BTCUSDT", feed: "klines_1m" }),
+    ).rejects.toThrowError(DataApiError);
+  });
+});
+
+describe("dataApi.deleteJob", () => {
+  let originalFetch: typeof fetch;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("DELETEs /api/data/jobs/{id} and resolves on 204", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await expect(dataApi.deleteJob("job-7")).resolves.toBeUndefined();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/api\/data\/jobs\/job-7$/);
+    expect((init as RequestInit).method).toBe("DELETE");
+  });
+
+  it("URL-encodes the id path component", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await dataApi.deleteJob("with/slash/and space");
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("with%2Fslash%2Fand%20space");
+  });
+
+  it("throws DataApiError on 404", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: "not_found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(dataApi.deleteJob("missing")).rejects.toThrowError(DataApiError);
+  });
+});
+
 describe("dataApi.deleteFeed", () => {
   let originalFetch: typeof fetch;
   let fetchMock: ReturnType<typeof vi.fn>;

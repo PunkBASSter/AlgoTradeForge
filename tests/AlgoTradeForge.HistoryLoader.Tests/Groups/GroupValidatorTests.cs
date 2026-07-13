@@ -244,18 +244,19 @@ public sealed class GroupValidatorTests
     [Fact]
     public void Derived_SourceCandles_IsAlwaysValid()
     {
-        // "candles" is always a valid derived source even when feeds only contains funding-rate
+        // "candles" is always a valid derived source even when feeds only contains funding-rate.
+        // The derived key must be a canonical AltBar id (Type_Source_Threshold).
         var feeds = new Dictionary<string, GroupFeed>
         {
             ["funding-rate"] = new GroupFeed("eager", null, null)
         };
         var derived = new Dictionary<string, GroupDerived>
         {
-            ["renko"] = new GroupDerived("candles", null, null, "1h", "eager")
+            ["Renko_1h_500"] = new GroupDerived("candles", null, null, "1h", "eager")
         };
         var group = ValidGroup() with { Feeds = feeds, Derived = derived };
         var errors = GroupValidator.Validate(group);
-        Assert.DoesNotContain(errors, e => e.Contains("renko") && e.Contains("candles"));
+        Assert.DoesNotContain(errors, e => e.Contains("Renko_1h_500"));
     }
 
     [Fact]
@@ -263,16 +264,54 @@ public sealed class GroupValidatorTests
     {
         var feeds = new Dictionary<string, GroupFeed>
         {
-            ["candles"]    = new GroupFeed("eager", ["1h"], null),
-            ["open-interest"] = new GroupFeed("eager", null, null),
+            ["candles"] = new GroupFeed("eager", ["1h"], null),
+            ["ticks"]   = new GroupFeed("eager", null, null),
         };
         var derived = new Dictionary<string, GroupDerived>
         {
-            ["oi-delta"] = new GroupDerived("open-interest", null, null, null, "eager")
+            ["EqV_ticks_1k"] = new GroupDerived("ticks", null, null, null, "eager")
         };
         var group = ValidGroup() with { Feeds = feeds, Derived = derived };
         var errors = GroupValidator.Validate(group);
-        Assert.DoesNotContain(errors, e => e.Contains("oi-delta"));
+        Assert.DoesNotContain(errors, e => e.Contains("EqV_ticks_1k"));
+    }
+
+    // --- Derived key canonicality (Type_Source_Threshold) ---
+
+    [Fact]
+    public void Derived_NonCanonicalKey_IsConfigTimeError()
+    {
+        // A 2-component id (EqV_1k) is NOT a canonical AltBarFeedId. Without this gate the
+        // materialize worker would parse it at runtime and throw FormatException → materialize_failed.
+        var feeds = new Dictionary<string, GroupFeed>
+        {
+            ["candles"] = new GroupFeed("eager", ["1h"], null),
+            ["ticks"]   = new GroupFeed("eager", null, null),
+        };
+        var derived = new Dictionary<string, GroupDerived>
+        {
+            ["EqV_1k"] = new GroupDerived("ticks", null, null, null, "eager")
+        };
+        var group = ValidGroup() with { Feeds = feeds, Derived = derived };
+        var errors = GroupValidator.Validate(group);
+        Assert.Contains(errors, e => e.Contains("derived_feed_not_canonical") && e.Contains("EqV_1k"));
+    }
+
+    [Fact]
+    public void Derived_CanonicalKey_Passes()
+    {
+        var feeds = new Dictionary<string, GroupFeed>
+        {
+            ["candles"] = new GroupFeed("eager", ["1h"], null),
+            ["ticks"]   = new GroupFeed("eager", null, null),
+        };
+        var derived = new Dictionary<string, GroupDerived>
+        {
+            ["EqV_ticks_1k"] = new GroupDerived("ticks", null, null, null, "eager")
+        };
+        var group = ValidGroup() with { Feeds = feeds, Derived = derived };
+        var errors = GroupValidator.Validate(group);
+        Assert.DoesNotContain(errors, e => e.Contains("derived_feed_not_canonical"));
     }
 
     // --- SymbolOverrides ---

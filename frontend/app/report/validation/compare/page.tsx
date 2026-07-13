@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQueries } from "@tanstack/react-query";
 import { getClient } from "@/lib/services";
@@ -8,7 +8,7 @@ import { ValidationComparison } from "@/components/features/validation/validatio
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ValidationRun } from "@/types/validation";
 
-export default function ValidationComparePage() {
+function ValidationCompareContent() {
   const searchParams = useSearchParams();
   const idsParam = searchParams.get("ids") ?? "";
   const ids = React.useMemo(
@@ -72,5 +72,13 @@ export default function ValidationComparePage() {
 
       <ValidationComparison validations={validations} />
     </div>
+  );
+}
+
+export default function ValidationComparePage() {
+  return (
+    <Suspense>
+      <ValidationCompareContent />
+    </Suspense>
   );
 }

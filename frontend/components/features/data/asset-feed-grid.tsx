@@ -14,7 +14,6 @@ interface Props {
   assets: AssetCatalogEntry[];
   rowHeight?: number;    // px; defaults to 36
   colWidth?: number;     // px; defaults to 132
-  onAdd?: (asset: AssetCatalogEntry, sourceFeed: FeedCatalogEntry) => void;
   onView?: (asset: AssetCatalogEntry, feed: FeedCatalogEntry) => void;
 }
 
@@ -26,7 +25,6 @@ export function AssetFeedGrid({
   assets,
   rowHeight = DEFAULT_ROW_HEIGHT,
   colWidth = DEFAULT_COL_WIDTH,
-  onAdd,
   onView,
 }: Props) {
   const columns = useMemo(() => unionFeedColumns(assets), [assets]);
@@ -143,7 +141,6 @@ export function AssetFeedGrid({
                     key={`${r.key}-${c.key}`}
                     asset={asset}
                     feedColumn={columns[c.index]}
-                    onAdd={onAdd}
                     onView={onView}
                     style={{
                       top: r.start,

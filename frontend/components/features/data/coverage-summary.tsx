@@ -4,7 +4,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { dataApi, DataApiError } from "@/lib/services/data-api";
 import { findMissingMonths, loadRangeForMonths } from "@/lib/data/coverage";
 import { exchangeSymbolOf } from "@/lib/data/coverage-mapping";
-import { useLoadJobsStore } from "@/lib/stores/load-jobs-store";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import type { AssetCatalogEntry, CoverageFeedEntry } from "@/types/data-tab";
@@ -35,7 +34,6 @@ function findEntry(
 
 export function CoverageSummary({ exchange, asset, mapping }: CoverageSummaryProps) {
   const { toast } = useToast();
-  const addJob = useLoadJobsStore((s) => s.addJob);
 
   const coverage = useQuery({
     queryKey: ["data", "coverage", exchange, exchangeSymbolOf(asset), asset.type],
@@ -46,15 +44,12 @@ export function CoverageSummary({ exchange, asset, mapping }: CoverageSummaryPro
 
   const loadMutation = useMutation({
     mutationFn: (body: Parameters<typeof dataApi.postLoad>[0]) => dataApi.postLoad(body),
-    onSuccess: (resp, body) => {
-      addJob(resp.job_id, `${asset.display_name} ${body.feed_name}`);
-      toast(`Load started (${resp.job_id.slice(0, 8)})`, "success");
+    onSuccess: (resp) => {
+      toast(`Load started (${resp.job_id.slice(0, 8)}) — see Jobs panel`, "success");
     },
-    onError: (err, body) => {
+    onError: (err) => {
       if (err instanceof DataApiError && err.status === 409) {
-        const activeJobId = (err.body as { active_job_id: string }).active_job_id;
-        addJob(activeJobId, `${asset.display_name} ${body.feed_name}`);
-        toast("Already running — attached", "info");
+        toast("Already running — see Jobs panel", "info");
         return;
       }
       toast(err instanceof Error ? err.message : String(err), "error");

@@ -1,147 +1,157 @@
-using System.Threading.Channels;
-using AlgoTradeForge.HistoryLoader.Application;
-using AlgoTradeForge.HistoryLoader.Application.Aggregation;
-using AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
-using Microsoft.Extensions.Options;
+using AlgoTradeForge.Domain.History;
+using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.HistoryLoader.Application.Jobs;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AlgoTradeForge.HistoryLoader.WebApi.Aggregation;
 
 /// <summary>
-/// Hosted worker pools that drain the aggregation job queues. Two separate pools (time-bar and
-/// tick) prevent I/O-heavy tick jobs from blocking CPU-heavy time-bar jobs at the queue head.
+/// Two store-backed worker pools that drain the aggregation wakeup queues. The time-bar and
+/// tick pools are separate keyed <see cref="IJobWakeupQueue"/> doorbells so I/O-heavy tick jobs
+/// don't head-of-line CPU-heavy time-bar jobs. The durable row is the source of truth; a wakeup
+/// only hints that a queued row exists. Mirrors <c>LoadJobWorker</c>'s drain / per-item isolation
+/// / cancellation-classification structure per pool.
 /// </summary>
-public sealed class AggregationWorkerHost : BackgroundService
+internal sealed class AggregationWorkerHost(
+    [FromKeyedServices("aggregation-timebar")] IJobWakeupQueue timeBarWakeup,
+    [FromKeyedServices("aggregation-tick")] IJobWakeupQueue tickWakeup,
+    IHistoryIndex index,
+    IAggregationService aggregationService,
+    IJobProgressSinkFactory sinkFactory,
+    IJobCancellationMap cancellations,
+    AggregationRequestRehydrator rehydrator,
+    ILogger<AggregationWorkerHost> logger) : BackgroundService
 {
-    private readonly IAggregationJobQueue _timeBarQueue;
-    private readonly IAggregationTickJobQueue _tickQueue;
-    private readonly IAggregationJobRegistry _registry;
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IOptionsMonitor<HistoryLoaderOptions> _options;
-    private readonly ILogger<AggregationWorkerHost> _logger;
-
-    public AggregationWorkerHost(
-        IAggregationJobQueue timeBarQueue,
-        IAggregationTickJobQueue tickQueue,
-        IAggregationJobRegistry registry,
-        IServiceScopeFactory scopeFactory,
-        IOptionsMonitor<HistoryLoaderOptions> options,
-        ILogger<AggregationWorkerHost> logger)
-    {
-        _timeBarQueue = timeBarQueue;
-        _tickQueue = tickQueue;
-        _registry = registry;
-        _scopeFactory = scopeFactory;
-        _options = options;
-        _logger = logger;
-    }
+    // Canonical three-part form (matches LoadJobWorker / ScheduledCollectorService).
+    private static bool IsTrueShutdown(Exception ex, CancellationToken stoppingToken) =>
+        ex is OperationCanceledException oce
+        && stoppingToken.IsCancellationRequested
+        && oce.CancellationToken == stoppingToken;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var aggregator = _options.CurrentValue.Aggregator;
-        var timeBarConcurrency = aggregator.MaxConcurrentJobs;
-        var tickConcurrency = aggregator.MaxConcurrentTickJobs;
+        await SeedFromQueued(stoppingToken);
 
-        if (timeBarConcurrency < 1 && tickConcurrency < 1)
-        {
-            _logger.LogWarning(
-                "Aggregator MaxConcurrentJobs={TimeBar} and MaxConcurrentTickJobs={Tick} both < 1 — disabling worker host.",
-                timeBarConcurrency, tickConcurrency);
-            return;
-        }
-
-        _logger.LogInformation(
-            "Aggregation worker host starting with {TimeBar} time-bar workers + {Tick} tick workers.",
-            timeBarConcurrency, tickConcurrency);
-
-        var workers = new List<Task>(timeBarConcurrency + tickConcurrency);
-        for (int i = 0; i < timeBarConcurrency; i++)
-        {
-            int workerId = i;
-            workers.Add(Task.Run(() => RunWorkerAsync("timebar", workerId, _timeBarQueue.Reader, stoppingToken), stoppingToken));
-        }
-        for (int i = 0; i < tickConcurrency; i++)
-        {
-            int workerId = i;
-            workers.Add(Task.Run(() => RunWorkerAsync("tick", workerId, _tickQueue.Reader, stoppingToken), stoppingToken));
-        }
-
-        await Task.WhenAll(workers);
+        // One serial drain loop per pool. The wakeup channel is SingleReader, so each pool has a
+        // single consumer; the split preserves head-of-line isolation between tick and time-bar.
+        await Task.WhenAll(
+            Drain(timeBarWakeup, maxItems: null, stoppingToken),
+            Drain(tickWakeup, maxItems: null, stoppingToken));
     }
 
-    private async Task RunWorkerAsync(
-        string poolName,
-        int workerId,
-        ChannelReader<AggregationJob> reader,
-        CancellationToken stoppingToken)
+    // Re-arm both pools from the durable store: rows still 'queued' after a restart never got a
+    // wakeup. Route each to the pool matching its source type; a row we can't rehydrate (e.g. a
+    // removed symbol) still gets queued to the time-bar pool so RunJob fails it cleanly.
+    private async Task SeedFromQueued(CancellationToken stoppingToken)
+    {
+        var queued = await index.ListJobs("aggregation", "queued", stoppingToken);
+        foreach (var row in queued)
+            PoolFor(row).TryEnqueue(row.Id);
+    }
+
+    private IJobWakeupQueue PoolFor(IndexJobRow row)
     {
         try
         {
-            await foreach (var job in reader.ReadAllAsync(stoppingToken))
+            return rehydrator.Rehydrate(row).Source.Kind == DataFeedKind.Tick ? tickWakeup : timeBarWakeup;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Could not determine source pool for queued aggregation job {JobId}; routing to time-bar pool", row.Id);
+            return timeBarWakeup;
+        }
+    }
+
+    // Processes exactly one wakeup item off the time-bar pool then returns — unit-test seam.
+    internal Task DrainOnceForTest(CancellationToken ct) => Drain(timeBarWakeup, maxItems: 1, ct);
+
+    // Processes up to `count` wakeup items off the time-bar pool then returns — multi-item test seam.
+    internal Task DrainForTest(int count, CancellationToken ct) => Drain(timeBarWakeup, count, ct);
+
+    // Same, off the tick pool — exercises tick-pool dispatch.
+    internal Task DrainTickOnceForTest(CancellationToken ct) => Drain(tickWakeup, maxItems: 1, ct);
+
+    // Shared drain loop. Per-item faults are isolated inside RunJob so one bad row never kills the
+    // loop; the outer catch swallows host-shutdown (including the rethrow from RunJob's shutdown arm)
+    // so the BackgroundService exits cleanly instead of faulting → StopHost → all collectors down.
+    private async Task Drain(IJobWakeupQueue wakeup, int? maxItems, CancellationToken stoppingToken)
+    {
+        var processed = 0;
+        try
+        {
+            await foreach (var jobId in wakeup.Reader(stoppingToken))
             {
-                // Link the host stopping token with the per-job CTS for user cancels. The
-                // pipeline observes either source via ct.ThrowIfCancellationRequested(); the
-                // catch below distinguishes which source fired to route OnCancelled vs
-                // OnErrored("host_shutdown").
-                var perJobToken = _registry.GetCancellationToken(job.JobId);
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, perJobToken);
-
-                try
-                {
-                    _registry.OnStarted(job.JobId, job.Source.FeedId);
-
-                    using var scope = _scopeFactory.CreateScope();
-                    var pipeline = scope.ServiceProvider.GetRequiredService<AggregationPipeline>();
-
-                    var result = await pipeline.Run(
-                        job,
-                        onProgress: ev => RouteProgress(job.JobId, ev),
-                        ct: linkedCts.Token);
-
-                    _registry.OnCompleted(job.JobId, result);
-                }
-                catch (OperationCanceledException) when (perJobToken.IsCancellationRequested)
-                {
-                    // User cancel — distinct terminal state from host_shutdown. Don't rethrow:
-                    // the worker continues draining the queue.
-                    _logger.LogInformation(
-                        "Aggregation worker {Pool}#{WorkerId} canceling job {JobId} on user request.",
-                        poolName, workerId, job.JobId);
-                    _registry.OnCancelled(job.JobId, "user_cancelled");
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    _logger.LogInformation(
-                        "Aggregation worker {Pool}#{WorkerId} canceling job {JobId} due to host shutdown.",
-                        poolName, workerId, job.JobId);
-                    _registry.OnErrored(job.JobId, "host_shutdown",
-                        "Job interrupted by host shutdown.", retryable: true);
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex,
-                        "Aggregation job {JobId} (feedId={FeedId}, pool={Pool}) failed.",
-                        job.JobId, job.OutcomeFeedId, poolName);
-                    var redacted = $"Aggregation job failed ({ex.GetType().Name}); see server logs (job_id={job.JobId}).";
-                    _registry.OnErrored(job.JobId, "internal_error", redacted, retryable: false);
-                }
+                await RunJob(jobId, stoppingToken);
+                if (maxItems is { } max && ++processed >= max)
+                    return;
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
-            // Normal shutdown.
-        }
-        catch (Exception ex)
-        {
-            _logger.LogCritical(ex, "Aggregation worker {Pool}#{WorkerId} crashed.", poolName, workerId);
+            // Normal host shutdown.
         }
     }
 
-    private void RouteProgress(string jobId, ProgressEvent ev)
+    private async Task RunJob(string jobId, CancellationToken stoppingToken)
     {
-        if (ev is ProgressEvent.Progress p)
+        IndexJobRow? row;
+        try
         {
-            _registry.OnProgress(jobId, p.CurrentPartition, p.BarsEmitted, p.ElapsedMs);
+            row = await index.GetJob(jobId, stoppingToken);
+        }
+        catch (Exception ex) when (!IsTrueShutdown(ex, stoppingToken))
+        {
+            // Transient store read (e.g. SQLITE_BUSY): we have no row to Fail — skip and keep draining.
+            logger.LogError(ex, "Failed to read aggregation job {JobId}; skipping wakeup", jobId);
+            return;
+        }
+
+        if (row is null)
+        {
+            logger.LogWarning("Aggregation job {JobId} woke the worker but is no longer in the store", jobId);
+            return;
+        }
+
+        // M3.4-M4: a DELETE that arrived while the job sat queued set cancel_requested but could not
+        // Trip a per-job token (not yet Registered). Short-circuit to 'cancelled' — no run, no
+        // running-state — closing the race where a cancel-while-queued was lost until reconcile.
+        if (row.CancelRequested)
+        {
+            await sinkFactory.For(jobId).Cancel("user_cancelled", CancellationToken.None);
+            return;
+        }
+
+        var sink = sinkFactory.For(jobId);
+        try
+        {
+            var linked = cancellations.Register(jobId, stoppingToken);
+            await index.UpdateJob(jobId, "running", ct: stoppingToken);
+            // Run owns the terminal sink transitions on the happy path (Started/Complete) and reports
+            // its own aggregation errors via Fail; it lets OCE propagate on any cancel so the HOST
+            // classifies user-cancel vs host-shutdown (D2: host owns cancellation ownership).
+            var job = rehydrator.Rehydrate(row);
+            await aggregationService.Run(new AggregationRunRequest(job), sink, linked);
+        }
+        catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
+        {
+            // User DELETE tripped the linked (per-job) token; the host is still running.
+            await sink.Cancel("user_cancelled", CancellationToken.None);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Host shutdown mid-run — leave the row non-terminal for restart rehydration (M3.6 reconciles).
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Pre-Run failures (rehydration of a removed symbol, UpdateJob) and any genuine escape.
+            logger.LogError(ex, "Aggregation job {JobId} failed", jobId);
+            await sink.Fail("aggregation_failed", ex.Message, CancellationToken.None);
+        }
+        finally
+        {
+            cancellations.Remove(jobId);
         }
     }
 }

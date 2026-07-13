@@ -1,17 +1,16 @@
-using System.Globalization;
-using System.Text.Json;
-using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.Aggregation;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
-using AlgoTradeForge.HistoryLoader.Application.Aggregation.Jobs;
 using AlgoTradeForge.HistoryLoader.Application.Catalog;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.HistoryLoader.Application.Jobs;
 using AlgoTradeForge.HistoryLoader.Domain;
+using AlgoTradeForge.HistoryLoader.WebApi.Aggregation;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Microsoft.Net.Http.Headers;
 
 namespace AlgoTradeForge.HistoryLoader.WebApi.Endpoints;
 
@@ -48,9 +47,9 @@ internal static class AggregationEndpoints
         ICollectionPlanSource planSource,
         IFeedCatalog catalog,
         ISchemaManager schema,
-        IAggregationJobRegistry registry,
-        IAggregationJobQueue queue,
-        IAggregationTickJobQueue tickQueue,
+        IHistoryIndex index,
+        [FromKeyedServices("aggregation-timebar")] IJobWakeupQueue timeBarWakeup,
+        [FromKeyedServices("aggregation-tick")] IJobWakeupQueue tickWakeup,
         CancellationToken ct)
     {
         // Path / input validation (422)
@@ -70,7 +69,9 @@ internal static class AggregationEndpoints
             string.Equals(a.Venue.Dir, asset, StringComparison.Ordinal));
         if (planAsset is null)
             // wire-compatible error code; "configured" now means "declared in an enabled group"
-            return Results.NotFound(new { error = "asset_not_configured", exchange, asset });
+            return TypedResults.Json(new ErrorBody("asset_not_configured",
+                    $"asset '{asset}' on exchange '{exchange}' is not declared in any enabled collection group"),
+                statusCode: StatusCodes.Status404NotFound);
 
         // Source feed eligibility (422)
         var sourceFeed = await catalog.GetFeed(exchange, asset, body.SourceFeedId, ct);
@@ -166,18 +167,8 @@ internal static class AggregationEndpoints
 
         var outcomeFeedId = parsed!.FeedId;
 
-        // Active-job conflict check (423) — must precede the 409 on-disk-exists check.
-        var active = registry.CheckActiveFeedId(outcomeFeedId);
-        if (active is not null)
-        {
-            return Results.Json(new
-            {
-                code = "feed_already_locked",
-                feed_id = outcomeFeedId,
-                existing_job_id = active.JobId,
-                existing_job_state = active.State.ToString().ToLowerInvariant(),
-            }, statusCode: StatusCodes.Status423Locked);
-        }
+        // The durable feed gate (TryAcquireFeedGate below) is the atomic active-job guard now;
+        // the prior in-memory 423 pre-check is folded into the gate's Busy outcome.
 
         // Existing feed → Continue (202), no_new_data (200), or resume_unsupported (422).
         // Full rebuild = explicit Delete then Aggregate; no in-place overwrite.
@@ -255,10 +246,11 @@ internal static class AggregationEndpoints
                 PriorSpec: BuildSpecFromDefinition(existing));
         }
 
-        // Enqueue (race-protected: TryEnqueue rechecks 423 internally). Tick sources route to a
-        // separate queue + worker pool so their I/O load doesn't block CPU-bound time-bar
-        // aggregations at the queue head. AltBar sources reuse the time-bar queue but the
-        // descriptor's Kind redirects PartitionedSourceReader to aggregated/<feedId>/.
+        // Build the self-contained job. JobId is a placeholder — the durable store assigns the
+        // authoritative id in TryAcquireFeedGate and the rehydrator stamps row.Id back on run.
+        // Tick sources route to a separate wakeup pool so their I/O load doesn't head-of-line the
+        // CPU-bound time-bar pool. AltBar sources reuse the time-bar pool but the descriptor's
+        // Kind redirects PartitionedSourceReader to aggregated/<feedId>/.
         var job = new AggregationJob(
             JobId: Guid.NewGuid().ToString("N"),
             Source: new DataFeedDescriptor(config.DataRoot, exchange, asset, body.SourceFeedId, sourceKind),
@@ -276,24 +268,35 @@ internal static class AggregationEndpoints
             ToolVersion: typeof(AggregationEndpoints).Assembly.GetName().Version?.ToString() ?? "0.0.0",
             Resume: resume);
 
-        IAggregationJobQueue targetQueue = sourceKind == DataFeedKind.Tick ? tickQueue : queue;
-        var outcome = registry.TryEnqueue(job, targetQueue);
-        return outcome switch
+        var feedKey = FeedGateKey(exchange, asset, outcomeFeedId);
+        var reqJson = AggregationRequestRehydrator.Serialize(job, planAsset.DecimalDigits);
+        var outcome = await index.TryAcquireFeedGate("aggregation", feedKey, "{}", reqJson, ct);
+        switch (outcome)
         {
-            EnqueueOutcome.Accepted accepted => AcceptedResult(accepted.Record),
-            EnqueueOutcome.FeedAlreadyLocked locked => Results.Json(new
-            {
-                code = "feed_already_locked",
-                feed_id = outcomeFeedId,
-                existing_job_id = locked.ExistingJobId,
-                existing_job_state = locked.ExistingState.ToString().ToLowerInvariant(),
-            }, statusCode: StatusCodes.Status423Locked),
-            EnqueueOutcome.QueueFull => Results.Json(
-                new { code = "queue_full", retry_after_seconds = 5 },
-                statusCode: StatusCodes.Status503ServiceUnavailable),
-            _ => Results.Problem("unknown enqueue outcome"),
-        };
+            case FeedGateOutcome.Acquired acquired:
+                var wakeup = sourceKind == DataFeedKind.Tick ? tickWakeup : timeBarWakeup;
+                if (wakeup.TryEnqueue(acquired.JobId))
+                    return AcceptedResult(acquired.JobId);
+                // Dispatch channel full: drop the just-claimed row so a 503 leaves no phantom job.
+                await index.DeleteJob(acquired.JobId, ct);
+                return Results.Json(
+                    new { code = "queue_full", retry_after_seconds = 5 },
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+
+            case FeedGateOutcome.Busy busy:
+                return Results.Json(
+                    new { code = "feed_busy", feed_id = outcomeFeedId, active_job_id = busy.ExistingJobId },
+                    statusCode: StatusCodes.Status409Conflict);
+
+            default:
+                return Results.Problem("unknown feed-gate outcome");
+        }
     }
+
+    // Aggregation outcome feeds have no interval, so the gate key trails an empty interval segment,
+    // matching the load path's {exchange}|{dir}|{feed}|{interval} shape.
+    private static string FeedGateKey(string exchange, string asset, string outcomeFeedId) =>
+        $"{exchange}|{asset}|{outcomeFeedId}|";
 
     private static AltBarFeedSpec BuildSpecFromDefinition(FeedDefinition def) =>
         new(
@@ -314,13 +317,13 @@ internal static class AggregationEndpoints
             LastBarTs: def.LastBarTs,
             Sidecar: def.Sidecar);
 
-    private static IResult AcceptedResult(AggregationJobRecord record)
+    private static IResult AcceptedResult(string jobId)
     {
-        var location = $"/api/v1/aggregations/{record.Job.JobId}/progress";
+        var location = $"/api/v1/aggregations/{jobId}/progress";
         var inner = Results.Json(
-            new { job_id = record.Job.JobId, state = record.State.ToString().ToLowerInvariant() },
+            new { job_id = jobId, state = "queued" },
             statusCode: StatusCodes.Status202Accepted);
-        return new AcceptedWithHeaders(record.Job.JobId, location, inner);
+        return new AcceptedWithHeaders(jobId, location, inner);
     }
 
     /// <summary>
@@ -345,7 +348,7 @@ internal static class AggregationEndpoints
         IOptionsMonitor<HistoryLoaderOptions> options,
         ICollectionPlanSource planSource,
         ISchemaManager schema,
-        IAggregationJobRegistry registry,
+        IHistoryIndex index,
         CancellationToken ct)
     {
         if (!FeedIdValidator.TryValidatePathComponent(exchange, out var pathErr1))
@@ -361,12 +364,15 @@ internal static class AggregationEndpoints
             string.Equals(a.Venue.Dir, asset, StringComparison.Ordinal));
         if (planAsset is null)
             // wire-compatible error code; "configured" now means "declared in an enabled group"
-            return Results.NotFound(new { error = "asset_not_configured", exchange, asset });
+            return TypedResults.Json(new ErrorBody("asset_not_configured",
+                    $"asset '{asset}' on exchange '{exchange}' is not declared in any enabled collection group"),
+                statusCode: StatusCodes.Status404NotFound);
 
         var assetDir = BackfillOrchestrator.ResolveAssetDir(config.DataRoot, planAsset);
         var manifest = await schema.Load(assetDir, ct);
         if (manifest is null || !manifest.Feeds.TryGetValue(feedId, out var def))
-            return Results.NotFound(new { error = "feed_not_found", feed_id = feedId });
+            return TypedResults.Json(new ErrorBody("feed_not_found", $"feed '{feedId}' not found in feeds.json"),
+                statusCode: StatusCodes.Status404NotFound);
 
         // Only OHLCV_AltBar feeds are user-deletable. Time bars / ticks / side feeds are
         // collector-managed and cannot be removed via this endpoint.
@@ -382,17 +388,22 @@ internal static class AggregationEndpoints
         }
 
         // Race guard: a job currently aggregating into this feedId would re-write the manifest
-        // entry milliseconds after we delete it. 423 must precede any disk mutation.
-        var active = registry.CheckActiveFeedId(feedId);
+        // entry milliseconds after we delete it. The active-job check must precede any disk
+        // mutation. The durable store's gate key ({exchange}|{dir}|{feedId}|) is the lock now.
+        var feedKey = FeedGateKey(exchange, asset, feedId);
+        var jobs = await index.ListJobs("aggregation", null, ct);
+        var active = jobs.FirstOrDefault(j =>
+            string.Equals(j.FeedKey, feedKey, StringComparison.Ordinal)
+            && (j.State == "queued" || j.State == "running"));
         if (active is not null)
         {
             return Results.Json(new
             {
-                code = "feed_already_locked",
+                code = "feed_busy",
                 feed_id = feedId,
-                existing_job_id = active.JobId,
-                existing_job_state = active.State.ToString().ToLowerInvariant(),
-            }, statusCode: StatusCodes.Status423Locked);
+                active_job_id = active.Id,
+                active_job_state = active.State,
+            }, statusCode: StatusCodes.Status409Conflict);
         }
 
         // Delete on-disk (rename-aside then recursive) first; the manifest write is the atomic
@@ -427,189 +438,20 @@ internal static class AggregationEndpoints
         catch (IOException) { /* sweeper covers it */ }
     }
 
-    /// <remarks>
-    /// 204 means "cancel observed at the registry" (per-job CTS fired), NOT "run was aborted".
-    /// Cooperative cancellation can race: if the pipeline emits its last record between this
-    /// call and the worker's next cancellation check, OnCompleted may still win and the SSE
-    /// terminal event will be <c>complete</c> rather than <c>cancelled</c>. The FE reconciles
-    /// via SSE; the REST status is advisory.
-    /// </remarks>
-    private static IResult CancelAggregation(string jobId, IAggregationJobRegistry registry)
-    {
-        if (string.IsNullOrWhiteSpace(jobId))
-            return Unprocessable("invalid_job_id", "job_id is required.");
+    // DELETE /aggregations/{jobId}, GET /aggregations/{jobId}, and .../progress are thin aliases
+    // over the unified job store (JobEndpoints), mirroring the load path's GET /loads/{jobId}.
+    // The rich per-job SSE/snapshot wire shape is retired here; M5 normalizes the envelope.
+    private static Task<IResult> CancelAggregation(
+        string jobId, IHistoryIndex index, IJobCancellationMap cancels, CancellationToken ct) =>
+        JobEndpoints.CancelJob(jobId, index, cancels, ct);
 
-        // Single tri-state call. The earlier Get + TryRequestCancel pattern had a TOCTOU window
-        // where a concurrent retention eviction between the two calls surfaced a misleading 409.
-        return registry.TryRequestCancel(jobId) switch
-        {
-            CancelRequestOutcome.Requested => Results.NoContent(),
-            CancelRequestOutcome.Unknown =>
-                Results.NotFound(new { error = "job_not_found_or_expired", job_id = jobId }),
-            CancelRequestOutcome.AlreadyTerminal terminal => Results.Json(new
-            {
-                code = "job_already_terminal",
-                job_id = jobId,
-                state = terminal.State.ToString().ToLowerInvariant(),
-            }, statusCode: StatusCodes.Status409Conflict),
-            _ => Results.Problem("unknown cancel outcome"),
-        };
-    }
+    private static Task<IResult> GetSnapshot(string jobId, IHistoryIndex index, CancellationToken ct) =>
+        JobEndpoints.GetJob(jobId, index, ct);
 
-    private static IResult GetSnapshot(string jobId, IAggregationJobRegistry registry)
-    {
-        var record = registry.Get(jobId);
-        if (record is null)
-            return Results.NotFound(new { error = "job_not_found_or_expired", job_id = jobId });
-
-        var snap = record.Snapshot();
-        return Results.Json(new
-        {
-            job_id = snap.JobId,
-            feed_id = snap.FeedId,
-            state = snap.State.ToString().ToLowerInvariant(),
-            queued_at = snap.QueuedAt,
-            started_at = snap.StartedAt,
-            completed_at = snap.CompletedAt,
-            queue_position = snap.State == AggregationJobState.Queued ? snap.QueuePosition : (int?)null,
-            current_partition = snap.State == AggregationJobState.Running ? snap.CurrentPartition : null,
-            bars_emitted = snap.State == AggregationJobState.Running || snap.State.IsTerminal()
-                ? snap.BarsEmitted
-                : (long?)null,
-            // Summary mirrors the SSE `complete` payload (minus type/job_id) for round-trip
-            // equivalence with the SSE stream.
-            summary = snap.State == AggregationJobState.Complete && snap.Result is not null
-                ? CompletePayload(snap.Result)
-                : null,
-            error = snap.Error is { } err
-                ? new { code = err.Code, message = err.Message, retryable = err.Retryable }
-                : null,
-            cancellation = snap.State == AggregationJobState.Cancelled && snap.CancellationReason is not null
-                ? new { reason = snap.CancellationReason, at_utc = snap.CompletedAt }
-                : null,
-        });
-    }
-
-    private static async Task GetProgressSse(
-        string jobId,
-        HttpContext context,
-        IAggregationJobRegistry registry,
-        IOptionsMonitor<HistoryLoaderOptions> options,
-        TimeProvider clock)
-    {
-        var record = registry.Get(jobId);
-        if (record is null)
-        {
-            context.Response.StatusCode = StatusCodes.Status410Gone;
-            try
-            {
-                await context.Response.WriteAsJsonAsync(
-                    new { error = "job_not_found_or_expired", job_id = jobId },
-                    context.RequestAborted);
-            }
-            catch (OperationCanceledException) { }
-            return;
-        }
-
-        context.Response.Headers[HeaderNames.ContentType] = "text/event-stream";
-        context.Response.Headers[HeaderNames.CacheControl] = "no-cache";
-        context.Response.Headers["X-Accel-Buffering"] = "no";
-
-        // SSE writes throw OperationCanceledException on client disconnect — that's normal
-        // (FE may reconnect with Last-Event-ID, navigate away, or be replaced by a new job
-        // stream). Swallow the cancel and exit; any other exception still bubbles.
-        try
-        {
-            await context.Response.Body.FlushAsync(context.RequestAborted);
-
-            var lastEventId = ParseLastEventId(context);
-            var lastSentSeq = lastEventId;
-
-            // Capture-before-drain: snapshot the next-event signal BEFORE reading the events.
-            // AppendEvent adds under the events lock then swaps the signal, so any event added
-            // between capture and drain has already fired the captured signal — the next
-            // iteration drains it. Capture-after-drain would TOCTOU and lose terminal events.
-            while (!context.RequestAborted.IsCancellationRequested)
-            {
-                var nextSignal = record.NextEventSignal;
-
-                var fresh = record.EventsAfter(lastSentSeq);
-                if (lastSentSeq == lastEventId
-                    && lastEventId > 0
-                    && fresh.Count == 0
-                    && record.LastSequence > 0)
-                {
-                    // Resume past the last known event — replay so no state transition is missed.
-                    fresh = record.EventsAfter(0);
-                }
-
-                foreach (var je in fresh)
-                {
-                    await WriteSseFrameAsync(context, je.Sequence, je.Event, context.RequestAborted);
-                    lastSentSeq = je.Sequence;
-                    if (je.Event is ProgressEvent.Complete or ProgressEvent.Error or ProgressEvent.Cancelled)
-                        return;
-                }
-
-                await nextSignal.WaitAsync(context.RequestAborted);
-            }
-        }
-        catch (OperationCanceledException) { }
-    }
+    private static Task GetProgressSse(
+        string jobId, HttpContext context, IHistoryIndex index, IJobEventSignal signal) =>
+        JobEndpoints.GetJobProgressSse(jobId, context, index, signal);
 
     private static IResult Unprocessable(string code, string message) =>
-        Results.Json(new { code, message }, statusCode: StatusCodes.Status422UnprocessableEntity);
-
-    private static int ParseLastEventId(HttpContext context)
-    {
-        var header = context.Request.Headers["Last-Event-ID"].ToString();
-        if (string.IsNullOrEmpty(header)) return 0;
-        return int.TryParse(header, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
-    }
-
-    private static async Task WriteSseFrameAsync(
-        HttpContext context, int seq, ProgressEvent ev, CancellationToken ct)
-    {
-        var (eventType, payload) = ev switch
-        {
-            ProgressEvent.Queued q     => ("queued",    (object)new { job_id = q.JobId, feed_id = q.FeedId, queued_at = q.QueuedAt, queue_position = q.QueuePosition }),
-            ProgressEvent.Started s    => ("started",   new { job_id = s.JobId, feed_id = s.FeedId, started_at = s.StartedAt, source_feed_id = s.SourceFeedId }),
-            ProgressEvent.Progress p   => ("progress",  new { job_id = p.JobId, current_partition = p.CurrentPartition, bars_emitted = p.BarsEmitted, elapsed_ms = p.ElapsedMs }),
-            ProgressEvent.Complete c   => ("complete",  CompletePayload(c.Result)),
-            ProgressEvent.Error e      => ("error",     new { job_id = e.JobId, code = e.Code, message = e.Message, retryable = e.Retryable }),
-            ProgressEvent.Cancelled cn => ("cancelled", new { job_id = cn.JobId, reason = cn.Reason, at_utc = cn.AtUtc }),
-            _ => throw new InvalidOperationException($"Unrecognized progress event: {ev.GetType().Name}"),
-        };
-
-        var json = JsonSerializer.Serialize(payload, SseJsonOptions);
-        var frame = $"id: {seq}\nevent: {eventType}\ndata: {json}\n\n";
-        await context.Response.WriteAsync(frame, ct);
-        await context.Response.Body.FlushAsync(ct);
-    }
-
-    private static object CompletePayload(AggregationResult r) => new
-    {
-        job_id = r.JobId,
-        feed_id = r.OutcomeFeedId,
-        sidecar_feed_id = r.SidecarFeedId,        // null for non-EqIV; populated for EqIV
-        bar_count = r.BarCount,
-        partitions_written = r.PartitionsWritten,
-        first_bar_ts = r.FirstBarTs,
-        last_bar_ts = r.LastBarTs,
-        fidelity = new
-        {
-            actual_overshoot_pct = r.ActualOvershootPct,
-            max_overshoot_pct = r.MaxOvershootPct,
-            estimated_overshoot_pct = r.EstimatedOvershootPct,
-            median_source_record_value = r.MedianSourceRecordValue,
-            n_factor = r.NFactor,
-        },
-        duration_seconds = r.DurationSeconds,
-    };
-
-    private static readonly JsonSerializerOptions SseJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-    };
-
+        TypedResults.Json(new ErrorBody(code, message), statusCode: StatusCodes.Status422UnprocessableEntity);
 }

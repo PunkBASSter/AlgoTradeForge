@@ -24,18 +24,21 @@ internal static class BackfillEndpoints
         var symbol = request.Symbol;
 
         if (string.IsNullOrWhiteSpace(symbol))
-            return Results.BadRequest(new { error = "Symbol is required" });
+            return TypedResults.Json(new ErrorBody("symbol_required", "symbol is required"),
+                statusCode: StatusCodes.Status400BadRequest);
 
         var asset = planSource.Current.Assets.FirstOrDefault(a =>
             string.Equals(a.Venue.Dir, symbol, StringComparison.OrdinalIgnoreCase));
 
         if (asset is null)
-            return Results.BadRequest(new { error = "Symbol not configured", symbol });
+            return TypedResults.Json(new ErrorBody("symbol_not_configured", $"symbol '{symbol}' is not configured"),
+                statusCode: StatusCodes.Status400BadRequest);
 
         var assetDir = BackfillOrchestrator.ResolveAssetDir(options.CurrentValue.DataRoot, asset);
 
         if (orchestrator.IsRunning(assetDir))
-            return Results.Conflict(new { error = "Backfill already running", symbol = asset.Venue.ApiSymbol });
+            return TypedResults.Json(new ErrorBody("backfill_busy", $"backfill already running for '{asset.Venue.ApiSymbol}'"),
+                statusCode: StatusCodes.Status409Conflict);
 
         var feedFilter = request.Feeds is { Length: > 0 } ? (IReadOnlyList<string>)request.Feeds : null;
         var fromDate = request.FromDate;
