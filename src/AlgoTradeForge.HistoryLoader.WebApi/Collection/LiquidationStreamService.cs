@@ -368,10 +368,15 @@ internal sealed class LiquidationStreamService(
         tracker.Clear();
     }
 
+    // Streams are collect-if-declared. The eager/on-demand axis governs BACKFILL, and streams have
+    // no backfill (live-only, no archive/REST) — so the distinction is meaningless for them and
+    // declaring the feed IS the opt-in. Keeping streams off the eager flag also keeps them out of
+    // the DesiredStateService kick path (which only fires on Collect == "eager"), so a gapped stream
+    // is never spuriously kicked for a backfill that cannot exist.
     internal static HashSet<string> BuildEnabledSymbolSet(CollectionPlan plan) =>
         plan.Assets
             .Where(a => AssetTypes.IsFutures(a.Venue.AssetType))
-            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.Liquidations && f.Collect == "eager"))
+            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.Liquidations))
             .Select(a => a.Venue.ApiSymbol)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 

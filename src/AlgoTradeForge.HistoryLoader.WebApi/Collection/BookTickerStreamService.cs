@@ -389,7 +389,7 @@ internal sealed class BookTickerStreamService(
         {
             if (!typeFilter(asset.Venue.AssetType))
                 continue;
-            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.BookTicker && f.Collect == "eager"))
+            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.BookTicker))
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(dataRoot, asset);
@@ -423,7 +423,7 @@ internal sealed class BookTickerStreamService(
         CollectionPlan plan, Func<string, bool> typeFilter) =>
         plan.Assets
             .Where(a => typeFilter(a.Venue.AssetType))
-            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.BookTicker && f.Collect == "eager"))
+            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.BookTicker))
             .Select(a => a.Venue.ApiSymbol)
             .ToList();
 

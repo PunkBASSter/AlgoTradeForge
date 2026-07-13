@@ -340,7 +340,7 @@ internal sealed class SpotAggTradeStreamService(
         {
             if (!AssetTypes.IsSpot(asset.Venue.AssetType))
                 continue;
-            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.Ticks && f.Collect == "eager"))
+            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.Ticks))
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(dataRoot, asset);
@@ -375,7 +375,7 @@ internal sealed class SpotAggTradeStreamService(
     internal static List<string> BuildEnabledSpotSymbols(CollectionPlan plan) =>
         plan.Assets
             .Where(a => AssetTypes.IsSpot(a.Venue.AssetType))
-            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.Ticks && f.Collect == "eager"))
+            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.Ticks))
             .Select(a => a.Venue.ApiSymbol)
             .ToList();
 
