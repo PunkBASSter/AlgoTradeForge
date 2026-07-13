@@ -1,0 +1,261 @@
+[
+  {
+    "name": "binance-perp-candles",
+    "enabled": true,
+    "exchanges": [
+      "binance"
+    ],
+    "assets": {
+      "symbols": [
+        "BTC/USDT-PERP",
+        "ETH/USDT-PERP",
+        "BNB/USDT-PERP",
+        "SOL/USDT-PERP",
+        "XRP/USDT-PERP",
+        "DOGE/USDT-PERP",
+        "ADA/USDT-PERP",
+        "AVAX/USDT-PERP",
+        "DOT/USDT-PERP",
+        "LINK/USDT-PERP"
+      ],
+      "historyStart": "2019-09"
+    },
+    "feeds": {
+      "candles": {
+        "collect": "eager",
+        "intervals": [
+          "1d",
+          "1h",
+          "1m"
+        ]
+      }
+    }
+  },
+  {
+    "name": "binance-perp-open-interest",
+    "enabled": true,
+    "exchanges": [
+      "binance"
+    ],
+    "assets": {
+      "symbols": [
+        "BTC/USDT-PERP",
+        "ETH/USDT-PERP",
+        "BNB/USDT-PERP",
+        "SOL/USDT-PERP",
+        "XRP/USDT-PERP",
+        "DOGE/USDT-PERP",
+        "ADA/USDT-PERP",
+        "AVAX/USDT-PERP",
+        "DOT/USDT-PERP",
+        "LINK/USDT-PERP"
+      ],
+      "historyStart": "2019-09"
+    },
+    "feeds": {
+      "open-interest": {
+        "collect": "eager"
+      }
+    }
+  },
+  {
+    "name": "binance-perp-long-short-ratio",
+    "enabled": true,
+    "exchanges": [
+      "binance"
+    ],
+    "assets": {
+      "symbols": [
+        "BTC/USDT-PERP",
+        "ETH/USDT-PERP",
+        "BNB/USDT-PERP",
+        "SOL/USDT-PERP",
+        "XRP/USDT-PERP",
+        "DOGE/USDT-PERP",
+        "ADA/USDT-PERP",
+        "AVAX/USDT-PERP",
+        "DOT/USDT-PERP",
+        "LINK/USDT-PERP"
+      ],
+      "historyStart": "2019-09"
+    },
+    "feeds": {
+      "ls-ratio-global": {
+        "collect": "eager"
+      },
+      "ls-ratio-top-accounts": {
+        "collect": "eager"
+      },
+      "ls-ratio-top-positions": {
+        "collect": "eager"
+      }
+    }
+  },
+  {
+    "name": "binance-perp-taker-volume",
+    "enabled": true,
+    "exchanges": [
+      "binance"
+    ],
+    "assets": {
+      "symbols": [
+        "BTC/USDT-PERP",
+        "ETH/USDT-PERP",
+        "BNB/USDT-PERP",
+        "SOL/USDT-PERP",
+        "XRP/USDT-PERP",
+        "DOGE/USDT-PERP",
+        "ADA/USDT-PERP",
+        "AVAX/USDT-PERP",
+        "DOT/USDT-PERP",
+        "LINK/USDT-PERP"
+      ],
+      "historyStart": "2019-09"
+    },
+    "feeds": {
+      "taker-volume": {
+        "collect": "eager"
+      }
+    }
+  },
+  {
+    "name": "binance-perp-liquidations",
+    "enabled": true,
+    "exchanges": [
+      "binance"
+    ],
+    "assets": {
+      "symbols": [
+        "BTC/USDT-PERP",
+        "ETH/USDT-PERP",
+        "BNB/USDT-PERP",
+        "SOL/USDT-PERP",
+        "XRP/USDT-PERP",
+        "DOGE/USDT-PERP",
+        "ADA/USDT-PERP",
+        "AVAX/USDT-PERP",
+        "DOT/USDT-PERP",
+        "LINK/USDT-PERP"
+      ],
+      "historyStart": "2019-09"
+    },
+    "feeds": {
+      "liquidations": {
+        "collect": "eager"
+      }
+    }
+  },
+  {
+    "name": "binance-perp-funding-rate",
+    "enabled": true,
+    "exchanges": [
+      "binance"
+    ],
+    "assets": {
+      "symbols": [
+        "BTC/USDT-PERP",
+        "ETH/USDT-PERP",
+        "BNB/USDT-PERP",
+        "SOL/USDT-PERP",
+        "XRP/USDT-PERP",
+        "DOGE/USDT-PERP",
+        "ADA/USDT-PERP",
+        "AVAX/USDT-PERP",
+        "DOT/USDT-PERP",
+        "LINK/USDT-PERP"
+      ],
+      "historyStart": "2019-09"
+    },
+    "feeds": {
+      "funding-rate": {
+        "collect": "on-demand"
+      }
+    }
+  },
+  {
+    "name": "binance-perp-mark-price",
+    "enabled": true,
+    "exchanges": [
+      "binance"
+    ],
+    "assets": {
+      "symbols": [
+        "BTC/USDT-PERP",
+        "ETH/USDT-PERP",
+        "BNB/USDT-PERP",
+        "SOL/USDT-PERP",
+        "XRP/USDT-PERP",
+        "DOGE/USDT-PERP",
+        "ADA/USDT-PERP",
+        "AVAX/USDT-PERP",
+        "DOT/USDT-PERP",
+        "LINK/USDT-PERP"
+      ],
+      "historyStart": "2019-09"
+    },
+    "feeds": {
+      "mark-price": {
+        "collect": "on-demand"
+      }
+    }
+  },
+  {
+    "name": "binance-perp-ticks",
+    "enabled": true,
+    "exchanges": [
+      "binance"
+    ],
+    "assets": {
+      "symbols": [
+        "BTC/USDT-PERP",
+        "ETH/USDT-PERP",
+        "BNB/USDT-PERP",
+        "SOL/USDT-PERP",
+        "XRP/USDT-PERP",
+        "DOGE/USDT-PERP",
+        "ADA/USDT-PERP",
+        "AVAX/USDT-PERP",
+        "DOT/USDT-PERP",
+        "LINK/USDT-PERP"
+      ],
+      "historyStart": "2019-09"
+    },
+    "feeds": {
+      "ticks": {
+        "collect": "on-demand"
+      }
+    }
+  },
+  {
+    "name": "binance-spot-candles",
+    "enabled": true,
+    "exchanges": [
+      "binance"
+    ],
+    "assets": {
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "XRP/USDT",
+        "DOGE/USDT",
+        "ADA/USDT",
+        "AVAX/USDT",
+        "DOT/USDT",
+        "LINK/USDT"
+      ],
+      "historyStart": "2020-01"
+    },
+    "feeds": {
+      "candles": {
+        "collect": "eager",
+        "intervals": [
+          "1d",
+          "1h",
+          "1m"
+        ]
+      }
+    }
+  }
+]
