@@ -26,6 +26,11 @@ internal sealed class LiquidationStreamService(
     private static readonly TimeSpan StableConnectionUptime = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan StatusFlushInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
+    // A connected-but-silent WS (half-open, or futures market-data geo-fenced by Binance) leaves
+    // ReceiveAsync blocked forever with no error — the failure that hid the liquidation outage for
+    // ~3 months. Bound the wait: no frame within this window => close and reconnect (loud). The
+    // market-wide !forceOrder@arr can be genuinely quiet for a minute or two, so keep it generous.
+    private static readonly TimeSpan StreamIdleTimeout = TimeSpan.FromMinutes(3);
 
     private bool _planDirty;
 
@@ -193,7 +198,20 @@ internal sealed class LiquidationStreamService(
             WebSocketReceiveResult result;
             do
             {
-                result = await ws.ReceiveAsync(buffer, ct);
+                using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                idleCts.CancelAfter(StreamIdleTimeout);
+                try
+                {
+                    result = await ws.ReceiveAsync(buffer, idleCts.Token);
+                }
+                catch (OperationCanceledException) when (idleCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                {
+                    logger.LogWarning(
+                        "LiquidationStream idle for {Seconds}s (connected but no frames) — reconnecting. " +
+                        "Binance futures WS (fstream) may be geo-restricted or the connection is half-open.",
+                        StreamIdleTimeout.TotalSeconds);
+                    return;
+                }
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {

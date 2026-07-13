@@ -67,7 +67,10 @@ public sealed class BinanceOptions
 {
     public string SpotBaseUrl { get; init; } = "https://api.binance.com";
     public string FuturesBaseUrl { get; init; } = "https://fapi.binance.com";
-    public string FuturesWsBaseUrl { get; init; } = "wss://fstream.binance.com";
+    // Binance decommissioned the legacy /ws + /stream futures market-data path (2026-04-23); public
+    // market streams (aggTrade, !forceOrder@arr, bookTicker) moved to the /market endpoint. The legacy
+    // host still accepts the connection + SUBSCRIBE but delivers no data — hence the base carries /market.
+    public string FuturesWsBaseUrl { get; init; } = "wss://fstream.binance.com/market";
     public string SpotWsBaseUrl { get; init; } = "wss://stream.binance.com:9443";
     public int MaxWeightPerMinute { get; init; } = 2400;
     public int WeightBudgetPercent { get; init; } = 40;
