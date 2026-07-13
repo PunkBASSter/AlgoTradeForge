@@ -32,6 +32,26 @@ builder.Services.AddSerilog(cfg => cfg
     .WriteTo.File(Path.Combine(logDir, "history-loader-.log"),
         rollingInterval: Serilog.RollingInterval.Day, shared: true));
 
+// Dev isolation by construction: under Development, the data/config/index roots default to a
+// dedicated HistoryDev tree so a dev run can NEVER read or write the production History/index.
+// Only fills roots left unset — an explicit config value or HistoryLoader__* env var still wins
+// (set them to point a dev run at production data on purpose). Production is untouched.
+if (builder.Environment.IsDevelopment())
+{
+    var devRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "AlgoTradeForge", "HistoryDev");
+    var devDefaults = new Dictionary<string, string?>();
+    if (string.IsNullOrEmpty(builder.Configuration["HistoryLoader:DataRoot"]))
+        devDefaults["HistoryLoader:DataRoot"] = devRoot;
+    if (string.IsNullOrEmpty(builder.Configuration["HistoryLoader:ConfigRoot"]))
+        devDefaults["HistoryLoader:ConfigRoot"] = Path.Combine(devRoot, "config");
+    if (string.IsNullOrEmpty(builder.Configuration["HistoryLoader:Index:Path"]))
+        devDefaults["HistoryLoader:Index:Path"] = Path.Combine(devRoot, "history-index-dev.sqlite");
+    if (devDefaults.Count > 0)
+        builder.Configuration.AddInMemoryCollection(devDefaults);
+}
+
 builder.Services.Configure<HistoryLoaderOptions>(
     builder.Configuration.GetSection("HistoryLoader"));
 builder.Services.AddSingleton<IValidateOptions<HistoryLoaderOptions>, HistoryLoaderOptionsValidator>();
