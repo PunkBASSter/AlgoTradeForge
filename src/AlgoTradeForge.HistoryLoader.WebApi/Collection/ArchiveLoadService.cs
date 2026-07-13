@@ -17,6 +17,9 @@ internal sealed class ArchiveLoadService(
     IHistoryIndex index,
     ILogger<ArchiveLoadService> logger) : IArchiveLoadService
 {
+    private static readonly JsonSerializerOptions SnakeCase =
+        new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+
     private static bool IsTrueShutdown(Exception ex, CancellationToken ct) =>
         ex is OperationCanceledException oce && ct.IsCancellationRequested && oce.CancellationToken == ct;
 
@@ -129,8 +132,15 @@ internal sealed class ArchiveLoadService(
     {
         // IProgress<T>.Report is synchronous; enqueue non-blocking and in order. The single
         // consumer in Run awaits sink.Report so writes complete before any terminal call.
+        // Canonical progress shape read by JobEnvelope + FE JobCard: top-level phase/done/total
+        // drive the bar; detail.current_month is the load month label.
         public void Report(ArchiveProgress value) =>
-            writer.TryWrite(
-                JsonSerializer.Serialize(new { done = value.MonthsDone, total = value.MonthsTotal, phase = value.CurrentMonth }));
+            writer.TryWrite(JsonSerializer.Serialize(new
+            {
+                Phase = value.CurrentMonth,
+                Done = value.MonthsDone,
+                Total = value.MonthsTotal,
+                Detail = new { CurrentMonth = value.CurrentMonth },
+            }, SnakeCase));
     }
 }

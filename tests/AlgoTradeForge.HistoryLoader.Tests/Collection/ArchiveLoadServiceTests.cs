@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
@@ -113,6 +114,15 @@ public sealed class ArchiveLoadServiceTests
         Assert.NotEmpty(sink.Reports);
         Assert.True(sink.WasCompleted);
         Assert.Null(sink.FailCode);
+
+        // Canonical progress shape read by JobEnvelope + FE JobCard: top-level phase/done/total
+        // drive the bar; detail.current_month is the load month label.
+        using var doc = JsonDocument.Parse(sink.Reports[0]);
+        var root = doc.RootElement;
+        Assert.Equal("2024-01", root.GetProperty("phase").GetString());
+        Assert.Equal(1, root.GetProperty("done").GetInt32());
+        Assert.Equal(1, root.GetProperty("total").GetInt32());
+        Assert.Equal("2024-01", root.GetProperty("detail").GetProperty("current_month").GetString());
     }
 
     // -------------------------------------------------------------------------

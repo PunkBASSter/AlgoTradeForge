@@ -18,7 +18,7 @@ namespace AlgoTradeForge.HistoryLoader.Tests.Jobs;
 /// End-to-end drain tests for the store-backed materialize worker: sequential-stage completion,
 /// resume-from-stage (skips already-done stages), §S7 interrupted-reseed, and host-owned user-cancel.
 /// The stage-request construction is stubbed (FakeStageRequestFactory) so these tests exercise the
-/// worker's orchestration — the stage loop, snake_case stage_index round-trip, and composite terminal.
+/// worker's orchestration — the stage loop, canonical progress round-trip (done=stage index), and composite terminal.
 /// </summary>
 public sealed class MaterializeWorkerHostTests : IAsyncLifetime, IDisposable
 {
@@ -67,12 +67,19 @@ public sealed class MaterializeWorkerHostTests : IAsyncLifetime, IDisposable
             _cancellations, _plan, new FakeStageRequestFactory(),
             NullLogger<MaterializeWorkerHost>.Instance);
 
-    // Writes a materialize row with snake_case progress_json (stage_index/stages_total) + a
+    // Writes a materialize row with the canonical snake_case progress_json
+    // ({phase, done, total, detail:{stage_index, stages_total}}; done=stage index) + a
     // request_json the worker re-Resolves against the published plan.
     private async Task<string> SeedMaterializeJob(int stagesTotal, int stageIndex, string feedKey)
     {
         var progressJson = JsonSerializer.Serialize(
-            new { stages_total = stagesTotal, stage_index = stageIndex, phase = "load" }, _snake);
+            new
+            {
+                phase = "load",
+                done = stageIndex,
+                total = stagesTotal,
+                detail = new { stage_index = stageIndex, stages_total = stagesTotal },
+            }, _snake);
         var reqJson = JsonSerializer.Serialize(
             new { exchange = "binance", symbol = "BTCUSDT", feed = "EqV_1k" }, _snake);
         var outcome = await _index.TryAcquireFeedGate("materialize", feedKey, progressJson, reqJson, Ct);
@@ -98,8 +105,8 @@ public sealed class MaterializeWorkerHostTests : IAsyncLifetime, IDisposable
         Assert.True(_fakeLoad.Ran && _fakeAgg.Ran);
     }
 
-    // Non-vacuous: the worker MUST read stage_index=1 (snake_case) and skip the Load stage. If it
-    // read camelCase it would get 0 and run Load — failing the _fakeLoad.Ran==false assertion.
+    // Non-vacuous: the worker MUST read done=1 (canonical progress) and skip the Load stage. If it
+    // read the wrong key it would get 0 and run Load — failing the _fakeLoad.Ran==false assertion.
     [Fact]
     public async Task Materialize_ResumedAtStage1_SkipsLoad()
     {

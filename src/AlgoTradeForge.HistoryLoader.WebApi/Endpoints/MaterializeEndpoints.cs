@@ -59,8 +59,15 @@ internal static class MaterializeEndpoints
         }
 
         var stagesTotal = materializePlan.Stages.Count;
+        // Canonical progress shape read by JobEnvelope + FE JobCard: done=stage index (0 at seed).
         var initialProgress = JsonSerializer.Serialize(
-            new { stages_total = stagesTotal, stage_index = 0, phase = "load" },
+            new
+            {
+                Phase = "load",
+                Done = 0,
+                Total = stagesTotal,
+                Detail = new { StageIndex = 0, StagesTotal = stagesTotal },
+            },
             _snakeCase);
         var reqJson = JsonSerializer.Serialize(body, _snakeCase);
 

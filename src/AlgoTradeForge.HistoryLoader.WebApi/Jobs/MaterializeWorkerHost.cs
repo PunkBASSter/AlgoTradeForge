@@ -10,8 +10,8 @@ namespace AlgoTradeForge.HistoryLoader.WebApi.Jobs;
 
 /// <summary>
 /// Drains the keyed "materialize" wakeup queue and runs each job's ordered stages sequentially,
-/// advancing <c>progress_json.stage_index</c> after each stage so a crashed composite resumes
-/// mid-stage. Mirrors <c>LoadJobWorker</c>'s drain / per-item isolation / cancellation-classification
+/// advancing <c>progress_json.done</c> (the stage index, in the canonical progress shape) after each
+/// stage so a crashed composite resumes mid-stage. Mirrors <c>LoadJobWorker</c>'s drain / per-item isolation / cancellation-classification
 /// structure. §B5: stages run DIRECTLY (no per-stage feed-gate) — the job already holds the output
 /// gate, and the aggregate stage's key equals the job's own key, so re-claiming would self-Busy.
 /// </summary>
@@ -201,8 +201,9 @@ internal sealed class MaterializeWorkerHost(
         return MaterializePlan.Resolve(planSource.Current, p.Exchange, p.Symbol, p.Feed, range);
     }
 
-    // ★ CRITICAL: progress_json is SNAKE_CASE (M4.1). Deserialize with SnakeCaseLower so stage_index
-    // binds — camelCase would silently read 0 and re-run a resumed job from scratch.
+    // ★ CRITICAL: progress_json is the canonical snake_case shape {phase, done, total, detail:{…}}.
+    // The stage index to resume from is the top-level `done` counter; SnakeCaseLower must bind it —
+    // a shape mismatch would silently read 0 and re-run a resumed job from scratch.
     private int ReadStageIndex(IndexJobRow row, int stagesTotal)
     {
         var stageIndex = 0;
@@ -211,15 +212,23 @@ internal sealed class MaterializeWorkerHost(
             try
             {
                 var p = JsonSerializer.Deserialize<StageProgress>(row.ProgressJson, _snakeCase);
-                if (p is not null) stageIndex = p.StageIndex;
+                if (p is not null) stageIndex = p.Done;
             }
             catch (JsonException) { /* malformed progress: restart from stage 0 */ }
         }
         return Math.Clamp(stageIndex, 0, stagesTotal);
     }
 
+    // Canonical progress shape read by JobEnvelope + FE JobCard: done=stage index drives both the
+    // coarse stage bar and the resume position (ReadStageIndex); detail carries the "Stage i of n" fields.
     private static string Progress(int stageIndex, int stagesTotal, string phase) =>
-        JsonSerializer.Serialize(new { stages_total = stagesTotal, stage_index = stageIndex, phase }, _snakeCase);
+        JsonSerializer.Serialize(new
+        {
+            Phase = phase,
+            Done = stageIndex,
+            Total = stagesTotal,
+            Detail = new { StageIndex = stageIndex, StagesTotal = stagesTotal },
+        }, _snakeCase);
 
     private static string PhaseOf(MaterializeStage stage) => stage switch
     {
@@ -231,7 +240,7 @@ internal sealed class MaterializeWorkerHost(
     private static string NextPhase(IReadOnlyList<MaterializeStage> stages, int index) =>
         index < stages.Count ? PhaseOf(stages[index]) : "done";
 
-    private sealed record StageProgress(int StageIndex, int StagesTotal);
+    private sealed record StageProgress(int Done, int Total);
 
     private sealed record MaterializeReqPayload(string Exchange, string Symbol, string Feed, DateOnly? From, DateOnly? To);
 }

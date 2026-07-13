@@ -10,6 +10,9 @@ internal sealed class AggregationService(
     IServiceScopeFactory scopeFactory,
     ILogger<AggregationService> logger) : IAggregationService
 {
+    private static readonly JsonSerializerOptions SnakeCase =
+        new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+
     // Mirrors ArchiveLoadService: true-shutdown = OCE caused by the token passed to Run,
     // not by an internal source (e.g. a downstream call with its own ct).
     private static bool IsTrueShutdown(Exception ex, CancellationToken ct) =>
@@ -67,12 +70,17 @@ internal sealed class AggregationService(
                 {
                     if (ev is ProgressEvent.Progress p)
                     {
+                        // Canonical shape read by JobEnvelope + FE JobCard: aggregation streams
+                        // no partition done/total (bar hidden), only the detail line fields.
                         channel.Writer.TryWrite(JsonSerializer.Serialize(new
                         {
-                            partition = p.CurrentPartition,
-                            barsEmitted = p.BarsEmitted,
-                            elapsedMs = p.ElapsedMs,
-                        }));
+                            Detail = new
+                            {
+                                CurrentPartition = p.CurrentPartition,
+                                BarsEmitted = p.BarsEmitted,
+                                ElapsedMs = p.ElapsedMs,
+                            },
+                        }, SnakeCase));
                     }
                 },
                 ct);

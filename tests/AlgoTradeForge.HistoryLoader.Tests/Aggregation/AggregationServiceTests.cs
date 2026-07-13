@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AlgoTradeForge.Domain;
 using AlgoTradeForge.Domain.History;
 using AlgoTradeForge.HistoryLoader.Application.Aggregation;
@@ -75,6 +76,13 @@ public sealed class AggregationServiceTests
 
         Assert.True(sink.WasCompleted);
         Assert.NotEmpty(sink.Reports);
+
+        // Canonical progress shape read by JobEnvelope + FE JobCard: aggregation streams no
+        // done/total (bar hidden) — only the detail line fields, snake_case, nested under detail.
+        using var doc = JsonDocument.Parse(sink.Reports[0]);
+        var detail = doc.RootElement.GetProperty("detail");
+        Assert.Equal("2024-01", detail.GetProperty("current_partition").GetString());
+        Assert.Equal(10, detail.GetProperty("bars_emitted").GetInt32());
     }
 
     // -------------------------------------------------------------------------

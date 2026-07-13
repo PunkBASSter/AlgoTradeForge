@@ -5,8 +5,9 @@ namespace AlgoTradeForge.HistoryLoader.Application.Jobs;
 
 /// <summary>
 /// Wraps the composite job's base sink for ONE stage of a materialize run. Stage progress is
-/// rewritten into a composite envelope carrying <c>stage_index</c>/<c>stages_total</c> so the SSE
-/// stream reads as "stage i/n: &lt;inner progress&gt;". The stage services own their per-stage
+/// rewritten into the canonical envelope <c>{phase, done, total, detail:{stage_index, stages_total,
+/// stage}}</c> (done=stage_index, total=stages_total) so the SSE stream reads as
+/// "stage i/n: &lt;inner progress&gt;". The stage services own their per-stage
 /// terminal calls, but the COMPOSITE terminal is owned by the worker — so this sink deliberately
 /// does NOT forward a stage <see cref="Started"/>/<see cref="Complete"/> as a composite terminal
 /// (that would evict the job from the SSE cache mid-run). A stage <see cref="Fail"/>/<see cref="Cancel"/>
@@ -29,12 +30,20 @@ public sealed class MaterializeProgressSink(
         try { inner = JsonNode.Parse(progressJson); }
         catch (JsonException) { /* non-JSON stage payload: embed verbatim as a string below */ }
 
+        // Canonical progress shape read by JobEnvelope + FE JobCard: top-level phase/done/total
+        // drive the coarse stage bar (done=stage_index); detail carries the "Stage i of n (stage)"
+        // fields plus the inner stage payload.
         var envelope = new JsonObject
         {
-            ["stage_index"] = stageIndex,
-            ["stages_total"] = stagesTotal,
             ["phase"] = phase,
-            ["stage"] = inner ?? JsonValue.Create(progressJson),
+            ["done"] = stageIndex,
+            ["total"] = stagesTotal,
+            ["detail"] = new JsonObject
+            {
+                ["stage_index"] = stageIndex,
+                ["stages_total"] = stagesTotal,
+                ["stage"] = inner ?? JsonValue.Create(progressJson),
+            },
         };
         return baseSink.Report(envelope.ToJsonString(_snakeCase), ct);
     }
