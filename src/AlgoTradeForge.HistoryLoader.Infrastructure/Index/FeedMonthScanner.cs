@@ -1,4 +1,5 @@
 using AlgoTradeForge.HistoryLoader.Application.Index;
+using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
 
 namespace AlgoTradeForge.HistoryLoader.Infrastructure.Index;
 
@@ -29,17 +30,10 @@ public sealed class FeedMonthScanner : IFeedMonthScanner
                 result.Add(k);
                 continue;
             }
-            result.Add(new MonthPartitionRow(month, await CountDataRows(file, ct), fi.Length, mtime));
+            result.Add(new MonthPartitionRow(
+                month, await ArchiveStatusMerger.CountDataRows(file, ct), fi.Length, mtime));
         }
         result.Sort((a, b) => string.CompareOrdinal(a.Month, b.Month));
         return result;
-    }
-
-    private static async Task<long> CountDataRows(string path, CancellationToken ct)
-    {
-        long lines = 0;
-        using var reader = new StreamReader(path);
-        while (await reader.ReadLineAsync(ct) is not null) lines++;
-        return Math.Max(0, lines - 1);
     }
 }
