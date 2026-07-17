@@ -27,6 +27,10 @@ file sealed class CleanRewriteMaterializer(string feedName) : IArchiveMaterializ
         var dir = Path.Combine(assetDir, feedName);
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, $"{year:D4}-{month:D2}_{feed.Interval}.csv");
+        // Ordering pin: the handler must delete the partition BEFORE calling MaterializeMonth.
+        // If the file still exists here, the endpoint reordered delete-after-materialize (data loss risk).
+        if (File.Exists(path))
+            throw new InvalidOperationException("partition not deleted before materialize");
         await File.WriteAllTextAsync(path, "ts,oi,oi_usd\n1614556800000,1,2\n1614557100000,3,4\n", ct);
         return new ArchiveMonthResult(2, AvailableAtSource: true);
     }
