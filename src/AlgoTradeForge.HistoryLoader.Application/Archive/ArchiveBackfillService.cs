@@ -59,6 +59,11 @@ public sealed class ArchiveBackfillService(
         IReadOnlyList<DataGap> gaps = status?.Gaps ?? [];
         long? firstDataMs = status?.FirstTimestamp;
 
+        // Load the index's month rows once — coverage trusts these counts instead of re-reading content.
+        var indexedMonths = ((await index.GetMonths(
+                asset.Exchange, asset.Venue.Dir, feed.FeedName, feed.Interval, ct)) ?? [])
+            .ToDictionary(m => m.Month);
+
         // Steps 3+4: iterate oldest→newest; skip covered months; materialize the rest.
         // Track leading unavailable streak to discover the earliest available date.
         int done = 0;
@@ -79,10 +84,14 @@ public sealed class ArchiveBackfillService(
                     ? firstDataMs
                     : null;
 
+            var monthKey = $"{year:D4}-{month:D2}";
+            MonthPartitionRow? indexedMonth =
+                indexedMonths.TryGetValue(monthKey, out var mp) ? mp : null;
+
             // Covered months are already complete; they end the leading-unavailable streak.
             if (await coverage.IsMonthCovered(
                 assetDir, feed.FeedName, feed.Interval, year, month,
-                gaps, status?.CompleteMonths, effectiveStartMs, ct))
+                gaps, indexedMonth, status?.CompleteMonths, effectiveStartMs, ct))
             {
                 leadingPhase = false;
                 done++;

@@ -3,6 +3,7 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
 using AlgoTradeForge.HistoryLoader.Tests.TestData;
@@ -345,6 +346,7 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
         var covered = await new MonthCoverageCalculator(clock)
             .IsMonthCovered(
                 _dir, FeedNames.Candles, "1h", 2024, 2, savedStatus.Gaps,
+                new MonthPartitionRow("2024-02", 695, 0, ""),
                 ct: TestContext.Current.CancellationToken);
         Assert.True(covered);
     }

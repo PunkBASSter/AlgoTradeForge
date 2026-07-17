@@ -273,7 +273,7 @@ public sealed class SymbolCollectorTests
         coverage.IsMonthCovered(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<int>(), Arg.Any<int>(),
-                Arg.Any<IReadOnlyList<DataGap>>(), Arg.Any<IReadOnlyList<string>?>(),
+                Arg.Any<IReadOnlyList<DataGap>>(), Arg.Any<MonthPartitionRow?>(), Arg.Any<IReadOnlyList<string>?>(),
                 Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
