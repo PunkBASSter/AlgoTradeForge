@@ -90,6 +90,15 @@ internal sealed class MetricsArchiveMaterializer(
         // Detect gaps from the actual downsampled row sequence (both ends are present rows)
         var gaps = ArchiveStatusMerger.DetectGaps(built.Select(x => x.Ts).ToList(), intervalMs);
 
+        // Blank tail: the source shipped present-but-blank rows after the last usable one (dropped
+        // above). Credit the observed blank region so the month reads covered instead of churning.
+        // Bounded to maxParsedTs (last present row), NEVER month-end — else a blank-then-absent tail
+        // would credit genuinely-missing days and falsely mark the month covered.
+        var maxParsedTs = parsed[^1].Ts; // parsed is sorted ascending
+        var lastUsableTs = built[^1].Ts;
+        if (maxParsedTs > lastUsableTs)
+            gaps.Add(new DataGap { FromMs = lastUsableTs, ToMs = maxParsedTs + intervalMs });
+
         var columns = _rowSpec.Columns;
         await schemaManager.EnsureSchema(assetDir, feedName, feed.Interval, columns, ct: ct);
         var path = Path.Combine(assetDir, feedName, $"{year:D4}-{month:D2}_{feed.Interval}.csv");
