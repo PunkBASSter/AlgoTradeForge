@@ -104,7 +104,7 @@ internal sealed class KlinesArchiveMaterializer(
         var delta = written - previousRows;
 
         var intervalMs = (long)IntervalParser.ToTimeSpan(feed.Interval).TotalMilliseconds;
-        var gaps = ArchiveStatusMerger.DetectGaps(parsed, intervalMs);
+        var gaps = ArchiveStatusMerger.DetectGaps(parsed.Select(x => x.Ts).ToList(), intervalMs);
 
         await ArchiveStatusMerger.MergeStatus(
             feedStatusStore, assetDir, primaryFeed, interval, parsed[0].Ts, parsed[^1].Ts, delta, gaps, ct);

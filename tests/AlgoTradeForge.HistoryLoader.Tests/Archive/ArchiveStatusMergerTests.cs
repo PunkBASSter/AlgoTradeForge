@@ -139,8 +139,7 @@ public sealed class ArchiveStatusMergerTests : IDisposable
     [Fact]
     public void DetectGaps_ConsecutiveRows_NoGap()
     {
-        var parsed = MakeRows([Base, Base + HourMs, Base + HourMs * 2]);
-        var gaps = ArchiveStatusMerger.DetectGaps(parsed, HourMs);
+        var gaps = ArchiveStatusMerger.DetectGaps([Base, Base + HourMs, Base + HourMs * 2], HourMs);
         Assert.Empty(gaps);
     }
 
@@ -150,9 +149,7 @@ public sealed class ArchiveStatusMergerTests : IDisposable
         // Jump of exactly 2×interval = one missing slot.
         // OLD behaviour (streaming multiplier=2.0): curr − prev = 2×interval is NOT > 2×interval → no gap.
         // NEW behaviour (archive exact threshold): curr − prev = 2×interval IS > 1×interval → gap recorded.
-        var parsed = MakeRows([Base, Base + HourMs * 2]);
-
-        var gaps = ArchiveStatusMerger.DetectGaps(parsed, HourMs);
+        var gaps = ArchiveStatusMerger.DetectGaps([Base, Base + HourMs * 2], HourMs);
 
         var gap = Assert.Single(gaps);
         Assert.Equal(Base, gap.FromMs);             // last PRESENT row before hole
@@ -166,9 +163,8 @@ public sealed class ArchiveStatusMergerTests : IDisposable
         var intervalMs = 5 * 60_000L; // 5m
         var ts0 = Base;
         var ts1 = Base + intervalMs * 7; // skip 6 slots
-        var parsed = MakeRows([ts0, ts1]);
 
-        var gaps = ArchiveStatusMerger.DetectGaps(parsed, intervalMs);
+        var gaps = ArchiveStatusMerger.DetectGaps([ts0, ts1], intervalMs);
 
         var gap = Assert.Single(gaps);
         Assert.Equal(ts0, gap.FromMs);
@@ -185,11 +181,7 @@ public sealed class ArchiveStatusMergerTests : IDisposable
     [Fact]
     public void DetectGaps_SingleRow_NoGap()
     {
-        var parsed = MakeRows([Base]);
-        var gaps = ArchiveStatusMerger.DetectGaps(parsed, HourMs);
+        var gaps = ArchiveStatusMerger.DetectGaps([Base], HourMs);
         Assert.Empty(gaps);
     }
-
-    private static List<(long Ts, string[] Row)> MakeRows(long[] timestamps) =>
-        timestamps.Select(ts => (ts, Array.Empty<string>())).ToList();
 }

@@ -22,13 +22,13 @@ internal static class ArchiveStatusMerger
     // Archive data has fixed slots — any delta > 1×interval is a genuine source hole.
     // Unlike the streaming path (FeedCollectorBase.DetectGap, configurable multiplier),
     // archive months are complete-or-missing; sub-threshold jitter does not occur.
-    public static List<DataGap> DetectGaps(List<(long Ts, string[] Row)> parsed, long intervalMs)
+    public static List<DataGap> DetectGaps(IReadOnlyList<long> timestamps, long intervalMs)
     {
         var gaps = new List<DataGap>();
-        for (var i = 1; i < parsed.Count; i++)
+        for (var i = 1; i < timestamps.Count; i++)
         {
-            var prev = parsed[i - 1].Ts;
-            var curr = parsed[i].Ts;
+            var prev = timestamps[i - 1];
+            var curr = timestamps[i];
             if (curr - prev > intervalMs)
                 gaps.Add(new DataGap { FromMs = prev, ToMs = curr });
         }

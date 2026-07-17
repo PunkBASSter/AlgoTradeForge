@@ -16,6 +16,8 @@ internal sealed class MetricsArchiveMaterializer(
     IFeedStatusStore feedStatusStore,
     ILogger<MetricsArchiveMaterializer> logger) : IArchiveMaterializer
 {
+    private readonly MetricsRowSpec _rowSpec = MetricsRowSpec.For(feedName);
+
     public string Exchange => "binance";
     public string FeedName => feedName;
     public bool Supports(string assetType) => AssetTypes.IsFutures(assetType);
@@ -53,40 +55,57 @@ internal sealed class MetricsArchiveMaterializer(
             .OrderBy(x => x.Ts)
             .ToList();
 
-        if (parsed.Count == 0)
+        // Rows the source left blank are dropped BEFORE gap detection, so the holes they leave are
+        // recorded as source gaps instead of aborting the whole month on a parse failure.
+        var built = new List<(long Ts, string Csv)>(parsed.Count);
+        foreach (var (ts, row) in parsed)
         {
-            logger.LogWarning("metrics {Symbol} {Year}-{Month:D2}: archive present but 0 in-range rows",
+            if (_rowSpec.TryBuildRow(ts, row, out var csv))
+                built.Add((ts, csv));
+        }
+
+        if (built.Count < parsed.Count)
+        {
+            logger.LogWarning(
+                "{Feed}/{Interval} {Year}-{Month:D2} {Symbol}: {Skipped} of {Total} archive row(s) blank at source; recorded as gaps",
+                feedName, feed.Interval, year, month, asset.Venue.ApiSymbol,
+                parsed.Count - built.Count, parsed.Count);
+        }
+
+        if (built.Count == 0)
+        {
+            logger.LogWarning("metrics {Symbol} {Year}-{Month:D2}: archive present but 0 usable in-range rows",
                 asset.Venue.ApiSymbol, year, month);
             return new ArchiveMonthResult(0, AvailableAtSource: true);
         }
 
         // Detect gaps from the actual downsampled row sequence (both ends are present rows)
-        var gaps = ArchiveStatusMerger.DetectGaps(parsed, intervalMs);
+        var gaps = ArchiveStatusMerger.DetectGaps(built.Select(x => x.Ts).ToList(), intervalMs);
 
-        var columns = GetColumns();
+        var columns = _rowSpec.Columns;
         await schemaManager.EnsureSchema(assetDir, feedName, feed.Interval, columns, ct: ct);
         var path = Path.Combine(assetDir, feedName, $"{year:D4}-{month:D2}_{feed.Interval}.csv");
         var previousRows = await ArchiveStatusMerger.CountDataRows(path, ct);
 
         // Replace-guard: a sparse archive month must not clobber a fuller REST-collected one.
-        if (parsed.Count < previousRows)
+        if (built.Count < previousRows)
         {
             logger.LogWarning(
                 "{Feed}/{Interval} {Year}-{Month:D2} {Symbol}: archive month has {New} rows < existing {Prev}; skipping replace",
-                feedName, feed.Interval, year, month, asset.Venue.ApiSymbol, parsed.Count, previousRows);
+                feedName, feed.Interval, year, month, asset.Venue.ApiSymbol, built.Count, previousRows);
             return new ArchiveMonthResult(0, AvailableAtSource: true);
         }
 
-        var csvRows = parsed.Select(x => BuildRow(x.Ts, x.Row));
-        await partitionWriter.ReplacePartition(path, $"ts,{string.Join(",", columns)}", csvRows, ct);
+        await partitionWriter.ReplacePartition(
+            path, $"ts,{string.Join(",", columns)}", built.Select(x => x.Csv), ct);
 
         await ArchiveStatusMerger.MergeStatus(
             feedStatusStore, assetDir, feedName, feed.Interval,
-            parsed[0].Ts, parsed[^1].Ts, parsed.Count - previousRows, gaps, ct);
+            built[0].Ts, built[^1].Ts, built.Count - previousRows, gaps, ct);
 
         logger.LogInformation("Materialized {Feed}/{Interval} {Year}-{Month:D2} for {Symbol}: {Rows} rows",
-            feedName, feed.Interval, year, month, asset.Venue.ApiSymbol, parsed.Count);
-        return new ArchiveMonthResult(parsed.Count, AvailableAtSource: true);
+            feedName, feed.Interval, year, month, asset.Venue.ApiSymbol, built.Count);
+        return new ArchiveMonthResult(built.Count, AvailableAtSource: true);
     }
 
     private static long ParseCreateTime(string value)
@@ -94,36 +113,6 @@ internal sealed class MetricsArchiveMaterializer(
         var dt = DateTime.ParseExact(value, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
         return new DateTimeOffset(dt).ToUnixTimeMilliseconds();
-    }
-
-    private string[] GetColumns() => feedName switch
-    {
-        FeedNames.OpenInterest => ["oi", "oi_usd"],
-        _ => ["long_pct", "short_pct", "ratio"]
-    };
-
-    private string BuildRow(long ts, string[] row) => feedName switch
-    {
-        FeedNames.OpenInterest      => BuildOiRow(ts, row),
-        FeedNames.LsRatioGlobal     => BuildLsRow(ts, row, ratioCol: 6),
-        FeedNames.LsRatioTopAccounts => BuildLsRow(ts, row, ratioCol: 4),
-        FeedNames.LsRatioTopPositions => BuildLsRow(ts, row, ratioCol: 5),
-        _ => throw new InvalidOperationException($"Unsupported metrics feed: {feedName}")
-    };
-
-    private static string BuildOiRow(long ts, string[] row)
-    {
-        var oi = double.Parse(row[2], CultureInfo.InvariantCulture);
-        var oiUsd = double.Parse(row[3], CultureInfo.InvariantCulture);
-        return $"{ts},{oi.ToString(CultureInfo.InvariantCulture)},{oiUsd.ToString(CultureInfo.InvariantCulture)}";
-    }
-
-    private static string BuildLsRow(long ts, string[] row, int ratioCol)
-    {
-        var r = double.Parse(row[ratioCol], CultureInfo.InvariantCulture);
-        var longPct = r / (1.0 + r);
-        var shortPct = 1.0 / (1.0 + r);
-        return $"{ts},{longPct.ToString(CultureInfo.InvariantCulture)},{shortPct.ToString(CultureInfo.InvariantCulture)},{r.ToString(CultureInfo.InvariantCulture)}";
     }
 
 }

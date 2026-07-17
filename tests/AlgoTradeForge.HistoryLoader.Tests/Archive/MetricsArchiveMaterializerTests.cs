@@ -163,6 +163,58 @@ public sealed class MetricsArchiveMaterializerTests : IDisposable
         Assert.Equal(1.303872, posRatio, precision: 5);
     }
 
+    // Binance ships metrics rows whose ratio columns are blank while open-interest stays populated:
+    // quoted-empty (XRPUSDT 2021-12) and bare-empty (BTCUSDT 2020-09) both occur.
+    private const string BlankRatioCsv =
+        "create_time,symbol,sum_open_interest,sum_open_interest_value,count_toptrader_long_short_ratio,sum_toptrader_long_short_ratio,count_long_short_ratio,sum_taker_long_short_vol_ratio\n" +
+        "2024-03-01 00:00:00,BTCUSDT,108532.354,6370849179.8,2.96564793,1.303872,2.84772561,1.27027\n" +
+        "2024-03-01 00:05:00,BTCUSDT,108533.926,6363680536.55,\"\",\"\",\"\",\"\"\n" +
+        "2024-03-01 00:10:00,BTCUSDT,108465.299,6358363944.54,,,,\n" +
+        "2024-03-01 00:15:00,BTCUSDT,108400.100,6350000000.00,2.96854526,1.301941,2.85154501,0.517488\n";
+
+    [Fact]
+    public async Task LsRatio_SkipsBlankRatioRows_AndRecordsGap()
+    {
+        const long ts0000 = 1709251200000L;
+        const long ts0015 = 1709252100000L;
+
+        _archive.DownloadDaily("futures/um", "metrics", "BTCUSDT", null, new DateOnly(2024, 3, 1), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream(BlankRatioCsv)));
+
+        var result = await Sut(FeedNames.LsRatioGlobal).MaterializeMonth(
+            FuturesConfig(), FeedCfg(FeedNames.LsRatioGlobal, "5m"), _dir, 2024, 3,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.RowsWritten);
+        Assert.True(result.AvailableAtSource);
+
+        var lines = await File.ReadAllLinesAsync(
+            Path.Combine(_dir, "ls-ratio-global", "2024-03_5m.csv"),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(3, lines.Length);
+        Assert.StartsWith($"{ts0000},", lines[1]);
+        Assert.StartsWith($"{ts0015},", lines[2]);
+
+        await _statusStore.Received(1).Save(
+            _dir, FeedNames.LsRatioGlobal, "5m",
+            Arg.Is<FeedStatus>(s =>
+                s.Gaps.Count == 1 && s.Gaps[0].FromMs == ts0000 && s.Gaps[0].ToMs == ts0015),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OpenInterest_KeepsRowsWhoseRatioColumnsAreBlank()
+    {
+        _archive.DownloadDaily("futures/um", "metrics", "BTCUSDT", null, new DateOnly(2024, 3, 1), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream(BlankRatioCsv)));
+
+        var result = await Sut(FeedNames.OpenInterest).MaterializeMonth(
+            FuturesConfig(), FeedCfg(FeedNames.OpenInterest, "5m"), _dir, 2024, 3,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(4, result.RowsWritten);
+    }
+
     [Fact]
     public void RejectsSpot()
     {
