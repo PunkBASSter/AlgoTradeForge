@@ -71,9 +71,11 @@ internal static class MaintenanceEndpoints
                 var year = int.Parse(month[..4]);
                 var mon = int.Parse(month[5..7]);
 
-                // Delete first: the replace-guard refuses to overwrite a fuller (doubled) file.
-                File.Delete(file);
+                // Index row first: crash after index delete leaves file-present + index-absent → self-heals on rescan.
+                // Crash after File.Delete leaves index-absent + file-absent → MaterializeMonth re-runs automatically.
+                // Reverse order (file gone + stale index row) would read as covered and silently lose the partition.
                 await index.DeleteMonthPartition(exchange, body.Dir, feed.FeedName, feed.Interval, month, ct);
+                File.Delete(file);
                 await materializer.MaterializeMonth(asset, feed, assetDir, year, mon, ct);
                 months.Add(month);
             }
