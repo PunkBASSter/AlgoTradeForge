@@ -55,21 +55,29 @@ internal sealed class MetricsArchiveMaterializer(
             .OrderBy(x => x.Ts)
             .ToList();
 
-        // Rows the source left blank are dropped BEFORE gap detection, so the holes they leave are
-        // recorded as source gaps instead of aborting the whole month on a parse failure.
+        // Dedup adjacent duplicate slots (Binance doubled 2020-09..2021-05) and drop rows the
+        // source left blank — both BEFORE gap detection, so the holes become gaps instead of
+        // aborting the month. parsed is sorted by Ts, so duplicates are adjacent.
         var built = new List<(long Ts, string Csv)>(parsed.Count);
+        var lastTs = long.MinValue;
+        long duplicates = 0;
         foreach (var (ts, row) in parsed)
         {
+            if (ts == lastTs) { duplicates++; continue; }
             if (_rowSpec.TryBuildRow(ts, row, out var csv))
+            {
                 built.Add((ts, csv));
+                lastTs = ts;
+            }
         }
+        var blanks = parsed.Count - built.Count - duplicates;
 
-        if (built.Count < parsed.Count)
+        if (duplicates > 0 || blanks > 0)
         {
             logger.LogWarning(
-                "{Feed}/{Interval} {Year}-{Month:D2} {Symbol}: {Skipped} of {Total} archive row(s) blank at source; recorded as gaps",
+                "{Feed}/{Interval} {Year}-{Month:D2} {Symbol}: dropped {Dupes} duplicate + {Blanks} blank archive row(s) of {Total}",
                 feedName, feed.Interval, year, month, asset.Venue.ApiSymbol,
-                parsed.Count - built.Count, parsed.Count);
+                duplicates, blanks, parsed.Count);
         }
 
         if (built.Count == 0)

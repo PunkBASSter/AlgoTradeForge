@@ -215,6 +215,35 @@ public sealed class MetricsArchiveMaterializerTests : IDisposable
         Assert.Equal(4, result.RowsWritten);
     }
 
+    // Binance doubled every metrics row from 2020-09..2021-05 (exact adjacent duplicates).
+    private const string DoubledCsv =
+        "create_time,symbol,sum_open_interest,sum_open_interest_value,count_toptrader_long_short_ratio,sum_toptrader_long_short_ratio,count_long_short_ratio,sum_taker_long_short_vol_ratio\n" +
+        "2024-03-01 00:00:00,BTCUSDT,108532.354,6370849179.8,2.96564793,1.303872,2.84772561,1.27027\n" +
+        "2024-03-01 00:00:00,BTCUSDT,108532.354,6370849179.8,2.96564793,1.303872,2.84772561,1.27027\n" +
+        "2024-03-01 00:05:00,BTCUSDT,108533.926,6363680536.55,2.96809221,1.303266,2.85246656,0.654691\n" +
+        "2024-03-01 00:05:00,BTCUSDT,108533.926,6363680536.55,2.96809221,1.303266,2.85246656,0.654691\n";
+
+    [Fact]
+    public async Task DoubledArchiveRows_WrittenOncePerSlot()
+    {
+        _archive.DownloadDaily("futures/um", "metrics", "BTCUSDT", null, new DateOnly(2024, 3, 1), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream(DoubledCsv)));
+
+        var result = await Sut(FeedNames.OpenInterest).MaterializeMonth(
+            FuturesConfig(), FeedCfg(FeedNames.OpenInterest, "5m"), _dir, 2024, 3,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.RowsWritten);
+
+        var lines = await File.ReadAllLinesAsync(
+            Path.Combine(_dir, "open-interest", "2024-03_5m.csv"), TestContext.Current.CancellationToken);
+        Assert.Equal(3, lines.Length); // header + 2 distinct slots
+
+        // RecordCount delta reflects the DISTINCT count (2), not the doubled line count (4).
+        await _statusStore.Received().Save(_dir, FeedNames.OpenInterest, "5m",
+            Arg.Is<FeedStatus>(s => s.RecordCount == 2), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public void RejectsSpot()
     {
