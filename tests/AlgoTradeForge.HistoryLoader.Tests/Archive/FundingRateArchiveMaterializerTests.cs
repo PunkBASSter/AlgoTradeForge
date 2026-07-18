@@ -145,10 +145,12 @@ public sealed class FundingRateArchiveMaterializerTests : IDisposable
 
         await Materializer().MaterializeMonth(FuturesConfig(), FeedConfig(), _dir, 2024, 3, Ct);
 
-        await _statusStore.Received().Save(
-            _dir, FeedNames.FundingRate, "",
-            Arg.Is<FeedStatus>(s => s.CompleteMonths.Contains("2024-03")),
-            Arg.Any<CancellationToken>());
+        // Fresh-write existing (null): MarkCompleteMonth's mutator adds the month; MergeStatus's does not.
+        var statuses = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .ToList();
+        Assert.Contains(statuses, s => s.CompleteMonths.Contains("2024-03"));
     }
 
     [Fact]
@@ -169,9 +171,10 @@ public sealed class FundingRateArchiveMaterializerTests : IDisposable
         Assert.Equal(1, result.RowsWritten);
         Assert.True(File.Exists(Path.Combine(_dir, "funding-rate", "2024-03.csv")));
 
-        await _statusStore.DidNotReceive().Save(
-            _dir, FeedNames.FundingRate, "",
-            Arg.Is<FeedStatus>(s => s.CompleteMonths.Count > 0),
-            Arg.Any<CancellationToken>());
+        var statuses = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .ToList();
+        Assert.DoesNotContain(statuses, s => s.CompleteMonths.Count > 0);
     }
 }

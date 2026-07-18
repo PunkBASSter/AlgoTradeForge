@@ -422,8 +422,7 @@ internal sealed class BookTickerStreamService(
         {
             if (st.count == 0) continue;
 
-            var existing = await feedStatusStore.Load(assetDir, FeedNames.BookTicker, "", ct);
-            await feedStatusStore.Save(assetDir, FeedNames.BookTicker, "", new FeedStatus
+            await feedStatusStore.Update(assetDir, FeedNames.BookTicker, "", existing => new FeedStatus
             {
                 FeedName = FeedNames.BookTicker,
                 Interval = "",

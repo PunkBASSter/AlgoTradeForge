@@ -62,8 +62,8 @@ public sealed class MaintenanceDedupTests : IDisposable
         var index = Substitute.For<IHistoryIndex>();
 
         var statusStore = Substitute.For<IFeedStatusStore>();
-        statusStore.Load(assetDir, FeedNames.OpenInterest, "5m", Arg.Any<CancellationToken>())
-            .Returns(new FeedStatus { FeedName = FeedNames.OpenInterest, Interval = "5m", RecordCount = 4 });
+        // Inflated existing base: the recompute must overwrite it with the authoritative distinct total.
+        var existingInput = new FeedStatus { FeedName = FeedNames.OpenInterest, Interval = "5m", RecordCount = 4 };
 
         var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
         options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = _root });
@@ -78,8 +78,11 @@ public sealed class MaintenanceDedupTests : IDisposable
 
         await index.Received(1).DeleteMonthPartition(
             "binance", "BTCUSDT_perp", FeedNames.OpenInterest, "5m", "2021-03", Arg.Any<CancellationToken>());
-        await statusStore.Received(1).Save(assetDir, FeedNames.OpenInterest, "5m",
-            Arg.Is<FeedStatus>(s => s.RecordCount == 2), Arg.Any<CancellationToken>());
+        var captured = statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(existingInput))
+            .Single();
+        Assert.Equal(2, captured.RecordCount);
     }
 
     [Fact]
@@ -106,8 +109,8 @@ public sealed class MaintenanceDedupTests : IDisposable
         var index = Substitute.For<IHistoryIndex>();
 
         var statusStore = Substitute.For<IFeedStatusStore>();
-        statusStore.Load(assetDir, FeedNames.OpenInterest, "5m", Arg.Any<CancellationToken>())
-            .Returns(new FeedStatus { FeedName = FeedNames.OpenInterest, Interval = "5m", RecordCount = 6 });
+        // Inflated existing base: the recompute must overwrite it with the authoritative distinct total.
+        var existingInput = new FeedStatus { FeedName = FeedNames.OpenInterest, Interval = "5m", RecordCount = 6 };
 
         var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
         options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = _root });
@@ -126,8 +129,11 @@ public sealed class MaintenanceDedupTests : IDisposable
         Assert.Equal(cleanApril, await File.ReadAllTextAsync(aprilPath, ct));
 
         // Authoritative recompute across the whole feed dir: 2 (now-clean 2021-03) + 2 (2021-04) = 4.
-        await statusStore.Received(1).Save(assetDir, FeedNames.OpenInterest, "5m",
-            Arg.Is<FeedStatus>(s => s.RecordCount == 4), Arg.Any<CancellationToken>());
+        var captured = statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(existingInput))
+            .Single();
+        Assert.Equal(4, captured.RecordCount);
     }
 
     [Fact]
@@ -149,8 +155,6 @@ public sealed class MaintenanceDedupTests : IDisposable
         var index = Substitute.For<IHistoryIndex>();
 
         var statusStore = Substitute.For<IFeedStatusStore>();
-        statusStore.Load(assetDir, FeedNames.OpenInterest, "5m", Arg.Any<CancellationToken>())
-            .Returns(new FeedStatus { FeedName = FeedNames.OpenInterest, Interval = "5m", RecordCount = 4 });
 
         var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
         options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = _root });
@@ -167,14 +171,15 @@ public sealed class MaintenanceDedupTests : IDisposable
         statusStore.ClearReceivedCalls();
 
         // Second run: all partitions clean → no delete, no re-materialize (CleanRewriteMaterializer would
-        // throw on an existing file), no recompute (months.Count == 0 short-circuits before Save).
+        // throw on an existing file), no recompute (months.Count == 0 short-circuits before Update).
         await MaintenanceEndpoints.Dedup(
             request, planSource, registry, index, statusStore, options, NullLoggerFactory.Instance, ct);
 
         await index.DidNotReceive().DeleteMonthPartition(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<CancellationToken>());
-        await statusStore.DidNotReceive().Save(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<FeedStatus>(), Arg.Any<CancellationToken>());
+        await statusStore.DidNotReceive().Update(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<Func<FeedStatus?, FeedStatus>>(), Arg.Any<CancellationToken>());
     }
 }

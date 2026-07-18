@@ -88,25 +88,26 @@ internal static class MaintenanceEndpoints
             foreach (var file in Directory.EnumerateFiles(feedDir, $"????-??_{feed.Interval}.csv"))
                 total += (await PartitionAudit.Count(file, ct)).Distinct;
 
-            var status = await statusStore.Load(assetDir, feed.FeedName, feed.Interval, ct);
-            if (status is not null && status.RecordCount != total)
-            {
-                // FeedStatus is a sealed class (not a record) — copy explicitly, override RecordCount.
-                await statusStore.Save(assetDir, feed.FeedName, feed.Interval, new FeedStatus
+            // Authoritative RecordCount under the per-path lock: Update always writes (idempotent when
+            // unchanged), so no read-before-write guard — the accumulator cannot self-correct from an
+            // inflated base, and a concurrent collector cycle can no longer clobber this recompute.
+            // FeedStatus is a sealed class (not a record) — copy explicitly, override RecordCount.
+            await statusStore.Update(assetDir, feed.FeedName, feed.Interval, existing => existing is null
+                ? new FeedStatus { FeedName = feed.FeedName, Interval = feed.Interval, RecordCount = total }
+                : new FeedStatus
                 {
-                    FeedName = status.FeedName,
-                    Interval = status.Interval,
-                    FirstTimestamp = status.FirstTimestamp,
-                    LastTimestamp = status.LastTimestamp,
-                    LastRunUtc = status.LastRunUtc,
+                    FeedName = existing.FeedName,
+                    Interval = existing.Interval,
+                    FirstTimestamp = existing.FirstTimestamp,
+                    LastTimestamp = existing.LastTimestamp,
+                    LastRunUtc = existing.LastRunUtc,
                     RecordCount = total,
-                    Gaps = status.Gaps,
-                    Health = status.Health,
-                    CompleteMonths = status.CompleteMonths,
+                    Gaps = existing.Gaps,
+                    Health = existing.Health,
+                    CompleteMonths = existing.CompleteMonths,
                 }, ct);
-                log.LogInformation("Dedup {Feed}/{Interval} {Dir}: RecordCount {Old} -> {New}",
-                    feed.FeedName, feed.Interval, body.Dir, status.RecordCount, total);
-            }
+            log.LogInformation("Dedup {Feed}/{Interval} {Dir}: RecordCount -> {New}",
+                feed.FeedName, feed.Interval, body.Dir, total);
 
             repaired.Add(new { feed = feed.FeedName, interval = feed.Interval, months });
         }

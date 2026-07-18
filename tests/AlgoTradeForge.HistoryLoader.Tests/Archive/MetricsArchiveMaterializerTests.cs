@@ -111,13 +111,13 @@ public sealed class MetricsArchiveMaterializerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.True(result.AvailableAtSource);
-        await _statusStore.Received(1).Save(
-            _dir, FeedNames.OpenInterest, "5m",
-            Arg.Is<FeedStatus>(s =>
-                s.Gaps.Count == 1 &&
-                s.Gaps[0].FromMs == day1LastTs &&
-                s.Gaps[0].ToMs == day3FirstTs),
-            Arg.Any<CancellationToken>());
+        var captured = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .Single();
+        var gap = Assert.Single(captured.Gaps);
+        Assert.Equal(day1LastTs, gap.FromMs);
+        Assert.Equal(day3FirstTs, gap.ToMs);
     }
 
     [Fact]
@@ -195,11 +195,13 @@ public sealed class MetricsArchiveMaterializerTests : IDisposable
         Assert.StartsWith($"{ts0000},", lines[1]);
         Assert.StartsWith($"{ts0015},", lines[2]);
 
-        await _statusStore.Received(1).Save(
-            _dir, FeedNames.LsRatioGlobal, "5m",
-            Arg.Is<FeedStatus>(s =>
-                s.Gaps.Count == 1 && s.Gaps[0].FromMs == ts0000 && s.Gaps[0].ToMs == ts0015),
-            Arg.Any<CancellationToken>());
+        var captured = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .Single();
+        var gap = Assert.Single(captured.Gaps);
+        Assert.Equal(ts0000, gap.FromMs);
+        Assert.Equal(ts0015, gap.ToMs);
     }
 
     [Fact]
@@ -240,8 +242,11 @@ public sealed class MetricsArchiveMaterializerTests : IDisposable
         Assert.Equal(3, lines.Length); // header + 2 distinct slots
 
         // RecordCount delta reflects the DISTINCT count (2), not the doubled line count (4).
-        await _statusStore.Received().Save(_dir, FeedNames.OpenInterest, "5m",
-            Arg.Is<FeedStatus>(s => s.RecordCount == 2), Arg.Any<CancellationToken>());
+        var captured = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .Single();
+        Assert.Equal(2, captured.RecordCount);
     }
 
     [Fact]
@@ -275,8 +280,8 @@ public sealed class MetricsArchiveMaterializerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         var saved = _statusStore.ReceivedCalls()
-            .Where(c => c.GetMethodInfo().Name == "Save")
-            .Select(c => (FeedStatus)c.GetArguments()[3]!)
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
             .Last();
 
         var tail = Assert.Single(saved.Gaps, g => g.FromMs == ts0000);
@@ -299,8 +304,8 @@ public sealed class MetricsArchiveMaterializerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         var saved = _statusStore.ReceivedCalls()
-            .Where(c => c.GetMethodInfo().Name == "Save")
-            .Select(c => (FeedStatus)c.GetArguments()[3]!)
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
             .Last();
 
         Assert.Empty(saved.Gaps);
@@ -325,8 +330,8 @@ public sealed class MetricsArchiveMaterializerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         var saved = _statusStore.ReceivedCalls()
-            .Where(c => c.GetMethodInfo().Name == "Save")
-            .Select(c => (FeedStatus)c.GetArguments()[3]!)
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
             .Last();
 
         var nowMs = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();

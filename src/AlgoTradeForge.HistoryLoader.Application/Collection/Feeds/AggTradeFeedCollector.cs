@@ -88,8 +88,7 @@ public sealed class AggTradeFeedCollector(
         CollectionHealth health = CollectionHealth.Healthy,
         CancellationToken ct = default)
     {
-        var existing = await feedStatusStore.Load(assetDir, FeedNames.Ticks, "", ct);
-        var status = new FeedStatus
+        await feedStatusStore.Update(assetDir, FeedNames.Ticks, "", existing => new FeedStatus
         {
             FeedName = FeedNames.Ticks,
             Interval = "",
@@ -99,7 +98,6 @@ public sealed class AggTradeFeedCollector(
             RecordCount = (existing?.RecordCount ?? 0) + recordCount,
             Gaps = existing?.Gaps ?? [],
             Health = health,
-        };
-        await feedStatusStore.Save(assetDir, FeedNames.Ticks, "", status, ct);
+        }, ct);
     }
 }

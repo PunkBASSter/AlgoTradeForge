@@ -373,9 +373,7 @@ internal sealed class SpotAggTradeStreamService(
             if (st.count == 0)
                 continue;
 
-            var existing = await feedStatusStore.Load(assetDir, FeedNames.Ticks, "", ct);
-
-            await feedStatusStore.Save(assetDir, FeedNames.Ticks, "", new FeedStatus
+            await feedStatusStore.Update(assetDir, FeedNames.Ticks, "", existing => new FeedStatus
             {
                 FeedName = FeedNames.Ticks,
                 Interval = "",

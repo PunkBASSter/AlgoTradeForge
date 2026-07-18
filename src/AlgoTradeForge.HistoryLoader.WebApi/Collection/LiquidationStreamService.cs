@@ -369,9 +369,7 @@ internal sealed class LiquidationStreamService(
             if (st.count == 0)
                 continue;
 
-            var existing = await feedStatusStore.Load(assetDir, FeedNames.Liquidations, "", ct);
-
-            await feedStatusStore.Save(assetDir, FeedNames.Liquidations, "", new FeedStatus
+            await feedStatusStore.Update(assetDir, FeedNames.Liquidations, "", existing => new FeedStatus
             {
                 FeedName = FeedNames.Liquidations,
                 Interval = "",
