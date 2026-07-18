@@ -175,4 +175,54 @@ public sealed class FeedStatusManagerTests : IDisposable
         Assert.NotNull(loaded);
         Assert.Equal(10, loaded.RecordCount);
     }
+
+    [Fact]
+    public async Task Update_NoExistingStatus_PassesNullToMutate_AndPersists()
+    {
+        FeedStatus? seen = new FeedStatus();
+        await _manager.Update(_tempDir, FeedNames.OpenInterest, "5m",
+            existing =>
+            {
+                seen = existing;
+                return new FeedStatus
+                {
+                    FeedName = FeedNames.OpenInterest,
+                    Interval = "5m",
+                    RecordCount = 7,
+                };
+            },
+            Ct);
+
+        Assert.Null(seen);
+        var loaded = await _manager.Load(_tempDir, FeedNames.OpenInterest, "5m", Ct);
+        Assert.NotNull(loaded);
+        Assert.Equal(7, loaded.RecordCount);
+    }
+
+    [Fact]
+    public async Task Update_ConcurrentIncrements_NoLostUpdate()
+    {
+        const int n = 50;
+        await _manager.Update(_tempDir, FeedNames.OpenInterest, "5m",
+            _ => new FeedStatus { FeedName = FeedNames.OpenInterest, Interval = "5m", RecordCount = 0 },
+            Ct);
+
+        await Task.WhenAll(Enumerable.Range(0, n).Select(_ =>
+            _manager.Update(_tempDir, FeedNames.OpenInterest, "5m",
+                existing => new FeedStatus
+                {
+                    FeedName = existing!.FeedName,
+                    Interval = existing.Interval,
+                    FirstTimestamp = existing.FirstTimestamp,
+                    LastTimestamp = existing.LastTimestamp,
+                    RecordCount = existing.RecordCount + 1,
+                    Gaps = existing.Gaps,
+                    Health = existing.Health,
+                    CompleteMonths = existing.CompleteMonths,
+                },
+                Ct)));
+
+        var final = await _manager.Load(_tempDir, FeedNames.OpenInterest, "5m", Ct);
+        Assert.Equal(n, final!.RecordCount);
+    }
 }

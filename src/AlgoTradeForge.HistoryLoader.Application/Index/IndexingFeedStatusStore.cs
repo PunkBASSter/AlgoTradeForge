@@ -13,4 +13,11 @@ public sealed class IndexingFeedStatusStore(IFeedStatusStore inner, IIndexMainte
         await inner.Save(assetDir, feedName, interval, status, ct);
         maintenance.Enqueue(new IndexWork.FeedTouched(assetDir, feedName, interval));
     }
+
+    public async Task Update(string assetDir, string feedName, string interval,
+        Func<FeedStatus?, FeedStatus> mutate, CancellationToken ct = default)
+    {
+        await inner.Update(assetDir, feedName, interval, mutate, ct);
+        maintenance.Enqueue(new IndexWork.FeedTouched(assetDir, feedName, interval));
+    }
 }

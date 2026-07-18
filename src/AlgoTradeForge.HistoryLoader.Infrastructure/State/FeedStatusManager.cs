@@ -17,9 +17,11 @@ internal sealed class FeedStatusManager(IFileStorage storage) : IFeedStatusStore
 
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _writeGates = new();
 
-    public async Task<FeedStatus?> Load(string assetDir, string feedName, string interval, CancellationToken ct = default)
+    public Task<FeedStatus?> Load(string assetDir, string feedName, string interval, CancellationToken ct = default)
+        => LoadFromPath(GetStatusPath(assetDir, feedName, interval), ct);
+
+    private async Task<FeedStatus?> LoadFromPath(string targetPath, CancellationToken ct)
     {
-        var targetPath = GetStatusPath(assetDir, feedName, interval);
         if (!await storage.Exists(targetPath, ct))
             return null;
 
@@ -55,6 +57,20 @@ internal sealed class FeedStatusManager(IFileStorage storage) : IFeedStatusStore
         // status while a collector cycle does). Serialize writers here; the storage layer keeps readers safe.
         var gate = _writeGates.GetOrAdd(targetPath, _ => new SemaphoreSlim(1, 1));
         using var _ = await gate.LockAsync(ct);
+        await storage.WriteAllText(targetPath, json, ct: ct);
+    }
+
+    public async Task Update(string assetDir, string feedName, string interval,
+        Func<FeedStatus?, FeedStatus> mutate, CancellationToken ct = default)
+    {
+        var targetPath = GetStatusPath(assetDir, feedName, interval);
+        // Hold the SAME per-path gate Save uses across Load→mutate→write so no updater (or plain Save)
+        // can slip between this load and write and clobber the result.
+        var gate = _writeGates.GetOrAdd(targetPath, _ => new SemaphoreSlim(1, 1));
+        using var _ = await gate.LockAsync(ct);
+        var existing = await LoadFromPath(targetPath, ct);
+        var updated = mutate(existing);
+        var json = JsonSerializer.Serialize(updated, JsonOptions);
         await storage.WriteAllText(targetPath, json, ct: ct);
     }
 
