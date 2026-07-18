@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using AlgoTradeForge.Storage;
+using AlgoTradeForge.Storage.Threading;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Domain;
 
@@ -12,6 +14,8 @@ internal sealed class FeedStatusManager(IFileStorage storage) : IFeedStatusStore
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
+
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _writeGates = new();
 
     public async Task<FeedStatus?> Load(string assetDir, string feedName, string interval, CancellationToken ct = default)
     {
@@ -46,21 +50,12 @@ internal sealed class FeedStatusManager(IFileStorage storage) : IFeedStatusStore
     {
         var targetPath = GetStatusPath(assetDir, feedName, interval);
         var json = JsonSerializer.Serialize(status, JsonOptions);
-        // Atomic replace: write a unique temp sibling then rename, so a concurrent reader/writer never
-        // sees a torn file (the maintenance repair endpoint may write a feed's status while a collector
-        // cycle does). A per-call temp name also avoids the shared-.tmp race two writers would hit going
-        // through WriteAllText directly on the same key.
-        var tempPath = targetPath + ".tmp-" + Guid.NewGuid().ToString("N");
-        try
-        {
-            await storage.WriteAllText(tempPath, json, ct: ct);
-            await storage.Move(tempPath, targetPath, overwrite: true, ct);
-        }
-        catch
-        {
-            try { await storage.Delete(tempPath, ct); } catch { /* best-effort */ }
-            throw;
-        }
+        // Per-path lock: LocalFileStorage.WriteAllText is atomic against readers (AtomicReplace) but two
+        // concurrent same-key writers race on its fixed .tmp (the repair endpoint can write a feed's
+        // status while a collector cycle does). Serialize writers here; the storage layer keeps readers safe.
+        var gate = _writeGates.GetOrAdd(targetPath, _ => new SemaphoreSlim(1, 1));
+        using var _ = await gate.LockAsync(ct);
+        await storage.WriteAllText(targetPath, json, ct: ct);
     }
 
     private static string GetStatusPath(string assetDir, string feedName, string interval)
