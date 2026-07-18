@@ -46,7 +46,21 @@ internal sealed class FeedStatusManager(IFileStorage storage) : IFeedStatusStore
     {
         var targetPath = GetStatusPath(assetDir, feedName, interval);
         var json = JsonSerializer.Serialize(status, JsonOptions);
-        await storage.WriteAllText(targetPath, json, ct: ct);
+        // Atomic replace: write a unique temp sibling then rename, so a concurrent reader/writer never
+        // sees a torn file (the maintenance repair endpoint may write a feed's status while a collector
+        // cycle does). A per-call temp name also avoids the shared-.tmp race two writers would hit going
+        // through WriteAllText directly on the same key.
+        var tempPath = targetPath + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            await storage.WriteAllText(tempPath, json, ct: ct);
+            await storage.Move(tempPath, targetPath, overwrite: true, ct);
+        }
+        catch
+        {
+            try { await storage.Delete(tempPath, ct); } catch { /* best-effort */ }
+            throw;
+        }
     }
 
     private static string GetStatusPath(string assetDir, string feedName, string interval)

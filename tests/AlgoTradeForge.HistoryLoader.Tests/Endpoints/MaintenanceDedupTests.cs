@@ -81,4 +81,100 @@ public sealed class MaintenanceDedupTests : IDisposable
         await statusStore.Received(1).Save(assetDir, FeedNames.OpenInterest, "5m",
             Arg.Is<FeedStatus>(s => s.RecordCount == 2), Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task Dedup_MultiPartition_RepairsOnlyDoubled_AndRecomputesFeedTotal()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var assetDir = Path.Combine(_root, "binance", "BTCUSDT_perp");
+        var oiDir = Path.Combine(assetDir, FeedNames.OpenInterest);
+        Directory.CreateDirectory(oiDir);
+        // 2021-03 doubled: 4 lines, 2 distinct slots.
+        await File.WriteAllTextAsync(Path.Combine(oiDir, "2021-03_5m.csv"),
+            "ts,oi,oi_usd\n1614556800000,1,2\n1614556800000,1,2\n1614557100000,3,4\n1614557100000,3,4\n", ct);
+        // 2021-04 already clean: 2 lines, 2 distinct slots (distinct April content to prove it stays untouched).
+        var cleanApril = "ts,oi,oi_usd\n1617235200000,5,6\n1617235500000,7,8\n";
+        var aprilPath = Path.Combine(oiDir, "2021-04_5m.csv");
+        await File.WriteAllTextAsync(aprilPath, cleanApril, ct);
+
+        var registry = new ArchiveMaterializerRegistry([new CleanRewriteMaterializer(FeedNames.OpenInterest)]);
+
+        var asset = CollectionAssets.Perp("BTCUSDT", 2, CollectionAssets.Feed(FeedNames.OpenInterest, "5m"));
+        var planSource = Substitute.For<ICollectionPlanSource>();
+        planSource.Current.Returns(new CollectionPlan([asset], [], []));
+
+        var index = Substitute.For<IHistoryIndex>();
+
+        var statusStore = Substitute.For<IFeedStatusStore>();
+        statusStore.Load(assetDir, FeedNames.OpenInterest, "5m", Arg.Any<CancellationToken>())
+            .Returns(new FeedStatus { FeedName = FeedNames.OpenInterest, Interval = "5m", RecordCount = 6 });
+
+        var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
+        options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = _root });
+
+        await MaintenanceEndpoints.Dedup(
+            new MaintenanceEndpoints.DedupRequest("binance", "BTCUSDT_perp"),
+            planSource, registry, index, statusStore, options, NullLoggerFactory.Instance, ct);
+
+        // Only the doubled month is re-materialized.
+        await index.Received(1).DeleteMonthPartition(
+            "binance", "BTCUSDT_perp", FeedNames.OpenInterest, "5m", "2021-03", Arg.Any<CancellationToken>());
+        await index.DidNotReceive().DeleteMonthPartition(
+            "binance", "BTCUSDT_perp", FeedNames.OpenInterest, "5m", "2021-04", Arg.Any<CancellationToken>());
+
+        // The clean partition is byte-for-byte untouched.
+        Assert.Equal(cleanApril, await File.ReadAllTextAsync(aprilPath, ct));
+
+        // Authoritative recompute across the whole feed dir: 2 (now-clean 2021-03) + 2 (2021-04) = 4.
+        await statusStore.Received(1).Save(assetDir, FeedNames.OpenInterest, "5m",
+            Arg.Is<FeedStatus>(s => s.RecordCount == 4), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Dedup_SecondRun_IsNoOp()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var assetDir = Path.Combine(_root, "binance", "BTCUSDT_perp");
+        var oiDir = Path.Combine(assetDir, FeedNames.OpenInterest);
+        Directory.CreateDirectory(oiDir);
+        await File.WriteAllTextAsync(Path.Combine(oiDir, "2021-03_5m.csv"),
+            "ts,oi,oi_usd\n1614556800000,1,2\n1614556800000,1,2\n1614557100000,3,4\n1614557100000,3,4\n", ct);
+
+        var registry = new ArchiveMaterializerRegistry([new CleanRewriteMaterializer(FeedNames.OpenInterest)]);
+
+        var asset = CollectionAssets.Perp("BTCUSDT", 2, CollectionAssets.Feed(FeedNames.OpenInterest, "5m"));
+        var planSource = Substitute.For<ICollectionPlanSource>();
+        planSource.Current.Returns(new CollectionPlan([asset], [], []));
+
+        var index = Substitute.For<IHistoryIndex>();
+
+        var statusStore = Substitute.For<IFeedStatusStore>();
+        statusStore.Load(assetDir, FeedNames.OpenInterest, "5m", Arg.Any<CancellationToken>())
+            .Returns(new FeedStatus { FeedName = FeedNames.OpenInterest, Interval = "5m", RecordCount = 4 });
+
+        var options = Substitute.For<IOptionsMonitor<HistoryLoaderOptions>>();
+        options.CurrentValue.Returns(new HistoryLoaderOptions { DataRoot = _root });
+
+        var request = new MaintenanceEndpoints.DedupRequest("binance", "BTCUSDT_perp");
+
+        // First run cleans the doubled partition.
+        await MaintenanceEndpoints.Dedup(
+            request, planSource, registry, index, statusStore, options, NullLoggerFactory.Instance, ct);
+        await index.Received(1).DeleteMonthPartition(
+            "binance", "BTCUSDT_perp", FeedNames.OpenInterest, "5m", "2021-03", Arg.Any<CancellationToken>());
+
+        index.ClearReceivedCalls();
+        statusStore.ClearReceivedCalls();
+
+        // Second run: all partitions clean → no delete, no re-materialize (CleanRewriteMaterializer would
+        // throw on an existing file), no recompute (months.Count == 0 short-circuits before Save).
+        await MaintenanceEndpoints.Dedup(
+            request, planSource, registry, index, statusStore, options, NullLoggerFactory.Instance, ct);
+
+        await index.DidNotReceive().DeleteMonthPartition(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+        await statusStore.DidNotReceive().Save(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<FeedStatus>(), Arg.Any<CancellationToken>());
+    }
 }
