@@ -180,5 +180,6 @@ app.MapCoverageEndpoints();
 app.MapGroupEndpoints();
 app.MapDesiredStateEndpoints();
 app.MapJobEndpoints();
+app.MapMaintenanceEndpoints();
 
 app.Run();

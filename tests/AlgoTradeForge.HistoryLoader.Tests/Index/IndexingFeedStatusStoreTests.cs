@@ -38,4 +38,21 @@ public sealed class IndexingFeedStatusStoreTests
 
         maintenance.DidNotReceiveWithAnyArgs().Enqueue(default!);
     }
+
+    [Fact]
+    public async Task Update_DelegatesThenEnqueuesFeedTouched()
+    {
+        var inner = Substitute.For<IFeedStatusStore>();
+        var maintenance = Substitute.For<IIndexMaintenance>();
+        var store = new IndexingFeedStatusStore(inner, maintenance);
+        Func<FeedStatus?, FeedStatus> mutate = _ => new FeedStatus { FeedName = "candles", Interval = "1h" };
+
+        await store.Update(@"C:\data\binance\BTCUSDT", "candles", "1h", mutate, Ct);
+
+        await inner.Received(1).Update(@"C:\data\binance\BTCUSDT", "candles", "1h", mutate, Arg.Any<CancellationToken>());
+        maintenance.Received(1).Enqueue(Arg.Is<IndexWork>(w =>
+            w is IndexWork.FeedTouched &&
+            ((IndexWork.FeedTouched)w).FeedName == "candles" &&
+            ((IndexWork.FeedTouched)w).Interval == "1h"));
+    }
 }

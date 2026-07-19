@@ -1,3 +1,4 @@
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
 
 namespace AlgoTradeForge.HistoryLoader.Application.Archive;
@@ -14,6 +15,7 @@ public interface IMonthCoverageCalculator
         string assetDir, string feedName, string interval,
         int year, int month,
         IReadOnlyList<DataGap> gaps,
+        MonthPartitionRow? indexedMonth,
         IReadOnlyList<string>? completeMonths = null,
         long? effectiveStartMs = null,
         CancellationToken ct = default);

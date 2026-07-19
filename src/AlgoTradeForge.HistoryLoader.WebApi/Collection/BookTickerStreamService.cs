@@ -33,6 +33,10 @@ internal sealed class BookTickerStreamService(
     private static readonly TimeSpan StableConnectionUptime = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan StatusFlushInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
+    // A connected-but-silent WS (half-open, or futures market-data geo-fenced by Binance) leaves
+    // ReceiveAsync blocked forever with no error. Book-ticker on a liquid symbol updates sub-second,
+    // so a minute of silence means the connection is dead => close and reconnect (loud).
+    private static readonly TimeSpan StreamIdleTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan PlanPollInterval = TimeSpan.FromSeconds(1);
 
     internal enum Venue { Spot, Futures }
@@ -257,7 +261,22 @@ internal sealed class BookTickerStreamService(
             WebSocketReceiveResult result;
             do
             {
-                result = await ws.ReceiveAsync(buffer, ct);
+                using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                idleCts.CancelAfter(StreamIdleTimeout);
+                try
+                {
+                    result = await ws.ReceiveAsync(buffer, idleCts.Token);
+                }
+                catch (OperationCanceledException) when (idleCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                {
+                    logger.LogWarning(
+                        "BookTicker[{Venue}] idle for {Seconds}s (connected but no frames) — reconnecting. " +
+                        "Binance futures WS (fstream) may be geo-restricted or the connection is half-open.",
+                        venue, StreamIdleTimeout.TotalSeconds);
+                    await FlushStatus(statusTracker, ct);
+                    return;
+                }
+
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
                     logger.LogWarning(
@@ -389,7 +408,7 @@ internal sealed class BookTickerStreamService(
         {
             if (!typeFilter(asset.Venue.AssetType))
                 continue;
-            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.BookTicker && f.Collect == "eager"))
+            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.BookTicker))
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(dataRoot, asset);
@@ -403,8 +422,7 @@ internal sealed class BookTickerStreamService(
         {
             if (st.count == 0) continue;
 
-            var existing = await feedStatusStore.Load(assetDir, FeedNames.BookTicker, "", ct);
-            await feedStatusStore.Save(assetDir, FeedNames.BookTicker, "", new FeedStatus
+            await feedStatusStore.Update(assetDir, FeedNames.BookTicker, "", existing => new FeedStatus
             {
                 FeedName = FeedNames.BookTicker,
                 Interval = "",
@@ -423,7 +441,7 @@ internal sealed class BookTickerStreamService(
         CollectionPlan plan, Func<string, bool> typeFilter) =>
         plan.Assets
             .Where(a => typeFilter(a.Venue.AssetType))
-            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.BookTicker && f.Collect == "eager"))
+            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.BookTicker))
             .Select(a => a.Venue.ApiSymbol)
             .ToList();
 

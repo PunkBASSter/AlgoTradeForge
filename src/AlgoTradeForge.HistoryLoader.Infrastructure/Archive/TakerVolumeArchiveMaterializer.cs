@@ -95,7 +95,7 @@ internal sealed class TakerVolumeArchiveMaterializer(
 
         var delta = parsed.Count - previousRows;
         var intervalMs = (long)IntervalParser.ToTimeSpan(interval).TotalMilliseconds;
-        var gaps = ArchiveStatusMerger.DetectGaps(parsed, intervalMs);
+        var gaps = ArchiveStatusMerger.DetectGaps(parsed.Select(x => x.Ts).ToList(), intervalMs);
 
         await ArchiveStatusMerger.MergeStatus(
             feedStatusStore, assetDir, FeedNames.TakerVolume, interval,

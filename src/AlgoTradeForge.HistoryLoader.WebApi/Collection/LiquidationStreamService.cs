@@ -26,6 +26,11 @@ internal sealed class LiquidationStreamService(
     private static readonly TimeSpan StableConnectionUptime = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan StatusFlushInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
+    // A connected-but-silent WS (half-open, or futures market-data geo-fenced by Binance) leaves
+    // ReceiveAsync blocked forever with no error — the failure that hid the liquidation outage for
+    // ~3 months. Bound the wait: no frame within this window => close and reconnect (loud). The
+    // market-wide !forceOrder@arr can be genuinely quiet for a minute or two, so keep it generous.
+    private static readonly TimeSpan StreamIdleTimeout = TimeSpan.FromMinutes(3);
 
     private bool _planDirty;
 
@@ -193,7 +198,20 @@ internal sealed class LiquidationStreamService(
             WebSocketReceiveResult result;
             do
             {
-                result = await ws.ReceiveAsync(buffer, ct);
+                using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                idleCts.CancelAfter(StreamIdleTimeout);
+                try
+                {
+                    result = await ws.ReceiveAsync(buffer, idleCts.Token);
+                }
+                catch (OperationCanceledException) when (idleCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                {
+                    logger.LogWarning(
+                        "LiquidationStream idle for {Seconds}s (connected but no frames) — reconnecting. " +
+                        "Binance futures WS (fstream) may be geo-restricted or the connection is half-open.",
+                        StreamIdleTimeout.TotalSeconds);
+                    return;
+                }
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
@@ -351,9 +369,7 @@ internal sealed class LiquidationStreamService(
             if (st.count == 0)
                 continue;
 
-            var existing = await feedStatusStore.Load(assetDir, FeedNames.Liquidations, "", ct);
-
-            await feedStatusStore.Save(assetDir, FeedNames.Liquidations, "", new FeedStatus
+            await feedStatusStore.Update(assetDir, FeedNames.Liquidations, "", existing => new FeedStatus
             {
                 FeedName = FeedNames.Liquidations,
                 Interval = "",
@@ -368,10 +384,15 @@ internal sealed class LiquidationStreamService(
         tracker.Clear();
     }
 
+    // Streams are collect-if-declared. The eager/on-demand axis governs BACKFILL, and streams have
+    // no backfill (live-only, no archive/REST) — so the distinction is meaningless for them and
+    // declaring the feed IS the opt-in. Keeping streams off the eager flag also keeps them out of
+    // the DesiredStateService kick path (which only fires on Collect == "eager"), so a gapped stream
+    // is never spuriously kicked for a backfill that cannot exist.
     internal static HashSet<string> BuildEnabledSymbolSet(CollectionPlan plan) =>
         plan.Assets
             .Where(a => AssetTypes.IsFutures(a.Venue.AssetType))
-            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.Liquidations && f.Collect == "eager"))
+            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.Liquidations))
             .Select(a => a.Venue.ApiSymbol)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 

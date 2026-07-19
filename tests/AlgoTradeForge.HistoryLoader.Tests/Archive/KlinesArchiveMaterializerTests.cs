@@ -3,6 +3,7 @@ using AlgoTradeForge.HistoryLoader.Application;
 using AlgoTradeForge.HistoryLoader.Application.Abstractions;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
 using AlgoTradeForge.HistoryLoader.Application.Collection;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
 using AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
 using AlgoTradeForge.HistoryLoader.Tests.TestData;
@@ -201,7 +202,7 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
         Assert.True(result.AvailableAtSource);
         var after = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
         Assert.Equal(before, after);
-        await _statusStore.DidNotReceiveWithAnyArgs().Save(default!, default!, default!, default!, default!);
+        await _statusStore.DidNotReceiveWithAnyArgs().Update(default!, default!, default!, default!, default!);
     }
 
     [Fact]
@@ -230,10 +231,12 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
         await CandlesMaterializer().MaterializeMonth(
             SpotConfig(), FeedConfig(), _dir, 2024, 3, TestContext.Current.CancellationToken);
 
-        await _statusStore.Received(1).Save(
-            _dir, FeedNames.Candles, "1h",
-            Arg.Is<FeedStatus>(s => s.RecordCount == 2 && s.LastTimestamp == 1709254800000),
-            Arg.Any<CancellationToken>());
+        var captured = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .Single();
+        Assert.Equal(2, captured.RecordCount);
+        Assert.Equal(1709254800000, captured.LastTimestamp);
     }
 
     [Fact]
@@ -244,12 +247,12 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
         _archive.DownloadMonthly("spot", "klines", "BTCUSDT", "1h", 2024, 3, Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromResult<Stream?>(CsvStream(KlineCsv)));
 
+        // Emulate the atomic RMW: each Update applies the mutator to the running persisted state,
+        // exactly as the real store's Load→mutate→write does under the per-path lock.
         FeedStatus? persisted = null;
-        _statusStore.Load(_dir, FeedNames.Candles, "1h", Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromResult(persisted));
-        _statusStore.When(s => s.Save(
-                _dir, FeedNames.Candles, "1h", Arg.Any<FeedStatus>(), Arg.Any<CancellationToken>()))
-            .Do(ci => persisted = ci.ArgAt<FeedStatus>(3));
+        _statusStore.When(s => s.Update(
+                _dir, FeedNames.Candles, "1h", Arg.Any<Func<FeedStatus?, FeedStatus>>(), Arg.Any<CancellationToken>()))
+            .Do(ci => persisted = ci.ArgAt<Func<FeedStatus?, FeedStatus>>(3)(persisted));
 
         await CandlesMaterializer().MaterializeMonth(
             SpotConfig(), FeedConfig(), _dir, 2024, 3, TestContext.Current.CancellationToken);
@@ -285,13 +288,13 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
             SpotConfig(), FeedConfig("1h"), _dir, 2024, 3, TestContext.Current.CancellationToken);
 
         // Gap between end of day-1 row and start of day-3 row must be recorded.
-        await _statusStore.Received(1).Save(
-            _dir, FeedNames.Candles, "1h",
-            Arg.Is<FeedStatus>(s =>
-                s.Gaps.Count == 1 &&
-                s.Gaps[0].FromMs == day1Ts &&
-                s.Gaps[0].ToMs == day3Ts),
-            Arg.Any<CancellationToken>());
+        var captured = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .Single();
+        var gap = Assert.Single(captured.Gaps);
+        Assert.Equal(day1Ts, gap.FromMs);
+        Assert.Equal(day3Ts, gap.ToMs);
     }
 
     // -----------------------------------------------------------------------
@@ -324,11 +327,9 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
             .Returns(Task.FromResult<Stream?>(CsvStream(csv)));
 
         FeedStatus? savedStatus = null;
-        _statusStore.Load(_dir, FeedNames.Candles, "1h", Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<FeedStatus?>(null));
-        _statusStore.When(s => s.Save(
-                _dir, FeedNames.Candles, "1h", Arg.Any<FeedStatus>(), Arg.Any<CancellationToken>()))
-            .Do(ci => savedStatus = ci.ArgAt<FeedStatus>(3));
+        _statusStore.When(s => s.Update(
+                _dir, FeedNames.Candles, "1h", Arg.Any<Func<FeedStatus?, FeedStatus>>(), Arg.Any<CancellationToken>()))
+            .Do(ci => savedStatus = ci.ArgAt<Func<FeedStatus?, FeedStatus>>(3)(null));
 
         await CandlesMaterializer().MaterializeMonth(
             SpotConfig(), FeedConfig("1h"), _dir, 2024, 2, TestContext.Current.CancellationToken);
@@ -345,6 +346,7 @@ public sealed class KlinesArchiveMaterializerTests : IDisposable
         var covered = await new MonthCoverageCalculator(clock)
             .IsMonthCovered(
                 _dir, FeedNames.Candles, "1h", 2024, 2, savedStatus.Gaps,
+                new MonthPartitionRow("2024-02", 695, 0, ""),
                 ct: TestContext.Current.CancellationToken);
         Assert.True(covered);
     }

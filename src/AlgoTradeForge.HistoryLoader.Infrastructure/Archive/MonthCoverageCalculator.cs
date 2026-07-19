@@ -1,56 +1,41 @@
-using System.Collections.Concurrent;
 using AlgoTradeForge.HistoryLoader.Application.Archive;
+using AlgoTradeForge.HistoryLoader.Application.Index;
 using AlgoTradeForge.HistoryLoader.Domain;
 
 namespace AlgoTradeForge.HistoryLoader.Infrastructure.Archive;
 
-internal sealed class MonthCoverageCalculator : IMonthCoverageCalculator
+internal sealed class MonthCoverageCalculator(TimeProvider clock) : IMonthCoverageCalculator
 {
-    private readonly TimeProvider _clock;
-
-    // Row counts memoized per (path, length, mtime). Partitions are replaced atomically
-    // (PartitionFileWriter) or appended (BufferedPartitionWriter) — both move length+mtime,
-    // so a stale entry cannot survive a content change.
-    // TODO: no eviction — entries for deleted partitions persist; cap or prune if catalog-scale uptime makes this matter.
-    private readonly ConcurrentDictionary<string, (long Length, DateTime MtimeUtc, long Rows)> _rowCounts = new();
-
-    public MonthCoverageCalculator(TimeProvider clock) => _clock = clock;
-
-    public async Task<bool> IsMonthCovered(
+    public Task<bool> IsMonthCovered(
         string assetDir, string feedName, string interval,
         int year, int month,
         IReadOnlyList<DataGap> gaps,
+        MonthPartitionRow? indexedMonth,
         IReadOnlyList<string>? completeMonths = null,
         long? effectiveStartMs = null,
         CancellationToken ct = default)
     {
-        // A month lying entirely inside one recorded gap has no partition file — correctly so.
-        // Missing file means 0 actual rows; gap credit alone may still cover the month.
+        var nowMs = clock.GetUtcNow().ToUnixTimeMilliseconds();
+
+        // Interval-less feeds (ticks, funding-rate) are covered by the CompleteMonths marker only;
+        // they have no month_partitions rows and must never touch the file/index-count branch.
+        if (FeedNames.UsesMonthlyCompleteness(feedName))
+            return Task.FromResult(MonthCoverageMath.IsCovered(
+                feedName, interval, year, month, actualRows: 0, gaps, completeMonths, effectiveStartMs, nowMs));
+
+        // Trust the index's row count when present — no content read.
+        if (indexedMonth is { } row)
+            return Task.FromResult(MonthCoverageMath.IsCovered(
+                feedName, interval, year, month, row.Rows, gaps, completeMonths, effectiveStartMs, nowMs));
+
+        // No index row. If the partition is on disk, the index is merely stale/cold: defer this month
+        // (report covered) rather than re-download it — a rescan will populate the real count. Only a
+        // genuinely absent file is uncovered.
         var partitionPath = Path.Combine(assetDir, feedName, $"{year:D4}-{month:D2}_{interval}.csv");
-        long actualRows = 0;
-        var fileInfo = new FileInfo(partitionPath);
-        if (fileInfo.Exists)
-            actualRows = await CountDataRows(fileInfo, ct);
+        if (File.Exists(partitionPath))
+            return Task.FromResult(true);
 
-        return MonthCoverageMath.IsCovered(
-            feedName, interval, year, month, actualRows,
-            gaps, completeMonths, effectiveStartMs,
-            _clock.GetUtcNow().ToUnixTimeMilliseconds());
-    }
-
-    private async Task<long> CountDataRows(FileInfo file, CancellationToken ct)
-    {
-        if (_rowCounts.TryGetValue(file.FullName, out var cached)
-            && cached.Length == file.Length && cached.MtimeUtc == file.LastWriteTimeUtc)
-            return cached.Rows;
-
-        long lines = 0;
-        using var reader = new StreamReader(file.FullName);
-        while (await reader.ReadLineAsync(ct) is not null)
-            lines++;
-
-        var rows = Math.Max(0, lines - 1);
-        _rowCounts[file.FullName] = (file.Length, file.LastWriteTimeUtc, rows);
-        return rows;
+        return Task.FromResult(MonthCoverageMath.IsCovered(
+            feedName, interval, year, month, actualRows: 0, gaps, completeMonths, effectiveStartMs, nowMs));
     }
 }

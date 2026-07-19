@@ -161,16 +161,17 @@ public sealed class LiquidationStreamServiceTests
     }
 
     // -------------------------------------------------------------------------
-    // 7. EnabledSymbolSet_ComesFromPlan_EagerLiquidationsFuturesOnly
+    // 7. EnabledSymbolSet_ComesFromPlan_DeclaredLiquidationsFuturesOnly
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void EnabledSymbolSet_ComesFromPlan_EagerLiquidationsFuturesOnly()
+    public void EnabledSymbolSet_ComesFromPlan_DeclaredLiquidationsFuturesOnly()
     {
+        // Streams are collect-if-declared (eager/on-demand governs backfill, which streams lack).
         // Plan contains:
-        //   BTCUSDT perp — eager liquidations  → should be included
-        //   ETHUSDT perp — on-demand liquidations → excluded (not eager)
-        //   BTCUSDT spot — eager liquidations  → excluded (not futures)
+        //   BTCUSDT perp — eager liquidations     → included (futures, declared)
+        //   ETHUSDT perp — on-demand liquidations → included (futures, declared — collect value ignored)
+        //   BTCUSDT spot — eager liquidations     → excluded (not futures)
         var plan = new CollectionPlan(
         [
             CollectionAssets.Perp("BTCUSDT", 2, CollectionAssets.Feed(FeedNames.Liquidations, "", "eager")),
@@ -180,7 +181,8 @@ public sealed class LiquidationStreamServiceTests
 
         var set = LiquidationStreamService.BuildEnabledSymbolSet(plan);
 
-        Assert.Single(set);
+        Assert.Equal(2, set.Count);
         Assert.Contains("BTCUSDT", set);
+        Assert.Contains("ETHUSDT", set);
     }
 }

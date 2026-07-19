@@ -29,7 +29,62 @@ On startup, the HistoryLoader launches **6 background services** that continuous
 
 The first 5 services extend `ScheduledCollectorService` (periodic timer or cron). Each iterates over all configured assets, checks which feeds are enabled, and collects data from the last known timestamp to now.
 
-`LiquidationStreamService` is a persistent WebSocket consumer that connects to Binance's `!forceOrder@arr` stream, filtering and writing events for configured symbols in real-time. It reconnects with exponential backoff (up to 10 attempts).
+`LiquidationStreamService` is a persistent WebSocket consumer that connects to Binance's `!forceOrder@arr` stream, filtering and writing events for configured symbols in real-time. It reconnects with exponential backoff (up to 10 attempts) and drops a stale connection after an idle timeout (no frames for 3 min) instead of hanging forever.
+
+## Collection Configuration — Groups
+
+Collection is configured declaratively via **groups**, stored durably (SQLite), editable via the API (`PUT /api/v1/groups/{name}`) or the web UI. **Groups are the source of truth.** The legacy `appsettings.json → HistoryLoader.Assets` list is a retired one-time bootstrap seed (empty by default) — see [Legacy asset config](#asset-configuration-legacy).
+
+A group is **exchange-scoped** and declares each **feed once** (with its `collect` mode) plus the **instruments** it applies to. The cross-product (every symbol × every feed in the group) is what gets collected. `collect` is either:
+
+- **`eager`** — actively collected/maintained (backfill for archivable feeds; live subscription for streams).
+- **`on-demand`** — catalog-only; loaded when explicitly requested. Must be archive-replenishable.
+
+### Feed-centric group
+
+Declare a data feed once, set `eager` on it, and list the instruments it is collected for, within an exchange:
+
+```json
+PUT /api/v1/groups/binance-perp-liquidations
+{
+  "name": "binance-perp-liquidations",
+  "enabled": true,
+  "exchanges": ["binance"],
+  "assets": { "symbols": ["BTC/USDT-PERP", "ETH/USDT-PERP", "SOL/USDT-PERP"], "historyStart": "2019-09" },
+  "feeds": { "liquidations": { "collect": "eager" } }
+}
+```
+
+Symbols are canonical (`BTC/USDT-PERP`, `BTC/USDT`), not Binance API symbols. All feeds in one group share one symbol list; for **different instrument sets per feed, use separate groups** — groups merge on expansion (`eager` beats `on-demand`).
+
+### Default Binance seed
+
+The default Binance collection is a feed-centric group set — one group per feed (family), all 10 majors — canonically in [`docs/binance-default-groups.json`](../../docs/binance-default-groups.json):
+
+| Group | Feeds | collect |
+|-------|-------|---------|
+| `binance-perp-candles` | `candles` (1d/1h/1m) | eager |
+| `binance-perp-open-interest` | `open-interest` | eager |
+| `binance-perp-long-short-ratio` | `ls-ratio-global`, `ls-ratio-top-accounts`, `ls-ratio-top-positions` | eager |
+| `binance-perp-taker-volume` | `taker-volume` | eager |
+| `binance-perp-liquidations` | `liquidations` | eager |
+| `binance-perp-funding-rate` | `funding-rate` | on-demand |
+| `binance-perp-mark-price` | `mark-price` | on-demand |
+| `binance-perp-ticks` | `ticks` | on-demand |
+| `binance-spot-candles` | `candles` (1d/1h/1m) | eager |
+
+Perp symbols: BTC/ETH/BNB/SOL/XRP/DOGE/ADA/AVAX/DOT/LINK `-USDT-PERP`; spot the same 10 without `-PERP`.
+
+### Seeding a fresh install
+
+An empty `Assets` seed means a fresh install starts with no groups. Apply the defaults with the seed script (idempotent — re-run to reset):
+
+```bash
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/seed-binance-groups.ps1
+# custom target: -BaseUrl http://host:5210
+```
+
+Or PUT them by hand from the JSON. Preview any group before committing with `POST /api/v1/groups/validate` (returns expansion tuple count + errors). Verify with `GET /api/v1/groups` and inspect the resolved plan via `GET /api/v1/desired-state`.
 
 ## Data Storage
 
@@ -107,7 +162,7 @@ All configuration is in `appsettings.json` under the `HistoryLoader` section. Th
     "Binance": {
       "SpotBaseUrl": "https://api.binance.com",
       "FuturesBaseUrl": "https://fapi.binance.com",
-      "FuturesWsBaseUrl": "wss://fstream.binance.com",
+      "FuturesWsBaseUrl": "wss://fstream.binance.com/market",
       "MaxWeightPerMinute": 2400,
       "WeightBudgetPercent": 40,
       "RequestDelayMs": 50
@@ -129,10 +184,12 @@ All configuration is in `appsettings.json` under the `HistoryLoader` section. Th
 | `CircuitBreakerCooldownMinutes` | 15 | Pause duration after HTTP 418 (IP ban) |
 | `WeightBudgetPercent` | 40 | Percentage of Binance rate limit to use (2400 weight/min) |
 | `RequestDelayMs` | 50 | Minimum delay between API requests |
-| `FuturesWsBaseUrl` | `wss://fstream.binance.com` | WebSocket base URL for liquidation stream |
+| `FuturesWsBaseUrl` | `wss://fstream.binance.com/market` | Futures WS base for liquidation/book-ticker streams. Must include `/market` — Binance decommissioned the legacy `/ws` path (2026-04-23); the old host still accepts connections but delivers no data |
 | `Schedules` | `{}` | Cron schedules for services (see Cron Schedules below) |
 
-### Asset Configuration
+### Asset Configuration (legacy)
+
+> **Deprecated.** `HistoryLoader.Assets` is a one-time bootstrap seed, empty by default and retired in favour of [groups](#collection-configuration--groups). It is imported into groups only on first boot when no groups exist; once groups are present it is ignored. Prefer defining collection as groups (API/UI). This section documents the legacy format for reference.
 
 Each asset entry defines a symbol, its market type, and which feeds to collect:
 

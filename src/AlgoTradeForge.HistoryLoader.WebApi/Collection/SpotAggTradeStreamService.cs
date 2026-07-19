@@ -30,6 +30,10 @@ internal sealed class SpotAggTradeStreamService(
     private static readonly TimeSpan StableConnectionUptime = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan StatusFlushInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(5);
+    // A connected-but-silent WS (half-open connection) leaves ReceiveAsync blocked forever with no
+    // error. Spot aggTrades on a liquid symbol arrive sub-second, so a minute of silence means the
+    // connection is dead => close and reconnect (loud) instead of hanging.
+    private static readonly TimeSpan StreamIdleTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan PlanPollInterval = TimeSpan.FromSeconds(1);
 
     private bool _planDirty;
@@ -213,7 +217,21 @@ internal sealed class SpotAggTradeStreamService(
             WebSocketReceiveResult result;
             do
             {
-                result = await ws.ReceiveAsync(buffer, ct);
+                using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                idleCts.CancelAfter(StreamIdleTimeout);
+                try
+                {
+                    result = await ws.ReceiveAsync(buffer, idleCts.Token);
+                }
+                catch (OperationCanceledException) when (idleCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                {
+                    logger.LogWarning(
+                        "SpotAggTrade idle for {Seconds}s (connected but no frames) — reconnecting. " +
+                        "The connection may be half-open.",
+                        StreamIdleTimeout.TotalSeconds);
+                    await FlushStatus(statusTracker, ct);
+                    return;
+                }
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
@@ -340,7 +358,7 @@ internal sealed class SpotAggTradeStreamService(
         {
             if (!AssetTypes.IsSpot(asset.Venue.AssetType))
                 continue;
-            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.Ticks && f.Collect == "eager"))
+            if (!asset.Feeds.Any(f => f.FeedName == FeedNames.Ticks))
                 continue;
 
             var assetDir = BackfillOrchestrator.ResolveAssetDir(dataRoot, asset);
@@ -355,9 +373,7 @@ internal sealed class SpotAggTradeStreamService(
             if (st.count == 0)
                 continue;
 
-            var existing = await feedStatusStore.Load(assetDir, FeedNames.Ticks, "", ct);
-
-            await feedStatusStore.Save(assetDir, FeedNames.Ticks, "", new FeedStatus
+            await feedStatusStore.Update(assetDir, FeedNames.Ticks, "", existing => new FeedStatus
             {
                 FeedName = FeedNames.Ticks,
                 Interval = "",
@@ -375,7 +391,7 @@ internal sealed class SpotAggTradeStreamService(
     internal static List<string> BuildEnabledSpotSymbols(CollectionPlan plan) =>
         plan.Assets
             .Where(a => AssetTypes.IsSpot(a.Venue.AssetType))
-            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.Ticks && f.Collect == "eager"))
+            .Where(a => a.Feeds.Any(f => f.FeedName == FeedNames.Ticks))
             .Select(a => a.Venue.ApiSymbol)
             .ToList();
 

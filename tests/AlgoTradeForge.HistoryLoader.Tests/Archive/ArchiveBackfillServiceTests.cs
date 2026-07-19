@@ -45,6 +45,7 @@ public sealed class ArchiveBackfillServiceTests
         _coverage.IsMonthCovered(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<int>(), Arg.Any<int>(), Arg.Any<IReadOnlyList<DataGap>>(),
+                Arg.Any<MonthPartitionRow?>(),
                 Arg.Any<IReadOnlyList<string>?>(), Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
@@ -102,6 +103,7 @@ public sealed class ArchiveBackfillServiceTests
         _coverage.IsMonthCovered(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 2026, 4, Arg.Any<IReadOnlyList<DataGap>>(),
+                Arg.Any<MonthPartitionRow?>(),
                 Arg.Any<IReadOnlyList<string>?>(), Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
@@ -222,6 +224,7 @@ public sealed class ArchiveBackfillServiceTests
         _coverage.IsMonthCovered(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 2026, 5, Arg.Any<IReadOnlyList<DataGap>>(),
+                Arg.Any<MonthPartitionRow?>(),
                 Arg.Any<IReadOnlyList<string>?>(), Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(true);
 
@@ -268,6 +271,7 @@ public sealed class ArchiveBackfillServiceTests
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<int>(), Arg.Any<int>(),
                 Arg.Do<IReadOnlyList<DataGap>>(receivedGapLists.Add),
+                Arg.Any<MonthPartitionRow?>(),
                 Arg.Any<IReadOnlyList<string>?>(), Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(false);
 
@@ -433,10 +437,11 @@ public sealed class ArchiveBackfillServiceTests
         _coverage.IsMonthCovered(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<int>(), Arg.Any<int>(), Arg.Any<IReadOnlyList<DataGap>>(),
+                Arg.Any<MonthPartitionRow?>(),
                 Arg.Any<IReadOnlyList<string>?>(), Arg.Any<long?>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
-                capturedEffective[(ci.ArgAt<int>(3), ci.ArgAt<int>(4))] = ci.ArgAt<long?>(7);
+                capturedEffective[(ci.ArgAt<int>(3), ci.ArgAt<int>(4))] = ci.ArgAt<long?>(8);
                 return false;
             });
 

@@ -91,7 +91,7 @@ internal sealed class FundingRateArchiveMaterializer(
         var previousRows = await ArchiveStatusMerger.CountDataRows(path, ct);
         await partitionWriter.ReplacePartition(path, Header, outRows, ct);
 
-        var gaps = ArchiveStatusMerger.DetectGaps(parsed, EightHoursMs);
+        var gaps = ArchiveStatusMerger.DetectGaps(parsed.Select(x => x.Ts).ToList(), EightHoursMs);
         await ArchiveStatusMerger.MergeStatus(
             feedStatusStore, assetDir, FeedNames.FundingRate, "",
             parsed[0].Ts, parsed[^1].Ts, outRows.Count - previousRows, gaps, ct);

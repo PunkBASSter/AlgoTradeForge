@@ -56,32 +56,31 @@ public abstract class FeedCollectorBase(
         List<DataGap>? newGaps = null,
         CancellationToken ct = default)
     {
-        var existing = await FeedStatusStore.Load(assetDir, feedName, interval, ct);
-
-        IReadOnlyList<DataGap> mergedGaps = existing?.Gaps ?? [];
-        if (newGaps is { Count: > 0 })
+        await FeedStatusStore.Update(assetDir, feedName, interval, existing =>
         {
-            mergedGaps = [.. mergedGaps, .. newGaps];
-        }
+            IReadOnlyList<DataGap> mergedGaps = existing?.Gaps ?? [];
+            if (newGaps is { Count: > 0 })
+            {
+                mergedGaps = [.. mergedGaps, .. newGaps];
+            }
 
-        //TODO: ?? reconsider this for stocks where gaps are expected
-        // Promote to Degraded if gaps exist and caller didn't report Error.
-        var resolvedHealth = health == CollectionHealth.Healthy && mergedGaps.Count > 0
-            ? CollectionHealth.Degraded
-            : health;
+            //TODO: ?? reconsider this for stocks where gaps are expected
+            // Promote to Degraded if gaps exist and caller didn't report Error.
+            var resolvedHealth = health == CollectionHealth.Healthy && mergedGaps.Count > 0
+                ? CollectionHealth.Degraded
+                : health;
 
-        var status = new FeedStatus
-        {
-            FeedName = feedName,
-            Interval = interval,
-            FirstTimestamp = existing?.FirstTimestamp ?? firstTs,
-            LastTimestamp = lastTs,
-            LastRunUtc = DateTimeOffset.UtcNow,
-            RecordCount = (existing?.RecordCount ?? 0) + recordCount,
-            Gaps = mergedGaps,
-            Health = resolvedHealth
-        };
-
-        await FeedStatusStore.Save(assetDir, feedName, interval, status, ct);
+            return new FeedStatus
+            {
+                FeedName = feedName,
+                Interval = interval,
+                FirstTimestamp = existing?.FirstTimestamp ?? firstTs,
+                LastTimestamp = lastTs,
+                LastRunUtc = DateTimeOffset.UtcNow,
+                RecordCount = (existing?.RecordCount ?? 0) + recordCount,
+                Gaps = mergedGaps,
+                Health = resolvedHealth
+            };
+        }, ct);
     }
 }

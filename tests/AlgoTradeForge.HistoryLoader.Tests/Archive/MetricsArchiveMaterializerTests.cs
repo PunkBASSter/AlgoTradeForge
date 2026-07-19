@@ -111,13 +111,13 @@ public sealed class MetricsArchiveMaterializerTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.True(result.AvailableAtSource);
-        await _statusStore.Received(1).Save(
-            _dir, FeedNames.OpenInterest, "5m",
-            Arg.Is<FeedStatus>(s =>
-                s.Gaps.Count == 1 &&
-                s.Gaps[0].FromMs == day1LastTs &&
-                s.Gaps[0].ToMs == day3FirstTs),
-            Arg.Any<CancellationToken>());
+        var captured = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .Single();
+        var gap = Assert.Single(captured.Gaps);
+        Assert.Equal(day1LastTs, gap.FromMs);
+        Assert.Equal(day3FirstTs, gap.ToMs);
     }
 
     [Fact]
@@ -163,11 +163,182 @@ public sealed class MetricsArchiveMaterializerTests : IDisposable
         Assert.Equal(1.303872, posRatio, precision: 5);
     }
 
+    // Binance ships metrics rows whose ratio columns are blank while open-interest stays populated:
+    // quoted-empty (XRPUSDT 2021-12) and bare-empty (BTCUSDT 2020-09) both occur.
+    private const string BlankRatioCsv =
+        "create_time,symbol,sum_open_interest,sum_open_interest_value,count_toptrader_long_short_ratio,sum_toptrader_long_short_ratio,count_long_short_ratio,sum_taker_long_short_vol_ratio\n" +
+        "2024-03-01 00:00:00,BTCUSDT,108532.354,6370849179.8,2.96564793,1.303872,2.84772561,1.27027\n" +
+        "2024-03-01 00:05:00,BTCUSDT,108533.926,6363680536.55,\"\",\"\",\"\",\"\"\n" +
+        "2024-03-01 00:10:00,BTCUSDT,108465.299,6358363944.54,,,,\n" +
+        "2024-03-01 00:15:00,BTCUSDT,108400.100,6350000000.00,2.96854526,1.301941,2.85154501,0.517488\n";
+
+    [Fact]
+    public async Task LsRatio_SkipsBlankRatioRows_AndRecordsGap()
+    {
+        const long ts0000 = 1709251200000L;
+        const long ts0015 = 1709252100000L;
+
+        _archive.DownloadDaily("futures/um", "metrics", "BTCUSDT", null, new DateOnly(2024, 3, 1), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream(BlankRatioCsv)));
+
+        var result = await Sut(FeedNames.LsRatioGlobal).MaterializeMonth(
+            FuturesConfig(), FeedCfg(FeedNames.LsRatioGlobal, "5m"), _dir, 2024, 3,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.RowsWritten);
+        Assert.True(result.AvailableAtSource);
+
+        var lines = await File.ReadAllLinesAsync(
+            Path.Combine(_dir, "ls-ratio-global", "2024-03_5m.csv"),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(3, lines.Length);
+        Assert.StartsWith($"{ts0000},", lines[1]);
+        Assert.StartsWith($"{ts0015},", lines[2]);
+
+        var captured = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .Single();
+        var gap = Assert.Single(captured.Gaps);
+        Assert.Equal(ts0000, gap.FromMs);
+        Assert.Equal(ts0015, gap.ToMs);
+    }
+
+    [Fact]
+    public async Task OpenInterest_KeepsRowsWhoseRatioColumnsAreBlank()
+    {
+        _archive.DownloadDaily("futures/um", "metrics", "BTCUSDT", null, new DateOnly(2024, 3, 1), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream(BlankRatioCsv)));
+
+        var result = await Sut(FeedNames.OpenInterest).MaterializeMonth(
+            FuturesConfig(), FeedCfg(FeedNames.OpenInterest, "5m"), _dir, 2024, 3,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(4, result.RowsWritten);
+    }
+
+    // Binance doubled every metrics row from 2020-09..2021-05 (exact adjacent duplicates).
+    private const string DoubledCsv =
+        "create_time,symbol,sum_open_interest,sum_open_interest_value,count_toptrader_long_short_ratio,sum_toptrader_long_short_ratio,count_long_short_ratio,sum_taker_long_short_vol_ratio\n" +
+        "2024-03-01 00:00:00,BTCUSDT,108532.354,6370849179.8,2.96564793,1.303872,2.84772561,1.27027\n" +
+        "2024-03-01 00:00:00,BTCUSDT,108532.354,6370849179.8,2.96564793,1.303872,2.84772561,1.27027\n" +
+        "2024-03-01 00:05:00,BTCUSDT,108533.926,6363680536.55,2.96809221,1.303266,2.85246656,0.654691\n" +
+        "2024-03-01 00:05:00,BTCUSDT,108533.926,6363680536.55,2.96809221,1.303266,2.85246656,0.654691\n";
+
+    [Fact]
+    public async Task DoubledArchiveRows_WrittenOncePerSlot()
+    {
+        _archive.DownloadDaily("futures/um", "metrics", "BTCUSDT", null, new DateOnly(2024, 3, 1), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream(DoubledCsv)));
+
+        var result = await Sut(FeedNames.OpenInterest).MaterializeMonth(
+            FuturesConfig(), FeedCfg(FeedNames.OpenInterest, "5m"), _dir, 2024, 3,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.RowsWritten);
+
+        var lines = await File.ReadAllLinesAsync(
+            Path.Combine(_dir, "open-interest", "2024-03_5m.csv"), TestContext.Current.CancellationToken);
+        Assert.Equal(3, lines.Length); // header + 2 distinct slots
+
+        // RecordCount delta reflects the DISTINCT count (2), not the doubled line count (4).
+        var captured = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .Single();
+        Assert.Equal(2, captured.RecordCount);
+    }
+
     [Fact]
     public void RejectsSpot()
     {
         var sut = Sut(FeedNames.OpenInterest);
         Assert.False(sut.Supports(AssetTypes.Spot));
         Assert.True(sut.Supports(AssetTypes.Perpetual));
+    }
+
+    [Fact]
+    public async Task BlankTail_CreditedAsGap_ToLastObservedRow()
+    {
+        // 00:00 usable, 00:05 blank, 00:10 blank (tail). 15m interval keeps only 00:00 and 00:15;
+        // use 5m so all four slots are candidates. Last usable = 00:00; blank tail = 00:05, 00:10.
+        const string csv =
+            "create_time,symbol,sum_open_interest,sum_open_interest_value,count_toptrader_long_short_ratio,sum_toptrader_long_short_ratio,count_long_short_ratio,sum_taker_long_short_vol_ratio\n" +
+            "2024-03-01 00:00:00,BTCUSDT,108532.354,6370849179.8,2.96564793,1.303872,2.84772561,1.27027\n" +
+            "2024-03-01 00:05:00,BTCUSDT,108533.926,6363680536.55,\"\",\"\",\"\",\"\"\n" +
+            "2024-03-01 00:10:00,BTCUSDT,108465.299,6358363944.54,,,,\n";
+
+        _archive.DownloadDaily("futures/um", "metrics", "BTCUSDT", null, new DateOnly(2024, 3, 1), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream(csv)));
+
+        // ts(00:00)=1709251200000, ts(00:10)=1709251800000, +interval(5m=300000) => 1709252100000
+        const long ts0000 = 1709251200000L;
+        const long tail_to = 1709251800000L + 300000L;
+
+        await Sut(FeedNames.LsRatioGlobal).MaterializeMonth(
+            FuturesConfig(), FeedCfg(FeedNames.LsRatioGlobal, "5m"), _dir, 2024, 3,
+            TestContext.Current.CancellationToken);
+
+        var saved = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .Last();
+
+        var tail = Assert.Single(saved.Gaps, g => g.FromMs == ts0000);
+        Assert.Equal(tail_to, tail.ToMs); // bounded to maxParsedTs + interval, NOT month-end
+    }
+
+    [Fact]
+    public async Task AbsentTail_NotCredited()
+    {
+        // Only 00:00 present; the rest of the day/month is absent (no rows). No trailing gap.
+        const string csv =
+            "create_time,symbol,sum_open_interest,sum_open_interest_value,count_toptrader_long_short_ratio,sum_toptrader_long_short_ratio,count_long_short_ratio,sum_taker_long_short_vol_ratio\n" +
+            "2024-03-01 00:00:00,BTCUSDT,108532.354,6370849179.8,2.96564793,1.303872,2.84772561,1.27027\n";
+
+        _archive.DownloadDaily("futures/um", "metrics", "BTCUSDT", null, new DateOnly(2024, 3, 1), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream(csv)));
+
+        await Sut(FeedNames.LsRatioGlobal).MaterializeMonth(
+            FuturesConfig(), FeedCfg(FeedNames.LsRatioGlobal, "5m"), _dir, 2024, 3,
+            TestContext.Current.CancellationToken);
+
+        var saved = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .Last();
+
+        Assert.Empty(saved.Gaps);
+    }
+
+    [Fact]
+    public async Task BlankThenAbsentTail_MonthStaysUncovered()
+    {
+        // One usable row then a blank; the rest of March is absent (no rows). The tail gap is bounded
+        // to the last blank row, so the absent days are NOT credited and the month reads uncovered.
+        // This is the B1 silent-data-loss scenario — absent-after-blank must not self-cover.
+        const string csv =
+            "create_time,symbol,sum_open_interest,sum_open_interest_value,count_toptrader_long_short_ratio,sum_toptrader_long_short_ratio,count_long_short_ratio,sum_taker_long_short_vol_ratio\n" +
+            "2024-03-01 00:00:00,BTCUSDT,108532.354,6370849179.8,2.96564793,1.303872,2.84772561,1.27027\n" +
+            "2024-03-01 00:05:00,BTCUSDT,108533.926,6363680536.55,\"\",\"\",\"\",\"\"\n";
+
+        _archive.DownloadDaily("futures/um", "metrics", "BTCUSDT", null, new DateOnly(2024, 3, 1), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<Stream?>(CsvStream(csv)));
+
+        var result = await Sut(FeedNames.LsRatioGlobal).MaterializeMonth(
+            FuturesConfig(), FeedCfg(FeedNames.LsRatioGlobal, "5m"), _dir, 2024, 3,
+            TestContext.Current.CancellationToken);
+
+        var saved = _statusStore.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == "Update")
+            .Select(c => ((Func<FeedStatus?, FeedStatus>)c.GetArguments()[3]!)(null))
+            .Last();
+
+        var nowMs = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        var covered = MonthCoverageMath.IsCovered(
+            FeedNames.LsRatioGlobal, "5m", 2024, 3, result.RowsWritten, saved.Gaps,
+            completeMonths: null, effectiveStartMs: null, nowMs: nowMs);
+
+        Assert.False(covered); // absent March days after the blank tail are not credited
     }
 }
