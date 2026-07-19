@@ -33,6 +33,7 @@ internal static class MaintenanceEndpoints
         IFeedStatusStore statusStore,
         IOptionsMonitor<HistoryLoaderOptions> options,
         ILoggerFactory loggerFactory,
+        TimeProvider clock,
         CancellationToken ct)
     {
         var exchange = body.Exchange.ToLowerInvariant();
@@ -44,6 +45,7 @@ internal static class MaintenanceEndpoints
 
         var log = loggerFactory.CreateLogger("MaintenanceDedup");
         var assetDir = BackfillOrchestrator.ResolveAssetDir(options.CurrentValue.DataRoot, asset);
+        var now = clock.GetUtcNow();
         var repaired = new List<object>();
 
         foreach (var feed in asset.Feeds.Where(f => MetricsFeeds.Contains(f.FeedName)))
@@ -63,13 +65,18 @@ internal static class MaintenanceEndpoints
                 var name = Path.GetFileNameWithoutExtension(file);
                 if (name.Length < 7 || name[4] != '-') continue;
                 var month = name[..7]; // "yyyy-MM"
+                var year = int.Parse(month[..4]);
+                var mon = int.Parse(month[5..7]);
+
+                // Never repair the current month: it is actively collected and the daily archive lags
+                // live by ~a day, so re-materializing would roll it back. Any trivial live-path dup there
+                // self-heals via collection (same rule as coverage's "current month is never archive-touched").
+                if (year == now.Year && mon == now.Month)
+                    continue;
 
                 var (lines, distinct) = await PartitionAudit.Count(file, ct);
                 if (lines <= distinct)
                     continue; // clean — idempotent skip
-
-                var year = int.Parse(month[..4]);
-                var mon = int.Parse(month[5..7]);
 
                 // Index row first: crash after index delete leaves file-present + index-absent → self-heals on rescan.
                 // Crash after File.Delete leaves index-absent + file-absent → MaterializeMonth re-runs automatically.
